@@ -207,6 +207,11 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
               <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)] mb-2">
                 Faenas asignadas
               </p>
+              {state.fieldErrors?.worksiteAssignments?.[0] && (
+                <p className="text-xs text-[var(--color-danger)] mb-2">
+                  {state.fieldErrors.worksiteAssignments[0]}
+                </p>
+              )}
               {allWorksites.length === 0 && (
                 <p className="text-xs text-[var(--color-text-subtle)]">No hay faenas registradas</p>
               )}

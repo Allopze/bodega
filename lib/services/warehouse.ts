@@ -13,7 +13,6 @@ import { recordAudit } from "@/lib/audit"
 export type MovementType =
   | "ingreso_oc"           // + : received from purchase order
   | "egreso_faena"         // - : dispatched to worksite
-  | "entrega_trabajador"   // - : delivered to worker
   | "transferencia"        // ±  : transfer between warehouses
   | "devolucion"           // + : return from faena
   | "ajuste_positivo"      // + : positive inventory adjustment

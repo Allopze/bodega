@@ -16,7 +16,7 @@ import {
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { createOrderAction } from "./actions"
 import { formatQty, formatCLP } from "@/lib/utils"
-import { computeOrderTotals } from "@/lib/services/purchasing"
+import { computeOrderTotals } from "@/lib/order-totals"
 import type { ActionState } from "@/lib/validation/operations"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
@@ -46,6 +46,7 @@ export interface PendingItemOption {
   unitOfMeasure: string
   urgency:       string
   notes:         string | null
+  supplierPrices: Record<string, number>
 }
 
 /* ── Row in the OC items table ───────────────────────────────────────────────── */
@@ -84,13 +85,63 @@ export function OcForm({
     }
   }, [state])
 
-  // Auto-fill payment terms from supplier
-  const selectedSupplier = suppliers.find((s) => s.id === supplierId)
-  React.useEffect(() => {
-    if (selectedSupplier?.paymentTerms) {
-      setPaymentTerms(selectedSupplier.paymentTerms)
-    }
-  }, [selectedSupplier])
+  function suggestedPrice(item: PendingItemOption, nextSupplierId = supplierId) {
+    return nextSupplierId ? item.supplierPrices[nextSupplierId] : undefined
+  }
+
+  function applySuggestedPrices(nextSupplierId: string, items = pendingItems) {
+    setUnitPrices((prev) => {
+      const next = { ...prev }
+      for (const item of items) {
+        const price = suggestedPrice(item, nextSupplierId)
+        if (price !== undefined) next[item.id] = price
+      }
+      return next
+    })
+  }
+
+  function handleSupplierChange(nextSupplierId: string) {
+    setSupplierId(nextSupplierId)
+    const nextSupplier = suppliers.find((s) => s.id === nextSupplierId)
+    if (nextSupplier?.paymentTerms) setPaymentTerms(nextSupplier.paymentTerms)
+    applySuggestedPrices(nextSupplierId)
+  }
+
+  function setDefaultPriceForItem(item: PendingItemOption) {
+    const price = suggestedPrice(item)
+    if (price === undefined) return
+    setUnitPrices((prev) => (
+      prev[item.id] === undefined || prev[item.id] === 0
+        ? { ...prev, [item.id]: price }
+        : prev
+    ))
+  }
+
+  function onSupplierValueChange(nextSupplierId: string) {
+    handleSupplierChange(nextSupplierId)
+  }
+
+  function priceHint(item: PendingItemOption) {
+    const price = suggestedPrice(item)
+    if (price === undefined) return null
+    return `Precio catálogo: ${formatCLP(price)}`
+  }
+
+  function itemPrice(item: PendingItemOption) {
+    return unitPrices[item.id] ?? suggestedPrice(item) ?? 0
+  }
+
+  function itemDiscount(itemId: string) {
+    return discounts[itemId] ?? 0
+  }
+
+  function setItemPrice(itemId: string, value: string) {
+    setUnitPrices((p) => ({ ...p, [itemId]: parseFloat(value) || 0 }))
+  }
+
+  function setItemDiscount(itemId: string, value: string) {
+    setDiscounts((p) => ({ ...p, [itemId]: parseFloat(value) || 0 }))
+  }
 
   // Filter items by selected worksite
   const filteredItems = worksiteId
@@ -98,19 +149,26 @@ export function OcForm({
     : pendingItems
 
   function toggleItem(itemId: string) {
+    const shouldSelect = !selectedItems.has(itemId)
     setSelectedItems((prev) => {
       const next = new Set(prev)
       if (next.has(itemId)) next.delete(itemId)
       else next.add(itemId)
       return next
     })
+    if (shouldSelect) {
+      const item = pendingItems.find((i) => i.id === itemId)
+      if (item) setDefaultPriceForItem(item)
+    }
   }
 
   function toggleAll() {
     if (selectedItems.size === filteredItems.length) {
       setSelectedItems(new Set())
     } else {
-      setSelectedItems(new Set(filteredItems.map((i) => i.id)))
+      const next = new Set(filteredItems.map((i) => i.id))
+      setSelectedItems(next)
+      applySuggestedPrices(supplierId, filteredItems)
     }
   }
 
@@ -118,8 +176,8 @@ export function OcForm({
     .filter((i) => selectedItems.has(i.id))
     .map((i) => ({
       ...i,
-      unitPrice: unitPrices[i.id] ?? 0,
-      discount:  discounts[i.id]  ?? 0,
+      unitPrice: itemPrice(i),
+      discount:  itemDiscount(i.id),
     }))
 
   const totals = computeOrderTotals(includedItems)
@@ -158,7 +216,7 @@ export function OcForm({
         </Field>
 
         <Field label="Proveedor" required>
-          <Select value={supplierId} onValueChange={setSupplierId}>
+          <Select value={supplierId} onValueChange={onSupplierValueChange}>
             <SelectTrigger><SelectValue placeholder="Selecciona proveedor" /></SelectTrigger>
             <SelectContent>
               {suppliers.map((s) => (
@@ -232,9 +290,10 @@ export function OcForm({
           <div className="border border-[var(--color-border)] rounded-[var(--radius)] divide-y divide-[var(--color-border)] overflow-hidden">
             {filteredItems.map((item) => {
               const isSelected  = selectedItems.has(item.id)
-              const price       = unitPrices[item.id] ?? 0
-              const disc        = discounts[item.id]  ?? 0
+              const price       = itemPrice(item)
+              const disc        = itemDiscount(item.id)
               const subtotal    = item.quantity * price * (1 - disc / 100)
+              const hint        = priceHint(item)
 
               return (
                 <div
@@ -285,10 +344,16 @@ export function OcForm({
                           step="1"
                           min="0"
                           value={price || ""}
-                          onChange={(e) => setUnitPrices((p) => ({ ...p, [item.id]: parseFloat(e.target.value) || 0 }))}
+                          onChange={(e) => setItemPrice(item.id, e.target.value)}
                           className="h-7 w-28 text-sm tabular-nums"
                           placeholder="0"
+                          title={hint ?? undefined}
                         />
+                        {hint && (
+                          <span className="text-[10px] text-[var(--color-text-subtle)]">
+                            catálogo
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-[var(--color-text-subtle)]">
@@ -300,7 +365,7 @@ export function OcForm({
                           min="0"
                           max="100"
                           value={disc || ""}
-                          onChange={(e) => setDiscounts((p) => ({ ...p, [item.id]: parseFloat(e.target.value) || 0 }))}
+                          onChange={(e) => setItemDiscount(item.id, e.target.value)}
                           className="h-7 w-20 text-sm tabular-nums"
                           placeholder="0"
                         />

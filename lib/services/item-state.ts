@@ -29,15 +29,11 @@ export type ItemStatus =
   | "received"
   | "partially_delivered"
   | "delivered"
-  | "invoiced"
-  | "reconciled"
-  | "observed"
 
 /** Valid terminal states (no further transitions expected) */
 export const TERMINAL_STATES: ItemStatus[] = [
   "rejected",
   "delivered",
-  "reconciled",
   "postponed",
 ]
 
@@ -55,10 +51,7 @@ export const ALLOWED_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
   partially_received: ["received"],
   received:           ["partially_delivered", "delivered"],
   partially_delivered:["delivered"],
-  delivered:          ["invoiced"],
-  invoiced:           ["reconciled", "observed"],
-  reconciled:         [],
-  observed:           ["reconciled"],
+  delivered:          [],
 }
 
 /** Check if a state transition is valid */
@@ -607,21 +600,4 @@ export async function deliverItem(
       newState:   { status: "delivered" },
     })
   })
-}
-
-// ── Phase 7 stubs ───────────────────────────────────────────────────────────
-
-/** Mark item as invoiced. Phase 7. */
-export async function invoiceItem(_itemId: string, _invoiceId: string, _userId: string): Promise<void> {
-  throw new Error("Not implemented — Phase 7")
-}
-
-/** Reconcile item (invoice matches OC + receipt). Phase 7. */
-export async function reconcileItem(_itemId: string, _userId: string): Promise<void> {
-  throw new Error("Not implemented — Phase 7")
-}
-
-/** Mark item as observed (invoice discrepancy). Phase 7. */
-export async function observeItem(_itemId: string, _userId: string, _reason: string): Promise<void> {
-  throw new Error("Not implemented — Phase 7")
 }

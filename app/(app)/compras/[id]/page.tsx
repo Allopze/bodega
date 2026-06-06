@@ -1,12 +1,14 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
-import { purchaseOrders } from "@/db/schema"
-import { eq } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
+import { invoiceAttachments, purchaseOrders } from "@/db/schema"
+import { and, desc, eq } from "drizzle-orm"
+import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
+import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
+import { InvoiceAttachmentsPanel } from "@/components/invoices/invoice-attachments-panel"
 import { OcActions } from "./oc-actions"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 
@@ -30,6 +32,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
 
   if (!order) notFound()
   if (!canAccessWorksite(session, order.worksiteId)) notFound()
+  const canViewInvoices = canViewInvoiceAttachments(session)
 
   // Load linked request items + request codes for traceability
   const requestItemIds = order.items
@@ -40,7 +43,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     .map((i) => i.productId)
     .filter((id): id is string => id !== null)
 
-  const [requestItemRows, productRows] = await Promise.all([
+  const [requestItemRows, productRows, invoiceRows] = await Promise.all([
     requestItemIds.length > 0
       ? db.query.purchaseRequestItems.findMany({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
@@ -52,6 +55,17 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
       ? db.query.products.findMany({
           where: (p, { inArray }) => inArray(p.id, productIds),
           columns: { id: true, sku: true, name: true },
+        })
+      : Promise.resolve([]),
+
+    canViewInvoices
+      ? db.query.invoiceAttachments.findMany({
+          where: and(
+            eq(invoiceAttachments.targetType, "purchase_order"),
+            eq(invoiceAttachments.targetId, order.id),
+          ),
+          with: { uploader: true },
+          orderBy: (ia) => [desc(ia.uploadedAt)],
         })
       : Promise.resolve([]),
   ])
@@ -200,6 +214,27 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             <p className="text-xs text-[var(--color-text-subtle)] mb-1">Notas</p>
             <p className="text-sm text-[var(--color-text-muted)]">{order.notes}</p>
           </div>
+        )}
+
+        {canViewInvoices && (
+          <InvoiceAttachmentsPanel
+            targetType="purchase_order"
+            targetId={order.id}
+            targetLabel={`la OC ${order.code}`}
+            canManage={can(session, "invoice_attachments:manage")}
+            attachments={invoiceRows.map((invoice) => ({
+              id: invoice.id,
+              invoiceNumber: invoice.invoiceNumber,
+              invoiceDate: invoice.invoiceDate,
+              amount: invoice.amount,
+              fileName: invoice.fileName,
+              fileSize: invoice.fileSize,
+              mimeType: invoice.mimeType,
+              notes: invoice.notes,
+              uploadedAt: invoice.uploadedAt,
+              uploaderName: invoice.uploader?.name ?? null,
+            }))}
+          />
         )}
 
         {/* Actions (issue/send) */}

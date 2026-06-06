@@ -4,11 +4,10 @@ Datos extraídos del documento `EPP PROVEEDORES.xlsx`, estructurados por proveed
 
 ## Resumen
 
-| Proveedor | Registros | Registros con valor | Total valores informados |
-|---|---:|---:|---:|
-| TRECK | 40 | 39 | 362930 |
-| APRO | 13 | 13 | 507942 |
-| **Total** | **53** | **52** | **870872** |
+| Proveedor | Registros | Registros con valor |
+|---|---:|---:|
+| TRECK | 40 | 39 |
+| APRO | 13 | 13 |
 
 ## Proveedor: TRECK
 

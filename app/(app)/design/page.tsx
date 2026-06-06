@@ -14,7 +14,7 @@ import {
   TableRow, TableHead, TableCell, TableCellNum,
 } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
-import { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, INVOICE_STATE_META } from "@/components/states/state-badge"
+import { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
 import { Package, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Galería de diseño" }
@@ -41,7 +41,6 @@ export default function DesignGallery() {
   const itemStates   = Object.keys(ITEM_STATE_META)
   const requestStates = Object.keys(REQUEST_STATE_META)
   const ocStates      = Object.keys(OC_STATE_META)
-  const invoiceStates = Object.keys(INVOICE_STATE_META)
 
   return (
     <>
@@ -84,7 +83,7 @@ export default function DesignGallery() {
           {itemStates.map((s) => <StateBadge key={s} state={s} entity="item" />)}
         </div>
         <p className="mt-3 text-xs text-[var(--color-text-subtle)]">
-          Naranja = señal de alerta (pendiente_compra, observado). Verde = éxito. Rojo = peligro. Azul = en progreso. Ámbar = parcial.
+          Naranja = señal de alerta para pendiente de compra. Verde = éxito. Rojo = peligro. Azul = en progreso. Ámbar = parcial.
         </p>
       </Section>
 
@@ -97,12 +96,6 @@ export default function DesignGallery() {
       <Section title="Badges de estado — Orden de compra">
         <div className="flex flex-wrap gap-2">
           {ocStates.map((s) => <StateBadge key={s} state={s} entity="oc" />)}
-        </div>
-      </Section>
-
-      <Section title="Badges de estado — Factura">
-        <div className="flex flex-wrap gap-2">
-          {invoiceStates.map((s) => <StateBadge key={s} state={s} entity="invoice" />)}
         </div>
       </Section>
 

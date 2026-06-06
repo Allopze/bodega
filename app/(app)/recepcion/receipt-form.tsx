@@ -35,11 +35,6 @@ export interface WarehouseOption {
   name: string
 }
 
-export interface WorksiteOption {
-  id:   string
-  name: string
-}
-
 /* ── Receipt form ─────────────────────────────────────────────────────────────── */
 
 export function ReceiptForm({
@@ -47,16 +42,12 @@ export function ReceiptForm({
   orderCode,
   items,
   warehouses,
-  worksites,
 }: {
   purchaseOrderId: string
   orderCode:       string
   items:           ReceiptOcItem[]
   warehouses:      WarehouseOption[]
-  worksites:       WorksiteOption[]
 }) {
-  const [locationType,  setLocationType]  = React.useState<"faena" | "warehouse">("faena")
-  const [worksiteId,    setWorksiteId]    = React.useState<string>(worksites[0]?.id ?? "")
   const [warehouseId,   setWarehouseId]   = React.useState<string>(warehouses[0]?.id ?? "")
   const [guideNo,       setGuideNo]       = React.useState<string>("")
   const [notes,         setNotes]         = React.useState<string>("")
@@ -88,13 +79,8 @@ export function ReceiptForm({
     <form action={action} className="flex flex-col gap-6">
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
       <input type="hidden" name="itemsJson"        value={itemsJson} />
-      <input type="hidden" name="locationType"     value={locationType} />
-      {locationType === "faena" && worksiteId && (
-        <input type="hidden" name="worksiteId" value={worksiteId} />
-      )}
-      {locationType === "warehouse" && warehouseId && (
-        <input type="hidden" name="warehouseId" value={warehouseId} />
-      )}
+      <input type="hidden" name="locationType"     value="warehouse" />
+      {warehouseId && <input type="hidden" name="warehouseId" value={warehouseId} />}
 
       {/* Header */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -107,43 +93,16 @@ export function ReceiptForm({
           />
         </Field>
 
-        <Field label="Destino" required>
-          <Select value={locationType} onValueChange={(v) => setLocationType(v as "faena" | "warehouse")}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+        <Field label="Bodega de destino" required>
+          <Select value={warehouseId} onValueChange={setWarehouseId}>
+            <SelectTrigger><SelectValue placeholder="Selecciona bodega" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="faena">Directo a faena</SelectItem>
-              {warehouses.length > 0 && (
-                <SelectItem value="warehouse">Bodega</SelectItem>
-              )}
+              {warehouses.map((w) => (
+                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </Field>
-
-        {locationType === "faena" && worksites.length > 0 && (
-          <Field label="Faena" required>
-            <Select value={worksiteId} onValueChange={setWorksiteId}>
-              <SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
-              <SelectContent>
-                {worksites.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        )}
-
-        {locationType === "warehouse" && warehouses.length > 0 && (
-          <Field label="Bodega de destino" required>
-            <Select value={warehouseId} onValueChange={setWarehouseId}>
-              <SelectTrigger><SelectValue placeholder="Selecciona bodega" /></SelectTrigger>
-              <SelectContent>
-                {warehouses.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        )}
       </div>
 
       {/* Items table */}

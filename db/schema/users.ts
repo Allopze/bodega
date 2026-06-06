@@ -16,7 +16,7 @@ export const users = sqliteTable("users", {
 /* ── Roles ───────────────────────────────────────────────────────────────── */
 export const roles = sqliteTable("roles", {
   id:          text("id").primaryKey(),
-  name:        text("name").notNull().unique(), // slug: 'administrador', 'solicitante', etc.
+  name:        text("name").notNull().unique(), // slug: 'administrador', 'jefa_chome', etc.
   label:       text("label").notNull(),         // human-readable: 'Administrador'
   description: text("description"),
 })

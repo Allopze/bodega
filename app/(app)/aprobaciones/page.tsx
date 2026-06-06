@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Aprobaciones" }
 
 export default async function AprobacionesPage() {
   let session
-  try { session = await requirePermission("approvals:approve_faena") }
+  try { session = await requirePermission("approvals:approve") }
   catch { redirect("/dashboard") }
 
   // Load all submitted/in-review requests

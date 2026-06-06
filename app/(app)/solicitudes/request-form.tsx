@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
   Plus, Trash, CaretDown, CaretUp, Warning,
-  Package, TextT, ArrowLeft,
+  Package, ArrowLeft,
 } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
@@ -242,7 +242,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
   const itemsJson = JSON.stringify(items.map((item) => ({
     id:              item.id,
     productId:       item.productId,
-    productNameFree: item.productNameFree || null,
+        productNameFree: null,
     quantity:        Number(item.quantity) || 1,
     unitOfMeasure:   item.unitOfMeasure,
     urgency:         item.urgency,
@@ -476,7 +476,7 @@ function ItemEditor({
           {idx + 1}
         </span>
 
-        {/* Product picker or free-text */}
+        {/* Product picker */}
         <div className="flex-1 space-y-2">
           {item.productId ? (
             /* Product selected */
@@ -494,23 +494,19 @@ function ItemEditor({
               )}
             </div>
           ) : item.productNameFree ? (
-            /* Free-text product */
-            <div className="flex items-center gap-2">
-              <TextT size={14} className="text-[var(--color-text-subtle)] shrink-0" />
-              <Input
-                className="flex-1 h-8 text-sm"
-                placeholder="Describe el artículo..."
-                value={item.productNameFree}
-                onChange={(e) => onUpdate({ productNameFree: e.target.value })}
-                disabled={readOnly}
-              />
+            <div className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-warning-100)] bg-[var(--color-warning-50)] px-3 py-2">
+              <Package size={14} className="text-[var(--color-text-subtle)] shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-[var(--color-text)]">{item.productNameFree}</p>
+                <p className="text-[11px] text-[var(--color-text-subtle)]">Ítem histórico sin catálogo</p>
+              </div>
               {!readOnly && (
                 <button
                   type="button"
                   onClick={() => onUpdate({ productNameFree: "" })}
-                  className="text-[var(--color-text-subtle)] hover:text-[var(--color-danger)] text-xs transition-colors duration-[var(--duration-fast)]"
+                  className="shrink-0 text-xs text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-700)] active:scale-[0.97]"
                 >
-                  Borrar
+                  Elegir catálogo
                 </button>
               )}
             </div>
@@ -530,22 +526,10 @@ function ItemEditor({
                   <div className="absolute z-20 top-full mt-1 left-0 right-0 max-h-52 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-md)] divide-y divide-[var(--color-border)]">
                     {filtered.length === 0 ? (
                       <div className="px-3 py-2.5 text-xs text-[var(--color-text-subtle)]">
-                        Sin resultados.{" "}
-                        <button
-                          type="button"
-                          className="underline text-[var(--color-primary)]"
-                          onMouseDown={(e) => {
-                            e.preventDefault()
-                            onUpdate({ productNameFree: search, productId: null })
-                            setSearch("")
-                            setOpen(false)
-                          }}
-                        >
-                          Agregar como producto libre
-                        </button>
+                        Sin resultados en el catálogo.
                       </div>
                     ) : (
-                      <>
+                      <div>
                         {filtered.map((p) => (
                           <button
                             key={p.id}
@@ -562,21 +546,7 @@ function ItemEditor({
                             <span className="text-sm text-[var(--color-text)]">{p.name}</span>
                           </button>
                         ))}
-                        {search.trim() && (
-                          <button
-                            type="button"
-                            className="w-full text-left px-3 py-2.5 text-xs text-[var(--color-primary)] hover:bg-[var(--color-surface-2)]"
-                            onMouseDown={(e) => {
-                              e.preventDefault()
-                              onUpdate({ productNameFree: search, productId: null })
-                              setSearch("")
-                              setOpen(false)
-                            }}
-                          >
-                            Agregar &quot;{search}&quot; como producto sin catálogo
-                          </button>
-                        )}
-                      </>
+                      </div>
                     )}
                   </div>
                 )}

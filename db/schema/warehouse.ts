@@ -30,7 +30,7 @@ export const warehouseStock = sqliteTable("warehouse_stock", {
 })
 
 /* ── Inventory Movements (Movimientos de Inventario) ────────────────────── */
-// type: ingreso_oc | egreso_faena | entrega_trabajador | transferencia
+// type: ingreso_oc | egreso_faena | transferencia
 //       devolucion | ajuste_positivo | ajuste_negativo | rechazo | merma | anulacion
 export const inventoryMovements = sqliteTable("inventory_movements", {
   id:             text("id").primaryKey(),

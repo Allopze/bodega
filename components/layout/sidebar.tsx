@@ -4,9 +4,9 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck, Package,
-  Warehouse, Receipt, ChartBar, Users, MapPin, Cube, Buildings, ShieldCheck,
-  SignOut, CaretRight,
+  SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
+  Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck,
+  SignOut, CaretRight, ArrowSquareOut,
 } from "@phosphor-icons/react"
 import type { IconWeight } from "@phosphor-icons/react"
 import type { Session } from "next-auth"
@@ -16,8 +16,8 @@ import { NAV_ITEMS, type NavItem } from "./nav-items"
 
 /* ── Icon registry ──────────────────────────────────────────────────────── */
 const ICONS: Record<string, React.ComponentType<{ size?: number; weight?: IconWeight; className?: string }>> = {
-  SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck, Package,
-  Warehouse, Receipt, ChartBar, Users, MapPin, Cube, Buildings, ShieldCheck,
+  SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
+  Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
 }
 
 /* ── Permission filter ──────────────────────────────────────────────────── */

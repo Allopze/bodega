@@ -11,9 +11,9 @@ const REVALIDATE = "/aprobaciones"
 
 function getRoleContext(roles: string[]): string {
   if (roles.includes("administrador")) return "admin"
-  if (roles.includes("compras"))       return "compras"
-  if (roles.includes("jefe_faena"))    return "jefe_faena"
-  if (roles.includes("prevencion"))    return "prevencion"
+  if (roles.includes("jefa_chome"))    return "jefa_chome"
+  if (roles.includes("secretaria"))    return "secretaria"
+  if (roles.includes("prevencionista")) return "prevencionista"
   return roles[0] ?? "unknown"
 }
 
@@ -24,7 +24,7 @@ export async function approveItemAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("approvals:approve_faena") }
+  try { session = await requirePermission("approvals:approve") }
   catch { return { ok: false, message: "Sin permisos para aprobar ítems" } }
 
   const itemId = formData.get("itemId") as string | null
@@ -58,7 +58,7 @@ export async function rejectItemAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("approvals:approve_faena") }
+  try { session = await requirePermission("approvals:approve") }
   catch { return { ok: false, message: "Sin permisos para rechazar ítems" } }
 
   const itemId = formData.get("itemId") as string | null
@@ -87,7 +87,7 @@ export async function returnItemAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("approvals:approve_faena") }
+  try { session = await requirePermission("approvals:approve") }
   catch { return { ok: false, message: "Sin permisos para devolver ítems" } }
 
   const itemId = formData.get("itemId") as string | null
@@ -116,7 +116,7 @@ export async function bulkApproveRequestAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("approvals:approve_faena") }
+  try { session = await requirePermission("approvals:approve") }
   catch { return { ok: false, message: "Sin permisos para aprobar ítems" } }
 
   const itemIds = (formData.get("itemIds") as string | null)?.split(",").filter(Boolean)

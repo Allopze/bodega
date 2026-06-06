@@ -26,11 +26,23 @@ export interface StockOption {
   unitOfMeasure: string
 }
 
-export function DispatchPanel({ stockItems }: { stockItems: StockOption[] }) {
+export interface WorksiteOption {
+  id: string
+  name: string
+}
+
+export function DispatchPanel({
+  stockItems,
+  worksites,
+}: {
+  stockItems: StockOption[]
+  worksites: WorksiteOption[]
+}) {
   const [warehouseId, setWarehouseId] = React.useState<string>("")
+  const [worksiteId,  setWorksiteId]  = React.useState<string>(worksites[0]?.id ?? "")
   const [productId,   setProductId]   = React.useState<string>("")
   const [quantity,    setQuantity]    = React.useState<string>("")
-  const [reason,      setReason]      = React.useState<string>("")
+  const [receiver,    setReceiver]    = React.useState<string>("")
   const [notes,       setNotes]       = React.useState<string>("")
 
   const [state, action] = useActionState<ActionState, FormData>(dispatchAction, INITIAL_STATE)
@@ -39,7 +51,7 @@ export function DispatchPanel({ stockItems }: { stockItems: StockOption[] }) {
     if (state.ok && state.message) {
       toast.success(state.message)
       setQuantity("")
-      setReason("")
+      setReceiver("")
       setNotes("")
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
@@ -65,12 +77,14 @@ export function DispatchPanel({ stockItems }: { stockItems: StockOption[] }) {
     <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5">
       <h2 className="text-sm font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
         <ArrowSquareOut size={16} className="text-[var(--color-text-muted)]" />
-        Despachar a faena
+        Registrar entrega a faena
       </h2>
 
       <form action={action} className="flex flex-col gap-4">
         <input type="hidden" name="warehouseId" value={warehouseId} />
+        <input type="hidden" name="worksiteId"  value={worksiteId} />
         <input type="hidden" name="productId"   value={productId} />
+        <input type="hidden" name="unitOfMeasure" value={selectedStock?.unitOfMeasure ?? "unidad"} />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Bodega" required>
@@ -86,6 +100,21 @@ export function DispatchPanel({ stockItems }: { stockItems: StockOption[] }) {
             </Select>
           </Field>
 
+          <Field label="Faena destino" required>
+            <Select value={worksiteId} onValueChange={setWorksiteId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona faena" />
+              </SelectTrigger>
+              <SelectContent>
+                {worksites.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Producto" required>
             <Select value={productId} onValueChange={setProductId} disabled={!warehouseId}>
               <SelectTrigger>
@@ -122,12 +151,12 @@ export function DispatchPanel({ stockItems }: { stockItems: StockOption[] }) {
             />
           </Field>
 
-          <Field label="Destino / motivo" required>
+          <Field label="Recibido por" required>
             <Input
-              name="reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Faena Norte — uso en obra"
+              name="receiverName"
+              value={receiver}
+              onChange={(e) => setReceiver(e.target.value)}
+              placeholder="Nombre de quien recibió"
               disabled={!productId}
             />
           </Field>
@@ -139,7 +168,7 @@ export function DispatchPanel({ stockItems }: { stockItems: StockOption[] }) {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
-            placeholder="Información adicional sobre este despacho..."
+            placeholder="Información adicional sobre esta entrega..."
             disabled={!productId}
           />
         </Field>
@@ -152,10 +181,10 @@ export function DispatchPanel({ stockItems }: { stockItems: StockOption[] }) {
 
         <div className="pt-1">
           <SubmitButton
-            label="Registrar despacho"
+            label="Registrar entrega"
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={!warehouseId || !productId || !quantity || !reason}
+            disabled={!warehouseId || !worksiteId || !productId || !quantity || !receiver}
           />
         </div>
       </form>

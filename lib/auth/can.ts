@@ -45,11 +45,16 @@ export function hasAnyRole(session: Session | null, ...roles: string[]): boolean
 
 /**
  * Check if a user has access to a specific worksite.
- * Administrators see all worksites.
+ * Operational leadership sees all worksites. Faena requesters are scoped.
  */
 export function canAccessWorksite(session: Session | null, worksiteId: string): boolean {
   if (!session?.user) return false
-  if (session.user.roles.includes("administrador") || session.user.roles.includes("gerencia")) return true
+  if (
+    session.user.roles.includes("administrador") ||
+    session.user.roles.includes("jefa_chome") ||
+    session.user.roles.includes("secretaria") ||
+    session.user.roles.includes("prevencionista")
+  ) return true
   return session.user.worksiteIds.includes(worksiteId)
 }
 

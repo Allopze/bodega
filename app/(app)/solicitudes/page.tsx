@@ -36,11 +36,11 @@ export default async function SolicitudesPage() {
     .from(purchaseRequests)
     .orderBy(desc(purchaseRequests.createdAt))
 
-  // Filter by worksite for non-admin/non-compras
+  // Faena requesters see only their own requests inside assigned worksites.
   const visible = viewAll
     ? allRequests
     : allRequests.filter(
-        (r) => r.requesterId === session.user.id || userWorksiteIds.includes(r.worksiteId),
+        (r) => r.requesterId === session.user.id && userWorksiteIds.includes(r.worksiteId),
       )
 
   if (visible.length === 0) {

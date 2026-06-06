@@ -2,14 +2,14 @@ import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { db }                 from "@/db"
 import {
-  purchaseOrders, warehouses, worksites,
+  purchaseOrders, warehouses,
 } from "@/db/schema"
 import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { ReceiptForm } from "../receipt-form"
-import type { ReceiptOcItem, WarehouseOption, WorksiteOption } from "../receipt-form"
+import type { ReceiptOcItem, WarehouseOption } from "../receipt-form"
 
 export const metadata: Metadata = { title: "Registrar recepción" }
 
@@ -40,7 +40,7 @@ export default async function NuevaRecepcionPage({
     .map((i) => i.productId)
     .filter((id): id is string => id !== null)
 
-  const [productRows, allWarehouses, allWorksites] = await Promise.all([
+  const [productRows, allWarehouses] = await Promise.all([
     productIds.length > 0
       ? db.query.products.findMany({
           where: (p, { inArray }) => inArray(p.id, productIds),
@@ -54,11 +54,6 @@ export default async function NuevaRecepcionPage({
       .where(eq(warehouses.isActive, true))
       .orderBy(asc(warehouses.name)),
 
-    db
-      .select({ id: worksites.id, name: worksites.name })
-      .from(worksites)
-      .where(eq(worksites.isActive, true))
-      .orderBy(asc(worksites.name)),
   ])
 
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
@@ -78,9 +73,6 @@ export default async function NuevaRecepcionPage({
   })
 
   const warehouseOptions: WarehouseOption[] = allWarehouses.map((w) => ({ id: w.id, name: w.name }))
-  const worksiteOptions: WorksiteOption[]   = allWorksites
-    .filter((w) => canAccessWorksite(session, w.id))
-    .map((w) => ({ id: w.id, name: w.name }))
 
   return (
     <>
@@ -101,7 +93,6 @@ export default async function NuevaRecepcionPage({
           orderCode={order.code}
           items={items}
           warehouses={warehouseOptions}
-          worksites={worksiteOptions}
         />
       </div>
     </>

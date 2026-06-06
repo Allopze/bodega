@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Chome StockFlow
 
-## Getting Started
+Sistema interno para solicitudes por faena, aprobaciones, compras, recepcion y bodega.
 
-First, run the development server:
+## Puesta en marcha
 
 ```bash
+npm install
+npm run db:push
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+El seed base no carga datos mock. Solo crea roles, permisos y un usuario administrador para poder entrar.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Credenciales por defecto:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```txt
+admin@chome.cl
+chome2026
+```
 
-## Learn More
+Puedes cambiarlas al sembrar:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+SEED_ADMIN_EMAIL=admin@empresa.cl \
+SEED_ADMIN_NAME="Administrador" \
+SEED_ADMIN_PASSWORD="cambia-esto" \
+npm run db:seed
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Datos reales o de prueba con flujo real
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 
-## Deploy on Vercel
+1. Administra faenas y centros de costo en `/admin/faenas`.
+2. Crea proveedores en `/admin/proveedores`.
+3. Crea categorias, productos, atributos y proveedores asociados en `/admin/productos`.
+4. Crea bodegas en `/admin/bodegas`.
+5. Crea usuarios por rol y asignales faenas en `/admin/usuarios`.
+6. Crea un usuario `Solicitante de faena` y asignale al menos una faena.
+7. Entra como solicitante de faena y crea una solicitud en `/solicitudes/nueva`.
+8. Entra como jefa, secretaria, prevencionista o administrador y aprueba en `/aprobaciones`.
+9. Entra como jefa, secretaria o administrador, genera una OC en `/compras/nueva` y emite/envia la orden.
+10. Registra la recepcion en `/recepcion/nueva`.
+11. Registra entregas a faena desde `/bodega`; cada entrega descuenta stock y guarda quien recibio.
+12. Anexa facturas desde el detalle de una solicitud u orden de compra.
+13. Revisa stock, movimientos y entregas en `/bodega` y `/entregas`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Reglas operativas
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Las entregas son siempre a una faena.
+- Para registrar una entrega basta indicar quien recibio.
+- Toda entrega descuenta stock desde una bodega.
+- La prevencionista participa en aprobaciones de todos los productos.
+- La aprobacion simple actual es suficiente: no hay cadena obligatoria.
+- Las facturas anexas son visibles solo para jefa Chome, secretaria y prevencionista.
+- Los EPP con talla, color o modelo se mantienen como productos comprables separados, con atributos normalizados para busqueda y solicitud.
+- La base SQLite local no se versiona; schema y seed son la fuente reproducible.
+
+## Pendiente para integraciones reales
+
+Dashboard y reportes consultan datos persistidos de solicitudes, OC, recepciones, stock y facturas anexas.
+
+Hace falta implementar:
+
+- Importadores o conectores externos si los maestros vienen de ERP, planillas o proveedor contable.
+- Exportacion CSV/Excel si los reportes deben salir del sistema.
+- Pruebas E2E que creen datos por UI/API siguiendo el flujo anterior.

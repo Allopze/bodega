@@ -22,9 +22,7 @@ export type Permission =
   | "requests:view_all"
   | "requests:submit"
   // Approvals
-  | "approvals:approve_faena"
-  | "approvals:approve_prevencion"
-  | "approvals:approve_admin"
+  | "approvals:approve"
   // Purchasing
   | "purchasing:view"
   | "purchasing:create_order"
@@ -33,21 +31,12 @@ export type Permission =
   // Receiving
   | "receiving:register"
   | "receiving:view"
-  // Delivery
-  | "delivery:register"
-  | "delivery:view"
   // Warehouse
   | "warehouse:view_stock"
   | "warehouse:register_movement"
   | "warehouse:adjust_stock"
-  // Invoicing
-  | "invoicing:register"
-  | "invoicing:reconcile"
-  | "invoicing:view"
-  // Reports
-  | "reports:view_operational"
-  | "reports:view_management"
-  | "reports:export"
+  // Invoice attachments
+  | "invoice_attachments:manage"
   // Admin
   | "admin:users"
   | "admin:worksites"
@@ -59,10 +48,7 @@ export type Permission =
 /** All role slugs */
 export type RoleSlug =
   | "administrador"
-  | "solicitante"
-  | "jefe_faena"
-  | "prevencion"
-  | "compras"
-  | "recepcion"
-  | "finanzas"
-  | "gerencia"
+  | "jefa_chome"
+  | "secretaria"
+  | "prevencionista"
+  | "solicitante_faena"

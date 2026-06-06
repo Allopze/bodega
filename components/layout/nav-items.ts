@@ -40,7 +40,7 @@ export const NAV_ITEMS: NavSection[] = [
         label:       "Aprobaciones",
         href:        "/aprobaciones",
         iconName:    "CheckSquare",
-        permissions: ["approvals:approve_faena", "approvals:approve_prevencion", "approvals:approve_admin"],
+        permissions: ["approvals:approve"],
         badge:       "count",
       },
       {
@@ -51,16 +51,10 @@ export const NAV_ITEMS: NavSection[] = [
         badge:       "count",
       },
       {
-        label:       "Recepción",
+        label:       "Recepción/Bodega",
         href:        "/recepcion",
         iconName:    "Truck",
         permissions: ["receiving:view"],
-      },
-      {
-        label:       "Entregas",
-        href:        "/entregas",
-        iconName:    "Package",
-        permissions: ["delivery:view"],
       },
       {
         label:       "Bodega",
@@ -68,28 +62,11 @@ export const NAV_ITEMS: NavSection[] = [
         iconName:    "Warehouse",
         permissions: ["warehouse:view_stock"],
       },
-    ],
-  },
-  {
-    section: "Finanzas",
-    items: [
       {
-        label:       "Facturas",
-        href:        "/facturas",
-        iconName:    "Receipt",
-        permissions: ["invoicing:view"],
-        badge:       "count",
-      },
-    ],
-  },
-  {
-    section: "Reportes",
-    items: [
-      {
-        label:       "Reportes",
-        href:        "/reportes",
-        iconName:    "ChartBar",
-        permissions: ["reports:view_operational", "reports:view_management"],
+        label:       "Entregas",
+        href:        "/entregas",
+        iconName:    "ArrowSquareOut",
+        permissions: ["warehouse:view_stock"],
       },
     ],
   },

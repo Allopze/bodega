@@ -3,6 +3,7 @@
 import { revalidatePath }    from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
 import { applyMovement }     from "@/lib/services/warehouse"
+import { registerWorksiteDelivery } from "@/lib/services/deliveries"
 import type { ActionState }  from "@/lib/validation/operations"
 
 const REVALIDATE = "/bodega"
@@ -18,40 +19,41 @@ export async function dispatchAction(
   catch { return { ok: false, message: "Sin permisos para registrar movimientos" } }
 
   const warehouseId = formData.get("warehouseId") as string | null
+  const worksiteId  = formData.get("worksiteId")  as string | null
   const productId   = formData.get("productId")   as string | null
   const qtyRaw      = formData.get("quantity")     as string | null
-  const reason      = (formData.get("reason") as string | null)?.trim()
+  const unit        = (formData.get("unitOfMeasure") as string | null)?.trim() || "unidad"
+  const receiver    = (formData.get("receiverName") as string | null)?.trim()
   const notes       = (formData.get("notes")  as string | null)?.trim()
 
   if (!warehouseId) return { ok: false, message: "Selecciona una bodega" }
+  if (!worksiteId)  return { ok: false, message: "Selecciona una faena" }
   if (!productId)   return { ok: false, message: "Selecciona un producto" }
+  if (!receiver)    return { ok: false, message: "Indica quién recibió" }
 
   const qty = parseFloat(qtyRaw ?? "0")
   if (isNaN(qty) || qty <= 0) {
     return { ok: false, message: "La cantidad debe ser mayor a 0" }
   }
-  if (!reason) {
-    return { ok: false, message: "Indica el motivo del despacho" }
-  }
-
   try {
-    await applyMovement({
+    await registerWorksiteDelivery({
       warehouseId,
+      worksiteId,
       productId,
-      type:        "egreso_faena",
-      quantity:    -qty,          // negative = out
-      referenceType: "manual_dispatch",
-      performedBy: session.user.id,
-      userEmail:   session.user.email ?? undefined,
-      reason,
-      notes: notes || undefined,
+      quantity: qty,
+      unitOfMeasure: unit,
+      receiverName: receiver,
+      deliveredBy: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      notes: notes || null,
     })
 
     revalidatePath(REVALIDATE)
-    return { ok: true, message: `Despacho registrado: ${qty} unidades` }
+    revalidatePath("/entregas")
+    return { ok: true, message: `Entrega registrada: ${qty} unidades` }
   } catch (e) {
     console.error("[dispatchAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar despacho" }
+    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar entrega" }
   }
 }
 

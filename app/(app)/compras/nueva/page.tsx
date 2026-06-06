@@ -3,7 +3,7 @@ import { redirect }      from "next/navigation"
 import { db }            from "@/db"
 import {
   purchaseRequestItems, purchaseRequests,
-  worksites, suppliers, products,
+  worksites, suppliers, products, productSuppliers,
 } from "@/db/schema"
 import { eq, inArray, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
@@ -43,7 +43,7 @@ export default async function NuevaOcPage() {
   const requestIds = [...new Set(rawItems.map((i) => i.requestId))]
   const productIds = [...new Set(rawItems.map((i) => i.productId).filter(Boolean))] as string[]
 
-  const [requestRows, productRows, allSuppliers, allWorksites] = await Promise.all([
+  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites] = await Promise.all([
     db
       .select({ id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId })
       .from(purchaseRequests)
@@ -54,6 +54,17 @@ export default async function NuevaOcPage() {
           .select({ id: products.id, sku: products.sku, name: products.name })
           .from(products)
           .where(inArray(products.id, productIds))
+      : Promise.resolve([]),
+
+    productIds.length > 0
+      ? db
+          .select({
+            productId: productSuppliers.productId,
+            supplierId: productSuppliers.supplierId,
+            unitPrice: productSuppliers.unitPrice,
+          })
+          .from(productSuppliers)
+          .where(inArray(productSuppliers.productId, productIds))
       : Promise.resolve([]),
 
     db
@@ -72,6 +83,12 @@ export default async function NuevaOcPage() {
   const reqMap     = Object.fromEntries(requestRows.map((r) => [r.id, r]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
   const wsMap      = Object.fromEntries(allWorksites.map((w) => [w.id, w.name]))
+  const supplierPriceMap = supplierPriceRows.reduce<Record<string, Record<string, number>>>((acc, row) => {
+    if (row.unitPrice === null) return acc
+    acc[row.productId] ??= {}
+    acc[row.productId][row.supplierId] = row.unitPrice
+    return acc
+  }, {})
 
   // Scope worksites
   const scopedWs = allWorksites.filter((w) => canAccessWorksite(session, w.id))
@@ -97,6 +114,7 @@ export default async function NuevaOcPage() {
         unitOfMeasure:   item.unitOfMeasure,
         urgency:         item.urgency ?? "normal",
         notes:           item.notes,
+        supplierPrices:  item.productId ? (supplierPriceMap[item.productId] ?? {}) : {},
       } satisfies PendingItemOption
     })
     .filter((i): i is PendingItemOption => i !== null)

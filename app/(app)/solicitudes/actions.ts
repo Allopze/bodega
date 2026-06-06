@@ -9,7 +9,7 @@ import {
 } from "@/db/schema"
 import { nanoid, generateCode } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
-import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { submitItem } from "@/lib/services/item-state"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 
@@ -41,6 +41,9 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
   const d = parsed.data
 
   const isEdit = !!d.id
+  if (!canAccessWorksite(session, d.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
+  }
 
   await db.transaction(async (tx) => {
     if (isEdit) {
@@ -50,6 +53,9 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
       })
       if (!existing) throw new Error("Solicitud no encontrada")
       if (existing.status !== "draft") throw new Error("Solo se pueden editar solicitudes en borrador")
+      if (existing.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
+        throw new Error("Solo puedes editar tus propias solicitudes")
+      }
 
       await tx.update(purchaseRequests).set({
         worksiteId:   d.worksiteId,
@@ -97,7 +103,7 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
         id:              itemId,
         requestId:       d.id!,
         productId:       item.productId || null,
-        productNameFree: item.productNameFree || null,
+        productNameFree: null,
         quantity:        item.quantity,
         unitOfMeasure:   item.unitOfMeasure,
         status:          "draft",
@@ -143,6 +149,12 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
   if (!request) return { ok: false, message: "Solicitud no encontrada" }
   if (request.status !== "draft") return { ok: false, message: "Solo se pueden enviar solicitudes en borrador" }
   if (request.items.length === 0) return { ok: false, message: "La solicitud debe tener al menos un ítem" }
+  if (request.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
+    return { ok: false, message: "Solo puedes enviar tus propias solicitudes" }
+  }
+  if (!canAccessWorksite(session, request.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
+  }
 
   const now = new Date().toISOString()
 
@@ -198,6 +210,12 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
   if (!request) return { ok: false, message: "Solicitud no encontrada" }
   if (!["draft", "returned"].includes(request.status)) {
     return { ok: false, message: "No se puede cancelar una solicitud en estado " + request.status }
+  }
+  if (request.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
+    return { ok: false, message: "Solo puedes cancelar tus propias solicitudes" }
+  }
+  if (!canAccessWorksite(session, request.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
   }
 
   await db.transaction(async (tx) => {

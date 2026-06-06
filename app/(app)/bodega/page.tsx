@@ -1,21 +1,20 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db }       from "@/db"
-import { warehouses } from "@/db/schema"
+import { warehouses, worksites } from "@/db/schema"
 import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
-import { can } from "@/lib/auth/can"
+import { can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { DispatchPanel } from "./dispatch-panel"
 import { formatQty, formatDate } from "@/lib/utils"
-import type { StockOption } from "./dispatch-panel"
+import type { StockOption, WorksiteOption } from "./dispatch-panel"
 
 export const metadata: Metadata = { title: "Bodega" }
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   ingreso_oc:          "Ingreso OC",
-  egreso_faena:        "Despacho faena",
-  entrega_trabajador:  "Entrega trabajador",
+  egreso_faena:        "Entrega faena",
   transferencia:       "Transferencia",
   devolucion:          "Devolución",
   ajuste_positivo:     "Ajuste (+)",
@@ -28,7 +27,6 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
 const MOVEMENT_QTY_CLASS: Record<string, string> = {
   ingreso_oc:         "text-[var(--color-success)] font-medium",
   egreso_faena:       "text-[var(--color-danger)]",
-  entrega_trabajador: "text-[var(--color-danger)]",
   ajuste_positivo:    "text-[var(--color-success)]",
   ajuste_negativo:    "text-[var(--color-danger)]",
   devolucion:         "text-[var(--color-success)]",
@@ -44,11 +42,18 @@ export default async function BodegaPage() {
   const canDispatch = can(session, "warehouse:register_movement")
 
   // Load all warehouses
-  const allWarehouses = await db
-    .select()
-    .from(warehouses)
-    .where(eq(warehouses.isActive, true))
-    .orderBy(asc(warehouses.name))
+  const [allWarehouses, allWorksites] = await Promise.all([
+    db
+      .select()
+      .from(warehouses)
+      .where(eq(warehouses.isActive, true))
+      .orderBy(asc(warehouses.name)),
+    db
+      .select({ id: worksites.id, name: worksites.name })
+      .from(worksites)
+      .where(eq(worksites.isActive, true))
+      .orderBy(asc(worksites.name)),
+  ])
 
   if (allWarehouses.length === 0) {
     return (
@@ -101,6 +106,9 @@ export default async function BodegaPage() {
       quantity:      s.quantity,
       unitOfMeasure: s.product?.unitOfMeasure ?? "unidad",
     }))
+  const worksiteOptions: WorksiteOption[] = allWorksites
+    .filter((w) => canAccessWorksite(session, w.id))
+    .map((w) => ({ id: w.id, name: w.name }))
 
   // Group stock by warehouse
   const stockByWarehouse: Record<string, typeof stockRows> = {}
@@ -210,9 +218,9 @@ export default async function BodegaPage() {
         })}
 
         {/* Dispatch panel */}
-        {canDispatch && stockOptions.length > 0 && (
+        {canDispatch && stockOptions.length > 0 && worksiteOptions.length > 0 && (
           <div className="max-w-2xl">
-            <DispatchPanel stockItems={stockOptions} />
+            <DispatchPanel stockItems={stockOptions} worksites={worksiteOptions} />
           </div>
         )}
 

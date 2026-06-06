@@ -1,12 +1,14 @@
 /**
- * Seed file — Chome StockFlow
- * Realistic Chilean data. No "John Doe", no round numbers, no predictable fake values.
+ * Bootstrap seed — Chome StockFlow
+ * Creates only system roles, permissions, and the initial administrator.
+ * Operational/test data should be entered through the app flows.
  * Run with: npx tsx db/seed.ts
  */
 import Database from "better-sqlite3"
 import { drizzle } from "drizzle-orm/better-sqlite3"
 import * as schema from "./schema"
 import bcrypt from "bcryptjs"
+import { eq } from "drizzle-orm"
 
 const DB_URL = process.env.DATABASE_URL ?? "./db/stockflow.db"
 const sqlite = new Database(DB_URL)
@@ -14,21 +16,135 @@ sqlite.pragma("journal_mode = WAL")
 sqlite.pragma("foreign_keys = ON")
 const db = drizzle(sqlite, { schema })
 
+type EppCatalogItem = {
+  id: string
+  supplierId: string
+  sku: string
+  name: string
+  originalName?: string
+  detail: string | null
+  price: number | null
+  attributes?: EppAttribute[]
+}
+
+type EppAttribute = {
+  name: string
+  value: string
+}
+
+const EPP_CATEGORY = {
+  id: "cat-epp",
+  name: "Elementos de protección personal",
+  slug: "epp",
+  isEpp: true,
+  requiresPrevencion: true,
+  sortOrder: 10,
+}
+
+const EPP_SUPPLIERS: schema.suppliers["$inferInsert"][] = [
+  {
+    id: "sup-treck",
+    name: "TRECK",
+    notes: "Proveedor cargado desde EPP PROVEEDORES.xlsx.",
+    isActive: true,
+  },
+  {
+    id: "sup-apro",
+    name: "APRO",
+    notes: "Proveedor cargado desde EPP PROVEEDORES.xlsx.",
+    isActive: true,
+  },
+]
+
+const attr = (name: string, value: string): EppAttribute => ({ name, value })
+
+const EPP_CATALOG_ITEMS: EppCatalogItem[] = [
+  { id: "epp-treck-001", supplierId: "sup-treck", sku: "EPP-TRECK-001", name: "Barbiquejo Gancho Plastico C/Mentonera", detail: null, price: 330 },
+  { id: "epp-treck-002", supplierId: "sup-treck", sku: "EPP-TRECK-002", name: "BORDADO ESPALDA", detail: null, price: 1200 },
+  { id: "epp-treck-003", supplierId: "sup-treck", sku: "EPP-TRECK-003", name: "Bota PVC Segusa Pegasus C/P y Plantilla", originalName: "Bota Pvc Segusa Pegasus C/P y Plantiilla T-41", detail: null, price: 8520, attributes: [attr("Talla", "41")] },
+  { id: "epp-treck-004", supplierId: "sup-treck", sku: "EPP-TRECK-004", name: "Botin V-Flex Thinsulate", originalName: "BOTIN V-FLEX THINSULATE  V15 NEGRO/AZUL  N", detail: "LINEA MANDO", price: 49900, attributes: [attr("Modelo", "V15"), attr("Color", "Negro/Azul")] },
+  { id: "epp-treck-005", supplierId: "sup-treck", sku: "EPP-TRECK-005", name: "Botin V-Flex Microfiber", originalName: "BOTIN V-FLEX V73 MICROFIBER NEGRO", detail: "personal", price: 39900, attributes: [attr("Modelo", "V73"), attr("Color", "Negro")] },
+  { id: "epp-treck-006", supplierId: "sup-treck", sku: "EPP-TRECK-006", name: "Botin V-Flex Mujer Nobuck", originalName: "Botin V-Flex V5  Mujer Nobuck Café - T37", detail: null, price: 36000, attributes: [attr("Modelo", "V5"), attr("Color", "Café"), attr("Talla", "37")] },
+  { id: "epp-treck-007", supplierId: "sup-treck", sku: "EPP-TRECK-007", name: "Botiquin Activex de Primeros Auxilios 10 Personas", detail: null, price: 4600 },
+  { id: "epp-treck-008", supplierId: "sup-treck", sku: "EPP-TRECK-008", name: "Buzo Dupont Tyvek", originalName: "Buzo Dupont Tyvek 500X Blanco", detail: null, price: 4100, attributes: [attr("Modelo", "500X"), attr("Color", "Blanco")] },
+  { id: "epp-treck-009", supplierId: "sup-treck", sku: "EPP-TRECK-009", name: "Blusa Absolute Zero Lightwind Poliéster", originalName: "BLUSA ABSOLUTE ZERO LIGHTWIND W2400 POLIESTER AZUL MARINO T-XL", detail: "LINEA MANDO", price: 12900, attributes: [attr("Modelo", "W2400"), attr("Color", "Azul marino"), attr("Talla", "XL")] },
+  { id: "epp-treck-010", supplierId: "sup-treck", sku: "EPP-TRECK-010", name: "Camisa Absolute Zero Lightwind Poliéster", originalName: "CAMISA ABSOLUTE ZERO LIGHTWIND H2600 POLIESTER AZUL MARINO T-3XL", detail: "LINEA MANDO", price: 12900, attributes: [attr("Modelo", "H2600"), attr("Color", "Azul marino"), attr("Talla", "3XL")] },
+  { id: "epp-treck-011", supplierId: "sup-treck", sku: "EPP-TRECK-011", name: "Capa PVC c/cinta reflectante", originalName: "Capa PVC Azul c/cinta reflectante talla única", detail: null, price: 4200, attributes: [attr("Color", "Azul"), attr("Talla", "Única")] },
+  { id: "epp-treck-012", supplierId: "sup-treck", sku: "EPP-TRECK-012", name: "Casco Activex I Arnes cinta 6 Puntas Ratchet", originalName: "Casco Activex I Gris Arnes cinta 6 Puntas Ratchet", detail: null, price: 2160, attributes: [attr("Color", "Gris")] },
+  { id: "epp-treck-013", supplierId: "sup-treck", sku: "EPP-TRECK-013", name: "Casquete ABS Porta Visor", originalName: "Casquete ABS Porta Visor Amarillo", detail: "Soldador", price: 1450, attributes: [attr("Color", "Amarillo")] },
+  { id: "epp-treck-014", supplierId: "sup-treck", sku: "EPP-TRECK-014", name: "Chaleco Geologo Activex Gabardina Terra Bicolor", originalName: "CHALECO GEOLOGO ACTIVEX GABARDINA TERRA BICOLOR AMARILLO", detail: "BORDADO ESPALDA", price: 9400, attributes: [attr("Color", "Amarillo")] },
+  { id: "epp-treck-015", supplierId: "sup-treck", sku: "EPP-TRECK-015", name: "Chaqueta Activex Micropolar manga larga", originalName: "Chaqueta activex  micropolar negro manga larga talla", detail: null, price: 7900, attributes: [attr("Color", "Negro")] },
+  { id: "epp-treck-016", supplierId: "sup-treck", sku: "EPP-TRECK-016", name: "Coleto Activex Soldador Cuero Tr.", detail: null, price: 5800 },
+  { id: "epp-treck-017", supplierId: "sup-treck", sku: "EPP-TRECK-017", name: "Filtro Activex vapores orgánicos y gases ácidos", originalName: "Filtro Activex ATX VO/GA350 Vapores Organicos y Gases Acidos A1E1 (Par)", detail: "BIODIVERSA", price: 5700, attributes: [attr("Modelo", "ATX VO/GA350"), attr("Tipo", "A1E1"), attr("Presentación", "Par")] },
+  { id: "epp-treck-018", supplierId: "sup-treck", sku: "EPP-TRECK-018", name: "Fono HL Verishield cintillo", originalName: "Fono HL Verishield VS120 cintillo SNR 31 dB", detail: null, price: 12500, attributes: [attr("Modelo", "VS120"), attr("Atenuación", "SNR 31 dB")] },
+  { id: "epp-treck-019", supplierId: "sup-treck", sku: "EPP-TRECK-019", name: "Fono HL Verishield p/casco dieléctrico", originalName: "Fono HL Verishield VS120DH p/casco Dielec SNR 31 dB 1035201", detail: null, price: 12200, attributes: [attr("Modelo", "VS120DH"), attr("Código", "1035201"), attr("Atenuación", "SNR 31 dB")] },
+  { id: "epp-treck-020", supplierId: "sup-treck", sku: "EPP-TRECK-020", name: "Gorro Legionario Activex", originalName: "GORRO LEGIONARIO BEIGE ACTIVEX", detail: null, price: 1880, attributes: [attr("Color", "Beige")] },
+  { id: "epp-treck-021", supplierId: "sup-treck", sku: "EPP-TRECK-021", name: "Guante Activex Cabritilla Largo Electricista", detail: "santa fe", price: 1530 },
+  { id: "epp-treck-022", supplierId: "sup-treck", sku: "EPP-TRECK-022", name: "Guante Activex Nitrilo Heavy Duty puño seguridad", originalName: "GUANTE ACTIVEX NITRILO HEAVY DUTY PUNO ROJO SEGURIDAD T-L", detail: "BIODIVERSA", price: 1900, attributes: [attr("Color", "Rojo"), attr("Talla", "L")] },
+  { id: "epp-treck-023", supplierId: "sup-treck", sku: "EPP-TRECK-023", name: "Guante Activex PVC", originalName: "GUANTE ACTIVEX PVC ROJO 14-35", detail: "cabrero", price: 1200, attributes: [attr("Color", "Rojo"), attr("Medida", "14-35")] },
+  { id: "epp-treck-024", supplierId: "sup-treck", sku: "EPP-TRECK-024", name: "Guante Cabritilla Activex con Forro", detail: null, price: 1150 },
+  { id: "epp-treck-025", supplierId: "sup-treck", sku: "EPP-TRECK-025", name: "Guante Cabritilla Activex sin forro gris", detail: null, price: 930 },
+  { id: "epp-treck-026", supplierId: "sup-treck", sku: "EPP-TRECK-026", name: "Guante Nitrilo Showa", originalName: "Guante Nitrilo Showa 720 1.1Mm 30 Cm. Tr. T-L", detail: "DE PRUEBA", price: 3490, attributes: [attr("Modelo", "720"), attr("Espesor", "1.1 mm"), attr("Largo", "30 cm"), attr("Talla", "L")] },
+  { id: "epp-treck-027", supplierId: "sup-treck", sku: "EPP-TRECK-027", name: "Lente Activex sellado", originalName: "Lente Activex FX III sellado In out", detail: null, price: 2240, attributes: [attr("Modelo", "FX III"), attr("Color", "In/Out")] },
+  { id: "epp-treck-028", supplierId: "sup-treck", sku: "EPP-TRECK-028", name: "Mascarilla plegable KN95 sin válvula", originalName: "MASCARILLA PLEGABLE KN 95 SIN VALVULA (10 UN)", detail: null, price: 600, attributes: [attr("Presentación", "10 unidades")] },
+  { id: "epp-treck-029", supplierId: "sup-treck", sku: "EPP-TRECK-029", name: "Overol Activex Piloto Poplin c/reflectante", originalName: "Overol Activex Piloto Poplin Azul  C/ Reflectante T-XXXL", detail: "CON LOGO", price: 5500, attributes: [attr("Color", "Azul"), attr("Talla", "XXXL")] },
+  { id: "epp-treck-030", supplierId: "sup-treck", sku: "EPP-TRECK-030", name: "Pantalón Lightwind nylon spandex mujer UV", originalName: "PANTALON LIGHTWIND W3000 NYLON SPANDEX MUJER BEIGE UV T-XL", detail: "LINEA MANDO", price: 26400, attributes: [attr("Modelo", "W3000"), attr("Género", "Mujer"), attr("Color", "Beige"), attr("Talla", "XL")] },
+  { id: "epp-treck-031", supplierId: "sup-treck", sku: "EPP-TRECK-031", name: "Pantalón Lightwind nylon spandex hombre UV", originalName: "PANTALON LIGHTWIND H3200 NYLON SPANDEXHOMBRE BEIGE UV T-2XL", detail: "LINEA MANDO", price: 26400, attributes: [attr("Modelo", "H3200"), attr("Género", "Hombre"), attr("Color", "Beige"), attr("Talla", "2XL")] },
+  { id: "epp-treck-032", supplierId: "sup-treck", sku: "EPP-TRECK-032", name: "Pantalón slack cargo gabardina con logo", originalName: "PANTALON SLACK CARGO GABARDINA GRIS/NARANJO con logo", detail: null, price: 11500, attributes: [attr("Color", "Gris/Naranjo")] },
+  { id: "epp-treck-033", supplierId: "sup-treck", sku: "EPP-TRECK-033", name: "Primera Capa Activex polyester", originalName: "Primera Capa Activex polyester Negro T- 2XL", detail: null, price: 4700, attributes: [attr("Color", "Negro"), attr("Talla", "2XL")] },
+  { id: "epp-treck-034", supplierId: "sup-treck", sku: "EPP-TRECK-034", name: "Respirador Activex TPR medio rostro", originalName: "Respirador Activex TPR ATX 100  (medio rostro)", detail: "BIODIVERSA", price: 3500, attributes: [attr("Modelo", "ATX 100")] },
+  { id: "epp-treck-035", supplierId: "sup-treck", sku: "EPP-TRECK-035", name: "Traje para Lluvia Activex color", detail: null, price: 7100 },
+  { id: "epp-treck-036", supplierId: "sup-treck", sku: "EPP-TRECK-036", name: "Traje PU Activex Pantalón", originalName: "Traje PU Verde Activex Pantalón T-L", detail: null, price: 13900, attributes: [attr("Color", "Verde"), attr("Talla", "L")] },
+  { id: "epp-treck-037", supplierId: "sup-treck", sku: "EPP-TRECK-037", name: "Alta Visibilidad C/Cinta", originalName: "verde Alta Visibilidad C/Cinta", detail: "Registro sin valor informado en EPP PROVEEDORES.xlsx.", price: null, attributes: [attr("Color", "Verde")] },
+  { id: "epp-treck-038", supplierId: "sup-treck", sku: "EPP-TRECK-038", name: "Visor Activex Policarbornato C/Porta Visor Control de Residu", detail: "personal", price: 5100 },
+  { id: "epp-treck-039", supplierId: "sup-treck", sku: "EPP-TRECK-039", name: "Visor Claro Borde Aluminio", originalName: "Visor Claro 8 x 16 Borde Aluminio", detail: "Soldador", price: 1050, attributes: [attr("Medida", "8 x 16")] },
+  { id: "epp-treck-040", supplierId: "sup-treck", sku: "EPP-TRECK-040", name: "Antiparra y Lente MSA Ductile Wings", originalName: "Antiparra y Lente MSA Ductile. Wings In/Out 2803154", detail: "MININCO", price: 11200, attributes: [attr("Color", "In/Out"), attr("Modelo", "2803154")] },
+  { id: "epp-apro-001", supplierId: "sup-apro", sku: "EPP-APRO-001", name: "Botin Norseg Greta CT", originalName: "BOTIN NORSEG GRETA CT DAMA GRIS", detail: null, price: 57513, attributes: [attr("Género", "Dama"), attr("Color", "Gris")] },
+  { id: "epp-apro-002", supplierId: "sup-apro", sku: "EPP-APRO-002", name: "Respirador MSA de escape Miniescape", detail: null, price: 30900 },
+  { id: "epp-apro-003", supplierId: "sup-apro", sku: "EPP-APRO-003", name: "ESTUCHE TACTICO P/DESCONTAMINADOR EN SPRAY", detail: null, price: 16000 },
+  { id: "epp-apro-004", supplierId: "sup-apro", sku: "EPP-APRO-004", name: "ESTUCHE PORTA MINIESCAPE", detail: null, price: 5900 },
+  { id: "epp-apro-005", supplierId: "sup-apro", sku: "EPP-APRO-005", name: "Polera Polo Dryfresh", originalName: "POLERA POLO DRYFRESH DAMA COLOR AZUL PIEDRA", detail: null, price: 6250, attributes: [attr("Género", "Dama"), attr("Color", "Azul piedra")] },
+  { id: "epp-apro-006", supplierId: "sup-apro", sku: "EPP-APRO-006", name: "Polera Polo Dryfresh", originalName: "POLERA POLO DRYFRESH HOMBRE COLOR AZUL PIEDRA", detail: null, price: 6250, attributes: [attr("Género", "Hombre"), attr("Color", "Azul piedra")] },
+  { id: "epp-apro-007", supplierId: "sup-apro", sku: "EPP-APRO-007", name: "Botin Proflex aislante antiácido", originalName: "BOTIN PROFLEX 125CDPH CMZ AISLANTE ANTIACIDO CAFE N°40", detail: null, price: 40900, attributes: [attr("Modelo", "125CDPH CMZ"), attr("Color", "Café"), attr("Talla", "40")] },
+  { id: "epp-apro-008", supplierId: "sup-apro", sku: "EPP-APRO-008", name: "ALCOTEST DIGITAL MARS", detail: null, price: 152990 },
+  { id: "epp-apro-009", supplierId: "sup-apro", sku: "EPP-APRO-009", name: "Boquillas Mars-Satellite", originalName: "BOQUILLAS MARS-SATELLITE (BL 100 UN)", detail: null, price: 28900, attributes: [attr("Presentación", "BL 100 unidades")] },
+  { id: "epp-apro-010", supplierId: "sup-apro", sku: "EPP-APRO-010", name: "ANPHOTEROL CARA/MANOS 200ml", detail: null, price: 92900 },
+  { id: "epp-apro-011", supplierId: "sup-apro", sku: "EPP-APRO-011", name: "Bota Proflex Soldador", originalName: "BOTA PROFLEX 111 SOLDADOR NEGRO N°41", detail: null, price: 57749, attributes: [attr("Modelo", "111"), attr("Color", "Negro"), attr("Talla", "41")] },
+  { id: "epp-apro-012", supplierId: "sup-apro", sku: "EPP-APRO-012", name: "Buzo Tyvek Xpert", originalName: "BUZO TYVEK@500 XPERT TY198S XL", detail: "coti CO-145636", price: 3790, attributes: [attr("Modelo", "TY198S"), attr("Talla", "XL")] },
+  { id: "epp-apro-013", supplierId: "sup-apro", sku: "EPP-APRO-013", name: "Guante nitrilo texturizado", originalName: "GUANTE NITRILO TEXTURIZADO 8,0 GR NARANJO T/ L (CJ 50 UN)", detail: "stafe", price: 7900, attributes: [attr("Color", "Naranjo"), attr("Talla", "L"), attr("Gramaje", "8,0 gr"), attr("Presentación", "Caja 50 unidades")] },
+]
+
+function sourceNote(item: EppCatalogItem) {
+  const parts = [
+    "Fuente: EPP PROVEEDORES.xlsx.",
+    `Proveedor original: ${item.supplierId === "sup-treck" ? "TRECK" : "APRO"}.`,
+  ]
+  if (item.originalName) parts.push(`Nombre original: ${item.originalName}.`)
+  if (item.detail) parts.push(`Detalle / Nota: ${item.detail}`)
+  return parts.join(" ")
+}
+
 async function main() {
-  console.log("🌱 Iniciando seed Chome StockFlow…")
+  console.log("Inicializando datos base de Chome StockFlow...")
 
   /* ── Roles ────────────────────────────────────────────────────────────── */
   const roleData: schema.roles["$inferInsert"][] = [
-    { id: "rol-admin",    name: "administrador",  label: "Administrador",     description: "Control total del sistema" },
-    { id: "rol-sol",      name: "solicitante",    label: "Solicitante",       description: "Crea solicitudes de compra desde faena" },
-    { id: "rol-jefe",     name: "jefe_faena",     label: "Jefe de faena",     description: "Aprueba solicitudes de su faena" },
-    { id: "rol-prev",     name: "prevencion",     label: "Prevención",        description: "Aprueba ítems de seguridad y EPP" },
-    { id: "rol-compras",  name: "compras",        label: "Compras",           description: "Genera órdenes de compra" },
-    { id: "rol-rec",      name: "recepcion",      label: "Recepción/Bodega",  description: "Registra recepciones y maneja stock" },
-    { id: "rol-fin",      name: "finanzas",       label: "Finanzas",          description: "Registra y concilia facturas" },
-    { id: "rol-ger",      name: "gerencia",       label: "Gerencia",          description: "Vista ejecutiva y reportes" },
+    { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total técnico del sistema" },
+    { id: "rol-jefa", name: "jefa_chome", label: "Jefa Chome", description: "Revisa, aprueba y administra la operación" },
+    { id: "rol-sec", name: "secretaria", label: "Secretaria", description: "Revisa, aprueba y gestiona operación diaria" },
+    { id: "rol-prev", name: "prevencionista", label: "Prevencionista", description: "Revisa y aprueba solicitudes" },
+    { id: "rol-sol-faena", name: "solicitante_faena", label: "Solicitante de faena", description: "Solicita ítems para sus faenas asignadas" },
   ]
-  await db.insert(schema.roles).values(roleData).onConflictDoNothing()
+  for (const role of roleData) {
+    await db.insert(schema.roles).values(role).onConflictDoUpdate({
+      target: schema.roles.id,
+      set: {
+        name: role.name,
+        label: role.label,
+        description: role.description ?? null,
+      },
+    })
+  }
 
   /* ── Permissions ─────────────────────────────────────────────────────── */
   const perms: schema.permissions["$inferInsert"][] = [
@@ -38,9 +154,7 @@ async function main() {
     { id: "p-req-all",        name: "requests:view_all",            module: "requests",   description: "Ver todas las solicitudes" },
     { id: "p-req-submit",     name: "requests:submit",              module: "requests",   description: "Enviar solicitudes a aprobación" },
     // Approvals
-    { id: "p-apr-faena",      name: "approvals:approve_faena",      module: "approvals",  description: "Aprobar como jefe de faena" },
-    { id: "p-apr-prev",       name: "approvals:approve_prevencion", module: "approvals",  description: "Aprobar como prevención" },
-    { id: "p-apr-admin",      name: "approvals:approve_admin",      module: "approvals",  description: "Aprobar como administrador" },
+    { id: "p-apr",            name: "approvals:approve",            module: "approvals",  description: "Revisar y aprobar solicitudes" },
     // Purchasing
     { id: "p-pur-view",       name: "purchasing:view",              module: "purchasing", description: "Ver módulo de compras" },
     { id: "p-pur-create",     name: "purchasing:create_order",      module: "purchasing", description: "Crear órdenes de compra" },
@@ -49,21 +163,12 @@ async function main() {
     // Receiving
     { id: "p-rec-reg",        name: "receiving:register",           module: "receiving",  description: "Registrar recepciones" },
     { id: "p-rec-view",       name: "receiving:view",               module: "receiving",  description: "Ver recepciones" },
-    // Delivery
-    { id: "p-del-reg",        name: "delivery:register",            module: "delivery",   description: "Registrar entregas" },
-    { id: "p-del-view",       name: "delivery:view",                module: "delivery",   description: "Ver entregas" },
     // Warehouse
     { id: "p-wh-stock",       name: "warehouse:view_stock",         module: "warehouse",  description: "Ver stock" },
     { id: "p-wh-mov",         name: "warehouse:register_movement",  module: "warehouse",  description: "Registrar movimientos" },
     { id: "p-wh-adj",         name: "warehouse:adjust_stock",       module: "warehouse",  description: "Ajustar stock" },
-    // Invoicing
-    { id: "p-inv-reg",        name: "invoicing:register",           module: "invoicing",  description: "Registrar facturas" },
-    { id: "p-inv-rec",        name: "invoicing:reconcile",          module: "invoicing",  description: "Conciliar facturas" },
-    { id: "p-inv-view",       name: "invoicing:view",               module: "invoicing",  description: "Ver facturas" },
-    // Reports
-    { id: "p-rep-ops",        name: "reports:view_operational",     module: "reports",    description: "Ver reportes operativos" },
-    { id: "p-rep-mgmt",       name: "reports:view_management",      module: "reports",    description: "Ver reportes de gestión" },
-    { id: "p-rep-exp",        name: "reports:export",               module: "reports",    description: "Exportar datos" },
+    // Invoice attachments
+    { id: "p-inv-att",        name: "invoice_attachments:manage",   module: "attachments", description: "Anexar facturas a solicitudes y OC" },
     // Admin
     { id: "p-adm-usr",        name: "admin:users",                  module: "admin",      description: "Gestionar usuarios" },
     { id: "p-adm-ws",         name: "admin:worksites",              module: "admin",      description: "Gestionar faenas" },
@@ -72,252 +177,171 @@ async function main() {
     { id: "p-adm-cfg",        name: "admin:config",                 module: "admin",      description: "Configuración del sistema" },
     { id: "p-adm-audit",      name: "admin:audit_log",              module: "admin",      description: "Ver log de auditoría" },
   ]
-  await db.insert(schema.permissions).values(perms).onConflictDoNothing()
+  for (const permission of perms) {
+    await db.insert(schema.permissions).values(permission).onConflictDoUpdate({
+      target: schema.permissions.id,
+      set: {
+        name: permission.name,
+        module: permission.module,
+        description: permission.description ?? null,
+      },
+    })
+  }
+
+  const keepRoleIds = roleData.map((r) => r.id)
+  const keepPermIds = perms.map((p) => p.id)
+  sqlite.prepare("delete from role_permissions").run()
+  sqlite.prepare(`delete from user_roles where role_id not in (${keepRoleIds.map(() => "?").join(",")})`).run(...keepRoleIds)
+  sqlite.prepare(`delete from roles where id not in (${keepRoleIds.map(() => "?").join(",")})`).run(...keepRoleIds)
+  sqlite.prepare(`delete from permissions where id not in (${keepPermIds.map(() => "?").join(",")})`).run(...keepPermIds)
 
   /* ── Role → Permission mapping ───────────────────────────────────────── */
   const rp = (roleId: string, permId: string) => ({ roleId, permissionId: permId })
+  const leadership = [
+    "p-req-create", "p-req-own", "p-req-all", "p-req-submit",
+    "p-apr",
+    "p-pur-view", "p-pur-create", "p-pur-send", "p-pur-sup",
+    "p-rec-reg", "p-rec-view",
+    "p-wh-stock", "p-wh-mov", "p-wh-adj",
+    "p-inv-att",
+    "p-adm-usr", "p-adm-ws", "p-adm-prod", "p-adm-sup", "p-adm-cfg", "p-adm-audit",
+  ]
   const rolePermData = [
-    // Administrador — all
     ...perms.map((p) => rp("rol-admin", p.id)),
-    // Solicitante
-    rp("rol-sol", "p-req-create"), rp("rol-sol", "p-req-own"), rp("rol-sol", "p-req-submit"),
-    // Jefe de faena
-    rp("rol-jefe", "p-req-all"), rp("rol-jefe", "p-apr-faena"),
-    rp("rol-jefe", "p-rep-ops"), rp("rol-jefe", "p-del-view"),
-    // Prevención
-    rp("rol-prev", "p-req-all"), rp("rol-prev", "p-apr-prev"),
-    rp("rol-prev", "p-del-view"), rp("rol-prev", "p-rep-ops"),
-    // Compras — also gets approve_faena so the secretaria can approve as backstop
-    rp("rol-compras", "p-req-all"),   rp("rol-compras", "p-apr-faena"),
-    rp("rol-compras", "p-pur-view"),  rp("rol-compras", "p-pur-create"),
-    rp("rol-compras", "p-pur-send"),  rp("rol-compras", "p-pur-sup"),
-    rp("rol-compras", "p-rep-ops"),   rp("rol-compras", "p-adm-sup"),
-    // Recepción/Bodega
-    rp("rol-rec", "p-rec-reg"), rp("rol-rec", "p-rec-view"),
-    rp("rol-rec", "p-del-reg"), rp("rol-rec", "p-del-view"),
-    rp("rol-rec", "p-wh-stock"), rp("rol-rec", "p-wh-mov"),
-    rp("rol-rec", "p-rep-ops"),
-    // Finanzas
-    rp("rol-fin", "p-inv-reg"), rp("rol-fin", "p-inv-rec"), rp("rol-fin", "p-inv-view"),
-    rp("rol-fin", "p-rep-ops"), rp("rol-fin", "p-rep-mgmt"), rp("rol-fin", "p-rep-exp"),
-    // Gerencia
-    rp("rol-ger", "p-req-all"), rp("rol-ger", "p-pur-view"),
-    rp("rol-ger", "p-inv-view"), rp("rol-ger", "p-wh-stock"),
-    rp("rol-ger", "p-rep-ops"), rp("rol-ger", "p-rep-mgmt"), rp("rol-ger", "p-rep-exp"),
+    ...leadership.map((permId) => rp("rol-jefa", permId)),
+    ...leadership.map((permId) => rp("rol-sec", permId)),
+    rp("rol-prev", "p-req-all"), rp("rol-prev", "p-apr"),
+    rp("rol-sol-faena", "p-req-create"), rp("rol-sol-faena", "p-req-own"), rp("rol-sol-faena", "p-req-submit"),
   ]
-  await db.insert(schema.rolePermissions).values(rolePermData).onConflictDoNothing()
+  await db.insert(schema.rolePermissions).values(rolePermData)
 
-  /* ── Users ───────────────────────────────────────────────────────────── */
-  const pw = await bcrypt.hash("chome2026", 12)
-  const users: schema.users["$inferInsert"][] = [
-    { id: "u-admin",    name: "Marcela Cisternas",    email: "admin@chome.cl",       hashedPassword: pw, avatarColor: "151" },
-    { id: "u-sol1",     name: "Diego Sepúlveda",      email: "dsepulveda@chome.cl",  hashedPassword: pw, avatarColor: "210" },
-    { id: "u-sol2",     name: "Fernanda Quiñones",    email: "fquinones@chome.cl",   hashedPassword: pw, avatarColor: "320" },
-    { id: "u-jefe1",    name: "Rodrigo Fuentes",      email: "rfuentes@chome.cl",    hashedPassword: pw, avatarColor: "185" },
-    { id: "u-jefe2",    name: "Camila Araya",         email: "caraya@chome.cl",      hashedPassword: pw, avatarColor: "55"  },
-    { id: "u-prev1",    name: "Eduardo Paredes",      email: "eparedes@chome.cl",    hashedPassword: pw, avatarColor: "30"  },
-    { id: "u-compras1", name: "Javiera Molina",       email: "jmolina@chome.cl",     hashedPassword: pw, avatarColor: "270" },
-    { id: "u-rec1",     name: "Patricio Vega",        email: "pvega@chome.cl",       hashedPassword: pw, avatarColor: "125" },
-    { id: "u-fin1",     name: "Lorena Muñoz",         email: "lmunoz@chome.cl",      hashedPassword: pw, avatarColor: "240" },
-    { id: "u-ger1",     name: "Andrés Contreras",     email: "acontreras@chome.cl",  hashedPassword: pw, avatarColor: "60"  },
-  ]
-  await db.insert(schema.users).values(users).onConflictDoNothing()
+  /* ── Bootstrap administrator ────────────────────────────────────────── */
+  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@chome.cl"
+  const adminName = process.env.SEED_ADMIN_NAME ?? "Administrador Chome"
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "chome2026"
+  const hashedPassword = await bcrypt.hash(adminPassword, 12)
 
-  /* ── User roles ──────────────────────────────────────────────────────── */
-  const urData = [
-    { userId: "u-admin",    roleId: "rol-admin"   },
-    { userId: "u-sol1",     roleId: "rol-sol"     },
-    { userId: "u-sol2",     roleId: "rol-sol"     },
-    { userId: "u-jefe1",    roleId: "rol-jefe"    },
-    { userId: "u-jefe2",    roleId: "rol-jefe"    },
-    { userId: "u-prev1",    roleId: "rol-prev"    },
-    { userId: "u-compras1", roleId: "rol-compras" },
-    { userId: "u-rec1",     roleId: "rol-rec"     },
-    { userId: "u-fin1",     roleId: "rol-fin"     },
-    { userId: "u-ger1",     roleId: "rol-ger"     },
-  ]
-  await db.insert(schema.userRoles).values(urData).onConflictDoNothing()
-
-  /* ── Worksites (Faenas) ─────────────────────────────────────────────── */
-  const worksiteData: schema.worksites["$inferInsert"][] = [
-    { id: "ws-norte", name: "Faena Atacama Norte", code: "FAN-001", address: "Ruta 5 Norte km 847", region: "Antofagasta" },
-    { id: "ws-sur",   name: "Faena Biobío Sur",    code: "FBS-001", address: "Camino Forestal s/n",  region: "Biobío"     },
-    { id: "ws-metro", name: "Planta Metropolitana", code: "PLM-001", address: "Av. Américo Vespucio 4821, Quilicura", region: "Metropolitana" },
-  ]
-  await db.insert(schema.worksites).values(worksiteData).onConflictDoNothing()
-
-  /* ── Cost Centers ───────────────────────────────────────────────────── */
-  const ccData: schema.costCenters["$inferInsert"][] = [
-    { id: "cc-1", name: "Operaciones Norte",       code: "CC-OPN-001", worksiteId: "ws-norte" },
-    { id: "cc-2", name: "Mantenimiento Norte",     code: "CC-MAN-001", worksiteId: "ws-norte" },
-    { id: "cc-3", name: "Operaciones Sur",         code: "CC-OPS-001", worksiteId: "ws-sur"   },
-    { id: "cc-4", name: "Logística Metropolitana", code: "CC-LOG-001", worksiteId: "ws-metro" },
-  ]
-  await db.insert(schema.costCenters).values(ccData).onConflictDoNothing()
-
-  /* ── Worksite users (faena scoping) ─────────────────────────────────── */
-  const wuData = [
-    { userId: "u-admin",    worksiteId: "ws-norte", isPrimary: true  },
-    { userId: "u-admin",    worksiteId: "ws-sur",   isPrimary: false },
-    { userId: "u-admin",    worksiteId: "ws-metro", isPrimary: false },
-    { userId: "u-sol1",     worksiteId: "ws-norte", isPrimary: true  },
-    { userId: "u-sol2",     worksiteId: "ws-sur",   isPrimary: true  },
-    { userId: "u-jefe1",    worksiteId: "ws-norte", isPrimary: true  },
-    { userId: "u-jefe2",    worksiteId: "ws-sur",   isPrimary: true  },
-    { userId: "u-prev1",    worksiteId: "ws-norte", isPrimary: true  },
-    { userId: "u-prev1",    worksiteId: "ws-sur",   isPrimary: false },
-    { userId: "u-compras1", worksiteId: "ws-norte", isPrimary: true  },
-    { userId: "u-rec1",     worksiteId: "ws-metro", isPrimary: true  },
-    { userId: "u-fin1",     worksiteId: "ws-metro", isPrimary: true  },
-    { userId: "u-ger1",     worksiteId: "ws-metro", isPrimary: true  },
-  ]
-  await db.insert(schema.worksiteUsers).values(wuData).onConflictDoNothing()
-
-  /* ── Suppliers ──────────────────────────────────────────────────────── */
-  const supplierData: schema.suppliers["$inferInsert"][] = [
-    { id: "sup-1", name: "Industrial Cáceres Ltda.",     rut: "76.483.921-3", contactName: "Hernán Cáceres",    email: "ventas@caceres.cl",     phone: "+56 2 2847 3912", paymentTerms: "30 días" },
-    { id: "sup-2", name: "Proveedora Nacional EPP SpA",  rut: "77.182.334-7", contactName: "Roxana Tapia",      email: "rtapia@pnepp.cl",        phone: "+56 9 7834 1029", paymentTerms: "Contado" },
-    { id: "sup-3", name: "Ferretería Sur Macrocentro",   rut: "78.341.198-2", contactName: "Carlos Mardones",   email: "cmardones@ferrsur.cl",   phone: "+56 41 247 8834", paymentTerms: "15 días" },
-    { id: "sup-4", name: "Equipos y Herramientas Andina", rut: "76.921.445-8", contactName: "Andrea Soto",      email: "asoto@equiposandina.cl", phone: "+56 9 6123 7741", paymentTerms: "30 días" },
-  ]
-  await db.insert(schema.suppliers).values(supplierData).onConflictDoNothing()
-
-  /* ── Product categories ─────────────────────────────────────────────── */
-  const catData: schema.productCategories["$inferInsert"][] = [
-    { id: "cat-epp",     name: "EPP",                slug: "epp",         isEpp: true,  requiresPrevencion: true,  sortOrder: 1 },
-    { id: "cat-ind",     name: "Indumentaria",       slug: "indumentaria", isEpp: true, requiresPrevencion: false, sortOrder: 2 },
-    { id: "cat-herr",    name: "Herramientas",       slug: "herramientas", isEpp: false, requiresPrevencion: false, sortOrder: 3 },
-    { id: "cat-ins",     name: "Insumos",            slug: "insumos",      isEpp: false, requiresPrevencion: false, sortOrder: 4 },
-    { id: "cat-mat",     name: "Materiales",         slug: "materiales",   isEpp: false, requiresPrevencion: false, sortOrder: 5 },
-    { id: "cat-equip",   name: "Equipos",            slug: "equipos",      isEpp: false, requiresPrevencion: false, sortOrder: 6 },
-    { id: "cat-cons",    name: "Consumibles",        slug: "consumibles",  isEpp: false, requiresPrevencion: false, sortOrder: 7 },
-  ]
-  await db.insert(schema.productCategories).values(catData).onConflictDoNothing()
-
-  /* ── Products ───────────────────────────────────────────────────────── */
-  const productData: schema.products["$inferInsert"][] = [
-    // EPP
-    { id: "prod-1",  sku: "EPP-001", name: "Casco de seguridad clase A",     categoryId: "cat-epp",  isEpp: true, requiresPrevencion: true,  unitOfMeasure: "unidad",  referencePrice: 8347  },
-    { id: "prod-2",  sku: "EPP-002", name: "Guantes anticorte nivel 5",      categoryId: "cat-epp",  isEpp: true, requiresPrevencion: true,  unitOfMeasure: "par",     referencePrice: 4218  },
-    { id: "prod-3",  sku: "EPP-003", name: "Zapatos de seguridad punta acero",categoryId: "cat-epp", isEpp: true, requiresPrevencion: true,  unitOfMeasure: "par",     referencePrice: 37450 },
-    { id: "prod-4",  sku: "EPP-004", name: "Lentes de seguridad policarbonato",categoryId: "cat-epp",isEpp: true, requiresPrevencion: true,  unitOfMeasure: "unidad",  referencePrice: 2915  },
-    { id: "prod-5",  sku: "EPP-005", name: "Chaleco reflectante clase 2",    categoryId: "cat-epp",  isEpp: true, requiresPrevencion: true,  unitOfMeasure: "unidad",  referencePrice: 7830  },
-    { id: "prod-6",  sku: "EPP-006", name: "Arnés de seguridad 5 puntos",    categoryId: "cat-epp",  isEpp: true, requiresPrevencion: true,  unitOfMeasure: "unidad",  referencePrice: 52000 },
-    { id: "prod-7",  sku: "EPP-007", name: "Protector auditivo tipo copa",   categoryId: "cat-epp",  isEpp: true, requiresPrevencion: true,  unitOfMeasure: "unidad",  referencePrice: 9120  },
-    { id: "prod-8",  sku: "EPP-008", name: "Mascarilla respiratoria N95",    categoryId: "cat-epp",  isEpp: true, requiresPrevencion: true,  unitOfMeasure: "caja/20", referencePrice: 18500 },
-    // Indumentaria
-    { id: "prod-9",  sku: "IND-001", name: "Overol ignífugo manga larga",    categoryId: "cat-ind",  isEpp: true, requiresPrevencion: false, unitOfMeasure: "unidad",  referencePrice: 42700 },
-    { id: "prod-10", sku: "IND-002", name: "Polera térmica UV50+ manga larga",categoryId: "cat-ind", isEpp: false,requiresPrevencion: false, unitOfMeasure: "unidad",  referencePrice: 11350 },
-    { id: "prod-11", sku: "IND-003", name: "Pantalón cargo denim reforzado", categoryId: "cat-ind",  isEpp: false,requiresPrevencion: false, unitOfMeasure: "unidad",  referencePrice: 19800 },
-    // Herramientas
-    { id: "prod-12", sku: "HER-001", name: "Llave combinada 13mm",          categoryId: "cat-herr", isEpp: false,requiresPrevencion: false, unitOfMeasure: "unidad",  referencePrice: 3750  },
-    { id: "prod-13", sku: "HER-002", name: "Alicate de corte lateral 8\"",  categoryId: "cat-herr", isEpp: false,requiresPrevencion: false, unitOfMeasure: "unidad",  referencePrice: 6940  },
-    { id: "prod-14", sku: "HER-003", name: "Taladro percutor 850W",         categoryId: "cat-herr", isEpp: false,requiresPrevencion: false, unitOfMeasure: "unidad",  referencePrice: 89000 },
-    // Insumos
-    { id: "prod-15", sku: "INS-001", name: "Bloqueador solar FPS50 1L",     categoryId: "cat-ins",  isEpp: false,requiresPrevencion: false, unitOfMeasure: "litro",   referencePrice: 8700  },
-    { id: "prod-16", sku: "INS-002", name: "Gel antibacterial 500ml",       categoryId: "cat-ins",  isEpp: false,requiresPrevencion: false, unitOfMeasure: "unidad",  referencePrice: 2140  },
-    { id: "prod-17", sku: "INS-003", name: "Cinta de embalaje 48mm x 90m",  categoryId: "cat-ins",  isEpp: false,requiresPrevencion: false, unitOfMeasure: "rollo",   referencePrice: 1380  },
-    // Materiales
-    { id: "prod-18", sku: "MAT-001", name: "Alambre galvanizado N°16 kg",   categoryId: "cat-mat",  isEpp: false,requiresPrevencion: false, unitOfMeasure: "kg",      referencePrice: 890   },
-    { id: "prod-19", sku: "MAT-002", name: "Tornillo cabeza hexagonal M10", categoryId: "cat-mat",  isEpp: false,requiresPrevencion: false, unitOfMeasure: "caja/100",referencePrice: 4250  },
-    // Consumibles
-    { id: "prod-20", sku: "CON-001", name: "Disco de corte metal 115mm",    categoryId: "cat-cons", isEpp: false,requiresPrevencion: false, unitOfMeasure: "unidad",  referencePrice: 1870  },
-  ]
-  await db.insert(schema.products).values(productData).onConflictDoNothing()
-
-  /* ── Product attributes (talla for EPP/indumentaria) ─────────────────── */
-  const attrData: schema.productAttributes["$inferInsert"][] = [
-    // Talla for EPP shoes, overalls, clothing
-    { id: "attr-talla-zapato",   productId: "prod-3",  categoryId: null, name: "Talla",  type: "select", isRequired: true,  options: JSON.stringify(["35","36","37","38","39","40","41","42","43","44","45","46"]), sortOrder: 1 },
-    { id: "attr-talla-overol",   productId: "prod-9",  categoryId: null, name: "Talla",  type: "select", isRequired: true,  options: JSON.stringify(["XS","S","M","L","XL","XXL","XXXL"]),                          sortOrder: 1 },
-    { id: "attr-talla-polera",   productId: "prod-10", categoryId: null, name: "Talla",  type: "select", isRequired: true,  options: JSON.stringify(["XS","S","M","L","XL","XXL"]),                                  sortOrder: 1 },
-    { id: "attr-talla-pantalon", productId: "prod-11", categoryId: null, name: "Talla",  type: "select", isRequired: true,  options: JSON.stringify(["28","30","32","34","36","38","40","42"]),                       sortOrder: 1 },
-    { id: "attr-talla-casco",    productId: "prod-1",  categoryId: null, name: "Talla",  type: "select", isRequired: false, options: JSON.stringify(["S/M","L/XL","Ajustable"]),                                    sortOrder: 1 },
-    { id: "attr-color-casco",    productId: "prod-1",  categoryId: null, name: "Color",  type: "select", isRequired: true,  options: JSON.stringify(["Blanco","Amarillo","Naranjo","Azul","Rojo","Verde"]),          sortOrder: 2 },
-    // Worker attribution for EPP
-    { id: "attr-worker-epp",     productId: null,      categoryId: "cat-epp", name: "Trabajador",  type: "text", isRequired: false, options: null, sortOrder: 10 },
-    { id: "attr-worker-ind",     productId: null,      categoryId: "cat-ind", name: "Trabajador",  type: "text", isRequired: false, options: null, sortOrder: 10 },
-  ]
-  await db.insert(schema.productAttributes).values(attrData).onConflictDoNothing()
-
-  /* ── Product ↔ Supplier ─────────────────────────────────────────────── */
-  const psData: schema.productSuppliers["$inferInsert"][] = [
-    { id: "ps-1",  productId: "prod-1",  supplierId: "sup-2", unitPrice: 7890,  isPreferred: true  },
-    { id: "ps-2",  productId: "prod-2",  supplierId: "sup-2", unitPrice: 3990,  isPreferred: true  },
-    { id: "ps-3",  productId: "prod-3",  supplierId: "sup-2", unitPrice: 35200, isPreferred: true  },
-    { id: "ps-4",  productId: "prod-4",  supplierId: "sup-2", unitPrice: 2750,  isPreferred: true  },
-    { id: "ps-5",  productId: "prod-5",  supplierId: "sup-2", unitPrice: 7430,  isPreferred: true  },
-    { id: "ps-6",  productId: "prod-12", supplierId: "sup-1", unitPrice: 3540,  isPreferred: true  },
-    { id: "ps-7",  productId: "prod-13", supplierId: "sup-1", unitPrice: 6580,  isPreferred: true  },
-    { id: "ps-8",  productId: "prod-14", supplierId: "sup-4", unitPrice: 84000, isPreferred: true  },
-    { id: "ps-9",  productId: "prod-15", supplierId: "sup-1", unitPrice: 8200,  isPreferred: true  },
-    { id: "ps-10", productId: "prod-20", supplierId: "sup-3", unitPrice: 1750,  isPreferred: true  },
-  ]
-  await db.insert(schema.productSuppliers).values(psData).onConflictDoNothing()
-
-  /* ── Warehouse ──────────────────────────────────────────────────────── */
-  const warehouseData: schema.warehouses["$inferInsert"][] = [
-    { id: "wh-central", name: "Bodega Central Quilicura", code: "BCQ-001", type: "central",   worksiteId: "ws-metro" },
-    { id: "wh-norte",   name: "Bodega Faena Norte",       code: "BFN-001", type: "worksite",  worksiteId: "ws-norte" },
-  ]
-  await db.insert(schema.warehouses).values(warehouseData).onConflictDoNothing()
-
-  /* ── Workers ────────────────────────────────────────────────────────── */
-  const workerData: schema.workers["$inferInsert"][] = [
-    { id: "wrk-1", rut: "12.847.391-2", firstName: "Luis",     lastName: "Carrasco",  position: "Operador maquinaria", worksiteId: "ws-norte" },
-    { id: "wrk-2", rut: "14.293.718-5", firstName: "Miguel",   lastName: "Torres",    position: "Capataz de terreno",  worksiteId: "ws-norte" },
-    { id: "wrk-3", rut: "16.482.039-K", firstName: "Pamela",   lastName: "González",  position: "Electricista",        worksiteId: "ws-sur"   },
-    { id: "wrk-4", rut: "13.741.829-7", firstName: "Roberto",  lastName: "Maturana",  position: "Soldador",            worksiteId: "ws-sur"   },
-    { id: "wrk-5", rut: "17.384.021-3", firstName: "Valentina",lastName: "Pizarro",   position: "Técnico en prevención", worksiteId: "ws-metro" },
-  ]
-  await db.insert(schema.workers).values(workerData).onConflictDoNothing()
-
-  /* ── Sample purchase requests (Phase 3+ test data) ─────────────────────── */
-  const reqData: schema.purchaseRequests["$inferInsert"][] = [
-    {
-      id: "req-1", code: "SOL-2026-0001",
-      worksiteId: "ws-norte", requesterId: "u-sol1", costCenterId: "cc-1",
-      urgency: "high", status: "submitted",
-      submittedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      notes: "Kit inicio temporada invierno para equipo de perforación",
+  await db.insert(schema.users).values({
+    id: "u-admin",
+    name: adminName,
+    email: adminEmail,
+    hashedPassword,
+    avatarColor: "151",
+  }).onConflictDoUpdate({
+    target: schema.users.id,
+    set: {
+      name: adminName,
+      email: adminEmail,
+      hashedPassword,
+      isActive: true,
+      updatedAt: new Date().toISOString(),
     },
-    {
-      id: "req-2", code: "SOL-2026-0002",
-      worksiteId: "ws-sur", requesterId: "u-sol2", costCenterId: "cc-3",
-      urgency: "normal", status: "draft",
-      notes: "Reposición mensual consumibles",
+  })
+
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, "u-admin"))
+  await db.insert(schema.userRoles).values({
+    userId: "u-admin",
+    roleId: "rol-admin",
+  })
+
+  /* ── EPP catalog from supplier spreadsheet ───────────────────────────── */
+  await db.insert(schema.productCategories).values(EPP_CATEGORY).onConflictDoUpdate({
+    target: schema.productCategories.id,
+    set: {
+      name: EPP_CATEGORY.name,
+      slug: EPP_CATEGORY.slug,
+      isEpp: EPP_CATEGORY.isEpp,
+      requiresPrevencion: EPP_CATEGORY.requiresPrevencion,
+      sortOrder: EPP_CATEGORY.sortOrder,
     },
-  ]
-  await db.insert(schema.purchaseRequests).values(reqData).onConflictDoNothing()
+  })
 
-  const itemData: schema.purchaseRequestItems["$inferInsert"][] = [
-    // req-1: submitted items (status requested)
-    { id: "ri-1", requestId: "req-1", productId: "prod-1", quantity: 10, unitOfMeasure: "unidad", status: "requested", urgency: "high",   sortOrder: 1, notes: "Para equipo de perforación norte" },
-    { id: "ri-2", requestId: "req-1", productId: "prod-3", quantity: 10, unitOfMeasure: "par",    status: "requested", urgency: "high",   sortOrder: 2, notes: "Reponer tallas 40-43" },
-    { id: "ri-3", requestId: "req-1", productId: "prod-9", quantity:  5, unitOfMeasure: "unidad", status: "requested", urgency: "normal", sortOrder: 3 },
-    { id: "ri-4", requestId: "req-1", productId: null, productNameFree: "Guantes de nitrilo talla M (100 uds)", quantity: 3, unitOfMeasure: "caja",  status: "requested", urgency: "normal", sortOrder: 4, notes: "Sin código EPP, uso general" },
-    // req-2: draft items
-    { id: "ri-5", requestId: "req-2", productId: "prod-20", quantity: 50, unitOfMeasure: "unidad", status: "draft", sortOrder: 1 },
-    { id: "ri-6", requestId: "req-2", productId: "prod-17", quantity: 20, unitOfMeasure: "rollo",  status: "draft", sortOrder: 2 },
-  ]
-  await db.insert(schema.purchaseRequestItems).values(itemData).onConflictDoNothing()
+  for (const supplier of EPP_SUPPLIERS) {
+    await db.insert(schema.suppliers).values(supplier).onConflictDoUpdate({
+      target: schema.suppliers.id,
+      set: {
+        name: supplier.name,
+        notes: supplier.notes ?? null,
+        isActive: true,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+  }
 
-  // Attributes for sized items in req-1
-  const riAttrData: schema.requestItemAttributes["$inferInsert"][] = [
-    { id: "ria-1", requestItemId: "ri-2", attributeId: "attr-talla-zapato", attributeName: "Talla", value: "40,41,42,43 (2-3 pares c/u)" },
-    { id: "ria-2", requestItemId: "ri-3", attributeId: "attr-talla-overol",  attributeName: "Talla", value: "L (x3), XL (x2)" },
-  ]
-  await db.insert(schema.requestItemAttributes).values(riAttrData).onConflictDoNothing()
+  for (const item of EPP_CATALOG_ITEMS) {
+    const attributeRows = item.attributes?.map((a, i) => ({
+      id: `pa-${item.id}-${i + 1}`,
+      productId: item.id,
+      categoryId: null,
+      name: a.name,
+      type: "select",
+      isRequired: true,
+      options: JSON.stringify([a.value]),
+      sortOrder: i,
+    })) ?? []
 
-  console.log("✅ Seed completado.")
+    await db.insert(schema.products).values({
+      id: item.id,
+      sku: item.sku,
+      name: item.name,
+      description: item.detail,
+      categoryId: EPP_CATEGORY.id,
+      unitOfMeasure: "unidad",
+      isEpp: true,
+      requiresPrevencion: true,
+      referencePrice: item.price,
+      isActive: true,
+      notes: sourceNote(item),
+    }).onConflictDoUpdate({
+      target: schema.products.id,
+      set: {
+        sku: item.sku,
+        name: item.name,
+        description: item.detail,
+        categoryId: EPP_CATEGORY.id,
+        unitOfMeasure: "unidad",
+        isEpp: true,
+        requiresPrevencion: true,
+        referencePrice: item.price,
+        isActive: true,
+        notes: sourceNote(item),
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+    await db.delete(schema.productAttributes).where(eq(schema.productAttributes.productId, item.id))
+    if (attributeRows.length > 0) {
+      await db.insert(schema.productAttributes).values(attributeRows)
+    }
+
+    await db.insert(schema.productSuppliers).values({
+      id: `ps-${item.id}`,
+      productId: item.id,
+      supplierId: item.supplierId,
+      unitPrice: item.price,
+      isPreferred: true,
+      notes: item.detail,
+    }).onConflictDoUpdate({
+      target: schema.productSuppliers.id,
+      set: {
+        productId: item.id,
+        supplierId: item.supplierId,
+        unitPrice: item.price,
+        isPreferred: true,
+        notes: item.detail,
+        lastUpdated: new Date().toISOString(),
+      },
+    })
+  }
+
+  console.log("Seed base completado.")
   console.log("")
-  console.log("  Usuarios de prueba (contraseña: chome2026):")
-  users.forEach((u) => console.log(`    ${u.email}`))
+  console.log("  Usuario administrador:")
+  console.log(`    ${adminEmail}`)
   console.log("")
-  console.log("  Faenas:  Atacama Norte / Biobío Sur / Planta Metropolitana")
-  console.log("  Productos: 20 items (EPP, Indumentaria, Herramientas, Insumos, Materiales, Consumibles)")
-  console.log("  Proveedores: 4")
-  console.log("  Bodegas: 2 (Central Quilicura + Faena Norte)")
+  console.log("  La contraseña viene de SEED_ADMIN_PASSWORD; si no se define, usa chome2026.")
+  console.log(`  Catálogo EPP cargado: ${EPP_CATALOG_ITEMS.length} productos, ${EPP_SUPPLIERS.length} proveedores.`)
+  console.log("  No se cargaron faenas, stock ni solicitudes demo.")
 }
 
 main()

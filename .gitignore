@@ -19,6 +19,12 @@
 
 # production
 /build
+/storage
+
+# local sqlite runtime
+/db/*.db
+/db/*.db-shm
+/db/*.db-wal
 
 # misc
 .DS_Store

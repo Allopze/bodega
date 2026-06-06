@@ -36,6 +36,8 @@ export async function createUser(
   }
 
   const d = parsed.data
+  const roleError = await validateRoleWorksiteRules(d.roleIds, d.worksiteAssignments)
+  if (roleError) return roleError
 
   // Check email uniqueness
   const existing = await db.query.users.findFirst({ where: eq(users.email, d.email) })
@@ -101,6 +103,8 @@ export async function updateUser(
   }
 
   const d = parsed.data
+  const roleError = await validateRoleWorksiteRules(d.roleIds, d.worksiteAssignments)
+  if (roleError) return roleError
 
   // Check email uniqueness (excluding self)
   const emailConflict = await db.query.users.findFirst({ where: eq(users.email, d.email) })
@@ -199,6 +203,24 @@ function buildWorksiteAssignments(formData: FormData) {
     worksiteId: wsId,
     isPrimary:  wsId === primaryWorksiteId,
   }))
+}
+
+async function validateRoleWorksiteRules(
+  roleIds: string[],
+  worksiteAssignments: { worksiteId: string; isPrimary: boolean }[],
+): Promise<ActionState | null> {
+  const allRoles = await db.query.roles.findMany()
+  const selected = allRoles.filter((role) => roleIds.includes(role.id))
+  const isFaenaRequester = selected.some((role) => role.name === "solicitante_faena")
+  if (isFaenaRequester && worksiteAssignments.length === 0) {
+    return {
+      ok: false,
+      fieldErrors: {
+        worksiteAssignments: ["El solicitante de faena debe tener al menos una faena asignada"],
+      },
+    }
+  }
+  return null
 }
 
 function hashStr(str: string): number {

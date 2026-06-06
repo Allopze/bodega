@@ -7,8 +7,7 @@ import { purchaseRequestItems } from "./requests"
 
 /* ── Purchase Order States ───────────────────────────────────────────────── */
 // draft | issued | sent | supplier_confirmed
-// partially_received | received | partially_invoiced | invoiced
-// reconciled | closed | cancelled
+// partially_received | received | closed | cancelled
 
 /* ── Purchase Orders ─────────────────────────────────────────────────────── */
 export const purchaseOrders = sqliteTable("purchase_orders", {

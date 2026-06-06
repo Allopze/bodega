@@ -12,7 +12,6 @@ import { products, productAttributes } from "./products"
 // draft | requested | approved | rejected | returned | postponed
 // pending_purchase | in_purchase_order | purchased
 // partially_received | received | partially_delivered | delivered
-// invoiced | reconciled | observed
 
 /* ── Purchase Requests ───────────────────────────────────────────────────── */
 export const purchaseRequests = sqliteTable("purchase_requests", {
@@ -68,7 +67,7 @@ export const approvalDecisions = sqliteTable("approval_decisions", {
   decidedAt:      text("decided_at").notNull().default(sql`(datetime('now'))`),
   reason:         text("reason"),
   modifiedQty:    real("modified_qty"),              // if quantity was modified during approval
-  roleContext:    text("role_context"),               // 'jefe_faena' | 'prevencion' | 'admin'
+  roleContext:    text("role_context"),               // 'jefa_chome' | 'secretaria' | 'prevencionista' | 'admin'
 })
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
