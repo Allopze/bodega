@@ -44,14 +44,23 @@ export const attachments = sqliteTable("attachments", {
 })
 
 /* ── Notifications ───────────────────────────────────────────────────────── */
+export type NotificationType =
+  | "request_submitted"
+  | "request_approved"
+  | "request_rejected"
+  | "oc_created"
+  | "receipt_done"
+  | "dispatch_done"
+
 export const notifications = sqliteTable("notifications", {
   id:           text("id").primaryKey(),
   userId:       text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  type:         text("type").notNull(),  // 'request_submitted' | 'item_approved' | etc.
+  type:         text("type").notNull(),  // NotificationType
   title:        text("title").notNull(),
-  body:         text("body").notNull(),
+  body:         text("body"),            // nullable — not all notifications have body text
   entityType:   text("entity_type"),
   entityId:     text("entity_id"),
+  entityHref:   text("entity_href"),     // direct navigation link (e.g. /solicitudes/{id})
   isRead:       integer("is_read", { mode: "boolean" }).notNull().default(false),
   createdAt:    text("created_at").notNull().default(sql`(datetime('now'))`),
 })

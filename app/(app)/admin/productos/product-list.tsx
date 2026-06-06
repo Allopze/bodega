@@ -2,16 +2,16 @@
 
 import * as React from "react"
 import { useActionState, useEffect } from "react"
-import Link from "next/link"
 import { toast } from "sonner"
 import { Plus, PencilSimple, ToggleLeft, ToggleRight, Tag } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { CategoryPanel, type CategoryForEdit } from "./category-panel"
+import { ProductForm } from "./product-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { formatCLP } from "@/lib/utils"
-import { toggleProductActive } from "./actions"
+import { toggleProductActive, getProductForEdit } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
 interface ProductRow {
@@ -25,6 +25,7 @@ interface CategoryItem {
   id: string; name: string; slug: string
   isEpp: boolean; requiresPrevencion: boolean; sortOrder: number
 }
+interface SupplierItem { id: string; name: string }
 
 const COLUMNS = [
   { key: "sku",          label: "SKU",       sortable: true, width: "w-36" },
@@ -35,10 +36,20 @@ const COLUMNS = [
   { key: "",             label: "",          sortable: false, width: "w-20"  },
 ]
 
-export function ProductList({ products, categories }: { products: ProductRow[]; categories: CategoryItem[] }) {
+export function ProductList({ products, categories, allSuppliers }: {
+  products:     ProductRow[]
+  categories:   CategoryItem[]
+  allSuppliers: SupplierItem[]
+}) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<CategoryForEdit | null>(null)
   const [toggleState,  toggleAction]    = useActionState(toggleProductActive, INITIAL_STATE)
+
+  // Product sheet state
+  const [productSheetOpen, setProductSheetOpen] = React.useState(false)
+  const [editProductFull,  setEditProductFull]  = React.useState<Awaited<ReturnType<typeof getProductForEdit>>>(null)
+  const [loadingEditId,    setLoadingEditId]    = React.useState<string | null>(null)
+  const [,                 startTransition]     = React.useTransition()
 
   useEffect(() => {
     if (toggleState.message) {
@@ -46,6 +57,25 @@ export function ProductList({ products, categories }: { products: ProductRow[]; 
       else toast.error(toggleState.message)
     }
   }, [toggleState])
+
+  function openNewProduct() {
+    setEditProductFull(null)
+    setProductSheetOpen(true)
+  }
+
+  function openEditProduct(id: string) {
+    setLoadingEditId(id)
+    startTransition(async () => {
+      const product = await getProductForEdit(id)
+      setLoadingEditId(null)
+      if (product) {
+        setEditProductFull(product)
+        setProductSheetOpen(true)
+      } else {
+        toast.error("No se pudo cargar el producto")
+      }
+    })
+  }
 
   function openNewCat()              { setEditCategory(null);    setCatSheetOpen(true) }
   function openEditCat(c: CategoryItem) {
@@ -56,7 +86,6 @@ export function ProductList({ products, categories }: { products: ProductRow[]; 
   return (
     <>
       <div className="flex items-center gap-2 mb-1">
-        {/* Secondary: manage categories */}
         <button
           onClick={openNewCat}
           className="flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] px-2 py-1 rounded-[var(--radius-sm)] hover:bg-[var(--color-surface-2)]"
@@ -75,13 +104,13 @@ export function ProductList({ products, categories }: { products: ProductRow[]; 
         emptyTitle="Sin productos"
         emptyDescription="Registra el primer producto del catálogo."
         emptyAction={
-          <Button size="sm" asChild>
-            <Link href="/admin/productos/nuevo"><Plus size={14} />Nuevo producto</Link>
+          <Button size="sm" onClick={openNewProduct}>
+            <Plus size={14} />Nuevo producto
           </Button>
         }
         actions={
-          <Button size="sm" asChild>
-            <Link href="/admin/productos/nuevo"><Plus size={14} />Nuevo producto</Link>
+          <Button size="sm" onClick={openNewProduct}>
+            <Plus size={14} />Nuevo producto
           </Button>
         }
         renderRow={(row) => {
@@ -109,13 +138,14 @@ export function ProductList({ products, categories }: { products: ProductRow[]; 
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1 justify-end">
-                  <Link
-                    href={`/admin/productos/${p.id}`}
-                    className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
+                  <button
+                    onClick={() => openEditProduct(p.id)}
+                    disabled={loadingEditId === p.id}
+                    className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
                     title="Editar"
                   >
-                    <PencilSimple size={14} />
-                  </Link>
+                    <PencilSimple size={14} className={loadingEditId === p.id ? "animate-spin" : ""} />
+                  </button>
                   <form action={toggleAction}>
                     <input type="hidden" name="id"       value={p.id} />
                     <input type="hidden" name="activate" value={String(!p.isActive)} />
@@ -162,6 +192,14 @@ export function ProductList({ products, categories }: { products: ProductRow[]; 
         open={catSheetOpen}
         onClose={() => setCatSheetOpen(false)}
         editCategory={editCategory}
+      />
+
+      <ProductForm
+        open={productSheetOpen}
+        onClose={() => setProductSheetOpen(false)}
+        categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))}
+        allSuppliers={allSuppliers}
+        editProduct={editProductFull}
       />
     </>
   )

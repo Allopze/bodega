@@ -1,6 +1,5 @@
 "use server"
 
-import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
@@ -142,7 +141,8 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
 
   await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "product", entityId: id, entityCode: d.sku, newState: { sku: d.sku, name: d.name, categoryId: d.categoryId } })
 
-  redirect(REVALIDATE)
+  revalidatePath(REVALIDATE)
+  return { ok: true as const, message: `Producto ${d.sku} creado` }
 }
 
 export async function updateProduct(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -225,7 +225,58 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
 
   await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "product", entityId: productId, entityCode: d.sku, oldState: { name: current.name, isActive: current.isActive }, newState: { name: d.name, isActive: d.isActive } })
 
-  redirect(REVALIDATE)
+  revalidatePath(REVALIDATE)
+  return { ok: true as const, message: `Producto ${d.sku} actualizado` }
+}
+
+// ── Read for edit ─────────────────────────────────────────────────────────────
+
+export async function getProductForEdit(id: string) {
+  try { await requirePermission("admin:products") }
+  catch { return null }
+
+  const product = await db.query.products.findFirst({
+    where: eq(products.id, id),
+    with: {
+      productAttributes: { orderBy: (a, { asc }) => [asc(a.sortOrder)] },
+      productSuppliers: {
+        with: { supplier: true },
+        orderBy: (ps, { asc }) => [asc(ps.isPreferred)],
+      },
+    },
+  })
+
+  if (!product) return null
+
+  return {
+    id:                 product.id,
+    sku:                product.sku,
+    name:               product.name,
+    description:        product.description,
+    categoryId:         product.categoryId,
+    unitOfMeasure:      product.unitOfMeasure,
+    isEpp:              product.isEpp,
+    requiresPrevencion: product.requiresPrevencion,
+    referencePrice:     product.referencePrice,
+    notes:              product.notes,
+    isActive:           product.isActive,
+    attributes: product.productAttributes.map((a) => ({
+      id:         a.id,
+      name:       a.name,
+      type:       a.type as "text" | "select" | "number",
+      isRequired: a.isRequired,
+      options:    a.options ?? "",
+      sortOrder:  a.sortOrder,
+    })),
+    suppliers: product.productSuppliers.map((ps) => ({
+      id:           ps.id,
+      supplierId:   ps.supplierId,
+      supplierName: ps.supplier?.name ?? ps.supplierId,
+      unitPrice:    ps.unitPrice != null ? String(ps.unitPrice) : "",
+      isPreferred:  ps.isPreferred,
+      notes:        ps.notes ?? "",
+    })),
+  }
 }
 
 export async function toggleProductActive(_prev: ActionState, formData: FormData): Promise<ActionState> {

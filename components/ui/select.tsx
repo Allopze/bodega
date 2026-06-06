@@ -20,11 +20,12 @@ const SelectTrigger = React.forwardRef<
       "border border-[var(--color-border)] bg-[var(--color-surface)]",
       "px-3 py-1.5 text-sm text-[var(--color-text)]",
       "transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+      "hover:border-[var(--color-border-strong)]",
       "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-100)]",
       "disabled:cursor-not-allowed disabled:opacity-50",
       "data-[placeholder]:text-[var(--color-text-subtle)]",
       "active:scale-[0.99]",
-      error && "border-[var(--color-danger)]",
+      error && "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-[var(--color-danger-100)]",
       className,
     )}
     {...props}
@@ -75,7 +76,7 @@ const SelectContent = React.forwardRef<
       className={cn(
         "relative z-50 min-w-[8rem] overflow-hidden",
         "rounded-[var(--radius-md)] border border-[var(--color-border)]",
-        "bg-[var(--color-surface)] shadow-[0_4px_16px_-4px_oklch(0_0_0/0.10),0_1px_4px_oklch(0_0_0/0.06)]",
+        "bg-[var(--color-surface)] shadow-[var(--shadow-md)]",
         // Entry animation — scale from trigger, ease-out (Emil)
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",

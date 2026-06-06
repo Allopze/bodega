@@ -13,6 +13,20 @@ export const users = sqliteTable("users", {
   updatedAt:      text("updated_at").notNull().default(sql`(datetime('now'))`),
 })
 
+/* ── User invitations ─────────────────────────────────────────────────────── */
+export const userInvitations = sqliteTable("user_invitations", {
+  id:                  text("id").primaryKey(),
+  email:               text("email").notNull(),
+  name:                text("name"),
+  tokenHash:           text("token_hash").notNull().unique(),
+  roleIdsJson:         text("role_ids_json").notNull().default("[]"),
+  worksiteAssignmentsJson: text("worksite_assignments_json").notNull().default("[]"),
+  invitedByUserId:     text("invited_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  expiresAt:           text("expires_at").notNull(),
+  acceptedAt:          text("accepted_at"),
+  createdAt:           text("created_at").notNull().default(sql`(datetime('now'))`),
+})
+
 /* ── Roles ───────────────────────────────────────────────────────────────── */
 export const roles = sqliteTable("roles", {
   id:          text("id").primaryKey(),
@@ -52,6 +66,7 @@ export const worksiteUsers = sqliteTable("worksite_users", {
 export const usersRelations = relations(users, ({ many }) => ({
   userRoles:      many(userRoles),
   worksiteUsers:  many(worksiteUsers),
+  invitations:    many(userInvitations),
 }))
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -66,4 +81,8 @@ export const permissionsRelations = relations(permissions, ({ many }) => ({
 export const userRolesRelations = relations(userRoles, ({ one }) => ({
   user: one(users, { fields: [userRoles.userId], references: [users.id] }),
   role: one(roles, { fields: [userRoles.roleId], references: [roles.id] }),
+}))
+
+export const userInvitationsRelations = relations(userInvitations, ({ one }) => ({
+  invitedBy: one(users, { fields: [userInvitations.invitedByUserId], references: [users.id] }),
 }))

@@ -1,12 +1,17 @@
 import type { Metadata } from "next"
+import Image from "next/image"
+import Link from "next/link"
 import { Suspense } from "react"
+import { getUserCount } from "@/lib/auth/bootstrap"
 import { LoginForm } from "./login-form"
 
 export const metadata: Metadata = {
   title: "Iniciar sesión",
 }
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const userCount = await getUserCount()
+
   return (
     <div className="min-h-[100dvh] flex items-stretch">
       {/* ── Brand panel (dark forest — brand moment) ── */}
@@ -18,12 +23,17 @@ export default function LoginPage() {
       ].join(" ")}>
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-[var(--radius)] bg-[var(--color-primary)] flex items-center justify-center">
-            <span className="font-display font-bold text-white text-base leading-none">SF</span>
-          </div>
+          <Image
+            src="/chome_logo_white.svg"
+            alt="Chome"
+            width={36}
+            height={36}
+            unoptimized
+            className="h-9 w-9 shrink-0"
+          />
           <div>
-            <p className="font-display font-bold text-[var(--color-brand-text)] text-lg leading-tight">StockFlow</p>
-            <p className="text-xs text-[var(--color-brand-text-muted)]">Chome</p>
+            <p className="font-display font-bold text-[var(--color-brand-text)] text-lg leading-tight">Chome</p>
+            <p className="text-xs text-[var(--color-brand-text-muted)]">Solicitudes y Bodega</p>
           </div>
         </div>
 
@@ -60,10 +70,15 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="flex items-center gap-2.5 mb-8 lg:hidden">
-            <div className="h-8 w-8 rounded-[var(--radius-sm)] bg-[var(--color-primary)] flex items-center justify-center">
-              <span className="font-display font-bold text-white text-sm">SF</span>
-            </div>
-            <p className="font-display font-bold text-[var(--color-text)] text-base">StockFlow — Chome</p>
+            <Image
+              src="/chome_logo_white.svg"
+              alt="Chome"
+              width={32}
+              height={32}
+              unoptimized
+              className="h-8 w-8 shrink-0 rounded-[var(--radius-sm)] bg-[var(--color-brand-surface)] p-0.5"
+            />
+            <p className="font-display font-bold text-[var(--color-text)] text-base">Chome Solicitudes y Bodega</p>
           </div>
 
           <h1 className="font-display text-xl font-semibold text-[var(--color-text)] mb-1">
@@ -75,6 +90,14 @@ export default function LoginPage() {
           <Suspense fallback={null}>
             <LoginForm />
           </Suspense>
+          {userCount === 0 && (
+            <p className="mt-4 text-center text-xs text-[var(--color-text-subtle)]">
+              Sin usuarios todavía.{" "}
+              <Link href="/registro" className="text-[var(--color-primary-700)] hover:underline">
+                Crear primer administrador
+              </Link>
+            </p>
+          )}
         </div>
       </div>
     </div>

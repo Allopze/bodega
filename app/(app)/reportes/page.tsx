@@ -5,10 +5,9 @@ import {
   purchaseRequests, purchaseRequestItems, purchaseOrders,
   receipts, warehouses, warehouseStock, invoiceAttachments,
 } from "@/db/schema"
-import { auth } from "@/lib/auth/auth"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
-import { PageHeader } from "@/components/ui/page-header"
+import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
 import { formatCLP } from "@/lib/utils"
 import { eq } from "drizzle-orm"
@@ -23,8 +22,9 @@ type ReportMetric = {
 }
 
 export default async function Page() {
-  const session = await auth()
-  if (!session) redirect("/login")
+  let session
+  try { session = await requirePermission("reports:view") }
+  catch { redirect("/dashboard") }
 
   const [
     requestRows,
@@ -141,6 +141,34 @@ export default async function Page() {
       <PageHeader
         title="Reportes"
         description="Resumen operativo desde datos persistidos."
+        breadcrumb={
+          <Breadcrumbs items={[
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "Reportes" },
+          ]} />
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/api/reportes/export?tipo=items_sin_oc"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-signal-100)] bg-[var(--color-signal-50)] px-3 text-xs font-medium text-[oklch(0.52_0.15_56)] hover:opacity-80 transition-opacity"
+            >
+              ↓ Ítems sin OC
+            </a>
+            <a
+              href="/api/reportes/export?tipo=gasto_faena"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] transition-colors"
+            >
+              ↓ Gasto por faena
+            </a>
+            <a
+              href="/api/reportes/export?tipo=oc_por_estado"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] transition-colors"
+            >
+              ↓ OC por estado
+            </a>
+          </div>
+        }
       />
 
       <div className="grid gap-px overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-border)] md:grid-cols-2 xl:grid-cols-3">

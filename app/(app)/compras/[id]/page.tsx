@@ -82,7 +82,19 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
       <PageHeader
         title={order.code}
         description={`${order.worksite?.name ?? "—"} · ${order.supplier?.name ?? "—"}`}
-        actions={<StateBadge state={order.status} entity="oc" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <StateBadge state={order.status} entity="oc" />
+            <a
+              href={`/compras/${order.id}/print`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-50)] hover:border-[var(--color-primary-100)]"
+            >
+              Imprimir / PDF
+            </a>
+          </div>
+        }
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -222,17 +234,20 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             targetId={order.id}
             targetLabel={`la OC ${order.code}`}
             canManage={can(session, "invoice_attachments:manage")}
+            orderTotalAmount={order.totalAmount}
             attachments={invoiceRows.map((invoice) => ({
-              id: invoice.id,
-              invoiceNumber: invoice.invoiceNumber,
-              invoiceDate: invoice.invoiceDate,
-              amount: invoice.amount,
-              fileName: invoice.fileName,
-              fileSize: invoice.fileSize,
-              mimeType: invoice.mimeType,
-              notes: invoice.notes,
-              uploadedAt: invoice.uploadedAt,
-              uploaderName: invoice.uploader?.name ?? null,
+              id:                  invoice.id,
+              invoiceNumber:       invoice.invoiceNumber,
+              invoiceDate:         invoice.invoiceDate,
+              amount:              invoice.amount,
+              fileName:            invoice.fileName,
+              fileSize:            invoice.fileSize,
+              mimeType:            invoice.mimeType,
+              notes:               invoice.notes,
+              uploadedAt:          invoice.uploadedAt,
+              uploaderName:        invoice.uploader?.name ?? null,
+              status:              (invoice.status as "registered" | "observed" | "reconciled") ?? "registered",
+              reconciliationNotes: invoice.reconciliationNotes ?? null,
             }))}
           />
         )}

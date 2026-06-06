@@ -40,11 +40,11 @@ const buttonVariants = cva(
         ],
         destructive: [
           "bg-[var(--color-danger)] text-white",
-          "hover:bg-[oklch(0.52_0.175_25)]",
+          "hover:bg-[var(--color-danger-700)]",
         ],
         signal: [
           // For the "pendiente/no-incluido" never-miss call to action
-          "bg-[var(--color-signal-50)] text-[oklch(0.55_0.15_56)]",
+          "bg-[var(--color-signal-50)] text-[var(--color-signal-700)]",
           "border border-[var(--color-signal-100)]",
           "hover:bg-[var(--color-signal-100)]",
         ],

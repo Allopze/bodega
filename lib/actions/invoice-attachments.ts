@@ -147,6 +147,57 @@ export async function deleteInvoiceAttachment(
   return { ok: true, message: "Factura anexa eliminada" }
 }
 
+export async function reconcileInvoiceAttachment(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("invoice_attachments:manage") }
+  catch { return { ok: false, message: "Sin permisos para conciliar facturas" } }
+
+  const id     = formData.get("id") as string | null
+  const status = formData.get("status") as "registered" | "observed" | "reconciled" | null
+  const notes  = (formData.get("reconciliationNotes") as string | null)?.trim() || null
+
+  if (!id) return { ok: false, message: "Factura no especificada" }
+  if (!status || !["registered", "observed", "reconciled"].includes(status)) {
+    return { ok: false, message: "Estado de conciliación inválido" }
+  }
+
+  const attachment = await db.query.invoiceAttachments.findFirst({
+    where: eq(invoiceAttachments.id, id),
+  })
+  if (!attachment) return { ok: false, message: "Factura anexa no encontrada" }
+
+  const targetType = attachment.targetType as InvoiceTargetType
+  const target = await assertTargetAccess(session, targetType, attachment.targetId)
+  if (!target.ok) return { ok: false, message: target.message }
+
+  const now = new Date().toISOString()
+  await db.update(invoiceAttachments).set({
+    status,
+    reconciliationNotes: notes,
+    reconciledAt:  status === "registered" ? null : now,
+    reconciledBy:  status === "registered" ? null : session.user.id,
+  }).where(eq(invoiceAttachments.id, id))
+
+  await recordAudit({
+    userId:     session.user.id,
+    userEmail:  session.user.email ?? undefined,
+    action:     "update",
+    entityType: "invoice_attachment",
+    entityId:   id,
+    entityCode: attachment.invoiceNumber,
+    oldState:   { status: attachment.status, reconciliationNotes: attachment.reconciliationNotes },
+    newState:   { status, reconciliationNotes: notes },
+  })
+
+  revalidatePath(pathForTarget(targetType, attachment.targetId))
+
+  const label = status === "reconciled" ? "Factura conciliada" : status === "observed" ? "Factura observada" : "Factura restablecida"
+  return { ok: true, message: label }
+}
+
 export async function canReadInvoiceAttachment(session: Session, attachmentId: string) {
   if (!canViewInvoiceAttachments(session)) return null
   const attachment = await db.query.invoiceAttachments.findFirst({

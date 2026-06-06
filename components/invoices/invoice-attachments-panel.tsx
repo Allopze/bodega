@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState, useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { FileText, Paperclip, Trash, Warning } from "@phosphor-icons/react"
+import { CheckCircle, FileText, Paperclip, Trash, Warning, WarningCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -14,29 +14,36 @@ import { formatCLP, formatDate } from "@/lib/utils"
 import {
   deleteInvoiceAttachment,
   uploadInvoiceAttachment,
+  reconcileInvoiceAttachment,
   type InvoiceTargetType,
 } from "@/lib/actions/invoice-attachments"
+import { computeReconciliationDiff, formatDiffPercent } from "@/lib/services/invoice-reconciliation"
 import type { ActionState } from "@/lib/validation/masters"
 
 export interface InvoiceAttachmentRow {
-  id:            string
-  invoiceNumber: string
-  invoiceDate:   string
-  amount:        number
-  fileName:      string
-  fileSize:      number | null
-  mimeType:      string | null
-  notes:         string | null
-  uploadedAt:    string
-  uploaderName:  string | null
+  id:                  string
+  invoiceNumber:       string
+  invoiceDate:         string
+  amount:              number
+  fileName:            string
+  fileSize:            number | null
+  mimeType:            string | null
+  notes:               string | null
+  uploadedAt:          string
+  uploaderName:        string | null
+  // Reconciliation fields (null on legacy rows created before this feature)
+  status:              "registered" | "observed" | "reconciled" | null
+  reconciliationNotes: string | null
 }
 
 interface InvoiceAttachmentsPanelProps {
-  targetType:  InvoiceTargetType
-  targetId:    string
-  targetLabel: string
-  canManage:   boolean
-  attachments: InvoiceAttachmentRow[]
+  targetType:       InvoiceTargetType
+  targetId:         string
+  targetLabel:      string
+  canManage:        boolean
+  attachments:      InvoiceAttachmentRow[]
+  /** When set, enables reconciliation comparison (purchase order total) */
+  orderTotalAmount?: number
 }
 
 export function InvoiceAttachmentsPanel({
@@ -45,6 +52,7 @@ export function InvoiceAttachmentsPanel({
   targetLabel,
   canManage,
   attachments,
+  orderTotalAmount,
 }: InvoiceAttachmentsPanelProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const [uploadState, uploadAction] = useActionState<ActionState, FormData>(
@@ -95,6 +103,7 @@ export function InvoiceAttachmentsPanel({
                 key={attachment.id}
                 attachment={attachment}
                 canManage={canManage}
+                orderTotalAmount={orderTotalAmount}
               />
             ))}
           </div>
@@ -198,60 +207,185 @@ export function InvoiceAttachmentsPanel({
 function InvoiceAttachmentItem({
   attachment,
   canManage,
+  orderTotalAmount,
 }: {
-  attachment: InvoiceAttachmentRow
-  canManage: boolean
+  attachment:       InvoiceAttachmentRow
+  canManage:        boolean
+  orderTotalAmount?: number
 }) {
-  const [deleteState, deleteAction] = useActionState<ActionState, FormData>(
-    deleteInvoiceAttachment,
-    INITIAL_STATE,
-  )
+  const [deleteState,    deleteAction]    = useActionState<ActionState, FormData>(deleteInvoiceAttachment,    INITIAL_STATE)
+  const [reconcileState, reconcileAction] = useActionState<ActionState, FormData>(reconcileInvoiceAttachment, INITIAL_STATE)
+
+  const [showReconcileForm, setShowReconcileForm] = React.useState(false)
 
   useEffect(() => {
-    if (deleteState.ok && deleteState.message) {
-      toast.success(deleteState.message)
-    } else if (deleteState.ok === false && deleteState.message && deleteState !== INITIAL_STATE) {
-      toast.error(deleteState.message)
-    }
+    if (deleteState.ok && deleteState.message)              toast.success(deleteState.message)
+    else if (deleteState.ok === false && deleteState.message && deleteState !== INITIAL_STATE) toast.error(deleteState.message)
   }, [deleteState])
 
+  useEffect(() => {
+    if (reconcileState.ok && reconcileState.message) {
+      toast.success(reconcileState.message)
+      setShowReconcileForm(false)
+    } else if (reconcileState.ok === false && reconcileState.message && reconcileState !== INITIAL_STATE) {
+      toast.error(reconcileState.message)
+    }
+  }, [reconcileState])
+
+  // Compute diff when we have the order total
+  const diff = orderTotalAmount !== undefined
+    ? computeReconciliationDiff(attachment.amount, orderTotalAmount)
+    : null
+
+  const status         = attachment.status ?? "registered"
+  const statusConfig   = RECONCILIATION_STATUS[status]
+
   return (
-    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]">
-          <FileText size={16} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <a
-            href={`/api/invoice-attachments/${attachment.id}`}
-            className="block truncate text-sm font-medium text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary)]"
-          >
-            {attachment.invoiceNumber} · {attachment.fileName}
-          </a>
-          <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
-            <span>{formatDate(attachment.invoiceDate)}</span>
-            <span className="font-mono">{formatCLP(attachment.amount)}</span>
-            {attachment.fileSize !== null && <span>{formatFileSize(attachment.fileSize)}</span>}
-            {attachment.uploaderName && <span>Subida por {attachment.uploaderName}</span>}
+    <div className="flex flex-col gap-3 px-4 py-3">
+      {/* Main row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]">
+            <FileText size={16} />
           </div>
-          {attachment.notes && (
-            <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{attachment.notes}</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={`/api/invoice-attachments/${attachment.id}`}
+                className="truncate text-sm font-medium text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary)]"
+              >
+                {attachment.invoiceNumber} · {attachment.fileName}
+              </a>
+              {/* Reconciliation status badge */}
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusConfig.className}`}>
+                {statusConfig.icon}
+                {statusConfig.label}
+              </span>
+            </div>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
+              <span>{formatDate(attachment.invoiceDate)}</span>
+              <span className="font-mono">{formatCLP(attachment.amount)}</span>
+              {attachment.fileSize !== null && <span>{formatFileSize(attachment.fileSize)}</span>}
+              {attachment.uploaderName && <span>Subida por {attachment.uploaderName}</span>}
+            </div>
+            {attachment.notes && (
+              <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{attachment.notes}</p>
+            )}
+            {/* Show reconciliation notes if present */}
+            {attachment.reconciliationNotes && (
+              <p className="mt-1 text-xs italic text-[var(--color-text-muted)]">
+                Conciliación: {attachment.reconciliationNotes}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 sm:self-start">
+          {canManage && diff !== null && (
+            <Button
+              type="button" variant="ghost" size="sm"
+              onClick={() => setShowReconcileForm((v) => !v)}
+              className={diff.hasDiff ? "text-[var(--color-warning)] hover:text-[var(--color-warning)]" : ""}
+            >
+              {diff.hasDiff ? <WarningCircle size={14} /> : <CheckCircle size={14} />}
+              Conciliar
+            </Button>
+          )}
+          {canManage && (
+            <form action={deleteAction} className="inline">
+              <input type="hidden" name="id" value={attachment.id} />
+              <Button type="submit" variant="ghost" size="sm" className="text-[var(--color-danger)] hover:text-[var(--color-danger)]">
+                <Trash size={14} />
+                Eliminar
+              </Button>
+            </form>
           )}
         </div>
       </div>
 
-      {canManage && (
-        <form action={deleteAction} className="sm:self-start">
+      {/* Diff summary (always visible when we have orderTotalAmount) */}
+      {diff !== null && (
+        <div className={`rounded-[var(--radius)] px-3 py-2 text-xs flex flex-wrap gap-x-4 gap-y-1 ${diff.hasDiff ? "bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-800" : "bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800"}`}>
+          <span className="text-[var(--color-text-muted)]">
+            OC: <span className="font-mono font-medium text-[var(--color-text)]">{formatCLP(diff.orderAmount)}</span>
+          </span>
+          <span className="text-[var(--color-text-muted)]">
+            Factura: <span className="font-mono font-medium text-[var(--color-text)]">{formatCLP(diff.invoiceAmount)}</span>
+          </span>
+          {diff.hasDiff ? (
+            <span className="font-medium text-amber-700 dark:text-amber-400">
+              Diferencia: {formatCLP(Math.abs(diff.absoluteDiff))}
+              {formatDiffPercent(diff) && ` (${formatDiffPercent(diff)})`}
+              {diff.absoluteDiff > 0 ? " — factura mayor" : " — factura menor"}
+            </span>
+          ) : (
+            <span className="font-medium text-emerald-700 dark:text-emerald-400">Montos coinciden</span>
+          )}
+        </div>
+      )}
+
+      {/* Reconciliation form */}
+      {showReconcileForm && canManage && (
+        <form action={reconcileAction} className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 space-y-3">
           <input type="hidden" name="id" value={attachment.id} />
-          <Button type="submit" variant="ghost" size="sm" className="text-[var(--color-danger)] hover:text-[var(--color-danger)]">
-            <Trash size={14} />
-            Eliminar
-          </Button>
+          <p className="text-xs font-semibold text-[var(--color-text)]">Registrar resultado de conciliación</p>
+
+          <div className="flex flex-wrap gap-2">
+            {(["reconciled", "observed", "registered"] as const).map((s) => {
+              const cfg = RECONCILIATION_STATUS[s]
+              return (
+                <label key={s} className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio" name="status" value={s}
+                    defaultChecked={status === s}
+                    className="accent-[var(--color-primary)]"
+                  />
+                  <span className={`text-xs font-medium ${cfg.textClass}`}>{cfg.label}</span>
+                </label>
+              )
+            })}
+          </div>
+
+          <Textarea
+            name="reconciliationNotes"
+            rows={2}
+            placeholder="Motivo de la observación o detalle de la conciliación..."
+            defaultValue={attachment.reconciliationNotes ?? ""}
+          />
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowReconcileForm(false)}>
+              Cancelar
+            </Button>
+            <SubmitButton label="Guardar" loadingLabel="Guardando..." size="sm" />
+          </div>
         </form>
       )}
     </div>
   )
 }
+
+const RECONCILIATION_STATUS = {
+  registered: {
+    label:     "Registrada",
+    className: "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
+    textClass: "text-[var(--color-text-muted)]",
+    icon:      null,
+  },
+  observed: {
+    label:     "Observada",
+    className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400",
+    textClass: "text-amber-700 dark:text-amber-400",
+    icon:      <WarningCircle size={11} className="shrink-0" />,
+  },
+  reconciled: {
+    label:     "Conciliada",
+    className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400",
+    textClass: "text-emerald-700 dark:text-emerald-400",
+    icon:      <CheckCircle size={11} className="shrink-0" />,
+  },
+} as const
 
 function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`

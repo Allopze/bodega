@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { deliveries, deliveryItems, worksites } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
 import { canAccessWorksite } from "@/lib/auth/can"
-import { PageHeader } from "@/components/ui/page-header"
+import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { DataTable } from "@/components/admin/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
@@ -69,7 +69,16 @@ export default async function Page() {
 
   return (
     <>
-      <PageHeader title="Entregas" description="Registro de entregas a faena o trabajador." />
+      <PageHeader
+        title="Entregas"
+        description="Registro de entregas a faena o trabajador."
+        breadcrumb={
+          <Breadcrumbs items={[
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "Entregas" },
+          ]} />
+        }
+      />
 
       {visible.length === 0 ? (
         <EmptyState

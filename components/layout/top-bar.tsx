@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { List, Bell, MagnifyingGlass } from "@phosphor-icons/react"
+import { List, MagnifyingGlass } from "@phosphor-icons/react"
 import type { Session } from "next-auth"
 import { cn } from "@/lib/utils"
 import { Avatar } from "@/components/ui/avatar"
+import { NotificationBell } from "./notification-bell"
 
 interface TopBarProps {
   session:      Session
@@ -55,18 +56,7 @@ export function TopBar({ session, onMenuToggle, className }: TopBarProps) {
         >
           <MagnifyingGlass size={16} />
         </button>
-        <button
-          className={cn(
-            "relative flex items-center justify-center h-8 w-8 rounded-[var(--radius-sm)]",
-            "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
-            "hover:bg-[var(--color-surface-2)]",
-            "transition-colors duration-[var(--duration-fast)]",
-            "active:scale-[0.95]",
-          )}
-          aria-label="Notificaciones"
-        >
-          <Bell size={16} />
-        </button>
+        <NotificationBell />
         <div className="ml-1">
           <Avatar name={session.user.name ?? session.user.email ?? ""} size="sm" />
         </div>

@@ -79,23 +79,15 @@ export default async function RecepcionPage() {
         }
       />
 
-      {visible.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-16 text-center">
-          <p className="text-sm font-medium text-[var(--color-text)]">Sin OCs pendientes de recepción</p>
-          <p className="text-sm text-[var(--color-text-muted)]">
-            Las órdenes de compra enviadas aparecerán aquí cuando estén listas para recibir.
-          </p>
-        </div>
-      ) : (
-        <DataTable
-          columns={COLUMNS}
-          rows={visible as unknown as Record<string, unknown>[]}
-          searchKeys={["code"]}
-          pageSize={20}
-          searchPlaceholder="Buscar OC..."
-          emptyTitle="Sin OCs pendientes"
-          emptyDescription="Las OCs enviadas al proveedor aparecerán aquí."
-          renderRow={(row) => {
+      <DataTable
+        columns={COLUMNS}
+        rows={visible as unknown as Record<string, unknown>[]}
+        searchKeys={["code"]}
+        pageSize={20}
+        searchPlaceholder="Buscar OC..."
+        emptyTitle="Sin OCs pendientes de recepción"
+        emptyDescription="Las órdenes de compra enviadas al proveedor aparecerán aquí cuando estén listas para recibir."
+        renderRow={(row) => {
             const o = row as unknown as typeof visible[0]
             return (
               <TableRow key={o.id} className="group">
@@ -134,7 +126,6 @@ export default async function RecepcionPage() {
             )
           }}
         />
-      )}
     </>
   )
 }

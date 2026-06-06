@@ -1,8 +1,12 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { eq } from "drizzle-orm"
+import { db } from "@/db"
+import { purchaseRequestItems } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { approveItem, rejectItem, returnItem } from "@/lib/services/item-state"
+import { notifySafe } from "@/lib/services/notifications"
 import type { ActionState } from "@/lib/validation/operations"
 
 const REVALIDATE = "/aprobaciones"
@@ -38,12 +42,34 @@ export async function approveItemAction(
   }
 
   try {
+    // Load item before service call to get requester info for notification
+    const itemBefore = await db.query.purchaseRequestItems.findFirst({
+      where: eq(purchaseRequestItems.id, itemId),
+      with: { request: { columns: { id: true, code: true, requesterId: true } } },
+    })
+
     await approveItem(itemId, session.user.id, {
       modifiedQty,
       userEmail:   session.user.email ?? undefined,
       roleContext: getRoleContext(session.user.roles),
     })
     revalidatePath(REVALIDATE)
+
+    // Notify requester (fire-and-forget)
+    if (itemBefore?.request?.requesterId) {
+      void notifySafe({
+        userId:     itemBefore.request.requesterId,
+        type:       "request_approved",
+        title:      `Ítem aprobado en ${itemBefore.request.code}`,
+        body:       modifiedQty
+          ? `Aprobado con cantidad modificada a ${modifiedQty}`
+          : `Aprobado por ${session.user.name ?? session.user.email}`,
+        entityType: "purchase_request",
+        entityId:   itemBefore.request.id,
+        entityHref: `/solicitudes/${itemBefore.request.id}`,
+      })
+    }
+
     return { ok: true, message: "Ítem aprobado" }
   } catch (e) {
     console.error("[approveItemAction]", e)
@@ -68,11 +94,30 @@ export async function rejectItemAction(
   if (!reason) return { ok: false, message: "El motivo de rechazo es obligatorio" }
 
   try {
+    const itemBefore = await db.query.purchaseRequestItems.findFirst({
+      where: eq(purchaseRequestItems.id, itemId),
+      with: { request: { columns: { id: true, code: true, requesterId: true } } },
+    })
+
     await rejectItem(itemId, session.user.id, reason, {
       userEmail:   session.user.email ?? undefined,
       roleContext: getRoleContext(session.user.roles),
     })
     revalidatePath(REVALIDATE)
+
+    // Notify requester (fire-and-forget)
+    if (itemBefore?.request?.requesterId) {
+      void notifySafe({
+        userId:     itemBefore.request.requesterId,
+        type:       "request_rejected",
+        title:      `Ítem rechazado en ${itemBefore.request.code}`,
+        body:       reason,
+        entityType: "purchase_request",
+        entityId:   itemBefore.request.id,
+        entityHref: `/solicitudes/${itemBefore.request.id}`,
+      })
+    }
+
     return { ok: true, message: "Ítem rechazado" }
   } catch (e) {
     console.error("[rejectItemAction]", e)

@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/table"
 import { Pagination } from "@/components/ui/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
+import { SkeletonRow } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -37,6 +38,8 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   className?:   string
   /** Content rendered in the header toolbar (right side) */
   actions?:     React.ReactNode
+  /** When true renders skeleton rows instead of EmptyState — prevents "no results" flash during load */
+  loading?:     boolean
 }
 
 type SortDir = "asc" | "desc" | null
@@ -55,6 +58,7 @@ export function DataTable<T extends Record<string, unknown>>({
   searchPlaceholder = "Buscar...",
   className,
   actions,
+  loading = false,
 }: DataTableProps<T>) {
   const [search,  setSearch]  = React.useState("")
   const [sortKey, setSortKey] = React.useState<string | null>(null)
@@ -145,8 +149,8 @@ export function DataTable<T extends Record<string, unknown>>({
                         "inline-flex items-center gap-1",
                         "text-xs font-medium uppercase tracking-wide",
                         "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
-                        "transition-[color,transform] duration-[150ms] ease-[var(--ease-out)]",
-                        "@media(prefers-reduced-motion:no-preference) active:scale-[0.97]",
+                        "transition-[color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+                        "motion-safe:active:scale-[0.97]",
                         "select-none",
                       )}
                     >
@@ -161,7 +165,15 @@ export function DataTable<T extends Record<string, unknown>>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginated.length === 0 ? (
+            {loading ? (
+              Array.from({ length: Math.min(pageSize, 5) }).map((_, i) => (
+                <tr key={i}>
+                  <td colSpan={columns.length} className="p-0">
+                    <SkeletonRow cols={columns.length} />
+                  </td>
+                </tr>
+              ))
+            ) : paginated.length === 0 ? (
               <tr>
                 <td colSpan={columns.length}>
                   <EmptyState

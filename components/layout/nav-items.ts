@@ -68,6 +68,18 @@ export const NAV_ITEMS: NavSection[] = [
         iconName:    "ArrowSquareOut",
         permissions: ["warehouse:view_stock"],
       },
+      {
+        label:       "Trazabilidad",
+        href:        "/trazabilidad",
+        iconName:    "ChartLineUp",
+        permissions: ["reports:view"],
+      },
+      {
+        label:       "Reportes",
+        href:        "/reportes",
+        iconName:    "ChartBar",
+        permissions: ["reports:view"],
+      },
     ],
   },
   {
@@ -90,6 +102,12 @@ export const NAV_ITEMS: NavSection[] = [
         href:        "/admin/productos",
         iconName:    "Cube",
         permissions: ["admin:products"],
+      },
+      {
+        label:       "Trabajadores",
+        href:        "/admin/trabajadores",
+        iconName:    "HardHat",
+        permissions: ["admin:workers"],
       },
       {
         label:       "Proveedores",

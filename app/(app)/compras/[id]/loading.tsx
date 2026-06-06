@@ -1,0 +1,20 @@
+import { SkeletonPage } from "@/components/ui/skeleton"
+import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+
+export default function Loading() {
+  return (
+    <>
+      <PageHeader
+        title="Orden de compra"
+        breadcrumb={
+          <Breadcrumbs items={[
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "Compras", href: "/compras" },
+            { label: "Detalle" },
+          ]} />
+        }
+      />
+      <SkeletonPage rows={6} />
+    </>
+  )
+}

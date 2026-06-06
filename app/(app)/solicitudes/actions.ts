@@ -11,6 +11,7 @@ import { nanoid, generateCode } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { submitItem } from "@/lib/services/item-state"
+import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 
 const REVALIDATE = "/solicitudes"
@@ -190,8 +191,108 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     await submitItem(item.id, session.user.id, { userEmail: session.user.email ?? undefined })
   }
 
+  // Notify approvers (fire-and-forget — never blocks the main flow)
+  void getUserIdsWithPermission("approvals:approve").then((approverIds) =>
+    notifyManyUser(approverIds, {
+      type:       "request_submitted",
+      title:      `Nueva solicitud: ${request.code}`,
+      body:       `${session.user.name ?? session.user.email} envió una solicitud con ${request.items.length} ítem${request.items.length !== 1 ? "s" : ""}`,
+      entityType: "purchase_request",
+      entityId:   requestId,
+      entityHref: `/solicitudes/${requestId}`,
+    }),
+  )
+
   revalidatePath(REVALIDATE)
   redirect(`${REVALIDATE}/${requestId}`)
+}
+
+// ── Duplicate a request ────────────────────────────────────────────────────────
+
+export async function duplicateRequest(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("requests:create") }
+  catch { return { ok: false, message: "Sin permisos para duplicar solicitudes" } }
+
+  const sourceId = formData.get("requestId") as string
+  if (!sourceId) return { ok: false, message: "ID de solicitud requerido" }
+
+  const source = await db.query.purchaseRequests.findFirst({
+    where: eq(purchaseRequests.id, sourceId),
+    with: { items: { with: { attributes: true } } },
+  })
+  if (!source) return { ok: false, message: "Solicitud no encontrada" }
+
+  const isOwner  = source.requesterId === session.user.id
+  const hasViewAll = session.user.permissions.includes("requests:view_all")
+  if (!isOwner && !hasViewAll) {
+    return { ok: false, message: "Solo puedes duplicar tus propias solicitudes" }
+  }
+  if (!canAccessWorksite(session, source.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de la solicitud original" }
+  }
+
+  // eslint-disable-next-line prefer-const
+  let newId!: string
+  await db.transaction(async (tx) => {
+    const [{ total }] = await tx.select({ total: count() }).from(purchaseRequests)
+    const code = generateCode("SOL", (total ?? 0) + 1)
+    newId = nanoid()
+
+    await tx.insert(purchaseRequests).values({
+      id:           newId,
+      code,
+      worksiteId:   source.worksiteId,
+      requesterId:  session.user.id,
+      costCenterId: source.costCenterId ?? null,
+      urgency:      source.urgency,
+      status:       "draft",
+      notes:        source.notes ? `[Duplicada de ${source.code}] ${source.notes}` : `[Duplicada de ${source.code}]`,
+    })
+
+    await recordAudit({
+      userId:     session.user.id,
+      userEmail:  session.user.email ?? undefined,
+      action:     "create",
+      entityType: "purchase_request",
+      entityId:   newId,
+      entityCode: code,
+      newState:   { status: "draft", duplicatedFrom: sourceId, worksiteId: source.worksiteId },
+    })
+
+    for (const [i, item] of source.items.entries()) {
+      const itemId = nanoid()
+      await tx.insert(purchaseRequestItems).values({
+        id:              itemId,
+        requestId:       newId,
+        productId:       item.productId ?? null,
+        productNameFree: item.productNameFree ?? null,
+        quantity:        item.quantity,
+        unitOfMeasure:   item.unitOfMeasure,
+        status:          "draft",
+        urgency:         item.urgency,
+        requiredDate:    item.requiredDate ?? null,
+        workerId:        item.workerId ?? null,
+        sortOrder:       i,
+        notes:           item.notes ?? null,
+      })
+
+      if (item.attributes.length > 0) {
+        await tx.insert(requestItemAttributes).values(
+          item.attributes.map((a) => ({
+            id:            nanoid(),
+            requestItemId: itemId,
+            attributeId:   a.attributeId ?? null,
+            attributeName: a.attributeName,
+            value:         a.value,
+          })),
+        )
+      }
+    }
+  })
+
+  revalidatePath(REVALIDATE)
+  redirect(`${REVALIDATE}/${newId!}`)
 }
 
 // ── Cancel a draft ────────────────────────────────────────────────────────────

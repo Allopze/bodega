@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -32,11 +33,12 @@ function canSeeItem(item: NavItem, session: Session): boolean {
 
 /* ── Sidebar ────────────────────────────────────────────────────────────── */
 interface SidebarProps {
-  session:     Session
+  session:       Session
   worksiteName?: string
+  badgeCounts?:  Record<string, number>
 }
 
-export function Sidebar({ session, worksiteName }: SidebarProps) {
+export function Sidebar({ session, worksiteName, badgeCounts }: SidebarProps) {
   const pathname = usePathname()
 
   return (
@@ -48,18 +50,20 @@ export function Sidebar({ session, worksiteName }: SidebarProps) {
       {/* ── Brand header ── */}
       <div className="px-4 pt-5 pb-4 border-b border-[var(--color-brand-border)]">
         <div className="flex items-center gap-2.5">
-          <div className={cn(
-            "h-8 w-8 rounded-[var(--radius-sm)] flex items-center justify-center",
-            "bg-[var(--color-primary)]",
-          )}>
-            <span className="font-display font-bold text-white text-sm tracking-tight">SF</span>
-          </div>
+          <Image
+            src="/chome_logo_white.svg"
+            alt="Chome"
+            width={32}
+            height={32}
+            unoptimized
+            className="h-8 w-8 shrink-0"
+          />
           <div>
             <p className="font-display font-bold text-[var(--color-brand-text)] text-sm leading-tight tracking-tight">
-              StockFlow
+              Chome
             </p>
             <p className="text-[10px] text-[var(--color-brand-text-muted)] leading-tight">
-              Chome
+              Solicitudes y Bodega
             </p>
           </div>
         </div>
@@ -82,7 +86,7 @@ export function Sidebar({ session, worksiteName }: SidebarProps) {
                 {section.section}
               </p>
               {visibleItems.map((item) => (
-                <NavLink key={item.href} item={item} pathname={pathname} />
+                <NavLink key={item.href} item={item} pathname={pathname} badgeCounts={badgeCounts} />
               ))}
             </div>
           )
@@ -114,9 +118,18 @@ export function Sidebar({ session, worksiteName }: SidebarProps) {
   )
 }
 
-function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const Icon = ICONS[item.iconName]
+function NavLink({
+  item,
+  pathname,
+  badgeCounts,
+}: {
+  item:         NavItem
+  pathname:     string
+  badgeCounts?: Record<string, number>
+}) {
+  const Icon    = ICONS[item.iconName]
   const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href))
+  const count   = item.badge === "count" ? (badgeCounts?.[item.href] ?? 0) : 0
 
   return (
     <Link
@@ -141,10 +154,23 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
           )}
         />
       )}
-      <span className="truncate">{item.label}</span>
-      {isActive && (
-        <CaretRight size={12} className="ml-auto text-[var(--color-primary)] shrink-0" weight="bold" />
+      <span className="truncate flex-1">{item.label}</span>
+      {/* Never-miss badge — signal orange, only when there are pending items */}
+      {count > 0 && (
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-signal)] px-1 text-[9px] font-bold leading-none text-white">
+          {count > 99 ? "99+" : count}
+        </span>
       )}
+      {/* Active indicator caret — fade in/out */}
+      <CaretRight
+        size={12}
+        weight="bold"
+        className={cn(
+          "shrink-0 text-[var(--color-primary)]",
+          "transition-opacity duration-[var(--duration-fast)]",
+          isActive ? "opacity-100" : "opacity-0",
+        )}
+      />
     </Link>
   )
 }

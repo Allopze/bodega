@@ -4,13 +4,87 @@ import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import bcrypt from "bcryptjs"
 import { db } from "@/db"
-import { users, userRoles, worksiteUsers, roles } from "@/db/schema"
+import { users, userRoles, worksiteUsers, roles, userInvitations } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
-import { userCreateSchema, userUpdateSchema, type ActionState } from "@/lib/validation/masters"
+import { generateInvitationToken, hashInvitationToken } from "@/lib/auth/bootstrap"
+import { getAppBaseUrl, sendInvitationEmail } from "@/lib/email/smtp"
+import { userCreateSchema, userInvitationSchema, userUpdateSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/usuarios"
+
+// ── Invite ───────────────────────────────────────────────────────────────────
+export async function inviteUser(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:users") }
+  catch { return { ok: false, message: "Sin permisos para invitar usuarios" } }
+
+  const raw = {
+    name: formData.get("name") || "",
+    email: formData.get("email"),
+    roleIds: formData.getAll("roleIds"),
+    expiresInDays: formData.get("expiresInDays") || 7,
+    worksiteAssignments: buildWorksiteAssignments(formData),
+  }
+
+  const parsed = userInvitationSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
+
+  const d = parsed.data
+  const roleError = await validateRoleWorksiteRules(d.roleIds, d.worksiteAssignments)
+  if (roleError) return roleError
+
+  const existing = await db.query.users.findFirst({ where: eq(users.email, d.email) })
+  if (existing) {
+    return { ok: false, fieldErrors: { email: ["Este correo ya tiene una cuenta"] } }
+  }
+
+  const token = generateInvitationToken()
+  const inviteUrl = `${getAppBaseUrl()}/registro?token=${encodeURIComponent(token)}`
+  const expiresAt = new Date(Date.now() + d.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
+  const invitationId = nanoid()
+
+  await db.insert(userInvitations).values({
+    id: invitationId,
+    email: d.email,
+    name: d.name || null,
+    tokenHash: hashInvitationToken(token),
+    roleIdsJson: JSON.stringify(d.roleIds),
+    worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
+    invitedByUserId: session.user.id,
+    expiresAt,
+  })
+
+  let deliveryMessage = "Invitación creada"
+  try {
+    const delivery = await sendInvitationEmail({
+      to: d.email,
+      inviteUrl,
+      invitedByName: session.user.name,
+    })
+    deliveryMessage = delivery.sent
+      ? `Invitación enviada a ${d.email}`
+      : `Invitación creada. SMTP no configurado, enlace: ${inviteUrl}`
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "error desconocido"
+    deliveryMessage = `Invitación creada, pero no se pudo enviar el correo (${reason}). Enlace: ${inviteUrl}`
+  }
+
+  await recordAudit({
+    userId: session.user.id, userEmail: session.user.email ?? undefined,
+    action: "create", entityType: "user_invitation", entityId: invitationId,
+    newState: { email: d.email, roles: d.roleIds, expiresAt },
+  })
+
+  revalidatePath(REVALIDATE)
+  return { ok: true, message: deliveryMessage }
+}
 
 // ── Create ────────────────────────────────────────────────────────────────────
 export async function createUser(

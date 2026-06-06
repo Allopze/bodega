@@ -1,16 +1,22 @@
 /**
- * Bootstrap seed — Chome StockFlow
- * Creates only system roles, permissions, and the initial administrator.
+ * Bootstrap seed — Chome Solicitudes y Bodega
+ * Creates only system roles, permissions, and base catalog data.
  * Operational/test data should be entered through the app flows.
  * Run with: npx tsx db/seed.ts
  */
 import Database from "better-sqlite3"
 import { drizzle } from "drizzle-orm/better-sqlite3"
-import * as schema from "./schema"
 import bcrypt from "bcryptjs"
+import { loadEnvConfig } from "@next/env"
+import * as schema from "./schema"
 import { eq } from "drizzle-orm"
 
+loadEnvConfig(process.cwd())
+
 const DB_URL = process.env.DATABASE_URL ?? "./db/stockflow.db"
+const adminName = process.env.SEED_ADMIN_NAME ?? "Administrador"
+const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@chome.cl").toLowerCase()
+const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "chome2026"
 const sqlite = new Database(DB_URL)
 sqlite.pragma("journal_mode = WAL")
 sqlite.pragma("foreign_keys = ON")
@@ -125,7 +131,7 @@ function sourceNote(item: EppCatalogItem) {
 }
 
 async function main() {
-  console.log("Inicializando datos base de Chome StockFlow...")
+  console.log("Inicializando datos base de Chome Solicitudes y Bodega...")
 
   /* ── Roles ────────────────────────────────────────────────────────────── */
   const roleData: schema.roles["$inferInsert"][] = [
@@ -169,9 +175,12 @@ async function main() {
     { id: "p-wh-adj",         name: "warehouse:adjust_stock",       module: "warehouse",  description: "Ajustar stock" },
     // Invoice attachments
     { id: "p-inv-att",        name: "invoice_attachments:manage",   module: "attachments", description: "Anexar facturas a solicitudes y OC" },
+    // Reports
+    { id: "p-rep-view",       name: "reports:view",                 module: "reports",    description: "Ver reportes y matriz de trazabilidad" },
     // Admin
     { id: "p-adm-usr",        name: "admin:users",                  module: "admin",      description: "Gestionar usuarios" },
     { id: "p-adm-ws",         name: "admin:worksites",              module: "admin",      description: "Gestionar faenas" },
+    { id: "p-adm-wrk",        name: "admin:workers",                module: "admin",      description: "Gestionar trabajadores" },
     { id: "p-adm-prod",       name: "admin:products",               module: "admin",      description: "Gestionar catálogo" },
     { id: "p-adm-sup",        name: "admin:suppliers",              module: "admin",      description: "Gestionar proveedores" },
     { id: "p-adm-cfg",        name: "admin:config",                 module: "admin",      description: "Configuración del sistema" },
@@ -204,45 +213,45 @@ async function main() {
     "p-rec-reg", "p-rec-view",
     "p-wh-stock", "p-wh-mov", "p-wh-adj",
     "p-inv-att",
-    "p-adm-usr", "p-adm-ws", "p-adm-prod", "p-adm-sup", "p-adm-cfg", "p-adm-audit",
+    "p-rep-view",
+    "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup", "p-adm-cfg", "p-adm-audit",
   ]
   const rolePermData = [
     ...perms.map((p) => rp("rol-admin", p.id)),
     ...leadership.map((permId) => rp("rol-jefa", permId)),
     ...leadership.map((permId) => rp("rol-sec", permId)),
-    rp("rol-prev", "p-req-all"), rp("rol-prev", "p-apr"),
+    rp("rol-prev", "p-req-all"), rp("rol-prev", "p-apr"), rp("rol-prev", "p-rep-view"),
     rp("rol-sol-faena", "p-req-create"), rp("rol-sol-faena", "p-req-own"), rp("rol-sol-faena", "p-req-submit"),
   ]
   await db.insert(schema.rolePermissions).values(rolePermData)
 
-  /* ── Bootstrap administrator ────────────────────────────────────────── */
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@chome.cl"
-  const adminName = process.env.SEED_ADMIN_NAME ?? "Administrador Chome"
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "chome2026"
+  /* ── Initial administrator ───────────────────────────────────────────── */
+  const existingAdmin = await db.query.users.findFirst({
+    where: eq(schema.users.email, adminEmail),
+  })
+  const adminId = existingAdmin?.id ?? "user-admin"
   const hashedPassword = await bcrypt.hash(adminPassword, 12)
 
-  await db.insert(schema.users).values({
-    id: "u-admin",
-    name: adminName,
-    email: adminEmail,
-    hashedPassword,
-    avatarColor: "151",
-  }).onConflictDoUpdate({
-    target: schema.users.id,
-    set: {
+  if (existingAdmin) {
+    await db.update(schema.users).set({
       name: adminName,
-      email: adminEmail,
       hashedPassword,
       isActive: true,
       updatedAt: new Date().toISOString(),
-    },
-  })
+    }).where(eq(schema.users.id, adminId))
+  } else {
+    await db.insert(schema.users).values({
+      id: adminId,
+      name: adminName,
+      email: adminEmail,
+      hashedPassword,
+      avatarColor: "160",
+      isActive: true,
+    })
+  }
 
-  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, "u-admin"))
-  await db.insert(schema.userRoles).values({
-    userId: "u-admin",
-    roleId: "rol-admin",
-  })
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, adminId))
+  await db.insert(schema.userRoles).values({ userId: adminId, roleId: "rol-admin" })
 
   /* ── EPP catalog from supplier spreadsheet ───────────────────────────── */
   await db.insert(schema.productCategories).values(EPP_CATEGORY).onConflictDoUpdate({

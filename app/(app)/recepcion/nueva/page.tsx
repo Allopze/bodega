@@ -11,6 +11,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { ReceiptForm } from "../receipt-form"
 import type { ReceiptOcItem, WarehouseOption } from "../receipt-form"
 
+export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Registrar recepción" }
 
 export default async function NuevaRecepcionPage({

@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
+import { suppliers } from "@/db/schema"
+import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { ProductList } from "./product-list"
@@ -11,14 +13,19 @@ export default async function ProductosPage() {
   try { await requirePermission("admin:products") }
   catch { redirect("/dashboard") }
 
-  const allProducts = await db.query.products.findMany({
-    with: { category: true },
-    orderBy: (p, { asc }) => [asc(p.name)],
-  })
-
-  const allCategories = await db.query.productCategories.findMany({
-    orderBy: (c, { asc }) => [asc(c.sortOrder), asc(c.name)],
-  })
+  const [allProducts, allCategories, allSuppliers] = await Promise.all([
+    db.query.products.findMany({
+      with: { category: true },
+      orderBy: (p, { asc }) => [asc(p.name)],
+    }),
+    db.query.productCategories.findMany({
+      orderBy: (c, { asc }) => [asc(c.sortOrder), asc(c.name)],
+    }),
+    db.query.suppliers.findMany({
+      where: eq(suppliers.isActive, true),
+      orderBy: (s, { asc }) => [asc(s.name)],
+    }),
+  ])
 
   return (
     <>
@@ -42,6 +49,7 @@ export default async function ProductosPage() {
           isActive: p.isActive, createdAt: p.createdAt,
         }))}
         categories={allCategories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion, sortOrder: c.sortOrder }))}
+        allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
       />
     </>
   )

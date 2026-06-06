@@ -78,7 +78,7 @@ export default function DesignGallery() {
       </Section>
 
       {/* ── State Badges — Item lifecycle (the core of the product) ── */}
-      <Section title="Badges de estado — Ítem de solicitud">
+      <Section title="Badges de estado: ítem de solicitud">
         <div className="flex flex-wrap gap-2">
           {itemStates.map((s) => <StateBadge key={s} state={s} entity="item" />)}
         </div>
@@ -87,13 +87,13 @@ export default function DesignGallery() {
         </p>
       </Section>
 
-      <Section title="Badges de estado — Solicitud">
+      <Section title="Badges de estado: solicitud">
         <div className="flex flex-wrap gap-2">
           {requestStates.map((s) => <StateBadge key={s} state={s} entity="request" />)}
         </div>
       </Section>
 
-      <Section title="Badges de estado — Orden de compra">
+      <Section title="Badges de estado: orden de compra">
         <div className="flex flex-wrap gap-2">
           {ocStates.map((s) => <StateBadge key={s} state={s} entity="oc" />)}
         </div>
@@ -229,6 +229,57 @@ export default function DesignGallery() {
             />
           </div>
         </div>
+      </Section>
+
+      {/* ── Motion reference ── */}
+      <Section title="Motion">
+        <p className="text-xs text-[var(--color-text-muted)] mb-5">
+          Tres velocidades: rápido (150ms) para feedback inmediato, normal (200ms) para transiciones estándar, lento (300ms) para drawers y overlays.
+          Reduced-motion: todas las animaciones se deshabilitan globalmente vía <code className="font-mono">@media (prefers-reduced-motion: reduce)</code>.
+        </p>
+
+        {/* Duration tokens */}
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)] mb-3">Duraciones</p>
+        <div className="flex flex-col gap-2 mb-6 max-w-sm">
+          {[
+            { label: "fast  — 150ms", w: "w-[30%]" },
+            { label: "normal — 200ms", w: "w-[50%]" },
+            { label: "slow  — 300ms", w: "w-[80%]" },
+          ].map(({ label, w }) => (
+            <div key={label} className="flex items-center gap-3">
+              <span className="text-xs font-mono text-[var(--color-text-subtle)] w-32 shrink-0">{label}</span>
+              <div className="flex-1 h-1.5 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
+                <div className={`h-full bg-[var(--color-primary)] rounded-full ${w}`} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Easing curves */}
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)] mb-3">Curvas de easing</p>
+        <div className="flex flex-wrap gap-3 mb-6">
+          {[
+            { name: "--ease-out",    desc: "Feedback inmediato" },
+            { name: "--ease-in-out", desc: "Transiciones UI" },
+            { name: "--ease-drawer", desc: "Drawers y sheets" },
+          ].map(({ name, desc }) => (
+            <div key={name} className="flex flex-col gap-0.5 px-3 py-2.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+              <span className="font-mono text-[10px] text-[var(--color-primary)]">{name}</span>
+              <span className="text-xs text-[var(--color-text-muted)]">{desc}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Skeleton shimmer — live demo */}
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)] mb-3">Shimmer de carga</p>
+        <div className="flex flex-col gap-2 max-w-lg border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden p-3 bg-[var(--color-surface)]">
+          <SkeletonRow cols={4} />
+          <SkeletonRow cols={4} />
+          <SkeletonRow cols={4} />
+        </div>
+        <p className="mt-2 text-xs text-[var(--color-text-subtle)]">
+          Overlays, dialogs y sheets usan <span className="font-mono">fade-in-0 + zoom-in-95</span> vía tw-animate-css. Abre cualquier Sheet o Dialog para verlo en acción.
+        </p>
       </Section>
 
       {/* ── Color reference ── */}

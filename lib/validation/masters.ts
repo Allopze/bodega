@@ -58,6 +58,30 @@ export const userUpdateSchema = z.object({
   ).default([]),
 })
 
+export const registerUserSchema = z.object({
+  name:            z.string().min(2, "Nombre demasiado corto").max(80),
+  email:           z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
+  password:        z.string().min(8, "Mínimo 8 caracteres"),
+  confirmPassword: z.string().min(1, "Confirma la contraseña"),
+  token:           z.string().optional().or(z.literal("")),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Las contraseñas no coinciden",
+  path: ["confirmPassword"],
+})
+
+export const userInvitationSchema = z.object({
+  name:       z.string().max(80).optional().or(z.literal("")),
+  email:      z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
+  roleIds:    z.array(z.string()).min(1, "Asigna al menos un rol"),
+  expiresInDays: z.coerce.number().int().min(1, "Mínimo 1 día").max(30, "Máximo 30 días").default(7),
+  worksiteAssignments: z.array(
+    z.object({
+      worksiteId: z.string(),
+      isPrimary:  z.coerce.boolean().default(false),
+    })
+  ).default([]),
+})
+
 // ── Worksite (Faena) ──────────────────────────────────────────────────────────
 export const worksiteSchema = z.object({
   id:       z.string().optional(),
@@ -148,6 +172,17 @@ export const warehouseSchema = z.object({
   worksiteId:  z.string().optional().nullable().or(z.literal("")),
   address:     z.string().max(200).optional().or(z.literal("")),
   notes:       z.string().max(300).optional().or(z.literal("")),
+  isActive:    z.coerce.boolean().default(true),
+})
+
+// ── Worker (Trabajador) ───────────────────────────────────────────────────────
+export const workerSchema = z.object({
+  id:          z.string().optional(),
+  rut:         rutSchema,
+  firstName:   z.string().min(1, "Nombre requerido").max(60),
+  lastName:    z.string().min(1, "Apellido requerido").max(60),
+  position:    z.string().max(80).optional().or(z.literal("")),
+  worksiteId:  z.string().min(1, "Selecciona una faena"),
   isActive:    z.coerce.boolean().default(true),
 })
 

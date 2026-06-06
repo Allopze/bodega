@@ -1,4 +1,4 @@
-# Plan MVP StockFlow Chome
+# Plan MVP Chome Solicitudes y Bodega
 
 ## Resumen
 Construir un MVP web interno en **Next.js + TypeScript + SQLite**, enfocado en resolver el problema central: ningún ítem aprobado puede perderse entre solicitud, compra, recepción, entrega y factura.

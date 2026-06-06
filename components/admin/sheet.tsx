@@ -17,7 +17,7 @@ const SheetOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-[oklch(0.20_0.01_155/0.35)]",
+      "fixed inset-0 z-50 bg-[var(--color-overlay)]",
       "data-[state=open]:animate-in data-[state=closed]:animate-out",
       "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       "duration-[250ms]",
@@ -42,7 +42,7 @@ const SheetContent = React.forwardRef<
         "fixed right-0 top-0 z-50 h-full w-full max-w-md",
         "bg-[var(--color-surface)]",
         "border-l border-[var(--color-border)]",
-        "shadow-[-20px_0_40px_oklch(0_0_0/0.08)]",
+        "shadow-[var(--shadow-lg)]",
         "flex flex-col",
         // Entry/exit: slide from the right
         // Tailwind animate-in/animate-out + translate for the drawer curve

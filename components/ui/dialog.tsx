@@ -17,7 +17,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-[oklch(0.20_0.01_155/0.40)]",
+      "fixed inset-0 z-50 bg-[var(--color-overlay)]",
       "backdrop-blur-[2px]",
       "data-[state=open]:animate-in data-[state=closed]:animate-out",
       "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
@@ -42,7 +42,7 @@ const DialogContent = React.forwardRef<
         "w-full max-w-lg",
         "bg-[var(--color-surface)] rounded-[var(--radius-lg)]",
         "border border-[var(--color-border)]",
-        "shadow-[0_20px_50px_-10px_oklch(0_0_0/0.18)]",
+        "shadow-[var(--shadow-lg)]",
         "p-6",
         // Entry: scale from center (modal stays centered per Emil's rule)
         "data-[state=open]:animate-in data-[state=closed]:animate-out",

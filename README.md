@@ -1,4 +1,4 @@
-# Chome StockFlow
+# Chome Solicitudes y Bodega
 
 Sistema interno para solicitudes por faena, aprobaciones, compras, recepcion y bodega.
 
@@ -11,22 +11,21 @@ npm run db:seed
 npm run dev
 ```
 
-El seed base no carga datos mock. Solo crea roles, permisos y un usuario administrador para poder entrar.
+El seed base no carga datos mock. Solo crea roles, permisos y datos base de catálogo.
 
-Credenciales por defecto:
+El primer usuario se crea desde `/registro` y recibe el rol `Administrador`.
+Después de eso, los registros requieren invitación desde `/admin/usuarios`.
 
-```txt
-admin@chome.cl
-chome2026
-```
-
-Puedes cambiarlas al sembrar:
+Para habilitar invitaciones por correo, configura SMTP:
 
 ```bash
-SEED_ADMIN_EMAIL=admin@empresa.cl \
-SEED_ADMIN_NAME="Administrador" \
-SEED_ADMIN_PASSWORD="cambia-esto" \
-npm run db:seed
+SMTP_HOST=smtp.tudominio.cl
+SMTP_PORT=587
+SMTP_USER=usuario
+SMTP_PASS=clave
+SMTP_FROM="Chome Solicitudes y Bodega <bodega@tudominio.cl>"
+SMTP_SECURE=false
+APP_URL=http://localhost:3000
 ```
 
 ## Datos reales o de prueba con flujo real

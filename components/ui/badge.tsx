@@ -12,12 +12,14 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default:     "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]",
+        // primary and success intentionally share the same green palette; they are semantically
+        // distinct (primary = confirmed/action, success = completed/approved) but visually unified.
         primary:     "bg-[var(--color-primary-50)] text-[var(--color-primary-700)] border border-[var(--color-primary-100)]",
         success:     "bg-[var(--color-primary-50)] text-[var(--color-primary-700)] border border-[var(--color-primary-100)]",
-        warning:     "bg-[var(--color-warning-50)] text-[oklch(0.55_0.12_85)] border border-[var(--color-warning-100)]",
-        signal:      "bg-[var(--color-signal-50)] text-[oklch(0.52_0.15_56)] border border-[var(--color-signal-100)]",
-        info:        "bg-[var(--color-info-50)] text-[oklch(0.45_0.10_248)] border border-[var(--color-info-100)]",
-        danger:      "bg-[var(--color-danger-50)] text-[oklch(0.48_0.15_25)] border border-[var(--color-danger-100)]",
+        warning:     "bg-[var(--color-warning-50)] text-[var(--color-warning-700)] border border-[var(--color-warning-100)]",
+        signal:      "bg-[var(--color-signal-50)] text-[var(--color-signal-700)] border border-[var(--color-signal-100)]",
+        info:        "bg-[var(--color-info-50)] text-[var(--color-info-700)] border border-[var(--color-info-100)]",
+        danger:      "bg-[var(--color-danger-50)] text-[var(--color-danger-700)] border border-[var(--color-danger-100)]",
         outline:     "border border-[var(--color-border)] text-[var(--color-text-muted)]",
       },
       size: {

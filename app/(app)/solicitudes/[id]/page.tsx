@@ -13,6 +13,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
 import { InvoiceAttachmentsPanel } from "@/components/invoices/invoice-attachments-panel"
 import { RequestForm } from "../request-form"
+import { DuplicateButton } from "./duplicate-button"
 
 export const metadata: Metadata = { title: "Solicitud de compra" }
 
@@ -111,7 +112,14 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       <PageHeader
         title={request.code}
         description={`Solicitado por ${request.requester?.name ?? "—"} · ${request.worksite?.name ?? "—"}`}
-        actions={<StateBadge state={request.status} entity="request" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <StateBadge state={request.status} entity="request" />
+            {can(session, "requests:create") && (
+              <DuplicateButton requestId={request.id} />
+            )}
+          </div>
+        }
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard",   href: "/dashboard"   },
@@ -133,16 +141,18 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
             targetLabel={`la solicitud ${request.code}`}
             canManage={can(session, "invoice_attachments:manage")}
             attachments={invoiceRows.map((invoice) => ({
-              id: invoice.id,
-              invoiceNumber: invoice.invoiceNumber,
-              invoiceDate: invoice.invoiceDate,
-              amount: invoice.amount,
-              fileName: invoice.fileName,
-              fileSize: invoice.fileSize,
-              mimeType: invoice.mimeType,
-              notes: invoice.notes,
-              uploadedAt: invoice.uploadedAt,
-              uploaderName: invoice.uploader?.name ?? null,
+              id:                  invoice.id,
+              invoiceNumber:       invoice.invoiceNumber,
+              invoiceDate:         invoice.invoiceDate,
+              amount:              invoice.amount,
+              fileName:            invoice.fileName,
+              fileSize:            invoice.fileSize,
+              mimeType:            invoice.mimeType,
+              notes:               invoice.notes,
+              uploadedAt:          invoice.uploadedAt,
+              uploaderName:        invoice.uploader?.name ?? null,
+              status:              (invoice.status as "registered" | "observed" | "reconciled") ?? "registered",
+              reconciliationNotes: invoice.reconciliationNotes ?? null,
             }))}
           />
         )}

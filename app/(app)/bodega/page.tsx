@@ -6,6 +6,8 @@ import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Warehouse } from "@phosphor-icons/react/dist/ssr"
 import { DispatchPanel } from "./dispatch-panel"
 import { formatQty, formatDate } from "@/lib/utils"
 import type { StockOption, WorksiteOption } from "./dispatch-panel"
@@ -68,12 +70,11 @@ export default async function BodegaPage() {
             ]} />
           }
         />
-        <div className="flex flex-col items-center gap-2 py-16 text-center">
-          <p className="text-sm font-medium text-[var(--color-text)]">Sin bodegas configuradas</p>
-          <p className="text-sm text-[var(--color-text-muted)]">
-            Configura las bodegas en el módulo de administración.
-          </p>
-        </div>
+        <EmptyState
+          icon={<Warehouse size={24} />}
+          title="Sin bodegas configuradas"
+          description="Configura las bodegas en el módulo de administración para ver el stock aquí."
+        />
       </>
     )
   }
@@ -144,9 +145,11 @@ export default async function BodegaPage() {
               </h2>
 
               {items.length === 0 ? (
-                <p className="text-sm text-[var(--color-text-subtle)] py-4 px-1">
-                  Sin movimientos aún. Los ingresos de OC aparecerán aquí.
-                </p>
+                <EmptyState
+                  title="Sin stock en esta bodega"
+                  description="Los ingresos de OC aparecerán aquí."
+                  compact
+                />
               ) : (
                 <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
                   <table className="w-full text-sm">
@@ -228,7 +231,7 @@ export default async function BodegaPage() {
         {recentMovements.length > 0 && (
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">
-              Kardex — últimos 50 movimientos
+              Kardex: últimos 50 movimientos
             </h2>
             <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
               <table className="w-full text-sm">

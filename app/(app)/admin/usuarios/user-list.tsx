@@ -4,9 +4,10 @@ import * as React from "react"
 import { useActionState } from "react"
 import { useEffect } from "react"
 import { toast } from "sonner"
-import { Plus, PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { EnvelopeSimple, Plus, PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { UserForm } from "./user-form"
+import { UserInviteForm } from "./user-invite-form"
 import { Avatar } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -47,6 +48,7 @@ const COLUMNS = [
 
 export function UserList({ users, allRoles, allWorksites }: UserListProps) {
   const [sheetOpen, setSheetOpen]   = React.useState(false)
+  const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)
   const [toggleState, toggleAction] = useActionState(toggleUserActive, INITIAL_STATE)
 
@@ -69,12 +71,17 @@ export function UserList({ users, allRoles, allWorksites }: UserListProps) {
         pageSize={25}
         searchPlaceholder="Buscar usuario o correo..."
         emptyTitle="Sin usuarios"
-        emptyDescription="Crea el primer usuario para comenzar."
-        emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo usuario</Button>}
+        emptyDescription="Invita al equipo o crea usuarios manualmente."
+        emptyAction={<Button size="sm" onClick={() => setInviteOpen(true)}><EnvelopeSimple size={14} />Invitar usuario</Button>}
         actions={
-          <Button size="sm" onClick={openCreate}>
-            <Plus size={14} />Nuevo usuario
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={openCreate}>
+              <Plus size={14} />Nuevo usuario
+            </Button>
+            <Button size="sm" onClick={() => setInviteOpen(true)}>
+              <EnvelopeSimple size={14} />Invitar
+            </Button>
+          </div>
         }
         renderRow={(row) => {
           const u = row as unknown as UserRow
@@ -150,6 +157,14 @@ export function UserList({ users, allRoles, allWorksites }: UserListProps) {
         allRoles={allRoles}
         allWorksites={allWorksites}
       />
+      {inviteOpen && (
+        <UserInviteForm
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          allRoles={allRoles}
+          allWorksites={allWorksites}
+        />
+      )}
     </>
   )
 }

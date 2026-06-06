@@ -7,6 +7,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { AuditLog } from "./audit-log"
 
+export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Log de auditoría" }
 
 export default async function AuditoriaPage() {

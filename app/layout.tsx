@@ -21,8 +21,8 @@ const sourceSans = Source_Sans_3({
 
 export const metadata: Metadata = {
   title: {
-    default: "Chome StockFlow",
-    template: "%s — Chome StockFlow",
+    default: "Chome Solicitudes y Bodega",
+    template: "%s — Chome Solicitudes y Bodega",
   },
   description: "Sistema de abastecimiento, compras y bodega — Chome",
   robots: { index: false, follow: false },

@@ -13,7 +13,7 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "flex gap-0 border-b border-border",
+      "flex gap-0 border-b border-[var(--color-border)]",
       className,
     )}
     {...props}
@@ -29,12 +29,13 @@ const TabsTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       "relative px-4 py-2.5 -mb-px",
-      "text-sm font-medium text-text-muted",
+      "text-sm font-medium text-[var(--color-text-muted)]",
       "border-b-2 border-transparent",
-      "transition-colors duration-(--duration-fast) ease-out",
-      "hover:text-text",
-      "focus-visible:outline-none focus-visible:text-text",
-      "data-[state=active]:text-primary data-[state=active]:border-primary",
+      "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+      "hover:text-[var(--color-text)]",
+      // Focus: show ring above the tab bar (outline-offset negative keeps it inside)
+      "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)] focus-visible:rounded-[var(--radius-sm)]",
+      "data-[state=active]:text-[var(--color-primary)] data-[state=active]:border-[var(--color-primary)]",
       "disabled:pointer-events-none disabled:opacity-45",
       "whitespace-nowrap",
       className,

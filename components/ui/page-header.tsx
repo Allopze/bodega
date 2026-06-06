@@ -1,4 +1,5 @@
 import * as React from "react"
+import Link from "next/link"
 import { cn } from "@/lib/utils"
 
 interface PageHeaderProps {
@@ -56,12 +57,12 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
             <span className="text-[var(--color-text-subtle)] text-xs" aria-hidden>/</span>
           )}
           {item.href ? (
-            <a
+            <Link
               href={item.href}
               className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors duration-[var(--duration-fast)]"
             >
               {item.label}
-            </a>
+            </Link>
           ) : (
             <span className="text-xs text-[var(--color-text-subtle)]" aria-current={i === items.length - 1 ? "page" : undefined}>
               {item.label}

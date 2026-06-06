@@ -1,6 +1,7 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-/* ─── Chome StockFlow — Design Tokens ─────────────────────────────────────── */
+/* ─── Chome Solicitudes y Bodega — Design Tokens ──────────────────────────── */
 /* All colors in OKLCH; hex provenance in comments. Chroma reduced at extremes. */
 
 @theme {
@@ -69,6 +70,20 @@
   --radius-md:  0.5rem;
   --radius-lg:  0.75rem;
   --radius-xl:  1rem;
+
+  /* ── Elevation / shadows (OKLCH-tinted, warm-green) ── */
+  --shadow-sm:  0 1px 2px oklch(0.20 0.010 155 / 0.10);
+  --shadow-md:  0 4px 16px oklch(0.20 0.010 155 / 0.12), 0 1px 3px oklch(0.20 0.010 155 / 0.08);
+  --shadow-lg:  0 20px 50px oklch(0.20 0.010 155 / 0.18), 0 4px 12px oklch(0.20 0.010 155 / 0.10);
+
+  /* ── Overlay backdrop (shared between dialog, drawer, mobile menu) ── */
+  --color-overlay: oklch(0.20 0.010 155 / 0.40);
+
+  /* ── Extended semantic palette — text on light tint backgrounds ── */
+  --color-warning-700:  oklch(0.520 0.110 85);   /* amber text on warning-50/100  */
+  --color-signal-700:   oklch(0.480 0.130 56);   /* orange text on signal-50/100  */
+  --color-info-700:     oklch(0.400 0.115 248);  /* blue text on info-50/100      */
+  --color-danger-700:   oklch(0.420 0.160 25);   /* red text on danger-50/100     */
 }
 
 /* ─── Base ──────────────────────────────────────────────────────────────────── */
@@ -111,8 +126,17 @@ body {
 }
 
 /* ─── Pressable affordance (Emil: scale on active) ───────────────────────── */
-[data-pressable]:active {
-  transform: scale(0.97);
+/* Gated: transform without transition — only suppress if user prefers reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  [data-pressable]:active {
+    transform: scale(0.97);
+  }
+}
+
+/* ─── Shimmer keyframe for skeleton sweep ─────────────────────────────────── */
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
 }
 
 /* ─── Reduced motion ──────────────────────────────────────────────────────── */

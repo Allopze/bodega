@@ -6,10 +6,10 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth
 
   // Public paths — no auth required
-  const publicPaths = ["/login", "/api/auth"]
+  const publicPaths = ["/login", "/registro", "/api/auth"]
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     // Redirect authenticated users away from login
-    if (isLoggedIn && pathname === "/login") {
+    if (isLoggedIn && (pathname === "/login" || pathname === "/registro")) {
       return NextResponse.redirect(new URL("/dashboard", req.url))
     }
     return NextResponse.next()
