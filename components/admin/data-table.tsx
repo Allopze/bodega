@@ -1,0 +1,209 @@
+"use client"
+
+import * as React from "react"
+import { CaretUp, CaretDown, CaretUpDown } from "@phosphor-icons/react"
+import { Input } from "@/components/ui/input"
+import {
+  TableRoot, Table, TableHeader, TableBody, TableRow, TableHead,
+} from "@/components/ui/table"
+import { Pagination } from "@/components/ui/pagination"
+import { EmptyState } from "@/components/ui/empty-state"
+import { cn } from "@/lib/utils"
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface ColumnDef {
+  key:       string
+  label:     string
+  sortable?: boolean
+  /** If true, renders with TableCellNum styles (mono, right-aligned) */
+  numeric?:  boolean
+  /** Width hint (Tailwind class, e.g. "w-32") */
+  width?:    string
+}
+
+export interface DataTableProps<T extends Record<string, unknown>> {
+  columns:      ColumnDef[]
+  rows:         T[]
+  /** Keys to include in full-text search */
+  searchKeys:   (keyof T)[]
+  /** Render a <tr> for a given row. Receives the row + the columns list. */
+  renderRow:    (row: T, index: number) => React.ReactNode
+  emptyTitle?:  string
+  emptyDescription?: string
+  emptyAction?: React.ReactNode
+  pageSize?:    number
+  searchPlaceholder?: string
+  className?:   string
+  /** Content rendered in the header toolbar (right side) */
+  actions?:     React.ReactNode
+}
+
+type SortDir = "asc" | "desc" | null
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function DataTable<T extends Record<string, unknown>>({
+  columns,
+  rows,
+  searchKeys,
+  renderRow,
+  emptyTitle = "Sin resultados",
+  emptyDescription,
+  emptyAction,
+  pageSize = 20,
+  searchPlaceholder = "Buscar...",
+  className,
+  actions,
+}: DataTableProps<T>) {
+  const [search,  setSearch]  = React.useState("")
+  const [sortKey, setSortKey] = React.useState<string | null>(null)
+  const [sortDir, setSortDir] = React.useState<SortDir>(null)
+  const [page,    setPage]    = React.useState(1)
+
+  // ── Filter ──────────────────────────────────────────────────────────────────
+  const filtered = React.useMemo(() => {
+    if (!search.trim()) return rows
+    const q = search.toLowerCase()
+    return rows.filter((row) =>
+      searchKeys.some((k) => {
+        const val = row[k]
+        return val != null && String(val).toLowerCase().includes(q)
+      })
+    )
+  }, [rows, search, searchKeys])
+
+  // ── Sort ────────────────────────────────────────────────────────────────────
+  const sorted = React.useMemo(() => {
+    if (!sortKey || !sortDir) return filtered
+    return [...filtered].sort((a, b) => {
+      const av = a[sortKey]
+      const bv = b[sortKey]
+      const cmp =
+        av == null ? -1 :
+        bv == null ?  1 :
+        typeof av === "number" && typeof bv === "number"
+          ? av - bv
+          : String(av).localeCompare(String(bv), "es-CL", { sensitivity: "base" })
+      return sortDir === "asc" ? cmp : -cmp
+    })
+  }, [filtered, sortKey, sortDir])
+
+  // ── Paginate ─────────────────────────────────────────────────────────────────
+  const totalFiltered = sorted.length
+  const paginated = React.useMemo(
+    () => sorted.slice((page - 1) * pageSize, page * pageSize),
+    [sorted, page, pageSize],
+  )
+
+  // Reset to page 1 when search changes
+  React.useEffect(() => { setPage(1) }, [search])
+
+  // ── Sort toggle ──────────────────────────────────────────────────────────────
+  function toggleSort(key: string) {
+    if (sortKey !== key) {
+      setSortKey(key)
+      setSortDir("asc")
+    } else if (sortDir === "asc") {
+      setSortDir("desc")
+    } else {
+      setSortKey(null)
+      setSortDir(null)
+    }
+    setPage(1)
+  }
+
+  return (
+    <div className={cn("flex flex-col", className)}>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <Input
+          type="search"
+          placeholder={searchPlaceholder}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-xs h-8 text-xs"
+          aria-label="Buscar en la tabla"
+        />
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+      </div>
+
+      {/* Table */}
+      <TableRoot>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {columns.map((col) => (
+                <TableHead
+                  key={col.key}
+                  className={cn(col.width, col.numeric && "text-right")}
+                >
+                  {col.sortable ? (
+                    <button
+                      onClick={() => toggleSort(col.key)}
+                      className={cn(
+                        "inline-flex items-center gap-1",
+                        "text-xs font-medium uppercase tracking-wide",
+                        "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
+                        "transition-[color,transform] duration-[150ms] ease-[var(--ease-out)]",
+                        "@media(prefers-reduced-motion:no-preference) active:scale-[0.97]",
+                        "select-none",
+                      )}
+                    >
+                      {col.label}
+                      <SortIcon colKey={col.key} sortKey={sortKey} sortDir={sortDir} />
+                    </button>
+                  ) : (
+                    col.label
+                  )}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paginated.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length}>
+                  <EmptyState
+                    title={emptyTitle}
+                    description={emptyDescription}
+                    action={emptyAction}
+                    compact
+                  />
+                </td>
+              </tr>
+            ) : (
+              paginated.map((row, i) => (
+                <React.Fragment key={(row.id as string | number | undefined) ?? i}>
+                  {renderRow(row, i)}
+                </React.Fragment>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableRoot>
+
+      {/* Pagination */}
+      <Pagination
+        page={page}
+        total={totalFiltered}
+        perPage={pageSize}
+        onPage={setPage}
+      />
+    </div>
+  )
+}
+
+// ── Sort icon helper ──────────────────────────────────────────────────────────
+function SortIcon({ colKey, sortKey, sortDir }: {
+  colKey:  string
+  sortKey: string | null
+  sortDir: SortDir
+}) {
+  if (sortKey !== colKey || !sortDir) {
+    return <CaretUpDown size={11} className="opacity-40" />
+  }
+  return sortDir === "asc"
+    ? <CaretUp size={11} className="text-[var(--color-primary)]" />
+    : <CaretDown size={11} className="text-[var(--color-primary)]" />
+}
