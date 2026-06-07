@@ -12,7 +12,6 @@ import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Badge } from "@/components/ui/badge"
 import { formatQty } from "@/lib/utils"
 import {
   TableRoot, Table, TableHeader, TableBody,

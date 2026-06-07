@@ -41,18 +41,14 @@ export function DispatchPanel({
   const [warehouseId, setWarehouseId] = React.useState<string>("")
   const [worksiteId,  setWorksiteId]  = React.useState<string>(worksites[0]?.id ?? "")
   const [productId,   setProductId]   = React.useState<string>("")
-  const [quantity,    setQuantity]    = React.useState<string>("")
-  const [receiver,    setReceiver]    = React.useState<string>("")
-  const [notes,       setNotes]       = React.useState<string>("")
+  const formRef = React.useRef<HTMLFormElement>(null)
 
   const [state, action] = useActionState<ActionState, FormData>(dispatchAction, INITIAL_STATE)
 
   React.useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
-      setQuantity("")
-      setReceiver("")
-      setNotes("")
+      formRef.current?.reset()
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
@@ -70,8 +66,10 @@ export function DispatchPanel({
 
   const selectedStock = availableProducts.find((s) => s.productId === productId)
 
-  // Reset product when warehouse changes
-  React.useEffect(() => { setProductId("") }, [warehouseId])
+  function handleWarehouseChange(nextWarehouseId: string) {
+    setWarehouseId(nextWarehouseId)
+    setProductId("")
+  }
 
   return (
     <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5">
@@ -80,7 +78,7 @@ export function DispatchPanel({
         Registrar entrega a faena
       </h2>
 
-      <form action={action} className="flex flex-col gap-4">
+      <form ref={formRef} action={action} className="flex flex-col gap-4">
         <input type="hidden" name="warehouseId" value={warehouseId} />
         <input type="hidden" name="worksiteId"  value={worksiteId} />
         <input type="hidden" name="productId"   value={productId} />
@@ -88,7 +86,7 @@ export function DispatchPanel({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Bodega" required>
-            <Select value={warehouseId} onValueChange={setWarehouseId}>
+            <Select value={warehouseId} onValueChange={handleWarehouseChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecciona bodega" />
               </SelectTrigger>
@@ -143,10 +141,9 @@ export function DispatchPanel({
               step="0.01"
               min="0.01"
               max={selectedStock?.quantity}
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
               placeholder="0"
               disabled={!productId}
+              required
               className="tabular-nums"
             />
           </Field>
@@ -154,10 +151,9 @@ export function DispatchPanel({
           <Field label="Recibido por" required>
             <Input
               name="receiverName"
-              value={receiver}
-              onChange={(e) => setReceiver(e.target.value)}
               placeholder="Nombre de quien recibió"
               disabled={!productId}
+              required
             />
           </Field>
         </div>
@@ -165,8 +161,6 @@ export function DispatchPanel({
         <Field label="Notas adicionales">
           <Textarea
             name="notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
             rows={2}
             placeholder="Información adicional sobre esta entrega..."
             disabled={!productId}
@@ -184,7 +178,7 @@ export function DispatchPanel({
             label="Registrar entrega"
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={!warehouseId || !worksiteId || !productId || !quantity || !receiver}
+            disabled={!warehouseId || !worksiteId || !productId}
           />
         </div>
       </form>

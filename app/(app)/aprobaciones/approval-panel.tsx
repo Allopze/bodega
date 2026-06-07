@@ -70,7 +70,6 @@ const URGENCY_CLASS: Record<string, string> = {
 
 function ItemRow({ item }: { item: ApprovalItem }) {
   const [action, setAction] = React.useState<ItemAction>("idle")
-  const [decided, setDecided] = React.useState<"approved" | "rejected" | "returned" | null>(null)
 
   const [approveState, approveAction] = useActionState<ActionState, FormData>(
     approveItemAction, INITIAL_STATE,
@@ -86,7 +85,6 @@ function ItemRow({ item }: { item: ApprovalItem }) {
   React.useEffect(() => {
     if (approveState.ok && approveState.message) {
       toast.success(approveState.message)
-      setDecided("approved")
     } else if (approveState.ok === false && approveState.message && approveState !== INITIAL_STATE) {
       toast.error(approveState.message)
     }
@@ -95,7 +93,6 @@ function ItemRow({ item }: { item: ApprovalItem }) {
   React.useEffect(() => {
     if (rejectState.ok && rejectState.message) {
       toast.success(rejectState.message)
-      setDecided("rejected")
     } else if (rejectState.ok === false && rejectState.message && rejectState !== INITIAL_STATE) {
       toast.error(rejectState.message)
     }
@@ -104,11 +101,16 @@ function ItemRow({ item }: { item: ApprovalItem }) {
   React.useEffect(() => {
     if (returnState.ok && returnState.message) {
       toast.success(returnState.message)
-      setDecided("returned")
     } else if (returnState.ok === false && returnState.message && returnState !== INITIAL_STATE) {
       toast.error(returnState.message)
     }
   }, [returnState])
+
+  const decided =
+    approveState.ok ? "approved" :
+    rejectState.ok ? "rejected" :
+    returnState.ok ? "returned" :
+    null
 
   // Once a decision is made, show a collapsed "decided" state
   if (decided) {
@@ -353,18 +355,17 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
   const [bulkState, bulkAction]     = useActionState<ActionState, FormData>(
     bulkApproveRequestAction, INITIAL_STATE,
   )
-  const [allApproved, setAllApproved] = React.useState(false)
 
   React.useEffect(() => {
     if (bulkState.ok && bulkState.message) {
       toast.success(bulkState.message)
-      setAllApproved(true)
     } else if (bulkState.ok === false && bulkState.message && bulkState !== INITIAL_STATE) {
       toast.error(bulkState.message)
     }
   }, [bulkState])
 
   const pendingIds = request.pendingItems.map((i) => i.id).join(",")
+  const allApproved = bulkState.ok === true
 
   return (
     <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">

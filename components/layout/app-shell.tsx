@@ -27,7 +27,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
   const showDrawer = mobileOpen || isClosing
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--color-bg)]">
+    <div className="flex min-h-[100dvh] overflow-hidden bg-[var(--color-bg)]">
       {/* Skip link — connects to main-content below */}
       <a
         href="#main-content"

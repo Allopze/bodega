@@ -27,7 +27,7 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
   const isEdit = !!editCategory
   const action = isEdit ? updateCategory : createCategory
   const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
-  const [slug, setSlug] = React.useState(editCategory?.slug ?? "")
+  const [slug, changeSlug] = React.useReducer((_current: string, next: string) => next, editCategory?.slug ?? "")
 
   useEffect(() => {
     if (state.ok) {
@@ -39,7 +39,7 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
-  useEffect(() => { setSlug(editCategory?.slug ?? "") }, [editCategory?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { changeSlug(editCategory?.slug ?? "") }, [editCategory?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
@@ -64,14 +64,14 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
                   defaultValue={editCategory?.name ?? ""}
                   placeholder="Herramientas manuales"
                   error={!!state.fieldErrors?.name}
-                  onChange={(e) => { if (!isEdit) setSlug(toCode(e.target.value).toLowerCase().replace(/-+/g, "-")) }}
+                  onChange={(e) => { if (!isEdit) changeSlug(toCode(e.target.value).toLowerCase().replace(/-+/g, "-")) }}
                 />
               </Field>
               <Field label="Slug" htmlFor="cat-slug" required helper="Identificador único del sistema" error={state.fieldErrors?.slug?.[0]}>
                 <Input
                   id="cat-slug" name="slug"
                   value={slug}
-                  onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+                  onChange={(e) => changeSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
                   placeholder="herramientas-manuales"
                   error={!!state.fieldErrors?.slug}
                   className="font-mono"

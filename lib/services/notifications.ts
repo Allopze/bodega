@@ -10,7 +10,7 @@
 
 import { eq, and, desc } from "drizzle-orm"
 import { db } from "@/db"
-import { notifications, userRoles, rolePermissions, permissions } from "@/db/schema"
+import { notifications, rolePermissions, permissions } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { NotificationType } from "@/db/schema/audit"
 

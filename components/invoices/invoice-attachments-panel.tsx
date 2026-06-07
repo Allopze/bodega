@@ -226,7 +226,6 @@ function InvoiceAttachmentItem({
   useEffect(() => {
     if (reconcileState.ok && reconcileState.message) {
       toast.success(reconcileState.message)
-      setShowReconcileForm(false)
     } else if (reconcileState.ok === false && reconcileState.message && reconcileState !== INITIAL_STATE) {
       toast.error(reconcileState.message)
     }
@@ -239,6 +238,7 @@ function InvoiceAttachmentItem({
 
   const status         = attachment.status ?? "registered"
   const statusConfig   = RECONCILIATION_STATUS[status]
+  const shouldShowReconcileForm = showReconcileForm && !reconcileState.ok
 
   return (
     <div className="flex flex-col gap-3 px-4 py-3">
@@ -326,7 +326,7 @@ function InvoiceAttachmentItem({
       )}
 
       {/* Reconciliation form */}
-      {showReconcileForm && canManage && (
+      {shouldShowReconcileForm && canManage && (
         <form action={reconcileAction} className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 space-y-3">
           <input type="hidden" name="id" value={attachment.id} />
           <p className="text-xs font-semibold text-[var(--color-text)]">Registrar resultado de conciliación</p>

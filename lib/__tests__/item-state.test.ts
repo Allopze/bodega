@@ -42,6 +42,7 @@ describe("TERMINAL_STATES", () => {
     // (it represents a soft pause, not a permanent end state).
     const hardTerminal: ItemStatus[] = ["rejected", "delivered"]
     for (const state of hardTerminal) {
+      expect(TERMINAL_STATES).toContain(state)
       const targets = ALLOWED_TRANSITIONS[state] ?? []
       expect(targets, `State "${state}" should have no outbound transitions`).toHaveLength(0)
     }

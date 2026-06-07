@@ -32,6 +32,52 @@ interface UserFormProps {
   allWorksites: Worksite[]
 }
 
+interface UserSelectionState {
+  selectedRoles:     string[]
+  selectedWsIds:     string[]
+  primaryWorksiteId: string
+}
+
+type UserSelectionAction =
+  | { type: "reset"; user?: UserForEdit | null }
+  | { type: "toggle-role"; id: string }
+  | { type: "toggle-worksite"; id: string }
+  | { type: "set-primary"; id: string }
+
+function getUserSelection(user?: UserForEdit | null): UserSelectionState {
+  const selectedWsIds = user?.worksiteAssignments.map((a) => a.worksiteId) ?? []
+  return {
+    selectedRoles:     user?.roleIds ?? [],
+    selectedWsIds,
+    primaryWorksiteId: user?.worksiteAssignments.find((a) => a.isPrimary)?.worksiteId
+      ?? selectedWsIds[0] ?? "",
+  }
+}
+
+function userSelectionReducer(state: UserSelectionState, action: UserSelectionAction): UserSelectionState {
+  switch (action.type) {
+    case "reset":
+      return getUserSelection(action.user)
+    case "toggle-role": {
+      const selectedRoles = state.selectedRoles.includes(action.id)
+        ? state.selectedRoles.filter((roleId) => roleId !== action.id)
+        : [...state.selectedRoles, action.id]
+      return { ...state, selectedRoles }
+    }
+    case "toggle-worksite": {
+      const selectedWsIds = state.selectedWsIds.includes(action.id)
+        ? state.selectedWsIds.filter((worksiteId) => worksiteId !== action.id)
+        : [...state.selectedWsIds, action.id]
+      const primaryWorksiteId = selectedWsIds.includes(state.primaryWorksiteId)
+        ? state.primaryWorksiteId
+        : selectedWsIds[0] ?? ""
+      return { ...state, selectedWsIds, primaryWorksiteId }
+    }
+    case "set-primary":
+      return { ...state, primaryWorksiteId: action.id }
+  }
+}
+
 export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: UserFormProps) {
   const isEdit = !!editUser
 
@@ -50,39 +96,26 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
-  // Default selected roles/worksites
-  const defaultRoles    = editUser?.roleIds ?? []
-  const defaultWsIds    = editUser?.worksiteAssignments.map((a) => a.worksiteId) ?? []
-  const defaultPrimary  = editUser?.worksiteAssignments.find((a) => a.isPrimary)?.worksiteId
-    ?? editUser?.worksiteAssignments[0]?.worksiteId ?? ""
-
-  const [selectedRoles,    setSelectedRoles]    = React.useState<string[]>(defaultRoles)
-  const [selectedWsIds,    setSelectedWsIds]    = React.useState<string[]>(defaultWsIds)
-  const [primaryWorksiteId, setPrimaryWorksiteId] = React.useState<string>(defaultPrimary)
+  const [selection, updateSelection] = React.useReducer(
+    userSelectionReducer,
+    editUser,
+    getUserSelection,
+  )
 
   // Reset state when form opens for a different user
   useEffect(() => {
-    setSelectedRoles(editUser?.roleIds ?? [])
-    setSelectedWsIds(editUser?.worksiteAssignments.map((a) => a.worksiteId) ?? [])
-    setPrimaryWorksiteId(
-      editUser?.worksiteAssignments.find((a) => a.isPrimary)?.worksiteId
-        ?? editUser?.worksiteAssignments[0]?.worksiteId ?? ""
-    )
+    updateSelection({ type: "reset", user: editUser })
   }, [editUser?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleRole(id: string) {
-    setSelectedRoles((prev) =>
-      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
-    )
+    updateSelection({ type: "toggle-role", id })
   }
 
   function toggleWorksite(id: string) {
-    setSelectedWsIds((prev) => {
-      const next = prev.includes(id) ? prev.filter((w) => w !== id) : [...prev, id]
-      if (!next.includes(primaryWorksiteId)) setPrimaryWorksiteId(next[0] ?? "")
-      return next
-    })
+    updateSelection({ type: "toggle-worksite", id })
   }
+
+  const { selectedRoles, selectedWsIds, primaryWorksiteId } = selection
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
@@ -234,7 +267,10 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
                       {isChecked && (
                         <button
                           type="button"
-                          onClick={(e) => { e.preventDefault(); setPrimaryWorksiteId(ws.id) }}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            updateSelection({ type: "set-primary", id: ws.id })
+                          }}
                           className={[
                             "text-xs px-2 py-0.5 rounded-[var(--radius-sm)] border",
                             "transition-colors duration-[var(--duration-fast)]",

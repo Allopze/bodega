@@ -232,7 +232,6 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
     return { ok: false, message: "No tienes acceso a la faena de la solicitud original" }
   }
 
-  // eslint-disable-next-line prefer-const
   let newId!: string
   await db.transaction(async (tx) => {
     const [{ total }] = await tx.select({ total: count() }).from(purchaseRequests)

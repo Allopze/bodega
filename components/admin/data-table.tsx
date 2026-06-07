@@ -100,9 +100,6 @@ export function DataTable<T extends Record<string, unknown>>({
     [sorted, page, pageSize],
   )
 
-  // Reset to page 1 when search changes
-  React.useEffect(() => { setPage(1) }, [search])
-
   // ── Sort toggle ──────────────────────────────────────────────────────────────
   function toggleSort(key: string) {
     if (sortKey !== key) {
@@ -125,7 +122,10 @@ export function DataTable<T extends Record<string, unknown>>({
           type="search"
           placeholder={searchPlaceholder}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setPage(1)
+          }}
           className="max-w-xs h-8 text-xs"
           aria-label="Buscar en la tabla"
         />

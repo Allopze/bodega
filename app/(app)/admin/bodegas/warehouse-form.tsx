@@ -37,9 +37,12 @@ export function WarehouseForm({ open, onClose, editWarehouse, worksites }: Wareh
   const isEdit = !!editWarehouse
   const action = isEdit ? updateWarehouse : createWarehouse
   const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
-  const [code,        setCode]        = React.useState(editWarehouse?.code ?? "")
-  const [type,        setType]        = React.useState(editWarehouse?.type ?? "central")
-  const [worksiteId,  setWorksiteId]  = React.useState(editWarehouse?.worksiteId ?? "")
+  const [code, changeCode] = React.useReducer((_current: string, next: string) => next, editWarehouse?.code ?? "")
+  const [type, changeType] = React.useReducer((_current: string, next: string) => next, editWarehouse?.type ?? "central")
+  const [worksiteId, changeWorksiteId] = React.useReducer(
+    (_current: string, next: string) => next,
+    editWarehouse?.worksiteId ?? "",
+  )
 
   useEffect(() => {
     if (state.ok) {
@@ -52,9 +55,9 @@ export function WarehouseForm({ open, onClose, editWarehouse, worksites }: Wareh
   }, [state])
 
   useEffect(() => {
-    setCode(editWarehouse?.code ?? "")
-    setType(editWarehouse?.type ?? "central")
-    setWorksiteId(editWarehouse?.worksiteId ?? "")
+    changeCode(editWarehouse?.code ?? "")
+    changeType(editWarehouse?.type ?? "central")
+    changeWorksiteId(editWarehouse?.worksiteId ?? "")
   }, [editWarehouse?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -86,7 +89,7 @@ export function WarehouseForm({ open, onClose, editWarehouse, worksites }: Wareh
                   defaultValue={editWarehouse?.name ?? ""}
                   placeholder="Bodega Central Santiago"
                   error={!!state.fieldErrors?.name}
-                  onChange={(e) => { if (!isEdit) setCode(toCode(e.target.value)) }}
+                  onChange={(e) => { if (!isEdit) changeCode(toCode(e.target.value)) }}
                 />
               </Field>
 
@@ -94,7 +97,7 @@ export function WarehouseForm({ open, onClose, editWarehouse, worksites }: Wareh
                 <Input
                   id="wh-code" name="code"
                   value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  onChange={(e) => changeCode(e.target.value.toUpperCase())}
                   placeholder="BOD-CENTRAL"
                   error={!!state.fieldErrors?.code}
                   className="font-mono"
@@ -102,7 +105,7 @@ export function WarehouseForm({ open, onClose, editWarehouse, worksites }: Wareh
               </Field>
 
               <Field label="Tipo" htmlFor="wh-type" required error={state.fieldErrors?.type?.[0]}>
-                <Select value={type} onValueChange={setType}>
+                <Select value={type} onValueChange={changeType}>
                   <SelectTrigger id="wh-type">
                     <SelectValue />
                   </SelectTrigger>
@@ -116,7 +119,7 @@ export function WarehouseForm({ open, onClose, editWarehouse, worksites }: Wareh
 
               {type === "worksite" && (
                 <Field label="Faena asociada" htmlFor="wh-ws" error={state.fieldErrors?.worksiteId?.[0]}>
-                  <Select value={worksiteId} onValueChange={setWorksiteId}>
+                  <Select value={worksiteId} onValueChange={changeWorksiteId}>
                     <SelectTrigger id="wh-ws">
                       <SelectValue placeholder="Seleccionar faena..." />
                     </SelectTrigger>

@@ -34,8 +34,11 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites, defau
   const isEdit = !!editCostCenter
   const action = isEdit ? updateCostCenter : createCostCenter
   const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
-  const [code, setCode]               = React.useState(editCostCenter?.code ?? "")
-  const [worksiteId, setWorksiteId]   = React.useState(editCostCenter?.worksiteId ?? defaultWorksiteId ?? "")
+  const [code, changeCode] = React.useReducer((_current: string, next: string) => next, editCostCenter?.code ?? "")
+  const [worksiteId, changeWorksiteId] = React.useReducer(
+    (_current: string, next: string) => next,
+    editCostCenter?.worksiteId ?? defaultWorksiteId ?? "",
+  )
 
   useEffect(() => {
     if (state.ok) {
@@ -48,8 +51,8 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites, defau
   }, [state])
 
   useEffect(() => {
-    setCode(editCostCenter?.code ?? "")
-    setWorksiteId(editCostCenter?.worksiteId ?? defaultWorksiteId ?? "")
+    changeCode(editCostCenter?.code ?? "")
+    changeWorksiteId(editCostCenter?.worksiteId ?? defaultWorksiteId ?? "")
   }, [editCostCenter?.id, defaultWorksiteId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -75,7 +78,7 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites, defau
             )}
             <FieldGroup className="gap-4">
               <Field label="Faena" htmlFor="cc-worksite" required error={state.fieldErrors?.worksiteId?.[0]}>
-                <Select value={worksiteId} onValueChange={setWorksiteId}>
+                <Select value={worksiteId} onValueChange={changeWorksiteId}>
                   <SelectTrigger id="cc-worksite" error={!!state.fieldErrors?.worksiteId}>
                     <SelectValue placeholder="Seleccionar faena..." />
                   </SelectTrigger>
@@ -93,7 +96,7 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites, defau
                   defaultValue={editCostCenter?.name ?? ""}
                   placeholder="Administración"
                   error={!!state.fieldErrors?.name}
-                  onChange={(e) => { if (!isEdit) setCode(toCode(e.target.value)) }}
+                  onChange={(e) => { if (!isEdit) changeCode(toCode(e.target.value)) }}
                 />
               </Field>
 
@@ -101,7 +104,7 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites, defau
                 <Input
                   id="cc-code" name="code"
                   value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  onChange={(e) => changeCode(e.target.value.toUpperCase())}
                   placeholder="ADM"
                   error={!!state.fieldErrors?.code}
                   className="font-mono"

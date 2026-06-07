@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import Image from "next/image"
-import Link from "next/link"
 import { Suspense } from "react"
 import { getUserCount } from "@/lib/auth/bootstrap"
 import { LoginForm } from "./login-form"
@@ -15,12 +14,10 @@ export default async function LoginPage() {
   return (
     <div className="min-h-[100dvh] flex items-stretch">
       {/* ── Brand panel (dark forest — brand moment) ── */}
-      <div className={[
-        "hidden lg:flex lg:w-96 lg:shrink-0 lg:flex-col",
-        "bg-[var(--color-brand-surface)]",
-        "px-10 py-12",
-        "justify-between",
-      ].join(" ")}>
+      <div
+        className="hidden lg:flex lg:w-115 lg:shrink-0 lg:flex-col px-10 py-12 justify-between"
+        style={{ background: "radial-gradient(ellipse 60% 50% at 20% 10%, oklch(0.280 0.055 155), oklch(0.216 0.045 155))" }}
+      >
         {/* Logo */}
         <div className="flex items-center gap-3">
           <Image
@@ -32,42 +29,42 @@ export default async function LoginPage() {
             className="h-9 w-9 shrink-0"
           />
           <div>
-            <p className="font-display font-bold text-[var(--color-brand-text)] text-lg leading-tight">Chome</p>
-            <p className="text-xs text-[var(--color-brand-text-muted)]">Solicitudes y Bodega</p>
+            <p className="font-display font-bold text-(--color-brand-text) text-lg leading-tight">Chome</p>
+            <p className="text-xs text-brand-text-muted">Solicitudes y Bodega</p>
           </div>
         </div>
 
         {/* Tagline */}
         <div>
-          <p className="font-display text-2xl font-semibold text-[var(--color-brand-text)] leading-snug">
+          <p className="font-display text-[1.875rem] leading-tight font-semibold text-(--color-brand-text)">
             Control total del abastecimiento
           </p>
-          <p className="mt-3 text-sm text-[var(--color-brand-text-muted)] leading-relaxed max-w-[32ch]">
-            Desde la solicitud de faena hasta la factura conciliada — sin perder un solo ítem.
+          <p className="mt-3 text-sm text-brand-text-muted leading-relaxed max-w-[32ch]">
+            Desde la solicitud de faena hasta la factura conciliada, sin perder un solo ítem.
           </p>
-          <div className="mt-6 grid grid-cols-3 gap-3">
+          <ul className="mt-6 flex flex-col gap-3">
             {[
-              { n: "100%",  label: "Trazabilidad" },
-              { n: "0",     label: "Ítems perdidos" },
-              { n: "Nivel 1", label: "Bodega activa" },
-            ].map(({ n, label }) => (
-              <div key={label} className="rounded-[var(--radius)] bg-[var(--color-brand-surface-raised)] p-3">
-                <p className="font-mono font-semibold text-[var(--color-brand-text)] text-base leading-none">{n}</p>
-                <p className="mt-1 text-[10px] text-[var(--color-brand-text-muted)]">{label}</p>
-              </div>
+              "Trazabilidad del 100% de los ítems",
+              "Sin pérdidas desde despacho hasta bodega",
+              "Bodega activa Nivel 1 con OC y conciliación",
+            ].map((text) => (
+              <li key={text} className="flex items-start gap-2.5 text-sm text-brand-text-muted">
+                <span className="mt-[0.35rem] w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                {text}
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
 
         {/* Footer */}
-        <p className="text-[10px] text-[var(--color-brand-text-muted)]">
+        <p className="text-[10px] text-brand-text-muted">
           Sistema interno Chome — uso exclusivo del personal autorizado.
         </p>
       </div>
 
       {/* ── Login form (light panel) ── */}
-      <div className="flex flex-1 items-center justify-center px-6 py-12 bg-[var(--color-bg)]">
-        <div className="w-full max-w-sm">
+      <div className="flex flex-1 items-center justify-center px-8 py-16 bg-white">
+        <div className="w-full max-w-sm bg-surface border border-border rounded-(--radius-xl) shadow-(--shadow-md) px-8 py-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
           {/* Mobile logo */}
           <div className="flex items-center gap-2.5 mb-8 lg:hidden">
             <Image
@@ -76,28 +73,17 @@ export default async function LoginPage() {
               width={32}
               height={32}
               unoptimized
-              className="h-8 w-8 shrink-0 rounded-[var(--radius-sm)] bg-[var(--color-brand-surface)] p-0.5"
+              className="h-8 w-8 shrink-0 rounded-sm bg-brand-surface p-0.5"
             />
-            <p className="font-display font-bold text-[var(--color-text)] text-base">Chome Solicitudes y Bodega</p>
+            <p className="font-display font-bold text-text text-base">Chome Solicitudes y Bodega</p>
           </div>
 
-          <h1 className="font-display text-xl font-semibold text-[var(--color-text)] mb-1">
+          <h1 className="font-display text-2xl font-semibold text-text mb-6">
             Iniciar sesión
           </h1>
-          <p className="text-sm text-[var(--color-text-muted)] mb-6">
-            Ingresa con tus credenciales de acceso.
-          </p>
           <Suspense fallback={null}>
-            <LoginForm />
+            <LoginForm showBootstrap={userCount === 0} />
           </Suspense>
-          {userCount === 0 && (
-            <p className="mt-4 text-center text-xs text-[var(--color-text-subtle)]">
-              Sin usuarios todavía.{" "}
-              <Link href="/registro" className="text-[var(--color-primary-700)] hover:underline">
-                Crear primer administrador
-              </Link>
-            </p>
-          )}
         </div>
       </div>
     </div>

@@ -25,8 +25,12 @@ SMTP_USER=usuario
 SMTP_PASS=clave
 SMTP_FROM="Chome Solicitudes y Bodega <bodega@tudominio.cl>"
 SMTP_SECURE=false
+SMTP_EHLO_NAME=localhost
 APP_URL=http://localhost:3000
 ```
+
+Con `SMTP_SECURE=false`, el servidor debe ofrecer STARTTLS antes de autenticar.
+Usa `SMTP_SECURE=true` para SMTP sobre TLS directo, tipicamente en el puerto 465.
 
 ## Datos reales o de prueba con flujo real
 

@@ -31,7 +31,7 @@ export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps)
   const isEdit = !!editWorksite
   const action = isEdit ? updateWorksite : createWorksite
   const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
-  const [code, setCode] = React.useState(editWorksite?.code ?? "")
+  const [code, changeCode] = React.useReducer((_current: string, next: string) => next, editWorksite?.code ?? "")
 
   useEffect(() => {
     if (state.ok) {
@@ -44,7 +44,7 @@ export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps)
   }, [state])
 
   useEffect(() => {
-    setCode(editWorksite?.code ?? "")
+    changeCode(editWorksite?.code ?? "")
   }, [editWorksite?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -74,7 +74,7 @@ export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps)
                   defaultValue={editWorksite?.name ?? ""}
                   placeholder="Faena Norte"
                   error={!!state.fieldErrors?.name}
-                  onChange={(e) => { if (!isEdit) setCode(toCode(e.target.value)) }}
+                  onChange={(e) => { if (!isEdit) changeCode(toCode(e.target.value)) }}
                 />
               </Field>
 
@@ -82,7 +82,7 @@ export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps)
                 <Input
                   id="ws-code" name="code"
                   value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  onChange={(e) => changeCode(e.target.value.toUpperCase())}
                   placeholder="FAENA-NORTE"
                   error={!!state.fieldErrors?.code}
                   className="font-mono"

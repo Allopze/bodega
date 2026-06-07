@@ -35,9 +35,14 @@ export function NotificationBell() {
   }, [])
 
   React.useEffect(() => {
-    fetchNotifications()
+    const firstFetch = setTimeout(() => {
+      void fetchNotifications()
+    }, 0)
     const interval = setInterval(fetchNotifications, 60_000)
-    return () => clearInterval(interval)
+    return () => {
+      clearTimeout(firstFetch)
+      clearInterval(interval)
+    }
   }, [fetchNotifications])
 
   async function markAllRead() {
