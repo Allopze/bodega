@@ -134,7 +134,7 @@ interface RequestFormProps {
 export function RequestForm({ worksites, products, editRequest }: RequestFormProps) {
   const router = useRouter()
   const isEdit  = !!editRequest
-  const isDraft = !isEdit || editRequest.status === "draft"
+  const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
 
   // ── Form action state
   const [draftState,  draftAction]  = useActionState<ActionState, FormData>(saveDraft,       INITIAL_STATE)
@@ -145,6 +145,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
   const [worksiteId,   setWorksiteId]   = useState(editRequest?.worksiteId   ?? (worksites[0]?.id ?? ""))
   const [costCenterId, setCostCenterId] = useState(editRequest?.costCenterId ?? "")
   const [urgency,      setUrgency]      = useState(editRequest?.urgency      ?? "normal")
+  const [notes,        setNotes]        = useState(editRequest?.notes        ?? "")
 
   // ── Items
   const [items, setItems] = useState<ItemRow[]>(() => {
@@ -224,9 +225,25 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
     }))
   }, [products])
 
+  const selectFreeProduct = useCallback((key: string, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setItems((prev) => prev.map((i) =>
+      i._key !== key ? i : {
+        ...i,
+        productId: null,
+        productNameFree: trimmed,
+        productName: trimmed,
+        unitOfMeasure: i.unitOfMeasure || "unidad",
+        attributes: [],
+        showAttrs: false,
+      },
+    ))
+  }, [])
+
   const clearProduct = useCallback((key: string) => {
     setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productName: "", attributes: [], showAttrs: false }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", attributes: [], showAttrs: false }
     ))
   }, [])
 
@@ -242,7 +259,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
   const itemsJson = JSON.stringify(items.map((item) => ({
     id:              item.id,
     productId:       item.productId,
-        productNameFree: null,
+    productNameFree: item.productNameFree || null,
     quantity:        Number(item.quantity) || 1,
     unitOfMeasure:   item.unitOfMeasure,
     urgency:         item.urgency,
@@ -294,15 +311,15 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
 
             <Field label="Centro de costo" htmlFor="costCenterId">
               <Select
-                value={costCenterId}
-                onValueChange={setCostCenterId}
+                value={costCenterId || "__none__"}
+                onValueChange={(value) => setCostCenterId(value === "__none__" ? "" : value)}
                 disabled={readOnly || activeCcs.length === 0}
               >
                 <SelectTrigger id="costCenterId">
                   <SelectValue placeholder={activeCcs.length === 0 ? "Sin centros de costo" : "Opcional"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin centro de costo</SelectItem>
+                  <SelectItem value="__none__">Sin centro de costo</SelectItem>
                   {activeCcs.map((cc) => (
                     <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>
                   ))}
@@ -340,7 +357,8 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
               placeholder="Observaciones, contexto de la solicitud..."
               rows={2}
               disabled={readOnly}
-              defaultValue={editRequest?.notes ?? ""}
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
             />
           </Field>
         </section>
@@ -378,6 +396,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
                 readOnly={readOnly}
                 onUpdate={(patch) => updateItem(item._key, patch)}
                 onSelectProduct={(pid) => selectProduct(item._key, pid)}
+                onSelectFreeProduct={(name) => selectFreeProduct(item._key, name)}
                 onClearProduct={() => clearProduct(item._key)}
                 onUpdateAttr={(i, v) => updateAttr(item._key, i, v)}
                 onRemove={() => removeItem(item._key)}
@@ -408,6 +427,11 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
       {isDraft && (
         <form action={submitAction} className="pt-0">
           <input type="hidden" name="requestId" value={editRequest?.id ?? ""} />
+          <input type="hidden" name="itemsJson" value={itemsJson} />
+          <input type="hidden" name="worksiteId" value={worksiteId} />
+          <input type="hidden" name="costCenterId" value={costCenterId} />
+          <input type="hidden" name="urgency" value={urgency} />
+          <input type="hidden" name="notes" value={notes} />
           {submitState.message && !submitState.ok && (
             <p className="mb-3 text-xs text-[var(--color-danger)] flex items-center gap-1.5">
               <Warning size={14} />
@@ -416,12 +440,15 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
           )}
           <div className="flex items-center justify-end gap-3">
             {isEdit && (
-              <form action={cancelAction} className="inline">
-                <input type="hidden" name="requestId" value={editRequest.id} />
-                <Button type="submit" variant="ghost" size="sm" className="text-[var(--color-danger)] hover:text-[var(--color-danger)]">
-                  Cancelar solicitud
-                </Button>
-              </form>
+              <Button
+                type="submit"
+                formAction={cancelAction}
+                variant="ghost"
+                size="sm"
+                className="text-[var(--color-danger)] hover:text-[var(--color-danger)]"
+              >
+                Cancelar solicitud
+              </Button>
             )}
             <SubmitButton label="Enviar a aprobación" loadingLabel="Enviando..." variant="primary" />
           </div>
@@ -447,6 +474,7 @@ interface ItemEditorProps {
   readOnly:        boolean
   onUpdate:        (patch: Partial<ItemRow>) => void
   onSelectProduct: (pid: string) => void
+  onSelectFreeProduct: (name: string) => void
   onClearProduct:  () => void
   onUpdateAttr:    (i: number, v: string) => void
   onRemove:        () => void
@@ -455,7 +483,7 @@ interface ItemEditorProps {
 
 function ItemEditor({
   item, idx, products, readOnly,
-  onUpdate, onSelectProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
+  onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
 }: ItemEditorProps) {
   const [search, setSearch] = useState("")
   const [open,   setOpen]   = useState(false)
@@ -525,9 +553,19 @@ function ItemEditor({
                 {open && (
                   <div className="absolute z-20 top-full mt-1 left-0 right-0 max-h-52 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-md)] divide-y divide-[var(--color-border)]">
                     {filtered.length === 0 ? (
-                      <div className="px-3 py-2.5 text-xs text-[var(--color-text-subtle)]">
-                        Sin resultados en el catálogo.
-                      </div>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2.5 text-left transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)] active:scale-[0.99]"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          onSelectFreeProduct(search)
+                          setSearch("")
+                          setOpen(false)
+                        }}
+                      >
+                        <span className="block text-sm font-medium text-[var(--color-text)]">Usar “{search.trim()}”</span>
+                        <span className="mt-0.5 block text-xs text-[var(--color-text-subtle)]">Ítem fuera de catálogo</span>
+                      </button>
                     ) : (
                       <div>
                         {filtered.map((p) => (

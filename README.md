@@ -6,12 +6,13 @@ Sistema interno para solicitudes por faena, aprobaciones, compras, recepcion y b
 
 ```bash
 npm install
-npm run db:push
+npm run db:migrate
 npm run db:seed
 npm run dev
 ```
 
 El seed base no carga datos mock. Solo crea roles, permisos y datos base de catálogo.
+Para desarrollo rápido también puedes usar `npm run db:push`; para ambientes compartidos usa las migraciones versionadas en `db/migrations`.
 
 El primer usuario se crea desde `/registro` y recibe el rol `Administrador`.
 Después de eso, los registros requieren invitación desde `/admin/usuarios`.
@@ -59,14 +60,16 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 - La aprobacion simple actual es suficiente: no hay cadena obligatoria.
 - Las facturas anexas son visibles solo para jefa Chome, secretaria y prevencionista.
 - Los EPP con talla, color o modelo se mantienen como productos comprables separados, con atributos normalizados para busqueda y solicitud.
-- La base SQLite local no se versiona; schema y seed son la fuente reproducible.
+- La base SQLite local no se versiona; schema, migraciones y seed son la fuente reproducible.
 
 ## Pendiente para integraciones reales
 
 Dashboard y reportes consultan datos persistidos de solicitudes, OC, recepciones, stock y facturas anexas.
+Los reportes principales ya tienen exportacion CSV desde `/reportes`.
 
 Hace falta implementar:
 
 - Importadores o conectores externos si los maestros vienen de ERP, planillas o proveedor contable.
-- Exportacion CSV/Excel si los reportes deben salir del sistema.
+- Exportacion Excel si los reportes deben salir con formato de planilla.
+- Facturacion contable avanzada con lineas de factura, estados de pago e integracion externa.
 - Pruebas E2E que creen datos por UI/API siguiendo el flujo anterior.

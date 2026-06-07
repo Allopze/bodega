@@ -31,16 +31,29 @@ export interface WorksiteOption {
   name: string
 }
 
+export interface DeliverableOption {
+  requestItemId: string
+  requestCode:   string
+  worksiteId:    string
+  productId:     string
+  productName:   string
+  quantity:      number
+  unitOfMeasure: string
+}
+
 export function DispatchPanel({
   stockItems,
   worksites,
+  deliverableItems,
 }: {
   stockItems: StockOption[]
   worksites: WorksiteOption[]
+  deliverableItems: DeliverableOption[]
 }) {
   const [warehouseId, setWarehouseId] = React.useState<string>("")
   const [worksiteId,  setWorksiteId]  = React.useState<string>(worksites[0]?.id ?? "")
   const [productId,   setProductId]   = React.useState<string>("")
+  const [requestItemId, setRequestItemId] = React.useState<string>("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
   const [state, action] = useActionState<ActionState, FormData>(dispatchAction, INITIAL_STATE)
@@ -65,10 +78,24 @@ export function DispatchPanel({
     : []
 
   const selectedStock = availableProducts.find((s) => s.productId === productId)
+  const matchingDeliverables = productId && worksiteId
+    ? deliverableItems.filter((item) => item.productId === productId && item.worksiteId === worksiteId)
+    : []
 
   function handleWarehouseChange(nextWarehouseId: string) {
     setWarehouseId(nextWarehouseId)
     setProductId("")
+    setRequestItemId("")
+  }
+
+  function handleWorksiteChange(nextWorksiteId: string) {
+    setWorksiteId(nextWorksiteId)
+    setRequestItemId("")
+  }
+
+  function handleProductChange(nextProductId: string) {
+    setProductId(nextProductId)
+    setRequestItemId("")
   }
 
   return (
@@ -82,6 +109,7 @@ export function DispatchPanel({
         <input type="hidden" name="warehouseId" value={warehouseId} />
         <input type="hidden" name="worksiteId"  value={worksiteId} />
         <input type="hidden" name="productId"   value={productId} />
+        {requestItemId && <input type="hidden" name="requestItemId" value={requestItemId} />}
         <input type="hidden" name="unitOfMeasure" value={selectedStock?.unitOfMeasure ?? "unidad"} />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -99,7 +127,7 @@ export function DispatchPanel({
           </Field>
 
           <Field label="Faena destino" required>
-            <Select value={worksiteId} onValueChange={setWorksiteId}>
+            <Select value={worksiteId} onValueChange={handleWorksiteChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecciona faena" />
               </SelectTrigger>
@@ -114,7 +142,7 @@ export function DispatchPanel({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Producto" required>
-            <Select value={productId} onValueChange={setProductId} disabled={!warehouseId}>
+            <Select value={productId} onValueChange={handleProductChange} disabled={!warehouseId}>
               <SelectTrigger>
                 <SelectValue placeholder={warehouseId ? "Selecciona producto" : "Elige bodega primero"} />
               </SelectTrigger>
@@ -132,6 +160,30 @@ export function DispatchPanel({
             </Select>
           </Field>
         </div>
+
+        {matchingDeliverables.length > 0 && (
+          <Field label="Asociar a solicitud">
+            <Select
+              value={requestItemId || "__none__"}
+              onValueChange={(value) => setRequestItemId(value === "__none__" ? "" : value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Entrega de stock sin solicitud específica" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Sin asociación</SelectItem>
+                {matchingDeliverables.map((item) => (
+                  <SelectItem key={item.requestItemId} value={item.requestItemId}>
+                    {item.requestCode} · {formatQty(item.quantity, item.unitOfMeasure)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+              Al asociar una solicitud, la entrega cerrará la trazabilidad de ese ítem.
+            </p>
+          </Field>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label={`Cantidad${selectedStock ? ` (máx. ${formatQty(selectedStock.quantity, selectedStock.unitOfMeasure)})` : ""}`} required>

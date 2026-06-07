@@ -13,8 +13,8 @@ import {
 import { nanoid, generateCode } from "@/lib/id"
 import { count } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
-import { receiveItem } from "./item-state"
-import { applyMovement } from "./warehouse"
+import { receiveItemTx } from "./item-state"
+import { applyMovementTx } from "./warehouse"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -45,6 +45,13 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
   if (input.locationType === "warehouse" && !input.warehouseId) {
     throw new Error("warehouseId is required when locationType is 'warehouse'")
   }
+  if (input.items.length === 0) {
+    throw new Error("At least one received item is required")
+  }
+  const itemIds = input.items.map((item) => item.purchaseOrderItemId)
+  if (new Set(itemIds).size !== itemIds.length) {
+    throw new Error("Receipt contains duplicated order items")
+  }
 
   const receiptId = nanoid()
   const now       = new Date().toISOString()
@@ -63,91 +70,99 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
     throw new Error(`Cannot receive against order in state '${order.status}'`)
   }
 
-  // Create receipt header
-  await db.insert(receipts).values({
-    id:              receiptId,
-    code,
-    purchaseOrderId: input.purchaseOrderId,
-    receivedBy:      input.receivedBy,
-    receivedAt:      now,
-    locationType:    input.locationType,
-    worksiteId:      input.worksiteId ?? null,
-    dispatchGuideNo: input.dispatchGuideNo ?? null,
-    status:          "open",
-    notes:           input.notes ?? null,
-    createdAt:       now,
-  })
-
-  // Process each receipt item
-  for (const ri of input.items) {
-    // Load the OC item
-    const ocItem = order.items.find((i) => i.id === ri.purchaseOrderItemId)
-    if (!ocItem) throw new Error(`OC item ${ri.purchaseOrderItemId} not in this order`)
-
-    const qtyRec = ri.quantityReceived
-    const qtyRej = ri.quantityRejected ?? 0
-    const qtyDmg = ri.quantityDamaged  ?? 0
-
-    await db.insert(receiptItems).values({
-      id:                  nanoid(),
-      receiptId,
-      purchaseOrderItemId: ri.purchaseOrderItemId,
-      quantityReceived:    qtyRec,
-      quantityRejected:    qtyRej,
-      quantityDamaged:     qtyDmg,
-      status:              qtyRec >= ocItem.quantity ? "received" : "partially_received",
-      notes:               ri.notes ?? null,
+  await db.transaction(async (tx) => {
+    // Create receipt header
+    await tx.insert(receipts).values({
+      id:              receiptId,
+      code,
+      purchaseOrderId: input.purchaseOrderId,
+      receivedBy:      input.receivedBy,
+      receivedAt:      now,
+      locationType:    input.locationType,
+      worksiteId:      input.worksiteId ?? order.worksiteId,
+      dispatchGuideNo: input.dispatchGuideNo ?? null,
+      status:          "closed",
+      notes:           input.notes ?? null,
+      createdAt:       now,
     })
 
-    // Update OC item quantityReceived
-    const totalNowReceived = (ocItem.quantityReceived ?? 0) + qtyRec
-    await db
-      .update(purchaseOrderItems)
-      .set({ quantityReceived: totalNowReceived })
-      .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
+    // Process each receipt item
+    for (const ri of input.items) {
+      // Load the OC item
+      const ocItem = order.items.find((i) => i.id === ri.purchaseOrderItemId)
+      if (!ocItem) throw new Error(`OC item ${ri.purchaseOrderItemId} not in this order`)
 
-    // Transition the linked purchase request item
-    if (ocItem.requestItemId) {
-      const fullReceived = totalNowReceived >= ocItem.quantity
-      await receiveItem(ocItem.requestItemId, input.receivedBy, {
-        fullReceived,
-        userEmail: input.userEmail,
+      const qtyRec = ri.quantityReceived
+      const qtyRej = ri.quantityRejected ?? 0
+      const qtyDmg = ri.quantityDamaged  ?? 0
+      const remaining = ocItem.quantity - (ocItem.quantityReceived ?? 0)
+
+      if (!Number.isFinite(qtyRec) || qtyRec <= 0) {
+        throw new Error("Received quantity must be greater than 0")
+      }
+      if (qtyRec > remaining) {
+        throw new Error(`Received quantity exceeds pending quantity for item ${ri.purchaseOrderItemId}`)
+      }
+      if (qtyRej < 0 || qtyDmg < 0) {
+        throw new Error("Rejected and damaged quantities cannot be negative")
+      }
+
+      const totalNowReceived = (ocItem.quantityReceived ?? 0) + qtyRec
+      await tx.insert(receiptItems).values({
+        id:                  nanoid(),
+        receiptId,
+        purchaseOrderItemId: ri.purchaseOrderItemId,
+        quantityReceived:    qtyRec,
+        quantityRejected:    qtyRej,
+        quantityDamaged:     qtyDmg,
+        status:              totalNowReceived >= ocItem.quantity ? "received" : "partially_received",
+        notes:               ri.notes ?? null,
       })
 
-      // If going to warehouse and product is catalogued, apply warehouse ingress
-      if (input.locationType === "warehouse" && input.warehouseId && ocItem.productId) {
-        await applyMovement({
-          warehouseId:   input.warehouseId,
-          productId:     ocItem.productId,
-          type:          "ingreso_oc",
-          quantity:      qtyRec,              // positive = in
-          referenceType: "purchase_order",
-          referenceId:   input.purchaseOrderId,
-          performedBy:   input.receivedBy,
-          userEmail:     input.userEmail,
-          notes:         `Recepción ${code} — guía ${input.dispatchGuideNo ?? "s/n"}`,
+      await tx
+        .update(purchaseOrderItems)
+        .set({ quantityReceived: totalNowReceived })
+        .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
+
+      if (ocItem.requestItemId) {
+        const fullReceived = totalNowReceived >= ocItem.quantity
+        await receiveItemTx(tx, ocItem.requestItemId, input.receivedBy, {
+          fullReceived,
+          userEmail: input.userEmail,
         })
+
+        if (input.locationType === "warehouse" && input.warehouseId && ocItem.productId) {
+          await applyMovementTx(tx, {
+            warehouseId:   input.warehouseId,
+            productId:     ocItem.productId,
+            type:          "ingreso_oc",
+            quantity:      qtyRec,
+            referenceType: "purchase_order",
+            referenceId:   input.purchaseOrderId,
+            performedBy:   input.receivedBy,
+            userEmail:     input.userEmail,
+            notes:         `Recepción ${code} — guía ${input.dispatchGuideNo ?? "s/n"}`,
+          })
+        }
       }
     }
-  }
 
-  // Roll up OC status
-  await rollupOrderReceiptStatus(input.purchaseOrderId)
+    await rollupOrderReceiptStatus(input.purchaseOrderId, tx)
 
-  // Audit
-  await recordAudit({
-    userId:     input.receivedBy,
-    userEmail:  input.userEmail,
-    action:     "create",
-    entityType: "receipt",
-    entityId:   receiptId,
-    entityCode: code,
-    newState:   {
-      purchaseOrderId: input.purchaseOrderId,
-      locationType:    input.locationType,
-      warehouseId:     input.warehouseId,
-      itemCount:       input.items.length,
-    },
+    await recordAudit({
+      userId:     input.receivedBy,
+      userEmail:  input.userEmail,
+      action:     "create",
+      entityType: "receipt",
+      entityId:   receiptId,
+      entityCode: code,
+      newState:   {
+        purchaseOrderId: input.purchaseOrderId,
+        locationType:    input.locationType,
+        warehouseId:     input.warehouseId,
+        itemCount:       input.items.length,
+      },
+    }, tx)
   })
 
   return receiptId
@@ -155,8 +170,8 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
 
 /* ── Roll up OC status based on received quantities ────────────────────────────  */
 
-async function rollupOrderReceiptStatus(orderId: string): Promise<void> {
-  const ocItems = await db
+async function rollupOrderReceiptStatus(orderId: string, tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): Promise<void> {
+  const ocItems = await tx
     .select({
       quantity:         purchaseOrderItems.quantity,
       quantityReceived: purchaseOrderItems.quantityReceived,
@@ -179,7 +194,7 @@ async function rollupOrderReceiptStatus(orderId: string): Promise<void> {
   }
 
   const now = new Date().toISOString()
-  await db
+  await tx
     .update(purchaseOrders)
     .set({ status: newStatus, updatedAt: now })
     .where(eq(purchaseOrders.id, orderId))

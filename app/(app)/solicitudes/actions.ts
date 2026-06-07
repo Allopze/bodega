@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { eq, count } from "drizzle-orm"
+import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
@@ -10,7 +11,7 @@ import {
 import { nanoid, generateCode } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { submitItem } from "@/lib/services/item-state"
+import { submitItemTx } from "@/lib/services/item-state"
 import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 
@@ -23,6 +24,17 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
   try { session = await requirePermission("requests:create") }
   catch { return { ok: false, message: "Sin permisos para crear solicitudes" } }
 
+  const result = await persistDraft(session, formData)
+  if (!result.ok) return result
+
+  revalidatePath(REVALIDATE)
+  return { ok: true, message: "Borrador guardado" }
+}
+
+async function persistDraft(
+  session: Session,
+  formData: FormData,
+): Promise<ActionState & { requestId?: string }> {
   // Parse items from JSON hidden input
   let itemsRaw: unknown[] = []
   try { itemsRaw = JSON.parse(formData.get("itemsJson") as string ?? "[]") } catch { /* ignore */ }
@@ -46,6 +58,8 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
 
+  let requestId = d.id
+
   await db.transaction(async (tx) => {
     if (isEdit) {
       // Verify ownership — solicitantes can only edit their own drafts
@@ -53,7 +67,7 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
         where: eq(purchaseRequests.id, d.id!),
       })
       if (!existing) throw new Error("Solicitud no encontrada")
-      if (existing.status !== "draft") throw new Error("Solo se pueden editar solicitudes en borrador")
+      if (!["draft", "returned"].includes(existing.status)) throw new Error("Solo se pueden editar solicitudes en borrador o devueltas")
       if (existing.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
         throw new Error("Solo puedes editar tus propias solicitudes")
       }
@@ -62,9 +76,11 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
         worksiteId:   d.worksiteId,
         costCenterId: d.costCenterId || null,
         urgency:      d.urgency,
+        status:       "draft",
         notes:        d.notes || null,
         updatedAt:    new Date().toISOString(),
       }).where(eq(purchaseRequests.id, d.id!))
+      requestId = d.id
 
       // Replace all items (delete + re-insert)
       await tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, d.id!))
@@ -73,7 +89,7 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
       const [{ total }] = await tx.select({ total: count() }).from(purchaseRequests)
       const code = generateCode("SOL", (total ?? 0) + 1)
       const reqId = nanoid()
-      d.id = reqId
+      requestId = reqId
 
       await tx.insert(purchaseRequests).values({
         id:           reqId,
@@ -94,7 +110,7 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
         entityId:   reqId,
         entityCode: code,
         newState:   { status: "draft", worksiteId: d.worksiteId },
-      })
+      }, tx)
     }
 
     // Insert items
@@ -102,9 +118,9 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
       const itemId = item.id ?? nanoid()
       await tx.insert(purchaseRequestItems).values({
         id:              itemId,
-        requestId:       d.id!,
+        requestId:       requestId!,
         productId:       item.productId || null,
-        productNameFree: null,
+        productNameFree: item.productNameFree?.trim() || null,
         quantity:        item.quantity,
         unitOfMeasure:   item.unitOfMeasure,
         status:          "draft",
@@ -129,8 +145,7 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
     }
   })
 
-  revalidatePath(REVALIDATE)
-  return { ok: true, message: "Borrador guardado" }
+  return { ok: true, message: "Borrador guardado", requestId }
 }
 
 // ── Submit for approval ───────────────────────────────────────────────────────
@@ -140,7 +155,12 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
   try { session = await requirePermission("requests:submit") }
   catch { return { ok: false, message: "Sin permisos para enviar solicitudes" } }
 
-  const requestId = formData.get("requestId") as string
+  let requestId = formData.get("requestId") as string
+  if (!requestId) {
+    const saved = await persistDraft(session, formData)
+    if (!saved.ok) return saved
+    requestId = saved.requestId ?? ""
+  }
   if (!requestId) return { ok: false, message: "ID de solicitud requerido" }
 
   const request = await db.query.purchaseRequests.findFirst({
@@ -173,7 +193,7 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
       fromStatus: "draft",
       toStatus:   "submitted",
       changedBy:  session.user.id,
-    })
+    }, tx)
     await recordAudit({
       userId:     session.user.id,
       userEmail:  session.user.email ?? undefined,
@@ -183,13 +203,12 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
       entityCode: request.code,
       oldState:   { status: "draft" },
       newState:   { status: "submitted" },
-    })
-  })
+    }, tx)
 
-  // Transition each item (outside the first transaction, each in its own)
-  for (const item of request.items) {
-    await submitItem(item.id, session.user.id, { userEmail: session.user.email ?? undefined })
-  }
+    for (const item of request.items) {
+      await submitItemTx(tx, item.id, session.user.id, { userEmail: session.user.email ?? undefined })
+    }
+  })
 
   // Notify approvers (fire-and-forget — never blocks the main flow)
   void getUserIdsWithPermission("approvals:approve").then((approverIds) =>

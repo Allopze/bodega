@@ -7,7 +7,7 @@ import {
   purchaseOrderItems, receiptItems, deliveryItems,
   approvalDecisions, products, worksites,
 } from "@/db/schema"
-import { asc, eq } from "drizzle-orm"
+import { asc, eq, inArray } from "drizzle-orm"
 import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
@@ -84,11 +84,11 @@ export default async function TrazabilidadPage({
       quantity:      deliveryItems.quantity,
     }).from(deliveryItems),
 
-    // Only "approve" type decisions — they may carry a modifiedQty
+    // Approval decisions may be recorded as "approve" or "modify" when quantity changes.
     db.select({
       requestItemId: approvalDecisions.requestItemId,
       modifiedQty:   approvalDecisions.modifiedQty,
-    }).from(approvalDecisions).where(eq(approvalDecisions.type, "approve")),
+    }).from(approvalDecisions).where(inArray(approvalDecisions.type, ["approve", "modify"])),
   ])
 
   /* ── Build lookup maps ──────────────────────────────────────────────── */

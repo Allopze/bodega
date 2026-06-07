@@ -5,6 +5,7 @@ import { useActionState } from "react"
 import { toast } from "sonner"
 import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
+import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -40,14 +41,19 @@ export interface WarehouseOption {
 export function ReceiptForm({
   purchaseOrderId,
   orderCode,
+  orderWorksiteName,
   items,
   warehouses,
 }: {
   purchaseOrderId: string
   orderCode:       string
+  orderWorksiteName: string
   items:           ReceiptOcItem[]
   warehouses:      WarehouseOption[]
 }) {
+  const [locationType,  setLocationType]  = React.useState<"warehouse" | "faena">(
+    warehouses.length > 0 ? "warehouse" : "faena",
+  )
   const [warehouseId,   setWarehouseId]   = React.useState<string>(warehouses[0]?.id ?? "")
   const [guideNo,       setGuideNo]       = React.useState<string>("")
   const [notes,         setNotes]         = React.useState<string>("")
@@ -79,8 +85,8 @@ export function ReceiptForm({
     <form action={action} className="flex flex-col gap-6">
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
       <input type="hidden" name="itemsJson"        value={itemsJson} />
-      <input type="hidden" name="locationType"     value="warehouse" />
-      {warehouseId && <input type="hidden" name="warehouseId" value={warehouseId} />}
+      <input type="hidden" name="locationType"     value={locationType} />
+      {locationType === "warehouse" && warehouseId && <input type="hidden" name="warehouseId" value={warehouseId} />}
 
       {/* Header */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -93,16 +99,45 @@ export function ReceiptForm({
           />
         </Field>
 
-        <Field label="Bodega de destino" required>
-          <Select value={warehouseId} onValueChange={setWarehouseId}>
-            <SelectTrigger><SelectValue placeholder="Selecciona bodega" /></SelectTrigger>
-            <SelectContent>
-              {warehouses.map((w) => (
-                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <Field label="Destino" required className="md:col-span-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant={locationType === "warehouse" ? "primary" : "secondary"}
+              className="justify-start"
+              disabled={warehouses.length === 0}
+              onClick={() => setLocationType("warehouse")}
+            >
+              Ingresar a bodega
+            </Button>
+            <Button
+              type="button"
+              variant={locationType === "faena" ? "primary" : "secondary"}
+              className="justify-start"
+              onClick={() => setLocationType("faena")}
+            >
+              Recepción directa en faena
+            </Button>
+          </div>
+          <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+            {locationType === "warehouse"
+              ? "Las cantidades recibidas entrarán al stock de la bodega seleccionada."
+              : `La recepción quedará registrada contra ${orderWorksiteName}, sin aumentar stock.`}
+          </p>
         </Field>
+
+        {locationType === "warehouse" && (
+          <Field label="Bodega de destino" required className="md:col-span-3">
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger><SelectValue placeholder="Selecciona bodega" /></SelectTrigger>
+              <SelectContent>
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
       </div>
 
       {/* Items table */}

@@ -2,7 +2,10 @@
 
 import { redirect }     from "next/navigation"
 import { revalidatePath } from "next/cache"
-import { requirePermission } from "@/lib/auth/can"
+import { db } from "@/db"
+import { purchaseOrders } from "@/db/schema"
+import { eq } from "drizzle-orm"
+import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createOrder, issueOrder, markOrderSent } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
 import type { ActionState } from "@/lib/validation/operations"
@@ -28,6 +31,9 @@ export async function createOrderAction(
 
   if (!worksiteId) return { ok: false, message: "Selecciona una faena" }
   if (!supplierId) return { ok: false, message: "Selecciona un proveedor" }
+  if (!canAccessWorksite(session, worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
+  }
 
   // Items JSON: [{requestItemId, productId, productNameFree, quantity, unitOfMeasure, unitPrice, discount, notes}]
   let itemsRaw: unknown[] = []
@@ -53,11 +59,38 @@ export async function createOrderAction(
   }
 
   const items = itemsRaw as RawItem[]
+  const itemIds = [...new Set(items.map((item) => item.requestItemId).filter(Boolean))]
+  if (itemIds.length !== items.length) {
+    return { ok: false, message: "Hay ítems duplicados o inválidos en la orden" }
+  }
+
+  const dbItems = await db.query.purchaseRequestItems.findMany({
+    where: (item, { inArray }) => inArray(item.id, itemIds),
+    with:  { request: true },
+  })
+  if (dbItems.length !== items.length) {
+    return { ok: false, message: "Uno o más ítems ya no están disponibles para compra" }
+  }
+
+  const dbItemMap = new Map(dbItems.map((item) => [item.id, item]))
 
   // Validate unit prices
   for (const item of items) {
     if (isNaN(item.unitPrice) || item.unitPrice < 0) {
       return { ok: false, message: `Precio unitario inválido en un ítem` }
+    }
+    if ((item.discount ?? 0) < 0 || (item.discount ?? 0) > 100) {
+      return { ok: false, message: "El descuento debe estar entre 0 y 100" }
+    }
+    const dbItem = dbItemMap.get(item.requestItemId)
+    if (!dbItem || !["approved", "pending_purchase"].includes(dbItem.status)) {
+      return { ok: false, message: "Solo se pueden comprar ítems aprobados pendientes" }
+    }
+    if (dbItem.request.worksiteId !== worksiteId || !canAccessWorksite(session, dbItem.request.worksiteId)) {
+      return { ok: false, message: "La orden contiene ítems de una faena no autorizada" }
+    }
+    if (item.quantity !== dbItem.quantity) {
+      return { ok: false, message: "La cantidad de compra debe coincidir con la cantidad aprobada" }
     }
   }
 
@@ -105,6 +138,8 @@ export async function issueOrderAction(
 
   const orderId = formData.get("orderId") as string | null
   if (!orderId) return { ok: false, message: "Orden no especificada" }
+  const accessError = await assertOrderAccess(session, orderId)
+  if (accessError) return accessError
 
   try {
     await issueOrder(orderId, session.user.id, {
@@ -131,6 +166,8 @@ export async function sendOrderAction(
 
   const orderId = formData.get("orderId") as string | null
   if (!orderId) return { ok: false, message: "Orden no especificada" }
+  const accessError = await assertOrderAccess(session, orderId)
+  if (accessError) return accessError
 
   try {
     await markOrderSent(orderId, session.user.id, {
@@ -143,6 +180,17 @@ export async function sendOrderAction(
     console.error("[sendOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al enviar orden" }
   }
+}
+
+async function assertOrderAccess(session: Awaited<ReturnType<typeof requirePermission>>, orderId: string): Promise<ActionState | null> {
+  const order = await db.query.purchaseOrders.findFirst({
+    where: eq(purchaseOrders.id, orderId),
+  })
+  if (!order) return { ok: false, message: "Orden no encontrada" }
+  if (!canAccessWorksite(session, order.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de esta orden" }
+  }
+  return null
 }
 
 // ── Postpone item ─────────────────────────────────────────────────────────────

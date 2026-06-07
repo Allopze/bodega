@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db }       from "@/db"
-import { warehouses, worksites } from "@/db/schema"
+import { purchaseRequestItems, warehouses, worksites } from "@/db/schema"
 import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can, canAccessWorksite } from "@/lib/auth/can"
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Warehouse } from "@phosphor-icons/react/dist/ssr"
 import { DispatchPanel } from "./dispatch-panel"
 import { formatQty, formatDate } from "@/lib/utils"
-import type { StockOption, WorksiteOption } from "./dispatch-panel"
+import type { DeliverableOption, StockOption, WorksiteOption } from "./dispatch-panel"
 
 export const metadata: Metadata = { title: "Bodega" }
 
@@ -82,7 +82,7 @@ export default async function BodegaPage() {
   const warehouseIds = allWarehouses.map((w) => w.id)
 
   // Stock + recent movements in parallel
-  const [stockRows, recentMovements] = await Promise.all([
+  const [stockRows, recentMovements, receivedItems] = await Promise.all([
     db.query.warehouseStock.findMany({
       where: (s, { inArray }) => inArray(s.warehouseId, warehouseIds),
       with:  { product: true, warehouse: true },
@@ -93,6 +93,13 @@ export default async function BodegaPage() {
       with:  { product: true, warehouse: true },
       orderBy: (m, { desc }) => [desc(m.performedAt)],
     }).then((rows) => rows.slice(0, 50)),
+    db.query.purchaseRequestItems.findMany({
+      where: eq(purchaseRequestItems.status, "received"),
+      with: {
+        product: true,
+        request: true,
+      },
+    }),
   ])
 
   // Build StockOptions for the dispatch panel
@@ -110,6 +117,17 @@ export default async function BodegaPage() {
   const worksiteOptions: WorksiteOption[] = allWorksites
     .filter((w) => canAccessWorksite(session, w.id))
     .map((w) => ({ id: w.id, name: w.name }))
+  const deliverableOptions: DeliverableOption[] = receivedItems
+    .filter((item) => item.productId !== null && canAccessWorksite(session, item.request.worksiteId))
+    .map((item) => ({
+      requestItemId: item.id,
+      requestCode: item.request.code,
+      worksiteId: item.request.worksiteId,
+      productId: item.productId as string,
+      productName: item.product?.name ?? item.productNameFree ?? "Ítem recibido",
+      quantity: item.quantity,
+      unitOfMeasure: item.unitOfMeasure,
+    }))
 
   // Group stock by warehouse
   const stockByWarehouse: Record<string, typeof stockRows> = {}
@@ -223,7 +241,11 @@ export default async function BodegaPage() {
         {/* Dispatch panel */}
         {canDispatch && stockOptions.length > 0 && worksiteOptions.length > 0 && (
           <div className="max-w-2xl">
-            <DispatchPanel stockItems={stockOptions} worksites={worksiteOptions} />
+            <DispatchPanel
+              stockItems={stockOptions}
+              worksites={worksiteOptions}
+              deliverableItems={deliverableOptions}
+            />
           </div>
         )}
 

@@ -9,6 +9,8 @@ import { warehouses, warehouseStock, inventoryMovements } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
 /* ── Movement types ─────────────────────────────────────────────────────────── */
 export type MovementType =
   | "ingreso_oc"           // + : received from purchase order
@@ -51,6 +53,16 @@ export async function applyMovement(input: ApplyMovementInput): Promise<number> 
   let stockAfter: number = 0
 
   await db.transaction(async (tx) => {
+    stockAfter = await applyMovementTx(tx, input)
+  })
+
+  return stockAfter
+}
+
+export async function applyMovementTx(
+  tx: Tx,
+  input: ApplyMovementInput,
+): Promise<number> {
     // Verify warehouse exists
     const warehouse = await tx.query.warehouses.findFirst({
       where: eq(warehouses.id, input.warehouseId),
@@ -80,7 +92,6 @@ export async function applyMovement(input: ApplyMovementInput): Promise<number> 
       )
     }
 
-    stockAfter = newQty
     const now  = new Date().toISOString()
 
     // Upsert warehouseStock
@@ -140,8 +151,7 @@ export async function applyMovement(input: ApplyMovementInput): Promise<number> 
         stockBefore: currentQty,
         stockAfter:  newQty,
       },
-    })
-  })
+    }, tx)
 
-  return stockAfter
+  return newQty
 }

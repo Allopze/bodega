@@ -9,7 +9,7 @@ import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/s
 import { nanoid, generateCode } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { computeOrderTotals } from "@/lib/order-totals"
-import { addItemToPurchaseOrder } from "./item-state"
+import { addItemToPurchaseOrderTx } from "./item-state"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -100,15 +100,14 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
       entityId:   orderId,
       entityCode: code,
       newState:   { status: "draft", totalAmount: totals.totalAmount, itemCount: input.items.length },
-    })
-  })
+    }, tx)
 
-  // Transition request items to in_purchase_order (outside the OC transaction for cleaner tx scoping)
-  for (const item of input.items) {
-    await addItemToPurchaseOrder(item.requestItemId, orderId, input.createdBy, {
-      userEmail: input.userEmail,
-    })
-  }
+    for (const item of input.items) {
+      await addItemToPurchaseOrderTx(tx, item.requestItemId, orderId, input.createdBy, {
+        userEmail: input.userEmail,
+      })
+    }
+  })
 
   return orderId
 }
@@ -141,7 +140,7 @@ export async function issueOrder(
       fromStatus: "draft",
       toStatus:   "issued",
       changedBy:  userId,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -151,7 +150,7 @@ export async function issueOrder(
       entityCode: order.code,
       oldState:   { status: "draft" },
       newState:   { status: "issued" },
-    })
+    }, tx)
   })
 }
 
@@ -203,7 +202,7 @@ export async function markOrderSent(
           fromStatus: "in_purchase_order",
           toStatus:   "purchased",
           changedBy:  userId,
-        })
+        }, tx)
       }
     }
 
@@ -213,7 +212,7 @@ export async function markOrderSent(
       fromStatus: "issued",
       toStatus:   "sent",
       changedBy:  userId,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -223,6 +222,6 @@ export async function markOrderSent(
       entityCode: order.code,
       oldState:   { status: "issued" },
       newState:   { status: "sent" },
-    })
+    }, tx)
   })
 }

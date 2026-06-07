@@ -4,8 +4,9 @@ import { db }       from "@/db"
 import {
   purchaseOrders, purchaseOrderItems,
   worksites, suppliers,
+  purchaseRequests,
 } from "@/db/schema"
-import { inArray, count, desc } from "drizzle-orm"
+import { inArray, count, desc, eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -22,11 +23,15 @@ export default async function ComprasPage() {
 
   // ── Approved / pending_purchase items (never-miss alert) ────────────────────
   const pendingApproved = await db
-    .select({ id: purchaseRequestItems.id })
+    .select({
+      id: purchaseRequestItems.id,
+      worksiteId: purchaseRequests.worksiteId,
+    })
     .from(purchaseRequestItems)
+    .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
     .where(inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]))
 
-  const pendingCount = pendingApproved.length
+  const pendingCount = pendingApproved.filter((item) => canAccessWorksite(session, item.worksiteId)).length
 
   // ── Purchase orders ──────────────────────────────────────────────────────────
   const allOrders = await db

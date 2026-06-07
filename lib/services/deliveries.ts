@@ -1,16 +1,19 @@
-import { and, count, eq } from "drizzle-orm"
+import { count, eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  deliveries, deliveryItems, inventoryMovements,
-  products, warehouseStock, warehouses, worksites,
+  deliveries, deliveryItems,
+  products, worksites,
 } from "@/db/schema"
 import { generateCode, nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
+import { deliverItemTx } from "@/lib/services/item-state"
+import { applyMovementTx } from "@/lib/services/warehouse"
 
 export interface RegisterWorksiteDeliveryInput {
   warehouseId: string
   worksiteId: string
   productId: string
+  requestItemId?: string | null
   quantity: number
   unitOfMeasure: string
   receiverName: string
@@ -34,27 +37,13 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
   const code = generateCode("ENT", total + 1, new Date().getFullYear())
 
   await db.transaction(async (tx) => {
-    const [warehouse, worksite, product, stock] = await Promise.all([
-      tx.query.warehouses.findFirst({ where: eq(warehouses.id, input.warehouseId) }),
+    const [worksite, product] = await Promise.all([
       tx.query.worksites.findFirst({ where: eq(worksites.id, input.worksiteId) }),
       tx.query.products.findFirst({ where: eq(products.id, input.productId) }),
-      tx.query.warehouseStock.findFirst({
-        where: and(
-          eq(warehouseStock.warehouseId, input.warehouseId),
-          eq(warehouseStock.productId, input.productId),
-        ),
-      }),
     ])
 
-    if (!warehouse || !warehouse.isActive) throw new Error("Bodega no disponible")
     if (!worksite || !worksite.isActive) throw new Error("Faena no disponible")
     if (!product || !product.isActive) throw new Error("Producto no disponible")
-
-    const currentQty = stock?.quantity ?? 0
-    const stockAfter = currentQty - input.quantity
-    if (stockAfter < 0) {
-      throw new Error(`Stock insuficiente: disponible ${currentQty}, solicitado ${input.quantity}`)
-    }
 
     await tx.insert(deliveries).values({
       id: deliveryId,
@@ -66,14 +55,14 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
       workerId: null,
       receiverName: input.receiverName.trim(),
       signaturePath: null,
-      notes: input.notes?.trim() || null,
+      notes: input.notes?.trim() || undefined,
       createdAt: now,
     })
 
     await tx.insert(deliveryItems).values({
       id: nanoid(),
       deliveryId,
-      requestItemId: null,
+      requestItemId: input.requestItemId ?? null,
       productId: input.productId,
       productNameFree: null,
       quantity: input.quantity,
@@ -81,53 +70,41 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
       notes: null,
     })
 
-    if (stock) {
-      await tx
-        .update(warehouseStock)
-        .set({
-          quantity: stockAfter,
-          lastMovementAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(warehouseStock.warehouseId, input.warehouseId),
-            eq(warehouseStock.productId, input.productId),
-          ),
-        )
-    }
-
-    await tx.insert(inventoryMovements).values({
-      id: nanoid(),
+    await applyMovementTx(tx, {
       warehouseId: input.warehouseId,
       productId: input.productId,
       type: "egreso_faena",
       quantity: -input.quantity,
       referenceType: "delivery",
       referenceId: deliveryId,
-      stockBefore: currentQty,
-      stockAfter,
       performedBy: input.deliveredBy,
-      performedAt: now,
+      userEmail: input.userEmail,
       reason: `Entrega ${code} a ${worksite.name}`,
-      notes: input.notes?.trim() || null,
+      notes: input.notes?.trim() || undefined,
     })
-  })
 
-  await recordAudit({
-    userId: input.deliveredBy,
-    userEmail: input.userEmail,
-    action: "create",
-    entityType: "delivery",
-    entityId: deliveryId,
-    entityCode: code,
-    newState: {
-      warehouseId: input.warehouseId,
-      worksiteId: input.worksiteId,
-      productId: input.productId,
-      quantity: input.quantity,
-      receiverName: input.receiverName.trim(),
-    },
+    if (input.requestItemId) {
+      await deliverItemTx(tx, input.requestItemId, input.deliveredBy, {
+        userEmail: input.userEmail,
+      })
+    }
+
+    await recordAudit({
+      userId: input.deliveredBy,
+      userEmail: input.userEmail,
+      action: "create",
+      entityType: "delivery",
+      entityId: deliveryId,
+      entityCode: code,
+      newState: {
+        warehouseId: input.warehouseId,
+        worksiteId: input.worksiteId,
+        productId: input.productId,
+        requestItemId: input.requestItemId ?? null,
+        quantity: input.quantity,
+        receiverName: input.receiverName.trim(),
+      },
+    }, tx)
   })
 
   return deliveryId

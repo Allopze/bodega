@@ -1,7 +1,10 @@
 "use server"
 
 import { revalidatePath }    from "next/cache"
-import { requirePermission } from "@/lib/auth/can"
+import { db } from "@/db"
+import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { eq } from "drizzle-orm"
+import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { applyMovement }     from "@/lib/services/warehouse"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
 import type { ActionState }  from "@/lib/validation/operations"
@@ -21,6 +24,7 @@ export async function dispatchAction(
   const warehouseId = formData.get("warehouseId") as string | null
   const worksiteId  = formData.get("worksiteId")  as string | null
   const productId   = formData.get("productId")   as string | null
+  const requestItemId = (formData.get("requestItemId") as string | null) || null
   const qtyRaw      = formData.get("quantity")     as string | null
   const unit        = (formData.get("unitOfMeasure") as string | null)?.trim() || "unidad"
   const receiver    = (formData.get("receiverName") as string | null)?.trim()
@@ -35,11 +39,41 @@ export async function dispatchAction(
   if (isNaN(qty) || qty <= 0) {
     return { ok: false, message: "La cantidad debe ser mayor a 0" }
   }
+
+  if (!canAccessWorksite(session, worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
+  }
+
+  if (requestItemId) {
+    const item = await db
+      .select({
+        id: purchaseRequestItems.id,
+        productId: purchaseRequestItems.productId,
+        quantity: purchaseRequestItems.quantity,
+        status: purchaseRequestItems.status,
+        worksiteId: purchaseRequests.worksiteId,
+      })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .where(eq(purchaseRequestItems.id, requestItemId))
+      .then((rows) => rows[0])
+
+    if (!item) return { ok: false, message: "Ítem de solicitud no encontrado" }
+    if (item.status !== "received") return { ok: false, message: "Solo puedes asociar ítems recibidos pendientes de entrega" }
+    if (item.productId !== productId || item.worksiteId !== worksiteId) {
+      return { ok: false, message: "El ítem trazable no coincide con el producto o la faena" }
+    }
+    if (item.quantity !== qty) {
+      return { ok: false, message: "Para asociar trazabilidad, la cantidad debe coincidir con el ítem recibido" }
+    }
+  }
+
   try {
     await registerWorksiteDelivery({
       warehouseId,
       worksiteId,
       productId,
+      requestItemId,
       quantity: qty,
       unitOfMeasure: unit,
       receiverName: receiver,
@@ -50,6 +84,7 @@ export async function dispatchAction(
 
     revalidatePath(REVALIDATE)
     revalidatePath("/entregas")
+    revalidatePath("/trazabilidad")
     return { ok: true, message: `Entrega registrada: ${qty} unidades` }
   } catch (e) {
     console.error("[dispatchAction]", e)

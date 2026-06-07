@@ -25,8 +25,8 @@ export const requestItemSchema = z.object({
   notes:           z.string().max(300).optional().or(z.literal("")),
   attributes:      z.array(requestItemAttributeSchema).default([]),
 }).refine(
-  (d) => !!d.productId,
-  { message: "Selecciona un producto del catálogo", path: ["productId"] },
+  (d) => !!d.productId || !!d.productNameFree?.trim(),
+  { message: "Selecciona un producto del catálogo o describe el ítem", path: ["productId"] },
 )
 
 // ── Purchase request (header) ─────────────────────────────────────────────────

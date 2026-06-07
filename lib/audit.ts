@@ -1,6 +1,8 @@
-import { db } from "@/db"
+import { db, type DB } from "@/db"
 import { auditLog, statusHistory } from "@/db/schema"
 import { nanoid } from "./id"
+
+type AuditDb = Pick<DB, "insert">
 
 interface AuditParams {
   userId:     string | null
@@ -19,8 +21,8 @@ interface AuditParams {
  * Record an audit log entry.
  * Must be called from service layer, never from UI components.
  */
-export async function recordAudit(params: AuditParams): Promise<void> {
-  await db.insert(auditLog).values({
+export async function recordAudit(params: AuditParams, client: AuditDb = db): Promise<void> {
+  await client.insert(auditLog).values({
     id:         nanoid(),
     userId:     params.userId,
     userEmail:  params.userEmail,
@@ -48,8 +50,8 @@ interface StatusChangeParams {
  * Record a status transition in the status history table.
  * Call alongside recordAudit for every state machine transition.
  */
-export async function recordStatusChange(params: StatusChangeParams): Promise<void> {
-  await db.insert(statusHistory).values({
+export async function recordStatusChange(params: StatusChangeParams, client: AuditDb = db): Promise<void> {
+  await client.insert(statusHistory).values({
     id:         nanoid(),
     entityType: params.entityType,
     entityId:   params.entityId,

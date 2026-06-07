@@ -28,7 +28,10 @@ export default async function NuevaRecepcionPage({
 
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, orderId),
-    with:  { items: { orderBy: (i, { asc }) => [asc(i.sortOrder)] } },
+    with:  {
+      items: { orderBy: (i, { asc }) => [asc(i.sortOrder)] },
+      worksite: true,
+    },
   })
 
   if (!order) notFound()
@@ -92,6 +95,7 @@ export default async function NuevaRecepcionPage({
         <ReceiptForm
           purchaseOrderId={order.id}
           orderCode={order.code}
+          orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
           items={items}
           warehouses={warehouseOptions}
         />

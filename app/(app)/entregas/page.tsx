@@ -84,7 +84,7 @@ export default async function Page() {
         <EmptyState
           icon={<Truck size={22} />}
           title="Sin entregas registradas"
-          description="La base ya puede listar entregas reales. Falta implementar el formulario de registro cuando se definan sus reglas."
+          description="Registra entregas desde el módulo Bodega cuando exista stock disponible."
         />
       ) : (
         <DataTable

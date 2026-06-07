@@ -14,6 +14,8 @@ import {
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
 /** All valid states for a purchase request item */
 export type ItemStatus =
   | "draft"
@@ -68,6 +70,16 @@ export async function submitItem(
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await submitItemTx(tx, itemId, userId, opts)
+  })
+}
+
+export async function submitItemTx(
+  tx: Tx,
+  itemId: string,
+  userId: string,
+  opts?: { userEmail?: string },
+): Promise<void> {
     const item = await tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
     })
@@ -88,7 +100,7 @@ export async function submitItem(
       fromStatus: item.status,
       toStatus:   "requested",
       changedBy:  userId,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -96,8 +108,7 @@ export async function submitItem(
       entityType: "request_item",
       entityId:   itemId,
       newState:   { status: "requested" },
-    })
-  })
+    }, tx)
 }
 
 // ── Phase 4 ─────────────────────────────────────────────────────────────────
@@ -151,7 +162,7 @@ export async function approveItem(
       fromStatus: item.status,
       toStatus:   "approved",
       changedBy:  userId,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -160,7 +171,7 @@ export async function approveItem(
       entityId:   itemId,
       oldState:   { status: item.status },
       newState:   { status: "approved", modifiedQty: opts?.modifiedQty },
-    })
+    }, tx)
 
     await rollupRequestStatus(item.requestId, tx)
   })
@@ -210,7 +221,7 @@ export async function rejectItem(
       toStatus:   "rejected",
       changedBy:  userId,
       reason,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -220,7 +231,7 @@ export async function rejectItem(
       oldState:   { status: item.status },
       newState:   { status: "rejected" },
       reason,
-    })
+    }, tx)
 
     await rollupRequestStatus(item.requestId, tx)
   })
@@ -271,7 +282,7 @@ export async function returnItem(
       toStatus:   "returned",
       changedBy:  userId,
       reason,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -281,7 +292,7 @@ export async function returnItem(
       oldState:   { status: item.status },
       newState:   { status: "returned" },
       reason,
-    })
+    }, tx)
 
     await rollupRequestStatus(item.requestId, tx)
   })
@@ -354,11 +365,22 @@ async function rollupRequestStatus(
  */
 export async function addItemToPurchaseOrder(
   itemId: string,
-  _orderId: string,
+  orderId: string,
   userId: string,
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await addItemToPurchaseOrderTx(tx, itemId, orderId, userId, opts)
+  })
+}
+
+export async function addItemToPurchaseOrderTx(
+  tx: Tx,
+  itemId: string,
+  orderId: string,
+  userId: string,
+  opts?: { userEmail?: string },
+): Promise<void> {
     const item = await tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
     })
@@ -382,7 +404,7 @@ export async function addItemToPurchaseOrder(
         fromStatus: "approved",
         toStatus:   "pending_purchase",
         changedBy:  userId,
-      })
+      }, tx)
     }
 
     // Now transition to in_purchase_order
@@ -402,16 +424,15 @@ export async function addItemToPurchaseOrder(
       fromStatus: currentStatus,
       toStatus:   "in_purchase_order",
       changedBy:  userId,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
       entityType: "request_item",
       entityId:   itemId,
-      newState:   { status: "in_purchase_order", orderId: _orderId },
-    })
-  })
+      newState:   { status: "in_purchase_order", orderId },
+    }, tx)
 }
 
 /**
@@ -444,7 +465,7 @@ export async function markItemPendingPurchase(
       fromStatus: item.status,
       toStatus:   "pending_purchase",
       changedBy:  userId,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -453,7 +474,7 @@ export async function markItemPendingPurchase(
       entityId:   itemId,
       oldState:   { status: item.status },
       newState:   { status: "pending_purchase" },
-    })
+    }, tx)
   })
 }
 
@@ -491,7 +512,7 @@ export async function postponeItem(
       toStatus:   "postponed",
       changedBy:  userId,
       reason,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -501,7 +522,7 @@ export async function postponeItem(
       oldState:   { status: item.status },
       newState:   { status: "postponed" },
       reason,
-    })
+    }, tx)
   })
 }
 
@@ -518,6 +539,16 @@ export async function receiveItem(
   opts?: { fullReceived?: boolean; userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await receiveItemTx(tx, itemId, userId, opts)
+  })
+}
+
+export async function receiveItemTx(
+  tx: Tx,
+  itemId: string,
+  userId: string,
+  opts?: { fullReceived?: boolean; userEmail?: string },
+): Promise<void> {
     const item = await tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
     })
@@ -546,7 +577,7 @@ export async function receiveItem(
       fromStatus: item.status,
       toStatus:   targetStatus,
       changedBy:  userId,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -555,8 +586,7 @@ export async function receiveItem(
       entityId:   itemId,
       oldState:   { status: item.status },
       newState:   { status: targetStatus },
-    })
-  })
+    }, tx)
 }
 
 /**
@@ -569,6 +599,16 @@ export async function deliverItem(
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await deliverItemTx(tx, itemId, userId, opts)
+  })
+}
+
+export async function deliverItemTx(
+  tx: Tx,
+  itemId: string,
+  userId: string,
+  opts?: { userEmail?: string },
+): Promise<void> {
     const item = await tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
     })
@@ -589,7 +629,7 @@ export async function deliverItem(
       fromStatus: item.status,
       toStatus:   "delivered",
       changedBy:  userId,
-    })
+    }, tx)
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
@@ -598,6 +638,5 @@ export async function deliverItem(
       entityId:   itemId,
       oldState:   { status: item.status },
       newState:   { status: "delivered" },
-    })
-  })
+    }, tx)
 }
