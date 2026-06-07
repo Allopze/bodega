@@ -6,11 +6,9 @@ import { auth } from "@/lib/auth/auth"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { DataTable } from "@/components/admin/data-table"
-import { TableCell, TableRow } from "@/components/ui/table"
 import { Truck } from "@phosphor-icons/react/dist/ssr"
 import { desc, inArray } from "drizzle-orm"
-import { formatDate } from "@/lib/utils"
+import { DeliveriesTable } from "./deliveries-table"
 
 export const metadata: Metadata = { title: "Entregas" }
 
@@ -59,14 +57,6 @@ export default async function Page() {
   }, {})
   const worksiteMap = Object.fromEntries(worksiteRows.map((w) => [w.id, w.name]))
 
-  const COLUMNS = [
-    { key: "code", label: "Entrega", sortable: true, width: "w-36" },
-    { key: "worksiteId", label: "Faena", sortable: true },
-    { key: "receiverName", label: "Receptor", sortable: true },
-    { key: "deliveredAt", label: "Fecha", sortable: true, width: "w-36" },
-    { key: "items", label: "Ítems", sortable: false, width: "w-20" },
-  ]
-
   return (
     <>
       <PageHeader
@@ -87,38 +77,10 @@ export default async function Page() {
           description="Registra entregas desde el módulo Bodega cuando exista stock disponible."
         />
       ) : (
-        <DataTable
-          columns={COLUMNS}
-          rows={visible as unknown as Record<string, unknown>[]}
-          searchKeys={["code", "receiverName"]}
-          pageSize={20}
-          searchPlaceholder="Buscar entrega..."
-          emptyTitle="Sin entregas"
-          emptyDescription="No hay entregas que coincidan con la búsqueda."
-          renderRow={(row) => {
-            const delivery = row as unknown as typeof visible[0]
-            const destination = delivery.worksiteId ? worksiteMap[delivery.worksiteId] ?? "Faena" : "Faena"
-
-            return (
-              <TableRow key={delivery.id}>
-                <TableCell>
-                  <span className="font-mono text-xs">{delivery.code}</span>
-                </TableCell>
-                <TableCell className="text-sm text-[var(--color-text-muted)]">
-                  {destination}
-                </TableCell>
-                <TableCell className="text-sm text-[var(--color-text-muted)]">
-                  {delivery.receiverName ?? "—"}
-                </TableCell>
-                <TableCell className="text-xs text-[var(--color-text-subtle)]">
-                  {formatDate(delivery.deliveredAt)}
-                </TableCell>
-                <TableCell className="font-mono text-sm text-[var(--color-text)]">
-                  {itemCountByDelivery[delivery.id] ?? 0}
-                </TableCell>
-              </TableRow>
-            )
-          }}
+        <DeliveriesTable
+          deliveries={visible}
+          worksiteMap={worksiteMap}
+          itemCountByDelivery={itemCountByDelivery}
         />
       )}
     </>

@@ -23,6 +23,8 @@ interface BrandMarkProps {
   subtitle?: boolean | string
   /** Override del tamaño del título. Default "sm". */
   titleSize?: "sm" | "base" | "lg"
+  /** Oculta el texto del logo (título y subtítulo) */
+  hideText?: boolean
 }
 
 const LOGO_SRC = {
@@ -41,6 +43,7 @@ export function BrandMark({
   size       = 32,
   subtitle   = false,
   titleSize  = "sm",
+  hideText   = false,
 }: BrandMarkProps) {
   const isDark      = variant === "dark"
   const titleColor  = isDark ? "text-[var(--color-brand-text)]"       : "text-[var(--color-text)]"
@@ -60,24 +63,26 @@ export function BrandMark({
         className="shrink-0"
         style={{ width: size, height: size }}
       />
-      <div>
-        {inlineSubtitle ? (
-          <p className={`font-display font-bold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
-            {subtitle}
-          </p>
-        ) : (
-          <>
+      {!hideText && (
+        <div>
+          {inlineSubtitle ? (
             <p className={`font-display font-bold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
-              Chome
+              {subtitle}
             </p>
-            {subtitle === true && (
-              <p className={`text-[10px] ${subtitleColor} leading-tight`}>
-                Solicitudes y Bodega
+          ) : (
+            <>
+              <p className={`font-display font-bold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
+                Chome
               </p>
-            )}
-          </>
-        )}
-      </div>
+              {subtitle === true && (
+                <p className={`text-[10px] ${subtitleColor} leading-tight`}>
+                  Solicitudes y Bodega
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

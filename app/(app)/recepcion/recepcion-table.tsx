@@ -1,0 +1,87 @@
+"use client"
+
+import Link from "next/link"
+import { DataTable } from "@/components/admin/data-table"
+import { TableRow, TableCell } from "@/components/ui/table"
+import { StateBadge } from "@/components/states/state-badge"
+import { Button } from "@/components/ui/button"
+import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
+import { formatDate } from "@/lib/utils"
+
+interface OrderRow {
+  id:          string
+  code:        string
+  worksiteId:  string
+  supplierId:  string
+  status:      string
+  sentAt:      string | null
+  createdAt:   string
+}
+
+interface RecepcionTableProps {
+  orders:       OrderRow[]
+  wsMap:        Record<string, string>
+  supMap:       Record<string, string>
+  canRegister:  boolean
+}
+
+const COLUMNS = [
+  { key: "code",         label: "OC",         sortable: true,  width: "w-36" },
+  { key: "worksiteId",   label: "Faena",      sortable: true  },
+  { key: "supplierId",   label: "Proveedor",  sortable: true  },
+  { key: "status",       label: "Estado",     sortable: true,  width: "w-40" },
+  { key: "sentAt",       label: "Enviada",    sortable: true,  width: "w-32" },
+  { key: "",             label: "",           sortable: false, width: "w-12" },
+]
+
+export function RecepcionTable({ orders, wsMap, supMap, canRegister }: RecepcionTableProps) {
+  return (
+    <DataTable
+      columns={COLUMNS}
+      rows={orders as unknown as Record<string, unknown>[]}
+      searchKeys={["code"]}
+      pageSize={20}
+      searchPlaceholder="Buscar OC..."
+      emptyTitle="Sin OCs pendientes de recepción"
+      emptyDescription="Las órdenes de compra enviadas al proveedor aparecerán aquí cuando deban marcarse como recibidas."
+      renderRow={(row) => {
+        const o = row as unknown as OrderRow
+        return (
+          <TableRow key={o.id} className="group">
+            <TableCell>
+              <span className="font-mono text-xs">{o.code}</span>
+            </TableCell>
+            <TableCell className="text-sm text-[var(--color-text-muted)]">
+              {wsMap[o.worksiteId] ?? o.worksiteId}
+            </TableCell>
+            <TableCell className="text-sm text-[var(--color-text-muted)]">
+              {supMap[o.supplierId] ?? o.supplierId}
+            </TableCell>
+            <TableCell>
+              <div className="flex items-center gap-2">
+                <StateBadge state={o.status} entity="oc" size="sm" />
+                {canRegister && (
+                  <Button variant="secondary" size="sm" asChild>
+                    <Link href={`/recepcion/nueva?oc=${o.id}`}>Recibir</Link>
+                  </Button>
+                )}
+              </div>
+            </TableCell>
+            <TableCell className="text-xs text-[var(--color-text-subtle)]">
+              {o.sentAt ? formatDate(o.sentAt) : "—"}
+            </TableCell>
+            <TableCell className="text-right pr-3">
+              <Link
+                href={`/compras/${o.id}`}
+                className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] opacity-0 group-hover:opacity-100"
+                aria-label={`Ver OC ${o.code}`}
+              >
+                <ArrowRight size={14} />
+              </Link>
+            </TableCell>
+          </TableRow>
+        )
+      }}
+    />
+  )
+}

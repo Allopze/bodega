@@ -102,7 +102,7 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
-  font-size: 0.9375rem; /* 15px — slightly smaller for dense product UI */
+  font-size: 1rem; /* 16px — standard body size for improved readability */
   line-height: 1.5;
 }
 
