@@ -88,9 +88,9 @@ interface AttrRow {
   options:       string[]
 }
 
-function blankItem(): ItemRow {
+function blankItem(key = "new-0"): ItemRow {
   return {
-    _key:            crypto.randomUUID(),
+    _key:            key,
     productId:       null,
     productNameFree: "",
     quantity:        "1",
@@ -153,7 +153,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
       return editRequest.items.map((item) => {
         const prod = item.productId ? products.find((p) => p.id === item.productId) : null
         return {
-          _key:            crypto.randomUUID(),
+          _key:            item.id ?? `edit-${item.productId ?? item.productNameFree ?? "item"}`,
           id:              item.id,
           productId:       item.productId,
           productNameFree: item.productNameFree ?? "",
@@ -197,7 +197,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
   }, [cancelState])
 
   // ── Item mutations
-  const addItem = useCallback(() => setItems((prev) => [...prev, blankItem()]), [])
+  const addItem = useCallback(() => setItems((prev) => [...prev, blankItem(crypto.randomUUID())]), [])
 
   const removeItem = useCallback((key: string) => {
     setItems((prev) => prev.length > 1 ? prev.filter((i) => i._key !== key) : prev)

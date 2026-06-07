@@ -3,7 +3,7 @@
 import { redirect }     from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { db } from "@/db"
-import { purchaseOrders } from "@/db/schema"
+import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createOrder, issueOrder, markOrderSent } from "@/lib/services/purchasing"
@@ -208,6 +208,32 @@ export async function postponeItemAction(
 
   if (!itemId) return { ok: false, message: "Ítem no especificado" }
   if (!reason) return { ok: false, message: "El motivo de postergación es obligatorio" }
+
+  const item = await db
+    .select({
+      id: purchaseRequestItems.id,
+      status: purchaseRequestItems.status,
+      worksiteId: purchaseRequests.worksiteId,
+    })
+    .from(purchaseRequestItems)
+    .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+    .where(eq(purchaseRequestItems.id, itemId))
+    .then((rows) => rows[0])
+
+  if (!item) return { ok: false, message: "Ítem no encontrado" }
+  if (!["approved", "pending_purchase"].includes(item.status)) {
+    return { ok: false, message: "Solo se pueden postergar ítems aprobados pendientes de compra" }
+  }
+  if (!canAccessWorksite(session, item.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de este ítem" }
+  }
+
+  const orderLink = await db.query.purchaseOrderItems.findFirst({
+    where: eq(purchaseOrderItems.requestItemId, itemId),
+  })
+  if (orderLink) {
+    return { ok: false, message: "No se puede postergar un ítem que ya está en una OC" }
+  }
 
   try {
     await postponeItem(itemId, session.user.id, reason, {

@@ -71,33 +71,34 @@ export async function registerUser(
   const hashedPassword = await bcrypt.hash(data.password, 12)
   const avatarColor = String(Math.abs(hashStr(data.name)) % 360)
 
-  await db.transaction(async (tx) => {
-    await tx.insert(users).values({
+  db.transaction((tx) => {
+    tx.insert(users).values({
       id,
       name: data.name,
       email: data.email,
       hashedPassword,
       avatarColor,
       isActive: true,
-    })
+    }).run()
 
-    await tx.insert(userRoles).values(roleIds.map((roleId) => ({ userId: id, roleId })))
+    tx.insert(userRoles).values(roleIds.map((roleId) => ({ userId: id, roleId }))).run()
 
     if (worksiteAssignments.length > 0) {
-      await tx.insert(worksiteUsers).values(
+      tx.insert(worksiteUsers).values(
         worksiteAssignments.map((assignment) => ({
           userId: id,
           worksiteId: assignment.worksiteId,
           isPrimary: assignment.isPrimary,
         })),
-      )
+      ).run()
     }
 
     if (invitationId) {
-      await tx
+      tx
         .update(userInvitations)
         .set({ acceptedAt: new Date().toISOString() })
         .where(eq(userInvitations.id, invitationId))
+        .run()
     }
   })
 

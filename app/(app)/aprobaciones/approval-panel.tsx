@@ -4,7 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "sonner"
 import {
-  CheckCircle, XCircle, ArrowCounterClockwise, Warning, CaretDown,
+  CheckCircle, XCircle, Warning, CaretDown,
 } from "@phosphor-icons/react"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import {
-  approveItemAction, rejectItemAction, returnItemAction, bulkApproveRequestAction,
+  approveItemAction, rejectItemAction, bulkApproveRequestAction,
 } from "./actions"
 import { formatQty, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
@@ -51,7 +51,7 @@ export interface ApprovalRequest {
 }
 
 /* ── Item action types ───────────────────────────────────────────────────────── */
-type ItemAction = "idle" | "approving" | "rejecting" | "returning"
+type ItemAction = "idle" | "approving" | "rejecting"
 
 /* ── Urgency label ────────────────────────────────────────────────────────────── */
 const URGENCY_LABEL: Record<string, string> = {
@@ -77,10 +77,6 @@ function ItemRow({ item }: { item: ApprovalItem }) {
   const [rejectState, rejectAction] = useActionState<ActionState, FormData>(
     rejectItemAction, INITIAL_STATE,
   )
-  const [returnState, returnAction] = useActionState<ActionState, FormData>(
-    returnItemAction, INITIAL_STATE,
-  )
-
   // Toast + collapse on successful action
   React.useEffect(() => {
     if (approveState.ok && approveState.message) {
@@ -98,23 +94,14 @@ function ItemRow({ item }: { item: ApprovalItem }) {
     }
   }, [rejectState])
 
-  React.useEffect(() => {
-    if (returnState.ok && returnState.message) {
-      toast.success(returnState.message)
-    } else if (returnState.ok === false && returnState.message && returnState !== INITIAL_STATE) {
-      toast.error(returnState.message)
-    }
-  }, [returnState])
-
   const decided =
     approveState.ok ? "approved" :
     rejectState.ok ? "rejected" :
-    returnState.ok ? "returned" :
     null
 
   // Once a decision is made, show a collapsed "decided" state
   if (decided) {
-    const label = decided === "approved" ? "Aprobado" : decided === "rejected" ? "Rechazado" : "Devuelto"
+    const label = decided === "approved" ? "Aprobado" : "Rechazado"
     return (
       <li className="flex items-center gap-3 py-2.5 px-3 rounded-[var(--radius)] bg-[var(--color-surface-2)] opacity-60">
         <StateBadge state={decided} entity="item" size="sm" />
@@ -200,15 +187,6 @@ function ItemRow({ item }: { item: ApprovalItem }) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setAction("returning")}
-              className="gap-1 text-[var(--color-text-muted)]"
-            >
-              <ArrowCounterClockwise size={13} />
-              Devolver
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
               onClick={() => setAction("rejecting")}
               className="gap-1 text-[var(--color-danger)] hover:text-[var(--color-danger)]"
             >
@@ -280,20 +258,6 @@ function ItemRow({ item }: { item: ApprovalItem }) {
         />
       )}
 
-      {/* Return inline form */}
-      {action === "returning" && (
-        <ReasonForm
-          itemId={item.id}
-          actionFn={returnAction}
-          state={returnState}
-          onCancel={() => setAction("idle")}
-          label="Observaciones para el solicitante"
-          placeholder="Qué debe corregir o aclarar el solicitante..."
-          submitLabel="Devolver al solicitante"
-          submitLoadingLabel="Devolviendo..."
-          colorClass="text-[oklch(0.62_0.15_56)]"
-        />
-      )}
     </li>
   )
 }

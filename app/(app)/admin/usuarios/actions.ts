@@ -123,22 +123,22 @@ export async function createUser(
   const hashedPass   = await bcrypt.hash(d.password, 10)
   const avatarColor  = String(Math.abs(hashStr(d.name)) % 360)
 
-  await db.transaction(async (tx) => {
-    await tx.insert(users).values({
+  db.transaction((tx) => {
+    tx.insert(users).values({
       id, name: d.name, email: d.email,
       hashedPassword: hashedPass,
       avatarColor,
       isActive: d.isActive,
-    })
+    }).run()
     if (d.roleIds.length > 0) {
-      await tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: id, roleId: rid })))
+      tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: id, roleId: rid }))).run()
     }
     if (d.worksiteAssignments.length > 0) {
-      await tx.insert(worksiteUsers).values(
+      tx.insert(worksiteUsers).values(
         d.worksiteAssignments.map((a) => ({
           userId: id, worksiteId: a.worksiteId, isPrimary: a.isPrimary,
         }))
-      )
+      ).run()
     }
   })
 
@@ -200,21 +200,21 @@ export async function updateUser(
     updates.hashedPassword = await bcrypt.hash(d.password, 10)
   }
 
-  await db.transaction(async (tx) => {
-    await tx.update(users).set(updates).where(eq(users.id, d.id))
+  db.transaction((tx) => {
+    tx.update(users).set(updates).where(eq(users.id, d.id)).run()
     // Replace roles
-    await tx.delete(userRoles).where(eq(userRoles.userId, d.id))
+    tx.delete(userRoles).where(eq(userRoles.userId, d.id)).run()
     if (d.roleIds.length > 0) {
-      await tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: d.id, roleId: rid })))
+      tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: d.id, roleId: rid }))).run()
     }
     // Replace worksite assignments
-    await tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, d.id))
+    tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, d.id)).run()
     if (d.worksiteAssignments.length > 0) {
-      await tx.insert(worksiteUsers).values(
+      tx.insert(worksiteUsers).values(
         d.worksiteAssignments.map((a) => ({
           userId: d.id, worksiteId: a.worksiteId, isPrimary: a.isPrimary,
         }))
-      )
+      ).run()
     }
   })
 

@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import Image from "next/image"
 import Link from "next/link"
+import { BrandMark } from "@/components/layout/brand-mark"
 import { usePathname } from "next/navigation"
 import {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
@@ -49,24 +49,7 @@ export function Sidebar({ session, worksiteName, badgeCounts }: SidebarProps) {
     )}>
       {/* ── Brand header ── */}
       <div className="px-4 pt-5 pb-4 border-b border-[var(--color-brand-border)]">
-        <div className="flex items-center gap-2.5">
-          <Image
-            src="/chome_logo_white.svg"
-            alt="Chome"
-            width={32}
-            height={32}
-            unoptimized
-            className="h-8 w-8 shrink-0"
-          />
-          <div>
-            <p className="font-display font-bold text-[var(--color-brand-text)] text-sm leading-tight tracking-tight">
-              Chome
-            </p>
-            <p className="text-[10px] text-[var(--color-brand-text-muted)] leading-tight">
-              Solicitudes y Bodega
-            </p>
-          </div>
-        </div>
+        <BrandMark variant="dark" size={32} subtitle />
         {worksiteName && (
           <div className="mt-3 flex items-center gap-1.5">
             <MapPin size={12} className="text-[var(--color-brand-text-muted)] shrink-0" />
@@ -107,6 +90,7 @@ export function Sidebar({ session, worksiteName, badgeCounts }: SidebarProps) {
           </div>
           <Link
             href="/api/auth/signout"
+            prefetch={false}
             className="text-[var(--color-brand-text-muted)] hover:text-[var(--color-brand-text)] transition-colors duration-[var(--duration-fast)]"
             title="Cerrar sesión"
           >

@@ -2,7 +2,7 @@ import { count, eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
   deliveries, deliveryItems,
-  products, worksites,
+  products, purchaseRequestItems, worksites,
 } from "@/db/schema"
 import { generateCode, nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
@@ -36,16 +36,41 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
   const deliveryId = nanoid()
   const code = generateCode("ENT", total + 1, new Date().getFullYear())
 
-  await db.transaction(async (tx) => {
-    const [worksite, product] = await Promise.all([
-      tx.query.worksites.findFirst({ where: eq(worksites.id, input.worksiteId) }),
-      tx.query.products.findFirst({ where: eq(products.id, input.productId) }),
-    ])
+  db.transaction((tx) => {
+    const worksite = tx.query.worksites.findFirst({ where: eq(worksites.id, input.worksiteId) }).sync()
+    const product = tx.query.products.findFirst({ where: eq(products.id, input.productId) }).sync()
 
     if (!worksite || !worksite.isActive) throw new Error("Faena no disponible")
     if (!product || !product.isActive) throw new Error("Producto no disponible")
 
-    await tx.insert(deliveries).values({
+    let totalDelivered: number | undefined
+    if (input.requestItemId) {
+      const requestItem = tx.query.purchaseRequestItems.findFirst({
+        where: eq(purchaseRequestItems.id, input.requestItemId),
+      }).sync()
+      if (!requestItem) throw new Error("Ítem de solicitud no encontrado")
+      if (!["received", "partially_delivered"].includes(requestItem.status)) {
+        throw new Error("Solo puedes asociar ítems recibidos pendientes de entrega")
+      }
+      if (requestItem.productId !== input.productId) {
+        throw new Error("El ítem trazable no coincide con el producto")
+      }
+
+      const previousDeliveries = tx
+        .select({ quantity: deliveryItems.quantity })
+        .from(deliveryItems)
+        .where(eq(deliveryItems.requestItemId, input.requestItemId))
+        .all()
+      const alreadyDelivered = previousDeliveries.reduce((sum, item) => sum + item.quantity, 0)
+      const pending = requestItem.quantity - alreadyDelivered
+      if (pending <= 0) throw new Error("El ítem ya fue entregado completamente")
+      if (input.quantity > pending) {
+        throw new Error(`La cantidad excede el saldo pendiente de entrega (${pending})`)
+      }
+      totalDelivered = alreadyDelivered + input.quantity
+    }
+
+    tx.insert(deliveries).values({
       id: deliveryId,
       code,
       deliveredBy: input.deliveredBy,
@@ -57,9 +82,9 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
       signaturePath: null,
       notes: input.notes?.trim() || undefined,
       createdAt: now,
-    })
+    }).run()
 
-    await tx.insert(deliveryItems).values({
+    tx.insert(deliveryItems).values({
       id: nanoid(),
       deliveryId,
       requestItemId: input.requestItemId ?? null,
@@ -68,9 +93,9 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
       quantity: input.quantity,
       unitOfMeasure: input.unitOfMeasure,
       notes: null,
-    })
+    }).run()
 
-    await applyMovementTx(tx, {
+    applyMovementTx(tx, {
       warehouseId: input.warehouseId,
       productId: input.productId,
       type: "egreso_faena",
@@ -84,12 +109,14 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
     })
 
     if (input.requestItemId) {
-      await deliverItemTx(tx, input.requestItemId, input.deliveredBy, {
+      deliverItemTx(tx, input.requestItemId, input.deliveredBy, {
         userEmail: input.userEmail,
+        deliveredQuantity: input.quantity,
+        totalDelivered,
       })
     }
 
-    await recordAudit({
+    recordAudit({
       userId: input.deliveredBy,
       userEmail: input.userEmail,
       action: "create",

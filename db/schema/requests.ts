@@ -85,3 +85,14 @@ export const purchaseRequestItemsRelations = relations(purchaseRequestItems, ({ 
   attributes:        many(requestItemAttributes),
   approvalDecisions: many(approvalDecisions),
 }))
+
+export const requestItemAttributesRelations = relations(requestItemAttributes, ({ one }) => ({
+  requestItem: one(purchaseRequestItems, {
+    fields:     [requestItemAttributes.requestItemId],
+    references: [purchaseRequestItems.id],
+  }),
+  attribute: one(productAttributes, {
+    fields:     [requestItemAttributes.attributeId],
+    references: [productAttributes.id],
+  }),
+}))

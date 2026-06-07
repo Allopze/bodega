@@ -46,19 +46,18 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 7. Entra como solicitante de faena y crea una solicitud en `/solicitudes/nueva`.
 8. Entra como jefa, secretaria, prevencionista o administrador y aprueba en `/aprobaciones`.
 9. Entra como jefa, secretaria o administrador, genera una OC en `/compras/nueva` y emite/envia la orden.
-10. Registra la recepcion en `/recepcion/nueva`.
-11. Registra entregas a faena desde `/bodega`; cada entrega descuenta stock y guarda quien recibio.
-12. Anexa facturas desde el detalle de una solicitud u orden de compra.
-13. Revisa stock, movimientos y entregas en `/bodega` y `/entregas`.
+10. Anexa facturas desde el detalle de una solicitud u orden de compra cuando llegue el respaldo.
+11. Marca la OC como recibida desde `/recepcion/nueva`.
+12. Revisa el avance por ítem en `/trazabilidad` y los pendientes en `/reportes`.
 
 ## Reglas operativas
 
-- Las entregas son siempre a una faena.
-- Para registrar una entrega basta indicar quien recibio.
-- Toda entrega descuenta stock desde una bodega.
+- El flujo operativo actual no usa entrega a trabajadores ni despacho desde bodega.
+- La recepcion se registra directamente contra la faena de la OC.
+- Marcar una OC como recibida cierra el seguimiento operativo de sus ítems recibidos.
 - La prevencionista participa en aprobaciones de todos los productos.
 - La aprobacion simple actual es suficiente: no hay cadena obligatoria.
-- Las facturas anexas son visibles solo para jefa Chome, secretaria y prevencionista.
+- Las facturas anexas son visibles para administrador, jefa Chome, secretaria y prevencionista.
 - Los EPP con talla, color o modelo se mantienen como productos comprables separados, con atributos normalizados para busqueda y solicitud.
 - La base SQLite local no se versiona; schema, migraciones y seed son la fuente reproducible.
 

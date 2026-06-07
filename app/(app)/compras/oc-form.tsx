@@ -206,7 +206,7 @@ export function OcForm({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Faena" required>
           <Select value={worksiteId} onValueChange={setWorksiteId}>
-            <SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
+            <SelectTrigger id="ocWorksiteId"><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
             <SelectContent>
               {worksites.map((w) => (
                 <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
@@ -217,7 +217,7 @@ export function OcForm({
 
         <Field label="Proveedor" required>
           <Select value={supplierId} onValueChange={onSupplierValueChange}>
-            <SelectTrigger><SelectValue placeholder="Selecciona proveedor" /></SelectTrigger>
+            <SelectTrigger id="supplierId"><SelectValue placeholder="Selecciona proveedor" /></SelectTrigger>
             <SelectContent>
               {suppliers.map((s) => (
                 <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>

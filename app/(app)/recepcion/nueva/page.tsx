@@ -2,14 +2,14 @@ import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { db }                 from "@/db"
 import {
-  purchaseOrders, warehouses,
+  purchaseOrders,
 } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { ReceiptForm } from "../receipt-form"
-import type { ReceiptOcItem, WarehouseOption } from "../receipt-form"
+import type { ReceiptOcItem } from "../receipt-form"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Registrar recepción" }
@@ -44,21 +44,12 @@ export default async function NuevaRecepcionPage({
     .map((i) => i.productId)
     .filter((id): id is string => id !== null)
 
-  const [productRows, allWarehouses] = await Promise.all([
-    productIds.length > 0
-      ? db.query.products.findMany({
-          where: (p, { inArray }) => inArray(p.id, productIds),
-          columns: { id: true, sku: true, name: true },
-        })
-      : Promise.resolve([]),
-
-    db
-      .select({ id: warehouses.id, name: warehouses.name })
-      .from(warehouses)
-      .where(eq(warehouses.isActive, true))
-      .orderBy(asc(warehouses.name)),
-
-  ])
+  const productRows = productIds.length > 0
+    ? await db.query.products.findMany({
+        where: (p, { inArray }) => inArray(p.id, productIds),
+        columns: { id: true, sku: true, name: true },
+      })
+    : []
 
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
 
@@ -76,13 +67,11 @@ export default async function NuevaRecepcionPage({
     }
   })
 
-  const warehouseOptions: WarehouseOption[] = allWarehouses.map((w) => ({ id: w.id, name: w.name }))
-
   return (
     <>
       <PageHeader
         title={`Recepción OC ${order.code}`}
-        description="Registra las cantidades recibidas y el destino de los ítems."
+        description="Marca los ítems recibidos directamente en la faena de la OC."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard",  href: "/dashboard" },
@@ -97,7 +86,6 @@ export default async function NuevaRecepcionPage({
           orderCode={order.code}
           orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
           items={items}
-          warehouses={warehouseOptions}
         />
       </div>
     </>

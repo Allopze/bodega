@@ -70,7 +70,7 @@ export default async function RecepcionPage() {
     <>
       <PageHeader
         title="Recepción"
-        description="Registro de recepción de órdenes de compra."
+        description="Marca como recibidas las órdenes de compra que llegaron a faena."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -86,7 +86,7 @@ export default async function RecepcionPage() {
         pageSize={20}
         searchPlaceholder="Buscar OC..."
         emptyTitle="Sin OCs pendientes de recepción"
-        emptyDescription="Las órdenes de compra enviadas al proveedor aparecerán aquí cuando estén listas para recibir."
+        emptyDescription="Las órdenes de compra enviadas al proveedor aparecerán aquí cuando deban marcarse como recibidas."
         renderRow={(row) => {
             const o = row as unknown as typeof visible[0]
             return (

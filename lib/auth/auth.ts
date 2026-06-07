@@ -2,9 +2,10 @@ import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import { db } from "@/db"
-import { users, userRoles, roles, rolePermissions, permissions, worksiteUsers } from "@/db/schema"
-import { eq, inArray } from "drizzle-orm"
+import { users } from "@/db/schema"
+import { eq } from "drizzle-orm"
 import { z } from "zod"
+import { applyRbacToToken, getUserRbacById } from "@/lib/auth/rbac"
 
 const loginSchema = z.object({
   email:    z.string().email(),
@@ -17,42 +18,11 @@ async function getUserWithAuth(email: string) {
     where: eq(users.email, email.toLowerCase()),
   })
   if (!user || !user.isActive) return null
-
-  // Load roles
-  const userRoleRows = await db
-    .select({ roleId: userRoles.roleId, roleName: roles.name, roleLabel: roles.label })
-    .from(userRoles)
-    .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(eq(userRoles.userId, user.id))
-
-  const roleIds = userRoleRows.map((r) => r.roleId)
-
-  // Load permissions for those roles
-  let permissionNames: string[] = []
-  if (roleIds.length > 0) {
-    const permsRows = await db
-      .select({ permissionName: permissions.name })
-      .from(rolePermissions)
-      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-      .where(inArray(rolePermissions.roleId, roleIds))
-    permissionNames = [...new Set(permsRows.map((p) => p.permissionName))]
-  }
-
-  // Load worksite scopes
-  const wsRows = await db
-    .select({ worksiteId: worksiteUsers.worksiteId, isPrimary: worksiteUsers.isPrimary })
-    .from(worksiteUsers)
-    .where(eq(worksiteUsers.userId, user.id))
+  const rbac = await getUserRbacById(user.id)
+  if (!rbac || !rbac.isActive) return null
 
   return {
-    id:           user.id,
-    name:         user.name,
-    email:        user.email,
-    avatarColor:  user.avatarColor,
-    roles:        userRoleRows.map((r) => r.roleName),
-    permissions:  permissionNames,
-    worksiteIds:  wsRows.map((w) => w.worksiteId),
-    primaryWorksiteId: wsRows.find((w) => w.isPrimary)?.worksiteId ?? wsRows[0]?.worksiteId ?? null,
+    ...rbac,
     _hashedPassword: user.hashedPassword,
   }
 }
@@ -90,12 +60,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         // First sign-in: embed RBAC into JWT
         const u = user as Omit<NonNullable<Awaited<ReturnType<typeof getUserWithAuth>>>, "_hashedPassword">
-        token.id               = u.id
-        token.roles            = u.roles
-        token.permissions      = u.permissions
-        token.worksiteIds      = u.worksiteIds
-        token.primaryWorksiteId = u.primaryWorksiteId
-        token.avatarColor      = u.avatarColor
+        applyRbacToToken(token, u)
+        return token
+      }
+      if (token.id) {
+        const snapshot = await getUserRbacById(token.id as string)
+        applyRbacToToken(token, snapshot)
       }
       return token
     },
@@ -106,6 +76,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.worksiteIds      = token.worksiteIds as string[]
       session.user.primaryWorksiteId = token.primaryWorksiteId as string | null
       session.user.avatarColor      = token.avatarColor as string | null
+      session.user.isActive         = token.isActive as boolean
       return session
     },
   },

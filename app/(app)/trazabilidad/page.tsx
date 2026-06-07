@@ -4,7 +4,7 @@ import Link from "next/link"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems,
-  purchaseOrderItems, receiptItems, deliveryItems,
+  purchaseOrderItems, receiptItems, invoiceAttachments,
   approvalDecisions, products, worksites,
 } from "@/db/schema"
 import { asc, eq, inArray } from "drizzle-orm"
@@ -24,7 +24,7 @@ export const metadata: Metadata = { title: "Trazabilidad de ítems" }
 /** States that indicate an item has been approved (or past approval). */
 const APPROVED_STATES = new Set([
   "approved", "pending_purchase", "in_purchase_order", "purchased",
-  "partially_received", "received", "partially_delivered", "delivered",
+  "partially_received", "received",
 ])
 
 export default async function TrazabilidadPage({
@@ -43,7 +43,7 @@ export default async function TrazabilidadPage({
   /* ── Fetch all data in parallel ─────────────────────────────────────── */
   const [
     allItems, allRequests, allProducts, allWorksites,
-    allOcItems, allReceiptItems, allDeliveryItems, allApproveDecisions,
+    allOcItems, allReceiptItems, allInvoiceAttachments, allApproveDecisions,
   ] = await Promise.all([
     db.select({
       id:              purchaseRequestItems.id,
@@ -70,6 +70,7 @@ export default async function TrazabilidadPage({
 
     db.select({
       id:            purchaseOrderItems.id,
+      purchaseOrderId: purchaseOrderItems.purchaseOrderId,
       requestItemId: purchaseOrderItems.requestItemId,
       quantity:      purchaseOrderItems.quantity,
     }).from(purchaseOrderItems),
@@ -80,9 +81,9 @@ export default async function TrazabilidadPage({
     }).from(receiptItems),
 
     db.select({
-      requestItemId: deliveryItems.requestItemId,
-      quantity:      deliveryItems.quantity,
-    }).from(deliveryItems),
+      targetId: invoiceAttachments.targetId,
+      status:   invoiceAttachments.status,
+    }).from(invoiceAttachments).where(eq(invoiceAttachments.targetType, "purchase_order")),
 
     // Approval decisions may be recorded as "approve" or "modify" when quantity changes.
     db.select({
@@ -97,11 +98,11 @@ export default async function TrazabilidadPage({
   const worksiteMap   = Object.fromEntries(allWorksites.map((w) => [w.id, w.name]))
 
   // OC items indexed by requestItemId → list of OC items
-  const ocByItemId = new Map<string, Array<{ id: string; quantity: number }>>()
+  const ocByItemId = new Map<string, Array<{ id: string; purchaseOrderId: string; quantity: number }>>()
   for (const oi of allOcItems) {
     if (!oi.requestItemId) continue
     const arr = ocByItemId.get(oi.requestItemId) ?? []
-    arr.push({ id: oi.id, quantity: oi.quantity })
+    arr.push({ id: oi.id, purchaseOrderId: oi.purchaseOrderId, quantity: oi.quantity })
     ocByItemId.set(oi.requestItemId, arr)
   }
 
@@ -114,16 +115,13 @@ export default async function TrazabilidadPage({
     )
   }
 
-  // Delivered quantities indexed by requestItemId
-  // Note: warehouse dispatch deliveries may not populate requestItemId.
-  // This captures only deliveries linked back to a request item.
-  const deliveredByItemId = new Map<string, number>()
-  for (const di of allDeliveryItems) {
-    if (!di.requestItemId) continue
-    deliveredByItemId.set(
-      di.requestItemId,
-      (deliveredByItemId.get(di.requestItemId) ?? 0) + di.quantity,
-    )
+  const invoiceStatusByOrder = new Map<string, string>()
+  for (const invoice of allInvoiceAttachments) {
+    const current = invoiceStatusByOrder.get(invoice.targetId)
+    if (current === "observed") continue
+    if (invoice.status === "observed" || current !== "reconciled") {
+      invoiceStatusByOrder.set(invoice.targetId, invoice.status)
+    }
   }
 
   // Last approve decision modifiedQty indexed by requestItemId
@@ -149,8 +147,8 @@ export default async function TrazabilidadPage({
     approved:     number | null  // null = not yet approved
     inOc:         number
     received:     number
-    delivered:    number
     status:       string
+    invoiceStatus: string
     /** True when approved > inOc — the core missing-item alert */
     alert:        boolean
   }
@@ -165,7 +163,16 @@ export default async function TrazabilidadPage({
     const ocItems = ocByItemId.get(item.id) ?? []
     const inOc     = ocItems.reduce((s, oi) => s + oi.quantity, 0)
     const received = ocItems.reduce((s, oi) => s + (receivedByOcItem.get(oi.id) ?? 0), 0)
-    const delivered = deliveredByItemId.get(item.id) ?? 0
+    const orderInvoiceStatuses = ocItems
+      .map((oi) => invoiceStatusByOrder.get(oi.purchaseOrderId))
+      .filter((status): status is string => !!status)
+    const invoiceStatus = orderInvoiceStatuses.includes("observed")
+      ? "Observada"
+      : orderInvoiceStatuses.includes("reconciled")
+        ? "Conciliada"
+        : orderInvoiceStatuses.length > 0
+          ? "Adjunta"
+          : "Sin factura"
 
     const isApproved = APPROVED_STATES.has(item.status)
     let approved: number | null = null
@@ -194,8 +201,8 @@ export default async function TrazabilidadPage({
       approved,
       inOc,
       received,
-      delivered,
       status:       item.status,
+      invoiceStatus,
       alert,
     })
   }
@@ -277,8 +284,6 @@ export default async function TrazabilidadPage({
             <option value="purchased">Comprado</option>
             <option value="partially_received">Rec. parcial</option>
             <option value="received">Recibido</option>
-            <option value="partially_delivered">Entrega parcial</option>
-            <option value="delivered">Entregado</option>
             <option value="rejected">Rechazado</option>
             <option value="postponed">Postergado</option>
           </select>
@@ -324,7 +329,7 @@ export default async function TrazabilidadPage({
                 <TableHead className="text-right">Aprobado</TableHead>
                 <TableHead className="text-right">En OC</TableHead>
                 <TableHead className="text-right">Recibido</TableHead>
-                <TableHead className="text-right">Entregado</TableHead>
+                <TableHead>Factura</TableHead>
                 <TableHead>Estado</TableHead>
               </TableRow>
             </TableHeader>
@@ -386,7 +391,7 @@ export default async function TrazabilidadPage({
                   </TableCellNum>
 
                   <TableCellNum>{formatQty(row.received, row.uom)}</TableCellNum>
-                  <TableCellNum>{formatQty(row.delivered, row.uom)}</TableCellNum>
+                  <TableCell className="text-sm text-[var(--color-text-muted)]">{row.invoiceStatus}</TableCell>
 
                   {/* Status badge */}
                   <TableCell>
@@ -402,7 +407,7 @@ export default async function TrazabilidadPage({
       {/* ── Legend ────────────────────────────────────────────────────── */}
       <p className="mt-4 text-xs text-[var(--color-text-subtle)]">
         Las filas resaltadas indican ítems aprobados cuya cantidad en órdenes de compra es inferior a la aprobada.
-        Entregas vinculadas directamente desde bodega (sin trazabilidad a un ítem de solicitud) no se reflejan en la columna Entregado.
+        La recepción directa en faena cierra el seguimiento operativo del ítem.
       </p>
     </>
   )

@@ -15,14 +15,14 @@ export const requestItemAttributeSchema = z.object({
 export const requestItemSchema = z.object({
   id:              z.string().optional(),
   productId:       z.string().nullable().optional(),
-  productNameFree: z.string().max(120).optional().or(z.literal("")),
+  productNameFree: z.string().max(120).nullable().optional().or(z.literal("")),
   quantity:        z.coerce.number().positive("Cantidad debe ser mayor a 0"),
   unitOfMeasure:   z.string().min(1, "Unidad requerida").max(20).default("unidad"),
   urgency:         z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate:    z.string().optional().nullable(),
   workerId:        z.string().optional().nullable(),
   sortOrder:       z.coerce.number().int().default(0),
-  notes:           z.string().max(300).optional().or(z.literal("")),
+  notes:           z.string().max(300).nullable().optional().or(z.literal("")),
   attributes:      z.array(requestItemAttributeSchema).default([]),
 }).refine(
   (d) => !!d.productId || !!d.productNameFree?.trim(),

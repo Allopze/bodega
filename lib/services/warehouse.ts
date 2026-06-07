@@ -52,21 +52,21 @@ export interface ApplyMovementInput {
 export async function applyMovement(input: ApplyMovementInput): Promise<number> {
   let stockAfter: number = 0
 
-  await db.transaction(async (tx) => {
-    stockAfter = await applyMovementTx(tx, input)
+  db.transaction((tx) => {
+    stockAfter = applyMovementTx(tx, input)
   })
 
   return stockAfter
 }
 
-export async function applyMovementTx(
+export function applyMovementTx(
   tx: Tx,
   input: ApplyMovementInput,
-): Promise<number> {
+): number {
     // Verify warehouse exists
-    const warehouse = await tx.query.warehouses.findFirst({
+    const warehouse = tx.query.warehouses.findFirst({
       where: eq(warehouses.id, input.warehouseId),
-    })
+    }).sync()
     if (!warehouse) {
       throw new Error(`Warehouse ${input.warehouseId} not found`)
     }
@@ -75,12 +75,12 @@ export async function applyMovementTx(
     }
 
     // Get current stock
-    const existing = await tx.query.warehouseStock.findFirst({
+    const existing = tx.query.warehouseStock.findFirst({
       where: and(
         eq(warehouseStock.warehouseId, input.warehouseId),
         eq(warehouseStock.productId, input.productId),
       ),
-    })
+    }).sync()
 
     const currentQty = existing?.quantity ?? 0
     const newQty     = currentQty + input.quantity
@@ -96,7 +96,7 @@ export async function applyMovementTx(
 
     // Upsert warehouseStock
     if (existing) {
-      await tx
+      tx
         .update(warehouseStock)
         .set({
           quantity:       newQty,
@@ -108,9 +108,9 @@ export async function applyMovementTx(
             eq(warehouseStock.warehouseId, input.warehouseId),
             eq(warehouseStock.productId,   input.productId),
           ),
-        )
+        ).run()
     } else {
-      await tx.insert(warehouseStock).values({
+      tx.insert(warehouseStock).values({
         id:             nanoid(),
         warehouseId:    input.warehouseId,
         productId:      input.productId,
@@ -119,11 +119,11 @@ export async function applyMovementTx(
         minStock:       0,
         lastMovementAt: now,
         updatedAt:      now,
-      })
+      }).run()
     }
 
     // Write movement record
-    await tx.insert(inventoryMovements).values({
+    tx.insert(inventoryMovements).values({
       id:            nanoid(),
       warehouseId:   input.warehouseId,
       productId:     input.productId,
@@ -136,9 +136,9 @@ export async function applyMovementTx(
       performedBy:   input.performedBy,
       reason:        input.reason ?? null,
       notes:         input.notes ?? null,
-    })
+    }).run()
 
-    await recordAudit({
+    recordAudit({
       userId:     input.performedBy,
       userEmail:  input.userEmail,
       action:     "create",

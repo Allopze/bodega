@@ -9,6 +9,7 @@ import {
   ALLOWED_TRANSITIONS,
   TERMINAL_STATES,
   canTransition,
+  getDeliveryTargetStatus,
   type ItemStatus,
 } from "@/lib/services/item-state"
 
@@ -159,5 +160,19 @@ describe("Partial receipt path", () => {
     for (let i = 0; i < path.length - 1; i++) {
       expect(canTransition(path[i], path[i + 1])).toBe(true)
     }
+  })
+})
+
+describe("delivery target status", () => {
+  it("marks partial deliveries when accumulated delivered quantity is below item quantity", () => {
+    expect(getDeliveryTargetStatus(5, 2)).toBe("partially_delivered")
+  })
+
+  it("marks delivered when accumulated delivered quantity reaches item quantity", () => {
+    expect(getDeliveryTargetStatus(5, 5)).toBe("delivered")
+  })
+
+  it("preserves legacy full-delivery behavior when no accumulated quantity is provided", () => {
+    expect(getDeliveryTargetStatus(5)).toBe("delivered")
   })
 })

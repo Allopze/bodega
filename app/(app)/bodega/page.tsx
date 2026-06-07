@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db }       from "@/db"
-import { purchaseRequestItems, warehouses, worksites } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { deliveryItems, purchaseRequestItems, warehouses, worksites } from "@/db/schema"
+import { eq, asc, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -94,7 +94,7 @@ export default async function BodegaPage() {
       orderBy: (m, { desc }) => [desc(m.performedAt)],
     }).then((rows) => rows.slice(0, 50)),
     db.query.purchaseRequestItems.findMany({
-      where: eq(purchaseRequestItems.status, "received"),
+      where: inArray(purchaseRequestItems.status, ["received", "partially_delivered"]),
       with: {
         product: true,
         request: true,
@@ -117,17 +117,35 @@ export default async function BodegaPage() {
   const worksiteOptions: WorksiteOption[] = allWorksites
     .filter((w) => canAccessWorksite(session, w.id))
     .map((w) => ({ id: w.id, name: w.name }))
+  const requestItemIds = receivedItems.map((item) => item.id)
+  const deliveredRows = requestItemIds.length > 0
+    ? await db
+        .select({ requestItemId: deliveryItems.requestItemId, quantity: deliveryItems.quantity })
+        .from(deliveryItems)
+        .where(inArray(deliveryItems.requestItemId, requestItemIds))
+    : []
+  const deliveredByItem = new Map<string, number>()
+  for (const row of deliveredRows) {
+    if (!row.requestItemId) continue
+    deliveredByItem.set(row.requestItemId, (deliveredByItem.get(row.requestItemId) ?? 0) + row.quantity)
+  }
   const deliverableOptions: DeliverableOption[] = receivedItems
     .filter((item) => item.productId !== null && canAccessWorksite(session, item.request.worksiteId))
-    .map((item) => ({
-      requestItemId: item.id,
-      requestCode: item.request.code,
-      worksiteId: item.request.worksiteId,
-      productId: item.productId as string,
-      productName: item.product?.name ?? item.productNameFree ?? "Ítem recibido",
-      quantity: item.quantity,
-      unitOfMeasure: item.unitOfMeasure,
-    }))
+    .map((item) => {
+      const deliveredQuantity = deliveredByItem.get(item.id) ?? 0
+      return {
+        requestItemId: item.id,
+        requestCode: item.request.code,
+        worksiteId: item.request.worksiteId,
+        productId: item.productId as string,
+        productName: item.product?.name ?? item.productNameFree ?? "Ítem recibido",
+        quantity: item.quantity,
+        deliveredQuantity,
+        remainingQuantity: Math.max(0, item.quantity - deliveredQuantity),
+        unitOfMeasure: item.unitOfMeasure,
+      }
+    })
+    .filter((item) => item.remainingQuantity > 0)
 
   // Group stock by warehouse
   const stockByWarehouse: Record<string, typeof stockRows> = {}

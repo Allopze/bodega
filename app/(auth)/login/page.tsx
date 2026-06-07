@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
-import Image from "next/image"
 import { Suspense } from "react"
+import { BrandMark } from "@/components/layout/brand-mark"
 import { getUserCount } from "@/lib/auth/bootstrap"
 import { LoginForm } from "./login-form"
 
@@ -19,20 +19,7 @@ export default async function LoginPage() {
         style={{ background: "radial-gradient(ellipse 60% 50% at 20% 10%, oklch(0.280 0.055 155), oklch(0.216 0.045 155))" }}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3">
-          <Image
-            src="/chome_logo_white.svg"
-            alt="Chome"
-            width={36}
-            height={36}
-            unoptimized
-            className="h-9 w-9 shrink-0"
-          />
-          <div>
-            <p className="font-display font-bold text-(--color-brand-text) text-lg leading-tight">Chome</p>
-            <p className="text-xs text-brand-text-muted">Solicitudes y Bodega</p>
-          </div>
-        </div>
+        <BrandMark variant="dark" size={36} subtitle titleSize="lg" />
 
         {/* Tagline */}
         <div>
@@ -66,16 +53,8 @@ export default async function LoginPage() {
       <div className="flex flex-1 items-center justify-center px-8 py-16 bg-white">
         <div className="w-full max-w-sm bg-surface border border-border rounded-(--radius-xl) shadow-(--shadow-md) px-8 py-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
           {/* Mobile logo */}
-          <div className="flex items-center gap-2.5 mb-8 lg:hidden">
-            <Image
-              src="/chome_logo_white.svg"
-              alt="Chome"
-              width={32}
-              height={32}
-              unoptimized
-              className="h-8 w-8 shrink-0 rounded-sm bg-brand-surface p-0.5"
-            />
-            <p className="font-display font-bold text-text text-base">Chome Solicitudes y Bodega</p>
+          <div className="mb-8 lg:hidden">
+            <BrandMark variant="light" size={32} subtitle="Chome Solicitudes y Bodega" titleSize="base" />
           </div>
 
           <h1 className="font-display text-2xl font-semibold text-text mb-6">

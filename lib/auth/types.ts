@@ -10,6 +10,7 @@ declare module "next-auth" {
       worksiteIds:       string[]
       primaryWorksiteId: string | null
       avatarColor:       string | null
+      isActive:          boolean
     }
   }
 }

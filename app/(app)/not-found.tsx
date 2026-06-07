@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { MagnifyingGlass } from "@phosphor-icons/react"
+import { MagnifyingGlass } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 

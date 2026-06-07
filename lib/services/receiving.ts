@@ -70,9 +70,9 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
     throw new Error(`Cannot receive against order in state '${order.status}'`)
   }
 
-  await db.transaction(async (tx) => {
+  db.transaction((tx) => {
     // Create receipt header
-    await tx.insert(receipts).values({
+    tx.insert(receipts).values({
       id:              receiptId,
       code,
       purchaseOrderId: input.purchaseOrderId,
@@ -84,7 +84,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       status:          "closed",
       notes:           input.notes ?? null,
       createdAt:       now,
-    })
+    }).run()
 
     // Process each receipt item
     for (const ri of input.items) {
@@ -108,7 +108,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       }
 
       const totalNowReceived = (ocItem.quantityReceived ?? 0) + qtyRec
-      await tx.insert(receiptItems).values({
+      tx.insert(receiptItems).values({
         id:                  nanoid(),
         receiptId,
         purchaseOrderItemId: ri.purchaseOrderItemId,
@@ -117,22 +117,22 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
         quantityDamaged:     qtyDmg,
         status:              totalNowReceived >= ocItem.quantity ? "received" : "partially_received",
         notes:               ri.notes ?? null,
-      })
+      }).run()
 
-      await tx
+      tx
         .update(purchaseOrderItems)
         .set({ quantityReceived: totalNowReceived })
-        .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
+        .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId)).run()
 
       if (ocItem.requestItemId) {
         const fullReceived = totalNowReceived >= ocItem.quantity
-        await receiveItemTx(tx, ocItem.requestItemId, input.receivedBy, {
+        receiveItemTx(tx, ocItem.requestItemId, input.receivedBy, {
           fullReceived,
           userEmail: input.userEmail,
         })
 
         if (input.locationType === "warehouse" && input.warehouseId && ocItem.productId) {
-          await applyMovementTx(tx, {
+          applyMovementTx(tx, {
             warehouseId:   input.warehouseId,
             productId:     ocItem.productId,
             type:          "ingreso_oc",
@@ -147,9 +147,9 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       }
     }
 
-    await rollupOrderReceiptStatus(input.purchaseOrderId, tx)
+    rollupOrderReceiptStatus(input.purchaseOrderId, tx)
 
-    await recordAudit({
+    recordAudit({
       userId:     input.receivedBy,
       userEmail:  input.userEmail,
       action:     "create",
@@ -170,14 +170,15 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
 
 /* ── Roll up OC status based on received quantities ────────────────────────────  */
 
-async function rollupOrderReceiptStatus(orderId: string, tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): Promise<void> {
-  const ocItems = await tx
+function rollupOrderReceiptStatus(orderId: string, tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): void {
+  const ocItems = tx
     .select({
       quantity:         purchaseOrderItems.quantity,
       quantityReceived: purchaseOrderItems.quantityReceived,
     })
     .from(purchaseOrderItems)
     .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
+    .all()
 
   if (ocItems.length === 0) return
 
@@ -194,8 +195,8 @@ async function rollupOrderReceiptStatus(orderId: string, tx: Parameters<Paramete
   }
 
   const now = new Date().toISOString()
-  await tx
+  tx
     .update(purchaseOrders)
     .set({ status: newStatus, updatedAt: now })
-    .where(eq(purchaseOrders.id, orderId))
+    .where(eq(purchaseOrders.id, orderId)).run()
 }

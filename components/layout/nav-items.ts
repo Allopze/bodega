@@ -51,22 +51,10 @@ export const NAV_ITEMS: NavSection[] = [
         badge:       "count",
       },
       {
-        label:       "Recepción/Bodega",
+        label:       "Recepción",
         href:        "/recepcion",
         iconName:    "Truck",
         permissions: ["receiving:view"],
-      },
-      {
-        label:       "Bodega",
-        href:        "/bodega",
-        iconName:    "Warehouse",
-        permissions: ["warehouse:view_stock"],
-      },
-      {
-        label:       "Entregas",
-        href:        "/entregas",
-        iconName:    "ArrowSquareOut",
-        permissions: ["warehouse:view_stock"],
       },
       {
         label:       "Trazabilidad",
@@ -104,22 +92,10 @@ export const NAV_ITEMS: NavSection[] = [
         permissions: ["admin:products"],
       },
       {
-        label:       "Trabajadores",
-        href:        "/admin/trabajadores",
-        iconName:    "HardHat",
-        permissions: ["admin:workers"],
-      },
-      {
         label:       "Proveedores",
         href:        "/admin/proveedores",
         iconName:    "Buildings",
         permissions: ["admin:suppliers"],
-      },
-      {
-        label:       "Bodegas",
-        href:        "/admin/bodegas",
-        iconName:    "Warehouse",
-        permissions: ["admin:config"],
       },
       {
         label:       "Log de Auditoría",

@@ -57,9 +57,7 @@ export default async function RecepcionDetallePage({
     : []
 
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
-  const destinationLabel = receipt.locationType === "warehouse"
-    ? "Ingreso a bodega"
-    : `Directo a ${receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "faena"}`
+  const destinationLabel = `Directo a ${receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "faena"}`
 
   return (
     <>
@@ -104,8 +102,6 @@ export default async function RecepcionDetallePage({
                 <TableRow>
                   <TableHead>Producto</TableHead>
                   <TableHead className="text-right">Recibido</TableHead>
-                  <TableHead className="text-right">Rechazado</TableHead>
-                  <TableHead className="text-right">Dañado</TableHead>
                   <TableHead>Nota</TableHead>
                 </TableRow>
               </TableHeader>
@@ -124,8 +120,6 @@ export default async function RecepcionDetallePage({
                         )}
                       </TableCell>
                       <TableCellNum>{formatQty(item.quantityReceived, ocItem.unitOfMeasure)}</TableCellNum>
-                      <TableCellNum>{formatQty(item.quantityRejected, ocItem.unitOfMeasure)}</TableCellNum>
-                      <TableCellNum>{formatQty(item.quantityDamaged, ocItem.unitOfMeasure)}</TableCellNum>
                       <TableCell className="text-sm text-[var(--color-text-muted)]">{item.notes ?? "—"}</TableCell>
                     </TableRow>
                   )

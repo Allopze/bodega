@@ -3,7 +3,7 @@ import type { Session } from "next-auth"
 import { auth } from "@/lib/auth/auth"
 import { PageHeader } from "@/components/ui/page-header"
 import { db } from "@/db"
-import { purchaseRequestItems, purchaseRequests, purchaseOrders } from "@/db/schema"
+import { invoiceAttachments, purchaseRequestItems, purchaseRequests, purchaseOrders } from "@/db/schema"
 import { eq, inArray } from "drizzle-orm"
 import { canAccessWorksite } from "@/lib/auth/can"
 import {
@@ -18,6 +18,7 @@ type MetricKey =
   | "approved_without_oc"
   | "orders_in_progress"
   | "orders_pending_receipt"
+  | "invoice_pending"
 
 type DashboardCard = {
   key: MetricKey
@@ -33,12 +34,14 @@ const PENDING_CARDS: Record<string, DashboardCard[]> = {
   jefa_chome: [
     { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare },
     { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: WarningCircle },
-    { key: "orders_in_progress", title: "Órdenes en curso", description: "OC emitidas esperando recepción", icon: Package },
+    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package },
+    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart },
   ],
   secretaria: [
     { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare },
     { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: ShoppingCart },
-    { key: "orders_in_progress", title: "Órdenes en curso", description: "OC emitidas esperando recepción", icon: Package },
+    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package },
+    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart },
   ],
   prevencionista: [
     { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare },
@@ -46,7 +49,8 @@ const PENDING_CARDS: Record<string, DashboardCard[]> = {
   administrador: [
     { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare },
     { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: WarningCircle },
-    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Órdenes que deben registrarse en bodega", icon: Package },
+    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package },
+    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart },
   ],
 }
 
@@ -86,7 +90,7 @@ export default async function DashboardPage() {
 }
 
 async function getDashboardMetrics(session: Session): Promise<Record<MetricKey, number>> {
-  const [requestRows, pendingItemRows, orderRows] = await Promise.all([
+  const [requestRows, pendingItemRows, orderRows, invoiceRows] = await Promise.all([
     db
       .select({
         id: purchaseRequests.id,
@@ -113,11 +117,32 @@ async function getDashboardMetrics(session: Session): Promise<Record<MetricKey, 
         status: purchaseOrders.status,
       })
       .from(purchaseOrders),
+
+    db
+      .select({
+        targetId: invoiceAttachments.targetId,
+        targetType: invoiceAttachments.targetType,
+        status: invoiceAttachments.status,
+      })
+      .from(invoiceAttachments),
   ])
 
   const visibleRequests = requestRows.filter((r) => canAccessWorksite(session, r.worksiteId))
   const visibleItems = pendingItemRows.filter((i) => canAccessWorksite(session, i.worksiteId))
   const visibleOrders = orderRows.filter((o) => canAccessWorksite(session, o.worksiteId))
+  const visibleOrderIds = new Set(visibleOrders.map((order) => order.id))
+  const invoiceRowsByOrder = invoiceRows.filter((invoice) =>
+    invoice.targetType === "purchase_order" && visibleOrderIds.has(invoice.targetId)
+  )
+  const ordersWithReconciledInvoice = new Set(
+    invoiceRowsByOrder
+      .filter((invoice) => invoice.status === "reconciled")
+      .map((invoice) => invoice.targetId),
+  )
+  const invoicesNeedingReview = invoiceRowsByOrder.filter((invoice) => invoice.status !== "reconciled").length
+  const receivedOrdersWithoutReconciledInvoice = visibleOrders.filter((order) =>
+    order.status === "received" && !ordersWithReconciledInvoice.has(order.id)
+  ).length
 
   return {
     my_requests: visibleRequests.filter((r) => r.requesterId === session.user.id && r.status !== "cancelled").length,
@@ -125,5 +150,6 @@ async function getDashboardMetrics(session: Session): Promise<Record<MetricKey, 
     approved_without_oc: visibleItems.filter((i) => i.status === "approved" || i.status === "pending_purchase").length,
     orders_in_progress: visibleOrders.filter((o) => ["issued", "sent", "supplier_confirmed", "partially_received"].includes(o.status)).length,
     orders_pending_receipt: visibleOrders.filter((o) => o.status === "sent" || o.status === "partially_received").length,
+    invoice_pending: receivedOrdersWithoutReconciledInvoice + invoicesNeedingReview,
   }
 }

@@ -61,6 +61,12 @@ export function canTransition(from: ItemStatus, to: ItemStatus): boolean {
   return ALLOWED_TRANSITIONS[from]?.includes(to) ?? false
 }
 
+export function getDeliveryTargetStatus(itemQuantity: number, totalDelivered?: number): ItemStatus {
+  return totalDelivered !== undefined && totalDelivered < itemQuantity
+    ? "partially_delivered"
+    : "delivered"
+}
+
 // ── Phase 3 ─────────────────────────────────────────────────────────────────
 
 /** Transition a draft item to requested status. */
@@ -69,39 +75,39 @@ export async function submitItem(
   userId: string,
   opts?: { userEmail?: string },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await submitItemTx(tx, itemId, userId, opts)
+  db.transaction((tx) => {
+    submitItemTx(tx, itemId, userId, opts)
   })
 }
 
-export async function submitItemTx(
+export function submitItemTx(
   tx: Tx,
   itemId: string,
   userId: string,
   opts?: { userEmail?: string },
-): Promise<void> {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+): void {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "requested")) {
       throw new Error(`Cannot transition item from '${item.status}' to 'requested'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseRequestItems)
       .set({ status: "requested", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
       fromStatus: item.status,
       toStatus:   "requested",
       changedBy:  userId,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -123,10 +129,10 @@ export async function approveItem(
   userId: string,
   opts?: { modifiedQty?: number; userEmail?: string; roleContext?: string },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+  db.transaction((tx) => {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "approved")) {
       throw new Error(`Cannot approve item in state '${item.status}'`)
@@ -141,12 +147,12 @@ export async function approveItem(
       updates.quantity = opts.modifiedQty
     }
 
-    await tx
+    tx
       .update(purchaseRequestItems)
       .set(updates)
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await tx.insert(approvalDecisions).values({
+    tx.insert(approvalDecisions).values({
       id:            nanoid(),
       requestItemId: itemId,
       requestId:     item.requestId,
@@ -154,16 +160,16 @@ export async function approveItem(
       decidedBy:     userId,
       modifiedQty:   opts?.modifiedQty ?? null,
       roleContext:   opts?.roleContext ?? null,
-    })
+    }).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
       fromStatus: item.status,
       toStatus:   "approved",
       changedBy:  userId,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -173,7 +179,7 @@ export async function approveItem(
       newState:   { status: "approved", modifiedQty: opts?.modifiedQty },
     }, tx)
 
-    await rollupRequestStatus(item.requestId, tx)
+    rollupRequestStatus(item.requestId, tx)
   })
 }
 
@@ -189,22 +195,22 @@ export async function rejectItem(
 ): Promise<void> {
   if (!reason?.trim()) throw new Error("Reason is required to reject an item")
 
-  await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+  db.transaction((tx) => {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "rejected")) {
       throw new Error(`Cannot reject item in state '${item.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseRequestItems)
       .set({ status: "rejected", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await tx.insert(approvalDecisions).values({
+    tx.insert(approvalDecisions).values({
       id:            nanoid(),
       requestItemId: itemId,
       requestId:     item.requestId,
@@ -212,9 +218,9 @@ export async function rejectItem(
       decidedBy:     userId,
       reason,
       roleContext:   opts?.roleContext ?? null,
-    })
+    }).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
       fromStatus: item.status,
@@ -222,7 +228,7 @@ export async function rejectItem(
       changedBy:  userId,
       reason,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -233,7 +239,7 @@ export async function rejectItem(
       reason,
     }, tx)
 
-    await rollupRequestStatus(item.requestId, tx)
+    rollupRequestStatus(item.requestId, tx)
   })
 }
 
@@ -250,22 +256,22 @@ export async function returnItem(
 ): Promise<void> {
   if (!reason?.trim()) throw new Error("Reason is required to return an item")
 
-  await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+  db.transaction((tx) => {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "returned")) {
       throw new Error(`Cannot return item in state '${item.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseRequestItems)
       .set({ status: "returned", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await tx.insert(approvalDecisions).values({
+    tx.insert(approvalDecisions).values({
       id:            nanoid(),
       requestItemId: itemId,
       requestId:     item.requestId,
@@ -273,9 +279,9 @@ export async function returnItem(
       decidedBy:     userId,
       reason,
       roleContext:   opts?.roleContext ?? null,
-    })
+    }).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
       fromStatus: item.status,
@@ -283,7 +289,7 @@ export async function returnItem(
       changedBy:  userId,
       reason,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -294,7 +300,7 @@ export async function returnItem(
       reason,
     }, tx)
 
-    await rollupRequestStatus(item.requestId, tx)
+    rollupRequestStatus(item.requestId, tx)
   })
 }
 
@@ -302,20 +308,23 @@ export async function returnItem(
  * Roll up purchase request status based on current item statuses.
  * Called inside transactions after each item transition.
  *
- * Logic:
+ * Logic follows the current simple flow:
+ *   - any requested item            → "in_review"
  *   - all items rejected            → "rejected"
- *   - all items resolved (not pending review) and some approved → "partially_approved" or "approved"
- *   - otherwise                     → "in_review"  (at least one item still awaiting decision)
+ *   - all non-rejected items received → "closed"
+ *   - any item in OC/purchased/received → "in_purchasing"
+ *   - otherwise, approved/rejected decisions roll up to "approved"
  */
-async function rollupRequestStatus(
+function rollupRequestStatus(
   requestId: string,
   // biome-ignore lint/suspicious/noExplicitAny: drizzle transaction type is complex
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-): Promise<void> {
-  const items = await tx
+): void {
+  const items = tx
     .select({ status: purchaseRequestItems.status })
     .from(purchaseRequestItems)
     .where(eq(purchaseRequestItems.requestId, requestId))
+    .all()
 
   if (items.length === 0) return
 
@@ -325,11 +334,22 @@ async function rollupRequestStatus(
   const pendingReview = ["requested"].some((s) => statuses.includes(s))
   const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
   const allRejected   = statuses.every((s) => s === "rejected")
+  const allReturned   = statuses.every((s) => s === "returned")
+  const allClosed     = statuses.every((s) => ["received", "rejected"].includes(s))
+  const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_received", "received"].includes(s))
   const allResolved   = !pendingReview
 
   let newStatus: string
-  if (allRejected) {
+  if (pendingReview) {
+    newStatus = "in_review"
+  } else if (allRejected) {
     newStatus = "rejected"
+  } else if (allReturned) {
+    newStatus = "returned"
+  } else if (allClosed) {
+    newStatus = "closed"
+  } else if (anyPurchasing) {
+    newStatus = "in_purchasing"
   } else if (allResolved && anyApproved) {
     const allApprovedOrBeyond = statuses.every((s) =>
       ["approved", "pending_purchase", "in_purchase_order", "purchased",
@@ -344,16 +364,16 @@ async function rollupRequestStatus(
   }
 
   const now = new Date().toISOString()
-  await tx
+  tx
     .update(purchaseRequests)
     .set({ status: newStatus, updatedAt: now })
     .where(
       and(
         eq(purchaseRequests.id, requestId),
         // Only advance from submitted/in_review — don't regress from "in_purchasing" etc.
-        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved", "approved", "rejected"]),
+        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved", "approved", "rejected", "returned", "in_purchasing", "closed"]),
       ),
-    )
+    ).run()
 }
 
 // ── Phase 5 ─────────────────────────────────────────────────────────────────
@@ -369,21 +389,21 @@ export async function addItemToPurchaseOrder(
   userId: string,
   opts?: { userEmail?: string },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await addItemToPurchaseOrderTx(tx, itemId, orderId, userId, opts)
+  db.transaction((tx) => {
+    addItemToPurchaseOrderTx(tx, itemId, orderId, userId, opts)
   })
 }
 
-export async function addItemToPurchaseOrderTx(
+export function addItemToPurchaseOrderTx(
   tx: Tx,
   itemId: string,
   orderId: string,
   userId: string,
   opts?: { userEmail?: string },
-): Promise<void> {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+): void {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
 
     const now = new Date().toISOString()
@@ -393,12 +413,12 @@ export async function addItemToPurchaseOrderTx(
       if (!canTransition("approved", "pending_purchase")) {
         throw new Error(`Cannot move item from 'approved' to 'pending_purchase'`)
       }
-      await tx
+      tx
         .update(purchaseRequestItems)
         .set({ status: "pending_purchase", updatedAt: now })
-        .where(eq(purchaseRequestItems.id, itemId))
+        .where(eq(purchaseRequestItems.id, itemId)).run()
 
-      await recordStatusChange({
+      recordStatusChange({
         entityType: "request_item",
         entityId:   itemId,
         fromStatus: "approved",
@@ -413,19 +433,19 @@ export async function addItemToPurchaseOrderTx(
       throw new Error(`Cannot move item from '${currentStatus}' to 'in_purchase_order'`)
     }
 
-    await tx
+    tx
       .update(purchaseRequestItems)
       .set({ status: "in_purchase_order", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
       fromStatus: currentStatus,
       toStatus:   "in_purchase_order",
       changedBy:  userId,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -433,6 +453,8 @@ export async function addItemToPurchaseOrderTx(
       entityId:   itemId,
       newState:   { status: "in_purchase_order", orderId },
     }, tx)
+
+    rollupRequestStatus(item.requestId, tx)
 }
 
 /**
@@ -444,29 +466,29 @@ export async function markItemPendingPurchase(
   userId: string,
   opts?: { userEmail?: string },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+  db.transaction((tx) => {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "pending_purchase")) {
       throw new Error(`Cannot move item from '${item.status}' to 'pending_purchase'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseRequestItems)
       .set({ status: "pending_purchase", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
       fromStatus: item.status,
       toStatus:   "pending_purchase",
       changedBy:  userId,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -490,22 +512,22 @@ export async function postponeItem(
 ): Promise<void> {
   if (!reason?.trim()) throw new Error("Reason is required to postpone an item")
 
-  await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+  db.transaction((tx) => {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "postponed")) {
       throw new Error(`Cannot postpone item in state '${item.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseRequestItems)
       .set({ status: "postponed", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
       fromStatus: item.status,
@@ -513,7 +535,7 @@ export async function postponeItem(
       changedBy:  userId,
       reason,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -538,20 +560,20 @@ export async function receiveItem(
   userId: string,
   opts?: { fullReceived?: boolean; userEmail?: string },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await receiveItemTx(tx, itemId, userId, opts)
+  db.transaction((tx) => {
+    receiveItemTx(tx, itemId, userId, opts)
   })
 }
 
-export async function receiveItemTx(
+export function receiveItemTx(
   tx: Tx,
   itemId: string,
   userId: string,
   opts?: { fullReceived?: boolean; userEmail?: string },
-): Promise<void> {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+): void {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
 
     const targetStatus = opts?.fullReceived === false ? "partially_received" : "received"
@@ -566,19 +588,19 @@ export async function receiveItemTx(
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseRequestItems)
       .set({ status: targetStatus, updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
       fromStatus: item.status,
       toStatus:   targetStatus,
       changedBy:  userId,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -587,6 +609,8 @@ export async function receiveItemTx(
       oldState:   { status: item.status },
       newState:   { status: targetStatus },
     }, tx)
+
+    rollupRequestStatus(item.requestId, tx)
 }
 
 /**
@@ -596,47 +620,57 @@ export async function receiveItemTx(
 export async function deliverItem(
   itemId: string,
   userId: string,
-  opts?: { userEmail?: string },
+  opts?: { userEmail?: string; deliveredQuantity?: number; totalDelivered?: number },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await deliverItemTx(tx, itemId, userId, opts)
+  db.transaction((tx) => {
+    deliverItemTx(tx, itemId, userId, opts)
   })
 }
 
-export async function deliverItemTx(
+export function deliverItemTx(
   tx: Tx,
   itemId: string,
   userId: string,
-  opts?: { userEmail?: string },
-): Promise<void> {
-    const item = await tx.query.purchaseRequestItems.findFirst({
+  opts?: { userEmail?: string; deliveredQuantity?: number; totalDelivered?: number },
+): void {
+    const item = tx.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-    })
+    }).sync()
     if (!item) throw new Error(`Item ${itemId} not found`)
-    if (!canTransition(item.status as ItemStatus, "delivered")) {
+
+    const targetStatus = getDeliveryTargetStatus(item.quantity, opts?.totalDelivered)
+
+    const statusChanged = item.status !== targetStatus
+    if (statusChanged && !canTransition(item.status as ItemStatus, targetStatus)) {
       throw new Error(`Cannot deliver item in state '${item.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseRequestItems)
-      .set({ status: "delivered", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .set({ status: targetStatus, updatedAt: now })
+      .where(eq(purchaseRequestItems.id, itemId)).run()
 
-    await recordStatusChange({
-      entityType: "request_item",
-      entityId:   itemId,
-      fromStatus: item.status,
-      toStatus:   "delivered",
-      changedBy:  userId,
-    }, tx)
-    await recordAudit({
+    if (statusChanged) {
+      recordStatusChange({
+        entityType: "request_item",
+        entityId:   itemId,
+        fromStatus: item.status,
+        toStatus:   targetStatus,
+        changedBy:  userId,
+      }, tx)
+    }
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
       entityType: "request_item",
       entityId:   itemId,
       oldState:   { status: item.status },
-      newState:   { status: "delivered" },
+      newState:   {
+        status: targetStatus,
+        deliveredQuantity: opts?.deliveredQuantity,
+        totalDelivered: opts?.totalDelivered,
+      },
     }, tx)
 }

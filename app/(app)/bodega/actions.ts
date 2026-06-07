@@ -2,7 +2,7 @@
 
 import { revalidatePath }    from "next/cache"
 import { db } from "@/db"
-import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { deliveryItems, purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { applyMovement }     from "@/lib/services/warehouse"
@@ -59,12 +59,22 @@ export async function dispatchAction(
       .then((rows) => rows[0])
 
     if (!item) return { ok: false, message: "Ítem de solicitud no encontrado" }
-    if (item.status !== "received") return { ok: false, message: "Solo puedes asociar ítems recibidos pendientes de entrega" }
+    if (!["received", "partially_delivered"].includes(item.status)) {
+      return { ok: false, message: "Solo puedes asociar ítems recibidos pendientes de entrega" }
+    }
     if (item.productId !== productId || item.worksiteId !== worksiteId) {
       return { ok: false, message: "El ítem trazable no coincide con el producto o la faena" }
     }
-    if (item.quantity !== qty) {
-      return { ok: false, message: "Para asociar trazabilidad, la cantidad debe coincidir con el ítem recibido" }
+
+    const previousDeliveries = await db
+      .select({ quantity: deliveryItems.quantity })
+      .from(deliveryItems)
+      .where(eq(deliveryItems.requestItemId, requestItemId))
+    const alreadyDelivered = previousDeliveries.reduce((sum, row) => sum + row.quantity, 0)
+    const pending = item.quantity - alreadyDelivered
+    if (pending <= 0) return { ok: false, message: "El ítem ya fue entregado completamente" }
+    if (qty > pending) {
+      return { ok: false, message: `La cantidad excede el saldo pendiente de entrega (${pending})` }
     }
   }
 

@@ -25,6 +25,7 @@ function makeSession(overrides: Partial<Session["user"]> = {}): Session {
       worksiteIds:       [],
       primaryWorksiteId: null,
       avatarColor:       null,
+      isActive:          true,
       ...overrides,
     },
   }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
-import Image from "next/image"
 import Link from "next/link"
+import { BrandMark } from "@/components/layout/brand-mark"
 import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { userInvitations } from "@/db/schema"
@@ -48,21 +48,8 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-[var(--color-bg)] px-6 py-12">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex items-center gap-3">
-          <Image
-            src="/chome_logo_white.svg"
-            alt="Chome"
-            width={36}
-            height={36}
-            unoptimized
-            className="h-9 w-9 shrink-0 rounded-[var(--radius-sm)] bg-[var(--color-brand-surface)] p-0.5"
-          />
-          <div>
-            <p className="font-display text-base font-bold leading-tight text-[var(--color-text)]">
-              Chome
-            </p>
-            <p className="text-xs text-[var(--color-text-muted)]">Solicitudes y Bodega</p>
-          </div>
+        <div className="mb-8">
+          <BrandMark variant="light" size={36} subtitle titleSize="base" />
         </div>
 
         <h1 className="font-display text-xl font-semibold text-[var(--color-text)]">

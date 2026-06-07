@@ -21,8 +21,8 @@ interface AuditParams {
  * Record an audit log entry.
  * Must be called from service layer, never from UI components.
  */
-export async function recordAudit(params: AuditParams, client: AuditDb = db): Promise<void> {
-  await client.insert(auditLog).values({
+export function recordAudit(params: AuditParams, client: AuditDb = db): void {
+  client.insert(auditLog).values({
     id:         nanoid(),
     userId:     params.userId,
     userEmail:  params.userEmail,
@@ -34,7 +34,7 @@ export async function recordAudit(params: AuditParams, client: AuditDb = db): Pr
     newState:   params.newState ? JSON.stringify(params.newState) : null,
     reason:     params.reason,
     ipAddress:  params.ipAddress,
-  })
+  }).run()
 }
 
 interface StatusChangeParams {
@@ -50,8 +50,8 @@ interface StatusChangeParams {
  * Record a status transition in the status history table.
  * Call alongside recordAudit for every state machine transition.
  */
-export async function recordStatusChange(params: StatusChangeParams, client: AuditDb = db): Promise<void> {
-  await client.insert(statusHistory).values({
+export function recordStatusChange(params: StatusChangeParams, client: AuditDb = db): void {
+  client.insert(statusHistory).values({
     id:         nanoid(),
     entityType: params.entityType,
     entityId:   params.entityId,
@@ -59,5 +59,5 @@ export async function recordStatusChange(params: StatusChangeParams, client: Aud
     toStatus:   params.toStatus,
     changedBy:  params.changedBy,
     reason:     params.reason,
-  })
+  }).run()
 }

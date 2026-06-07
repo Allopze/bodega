@@ -38,6 +38,8 @@ export interface DeliverableOption {
   productId:     string
   productName:   string
   quantity:      number
+  deliveredQuantity: number
+  remainingQuantity: number
   unitOfMeasure: string
 }
 
@@ -81,6 +83,11 @@ export function DispatchPanel({
   const matchingDeliverables = productId && worksiteId
     ? deliverableItems.filter((item) => item.productId === productId && item.worksiteId === worksiteId)
     : []
+  const selectedDeliverable = matchingDeliverables.find((item) => item.requestItemId === requestItemId)
+  const quantityMax = Math.min(
+    selectedStock?.quantity ?? Number.POSITIVE_INFINITY,
+    selectedDeliverable?.remainingQuantity ?? Number.POSITIVE_INFINITY,
+  )
 
   function handleWarehouseChange(nextWarehouseId: string) {
     setWarehouseId(nextWarehouseId)
@@ -115,7 +122,7 @@ export function DispatchPanel({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Bodega" required>
             <Select value={warehouseId} onValueChange={handleWarehouseChange}>
-              <SelectTrigger>
+              <SelectTrigger id="dispatchWarehouseId">
                 <SelectValue placeholder="Selecciona bodega" />
               </SelectTrigger>
               <SelectContent>
@@ -128,7 +135,7 @@ export function DispatchPanel({
 
           <Field label="Faena destino" required>
             <Select value={worksiteId} onValueChange={handleWorksiteChange}>
-              <SelectTrigger>
+              <SelectTrigger id="dispatchWorksiteId">
                 <SelectValue placeholder="Selecciona faena" />
               </SelectTrigger>
               <SelectContent>
@@ -143,7 +150,7 @@ export function DispatchPanel({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Producto" required>
             <Select value={productId} onValueChange={handleProductChange} disabled={!warehouseId}>
-              <SelectTrigger>
+              <SelectTrigger id="dispatchProductId">
                 <SelectValue placeholder={warehouseId ? "Selecciona producto" : "Elige bodega primero"} />
               </SelectTrigger>
               <SelectContent>
@@ -167,32 +174,37 @@ export function DispatchPanel({
               value={requestItemId || "__none__"}
               onValueChange={(value) => setRequestItemId(value === "__none__" ? "" : value)}
             >
-              <SelectTrigger>
+              <SelectTrigger id="dispatchRequestItemId">
                 <SelectValue placeholder="Entrega de stock sin solicitud específica" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Sin asociación</SelectItem>
                 {matchingDeliverables.map((item) => (
                   <SelectItem key={item.requestItemId} value={item.requestItemId}>
-                    {item.requestCode} · {formatQty(item.quantity, item.unitOfMeasure)}
+                    {item.requestCode} · pendiente {formatQty(item.remainingQuantity, item.unitOfMeasure)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
-              Al asociar una solicitud, la entrega cerrará la trazabilidad de ese ítem.
+              Al asociar una solicitud, la entrega actualizará su avance trazable.
             </p>
           </Field>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label={`Cantidad${selectedStock ? ` (máx. ${formatQty(selectedStock.quantity, selectedStock.unitOfMeasure)})` : ""}`} required>
+          <Field
+            label={`Cantidad${selectedStock ? ` (máx. ${formatQty(selectedStock.quantity, selectedStock.unitOfMeasure)})` : ""}`}
+            htmlFor="dispatchQuantity"
+            required
+          >
             <Input
+              id="dispatchQuantity"
               type="number"
               name="quantity"
               step="0.01"
               min="0.01"
-              max={selectedStock?.quantity}
+              max={Number.isFinite(quantityMax) ? quantityMax : selectedStock?.quantity}
               placeholder="0"
               disabled={!productId}
               required
@@ -200,8 +212,9 @@ export function DispatchPanel({
             />
           </Field>
 
-          <Field label="Recibido por" required>
+          <Field label="Recibido por" htmlFor="dispatchReceiverName" required>
             <Input
+              id="dispatchReceiverName"
               name="receiverName"
               placeholder="Nombre de quien recibió"
               disabled={!productId}
@@ -210,8 +223,9 @@ export function DispatchPanel({
           </Field>
         </div>
 
-        <Field label="Notas adicionales">
+        <Field label="Notas adicionales" htmlFor="dispatchNotes">
           <Textarea
+            id="dispatchNotes"
             name="notes"
             rows={2}
             placeholder="Información adicional sobre esta entrega..."

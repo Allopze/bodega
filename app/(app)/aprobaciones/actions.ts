@@ -1,10 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequestItems } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { approveItem, rejectItem, returnItem } from "@/lib/services/item-state"
 import { notifySafe } from "@/lib/services/notifications"
 import type { ActionState } from "@/lib/validation/operations"
@@ -45,8 +45,12 @@ export async function approveItemAction(
     // Load item before service call to get requester info for notification
     const itemBefore = await db.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-      with: { request: { columns: { id: true, code: true, requesterId: true } } },
+      with: { request: { columns: { id: true, code: true, requesterId: true, worksiteId: true } } },
     })
+    if (!itemBefore) return { ok: false, message: "Ítem no encontrado" }
+    if (!canAccessWorksite(session, itemBefore.request.worksiteId)) {
+      return { ok: false, message: "No tienes acceso a la faena de este ítem" }
+    }
 
     await approveItem(itemId, session.user.id, {
       modifiedQty,
@@ -96,8 +100,12 @@ export async function rejectItemAction(
   try {
     const itemBefore = await db.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-      with: { request: { columns: { id: true, code: true, requesterId: true } } },
+      with: { request: { columns: { id: true, code: true, requesterId: true, worksiteId: true } } },
     })
+    if (!itemBefore) return { ok: false, message: "Ítem no encontrado" }
+    if (!canAccessWorksite(session, itemBefore.request.worksiteId)) {
+      return { ok: false, message: "No tienes acceso a la faena de este ítem" }
+    }
 
     await rejectItem(itemId, session.user.id, reason, {
       userEmail:   session.user.email ?? undefined,
@@ -142,6 +150,15 @@ export async function returnItemAction(
   if (!reason) return { ok: false, message: "Las observaciones son obligatorias para devolver un ítem" }
 
   try {
+    const itemBefore = await db.query.purchaseRequestItems.findFirst({
+      where: eq(purchaseRequestItems.id, itemId),
+      with: { request: { columns: { worksiteId: true } } },
+    })
+    if (!itemBefore) return { ok: false, message: "Ítem no encontrado" }
+    if (!canAccessWorksite(session, itemBefore.request.worksiteId)) {
+      return { ok: false, message: "No tienes acceso a la faena de este ítem" }
+    }
+
     await returnItem(itemId, session.user.id, reason, {
       userEmail:   session.user.email ?? undefined,
       roleContext: getRoleContext(session.user.roles),
@@ -170,8 +187,21 @@ export async function bulkApproveRequestAction(
   const roleContext = getRoleContext(session.user.roles)
   let approved = 0
   const errors: string[] = []
+  const scopedItems = await db.query.purchaseRequestItems.findMany({
+    where: inArray(purchaseRequestItems.id, itemIds),
+    with: { request: { columns: { worksiteId: true } } },
+  })
+  const allowedItemIds = new Set(
+    scopedItems
+      .filter((item) => canAccessWorksite(session, item.request.worksiteId))
+      .map((item) => item.id),
+  )
 
   for (const id of itemIds) {
+    if (!allowedItemIds.has(id)) {
+      errors.push(id)
+      continue
+    }
     try {
       await approveItem(id, session.user.id, {
         userEmail:   session.user.email ?? undefined,

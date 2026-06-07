@@ -48,9 +48,9 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
   const code        = generateCode("OC", total + 1, year)
   const totals      = computeOrderTotals(input.items)
 
-  await db.transaction(async (tx) => {
+  db.transaction((tx) => {
     // Create the order header
-    await tx.insert(purchaseOrders).values({
+    tx.insert(purchaseOrders).values({
       id:                orderId,
       code,
       worksiteId:        input.worksiteId,
@@ -66,7 +66,7 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
       totalAmount:       totals.totalAmount,
       createdAt:         now,
       updatedAt:         now,
-    })
+    }).run()
 
     // Insert OC items
     for (let i = 0; i < input.items.length; i++) {
@@ -74,7 +74,7 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
       const subtotal = Math.round(
         item.quantity * item.unitPrice * (1 - (item.discount ?? 0) / 100)
       )
-      await tx.insert(purchaseOrderItems).values({
+      tx.insert(purchaseOrderItems).values({
         id:              nanoid(),
         purchaseOrderId: orderId,
         requestItemId:   item.requestItemId,
@@ -89,10 +89,10 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
         status:          "issued",
         sortOrder:       item.sortOrder ?? i,
         notes:           item.notes ?? null,
-      })
+      }).run()
     }
 
-    await recordAudit({
+    recordAudit({
       userId:     input.createdBy,
       userEmail:  input.userEmail,
       action:     "create",
@@ -103,7 +103,7 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
     }, tx)
 
     for (const item of input.items) {
-      await addItemToPurchaseOrderTx(tx, item.requestItemId, orderId, input.createdBy, {
+      addItemToPurchaseOrderTx(tx, item.requestItemId, orderId, input.createdBy, {
         userEmail: input.userEmail,
       })
     }
@@ -119,29 +119,29 @@ export async function issueOrder(
   userId: string,
   opts?: { userEmail?: string },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const order = await tx.query.purchaseOrders.findFirst({
+  db.transaction((tx) => {
+    const order = tx.query.purchaseOrders.findFirst({
       where: eq(purchaseOrders.id, orderId),
-    })
+    }).sync()
     if (!order) throw new Error(`Order ${orderId} not found`)
     if (order.status !== "draft") {
       throw new Error(`Cannot issue order in state '${order.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseOrders)
       .set({ status: "issued", issuedAt: now, updatedAt: now })
-      .where(eq(purchaseOrders.id, orderId))
+      .where(eq(purchaseOrders.id, orderId)).run()
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "purchase_order",
       entityId:   orderId,
       fromStatus: "draft",
       toStatus:   "issued",
       changedBy:  userId,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",
@@ -161,26 +161,27 @@ export async function markOrderSent(
   userId: string,
   opts?: { userEmail?: string },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const order = await tx.query.purchaseOrders.findFirst({
+  db.transaction((tx) => {
+    const order = tx.query.purchaseOrders.findFirst({
       where: eq(purchaseOrders.id, orderId),
-    })
+    }).sync()
     if (!order) throw new Error(`Order ${orderId} not found`)
     if (order.status !== "issued") {
       throw new Error(`Cannot mark order as sent from state '${order.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    tx
       .update(purchaseOrders)
       .set({ status: "sent", sentAt: now, updatedAt: now })
-      .where(eq(purchaseOrders.id, orderId))
+      .where(eq(purchaseOrders.id, orderId)).run()
 
     // Move request items to "purchased" status
-    const ocItems = await tx
+    const ocItems = tx
       .select({ requestItemId: purchaseOrderItems.requestItemId })
       .from(purchaseOrderItems)
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
+      .all()
 
     const requestItemIds = ocItems
       .map((i) => i.requestItemId)
@@ -188,15 +189,15 @@ export async function markOrderSent(
 
     if (requestItemIds.length > 0) {
       const itemNow = new Date().toISOString()
-      await tx
+      tx
         .update(purchaseRequestItems)
         .set({ status: "purchased", updatedAt: itemNow })
         .where(
           inArray(purchaseRequestItems.id, requestItemIds),
-        )
+        ).run()
 
       for (const reqItemId of requestItemIds) {
-        await recordStatusChange({
+        recordStatusChange({
           entityType: "request_item",
           entityId:   reqItemId,
           fromStatus: "in_purchase_order",
@@ -206,14 +207,14 @@ export async function markOrderSent(
       }
     }
 
-    await recordStatusChange({
+    recordStatusChange({
       entityType: "purchase_order",
       entityId:   orderId,
       fromStatus: "issued",
       toStatus:   "sent",
       changedBy:  userId,
     }, tx)
-    await recordAudit({
+    recordAudit({
       userId,
       userEmail:  opts?.userEmail,
       action:     "status_change",

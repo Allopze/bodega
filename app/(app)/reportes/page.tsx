@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, purchaseOrders,
-  receipts, warehouses, warehouseStock, invoiceAttachments,
+  receipts, invoiceAttachments,
 } from "@/db/schema"
 import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
@@ -31,7 +31,6 @@ export default async function Page() {
     itemRows,
     orderRows,
     receiptRows,
-    stockRows,
     invoiceRows,
   ] = await Promise.all([
     db
@@ -70,20 +69,11 @@ export default async function Page() {
 
     db
       .select({
-        productId: warehouseStock.productId,
-        warehouseId: warehouseStock.warehouseId,
-        worksiteId: warehouses.worksiteId,
-        quantity: warehouseStock.quantity,
-      })
-      .from(warehouseStock)
-      .innerJoin(warehouses, eq(warehouseStock.warehouseId, warehouses.id)),
-
-    db
-      .select({
         id: invoiceAttachments.id,
         targetType: invoiceAttachments.targetType,
         targetId: invoiceAttachments.targetId,
         amount: invoiceAttachments.amount,
+        status: invoiceAttachments.status,
       })
       .from(invoiceAttachments),
   ])
@@ -92,7 +82,6 @@ export default async function Page() {
   const items = itemRows.filter((i) => canAccessWorksite(session, i.worksiteId))
   const orders = orderRows.filter((o) => canAccessWorksite(session, o.worksiteId))
   const receiptsVisible = receiptRows.filter((r) => !r.worksiteId || canAccessWorksite(session, r.worksiteId))
-  const stockVisible = stockRows.filter((s) => !s.worksiteId || canAccessWorksite(session, s.worksiteId))
   const visibleRequestIds = new Set(requests.map((r) => r.id))
   const visibleOrderIds = new Set(orders.map((o) => o.id))
   const invoicesVisible = canViewInvoiceAttachments(session)
@@ -122,17 +111,17 @@ export default async function Page() {
     {
       label: "Recepciones",
       value: receiptsVisible.length,
-      detail: `${receiptsVisible.filter((r) => r.status === "open").length} abiertas`,
+      detail: `${orders.filter((o) => ["sent", "partially_received"].includes(o.status)).length} OC pendientes de recepción`,
     },
     {
-      label: "Stock",
-      value: stockVisible.length,
-      detail: `${stockVisible.filter((s) => s.quantity > 0).length} posiciones con saldo`,
+      label: "OC pendientes",
+      value: orders.filter((o) => ["sent", "partially_received"].includes(o.status)).length,
+      detail: "Compras enviadas aún no marcadas como recibidas",
     },
     {
       label: "Facturas anexas",
       value: invoicesVisible.length,
-      detail: `${formatCLP(invoicesVisible.reduce((sum, invoice) => sum + invoice.amount, 0))} informado`,
+      detail: `${invoicesVisible.filter((invoice) => invoice.status !== "reconciled").length} pendientes u observadas`,
     },
   ]
 
@@ -149,24 +138,10 @@ export default async function Page() {
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <a
-              href="/api/reportes/export?tipo=items_sin_oc"
-              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-signal-100)] bg-[var(--color-signal-50)] px-3 text-xs font-medium text-[oklch(0.52_0.15_56)] hover:opacity-80 transition-opacity"
-            >
-              ↓ Ítems sin OC
-            </a>
-            <a
-              href="/api/reportes/export?tipo=gasto_faena"
-              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] transition-colors"
-            >
-              ↓ Gasto por faena
-            </a>
-            <a
-              href="/api/reportes/export?tipo=oc_por_estado"
-              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] transition-colors"
-            >
-              ↓ OC por estado
-            </a>
+            <ExportLinks tipo="items_sin_oc" label="Ítems sin OC" tone="signal" />
+            <ExportLinks tipo="gasto_faena" label="Gasto por faena" />
+            <ExportLinks tipo="oc_por_estado" label="OC por estado" />
+            <ExportLinks tipo="facturas_pendientes" label="Facturas pendientes" />
           </div>
         }
       />
@@ -195,6 +170,37 @@ export default async function Page() {
         </div>
       </section>
     </>
+  )
+}
+
+function ExportLinks({
+  tipo,
+  label,
+  tone = "neutral",
+}: {
+  tipo: string
+  label: string
+  tone?: "neutral" | "signal"
+}) {
+  const baseClass = tone === "signal"
+    ? "border-[var(--color-signal-100)] bg-[var(--color-signal-50)] text-[oklch(0.52_0.15_56)] hover:opacity-80"
+    : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
+
+  return (
+    <div className="inline-flex overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]">
+      <a
+        href={`/api/reportes/export?tipo=${tipo}`}
+        className={`inline-flex h-8 items-center gap-1.5 border-r border-[var(--color-border)] px-3 text-xs font-medium transition-colors ${baseClass}`}
+      >
+        CSV {label}
+      </a>
+      <a
+        href={`/api/reportes/export?tipo=${tipo}&formato=xlsx`}
+        className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-medium transition-colors ${baseClass}`}
+      >
+        Excel
+      </a>
+    </div>
   )
 }
 
