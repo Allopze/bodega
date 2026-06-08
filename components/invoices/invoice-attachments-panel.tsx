@@ -44,6 +44,7 @@ interface InvoiceAttachmentsPanelProps {
   attachments:      InvoiceAttachmentRow[]
   /** When set, enables reconciliation comparison (purchase order total) */
   orderTotalAmount?: number
+  maxPdfSizeMb?:     number
 }
 
 export function InvoiceAttachmentsPanel({
@@ -53,6 +54,7 @@ export function InvoiceAttachmentsPanel({
   canManage,
   attachments,
   orderTotalAmount,
+  maxPdfSizeMb = 10,
 }: InvoiceAttachmentsPanelProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const [uploadState, uploadAction] = useActionState<ActionState, FormData>(
@@ -166,7 +168,7 @@ export function InvoiceAttachmentsPanel({
               label="Archivo"
               htmlFor={`invoice-file-${targetId}`}
               required
-              helper="PDF, JPG, PNG o WebP. Máximo 10 MB."
+              helper={`PDF (máx. ${maxPdfSizeMb} MB), JPG, PNG o WebP (máx. 10 MB).`}
               error={uploadState.fieldErrors?.file?.[0]}
             >
               <Input

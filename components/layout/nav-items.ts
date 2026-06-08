@@ -55,6 +55,7 @@ export const NAV_ITEMS: NavSection[] = [
         href:        "/recepcion",
         iconName:    "Truck",
         permissions: ["receiving:view"],
+        badge:       "count",
       },
       {
         label:       "Trazabilidad",

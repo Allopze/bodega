@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { List, CaretLeft, CaretRight, SignOut, ShieldCheck } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
+import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import { Avatar } from "@/components/ui/avatar"
 import { NotificationBell } from "./notification-bell"
@@ -35,6 +36,13 @@ export function TopBar({
   className,
   isMenuOpen = false,
 }: TopBarProps) {
+  const [isSigningOut, setIsSigningOut] = React.useState(false)
+
+  async function handleSignOut() {
+    setIsSigningOut(true)
+    await signOut({ redirectTo: "/login" })
+  }
+
   return (
     <header className={cn(
       "flex items-center h-14 px-4 gap-3",
@@ -98,7 +106,10 @@ export function TopBar({
         
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="ml-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] active:scale-[0.97] transition-transform shrink-0 cursor-pointer">
+            <button
+              className="ml-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] active:scale-[0.97] transition-transform shrink-0 cursor-pointer"
+              aria-label="Abrir menú de usuario"
+            >
               <Avatar name={session.user.name ?? session.user.email ?? ""} size="sm" />
             </button>
           </DropdownMenuTrigger>
@@ -128,14 +139,15 @@ export function TopBar({
               </>
             )}
             <DropdownMenuItem asChild>
-              <Link
-                href="/api/auth/signout"
-                prefetch={false}
-                className="flex items-center gap-2 text-[var(--color-danger)] focus:bg-[var(--color-danger-50)] focus:text-[var(--color-danger-700)] w-full"
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={isSigningOut}
+                className="flex w-full items-center gap-2 text-[var(--color-danger)] focus:bg-[var(--color-danger-50)] focus:text-[var(--color-danger-700)] disabled:cursor-wait disabled:opacity-70"
               >
                 <SignOut size={16} />
-                <span>Cerrar sesión</span>
-              </Link>
+                <span>{isSigningOut ? "Cerrando..." : "Cerrar sesión"}</span>
+              </button>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

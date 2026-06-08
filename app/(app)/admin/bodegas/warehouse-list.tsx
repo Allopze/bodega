@@ -76,20 +76,20 @@ export function WarehouseList({ warehouses, worksites }: { warehouses: Warehouse
                 {w.worksiteName ?? "—"}
               </TableCell>
               <TableCell>
-                <Badge variant={w.isActive ? "success" : "default"} dot>
+                <Badge variant={w.isActive ? "success" : "default"} dot className="w-20 justify-center">
                   {w.isActive ? "Activa" : "Inactiva"}
                 </Badge>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-1 justify-end">
-                  <button onClick={() => openEdit(w)} className="p-1.5 rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-fast active:scale-[0.97]" title="Editar">
-                    <PencilSimple size={14} />
+                <div className="flex items-center gap-2 justify-end">
+                  <button onClick={() => openEdit(w)} className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-fast active:scale-[0.97]" title="Editar">
+                    <PencilSimple size={16} />
                   </button>
                   <form action={toggleAction}>
                     <input type="hidden" name="id"       value={w.id} />
                     <input type="hidden" name="activate" value={String(!w.isActive)} />
-                    <button type="submit" className="p-1.5 rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-fast active:scale-[0.97]" title={w.isActive ? "Desactivar" : "Activar"}>
-                      {w.isActive ? <ToggleRight size={14} className="text-primary" /> : <ToggleLeft size={14} />}
+                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-fast active:scale-[0.97]" title={w.isActive ? "Desactivar" : "Activar"}>
+                      {w.isActive ? <ToggleRight size={20} className="text-primary" /> : <ToggleLeft size={20} />}
                     </button>
                   </form>
                 </div>

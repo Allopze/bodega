@@ -124,6 +124,9 @@ function NavLink({
   const Icon    = ICONS[item.iconName]
   const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href))
   const count   = item.badge === "count" ? (badgeCounts?.[item.href] ?? 0) : 0
+  const titleText = count > 0
+    ? `${item.label}: ${count} pendiente${count === 1 ? "" : "s"}`
+    : item.label
 
   return (
     <Link
@@ -138,7 +141,8 @@ function NavLink({
           : "text-[var(--color-brand-text-muted)] hover:bg-[var(--color-brand-surface-raised)] hover:text-[var(--color-brand-text)]",
       )}
       aria-current={isActive ? "page" : undefined}
-      title={isCollapsed ? item.label : undefined}
+      aria-label={count > 0 ? titleText : undefined}
+      title={isCollapsed || count > 0 ? titleText : undefined}
     >
       {/* Active state left indicator line */}
       {isActive && (

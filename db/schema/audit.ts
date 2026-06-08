@@ -49,6 +49,7 @@ export type NotificationType =
   | "request_approved"
   | "request_rejected"
   | "oc_created"
+  | "oc_sent"
   | "receipt_done"
   | "dispatch_done"
 

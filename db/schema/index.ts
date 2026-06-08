@@ -9,3 +9,5 @@ export * from "./warehouse"
 export * from "./invoice-attachments"
 export * from "./audit"
 export * from "./code-sequences"
+export * from "./system-settings"
+

@@ -88,30 +88,30 @@ export function WorkerList({
                 {w.worksiteName}
               </TableCell>
               <TableCell>
-                <Badge variant={w.isActive ? "success" : "default"} dot>
+                <Badge variant={w.isActive ? "success" : "default"} dot className="w-20 justify-center">
                   {w.isActive ? "Activo" : "Inactivo"}
                 </Badge>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-1 justify-end">
+                <div className="flex items-center gap-2 justify-end">
                   <button
                     onClick={() => openEdit(w)}
-                    className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
                     title="Editar"
                   >
-                    <PencilSimple size={14} />
+                    <PencilSimple size={16} />
                   </button>
                   <form action={toggleAction}>
                     <input type="hidden" name="id"       value={w.id} />
                     <input type="hidden" name="activate" value={String(!w.isActive)} />
                     <button
                       type="submit"
-                      className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                      className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
                       title={w.isActive ? "Desactivar" : "Activar"}
                     >
                       {w.isActive
-                        ? <ToggleRight size={14} className="text-[var(--color-primary)]" />
-                        : <ToggleLeft  size={14} />}
+                        ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
+                        : <ToggleLeft  size={20} />}
                     </button>
                   </form>
                 </div>

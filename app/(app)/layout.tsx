@@ -31,8 +31,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`
       )
 
+  const receivingFilter = isGlobal
+    ? inArray(purchaseOrders.status, ["sent", "partially_received"])
+    : and(
+        inArray(purchaseOrders.status, ["sent", "partially_received"]),
+        wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`
+      )
+
   // Load worksite name + pending badge counts in parallel
-  const [ws, [approvalRow], [purchaseRow]] = await Promise.all([
+  const [ws, [approvalRow], [purchaseRow], [receivingRow]] = await Promise.all([
     session.user.primaryWorksiteId
       ? db.query.worksites.findFirst({ where: eq(worksites.id, session.user.primaryWorksiteId) })
       : Promise.resolve(undefined),
@@ -40,11 +47,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       .where(approvalFilter),
     db.select({ n: count() }).from(purchaseOrders)
       .where(purchaseFilter),
+    db.select({ n: count() }).from(purchaseOrders)
+      .where(receivingFilter),
   ])
 
   const badgeCounts: Record<string, number> = {
     "/aprobaciones": approvalRow?.n ?? 0,
     "/compras":      purchaseRow?.n ?? 0,
+    "/recepcion":    receivingRow?.n ?? 0,
   }
 
   return (

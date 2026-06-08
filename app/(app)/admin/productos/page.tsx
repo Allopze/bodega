@@ -35,7 +35,7 @@ export default async function ProductosPage() {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración" },
+            { label: "Administración", href: "/admin" },
             { label: "Productos" },
           ]} />
         }

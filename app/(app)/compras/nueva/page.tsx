@@ -14,10 +14,16 @@ import type { PendingItemOption, SupplierOption, WorksiteOption } from "../oc-fo
 
 export const metadata: Metadata = { title: "Nueva orden de compra" }
 
-export default async function NuevaOcPage() {
+export default async function NuevaOcPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("purchasing:create_order") }
   catch { redirect("/compras") }
+  const sp = await searchParams
+  const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
 
   // Load approved/pending_purchase items
   const rawItems = await db
@@ -129,6 +135,9 @@ export default async function NuevaOcPage() {
     id:   w.id,
     name: w.name,
   }))
+  const initialWorksiteId = worksiteOptions.some((w) => w.id === requestedWorksiteId)
+    ? requestedWorksiteId
+    : undefined
 
   return (
     <>
@@ -148,6 +157,7 @@ export default async function NuevaOcPage() {
           suppliers={supplierOptions}
           worksites={worksiteOptions}
           pendingItems={pendingItems}
+          initialWorksiteId={initialWorksiteId}
         />
       </div>
     </>

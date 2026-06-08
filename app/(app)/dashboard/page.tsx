@@ -1,17 +1,47 @@
 import type { Metadata } from "next"
 import type { Session } from "next-auth"
+import type { ComponentType } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { PageHeader } from "@/components/ui/page-header"
+import { EmptyState } from "@/components/ui/empty-state"
 import { db } from "@/db"
-import { invoiceAttachments, purchaseRequestItems, purchaseRequests, purchaseOrders, worksites } from "@/db/schema"
-import { and, eq, inArray, sql } from "drizzle-orm"
+import {
+  invoiceAttachments,
+  products,
+  purchaseOrderItems,
+  purchaseOrders,
+  purchaseRequestItems,
+  purchaseRequests,
+  suppliers,
+  warehouseStock,
+  worksites,
+} from "@/db/schema"
+import { and, count, eq, inArray, sql } from "drizzle-orm"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { cn } from "@/lib/utils"
 import {
-  ClipboardText, CheckSquare, ShoppingCart, WarningCircle, Package,
-  Coins, FileText, CheckCircle,
+  ArrowRight,
+  CheckCircle,
+  CheckSquare,
+  ClipboardText,
+  Coins,
+  FileText,
+  ShoppingCart,
+  Truck,
+  Warehouse,
 } from "@phosphor-icons/react/dist/ssr"
+import {
+  buildWorkTasks,
+  type WorkActor,
+  type WorkItemRow,
+  type WorkOrderRow,
+  type WorkPriority,
+  type WorkQueueSnapshot,
+  type WorkRequestRow,
+  type WorkTask,
+  type WorkTaskType,
+} from "@/lib/work-queue"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -23,90 +53,30 @@ type MetricKey =
   | "orders_pending_receipt"
   | "invoice_pending"
 
-type DashboardCard = {
-  key: MetricKey
-  title: string
-  description: string
-  icon: React.FC<{ size: number; className?: string }>
-  href: string
+type IconComponent = ComponentType<{ size: number; className?: string }>
+
+const TASK_ICON: Record<WorkTaskType, IconComponent> = {
+  request_followup:  ClipboardText,
+  approval:          CheckSquare,
+  purchase:          ShoppingCart,
+  purchase_order:    ShoppingCart,
+  receipt:           Truck,
+  warehouse_delivery:Warehouse,
+  invoice:           FileText,
 }
 
-const PENDING_CARDS: Record<string, DashboardCard[]> = {
-  solicitante_faena: [
-    { key: "my_requests", title: "Mis solicitudes de faena", description: "Pedidos creados para tus faenas asignadas", icon: ClipboardText, href: "/solicitudes" },
-  ],
-  jefa_chome: [
-    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare, href: "/aprobaciones" },
-    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: WarningCircle, href: "/compras/nueva" },
-    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package, href: "/recepcion" },
-    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart, href: "/reportes" },
-  ],
-  secretaria: [
-    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare, href: "/aprobaciones" },
-    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: ShoppingCart, href: "/compras/nueva" },
-    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package, href: "/recepcion" },
-    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart, href: "/reportes" },
-  ],
-  prevencionista: [
-    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare, href: "/aprobaciones" },
-  ],
-  administrador: [
-    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare, href: "/aprobaciones" },
-    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: WarningCircle, href: "/compras/nueva" },
-    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package, href: "/recepcion" },
-    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart, href: "/reportes" },
-  ],
+const PRIORITY_LABEL: Record<WorkPriority, string> = {
+  critical: "Crítica",
+  high:     "Alta",
+  normal:   "Normal",
+  low:      "Baja",
 }
 
-const CARD_STYLES: Record<MetricKey, { bg: string; border: string; text: string; textActive: string; iconColor: string; iconBg: string }> = {
-  my_requests: {
-    bg: "bg-[var(--color-primary-50)]",
-    border: "border-[var(--color-primary-100)]",
-    text: "text-[var(--color-text-subtle)]",
-    textActive: "text-[var(--color-primary)] font-bold",
-    iconColor: "text-[var(--color-primary)]",
-    iconBg: "bg-[var(--color-primary-100)]",
-  },
-  pending_approvals: {
-    bg: "bg-[oklch(0.975_0.02_90)]",
-    border: "border-[oklch(0.948_0.042_90)]",
-    text: "text-[var(--color-text-subtle)]",
-    textActive: "text-[oklch(0.52_0.11_85)] font-bold",
-    iconColor: "text-[oklch(0.52_0.11_85)]",
-    iconBg: "bg-[oklch(0.948_0.042_90)]",
-  },
-  approved_without_oc: {
-    bg: "bg-[var(--color-primary-50)]",
-    border: "border-[var(--color-primary-100)]",
-    text: "text-[var(--color-text-subtle)]",
-    textActive: "text-[var(--color-primary)] font-bold",
-    iconColor: "text-[var(--color-primary)]",
-    iconBg: "bg-[var(--color-primary-100)]",
-  },
-  orders_in_progress: {
-    bg: "bg-[oklch(0.966_0.014_250)]",
-    border: "border-[oklch(0.924_0.03_250)]",
-    text: "text-[var(--color-text-subtle)]",
-    textActive: "text-[oklch(0.4_0.115_248)] font-bold",
-    iconColor: "text-[oklch(0.4_0.115_248)]",
-    iconBg: "bg-[oklch(0.924_0.03_250)]",
-  },
-  orders_pending_receipt: {
-    bg: "bg-[oklch(0.966_0.014_250)]",
-    border: "border-[oklch(0.924_0.03_250)]",
-    text: "text-[var(--color-text-subtle)]",
-    textActive: "text-[oklch(0.4_0.115_248)] font-bold",
-    iconColor: "text-[oklch(0.4_0.115_248)]",
-    iconBg: "bg-[oklch(0.924_0.03_250)]",
-  },
-  invoice_pending: {
-    bg: "bg-[oklch(0.97_0.018_25)]",
-    border: "border-[oklch(0.934_0.04_25)]",
-    text: "text-[var(--color-text-subtle)]",
-    textActive: "text-[oklch(0.42_0.16_25)] font-bold",
-    iconColor: "text-[oklch(0.42_0.16_25)]",
-    iconBg: "bg-[oklch(0.934_0.04_25)]",
-  },
+const PRIORITY_CLASS: Record<WorkPriority, string> = {
+  critical: "border-[var(--color-danger)] bg-[var(--color-danger-50)] text-[var(--color-danger)]",
+  high:     "border-[var(--color-warning-100)] bg-[var(--color-warning-50)] text-[oklch(0.52_0.11_85)]",
+  normal:   "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
+  low:      "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-subtle)]",
 }
 
 function formatCLP(amount: number) {
@@ -117,131 +87,128 @@ function formatCLP(amount: number) {
   }).format(amount)
 }
 
+function formatShortDate(value: string) {
+  return new Intl.DateTimeFormat("es-CL", {
+    day: "2-digit",
+    month: "short",
+  }).format(new Date(value))
+}
+
 export default async function DashboardPage() {
   const session = await auth()
   if (!session) return null
-  
-  const primaryRole = session.user.roles?.[0] ?? "solicitante_faena"
-  const cards = PENDING_CARDS[primaryRole] ?? PENDING_CARDS.solicitante_faena
-  const data = await getDashboardData(session)
 
-  const approvalRate = data.summary.totalRequests > 0 
+  const [data, snapshot] = await Promise.all([
+    getDashboardData(session),
+    getWorkQueueSnapshot(session),
+  ])
+  const tasks = buildWorkTasks(buildActor(session), snapshot)
+  const visibleTasks = tasks.slice(0, 12)
+
+  const approvalRate = data.summary.totalRequests > 0
     ? Math.round((data.summary.approvedRequests / data.summary.totalRequests) * 100)
     : 0
 
   return (
     <div className="space-y-8 animate-in fade-in duration-[var(--duration-default)]">
       <PageHeader
-        title="Dashboard"
-        description={`Bienvenido, ${session.user.name?.split(" ")[0] ?? "usuario"}`}
+        title="Trabajo de hoy"
+        description={`Hola, ${session.user.name?.split(" ")[0] ?? "usuario"}. Estas son las acciones que mantienen los pedidos avanzando.`}
       />
 
-      {/* ── KPI Resumen Rápido (Sección Superior) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* Costos Totales */}
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5 flex items-center gap-4 shadow-[var(--shadow-sm)]">
-          <div className="h-10 w-10 rounded-full bg-[var(--color-primary-50)] text-[var(--color-primary)] flex items-center justify-center shrink-0">
-            <Coins size={22} weight="fill" />
-          </div>
+      <section className="space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs text-[var(--color-text-muted)] font-medium">Inversión en OC Emitidas</p>
-            <p className="text-xl font-bold text-[var(--color-text)] mt-0.5">{formatCLP(data.summary.totalCosts)}</p>
+            <h2 className="text-base font-semibold text-[var(--color-text)]">Tareas pendientes</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Ordenadas por urgencia y antigüedad. Cada tarjeta te lleva al siguiente paso.
+            </p>
           </div>
+          <span className="text-xs font-medium text-[var(--color-text-subtle)]">
+            {tasks.length} tarea{tasks.length !== 1 ? "s" : ""}
+          </span>
         </div>
 
-        {/* Solicitudes Totales */}
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5 flex items-center gap-4 shadow-[var(--shadow-sm)]">
-          <div className="h-10 w-10 rounded-full bg-[var(--color-primary-50)] text-[var(--color-primary)] flex items-center justify-center shrink-0">
-            <FileText size={22} weight="fill" />
+        {visibleTasks.length === 0 ? (
+          <EmptyState
+            icon={<CheckCircle size={24} />}
+            title="Sin tareas pendientes"
+            description="No hay aprobaciones, compras, recepciones o entregas que requieran acción en este momento."
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {visibleTasks.map((task) => (
+              <TaskCard key={task.id} task={task} />
+            ))}
           </div>
-          <div>
-            <p className="text-xs text-[var(--color-text-muted)] font-medium">Solicitudes Visibles</p>
-            <p className="text-xl font-bold text-[var(--color-text)] mt-0.5">{data.summary.totalRequests}</p>
-          </div>
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-base font-semibold text-[var(--color-text)]">Resumen operativo</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Indicadores rápidos para mirar carga, costos y alertas.
+          </p>
         </div>
 
-        {/* Tasa de Aprobación */}
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5 flex items-center gap-4 shadow-[var(--shadow-sm)]">
-          <div className="h-10 w-10 rounded-full bg-[var(--color-success-50)] text-[var(--color-success)] flex items-center justify-center shrink-0">
-            <CheckCircle size={22} weight="fill" />
-          </div>
-          <div>
-            <p className="text-xs text-[var(--color-text-muted)] font-medium">Tasa de Aprobación</p>
-            <p className="text-xl font-bold text-[var(--color-text)] mt-0.5">{approvalRate}%</p>
-          </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <MetricCard
+            icon={Coins}
+            label="Inversión en OC emitidas"
+            value={formatCLP(data.summary.totalCosts)}
+          />
+          <MetricCard
+            icon={FileText}
+            label="Solicitudes visibles"
+            value={String(data.summary.totalRequests)}
+          />
+          <MetricCard
+            icon={CheckCircle}
+            label="Tasa de aprobación"
+            value={`${approvalRate}%`}
+            tone="success"
+          />
         </div>
-      </div>
 
-      {/* ── Rejilla de Pendientes (Grid Compacta de Tarjetas) ── */}
-      <div>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Tareas y Alertas Pendientes</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {cards.map(({ key, title, description, icon: Icon, href }) => {
-            const value = data.metrics[key] ?? 0
-            const style = CARD_STYLES[key] ?? CARD_STYLES.my_requests
-            const hasPending = value > 0
-
-            return (
-              <Link
-                href={href}
-                key={title}
-                className={cn(
-                  "rounded-[var(--radius-lg)] border p-5 flex flex-col justify-between bg-[var(--color-surface)]",
-                  "transition-[background-color,border-color,box-shadow,transform] duration-[var(--duration-default)] ease-[var(--ease-out)]",
-                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-                  hasPending ? `${style.bg} ${style.border}` : "border-[var(--color-border)] opacity-85",
-                  "hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--color-primary)] active:scale-[0.99]"
-                )}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className={cn("p-2 rounded-[var(--radius)]", hasPending ? style.iconBg : "bg-[var(--color-surface-2)]")}>
-                    <Icon size={18} className={hasPending ? style.iconColor : "text-[var(--color-text-subtle)]"} />
-                  </div>
-                  <div className={cn("text-2xl font-mono font-bold leading-none", hasPending ? style.textActive : "text-[var(--color-text-subtle)]")}>
-                    {value}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-[var(--color-text)]">{title}</h4>
-                  <p className="text-xs text-[var(--color-text-muted)] mt-1">{description}</p>
-                </div>
-              </Link>
-            )
-          })}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <QuickLink href="/aprobaciones" label="Pendientes de aprobación" value={data.metrics.pending_approvals} />
+          <QuickLink href="/compras/nueva" label="Aprobados sin OC" value={data.metrics.approved_without_oc} />
+          <QuickLink href="/recepcion" label="OC por recibir" value={data.metrics.orders_pending_receipt} />
+          <QuickLink href="/reportes" label="Facturas pendientes" value={data.metrics.invoice_pending} />
         </div>
-      </div>
+      </section>
 
-      {/* ── Desglose de Actividad por Faena (Sección Inferior) ── */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-6 shadow-[var(--shadow-sm)]">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Actividad y Costos por Faena</h3>
+      <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-sm)]">
+        <h2 className="text-sm font-semibold text-[var(--color-text)]">Actividad y costos por faena</h2>
         {data.worksitesBreakdown.length === 0 ? (
-          <div className="text-center py-8">
+          <div className="py-8 text-center">
             <p className="text-sm text-[var(--color-text-subtle)]">No hay actividad registrada en las faenas visibles.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm" aria-label="Actividad y costos por faena">
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm" aria-label="Actividad y costos por faena">
               <thead>
-                <tr className="border-b border-[var(--color-border-strong)] text-[var(--color-text-muted)] font-semibold">
-                  <th className="py-2.5 px-3">Faena</th>
-                  <th className="py-2.5 px-3 text-right">Solicitudes</th>
-                  <th className="py-2.5 px-3 text-right">Pendientes Aprob.</th>
-                  <th className="py-2.5 px-3 text-right">Aprobadas</th>
-                  <th className="py-2.5 px-3 text-right">Total OC Emitidas</th>
+                <tr className="border-b border-[var(--color-border-strong)] text-[var(--color-text-muted)]">
+                  <th className="px-3 py-2.5 font-medium">Faena</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Solicitudes</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Pendientes aprob.</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Aprobadas</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Total OC emitidas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {data.worksitesBreakdown.map((row) => (
-                  <tr key={row.id} className="hover:bg-[var(--color-surface-2)] transition-colors">
-                    <td className="py-3 px-3 font-medium text-[var(--color-text)]">{row.name}</td>
-                    <td className="py-3 px-3 text-right font-mono">{row.requestsCount}</td>
-                    <td className="py-3 px-3 text-right font-mono">
-                      <span className={cn(row.pendingCount > 0 ? "text-[oklch(0.52_0.11_85)] font-bold" : "text-[var(--color-text-subtle)]")}>
+                  <tr key={row.id} className="transition-colors hover:bg-[var(--color-surface-2)]">
+                    <td className="px-3 py-3 font-medium text-[var(--color-text)]">{row.name}</td>
+                    <td className="px-3 py-3 text-right font-mono">{row.requestsCount}</td>
+                    <td className="px-3 py-3 text-right font-mono">
+                      <span className={cn(row.pendingCount > 0 ? "font-bold text-[oklch(0.52_0.11_85)]" : "text-[var(--color-text-subtle)]")}>
                         {row.pendingCount}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-right font-mono">{row.approvedCount}</td>
-                    <td className="py-3 px-3 text-right font-mono font-medium text-[var(--color-text)]">
+                    <td className="px-3 py-3 text-right font-mono">{row.approvedCount}</td>
+                    <td className="px-3 py-3 text-right font-mono font-medium text-[var(--color-text)]">
                       {formatCLP(row.totalCost)}
                     </td>
                   </tr>
@@ -250,9 +217,247 @@ export default async function DashboardPage() {
             </table>
           </div>
         )}
+      </section>
+    </div>
+  )
+}
+
+function TaskCard({ task }: { task: WorkTask }) {
+  const Icon = TASK_ICON[task.type]
+
+  return (
+    <Link
+      href={task.href}
+      className={cn(
+        "group grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4",
+        "transition-[background-color,border-color,box-shadow,transform] duration-[var(--duration-default)] ease-[var(--ease-out)]",
+        "hover:-translate-y-0.5 hover:border-[var(--color-primary-100)] hover:bg-[var(--color-primary-50)] hover:shadow-[var(--shadow-sm)] active:scale-[0.99]",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
+      )}
+    >
+      <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-surface)] group-hover:text-[var(--color-primary)]">
+        <Icon size={20} />
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">{task.title}</h3>
+          <span className={cn("rounded-[var(--radius-sm)] border px-1.5 py-0.5 text-[10px] font-medium", PRIORITY_CLASS[task.priority])}>
+            {PRIORITY_LABEL[task.priority]}
+          </span>
+        </div>
+        <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">{task.subtitle}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[var(--color-text-muted)]">
+            {task.statusLabel}
+          </span>
+          <span className="text-[var(--color-text-subtle)]">{formatShortDate(task.createdAt)}</span>
+        </div>
+      </div>
+
+      <div className="hidden items-center gap-1 text-sm font-medium text-[var(--color-primary)] sm:flex">
+        {task.ctaLabel}
+        <ArrowRight size={14} className="transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5" />
+      </div>
+    </Link>
+  )
+}
+
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  tone = "primary",
+}: {
+  icon: IconComponent
+  label: string
+  value: string
+  tone?: "primary" | "success"
+}) {
+  return (
+    <div className="flex items-center gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-sm)]">
+      <div className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius)]",
+        tone === "success" ? "bg-[var(--color-success-50)] text-[var(--color-success)]" : "bg-[var(--color-primary-50)] text-[var(--color-primary)]",
+      )}>
+        <Icon size={22} />
+      </div>
+      <div>
+        <p className="text-xs font-medium text-[var(--color-text-muted)]">{label}</p>
+        <p className="mt-0.5 text-xl font-bold text-[var(--color-text)]">{value}</p>
       </div>
     </div>
   )
+}
+
+function QuickLink({ href, label, value }: { href: string; label: string; value: number }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors duration-[var(--duration-fast)] hover:border-[var(--color-primary-100)] hover:bg-[var(--color-primary-50)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+    >
+      <p className="text-2xl font-bold leading-none text-[var(--color-text)]">{value}</p>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">{label}</p>
+    </Link>
+  )
+}
+
+function buildActor(session: Session): WorkActor {
+  return {
+    userId:      session.user.id,
+    permissions: session.user.permissions,
+    worksiteIds: session.user.worksiteIds,
+    isGlobal:    isGlobalRole(session),
+  }
+}
+
+async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot> {
+  const isGlobal = isGlobalRole(session)
+  const wsIds = visibleWorksiteIds(session)
+  const requestWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
+  const itemWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
+  const orderWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`)
+
+  const [
+    requestRows,
+    itemRows,
+    orderRows,
+    orderItemCounts,
+    invoiceRows,
+    stockRows,
+  ] = await Promise.all([
+    db
+      .select({
+        id:           purchaseRequests.id,
+        code:         purchaseRequests.code,
+        worksiteId:   purchaseRequests.worksiteId,
+        worksiteName: worksites.name,
+        requesterId:  purchaseRequests.requesterId,
+        status:       purchaseRequests.status,
+        urgency:      purchaseRequests.urgency,
+        createdAt:    purchaseRequests.createdAt,
+        submittedAt:  purchaseRequests.submittedAt,
+      })
+      .from(purchaseRequests)
+      .innerJoin(worksites, eq(purchaseRequests.worksiteId, worksites.id))
+      .where(requestWorksiteFilter),
+
+    db
+      .select({
+        id:              purchaseRequestItems.id,
+        requestId:       purchaseRequestItems.requestId,
+        requestCode:     purchaseRequests.code,
+        worksiteId:      purchaseRequests.worksiteId,
+        worksiteName:    worksites.name,
+        requesterId:     purchaseRequests.requesterId,
+        productName:     products.name,
+        productNameFree: purchaseRequestItems.productNameFree,
+        productId:       purchaseRequestItems.productId,
+        status:          purchaseRequestItems.status,
+        urgency:         purchaseRequestItems.urgency,
+        createdAt:       purchaseRequestItems.createdAt,
+        quantity:        purchaseRequestItems.quantity,
+        unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
+      })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .innerJoin(worksites, eq(purchaseRequests.worksiteId, worksites.id))
+      .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
+      .where(itemWorksiteFilter),
+
+    db
+      .select({
+        id:           purchaseOrders.id,
+        code:         purchaseOrders.code,
+        worksiteId:   purchaseOrders.worksiteId,
+        worksiteName: worksites.name,
+        supplierName: suppliers.name,
+        status:       purchaseOrders.status,
+        createdAt:    purchaseOrders.createdAt,
+        issuedAt:     purchaseOrders.issuedAt,
+        sentAt:       purchaseOrders.sentAt,
+        totalAmount:  purchaseOrders.totalAmount,
+      })
+      .from(purchaseOrders)
+      .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
+      .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+      .where(orderWorksiteFilter),
+
+    db
+      .select({
+        purchaseOrderId: purchaseOrderItems.purchaseOrderId,
+        total:           count(),
+      })
+      .from(purchaseOrderItems)
+      .groupBy(purchaseOrderItems.purchaseOrderId),
+
+    db
+      .select({
+        targetId: invoiceAttachments.targetId,
+        status:   invoiceAttachments.status,
+      })
+      .from(invoiceAttachments)
+      .where(eq(invoiceAttachments.targetType, "purchase_order")),
+
+    db
+      .select({
+        productId: warehouseStock.productId,
+      })
+      .from(warehouseStock)
+      .where(sql`${warehouseStock.quantity} > 0`),
+  ])
+
+  const itemStatusesByRequest = new Map<string, string[]>()
+  for (const item of itemRows) {
+    const statuses = itemStatusesByRequest.get(item.requestId) ?? []
+    statuses.push(item.status)
+    itemStatusesByRequest.set(item.requestId, statuses)
+  }
+
+  const itemCountByRequest = new Map<string, number>()
+  for (const item of itemRows) {
+    itemCountByRequest.set(item.requestId, (itemCountByRequest.get(item.requestId) ?? 0) + 1)
+  }
+
+  const stockProductIds = new Set(stockRows.map((row) => row.productId))
+
+  const itemCountByOrder = new Map(orderItemCounts.map((row) => [row.purchaseOrderId, row.total]))
+  const invoiceStatusesByOrder = new Map<string, string[]>()
+  for (const invoice of invoiceRows) {
+    const statuses = invoiceStatusesByOrder.get(invoice.targetId) ?? []
+    statuses.push(invoice.status)
+    invoiceStatusesByOrder.set(invoice.targetId, statuses)
+  }
+
+  const requests: WorkRequestRow[] = requestRows.map((request) => ({
+    ...request,
+    itemCount:    itemCountByRequest.get(request.id) ?? 0,
+    itemStatuses: itemStatusesByRequest.get(request.id) ?? [],
+  }))
+
+  const items: WorkItemRow[] = itemRows.map((item) => ({
+    id:            item.id,
+    requestId:     item.requestId,
+    requestCode:   item.requestCode,
+    worksiteId:    item.worksiteId,
+    worksiteName:  item.worksiteName,
+    requesterId:   item.requesterId,
+    productName:   item.productName ?? item.productNameFree ?? "Ítem solicitado",
+    status:        item.status,
+    urgency:       item.urgency,
+    createdAt:     item.createdAt,
+    quantity:      item.quantity,
+    unitOfMeasure: item.unitOfMeasure,
+    hasStock:      item.productId ? stockProductIds.has(item.productId) : false,
+  }))
+
+  const orders: WorkOrderRow[] = orderRows.map((order) => ({
+    ...order,
+    itemCount:       itemCountByOrder.get(order.id) ?? 0,
+    invoiceStatuses: invoiceStatusesByOrder.get(order.id) ?? [],
+  }))
+
+  return { requests, items, orders }
 }
 
 async function getDashboardData(session: Session) {

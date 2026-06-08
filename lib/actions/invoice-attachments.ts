@@ -13,6 +13,7 @@ import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
 import { invoiceAttachmentSchema, type InvoiceAttachmentFormData } from "@/lib/validation/operations"
 import type { ActionState } from "@/lib/validation/masters"
+import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 
 export type InvoiceTargetType = "purchase_request" | "purchase_order"
 
@@ -54,6 +55,32 @@ export async function uploadInvoiceAttachment(
     notes,
     file,
   }: InvoiceAttachmentFormData = parsed.data
+
+  const maxPdfSizeMb = await getPdfMaxSizeMb()
+  const maxPdfSizeBytes = maxPdfSizeMb * 1024 * 1024
+
+  if (file.type === "application/pdf") {
+    if (file.size > maxPdfSizeBytes) {
+      return {
+        ok: false,
+        message: "Revisa los datos de la factura",
+        fieldErrors: {
+          file: [`El archivo PDF no puede superar los ${maxPdfSizeMb} MB`],
+        },
+      }
+    }
+  } else {
+    if (file.size > 10 * 1024 * 1024) {
+      return {
+        ok: false,
+        message: "Revisa los datos de la factura",
+        fieldErrors: {
+          file: ["El archivo de imagen no puede superar los 10 MB"],
+        },
+      }
+    }
+  }
+
 
   const target = await assertTargetAccess(session, targetType, targetId)
   if (!target.ok) return { ok: false, message: target.message }

@@ -9,6 +9,7 @@ import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
 import { InvoiceAttachmentsPanel } from "@/components/invoices/invoice-attachments-panel"
+import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { OcActions } from "./oc-actions"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { EntityTimeline } from "@/components/states/entity-timeline"
@@ -44,7 +45,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     .map((i) => i.productId)
     .filter((id): id is string => id !== null)
 
-  const [requestItemRows, productRows, invoiceRows, timelineEvents] = await Promise.all([
+  const [requestItemRows, productRows, invoiceRows, timelineEvents, maxPdfSizeMb] = await Promise.all([
     requestItemIds.length > 0
       ? db.query.purchaseRequestItems.findMany({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
@@ -90,6 +91,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
         ),
       )
       .orderBy(desc(statusHistory.changedAt)),
+    getPdfMaxSizeMb(),
   ])
 
   // Build maps
@@ -257,6 +259,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             targetLabel={`la OC ${order.code}`}
             canManage={can(session, "invoice_attachments:manage")}
             orderTotalAmount={order.totalAmount}
+            maxPdfSizeMb={maxPdfSizeMb}
             attachments={invoiceRows.map((invoice) => ({
               id:                  invoice.id,
               invoiceNumber:       invoice.invoiceNumber,

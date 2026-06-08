@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs"
 import { describe, expect, it, vi } from "vitest"
-import { buildCsv, buildXlsxBuffer, type ReportData } from "@/lib/reports/export"
+import { buildXlsxBuffer, type ReportData } from "@/lib/reports/export"
 
 vi.mock("@/lib/auth/auth", () => ({ auth: vi.fn() }))
 
@@ -15,13 +15,6 @@ const report: ReportData = {
 }
 
 describe("report export helpers", () => {
-  it("keeps CSV escaping compatible with comma and quotes", () => {
-    expect(buildCsv(report)).toBe([
-      "OC,Proveedor,Monto",
-      "OC-1,\"Proveedor, con coma\",1000",
-      "OC-2,\"Proveedor \"\"quoted\"\"\",",
-    ].join("\r\n"))
-  })
 
   it("builds a parseable XLSX workbook with headers and rows", async () => {
     const buffer = await buildXlsxBuffer(report)

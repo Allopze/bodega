@@ -47,15 +47,23 @@ export function DispatchPanel({
   stockItems,
   worksites,
   deliverableItems,
+  initialWarehouseId,
+  initialWorksiteId,
+  initialProductId,
+  initialRequestItemId,
 }: {
   stockItems: StockOption[]
   worksites: WorksiteOption[]
   deliverableItems: DeliverableOption[]
+  initialWarehouseId?: string
+  initialWorksiteId?: string
+  initialProductId?: string
+  initialRequestItemId?: string
 }) {
-  const [warehouseId, setWarehouseId] = React.useState<string>("")
-  const [worksiteId,  setWorksiteId]  = React.useState<string>(worksites[0]?.id ?? "")
-  const [productId,   setProductId]   = React.useState<string>("")
-  const [requestItemId, setRequestItemId] = React.useState<string>("")
+  const [warehouseId, setWarehouseId] = React.useState<string>(initialWarehouseId ?? "")
+  const [worksiteId,  setWorksiteId]  = React.useState<string>(initialWorksiteId ?? worksites[0]?.id ?? "")
+  const [productId,   setProductId]   = React.useState<string>(initialProductId ?? "")
+  const [requestItemId, setRequestItemId] = React.useState<string>(initialRequestItemId ?? "")
   const formRef = React.useRef<HTMLFormElement>(null)
 
   const [state, action] = useActionState<ActionState, FormData>(dispatchAction, INITIAL_STATE)

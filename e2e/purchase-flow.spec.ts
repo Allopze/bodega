@@ -23,7 +23,7 @@ test("flujo solicitud, aprobación, OC, factura, recepción y trazabilidad", asy
   await expect(page.getByText("Orden emitida")).toBeVisible()
   await page.reload()
   await page.getByRole("button", { name: "Marcar como enviada" }).click()
-  await expect(page.getByText("Orden marcada como enviada al proveedor")).toBeVisible()
+  await expect(page.getByText("Orden enviada al proveedor. Siguiente paso: registrar recepción.")).toBeVisible()
 
   await page.getByLabel("Número de factura").fill("F-E2E-001")
   await page.getByLabel("Fecha").fill("2026-06-07")
@@ -47,7 +47,7 @@ test("flujo solicitud, aprobación, OC, factura, recepción y trazabilidad", asy
   await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Adjunta.*Recibido/ })).toBeVisible()
 
   await page.goto("/reportes")
-  await expect(page.getByRole("link", { name: "Excel", exact: true }).first()).toBeVisible()
+  await expect(page.getByRole("link", { name: "Exportar Excel: Gasto por faena", exact: true })).toBeVisible()
   const response = await page.request.get("/api/reportes/export?tipo=gasto_faena&formato=xlsx")
   expect(response.status()).toBe(200)
   expect(response.headers()["content-disposition"]).toContain("gasto-por-faena.xlsx")
@@ -89,16 +89,16 @@ async function createCatalogRequest(
   await selectRadixById(page, "worksiteId", "Faena E2E")
   await page.getByPlaceholder("Buscar en catálogo o escribir producto...").fill(productName)
   if (options.freeText) {
-    await page.getByRole("button", { name: new RegExp(`Usar “${productName}”`) }).click()
+    await page.getByRole("option", { name: new RegExp(`Usar “${productName}”`) }).click()
   } else {
-    await page.getByRole("button", { name: new RegExp(`E2E-001\\s*${productName}`) }).click()
+    await page.getByRole("option", { name: new RegExp(`E2E-001\\s*${productName}`) }).click()
     await expect(page.getByRole("button", { name: "Cambiar" })).toBeVisible()
     await expect(page.locator('form').nth(1).locator('input[name="itemsJson"]')).toHaveValue(/prod-e2e/)
   }
   await page.getByLabel("Cantidad").fill(quantity)
   await page.getByRole("button", { name: "Enviar a aprobación" }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
-  await expect(page.getByText(productName)).toBeVisible()
+  await expect(page.getByText(productName).first()).toBeVisible()
 }
 
 async function selectRadixById(page: Page, id: string, option: string | RegExp) {
@@ -111,10 +111,10 @@ async function selectRadixById(page: Page, id: string, option: string | RegExp) 
 test("descarga real de Excel desde el navegador", async ({ page }) => {
   await login(page)
   await page.goto("/reportes")
-  await expect(page.getByRole("link", { name: "Excel", exact: true }).first()).toBeVisible()
+  await expect(page.getByRole("link", { name: "Exportar Excel: Ítems sin OC", exact: true })).toBeVisible()
 
   const downloadPromise = page.waitForEvent("download", { timeout: 15_000 })
-  await page.getByRole("link", { name: "Excel", exact: true }).first().click()
+  await page.getByRole("link", { name: "Exportar Excel: Ítems sin OC", exact: true }).click()
   const download = await downloadPromise
 
   expect(download.suggestedFilename()).toContain(".xlsx")
@@ -125,4 +125,15 @@ test("descarga real de Excel desde el navegador", async ({ page }) => {
   const fs = await import("fs")
   const stat = fs.statSync(filePath!)
   expect(stat.size).toBeGreaterThan(0)
+})
+
+test("cierra sesión y bloquea el acceso al dashboard", async ({ page }) => {
+  await login(page)
+
+  await page.getByRole("button", { name: "Abrir menú de usuario" }).click()
+  await page.getByRole("menuitem", { name: "Cerrar sesión" }).click()
+  await expect(page).toHaveURL(/\/login$/)
+
+  await page.goto("/dashboard")
+  await expect(page).toHaveURL(/\/login/)
 })

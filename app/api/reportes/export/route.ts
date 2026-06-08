@@ -7,7 +7,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
-import { buildCsv, buildXlsxBuffer, getReportData } from "@/lib/reports/export"
+import { buildXlsxBuffer, getReportData } from "@/lib/reports/export"
 
 const REPORT_TYPES = new Set([
   "gasto_faena",
@@ -26,7 +26,6 @@ export async function GET(req: NextRequest) {
   }
 
   const tipo = req.nextUrl.searchParams.get("tipo") ?? "gasto_faena"
-  const formato = req.nextUrl.searchParams.get("formato") === "xlsx" ? "xlsx" : "csv"
   if (!REPORT_TYPES.has(tipo)) {
     return NextResponse.json({ error: "Tipo de reporte inválido" }, { status: 400 })
   }
@@ -34,23 +33,12 @@ export async function GET(req: NextRequest) {
   try {
     const report = await getReportData(tipo, session)
 
-    if (formato === "xlsx") {
-      const xlsx = await buildXlsxBuffer(report)
-      return new NextResponse(xlsx, {
-        status: 200,
-        headers: {
-          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="${report.filenameBase}.xlsx"`,
-        },
-      })
-    }
-
-    const csv = buildCsv(report)
-    return new NextResponse(csv, {
+    const xlsx = await buildXlsxBuffer(report)
+    return new NextResponse(xlsx, {
       status: 200,
       headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${report.filenameBase}.csv"`,
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${report.filenameBase}.xlsx"`,
       },
     })
   } catch (err) {

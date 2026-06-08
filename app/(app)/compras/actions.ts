@@ -3,11 +3,12 @@
 import { redirect }     from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { db } from "@/db"
-import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests, suppliers, worksites } from "@/db/schema"
+import { count, eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createOrder, issueOrder, markOrderSent, cancelOrder } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
+import { getUserIdsWithPermission, notifyManyUser } from "@/lib/services/notifications"
 import { createOrderSchema, type ActionState } from "@/lib/validation/operations"
 
 const REVALIDATE = "/compras"
@@ -169,12 +170,44 @@ export async function sendOrderAction(
   if (accessError) return accessError
 
   try {
+    const [[orderSummary], [itemCountRow]] = await Promise.all([
+      db
+        .select({
+          code:         purchaseOrders.code,
+          worksiteName: worksites.name,
+          supplierName: suppliers.name,
+        })
+        .from(purchaseOrders)
+        .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
+        .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+        .where(eq(purchaseOrders.id, orderId)),
+      db
+        .select({ n: count() })
+        .from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.purchaseOrderId, orderId)),
+    ])
+
     await markOrderSent(orderId, session.user.id, {
       userEmail: session.user.email ?? undefined,
     })
+
+    void getUserIdsWithPermission("receiving:register").then((receiverIds) =>
+      notifyManyUser(receiverIds, {
+        type:       "oc_sent",
+        title:      `OC lista para recepción: ${orderSummary?.code ?? "Orden enviada"}`,
+        body:       `${orderSummary?.worksiteName ?? "Faena"} · ${itemCountRow?.n ?? 0} ítem${(itemCountRow?.n ?? 0) === 1 ? "" : "s"} enviado${(itemCountRow?.n ?? 0) === 1 ? "" : "s"} al proveedor${orderSummary?.supplierName ? ` ${orderSummary.supplierName}` : ""}.`,
+        entityType: "purchase_order",
+        entityId:   orderId,
+        entityHref: `/recepcion/nueva?oc=${orderId}`,
+      }),
+    )
+
     revalidatePath(REVALIDATE)
     revalidatePath(`/compras/${orderId}`)
-    return { ok: true, message: "Orden marcada como enviada al proveedor" }
+    revalidatePath("/recepcion")
+    revalidatePath("/dashboard")
+    revalidatePath("/", "layout")
+    return { ok: true, message: "Orden enviada al proveedor. Siguiente paso: registrar recepción." }
   } catch (e) {
     console.error("[sendOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al enviar orden" }

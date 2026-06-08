@@ -21,7 +21,7 @@ export default async function ProveedoresPage() {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración" },
+            { label: "Administración", href: "/admin" },
             { label: "Proveedores" },
           ]} />
         }

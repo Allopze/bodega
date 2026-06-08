@@ -62,13 +62,15 @@ export function OcForm({
   suppliers,
   worksites,
   pendingItems,
+  initialWorksiteId,
 }: {
   suppliers:    SupplierOption[]
   worksites:    WorksiteOption[]
   pendingItems: PendingItemOption[]
+  initialWorksiteId?: string
 }) {
   const [supplierId,   setSupplierId]   = React.useState<string>("")
-  const [worksiteId,   setWorksiteId]   = React.useState<string>(worksites[0]?.id ?? "")
+  const [worksiteId,   setWorksiteId]   = React.useState<string>(initialWorksiteId ?? worksites[0]?.id ?? "")
   const [paymentTerms, setPaymentTerms] = React.useState<string>("")
   const [estDelivery,  setEstDelivery]  = React.useState<string>("")
   const [address,      setAddress]      = React.useState<string>("")

@@ -36,10 +36,17 @@ const MOVEMENT_QTY_CLASS: Record<string, string> = {
   merma:              "text-[var(--color-danger)]",
 }
 
-export default async function BodegaPage() {
+export default async function BodegaPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("warehouse:view_stock") }
   catch { redirect("/dashboard") }
+  const sp = await searchParams
+  const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
+  const requestedItemId = typeof sp.item === "string" ? sp.item : ""
 
   const canDispatch = can(session, "warehouse:register_movement")
 
@@ -147,6 +154,15 @@ export default async function BodegaPage() {
       }
     })
     .filter((item) => item.remainingQuantity > 0)
+  const initialDeliverable = requestedItemId
+    ? deliverableOptions.find((item) => item.requestItemId === requestedItemId)
+    : undefined
+  const initialWorksiteId = initialDeliverable?.worksiteId
+    ?? (worksiteOptions.some((worksite) => worksite.id === requestedWorksiteId) ? requestedWorksiteId : undefined)
+  const initialProductId = initialDeliverable?.productId
+  const initialWarehouseId = initialProductId
+    ? stockOptions.find((stock) => stock.productId === initialProductId)?.warehouseId
+    : undefined
 
   // Group stock by warehouse
   const stockByWarehouse: Record<string, typeof stockRows> = {}
@@ -257,6 +273,10 @@ export default async function BodegaPage() {
               stockItems={stockOptions}
               worksites={worksiteOptions}
               deliverableItems={deliverableOptions}
+              initialWarehouseId={initialWarehouseId}
+              initialWorksiteId={initialWorksiteId}
+              initialProductId={initialProductId}
+              initialRequestItemId={initialDeliverable?.requestItemId}
             />
           </div>
         )}

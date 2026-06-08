@@ -21,7 +21,7 @@ export default async function FaenasPage() {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración" },
+            { label: "Administración", href: "/admin" },
             { label: "Faenas" },
           ]} />
         }

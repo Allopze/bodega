@@ -30,7 +30,7 @@ export default async function BodegasPage() {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración" },
+            { label: "Administración", href: "/admin" },
             { label: "Bodegas" },
           ]} />
         }

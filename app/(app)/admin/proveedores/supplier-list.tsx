@@ -71,20 +71,20 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
               </TableCell>
               <TableCell className="text-xs text-[var(--color-text-muted)]">{s.paymentTerms ?? "—"}</TableCell>
               <TableCell>
-                <Badge variant={s.isActive ? "success" : "default"} dot>
+                <Badge variant={s.isActive ? "success" : "default"} dot className="w-20 justify-center">
                   {s.isActive ? "Activo" : "Inactivo"}
                 </Badge>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-1 justify-end">
-                  <button onClick={() => openEdit(s)} className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title="Editar">
-                    <PencilSimple size={14} />
+                <div className="flex items-center gap-2 justify-end">
+                  <button onClick={() => openEdit(s)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title="Editar">
+                    <PencilSimple size={16} />
                   </button>
                   <form action={toggleAction}>
                     <input type="hidden" name="id" value={s.id} />
                     <input type="hidden" name="activate" value={String(!s.isActive)} />
-                    <button type="submit" className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={s.isActive ? "Desactivar" : "Activar"}>
-                      {s.isActive ? <ToggleRight size={14} className="text-[var(--color-primary)]" /> : <ToggleLeft size={14} />}
+                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={s.isActive ? "Desactivar" : "Activar"}>
+                      {s.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                     </button>
                   </form>
                 </div>

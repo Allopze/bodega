@@ -64,7 +64,7 @@ export default async function UsuariosPage() {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración" },
+            { label: "Administración", href: "/admin" },
             { label: "Usuarios" },
           ]} />
         }

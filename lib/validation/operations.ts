@@ -147,7 +147,6 @@ export const invoiceAttachmentSchema = z.object({
   notes: z.string().trim().max(500).nullable().optional().or(z.literal("")),
   file: z.instanceof(File, { message: "Selecciona un archivo" })
     .refine((file) => file.size > 0, "Selecciona un archivo")
-    .refine((file) => file.size <= MAX_INVOICE_FILE_SIZE, "El archivo no puede superar 10 MB")
     .refine((file) => ALLOWED_INVOICE_MIME_TYPES.includes(file.type as typeof ALLOWED_INVOICE_MIME_TYPES[number]), "Solo se aceptan PDF, JPG, PNG o WebP"),
 })
 

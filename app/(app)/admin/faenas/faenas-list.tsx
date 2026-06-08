@@ -76,20 +76,20 @@ export function FaenasList({ worksites }: { worksites: WorksiteRow[] }) {
                 <TableCell><span className="font-mono text-xs">{ws.code}</span></TableCell>
                 <TableCell className="text-sm text-text-muted">{ws.region ?? "—"}</TableCell>
                 <TableCell>
-                  <Badge variant={ws.isActive ? "success" : "default"} dot>
+                  <Badge variant={ws.isActive ? "success" : "default"} dot className="w-20 justify-center">
                     {ws.isActive ? "Activa" : "Inactiva"}
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-1 justify-end">
-                    <button onClick={() => openEditWs(ws)} className="p-1.5 rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast) active:scale-[0.97]" title="Editar">
-                      <PencilSimple size={14} />
+                  <div className="flex items-center gap-2 justify-end">
+                    <button onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast) active:scale-[0.97]" title="Editar">
+                      <PencilSimple size={16} />
                     </button>
                     <form action={wsToggleAction}>
                       <input type="hidden" name="id"       value={ws.id} />
                       <input type="hidden" name="activate" value={String(!ws.isActive)} />
-                      <button type="submit" className="p-1.5 rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast) active:scale-[0.97]" title={ws.isActive ? "Desactivar" : "Activar"}>
-                        {ws.isActive ? <ToggleRight size={14} className="text-primary" /> : <ToggleLeft size={14} />}
+                      <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast) active:scale-[0.97]" title={ws.isActive ? "Desactivar" : "Activar"}>
+                        {ws.isActive ? <ToggleRight size={20} className="text-primary" /> : <ToggleLeft size={20} />}
                       </button>
                     </form>
                   </div>

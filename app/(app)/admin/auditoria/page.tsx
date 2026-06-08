@@ -28,7 +28,7 @@ export default async function AuditoriaPage() {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración" },
+            { label: "Administración", href: "/admin" },
             { label: "Auditoría" },
           ]} />
         }

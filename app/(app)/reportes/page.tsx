@@ -202,20 +202,13 @@ function ExportLinks({
     : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
 
   return (
-    <div className="inline-flex overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]">
-      <a
-        href={`/api/reportes/export?tipo=${tipo}`}
-        className={`inline-flex h-8 items-center gap-1.5 border-r border-[var(--color-border)] px-3 text-xs font-medium transition-colors ${baseClass}`}
-      >
-        CSV {label}
-      </a>
-      <a
-        href={`/api/reportes/export?tipo=${tipo}&formato=xlsx`}
-        className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-medium transition-colors ${baseClass}`}
-      >
-        Excel
-      </a>
-    </div>
+    <a
+      href={`/api/reportes/export?tipo=${tipo}`}
+      aria-label={`Exportar Excel: ${label}`}
+      className={`inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border px-3 text-xs font-medium transition-colors ${baseClass}`}
+    >
+      Exportar {label}
+    </a>
   )
 }
 

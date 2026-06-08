@@ -13,9 +13,12 @@ import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
 import { InvoiceAttachmentsPanel } from "@/components/invoices/invoice-attachments-panel"
+import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { RequestForm } from "../request-form"
 import { DuplicateButton } from "./duplicate-button"
 import { EntityTimeline } from "@/components/states/entity-timeline"
+import { RequestProgressPanel } from "@/components/states/request-progress-panel"
+import { buildRequestProgress } from "@/lib/work-queue"
 
 export const metadata: Metadata = { title: "Solicitud de compra" }
 
@@ -46,7 +49,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   if (!hasAccess) notFound()
   const canViewInvoices = canViewInvoiceAttachments(session)
 
-  const [allWorksites, allProducts, allAttrs, invoiceRows, timelineEvents] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, invoiceRows, timelineEvents, maxPdfSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
@@ -80,6 +83,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         ),
       )
       .orderBy(desc(statusHistory.changedAt)),
+    getPdfMaxSizeMb(),
   ])
 
   const worksiteOptions = allWorksites
@@ -100,6 +104,18 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       .filter((a) => a.productId === p.id)
       .map((a) => ({ id: a.id, name: a.name, type: a.type, isRequired: a.isRequired, options: a.options })),
   }))
+
+  const productNameById = new Map(allProducts.map((product) => [product.id, product.name]))
+  const progress = buildRequestProgress(
+    request.status,
+    request.items.map((item) => ({
+      id:            item.id,
+      productName:   item.productId ? (productNameById.get(item.productId) ?? item.productNameFree ?? "Ítem solicitado") : (item.productNameFree ?? "Ítem solicitado"),
+      status:        item.status,
+      quantity:      item.quantity,
+      unitOfMeasure: item.unitOfMeasure,
+    })),
+  )
 
   const editRequest = {
     id:           request.id,
@@ -147,6 +163,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         }
       />
       <div className="max-w-3xl space-y-6">
+        <RequestProgressPanel progress={progress} />
         <RequestForm
           worksites={worksiteOptions}
           products={productOptions}
@@ -158,6 +175,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
             targetId={request.id}
             targetLabel={`la solicitud ${request.code}`}
             canManage={can(session, "invoice_attachments:manage")}
+            maxPdfSizeMb={maxPdfSizeMb}
             attachments={invoiceRows.map((invoice) => ({
               id:                  invoice.id,
               invoiceNumber:       invoice.invoiceNumber,
@@ -179,4 +197,3 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     </>
   )
 }
-

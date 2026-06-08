@@ -18,19 +18,6 @@ export interface ReportData {
   rows: ReportCell[][]
 }
 
-export function csvRow(values: ReportCell[]): string {
-  return values
-    .map((v) => {
-      const s = v === null || v === undefined ? "" : String(v)
-      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-      return s
-    })
-    .join(",")
-}
-
-export function buildCsv(report: Pick<ReportData, "headers" | "rows">): string {
-  return [csvRow(report.headers), ...report.rows.map(csvRow)].join("\r\n")
-}
 
 export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()

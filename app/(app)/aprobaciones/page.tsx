@@ -14,10 +14,16 @@ import type { ApprovalItem, ApprovalRequest } from "./approval-panel"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
 
-export default async function AprobacionesPage() {
+export default async function AprobacionesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("approvals:approve") }
   catch { redirect("/dashboard") }
+  const sp = await searchParams
+  const selectedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
 
   // Load all submitted/in-review requests
   const allRequests = await db
@@ -164,14 +170,17 @@ export default async function AprobacionesPage() {
       }
     })
 
-  const totalPending = rows.reduce((n, r) => n + r.pendingCount, 0)
+  const displayedRows = selectedRequestId
+    ? rows.filter((row) => row.id === selectedRequestId)
+    : rows
+  const totalPending = displayedRows.reduce((n, r) => n + r.pendingCount, 0)
 
   return (
     <>
       <PageHeader
         title="Aprobaciones"
         description={
-          rows.length > 0
+          displayedRows.length > 0
             ? `${totalPending} ítem${totalPending !== 1 ? "s" : ""} pendiente${totalPending !== 1 ? "s" : ""} de revisión`
             : "Revisión y aprobación de ítems solicitados por faena."
         }
@@ -182,7 +191,7 @@ export default async function AprobacionesPage() {
           ]} />
         }
       />
-      <ApprovalPanel requests={rows} />
+      <ApprovalPanel requests={displayedRows} />
     </>
   )
 }

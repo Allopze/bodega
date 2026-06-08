@@ -132,25 +132,25 @@ export function ProductList({ products, categories, allSuppliers }: {
                 {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
               </TableCellNum>
               <TableCell>
-                <Badge variant={p.isActive ? "success" : "default"} dot>
+                <Badge variant={p.isActive ? "success" : "default"} dot className="w-20 justify-center">
                   {p.isActive ? "Activo" : "Inactivo"}
                 </Badge>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-1 justify-end">
+                <div className="flex items-center gap-2 justify-end">
                   <button
                     onClick={() => openEditProduct(p.id)}
                     disabled={loadingEditId === p.id}
-                    className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
+                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
                     title="Editar"
                   >
-                    <PencilSimple size={14} className={loadingEditId === p.id ? "animate-spin" : ""} />
+                    <PencilSimple size={16} className={loadingEditId === p.id ? "animate-spin" : ""} />
                   </button>
                   <form action={toggleAction}>
                     <input type="hidden" name="id"       value={p.id} />
                     <input type="hidden" name="activate" value={String(!p.isActive)} />
-                    <button type="submit" className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={p.isActive ? "Desactivar" : "Activar"}>
-                      {p.isActive ? <ToggleRight size={14} className="text-[var(--color-primary)]" /> : <ToggleLeft size={14} />}
+                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={p.isActive ? "Desactivar" : "Activar"}>
+                      {p.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                     </button>
                   </form>
                 </div>
