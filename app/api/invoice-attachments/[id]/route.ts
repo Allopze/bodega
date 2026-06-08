@@ -14,7 +14,10 @@ export async function GET(_request: Request, context: RouteContext<"/api/invoice
   const attachment = await canReadInvoiceAttachment(session, id)
   if (!attachment) notFound()
 
-  const absolutePath = path.join(STORAGE_DIR, attachment.storageName)
+  const storageRoot = path.resolve(STORAGE_DIR)
+  const absolutePath = path.resolve(storageRoot, attachment.storageName)
+  if (!absolutePath.startsWith(`${storageRoot}${path.sep}`)) notFound()
+
   const file = await readFile(absolutePath).catch(() => null)
   if (!file) notFound()
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import type { Session } from "next-auth"
+import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { PageHeader } from "@/components/ui/page-header"
 import { db } from "@/db"
@@ -27,32 +28,33 @@ type DashboardCard = {
   title: string
   description: string
   icon: React.FC<{ size: number; className?: string }>
+  href: string
 }
 
 const PENDING_CARDS: Record<string, DashboardCard[]> = {
   solicitante_faena: [
-    { key: "my_requests", title: "Mis solicitudes de faena", description: "Pedidos creados para tus faenas asignadas", icon: ClipboardText },
+    { key: "my_requests", title: "Mis solicitudes de faena", description: "Pedidos creados para tus faenas asignadas", icon: ClipboardText, href: "/solicitudes" },
   ],
   jefa_chome: [
-    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare },
-    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: WarningCircle },
-    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package },
-    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart },
+    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare, href: "/aprobaciones" },
+    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: WarningCircle, href: "/compras/nueva" },
+    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package, href: "/recepcion" },
+    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart, href: "/reportes" },
   ],
   secretaria: [
-    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare },
-    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: ShoppingCart },
-    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package },
-    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart },
+    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare, href: "/aprobaciones" },
+    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: ShoppingCart, href: "/compras/nueva" },
+    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package, href: "/recepcion" },
+    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart, href: "/reportes" },
   ],
   prevencionista: [
-    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare },
+    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare, href: "/aprobaciones" },
   ],
   administrador: [
-    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare },
-    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: WarningCircle },
-    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package },
-    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart },
+    { key: "pending_approvals", title: "Pendientes de aprobación", description: "Solicitudes esperando revisión", icon: CheckSquare, href: "/aprobaciones" },
+    { key: "approved_without_oc", title: "Ítems aprobados sin OC", description: "Ítems listos para compra", icon: WarningCircle, href: "/compras/nueva" },
+    { key: "orders_pending_receipt", title: "OC pendientes de recepción", description: "Compras enviadas que deben marcarse recibidas", icon: Package, href: "/recepcion" },
+    { key: "invoice_pending", title: "Facturas pendientes", description: "OC recibidas sin factura conciliada", icon: ShoppingCart, href: "/reportes" },
   ],
 }
 
@@ -174,18 +176,21 @@ export default async function DashboardPage() {
       <div>
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Tareas y Alertas Pendientes</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {cards.map(({ key, title, description, icon: Icon }) => {
+          {cards.map(({ key, title, description, icon: Icon, href }) => {
             const value = data.metrics[key] ?? 0
             const style = CARD_STYLES[key] ?? CARD_STYLES.my_requests
             const hasPending = value > 0
 
             return (
-              <div
+              <Link
+                href={href}
                 key={title}
                 className={cn(
-                  "rounded-[var(--radius-lg)] border p-5 flex flex-col justify-between transition-all duration-[var(--duration-default)] bg-[var(--color-surface)]",
+                  "rounded-[var(--radius-lg)] border p-5 flex flex-col justify-between bg-[var(--color-surface)]",
+                  "transition-[background-color,border-color,box-shadow,transform] duration-[var(--duration-default)] ease-[var(--ease-out)]",
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
                   hasPending ? `${style.bg} ${style.border}` : "border-[var(--color-border)] opacity-85",
-                  "hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--color-primary)] cursor-pointer"
+                  "hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--color-primary)] active:scale-[0.99]"
                 )}
               >
                 <div className="flex items-center justify-between mb-4">
@@ -200,7 +205,7 @@ export default async function DashboardPage() {
                   <h4 className="text-sm font-semibold text-[var(--color-text)]">{title}</h4>
                   <p className="text-xs text-[var(--color-text-muted)] mt-1">{description}</p>
                 </div>
-              </div>
+              </Link>
             )
           })}
         </div>

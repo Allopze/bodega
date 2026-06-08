@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, real, index, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
 import { worksites } from "./worksites"
@@ -27,7 +27,9 @@ export const warehouseStock = sqliteTable("warehouse_stock", {
   minStock:         real("min_stock").notNull().default(0),
   lastMovementAt:   text("last_movement_at"),
   updatedAt:        text("updated_at").notNull().default(sql`(datetime('now'))`),
-})
+}, (table) => [
+  uniqueIndex("warehouse_stock_warehouse_product_unique").on(table.warehouseId, table.productId),
+])
 
 /* ── Inventory Movements (Movimientos de Inventario) ────────────────────── */
 // type: ingreso_oc | egreso_faena | transferencia
@@ -46,7 +48,10 @@ export const inventoryMovements = sqliteTable("inventory_movements", {
   performedAt:    text("performed_at").notNull().default(sql`(datetime('now'))`),
   reason:         text("reason"),
   notes:          text("notes"),
-})
+}, (table) => [
+  index("inventory_movements_warehouse_performed_at_idx").on(table.warehouseId, table.performedAt),
+  index("inventory_movements_product_performed_at_idx").on(table.productId, table.performedAt),
+])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const warehousesRelations = relations(warehouses, ({ one, many }) => ({

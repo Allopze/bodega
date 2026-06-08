@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { relations, sql } from "drizzle-orm"
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
@@ -47,20 +47,26 @@ export const permissions = sqliteTable("permissions", {
 export const rolePermissions = sqliteTable("role_permissions", {
   roleId:       text("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
   permissionId: text("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
-})
+}, (table) => [
+  uniqueIndex("role_permissions_role_permission_unique").on(table.roleId, table.permissionId),
+])
 
 /* ── User ↔ Role ─────────────────────────────────────────────────────────── */
 export const userRoles = sqliteTable("user_roles", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   roleId: text("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
-})
+}, (table) => [
+  uniqueIndex("user_roles_user_role_unique").on(table.userId, table.roleId),
+])
 
 /* ── User ↔ Faena (worksite scoping) ────────────────────────────────────── */
 export const worksiteUsers = sqliteTable("worksite_users", {
   userId:     text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   worksiteId: text("worksite_id").notNull(),  // fk to worksites.id — resolved in index.ts
   isPrimary:  integer("is_primary", { mode: "boolean" }).notNull().default(false),
-})
+}, (table) => [
+  uniqueIndex("worksite_users_user_worksite_unique").on(table.userId, table.worksiteId),
+])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const usersRelations = relations(users, ({ many }) => ({

@@ -79,7 +79,11 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites, defau
             <FieldGroup className="gap-4">
               <Field label="Faena" htmlFor="cc-worksite" required error={state.fieldErrors?.worksiteId?.[0]}>
                 <Select value={worksiteId} onValueChange={changeWorksiteId}>
-                  <SelectTrigger id="cc-worksite" error={!!state.fieldErrors?.worksiteId}>
+                  <SelectTrigger
+                    id="cc-worksite"
+                    error={!!state.fieldErrors?.worksiteId}
+                    aria-describedby={state.fieldErrors?.worksiteId ? "cc-worksite-error" : undefined}
+                  >
                     <SelectValue placeholder="Seleccionar faena..." />
                   </SelectTrigger>
                   <SelectContent>

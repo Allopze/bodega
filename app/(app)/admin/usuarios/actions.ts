@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import bcrypt from "bcryptjs"
 import { db } from "@/db"
 import { users, userRoles, worksiteUsers, roles, userInvitations } from "@/db/schema"
@@ -245,14 +245,20 @@ export async function toggleUserActive(
 
   // Guard: don't deactivate the last admin
   if (!activate) {
-    const activeAdmins = await db
+    const targetAdmin = await db
       .select({ userId: userRoles.userId })
       .from(userRoles)
       .innerJoin(roles, eq(userRoles.roleId, roles.id))
-      .where(eq(roles.name, "administrador"))
-    const otherActiveAdmins = activeAdmins.filter((r) => r.userId !== id)
-    const isAdmin = activeAdmins.some((r) => r.userId === id)
-    if (isAdmin && otherActiveAdmins.length === 0) {
+      .where(and(eq(roles.name, "administrador"), eq(userRoles.userId, id)))
+
+    const otherActiveAdmins = await db
+      .select({ userId: users.id })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(and(eq(roles.name, "administrador"), eq(users.isActive, true), ne(users.id, id)))
+
+    if (targetAdmin.length > 0 && otherActiveAdmins.length === 0) {
       return { ok: false, message: "No puedes desactivar al único administrador" }
     }
   }

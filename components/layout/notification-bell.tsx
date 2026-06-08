@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import * as PopoverPrimitive from "@radix-ui/react-popover"
+import Link from "next/link"
 import { Bell, CheckCircle } from "@phosphor-icons/react"
 import { cn, formatDate } from "@/lib/utils"
 
@@ -161,21 +162,19 @@ function NotificationRow({
 }) {
   function handleClick() {
     if (!notification.isRead) onRead()
-    if (notification.entityHref) {
-      window.location.href = notification.entityHref
-    }
   }
 
-  return (
-    <div
-      onClick={handleClick}
-      className={cn(
-        "flex items-start gap-3 px-3 py-2.5 cursor-pointer",
-        "transition-colors duration-[var(--duration-fast)]",
-        "hover:bg-[var(--color-surface-2)]",
-        !notification.isRead && "bg-[var(--color-primary-50)]",
-      )}
-    >
+  const rowClassName = cn(
+    "flex w-full items-start gap-3 px-3 py-2.5 text-left",
+    "transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+    "hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)]",
+    "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
+    "active:scale-[0.99]",
+    !notification.isRead && "bg-[var(--color-primary-50)]",
+  )
+
+  const content = (
+    <>
       <div className="mt-1.5 shrink-0">
         {!notification.isRead
           ? <span className="block h-2 w-2 rounded-full bg-[var(--color-primary)]" />
@@ -198,6 +197,20 @@ function NotificationRow({
           {formatDate(notification.createdAt)}
         </p>
       </div>
-    </div>
+    </>
+  )
+
+  if (notification.entityHref) {
+    return (
+      <Link href={notification.entityHref} onClick={handleClick} className={rowClassName}>
+        {content}
+      </Link>
+    )
+  }
+
+  return (
+    <button type="button" onClick={handleClick} className={rowClassName}>
+      {content}
+    </button>
   )
 }

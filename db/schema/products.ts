@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { relations, sql } from "drizzle-orm"
 import { suppliers } from "./worksites"
 
@@ -50,7 +50,9 @@ export const productSuppliers = sqliteTable("product_suppliers", {
   isPreferred:  integer("is_preferred", { mode: "boolean" }).notNull().default(false),
   lastUpdated:  text("last_updated").notNull().default(sql`(datetime('now'))`),
   notes:        text("notes"),
-})
+}, (table) => [
+  uniqueIndex("product_suppliers_product_supplier_unique").on(table.productId, table.supplierId),
+])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const productCategoriesRelations = relations(productCategories, ({ many }) => ({

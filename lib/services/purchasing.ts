@@ -3,10 +3,11 @@
  * All DB mutations here, never in Server Actions or UI components.
  */
 
-import { eq, count, inArray } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
-import { nanoid, generateCode } from "@/lib/id"
+import { nanoid } from "@/lib/id"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { computeOrderTotals } from "@/lib/order-totals"
 import { addItemToPurchaseOrderTx } from "./item-state"
@@ -43,12 +44,12 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
   const orderId   = nanoid()
   const now       = new Date().toISOString()
   const year      = new Date().getFullYear()
-
-  const [{ total }] = await db.select({ total: count() }).from(purchaseOrders)
-  const code        = generateCode("OC", total + 1, year)
   const totals      = computeOrderTotals(input.items)
+  let code!: string
 
   db.transaction((tx) => {
+    code = nextCodeTx(tx, "OC", year)
+
     // Create the order header
     tx.insert(purchaseOrders).values({
       id:                orderId,

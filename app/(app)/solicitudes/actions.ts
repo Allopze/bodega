@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { eq, count } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
 } from "@/db/schema"
-import { nanoid, generateCode } from "@/lib/id"
+import { nanoid } from "@/lib/id"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { submitItemTx } from "@/lib/services/item-state"
@@ -85,9 +86,7 @@ async function persistDraft(
       // Replace all items (delete + re-insert)
       tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, d.id!)).run()
     } else {
-      // Generate code: count existing + 1
-      const [{ total }] = tx.select({ total: count() }).from(purchaseRequests).all()
-      const code = generateCode("SOL", (total ?? 0) + 1)
+      const code = nextCodeTx(tx, "SOL")
       const reqId = nanoid()
       requestId = reqId
 
@@ -253,8 +252,7 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
 
   let newId!: string
   db.transaction((tx) => {
-    const [{ total }] = tx.select({ total: count() }).from(purchaseRequests).all()
-    const code = generateCode("SOL", (total ?? 0) + 1)
+    const code = nextCodeTx(tx, "SOL")
     newId = nanoid()
 
     tx.insert(purchaseRequests).values({
@@ -276,7 +274,7 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
       entityId:   newId,
       entityCode: code,
       newState:   { status: "draft", duplicatedFrom: sourceId, worksiteId: source.worksiteId },
-    })
+    }, tx)
 
     for (const [i, item] of source.items.entries()) {
       const itemId = nanoid()
@@ -349,7 +347,7 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
       fromStatus: request.status,
       toStatus:   "cancelled",
       changedBy:  session.user.id,
-    })
+    }, tx)
     recordAudit({
       userId:     session.user.id,
       userEmail:  session.user.email ?? undefined,
@@ -359,7 +357,7 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
       entityCode: request.code,
       oldState:   { status: request.status },
       newState:   { status: "cancelled" },
-    })
+    }, tx)
   })
 
   revalidatePath(REVALIDATE)

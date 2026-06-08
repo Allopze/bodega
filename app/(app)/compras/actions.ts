@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createOrder, issueOrder, markOrderSent } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
-import type { ActionState } from "@/lib/validation/operations"
+import { createOrderSchema, type ActionState } from "@/lib/validation/operations"
 
 const REVALIDATE = "/compras"
 
@@ -22,43 +22,49 @@ export async function createOrderAction(
   try { session = await requirePermission("purchasing:create_order") }
   catch { return { ok: false, message: "Sin permisos para crear órdenes de compra" } }
 
-  const worksiteId        = formData.get("worksiteId") as string | null
-  const supplierId        = formData.get("supplierId") as string | null
-  const paymentTerms      = formData.get("paymentTerms") as string | null
-  const estimatedDelivery = formData.get("estimatedDelivery") as string | null
-  const deliveryAddress   = formData.get("deliveryAddress") as string | null
-  const notes             = formData.get("notes") as string | null
-
-  if (!worksiteId) return { ok: false, message: "Selecciona una faena" }
-  if (!supplierId) return { ok: false, message: "Selecciona un proveedor" }
-  if (!canAccessWorksite(session, worksiteId)) {
-    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
-  }
-
-  // Items JSON: [{requestItemId, productId, productNameFree, quantity, unitOfMeasure, unitPrice, discount, notes}]
   let itemsRaw: unknown[] = []
   try {
     itemsRaw = JSON.parse(formData.get("itemsJson") as string ?? "[]")
   } catch {
-    return { ok: false, message: "Error al procesar los ítems" }
+    return { ok: false, message: "Error al procesar los ítems", fieldErrors: { items: ["Formato de ítems inválido"] } }
   }
 
-  if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
-    return { ok: false, message: "Selecciona al menos un ítem para la orden" }
+  const parsed = createOrderSchema.safeParse({
+    worksiteId:        formData.get("worksiteId"),
+    supplierId:        formData.get("supplierId"),
+    paymentTerms:      formData.get("paymentTerms"),
+    estimatedDelivery: formData.get("estimatedDelivery"),
+    deliveryAddress:   formData.get("deliveryAddress"),
+    notes:             formData.get("notes"),
+    items:             itemsRaw,
+  })
+
+  if (!parsed.success) {
+    const flattened = parsed.error.flatten()
+    return {
+      ok: false,
+      message: "Revisa los datos de la orden",
+      fieldErrors: {
+        ...flattened.fieldErrors,
+        items: flattened.fieldErrors.items ?? flattened.formErrors,
+      },
+    }
   }
 
-  type RawItem = {
-    requestItemId: string
-    productId: string | null
-    productNameFree: string | null
-    quantity: number
-    unitOfMeasure: string
-    unitPrice: number
-    discount?: number
-    notes?: string
+  const {
+    worksiteId,
+    supplierId,
+    paymentTerms,
+    estimatedDelivery,
+    deliveryAddress,
+    notes,
+    items,
+  } = parsed.data
+
+  if (!canAccessWorksite(session, worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
 
-  const items = itemsRaw as RawItem[]
   const itemIds = [...new Set(items.map((item) => item.requestItemId).filter(Boolean))]
   if (itemIds.length !== items.length) {
     return { ok: false, message: "Hay ítems duplicados o inválidos en la orden" }
@@ -74,14 +80,7 @@ export async function createOrderAction(
 
   const dbItemMap = new Map(dbItems.map((item) => [item.id, item]))
 
-  // Validate unit prices
   for (const item of items) {
-    if (isNaN(item.unitPrice) || item.unitPrice < 0) {
-      return { ok: false, message: `Precio unitario inválido en un ítem` }
-    }
-    if ((item.discount ?? 0) < 0 || (item.discount ?? 0) > 100) {
-      return { ok: false, message: "El descuento debe estar entre 0 y 100" }
-    }
     const dbItem = dbItemMap.get(item.requestItemId)
     if (!dbItem || !["approved", "pending_purchase"].includes(dbItem.status)) {
       return { ok: false, message: "Solo se pueden comprar ítems aprobados pendientes" }
@@ -106,8 +105,8 @@ export async function createOrderAction(
       notes:              notes || null,
       items: items.map((item, i) => ({
         requestItemId:   item.requestItemId,
-        productId:       item.productId,
-        productNameFree: item.productNameFree,
+        productId:       item.productId ?? null,
+        productNameFree: item.productNameFree ?? null,
         quantity:        item.quantity,
         unitOfMeasure:   item.unitOfMeasure,
         unitPrice:       item.unitPrice,

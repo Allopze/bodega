@@ -1,10 +1,11 @@
-import { count, eq } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
   deliveries, deliveryItems,
   products, purchaseRequestItems, worksites,
 } from "@/db/schema"
-import { generateCode, nanoid } from "@/lib/id"
+import { nanoid } from "@/lib/id"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { deliverItemTx } from "@/lib/services/item-state"
 import { applyMovementTx } from "@/lib/services/warehouse"
@@ -31,12 +32,14 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
     throw new Error("La cantidad debe ser mayor a 0")
   }
 
-  const [{ total }] = await db.select({ total: count() }).from(deliveries)
   const now = new Date().toISOString()
   const deliveryId = nanoid()
-  const code = generateCode("ENT", total + 1, new Date().getFullYear())
+  const year = new Date().getFullYear()
+  let code!: string
 
   db.transaction((tx) => {
+    code = nextCodeTx(tx, "ENT", year)
+
     const worksite = tx.query.worksites.findFirst({ where: eq(worksites.id, input.worksiteId) }).sync()
     const product = tx.query.products.findFirst({ where: eq(products.id, input.productId) }).sync()
 

@@ -77,6 +77,7 @@ const SelectContent = React.forwardRef<
         "relative z-50 min-w-[8rem] overflow-hidden",
         "rounded-[var(--radius-md)] border border-[var(--color-border)]",
         "bg-[var(--color-surface)] shadow-[var(--shadow-md)]",
+        "origin-[var(--radix-select-content-transform-origin)]",
         // Entry animation — scale from trigger, ease-out (Emil)
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",

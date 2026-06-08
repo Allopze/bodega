@@ -8,11 +8,12 @@ import { WarningCircle } from "@phosphor-icons/react"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { safeInternalPath } from "@/lib/navigation"
 
 export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }) {
   const router       = useRouter()
   const searchParams = useSearchParams()
-  const callbackUrl  = searchParams.get("callbackUrl") ?? "/dashboard"
+  const callbackUrl  = safeInternalPath(searchParams.get("callbackUrl"))
 
   const [error,   setError]   = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)

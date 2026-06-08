@@ -120,9 +120,9 @@ export function DispatchPanel({
         <input type="hidden" name="unitOfMeasure" value={selectedStock?.unitOfMeasure ?? "unidad"} />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Bodega" required>
+          <Field label="Bodega" htmlFor="dispatchWarehouseId" required error={state.fieldErrors?.warehouseId?.[0]}>
             <Select value={warehouseId} onValueChange={handleWarehouseChange}>
-              <SelectTrigger id="dispatchWarehouseId">
+              <SelectTrigger id="dispatchWarehouseId" error={!!state.fieldErrors?.warehouseId} aria-describedby={state.fieldErrors?.warehouseId ? "dispatchWarehouseId-error" : undefined}>
                 <SelectValue placeholder="Selecciona bodega" />
               </SelectTrigger>
               <SelectContent>
@@ -133,9 +133,9 @@ export function DispatchPanel({
             </Select>
           </Field>
 
-          <Field label="Faena destino" required>
+          <Field label="Faena destino" htmlFor="dispatchWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
             <Select value={worksiteId} onValueChange={handleWorksiteChange}>
-              <SelectTrigger id="dispatchWorksiteId">
+              <SelectTrigger id="dispatchWorksiteId" error={!!state.fieldErrors?.worksiteId} aria-describedby={state.fieldErrors?.worksiteId ? "dispatchWorksiteId-error" : undefined}>
                 <SelectValue placeholder="Selecciona faena" />
               </SelectTrigger>
               <SelectContent>
@@ -148,9 +148,9 @@ export function DispatchPanel({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Producto" required>
+          <Field label="Producto" htmlFor="dispatchProductId" required error={state.fieldErrors?.productId?.[0]}>
             <Select value={productId} onValueChange={handleProductChange} disabled={!warehouseId}>
-              <SelectTrigger id="dispatchProductId">
+              <SelectTrigger id="dispatchProductId" error={!!state.fieldErrors?.productId} aria-describedby={state.fieldErrors?.productId ? "dispatchProductId-error" : undefined}>
                 <SelectValue placeholder={warehouseId ? "Selecciona producto" : "Elige bodega primero"} />
               </SelectTrigger>
               <SelectContent>
@@ -169,7 +169,7 @@ export function DispatchPanel({
         </div>
 
         {matchingDeliverables.length > 0 && (
-          <Field label="Asociar a solicitud">
+          <Field label="Asociar a solicitud" htmlFor="dispatchRequestItemId">
             <Select
               value={requestItemId || "__none__"}
               onValueChange={(value) => setRequestItemId(value === "__none__" ? "" : value)}
@@ -197,6 +197,7 @@ export function DispatchPanel({
             label={`Cantidad${selectedStock ? ` (máx. ${formatQty(selectedStock.quantity, selectedStock.unitOfMeasure)})` : ""}`}
             htmlFor="dispatchQuantity"
             required
+            error={state.fieldErrors?.quantity?.[0]}
           >
             <Input
               id="dispatchQuantity"
@@ -208,28 +209,31 @@ export function DispatchPanel({
               placeholder="0"
               disabled={!productId}
               required
+              error={!!state.fieldErrors?.quantity}
               className="tabular-nums"
             />
           </Field>
 
-          <Field label="Recibido por" htmlFor="dispatchReceiverName" required>
+          <Field label="Recibido por" htmlFor="dispatchReceiverName" required error={state.fieldErrors?.receiverName?.[0]}>
             <Input
               id="dispatchReceiverName"
               name="receiverName"
               placeholder="Nombre de quien recibió"
               disabled={!productId}
               required
+              error={!!state.fieldErrors?.receiverName}
             />
           </Field>
         </div>
 
-        <Field label="Notas adicionales" htmlFor="dispatchNotes">
+        <Field label="Notas adicionales" htmlFor="dispatchNotes" error={state.fieldErrors?.notes?.[0]}>
           <Textarea
             id="dispatchNotes"
             name="notes"
             rows={2}
             placeholder="Información adicional sobre esta entrega..."
             disabled={!productId}
+            error={!!state.fieldErrors?.notes}
           />
         </Field>
 

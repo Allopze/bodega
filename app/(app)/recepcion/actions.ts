@@ -7,8 +7,7 @@ import { purchaseOrders } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { registerReceipt } from "@/lib/services/receiving"
-import type { ActionState } from "@/lib/validation/operations"
-import type { ReceiptItemInput } from "@/lib/services/receiving"
+import { receiptSchema, type ActionState } from "@/lib/validation/operations"
 
 const REVALIDATE = "/recepcion"
 
@@ -20,22 +19,45 @@ export async function registerReceiptAction(
   try { session = await requirePermission("receiving:register") }
   catch { return { ok: false, message: "Sin permisos para registrar recepciones" } }
 
-  const purchaseOrderId  = formData.get("purchaseOrderId")  as string | null
-  const locationType     = formData.get("locationType")     as string | null
-  const worksiteId       = formData.get("worksiteId")       as string | null
-  const warehouseId      = formData.get("warehouseId")      as string | null
-  const dispatchGuideNo  = formData.get("dispatchGuideNo")  as string | null
-  const notes            = formData.get("notes")            as string | null
-
-  if (!purchaseOrderId) return { ok: false, message: "OC no especificada" }
-  if (!locationType)    return { ok: false, message: "Tipo de destino requerido" }
-  if (locationType !== "warehouse" && locationType !== "faena") {
-    return { ok: false, message: "Tipo de destino inválido" }
+  let itemsRaw: unknown[] = []
+  try {
+    itemsRaw = JSON.parse(formData.get("itemsJson") as string ?? "[]")
+  } catch {
+    return { ok: false, message: "Error al procesar los ítems", fieldErrors: { items: ["Formato de ítems inválido"] } }
   }
 
-  if (locationType === "warehouse" && !warehouseId) {
-    return { ok: false, message: "Selecciona una bodega de destino" }
+  const parsed = receiptSchema.safeParse({
+    purchaseOrderId: formData.get("purchaseOrderId"),
+    locationType:    formData.get("locationType"),
+    worksiteId:      formData.get("worksiteId"),
+    warehouseId:     formData.get("warehouseId"),
+    dispatchGuideNo: formData.get("dispatchGuideNo"),
+    notes:           formData.get("notes"),
+    items:           itemsRaw,
+  })
+
+  if (!parsed.success) {
+    const flattened = parsed.error.flatten()
+    return {
+      ok: false,
+      message: "Revisa los datos de recepción",
+      fieldErrors: {
+        ...flattened.fieldErrors,
+        items: flattened.fieldErrors.items ?? flattened.formErrors,
+      },
+    }
   }
+
+  const {
+    purchaseOrderId,
+    locationType,
+    worksiteId,
+    warehouseId,
+    dispatchGuideNo,
+    notes,
+    items,
+  } = parsed.data
+
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, purchaseOrderId),
   })
@@ -44,28 +66,6 @@ export async function registerReceiptAction(
     return { ok: false, message: "No tienes acceso a la faena de esta OC" }
   }
 
-  // Items JSON: [{purchaseOrderItemId, quantityReceived, quantityRejected, quantityDamaged, notes}]
-  let itemsRaw: unknown[] = []
-  try {
-    itemsRaw = JSON.parse(formData.get("itemsJson") as string ?? "[]")
-  } catch {
-    return { ok: false, message: "Error al procesar los ítems" }
-  }
-
-  if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
-    return { ok: false, message: "Ingresa las cantidades recibidas" }
-  }
-
-  const items = itemsRaw as ReceiptItemInput[]
-
-  // Validate all quantities >= 0
-  for (const item of items) {
-    if (item.quantityReceived < 0) {
-      return { ok: false, message: "Las cantidades no pueden ser negativas" }
-    }
-  }
-
-  // Filter out zero-received items (not required to receive all)
   const nonZeroItems = items.filter((i) => i.quantityReceived > 0)
   if (nonZeroItems.length === 0) {
     return { ok: false, message: "Ingresa al menos una cantidad recibida mayor a 0" }
@@ -77,7 +77,7 @@ export async function registerReceiptAction(
       purchaseOrderId,
       receivedBy:      session.user.id,
       userEmail:       session.user.email ?? undefined,
-      locationType:    locationType as "faena" | "warehouse",
+      locationType,
       worksiteId:      worksiteId  || order.worksiteId,
       warehouseId:     warehouseId || null,
       dispatchGuideNo: dispatchGuideNo || null,

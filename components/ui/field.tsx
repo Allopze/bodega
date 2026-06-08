@@ -37,23 +37,44 @@ interface FieldProps {
 }
 
 function Field({ label, htmlFor, required, helper, error, className, children }: FieldProps) {
+  const descriptionId = htmlFor && (error || helper)
+    ? `${htmlFor}-${error ? "error" : "helper"}`
+    : undefined
+  const content = addDescriptionToSingleControl(children, descriptionId, !!error)
+
   return (
     <div className={cn("flex flex-col gap-0", className)}>
       <Label htmlFor={htmlFor} required={required}>
         {label}
       </Label>
-      {children}
+      {content}
       {error ? (
-        <p className="mt-1.5 text-xs text-[var(--color-danger)] leading-tight" role="alert">
+        <p id={descriptionId} className="mt-1.5 text-xs text-[var(--color-danger)] leading-tight" role="alert">
           {error}
         </p>
       ) : helper ? (
-        <p className="mt-1.5 text-xs text-[var(--color-text-subtle)] leading-tight">
+        <p id={descriptionId} className="mt-1.5 text-xs text-[var(--color-text-subtle)] leading-tight">
           {helper}
         </p>
       ) : null}
     </div>
   )
+}
+
+function addDescriptionToSingleControl(children: React.ReactNode, descriptionId: string | undefined, hasError: boolean) {
+  if (!descriptionId) return children
+
+  const childArray = React.Children.toArray(children)
+  if (childArray.length !== 1 || !React.isValidElement<Record<string, unknown>>(childArray[0])) {
+    return children
+  }
+
+  const child = childArray[0]
+  const existing = typeof child.props["aria-describedby"] === "string" ? child.props["aria-describedby"] : ""
+  return React.cloneElement(child, {
+    "aria-describedby": cn(existing, descriptionId),
+    "aria-invalid": hasError || child.props["aria-invalid"],
+  })
 }
 
 /* ── FieldGroup ───────────────────────────────────────────────────────────── */

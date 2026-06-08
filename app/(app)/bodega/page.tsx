@@ -92,7 +92,8 @@ export default async function BodegaPage() {
       where: (m, { inArray }) => inArray(m.warehouseId, warehouseIds),
       with:  { product: true, warehouse: true },
       orderBy: (m, { desc }) => [desc(m.performedAt)],
-    }).then((rows) => rows.slice(0, 50)),
+      limit: 50,
+    }),
     db.query.purchaseRequestItems.findMany({
       where: inArray(purchaseRequestItems.status, ["received", "partially_delivered"]),
       with: {

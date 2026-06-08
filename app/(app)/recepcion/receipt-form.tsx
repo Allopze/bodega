@@ -72,12 +72,14 @@ export function ReceiptForm({
 
       {/* Header */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Field label="N° guía de despacho">
+        <Field label="N° guía de despacho" htmlFor="receiptDispatchGuideNo" error={state.fieldErrors?.dispatchGuideNo?.[0]}>
           <Input
+            id="receiptDispatchGuideNo"
             name="dispatchGuideNo"
             value={guideNo}
             onChange={(e) => setGuideNo(e.target.value)}
             placeholder="Ej: GD-000123"
+            error={!!state.fieldErrors?.dispatchGuideNo}
           />
         </Field>
 
@@ -127,6 +129,7 @@ export function ReceiptForm({
                 </div>
 
                 <Input
+                  id={`receiptQty-${item.id}`}
                   type="number"
                   step="0.01"
                   min="0"
@@ -143,13 +146,15 @@ export function ReceiptForm({
       </div>
 
       {/* Notes */}
-      <Field label="Observaciones de recepción">
+      <Field label="Observaciones de recepción" htmlFor="receiptNotes" error={state.fieldErrors?.notes?.[0]}>
         <Textarea
+          id="receiptNotes"
           name="notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
           placeholder="Estado del embalaje, condiciones de entrega..."
+          error={!!state.fieldErrors?.notes}
         />
       </Field>
 

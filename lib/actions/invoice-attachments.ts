@@ -11,18 +11,12 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
+import { invoiceAttachmentSchema, type InvoiceAttachmentFormData } from "@/lib/validation/operations"
 import type { ActionState } from "@/lib/validation/masters"
 
 export type InvoiceTargetType = "purchase_request" | "purchase_order"
 
 const STORAGE_DIR = path.join(process.cwd(), "storage", "invoices")
-const ALLOWED_MIME_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-])
-const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 export async function uploadInvoiceAttachment(
   _prev: ActionState,
@@ -33,33 +27,33 @@ export async function uploadInvoiceAttachment(
   catch { return { ok: false, message: "Sin permisos para anexar facturas" } }
   if (!canViewInvoiceAttachments(session)) return { ok: false, message: "Sin permisos para anexar facturas" }
 
-  const targetType = formData.get("targetType") as InvoiceTargetType | null
-  const targetId = formData.get("targetId") as string | null
-  const invoiceNumber = (formData.get("invoiceNumber") as string | null)?.trim()
-  const invoiceDate = formData.get("invoiceDate") as string | null
-  const amountRaw = formData.get("amount") as string | null
-  const notes = (formData.get("notes") as string | null)?.trim()
-  const file = formData.get("file")
+  const parsed = invoiceAttachmentSchema.safeParse({
+    targetType: formData.get("targetType"),
+    targetId: formData.get("targetId"),
+    invoiceNumber: formData.get("invoiceNumber"),
+    invoiceDate: formData.get("invoiceDate"),
+    amount: formData.get("amount"),
+    notes: formData.get("notes"),
+    file: formData.get("file"),
+  })
 
-  if (targetType !== "purchase_request" && targetType !== "purchase_order") {
-    return { ok: false, message: "Destino de factura inválido" }
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Revisa los datos de la factura",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    }
   }
-  if (!targetId) return { ok: false, message: "Destino no especificado" }
-  if (!invoiceNumber) return { ok: false, fieldErrors: { invoiceNumber: ["Número de factura requerido"] } }
-  if (!invoiceDate) return { ok: false, fieldErrors: { invoiceDate: ["Fecha de factura requerida"] } }
-  const amount = Number(amountRaw)
-  if (!Number.isFinite(amount) || amount < 0) {
-    return { ok: false, fieldErrors: { amount: ["Monto inválido"] } }
-  }
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, fieldErrors: { file: ["Selecciona un archivo"] } }
-  }
-  if (file.size > MAX_FILE_SIZE) {
-    return { ok: false, fieldErrors: { file: ["El archivo no puede superar 10 MB"] } }
-  }
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    return { ok: false, fieldErrors: { file: ["Solo se aceptan PDF, JPG, PNG o WebP"] } }
-  }
+
+  const {
+    targetType,
+    targetId,
+    invoiceNumber,
+    invoiceDate,
+    amount,
+    notes,
+    file,
+  }: InvoiceAttachmentFormData = parsed.data
 
   const target = await assertTargetAccess(session, targetType, targetId)
   if (!target.ok) return { ok: false, message: target.message }
@@ -70,6 +64,9 @@ export async function uploadInvoiceAttachment(
   const filePath = path.join("storage", "invoices", storageName)
   const absolutePath = path.join(STORAGE_DIR, storageName)
   const bytes = Buffer.from(await file.arrayBuffer())
+  if (!hasExpectedSignature(file.type, bytes)) {
+    return { ok: false, fieldErrors: { file: ["El contenido del archivo no coincide con su tipo"] } }
+  }
 
   await mkdir(STORAGE_DIR, { recursive: true })
   await writeFile(absolutePath, bytes)
@@ -249,4 +246,20 @@ function sanitizeFileName(fileName: string) {
     .replace(/_+/g, "_")
     .slice(0, 120)
   return cleaned || fallback
+}
+
+function hasExpectedSignature(mimeType: string, bytes: Buffer) {
+  if (mimeType === "application/pdf") {
+    return bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))
+  }
+  if (mimeType === "image/jpeg") {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  }
+  if (mimeType === "image/png") {
+    return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  }
+  if (mimeType === "image/webp") {
+    return bytes.subarray(0, 4).equals(Buffer.from("RIFF")) && bytes.subarray(8, 12).equals(Buffer.from("WEBP"))
+  }
+  return false
 }

@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { applyMovement }     from "@/lib/services/warehouse"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
-import type { ActionState }  from "@/lib/validation/operations"
+import { dispatchSchema, stockAdjustmentSchema, type ActionState }  from "@/lib/validation/operations"
 
 const REVALIDATE = "/bodega"
 
@@ -21,24 +21,27 @@ export async function dispatchAction(
   try { session = await requirePermission("warehouse:register_movement") }
   catch { return { ok: false, message: "Sin permisos para registrar movimientos" } }
 
-  const warehouseId = formData.get("warehouseId") as string | null
-  const worksiteId  = formData.get("worksiteId")  as string | null
-  const productId   = formData.get("productId")   as string | null
-  const requestItemId = (formData.get("requestItemId") as string | null) || null
-  const qtyRaw      = formData.get("quantity")     as string | null
-  const unit        = (formData.get("unitOfMeasure") as string | null)?.trim() || "unidad"
-  const receiver    = (formData.get("receiverName") as string | null)?.trim()
-  const notes       = (formData.get("notes")  as string | null)?.trim()
+  const parsed = dispatchSchema.safeParse({
+    warehouseId:   formData.get("warehouseId"),
+    worksiteId:    formData.get("worksiteId"),
+    productId:     formData.get("productId"),
+    requestItemId: formData.get("requestItemId"),
+    quantity:      formData.get("quantity"),
+    unitOfMeasure: formData.get("unitOfMeasure"),
+    receiverName:  formData.get("receiverName"),
+    notes:         formData.get("notes"),
+  })
 
-  if (!warehouseId) return { ok: false, message: "Selecciona una bodega" }
-  if (!worksiteId)  return { ok: false, message: "Selecciona una faena" }
-  if (!productId)   return { ok: false, message: "Selecciona un producto" }
-  if (!receiver)    return { ok: false, message: "Indica quién recibió" }
-
-  const qty = parseFloat(qtyRaw ?? "0")
-  if (isNaN(qty) || qty <= 0) {
-    return { ok: false, message: "La cantidad debe ser mayor a 0" }
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Revisa los datos de la entrega",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    }
   }
+
+  const { warehouseId, worksiteId, productId, quantity: qty, unitOfMeasure: unit, receiverName: receiver, notes } = parsed.data
+  const requestItemId = parsed.data.requestItemId || null
 
   if (!canAccessWorksite(session, worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
@@ -112,22 +115,23 @@ export async function adjustStockAction(
   try { session = await requirePermission("warehouse:adjust_stock") }
   catch { return { ok: false, message: "Sin permisos para ajustar stock" } }
 
-  const warehouseId = formData.get("warehouseId") as string | null
-  const productId   = formData.get("productId")   as string | null
-  const qtyRaw      = formData.get("quantity")     as string | null
-  const type        = formData.get("type")          as string | null
-  const reason      = (formData.get("reason") as string | null)?.trim()
+  const parsed = stockAdjustmentSchema.safeParse({
+    warehouseId: formData.get("warehouseId"),
+    productId:   formData.get("productId"),
+    quantity:    formData.get("quantity"),
+    type:        formData.get("type"),
+    reason:      formData.get("reason"),
+  })
 
-  if (!warehouseId) return { ok: false, message: "Selecciona una bodega" }
-  if (!productId)   return { ok: false, message: "Selecciona un producto" }
-  if (!reason)      return { ok: false, message: "El motivo es obligatorio para ajustes" }
-
-  const qty = parseFloat(qtyRaw ?? "0")
-  if (isNaN(qty) || qty <= 0) {
-    return { ok: false, message: "La cantidad debe ser mayor a 0" }
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Revisa los datos del ajuste",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    }
   }
 
-  const movType = type === "ajuste_negativo" ? "ajuste_negativo" : "ajuste_positivo"
+  const { warehouseId, productId, quantity: qty, type: movType, reason } = parsed.data
   const signedQty = movType === "ajuste_negativo" ? -qty : qty
 
   try {

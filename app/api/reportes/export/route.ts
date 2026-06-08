@@ -9,6 +9,13 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { buildCsv, buildXlsxBuffer, getReportData } from "@/lib/reports/export"
 
+const REPORT_TYPES = new Set([
+  "gasto_faena",
+  "items_sin_oc",
+  "oc_por_estado",
+  "facturas_pendientes",
+])
+
 export async function GET(req: NextRequest) {
   const session = await auth()
   if (!session) {
@@ -20,6 +27,9 @@ export async function GET(req: NextRequest) {
 
   const tipo = req.nextUrl.searchParams.get("tipo") ?? "gasto_faena"
   const formato = req.nextUrl.searchParams.get("formato") === "xlsx" ? "xlsx" : "csv"
+  if (!REPORT_TYPES.has(tipo)) {
+    return NextResponse.json({ error: "Tipo de reporte inválido" }, { status: 400 })
+  }
 
   try {
     const report = await getReportData(tipo, session)

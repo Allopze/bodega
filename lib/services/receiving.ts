@@ -10,8 +10,8 @@ import {
   receipts, receiptItems,
   purchaseOrders, purchaseOrderItems,
 } from "@/db/schema"
-import { nanoid, generateCode } from "@/lib/id"
-import { count } from "drizzle-orm"
+import { nanoid } from "@/lib/id"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { receiveItemTx } from "./item-state"
 import { applyMovementTx } from "./warehouse"
@@ -56,9 +56,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
   const receiptId = nanoid()
   const now       = new Date().toISOString()
   const year      = new Date().getFullYear()
-
-  const [{ total }] = await db.select({ total: count() }).from(receipts)
-  const code        = generateCode("REC", total + 1, year)
+  let code!: string
 
   // Load the OC to validate it's in a receivable state
   const order = await db.query.purchaseOrders.findFirst({
@@ -71,6 +69,8 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
   }
 
   db.transaction((tx) => {
+    code = nextCodeTx(tx, "REC", year)
+
     // Create receipt header
     tx.insert(receipts).values({
       id:              receiptId,

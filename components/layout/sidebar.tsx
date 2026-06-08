@@ -6,12 +6,11 @@ import { usePathname } from "next/navigation"
 import {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck,
-  SignOut, ArrowSquareOut, ChartLineUp, ChartBar,
+  ArrowSquareOut, ChartLineUp, ChartBar,
 } from "@phosphor-icons/react"
 import type { IconWeight } from "@phosphor-icons/react"
 import type { Session } from "next-auth"
 import { cn } from "@/lib/utils"
-import { Avatar } from "@/components/ui/avatar"
 import { NAV_ITEMS, type NavItem } from "./nav-items"
 
 /* ── Icon registry ──────────────────────────────────────────────────────── */

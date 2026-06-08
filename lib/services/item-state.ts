@@ -673,4 +673,6 @@ export function deliverItemTx(
         totalDelivered: opts?.totalDelivered,
       },
     }, tx)
+
+    rollupRequestStatus(item.requestId, tx)
 }

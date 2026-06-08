@@ -1,0 +1,213 @@
+"filename", "language", "TypeScript", "Markdown", "JSON with Comments", "Shell Script", "JSON", "XML", "SQLite", "JavaScript", "TypeScript JSX", "PostCSS", "comment", "blank", "total"
+"/home/allopze/dev/chome/bodega/AGENTS.md", "Markdown", 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 6
+"/home/allopze/dev/chome/bodega/AUDITORIA_PROYECTO.md", "Markdown", 0, 324, 0, 0, 0, 0, 0, 0, 0, 0, 0, 69, 393
+"/home/allopze/dev/chome/bodega/CLAUDE.md", "Markdown", 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2
+"/home/allopze/dev/chome/bodega/EPP_PROVEEDORES_ESTRUCTURADO.md", "Markdown", 0, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 74
+"/home/allopze/dev/chome/bodega/PLAN.md", "Markdown", 0, 68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 81
+"/home/allopze/dev/chome/bodega/README.md", "Markdown", 0, 57, 0, 0, 0, 0, 0, 0, 0, 0, 0, 18, 75
+"/home/allopze/dev/chome/bodega/TESTING.md", "Markdown", 0, 232, 0, 0, 0, 0, 0, 0, 0, 0, 0, 95, 327
+"/home/allopze/dev/chome/bodega/app/(app)/admin/auditoria/audit-log.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 85, 0, 0, 7, 92
+"/home/allopze/dev/chome/bodega/app/(app)/admin/auditoria/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/auditoria/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 46, 0, 0, 5, 51
+"/home/allopze/dev/chome/bodega/app/(app)/admin/bodegas/actions.ts", "TypeScript", 83, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21, 104
+"/home/allopze/dev/chome/bodega/app/(app)/admin/bodegas/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/bodegas/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 42, 0, 1, 6, 49
+"/home/allopze/dev/chome/bodega/app/(app)/admin/bodegas/warehouse-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 140, 0, 1, 18, 159
+"/home/allopze/dev/chome/bodega/app/(app)/admin/bodegas/warehouse-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 101, 0, 0, 9, 110
+"/home/allopze/dev/chome/bodega/app/(app)/admin/faenas/actions.ts", "TypeScript", 122, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 41, 166
+"/home/allopze/dev/chome/bodega/app/(app)/admin/faenas/cost-center-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 115, 0, 1, 14, 130
+"/home/allopze/dev/chome/bodega/app/(app)/admin/faenas/faenas-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 169, 0, 2, 13, 184
+"/home/allopze/dev/chome/bodega/app/(app)/admin/faenas/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/faenas/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 5, 45
+"/home/allopze/dev/chome/bodega/app/(app)/admin/faenas/worksite-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 1, 15, 116
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/[id]/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/[id]/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 2, 6
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/actions.ts", "TypeScript", 245, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 47, 298
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/category-panel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 95, 0, 1, 8, 104
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/nuevo/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/nuevo/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 2, 6
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 52, 0, 0, 5, 57
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/product-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 274, 0, 4, 25, 303
+"/home/allopze/dev/chome/bodega/app/(app)/admin/productos/product-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 190, 0, 2, 15, 207
+"/home/allopze/dev/chome/bodega/app/(app)/admin/proveedores/actions.ts", "TypeScript", 98, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21, 119
+"/home/allopze/dev/chome/bodega/app/(app)/admin/proveedores/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/proveedores/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 5, 38
+"/home/allopze/dev/chome/bodega/app/(app)/admin/proveedores/supplier-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 1, 17, 118
+"/home/allopze/dev/chome/bodega/app/(app)/admin/proveedores/supplier-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 92, 0, 0, 8, 100
+"/home/allopze/dev/chome/bodega/app/(app)/admin/trabajadores/actions.ts", "TypeScript", 111, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21, 132
+"/home/allopze/dev/chome/bodega/app/(app)/admin/trabajadores/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/trabajadores/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 50, 0, 0, 5, 55
+"/home/allopze/dev/chome/bodega/app/(app)/admin/trabajadores/worker-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 132, 0, 1, 15, 148
+"/home/allopze/dev/chome/bodega/app/(app)/admin/trabajadores/worker-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 123, 0, 0, 9, 132
+"/home/allopze/dev/chome/bodega/app/(app)/admin/usuarios/actions.ts", "TypeScript", 256, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 44, 311
+"/home/allopze/dev/chome/bodega/app/(app)/admin/usuarios/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/admin/usuarios/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 66, 0, 5, 9, 80
+"/home/allopze/dev/chome/bodega/app/(app)/admin/usuarios/user-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 270, 0, 9, 27, 306
+"/home/allopze/dev/chome/bodega/app/(app)/admin/usuarios/user-invite-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 1, 17, 218
+"/home/allopze/dev/chome/bodega/app/(app)/admin/usuarios/user-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 155, 0, 6, 10, 171
+"/home/allopze/dev/chome/bodega/app/(app)/aprobaciones/actions.ts", "TypeScript", 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 35, 227
+"/home/allopze/dev/chome/bodega/app/(app)/aprobaciones/approval-panel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 368, 0, 20, 36, 424
+"/home/allopze/dev/chome/bodega/app/(app)/aprobaciones/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/aprobaciones/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 174, 0, 7, 19, 200
+"/home/allopze/dev/chome/bodega/app/(app)/bodega/actions.ts", "TypeScript", 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 22, 152
+"/home/allopze/dev/chome/bodega/app/(app)/bodega/dispatch-panel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 227, 0, 2, 25, 254
+"/home/allopze/dev/chome/bodega/app/(app)/bodega/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/bodega/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 313, 0, 7, 18, 338
+"/home/allopze/dev/chome/bodega/app/(app)/compras/[id]/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/compras/[id]/oc-actions.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 74, 0, 0, 7, 81
+"/home/allopze/dev/chome/bodega/app/(app)/compras/[id]/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 242, 0, 6, 20, 268
+"/home/allopze/dev/chome/bodega/app/(app)/compras/actions.ts", "TypeScript", 210, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 33, 249
+"/home/allopze/dev/chome/bodega/app/(app)/compras/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/compras/nueva/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/compras/nueva/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 136, 0, 3, 17, 156
+"/home/allopze/dev/chome/bodega/app/(app)/compras/oc-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 377, 0, 13, 43, 433
+"/home/allopze/dev/chome/bodega/app/(app)/compras/oc-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 189, 0, 7, 14, 210
+"/home/allopze/dev/chome/bodega/app/(app)/compras/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 120, 0, 3, 15, 138
+"/home/allopze/dev/chome/bodega/app/(app)/dashboard/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 2, 15
+"/home/allopze/dev/chome/bodega/app/(app)/dashboard/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 339, 0, 9, 31, 379
+"/home/allopze/dev/chome/bodega/app/(app)/design/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 281, 0, 14, 22, 317
+"/home/allopze/dev/chome/bodega/app/(app)/entregas/deliveries-table.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 66, 0, 0, 7, 73
+"/home/allopze/dev/chome/bodega/app/(app)/entregas/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/entregas/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 79, 0, 0, 10, 89
+"/home/allopze/dev/chome/bodega/app/(app)/error.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 28, 0, 0, 4, 32
+"/home/allopze/dev/chome/bodega/app/(app)/layout.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 43, 0, 1, 6, 50
+"/home/allopze/dev/chome/bodega/app/(app)/not-found.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/recepcion/[id]/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 134, 0, 0, 15, 149
+"/home/allopze/dev/chome/bodega/app/(app)/recepcion/actions.ts", "TypeScript", 80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 14, 97
+"/home/allopze/dev/chome/bodega/app/(app)/recepcion/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/recepcion/nueva/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/recepcion/nueva/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 83, 0, 0, 11, 94
+"/home/allopze/dev/chome/bodega/app/(app)/recepcion/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 1, 11, 76
+"/home/allopze/dev/chome/bodega/app/(app)/recepcion/receipt-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 152, 0, 8, 20, 180
+"/home/allopze/dev/chome/bodega/app/(app)/recepcion/recepcion-table.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 82, 0, 0, 6, 88
+"/home/allopze/dev/chome/bodega/app/(app)/reportes/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/reportes/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 218, 0, 0, 20, 238
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/[id]/duplicate-button.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 25, 0, 1, 5, 31
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/[id]/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/[id]/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 151, 0, 0, 12, 163
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/actions.ts", "TypeScript", 310, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 47, 368
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/nueva/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 2, 21
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/nueva/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 113, 0, 2, 10, 125
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 107, 0, 5, 18, 130
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/request-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 645, 0, 28, 59, 732
+"/home/allopze/dev/chome/bodega/app/(app)/solicitudes/request-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 159, 0, 0, 9, 168
+"/home/allopze/dev/chome/bodega/app/(app)/template.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 1, 8
+"/home/allopze/dev/chome/bodega/app/(app)/trazabilidad/loading.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 2, 20
+"/home/allopze/dev/chome/bodega/app/(app)/trazabilidad/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 350, 0, 23, 42, 415
+"/home/allopze/dev/chome/bodega/app/(auth)/login/login-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 91, 0, 0, 14, 105
+"/home/allopze/dev/chome/bodega/app/(auth)/login/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 57, 0, 6, 8, 71
+"/home/allopze/dev/chome/bodega/app/(auth)/registro/actions.ts", "TypeScript", 107, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 19, 126
+"/home/allopze/dev/chome/bodega/app/(auth)/registro/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 70, 0, 0, 11, 81
+"/home/allopze/dev/chome/bodega/app/(auth)/registro/register-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 120, 0, 0, 14, 134
+"/home/allopze/dev/chome/bodega/app/(print)/compras/[id]/print/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 228, 0, 11, 18, 257
+"/home/allopze/dev/chome/bodega/app/(print)/compras/[id]/print/print-trigger.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 36, 0, 0, 2, 38
+"/home/allopze/dev/chome/bodega/app/(print)/layout.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 1, 2, 10
+"/home/allopze/dev/chome/bodega/app/api/auth/[...nextauth]/route.ts", "TypeScript", 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4
+"/home/allopze/dev/chome/bodega/app/api/invoice-attachments/[id]/route.ts", "TypeScript", 27, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 34
+"/home/allopze/dev/chome/bodega/app/api/notifications/route.ts", "TypeScript", 39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 13, 58
+"/home/allopze/dev/chome/bodega/app/api/reportes/export/route.ts", "TypeScript", 39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 7, 51
+"/home/allopze/dev/chome/bodega/app/global-error.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 47, 0, 0, 4, 51
+"/home/allopze/dev/chome/bodega/app/globals.css", "PostCSS", 0, 0, 0, 0, 0, 0, 0, 0, 0, 112, 24, 26, 162
+"/home/allopze/dev/chome/bodega/app/icon.svg", "XML", 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 1, 33
+"/home/allopze/dev/chome/bodega/app/layout.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 38, 0, 2, 5, 45
+"/home/allopze/dev/chome/bodega/app/page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 1, 2, 7
+"/home/allopze/dev/chome/bodega/chome_feature_list.md", "Markdown", 0, 953, 0, 0, 0, 0, 0, 0, 0, 0, 0, 285, 1238
+"/home/allopze/dev/chome/bodega/chome_logo.svg", "XML", 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 1, 33
+"/home/allopze/dev/chome/bodega/chome_logo_white.svg", "XML", 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 1, 33
+"/home/allopze/dev/chome/bodega/components/admin/data-table.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 190, 0, 16, 16, 222
+"/home/allopze/dev/chome/bodega/components/admin/form-state.ts", "TypeScript", 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 9
+"/home/allopze/dev/chome/bodega/components/admin/sheet.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 130, 0, 12, 12, 154
+"/home/allopze/dev/chome/bodega/components/admin/submit-button.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 4, 4, 23
+"/home/allopze/dev/chome/bodega/components/invoices/invoice-attachments-panel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 355, 0, 9, 31, 395
+"/home/allopze/dev/chome/bodega/components/layout/app-shell.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 11, 15, 126
+"/home/allopze/dev/chome/bodega/components/layout/brand-mark.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 63, 0, 17, 9, 89
+"/home/allopze/dev/chome/bodega/components/layout/nav-items.ts", "TypeScript", 104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 109
+"/home/allopze/dev/chome/bodega/components/layout/notification-bell.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 195, 0, 3, 19, 217
+"/home/allopze/dev/chome/bodega/components/layout/sidebar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 159, 0, 7, 11, 177
+"/home/allopze/dev/chome/bodega/components/layout/top-bar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 113, 0, 6, 9, 128
+"/home/allopze/dev/chome/bodega/components/providers/session-provider.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 3, 15
+"/home/allopze/dev/chome/bodega/components/states/state-badge.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 92, 0, 11, 13, 116
+"/home/allopze/dev/chome/bodega/components/ui/avatar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 59, 0, 5, 9, 73
+"/home/allopze/dev/chome/bodega/components/ui/badge.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 52, 0, 2, 5, 59
+"/home/allopze/dev/chome/bodega/components/ui/button.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 111, 0, 3, 7, 121
+"/home/allopze/dev/chome/bodega/components/ui/data-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 47, 0, 4, 5, 56
+"/home/allopze/dev/chome/bodega/components/ui/dialog.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 102, 0, 1, 10, 113
+"/home/allopze/dev/chome/bodega/components/ui/dropdown-menu.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 88, 0, 0, 8, 96
+"/home/allopze/dev/chome/bodega/components/ui/empty-state.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 57, 0, 4, 3, 64
+"/home/allopze/dev/chome/bodega/components/ui/field.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 59, 0, 5, 6, 70
+"/home/allopze/dev/chome/bodega/components/ui/input.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 4, 37
+"/home/allopze/dev/chome/bodega/components/ui/page-header.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 69, 0, 1, 6, 76
+"/home/allopze/dev/chome/bodega/components/ui/pagination.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 99, 0, 0, 8, 107
+"/home/allopze/dev/chome/bodega/components/ui/select.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 152, 0, 1, 11, 164
+"/home/allopze/dev/chome/bodega/components/ui/skeleton.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 39, 0, 4, 5, 48
+"/home/allopze/dev/chome/bodega/components/ui/table.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 123, 0, 2, 12, 137
+"/home/allopze/dev/chome/bodega/components/ui/tabs.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 57, 0, 1, 7, 65
+"/home/allopze/dev/chome/bodega/components/ui/textarea.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 4, 36
+"/home/allopze/dev/chome/bodega/components/ui/tooltip.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 53, 0, 1, 6, 60
+"/home/allopze/dev/chome/bodega/db/index.ts", "TypeScript", 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 7, 26
+"/home/allopze/dev/chome/bodega/db/migrations/0000_reflective_mimic.sql", "SQLite", 0, 0, 0, 0, 0, 0, 448, 0, 0, 0, 33, 1, 482
+"/home/allopze/dev/chome/bodega/db/migrations/meta/0000_snapshot.json", "JSON", 0, 0, 0, 0, 3480, 0, 0, 0, 0, 0, 0, 0, 3480
+"/home/allopze/dev/chome/bodega/db/migrations/meta/_journal.json", "JSON", 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 13
+"/home/allopze/dev/chome/bodega/db/schema/audit.ts", "TypeScript", 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 8, 76
+"/home/allopze/dev/chome/bodega/db/schema/index.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 11
+"/home/allopze/dev/chome/bodega/db/schema/invoice-attachments.ts", "TypeScript", 28, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 34
+"/home/allopze/dev/chome/bodega/db/schema/products.ts", "TypeScript", 62, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 9, 76
+"/home/allopze/dev/chome/bodega/db/schema/purchasing.ts", "TypeScript", 67, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 7, 81
+"/home/allopze/dev/chome/bodega/db/schema/receiving.ts", "TypeScript", 69, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 8, 84
+"/home/allopze/dev/chome/bodega/db/schema/requests.ts", "TypeScript", 76, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 10, 99
+"/home/allopze/dev/chome/bodega/db/schema/users.ts", "TypeScript", 68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 13, 89
+"/home/allopze/dev/chome/bodega/db/schema/warehouse.ts", "TypeScript", 55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 7, 68
+"/home/allopze/dev/chome/bodega/db/schema/worksites.ts", "TypeScript", 54, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 8, 67
+"/home/allopze/dev/chome/bodega/db/seed.ts", "TypeScript", 314, 0, 0, 0, 0, 0, 0, 0, 0, 0, 19, 26, 359
+"/home/allopze/dev/chome/bodega/drizzle.config.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 11
+"/home/allopze/dev/chome/bodega/e2e/purchase-flow.spec.ts", "TypeScript", 106, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 23, 130
+"/home/allopze/dev/chome/bodega/e2e/setup-db.ts", "TypeScript", 140, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 155
+"/home/allopze/dev/chome/bodega/e2e/start-server.sh", "Shell Script", 0, 0, 0, 18, 0, 0, 0, 0, 0, 0, 1, 5, 24
+"/home/allopze/dev/chome/bodega/eslint.config.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 0, 25, 0, 0, 6, 3, 34
+"/home/allopze/dev/chome/bodega/lib/__tests__/auth-can.test.ts", "TypeScript", 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 34, 166
+"/home/allopze/dev/chome/bodega/lib/__tests__/auth-rbac.test.ts", "TypeScript", 36, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 43
+"/home/allopze/dev/chome/bodega/lib/__tests__/item-state.test.ts", "TypeScript", 137, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 32, 179
+"/home/allopze/dev/chome/bodega/lib/__tests__/order-totals.test.ts", "TypeScript", 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 11, 85
+"/home/allopze/dev/chome/bodega/lib/__tests__/postpone-item-action.test.ts", "TypeScript", 187, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 68, 287
+"/home/allopze/dev/chome/bodega/lib/__tests__/report-export.test.ts", "TypeScript", 33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 39
+"/home/allopze/dev/chome/bodega/lib/actions/invoice-attachments.ts", "TypeScript", 219, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 34, 253
+"/home/allopze/dev/chome/bodega/lib/audit.ts", "TypeScript", 50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 6, 64
+"/home/allopze/dev/chome/bodega/lib/auth/auth.ts", "TypeScript", 76, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 12, 90
+"/home/allopze/dev/chome/bodega/lib/auth/bootstrap.ts", "TypeScript", 91, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 102
+"/home/allopze/dev/chome/bodega/lib/auth/can.ts", "TypeScript", 44, 0, 0, 0, 0, 0, 0, 0, 0, 0, 27, 9, 80
+"/home/allopze/dev/chome/bodega/lib/auth/invoice-attachments.ts", "TypeScript", 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 8
+"/home/allopze/dev/chome/bodega/lib/auth/rbac.ts", "TypeScript", 74, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 84
+"/home/allopze/dev/chome/bodega/lib/auth/types.ts", "TypeScript", 44, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 4, 59
+"/home/allopze/dev/chome/bodega/lib/email/smtp.ts", "TypeScript", 345, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 46, 391
+"/home/allopze/dev/chome/bodega/lib/id.ts", "TypeScript", 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 17
+"/home/allopze/dev/chome/bodega/lib/navigation.ts", "TypeScript", 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 13
+"/home/allopze/dev/chome/bodega/lib/order-totals.ts", "TypeScript", 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 11
+"/home/allopze/dev/chome/bodega/lib/reports/export.ts", "TypeScript", 277, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 33, 310
+"/home/allopze/dev/chome/bodega/lib/services/deliveries.ts", "TypeScript", 125, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 139
+"/home/allopze/dev/chome/bodega/lib/services/invoice-reconciliation.ts", "TypeScript", 29, 0, 0, 0, 0, 0, 0, 0, 0, 0, 26, 5, 60
+"/home/allopze/dev/chome/bodega/lib/services/item-state.ts", "TypeScript", 540, 0, 0, 0, 0, 0, 0, 0, 0, 0, 69, 70, 679
+"/home/allopze/dev/chome/bodega/lib/services/notifications.ts", "TypeScript", 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 20, 171
+"/home/allopze/dev/chome/bodega/lib/services/purchasing.ts", "TypeScript", 193, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 25, 229
+"/home/allopze/dev/chome/bodega/lib/services/receiving.ts", "TypeScript", 163, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 27, 203
+"/home/allopze/dev/chome/bodega/lib/services/warehouse.ts", "TypeScript", 118, 0, 0, 0, 0, 0, 0, 0, 0, 0, 22, 18, 158
+"/home/allopze/dev/chome/bodega/lib/utils.ts", "TypeScript", 58, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 10, 77
+"/home/allopze/dev/chome/bodega/lib/validation/masters.ts", "TypeScript", 163, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 18, 195
+"/home/allopze/dev/chome/bodega/lib/validation/operations.ts", "TypeScript", 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 6, 45
+"/home/allopze/dev/chome/bodega/next.config.ts", "TypeScript", 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 22
+"/home/allopze/dev/chome/bodega/package-lock.json", "JSON", 0, 0, 0, 0, 11931, 0, 0, 0, 0, 0, 0, 1, 11932
+"/home/allopze/dev/chome/bodega/package.json", "JSON", 0, 0, 0, 0, 83, 0, 0, 0, 0, 0, 0, 1, 84
+"/home/allopze/dev/chome/bodega/playwright.config.ts", "TypeScript", 28, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 31
+"/home/allopze/dev/chome/bodega/postcss.config.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 2, 8
+"/home/allopze/dev/chome/bodega/proxy.ts", "TypeScript", 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 6, 40
+"/home/allopze/dev/chome/bodega/public/chome_logo.svg", "XML", 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 1, 33
+"/home/allopze/dev/chome/bodega/public/chome_logo_white.svg", "XML", 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 1, 33
+"/home/allopze/dev/chome/bodega/public/file.svg", "XML", 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1
+"/home/allopze/dev/chome/bodega/public/globe.svg", "XML", 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1
+"/home/allopze/dev/chome/bodega/public/next.svg", "XML", 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1
+"/home/allopze/dev/chome/bodega/public/vercel.svg", "XML", 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1
+"/home/allopze/dev/chome/bodega/public/window.svg", "XML", 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1
+"/home/allopze/dev/chome/bodega/tsconfig.json", "JSON with Comments", 0, 0, 34, 0, 0, 0, 0, 0, 0, 0, 0, 1, 35
+"/home/allopze/dev/chome/bodega/vitest.config.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 17
+"Total", "-", 6749, 1703, 34, 18, 15507, 165, 448, 31, 11819, 112, 884, 2833, 40303
