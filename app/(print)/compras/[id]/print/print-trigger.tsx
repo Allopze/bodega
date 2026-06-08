@@ -1,37 +1,25 @@
 "use client"
 
-export function PrintTrigger({ backHref }: { backHref: string }) {
+import { ArrowLeft, Printer } from "@phosphor-icons/react"
+
+export function PrintTrigger({ backHref, suggestedFilename }: { backHref: string; suggestedFilename: string }) {
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 20 }} className="print-btn">
+    <div className="print-toolbar">
       <button
         onClick={() => window.print()}
-        style={{
-          padding:      "6px 16px",
-          background:   "#1a1a1a",
-          color:        "#fff",
-          border:       "none",
-          borderRadius: 4,
-          cursor:       "pointer",
-          fontSize:     13,
-        }}
+        className="print-action print-action-primary"
       >
-        Imprimir / Guardar PDF
+        <Printer size={15} weight="bold" aria-hidden />
+        Guardar PDF / Imprimir
       </button>
       <a
         href={backHref}
-        style={{
-          padding:        "6px 16px",
-          background:     "#fff",
-          color:          "#1a1a1a",
-          border:         "1px solid #ccc",
-          borderRadius:   4,
-          cursor:         "pointer",
-          fontSize:       13,
-          textDecoration: "none",
-        }}
+        className="print-action print-action-secondary"
       >
-        ← Volver
+        <ArrowLeft size={15} weight="bold" aria-hidden />
+        Volver a la OC
       </a>
+      <span className="print-filename">Nombre sugerido: {suggestedFilename}</span>
     </div>
   )
 }

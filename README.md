@@ -72,3 +72,18 @@ Hace falta implementar:
 - Exportacion Excel si los reportes deben salir con formato de planilla.
 - Facturacion contable avanzada con lineas de factura, estados de pago e integracion externa.
 - Pruebas E2E que creen datos por UI/API siguiendo el flujo anterior.
+
+## Documentación
+
+La documentación del proyecto, especificaciones, arquitectura y auditorías ha sido organizada en subcarpetas dentro del directorio `docs/`:
+
+*   **Diseño:** [DESIGN.md](file:///home/allopze/dev/chome/bodega/docs/diseno/DESIGN.md) - Guía sobre el sistema de tokens, diseño visual y alineamiento estético.
+*   **Planificación:**
+    *   [PLAN.md](file:///home/allopze/dev/chome/bodega/docs/planificacion/PLAN.md) - Plan de desarrollo y etapas.
+    *   [PRODUCT.md](file:///home/allopze/dev/chome/bodega/docs/planificacion/PRODUCT.md) - Requisitos y especificaciones del producto.
+    *   [chome_feature_list.md](file:///home/allopze/dev/chome/bodega/docs/planificacion/chome_feature_list.md) - Catálogo detallado de funcionalidades del sistema.
+*   **Auditorías y Catálogos:**
+    *   [AUDITORIA_PROYECTO.md](file:///home/allopze/dev/chome/bodega/docs/auditoria/AUDITORIA_PROYECTO.md) - Análisis, reporte de seguridad y mejoras necesarias.
+    *   [EPP_PROVEEDORES_ESTRUCTURADO.md](file:///home/allopze/dev/chome/bodega/docs/auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md) - Datos maestros estructurados de proveedores y catálogo.
+*   **Pruebas:** [TESTING.md](file:///home/allopze/dev/chome/bodega/docs/pruebas/TESTING.md) - Información sobre la ejecución y cobertura de pruebas.
+

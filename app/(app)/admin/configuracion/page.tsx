@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
+import { getCompanyProfile, getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { ConfigForm } from "./config-form"
 
 export const metadata: Metadata = { title: "Configuración del Sistema" }
@@ -14,7 +14,10 @@ export default async function ConfiguracionPage() {
     redirect("/dashboard")
   }
 
-  const pdfMaxSizeMb = await getPdfMaxSizeMb()
+  const [pdfMaxSizeMb, companyProfile] = await Promise.all([
+    getPdfMaxSizeMb(),
+    getCompanyProfile(),
+  ])
 
   return (
     <>
@@ -31,7 +34,7 @@ export default async function ConfiguracionPage() {
           />
         }
       />
-      <ConfigForm initialPdfMaxSizeMb={pdfMaxSizeMb} />
+      <ConfigForm initialPdfMaxSizeMb={pdfMaxSizeMb} initialCompanyProfile={companyProfile} />
     </>
   )
 }
