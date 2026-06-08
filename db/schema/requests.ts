@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core"
 import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
-import { worksites, costCenters, workers } from "./worksites"
+import { worksites, workers } from "./worksites"
 import { products, productAttributes } from "./products"
 
 /* ── Purchase Request States ─────────────────────────────────────────────── */
@@ -19,7 +19,7 @@ export const purchaseRequests = sqliteTable("purchase_requests", {
   code:         text("code").notNull().unique(),    // e.g. "SOL-2026-0042"
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
   requesterId:  text("requester_id").notNull().references(() => users.id),
-  costCenterId: text("cost_center_id").references(() => costCenters.id),
+
   urgency:      text("urgency").notNull().default("normal"), // normal | high | critical
   status:       text("status").notNull().default("draft"),
   submittedAt:  text("submitted_at"),
@@ -74,7 +74,6 @@ export const approvalDecisions = sqliteTable("approval_decisions", {
 export const purchaseRequestsRelations = relations(purchaseRequests, ({ one, many }) => ({
   worksite:   one(worksites, { fields: [purchaseRequests.worksiteId], references: [worksites.id] }),
   requester:  one(users, { fields: [purchaseRequests.requesterId], references: [users.id] }),
-  costCenter: one(costCenters, { fields: [purchaseRequests.costCenterId], references: [costCenters.id] }),
   items:      many(purchaseRequestItems),
 }))
 

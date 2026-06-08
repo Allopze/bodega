@@ -13,16 +13,6 @@ export const worksites = sqliteTable("worksites", {
   updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
 })
 
-/* ── Cost Centers (Centros de Costo) ─────────────────────────────────────── */
-export const costCenters = sqliteTable("cost_centers", {
-  id:          text("id").primaryKey(),
-  name:        text("name").notNull(),
-  code:        text("code").notNull().unique(),
-  worksiteId:  text("worksite_id").notNull().references(() => worksites.id),
-  isActive:    integer("is_active", { mode: "boolean" }).notNull().default(true),
-  createdAt:   text("created_at").notNull().default(sql`(datetime('now'))`),
-})
-
 /* ── Suppliers (Proveedores) ─────────────────────────────────────────────── */
 export const suppliers = sqliteTable("suppliers", {
   id:          text("id").primaryKey(),
@@ -53,12 +43,7 @@ export const workers = sqliteTable("workers", {
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const worksitesRelations = relations(worksites, ({ many }) => ({
-  costCenters: many(costCenters),
   workers:     many(workers),
-}))
-
-export const costCentersRelations = relations(costCenters, ({ one }) => ({
-  worksite: one(worksites, { fields: [costCenters.worksiteId], references: [worksites.id] }),
 }))
 
 export const workersRelations = relations(workers, ({ one }) => ({

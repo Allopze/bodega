@@ -16,7 +16,6 @@ export interface RequestRow {
   id:            string
   code:          string
   worksiteName:  string
-  costCenterName: string | null
   urgency:       string
   status:        string
   itemCount:     number
@@ -110,9 +109,6 @@ export function RequestList({
               </TableCell>
               <TableCell className="text-sm text-[var(--color-text-muted)]">
                 {r.worksiteName}
-                {r.costCenterName && (
-                  <span className="text-[var(--color-text-subtle)]"> · {r.costCenterName}</span>
-                )}
               </TableCell>
               <TableCell>
                 <span className={`text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>

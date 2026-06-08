@@ -3,7 +3,7 @@ import { redirect }       from "next/navigation"
 import { db }             from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
-  worksites, costCenters, users as usersTable, products,
+  worksites, users as usersTable, products,
 } from "@/db/schema"
 import { eq, and, inArray, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
@@ -25,7 +25,6 @@ export default async function AprobacionesPage() {
       id:           purchaseRequests.id,
       code:         purchaseRequests.code,
       worksiteId:   purchaseRequests.worksiteId,
-      costCenterId: purchaseRequests.costCenterId,
       urgency:      purchaseRequests.urgency,
       status:       purchaseRequests.status,
       requesterId:  purchaseRequests.requesterId,
@@ -58,7 +57,6 @@ export default async function AprobacionesPage() {
 
   const requestIds   = visible.map((r) => r.id)
   const wsIds        = [...new Set(visible.map((r) => r.worksiteId))]
-  const ccIds        = [...new Set(visible.map((r) => r.costCenterId).filter(Boolean))] as string[]
   const requesterIds = [...new Set(visible.map((r) => r.requesterId))]
 
   // Load pending items first so we can load their attributes in one shot
@@ -88,7 +86,7 @@ export default async function AprobacionesPage() {
   const pendingItemIds = pendingItems.map((i) => i.id)
 
   // Batch load everything else in parallel
-  const [allAttrs, wsRows, ccRows, requesterRows, productRows] = await Promise.all([
+  const [allAttrs, wsRows, requesterRows, productRows] = await Promise.all([
     pendingItemIds.length > 0
       ? db
           .select({
@@ -105,13 +103,6 @@ export default async function AprobacionesPage() {
       .from(worksites)
       .where(inArray(worksites.id, wsIds)),
 
-    ccIds.length > 0
-      ? db
-          .select({ id: costCenters.id, name: costCenters.name })
-          .from(costCenters)
-          .where(inArray(costCenters.id, ccIds))
-      : Promise.resolve([]),
-
     requesterIds.length > 0
       ? db
           .select({ id: usersTable.id, name: usersTable.name })
@@ -126,7 +117,6 @@ export default async function AprobacionesPage() {
 
   // Build lookup maps
   const wsMap      = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
-  const ccMap      = Object.fromEntries(ccRows.map((c) => [c.id, c.name]))
   const userMap    = Object.fromEntries(requesterRows.map((u) => [u.id, u.name]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
   const attrsMap: Record<string, { attributeName: string; value: string }[]> = {}
@@ -166,7 +156,6 @@ export default async function AprobacionesPage() {
         id:             r.id,
         code:           r.code,
         worksiteName:   wsMap[r.worksiteId]   ?? r.worksiteId,
-        costCenterName: r.costCenterId ? (ccMap[r.costCenterId] ?? null) : null,
         requesterName:  userMap[r.requesterId] ?? r.requesterId,
         requestUrgency: r.urgency,
         submittedAt:    r.submittedAt,

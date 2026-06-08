@@ -24,6 +24,7 @@ interface TopBarProps {
   onToggleCollapse?:   () => void
   worksiteName?:       string
   className?:          string
+  isMenuOpen?:         boolean
 }
 
 export function TopBar({
@@ -32,6 +33,7 @@ export function TopBar({
   isCollapsed = false,
   onToggleCollapse,
   className,
+  isMenuOpen = false,
 }: TopBarProps) {
   return (
     <header className={cn(
@@ -78,6 +80,7 @@ export function TopBar({
             "active:scale-[0.95]",
           )}
           aria-label="Abrir menú"
+          aria-expanded={isMenuOpen}
         >
           <List size={18} weight="bold" />
         </button>

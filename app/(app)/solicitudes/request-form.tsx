@@ -36,14 +36,12 @@ export interface ProductOption {
 export interface WorksiteOption {
   id: string
   name: string
-  costCenters: { id: string; name: string }[]
 }
 
 export interface EditRequest {
   id:           string
   code:         string
   worksiteId:   string
-  costCenterId: string | null
   urgency:      string
   status:       string
   notes:        string | null
@@ -144,7 +142,6 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
 
   // ── Header fields
   const [worksiteId,   setWorksiteId]   = useState(editRequest?.worksiteId   ?? (worksites[0]?.id ?? ""))
-  const [costCenterId, setCostCenterId] = useState(editRequest?.costCenterId ?? "")
   const [urgency,      setUrgency]      = useState(editRequest?.urgency      ?? "normal")
   const [notes,        setNotes]        = useState(editRequest?.notes        ?? "")
 
@@ -182,8 +179,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
     return [blankItem()]
   })
 
-  // Available cost centers for selected worksite
-  const activeCcs = worksites.find((w) => w.id === worksiteId)?.costCenters ?? []
+
 
   // ── Toast on draft save
   useEffect(() => {
@@ -283,7 +279,6 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
         {isEdit && <input type="hidden" name="id" value={editRequest.id} />}
         <input type="hidden" name="itemsJson" value={itemsJson} />
         <input type="hidden" name="worksiteId" value={worksiteId} />
-        <input type="hidden" name="costCenterId" value={costCenterId} />
         <input type="hidden" name="urgency" value={urgency} />
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
@@ -296,7 +291,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
             <Field label="Faena" required htmlFor="worksiteId">
               <Select
                 value={worksiteId}
-                onValueChange={(v) => { setWorksiteId(v); setCostCenterId("") }}
+                onValueChange={setWorksiteId}
                 disabled={readOnly}
               >
                 <SelectTrigger id="worksiteId">
@@ -310,23 +305,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
               </Select>
             </Field>
 
-            <Field label="Centro de costo" htmlFor="costCenterId">
-              <Select
-                value={costCenterId || "__none__"}
-                onValueChange={(value) => setCostCenterId(value === "__none__" ? "" : value)}
-                disabled={readOnly || activeCcs.length === 0}
-              >
-                <SelectTrigger id="costCenterId">
-                  <SelectValue placeholder={activeCcs.length === 0 ? "Sin centros de costo" : "Opcional"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Sin centro de costo</SelectItem>
-                  {activeCcs.map((cc) => (
-                    <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+
 
             <Field label="Urgencia" htmlFor="urgency">
               <Select value={urgency} onValueChange={setUrgency} disabled={readOnly}>
@@ -430,7 +409,6 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
           <input type="hidden" name="requestId" value={editRequest?.id ?? ""} />
           <input type="hidden" name="itemsJson" value={itemsJson} />
           <input type="hidden" name="worksiteId" value={worksiteId} />
-          <input type="hidden" name="costCenterId" value={costCenterId} />
           <input type="hidden" name="urgency" value={urgency} />
           <input type="hidden" name="notes" value={notes} />
           {submitState.message && !submitState.ok && (

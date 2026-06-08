@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { purchaseRequests, purchaseRequestItems, worksites, costCenters } from "@/db/schema"
-import { desc, count, inArray, eq } from "drizzle-orm"
+import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
+import { desc, count, inArray, eq, and, sql } from "drizzle-orm"
 import { requirePermission, can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { RequestList } from "./request-list"
@@ -19,6 +19,15 @@ export default async function SolicitudesPage() {
   // Build worksite filter — solicitantes see only their worksites
   const userWorksiteIds = session.user.worksiteIds ?? []
 
+  const filterConditions = viewAll
+    ? undefined
+    : and(
+        eq(purchaseRequests.requesterId, session.user.id),
+        userWorksiteIds.length > 0
+          ? inArray(purchaseRequests.worksiteId, userWorksiteIds)
+          : sql`1 = 0`
+      )
+
   // Load requests and active worksites in parallel
   const [allRequests, activeWorksites] = await Promise.all([
     db
@@ -26,7 +35,6 @@ export default async function SolicitudesPage() {
         id:           purchaseRequests.id,
         code:         purchaseRequests.code,
         worksiteId:   purchaseRequests.worksiteId,
-        costCenterId: purchaseRequests.costCenterId,
         urgency:      purchaseRequests.urgency,
         status:       purchaseRequests.status,
         submittedAt:  purchaseRequests.submittedAt,
@@ -34,6 +42,7 @@ export default async function SolicitudesPage() {
         requesterId:  purchaseRequests.requesterId,
       })
       .from(purchaseRequests)
+      .where(filterConditions)
       .orderBy(desc(purchaseRequests.createdAt)),
 
     db.select({ id: worksites.id })
@@ -47,12 +56,8 @@ export default async function SolicitudesPage() {
   )
   const hasWorksites = scopedWorksites.length > 0
 
-  // Faena requesters see only their own requests inside assigned worksites.
-  const visible = viewAll
-    ? allRequests
-    : allRequests.filter(
-        (r) => r.requesterId === session.user.id && userWorksiteIds.includes(r.worksiteId),
-      )
+  // Already filtered in database
+  const visible = allRequests
 
   if (visible.length === 0) {
     return (
@@ -75,19 +80,12 @@ export default async function SolicitudesPage() {
 
   const requestIds = visible.map((r) => r.id)
   const wsIds      = [...new Set(visible.map((r) => r.worksiteId))]
-  const ccIds      = [...new Set(visible.map((r) => r.costCenterId).filter(Boolean))] as string[]
 
   // Batch load related data
-  const [wsRows, ccRows, itemCounts] = await Promise.all([
+  const [wsRows, itemCounts] = await Promise.all([
     db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
       .where(inArray(worksites.id, wsIds)),
-
-    ccIds.length > 0
-      ? db.select({ id: costCenters.id, name: costCenters.name })
-          .from(costCenters)
-          .where(inArray(costCenters.id, ccIds))
-      : Promise.resolve([]),
 
     db.select({ requestId: purchaseRequestItems.requestId, total: count() })
       .from(purchaseRequestItems)
@@ -96,14 +94,12 @@ export default async function SolicitudesPage() {
   ])
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
-  const ccMap  = Object.fromEntries(ccRows.map((c) => [c.id, c.name]))
   const cntMap = Object.fromEntries(itemCounts.map((c) => [c.requestId, c.total]))
 
   const rows = visible.map((r) => ({
     id:             r.id,
     code:           r.code,
     worksiteName:   wsMap[r.worksiteId] ?? r.worksiteId,
-    costCenterName: r.costCenterId ? (ccMap[r.costCenterId] ?? null) : null,
     urgency:        r.urgency,
     status:         r.status,
     itemCount:      cntMap[r.id] ?? 0,

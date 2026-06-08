@@ -3,7 +3,7 @@
  * All DB mutations here, never in Server Actions or UI components.
  */
 
-import { eq, inArray } from "drizzle-orm"
+import { eq, inArray, and } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -194,7 +194,10 @@ export async function markOrderSent(
         .update(purchaseRequestItems)
         .set({ status: "purchased", updatedAt: itemNow })
         .where(
-          inArray(purchaseRequestItems.id, requestItemIds),
+          and(
+            inArray(purchaseRequestItems.id, requestItemIds),
+            eq(purchaseRequestItems.status, "in_purchase_order"),
+          )
         ).run()
 
       for (const reqItemId of requestItemIds) {

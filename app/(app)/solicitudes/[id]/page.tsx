@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import {
   invoiceAttachments, purchaseRequests,
-  worksites, costCenters, products, productAttributes,
+  worksites, products, productAttributes,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -32,7 +32,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         with: { attributes: true },
       },
       worksite:   true,
-      costCenter: true,
       requester:  true,
     },
   })
@@ -45,11 +44,10 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   if (!hasAccess) notFound()
   const canViewInvoices = canViewInvoiceAttachments(session)
 
-  const [allWorksites, allProducts, allAttrs, allCcs, invoiceRows] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, invoiceRows] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
-    db.select().from(costCenters).where(eq(costCenters.isActive, true)).orderBy(asc(costCenters.name)),
     canViewInvoices
       ? db.query.invoiceAttachments.findMany({
           where: and(
@@ -67,7 +65,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     .map((w) => ({
       id:          w.id,
       name:        w.name,
-      costCenters: allCcs.filter((cc) => cc.worksiteId === w.id).map((cc) => ({ id: cc.id, name: cc.name })),
     }))
 
   const productOptions = allProducts.map((p) => ({
@@ -86,7 +83,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     id:           request.id,
     code:         request.code,
     worksiteId:   request.worksiteId,
-    costCenterId: request.costCenterId,
     urgency:      request.urgency,
     status:       request.status,
     notes:        request.notes,

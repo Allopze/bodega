@@ -33,7 +33,6 @@ export const requestItemSchema = z.object({
 export const requestSchema = z.object({
   id:           z.string().optional(),
   worksiteId:   z.string().min(1, "Selecciona una faena"),
-  costCenterId: z.string().optional().nullable().or(z.literal("")),
   urgency:      z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate: z.string().optional().nullable(),
   notes:        z.string().max(500).optional().or(z.literal("")),
@@ -86,7 +85,7 @@ export type CreateOrderItemFormData = z.infer<typeof createOrderItemSchema>
 // ── Receipt ──────────────────────────────────────────────────────────────────
 export const receiptItemSchema = z.object({
   purchaseOrderItemId: z.string().min(1, "Ítem de OC requerido"),
-  quantityReceived:    nonNegativeQuantitySchema,
+  quantityReceived:    positiveQuantitySchema,
   quantityRejected:    nonNegativeQuantitySchema.default(0),
   quantityDamaged:     nonNegativeQuantitySchema.default(0),
   notes:               z.string().max(300).nullable().optional().or(z.literal("")),

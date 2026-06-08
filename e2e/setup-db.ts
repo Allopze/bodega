@@ -92,15 +92,6 @@ async function main() {
     worksiteId: "ws-e2e",
     isPrimary: true,
   })
-  await db.insert(schema.costCenters).values({
-    id: "cc-e2e",
-    name: "Centro E2E",
-    code: "CC-E2E",
-    worksiteId: "ws-e2e",
-    isActive: true,
-    createdAt: now,
-  })
-
   await db.insert(schema.suppliers).values({
     id: "sup-e2e",
     name: "Proveedor E2E",

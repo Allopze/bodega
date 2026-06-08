@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, costCenters, products, productAttributes } from "@/db/schema"
+import { worksites, products, productAttributes } from "@/db/schema"
 import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
@@ -35,21 +35,9 @@ export default async function NuevaSolicitudPage() {
     (w) => canAccessWorksite(session, w.id),
   )
 
-  // Load cost centers for scoped worksites
-  const wsIds = scopedWorksites.map((w) => w.id)
-  const allCcs = wsIds.length > 0
-    ? await db.select().from(costCenters)
-        .where(eq(costCenters.isActive, true))
-        .orderBy(asc(costCenters.name))
-    : []
-
   const worksiteOptions = scopedWorksites.map((w) => ({
     id:          w.id,
     name:        w.name,
-    costCenters: allCcs.filter((cc) => cc.worksiteId === w.id).map((cc) => ({
-      id:   cc.id,
-      name: cc.name,
-    })),
   }))
 
   const productOptions = allProducts.map((p) => ({

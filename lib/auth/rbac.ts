@@ -14,7 +14,14 @@ export interface UserRbacSnapshot {
   primaryWorksiteId: string | null
 }
 
+const rbacCache = new Map<string, { snapshot: UserRbacSnapshot | null; expiresAt: number }>()
+
 export async function getUserRbacById(userId: string): Promise<UserRbacSnapshot | null> {
+  const cached = rbacCache.get(userId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.snapshot
+  }
+
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
   })
@@ -43,7 +50,7 @@ export async function getUserRbacById(userId: string): Promise<UserRbacSnapshot 
     .from(worksiteUsers)
     .where(eq(worksiteUsers.userId, user.id))
 
-  return {
+  const snapshot = {
     id: user.id,
     name: user.name,
     email: user.email,
@@ -54,6 +61,9 @@ export async function getUserRbacById(userId: string): Promise<UserRbacSnapshot 
     worksiteIds: wsRows.map((w) => w.worksiteId),
     primaryWorksiteId: wsRows.find((w) => w.isPrimary)?.worksiteId ?? wsRows[0]?.worksiteId ?? null,
   }
+
+  rbacCache.set(userId, { snapshot, expiresAt: Date.now() + 60000 })
+  return snapshot
 }
 
 export function applyRbacToToken(

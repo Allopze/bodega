@@ -7,10 +7,52 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { applyRbacToToken, getUserRbacById } from "@/lib/auth/rbac"
 
+import { headers } from "next/headers"
+
 const loginSchema = z.object({
   email:    z.string().email(),
   password: z.string().min(1),
 })
+
+const LIMIT_ATTEMPTS = 5
+const LOCK_TIME = 15 * 60 * 1000 // 15 mins
+
+interface RateLimitRecord {
+  count:     number
+  lockUntil: number
+}
+
+const rateLimitMap = new Map<string, RateLimitRecord>()
+
+function checkRateLimit(key: string): { allowed: boolean; waitTimeRemainingMs: number } {
+  const record = rateLimitMap.get(key)
+  if (!record) return { allowed: true, waitTimeRemainingMs: 0 }
+  
+  const now = Date.now()
+  if (record.lockUntil > now) {
+    return { allowed: false, waitTimeRemainingMs: record.lockUntil - now }
+  }
+  
+  if (record.lockUntil <= now && record.count >= LIMIT_ATTEMPTS) {
+    rateLimitMap.delete(key)
+    return { allowed: true, waitTimeRemainingMs: 0 }
+  }
+  
+  return { allowed: true, waitTimeRemainingMs: 0 }
+}
+
+function recordFailure(key: string) {
+  const record = rateLimitMap.get(key) || { count: 0, lockUntil: 0 }
+  record.count += 1
+  if (record.count >= LIMIT_ATTEMPTS) {
+    record.lockUntil = Date.now() + LOCK_TIME
+  }
+  rateLimitMap.set(key, record)
+}
+
+function recordSuccess(key: string) {
+  rateLimitMap.delete(key)
+}
 
 /** Load user with full roles/permissions from DB */
 async function getUserWithAuth(email: string) {
@@ -41,11 +83,41 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = loginSchema.safeParse(credentials)
         if (!parsed.success) return null
 
-        const userWithAuth = await getUserWithAuth(parsed.data.email)
-        if (!userWithAuth) return null
+        const email = parsed.data.email.toLowerCase()
+        let clientIp = "127.0.0.1"
+        try {
+          const headersList = await headers()
+          clientIp = headersList.get("x-forwarded-for")?.split(",")[0] || "127.0.0.1"
+        } catch {
+          // Fallback if headers are not available
+        }
+
+        const ipCheck = checkRateLimit(clientIp)
+        if (!ipCheck.allowed) {
+          throw new Error(`Demasiados intentos de inicio de sesión desde esta dirección IP. Intente de nuevo en ${Math.ceil(ipCheck.waitTimeRemainingMs / 60000)} minutos.`)
+        }
+
+        const emailCheck = checkRateLimit(email)
+        if (!emailCheck.allowed) {
+          throw new Error(`Esta cuenta ha sido bloqueada temporalmente por múltiples intentos fallidos. Intente de nuevo en ${Math.ceil(emailCheck.waitTimeRemainingMs / 60000)} minutos.`)
+        }
+
+        const userWithAuth = await getUserWithAuth(email)
+        if (!userWithAuth) {
+          recordFailure(clientIp)
+          recordFailure(email)
+          return null
+        }
 
         const valid = await bcrypt.compare(parsed.data.password, userWithAuth._hashedPassword)
-        if (!valid) return null
+        if (!valid) {
+          recordFailure(clientIp)
+          recordFailure(email)
+          return null
+        }
+
+        recordSuccess(clientIp)
+        recordSuccess(email)
 
         const { _hashedPassword: _, ...safeUser } = userWithAuth
         return safeUser

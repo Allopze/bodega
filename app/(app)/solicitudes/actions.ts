@@ -43,7 +43,6 @@ async function persistDraft(
   const parsed = requestSchema.safeParse({
     id:           formData.get("id") || undefined,
     worksiteId:   formData.get("worksiteId"),
-    costCenterId: formData.get("costCenterId") || null,
     urgency:      formData.get("urgency") || "normal",
     requiredDate: formData.get("requiredDate") || null,
     notes:        formData.get("notes") || "",
@@ -53,14 +52,14 @@ async function persistDraft(
     return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   }
   const d = parsed.data
-
+ 
   const isEdit = !!d.id
   if (!canAccessWorksite(session, d.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
-
+ 
   let requestId = d.id
-
+ 
   db.transaction((tx) => {
     if (isEdit) {
       // Verify ownership — solicitantes can only edit their own drafts
@@ -72,30 +71,28 @@ async function persistDraft(
       if (existing.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
         throw new Error("Solo puedes editar tus propias solicitudes")
       }
-
+ 
       tx.update(purchaseRequests).set({
         worksiteId:   d.worksiteId,
-        costCenterId: d.costCenterId || null,
         urgency:      d.urgency,
         status:       "draft",
         notes:        d.notes || null,
         updatedAt:    new Date().toISOString(),
       }).where(eq(purchaseRequests.id, d.id!)).run()
       requestId = d.id
-
+ 
       // Replace all items (delete + re-insert)
       tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, d.id!)).run()
     } else {
       const code = nextCodeTx(tx, "SOL")
       const reqId = nanoid()
       requestId = reqId
-
+ 
       tx.insert(purchaseRequests).values({
         id:           reqId,
         code,
         worksiteId:   d.worksiteId,
         requesterId:  session.user.id,
-        costCenterId: d.costCenterId || null,
         urgency:      d.urgency,
         status:       "draft",
         notes:        d.notes || null,
@@ -260,7 +257,6 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
       code,
       worksiteId:   source.worksiteId,
       requesterId:  session.user.id,
-      costCenterId: source.costCenterId ?? null,
       urgency:      source.urgency,
       status:       "draft",
       notes:        source.notes ? `[Duplicada de ${source.code}] ${source.notes}` : `[Duplicada de ${source.code}]`,

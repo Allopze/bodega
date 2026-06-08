@@ -87,7 +87,6 @@ async function createCatalogRequest(
 ) {
   await page.goto("/solicitudes/nueva")
   await selectRadixById(page, "worksiteId", "Faena E2E")
-  await selectRadixById(page, "costCenterId", "Centro E2E")
   await page.getByPlaceholder("Buscar en catálogo o escribir producto...").fill(productName)
   if (options.freeText) {
     await page.getByRole("button", { name: new RegExp(`Usar “${productName}”`) }).click()

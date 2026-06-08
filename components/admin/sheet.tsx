@@ -28,7 +28,7 @@ const SheetOverlay = React.forwardRef<
 ))
 SheetOverlay.displayName = "SheetOverlay"
 
-// ── Panel content ─────────────────────────────────────────────────────────────
+// ── Modal content (centered dialog) ───────────────────────────────────────────
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
@@ -38,21 +38,23 @@ const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        // Position: right side, full height
-        "fixed right-0 top-0 z-50 h-full w-full max-w-md",
+        // Position: centered modal
+        "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
+        "w-[calc(100%-2rem)] max-w-lg max-h-[min(85vh,56rem)]",
         "bg-[var(--color-surface)]",
-        "border-l border-[var(--color-border)]",
+        "border border-[var(--color-border)]",
+        "rounded-[var(--radius-lg,0.75rem)]",
         "shadow-[var(--shadow-lg)]",
         "flex flex-col",
-        // Entry/exit: slide from the right
-        // Tailwind animate-in/animate-out + translate for the drawer curve
+        // Entry/exit: scale + fade
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
-        "data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right",
-        "duration-[250ms]",
-        // Use the --ease-drawer CSS variable via inline style (see style prop below)
+        "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+        "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
+        "data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
+        "data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]",
+        "duration-200",
         className,
       )}
-      style={{ animationTimingFunction: "var(--ease-drawer)" }}
       {...props}
     >
       {children}

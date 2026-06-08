@@ -92,15 +92,6 @@ export const worksiteSchema = z.object({
   isActive: z.coerce.boolean().default(true),
 })
 
-// ── Cost Center ───────────────────────────────────────────────────────────────
-export const costCenterSchema = z.object({
-  id:          z.string().optional(),
-  name:        z.string().min(2, "Nombre requerido").max(80),
-  code:        z.string().min(1, "Código requerido").max(20).toUpperCase(),
-  worksiteId:  z.string().min(1, "Selecciona una faena"),
-  isActive:    z.coerce.boolean().default(true),
-})
-
 // ── Supplier (Proveedor) ──────────────────────────────────────────────────────
 export const supplierSchema = z.object({
   id:           z.string().optional(),

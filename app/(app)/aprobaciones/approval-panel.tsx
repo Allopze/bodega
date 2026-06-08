@@ -42,7 +42,6 @@ export interface ApprovalRequest {
   id:              string
   code:            string
   worksiteName:    string
-  costCenterName:  string | null
   requesterName:   string
   requestUrgency:  string
   submittedAt:     string | null
@@ -351,7 +350,6 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
           <span className="text-sm text-[var(--color-text-muted)]">·</span>
           <span className="text-sm text-[var(--color-text-muted)] truncate">
             {request.worksiteName}
-            {request.costCenterName ? ` / ${request.costCenterName}` : ""}
           </span>
         </button>
 

@@ -12,13 +12,12 @@ export default async function FaenasPage() {
   catch { redirect("/dashboard") }
 
   const worksites   = await db.query.worksites.findMany({ orderBy: (w, { asc }) => [asc(w.name)] })
-  const costCenters = await db.query.costCenters.findMany({ orderBy: (c, { asc }) => [asc(c.name)] })
 
   return (
     <>
       <PageHeader
-        title="Faenas y centros de costo"
-        description="Configura las faenas activas y sus centros de costo."
+        title="Faenas"
+        description="Configura las faenas activas de la organización."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -32,11 +31,6 @@ export default async function FaenasPage() {
           id: w.id, name: w.name, code: w.code,
           address: w.address, region: w.region,
           isActive: w.isActive, createdAt: w.createdAt, updatedAt: w.updatedAt,
-          costCenters: [],
-        }))}
-        costCenters={costCenters.map((c) => ({
-          id: c.id, name: c.name, code: c.code,
-          worksiteId: c.worksiteId, isActive: c.isActive, createdAt: c.createdAt,
         }))}
       />
     </>

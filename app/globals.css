@@ -40,6 +40,9 @@
   --color-info:         oklch(0.600 0.120 248);   /* blue — in-progress      */
   --color-info-50:      oklch(0.966 0.014 250);
   --color-info-100:     oklch(0.924 0.030 250);
+  --color-success:      oklch(0.650 0.170 154);   /* green — approved/success */
+  --color-success-50:   oklch(0.975 0.020 154);
+  --color-success-100:  oklch(0.940 0.040 154);
   --color-danger:       oklch(0.575 0.180 25);    /* red — rejected/danger   */
   --color-danger-50:    oklch(0.970 0.018 25);
   --color-danger-100:   oklch(0.934 0.040 25);
@@ -92,6 +95,7 @@
   --color-warning-700:  oklch(0.520 0.110 85);   /* amber text on warning-50/100  */
   --color-signal-700:   oklch(0.480 0.130 56);   /* orange text on signal-50/100  */
   --color-info-700:     oklch(0.400 0.115 248);  /* blue text on info-50/100      */
+  --color-success-700:  oklch(0.480 0.140 154);  /* green text on success-50/100   */
   --color-danger-700:   oklch(0.420 0.160 25);   /* red text on danger-50/100     */
 }
 

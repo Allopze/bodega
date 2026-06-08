@@ -61,6 +61,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
         isCollapsed={isCollapsed}
         onToggleCollapse={toggleCollapse}
         worksiteName={worksiteName}
+        isMenuOpen={mobileOpen}
       />
 
       {/* ── Body row: sidebar + content ── */}
