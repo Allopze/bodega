@@ -4,7 +4,7 @@ import { db } from "@/db"
 import {
   invoiceAttachments, purchaseRequests,
   worksites, products, productAttributes,
-  statusHistory, users,
+  statusHistory, users, suppliers, workers,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -49,7 +49,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   if (!hasAccess) notFound()
   const canViewInvoices = canViewInvoiceAttachments(session)
 
-  const [allWorksites, allProducts, allAttrs, invoiceRows, timelineEvents, maxPdfSizeMb] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, invoiceRows, timelineEvents, maxPdfSizeMb, allSuppliers, allWorkers] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
@@ -84,6 +84,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       )
       .orderBy(desc(statusHistory.changedAt)),
     getPdfMaxSizeMb(),
+    db.select().from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
+    db.select().from(workers).where(eq(workers.isActive, true)).orderBy(asc(workers.firstName)),
   ])
 
   const worksiteOptions = allWorksites
@@ -97,12 +99,26 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     id:             p.id,
     sku:            p.sku,
     name:           p.name,
+    isEpp:          p.isEpp,
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
     attributes:     allAttrs
       .filter((a) => a.productId === p.id)
       .map((a) => ({ id: a.id, name: a.name, type: a.type, isRequired: a.isRequired, options: a.options })),
+  }))
+
+  const supplierOptions = allSuppliers.map((s) => ({
+    id:   s.id,
+    name: s.name,
+  }))
+
+  const workerOptions = allWorkers.map((w) => ({
+    id:         w.id,
+    worksiteId: w.worksiteId,
+    firstName:  w.firstName,
+    lastName:   w.lastName,
+    position:   w.position,
   }))
 
   const productNameById = new Map(allProducts.map((product) => [product.id, product.name]))
@@ -121,19 +137,23 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     id:           request.id,
     code:         request.code,
     worksiteId:   request.worksiteId,
+    requestType:  request.requestType,
     urgency:      request.urgency,
     status:       request.status,
     notes:        request.notes,
     items: request.items.map((item) => ({
-      id:              item.id,
-      productId:       item.productId,
-      productNameFree: item.productNameFree,
-      quantity:        item.quantity,
-      unitOfMeasure:   item.unitOfMeasure,
-      urgency:         item.urgency ?? "normal",
-      requiredDate:    item.requiredDate,
-      notes:           item.notes,
-      attributes:      item.attributes.map((a) => ({
+      id:                  item.id,
+      productId:           item.productId,
+      productNameFree:     item.productNameFree,
+      quantity:            item.quantity,
+      unitOfMeasure:       item.unitOfMeasure,
+      urgency:             item.urgency ?? "normal",
+      requiredDate:        item.requiredDate,
+      workerId:            item.workerId,
+      suggestedSupplierId: item.suggestedSupplierId,
+      supplierHint:        item.supplierHint,
+      notes:               item.notes,
+      attributes:          item.attributes.map((a) => ({
         attributeId:   a.attributeId,
         attributeName: a.attributeName,
         value:         a.value,
@@ -167,6 +187,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         <RequestForm
           worksites={worksiteOptions}
           products={productOptions}
+          suppliers={supplierOptions}
+          workers={workerOptions}
           editRequest={editRequest}
         />
         {canViewInvoices && (

@@ -13,17 +13,19 @@ export const requestItemAttributeSchema = z.object({
 
 // ── Request item ──────────────────────────────────────────────────────────────
 export const requestItemSchema = z.object({
-  id:              z.string().optional(),
-  productId:       z.string().nullable().optional(),
-  productNameFree: z.string().max(120).nullable().optional().or(z.literal("")),
-  quantity:        z.coerce.number().positive("Cantidad debe ser mayor a 0"),
-  unitOfMeasure:   z.string().min(1, "Unidad requerida").max(20).default("unidad"),
-  urgency:         z.enum(["normal", "high", "critical"]).default("normal"),
-  requiredDate:    z.string().optional().nullable(),
-  workerId:        z.string().optional().nullable(),
-  sortOrder:       z.coerce.number().int().default(0),
-  notes:           z.string().max(300).nullable().optional().or(z.literal("")),
-  attributes:      z.array(requestItemAttributeSchema).default([]),
+  id:                  z.string().optional(),
+  productId:           z.string().nullable().optional(),
+  productNameFree:     z.string().max(120).nullable().optional().or(z.literal("")),
+  quantity:            z.coerce.number().positive("Cantidad debe ser mayor a 0"),
+  unitOfMeasure:       z.string().min(1, "Unidad requerida").max(20).default("unidad"),
+  urgency:             z.enum(["normal", "high", "critical"]).default("normal"),
+  requiredDate:        z.string().optional().nullable(),
+  workerId:            z.string().optional().nullable(),
+  suggestedSupplierId: z.string().nullable().optional(),
+  supplierHint:        z.string().max(100).nullable().optional().or(z.literal("")),
+  sortOrder:           z.coerce.number().int().default(0),
+  notes:               z.string().max(300).nullable().optional().or(z.literal("")),
+  attributes:          z.array(requestItemAttributeSchema).default([]),
 }).refine(
   (d) => !!d.productId || !!d.productNameFree?.trim(),
   { message: "Selecciona un producto del catálogo o describe el ítem", path: ["productId"] },
@@ -33,6 +35,7 @@ export const requestItemSchema = z.object({
 export const requestSchema = z.object({
   id:           z.string().optional(),
   worksiteId:   z.string().min(1, "Selecciona una faena"),
+  requestType:  z.enum(["epp", "stock", "mantencion", "otro"]).default("epp"),
   urgency:      z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate: z.string().optional().nullable(),
   notes:        z.string().max(500).optional().or(z.literal("")),

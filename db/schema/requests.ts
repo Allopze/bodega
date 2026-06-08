@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core"
 import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
-import { worksites, workers } from "./worksites"
+import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
 
 /* ── Purchase Request States ─────────────────────────────────────────────── */
@@ -20,7 +20,8 @@ export const purchaseRequests = sqliteTable("purchase_requests", {
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
   requesterId:  text("requester_id").notNull().references(() => users.id),
 
-  urgency:      text("urgency").notNull().default("normal"), // normal | high | critical
+  requestType:  text("request_type").notNull().default("epp"), // epp | stock | mantencion | otro
+  urgency:      text("urgency").notNull().default("normal"),   // normal | high | critical
   status:       text("status").notNull().default("draft"),
   submittedAt:  text("submitted_at"),
   closedAt:     text("closed_at"),
@@ -45,6 +46,9 @@ export const purchaseRequestItems = sqliteTable("purchase_request_items", {
   urgency:         text("urgency"),
   requiredDate:    text("required_date"),
   workerId:        text("worker_id").references(() => workers.id),  // EPP → specific worker
+  // Supplier hint (mirrors productId / productNameFree pattern)
+  suggestedSupplierId: text("suggested_supplier_id").references(() => suppliers.id),
+  supplierHint:    text("supplier_hint"),                           // free-text fallback
   sortOrder:       integer("sort_order").notNull().default(0),
   notes:           text("notes"),
   createdAt:       text("created_at").notNull().default(sql`(datetime('now'))`),
@@ -86,6 +90,7 @@ export const purchaseRequestItemsRelations = relations(purchaseRequestItems, ({ 
   request:           one(purchaseRequests, { fields: [purchaseRequestItems.requestId], references: [purchaseRequests.id] }),
   product:           one(products, { fields: [purchaseRequestItems.productId], references: [products.id] }),
   worker:            one(workers, { fields: [purchaseRequestItems.workerId], references: [workers.id] }),
+  suggestedSupplier: one(suppliers, { fields: [purchaseRequestItems.suggestedSupplierId], references: [suppliers.id] }),
   attributes:        many(requestItemAttributes),
   approvalDecisions: many(approvalDecisions),
 }))

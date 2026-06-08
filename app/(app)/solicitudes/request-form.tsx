@@ -27,6 +27,7 @@ export interface ProductOption {
   id:              string
   sku:             string
   name:            string
+  isEpp:           boolean
   unitOfMeasure:   string
   categoryName:    string
   referencePrice:  number | null
@@ -38,44 +39,65 @@ export interface WorksiteOption {
   name: string
 }
 
+export interface SupplierOption {
+  id:   string
+  name: string
+}
+
+export interface WorkerOption {
+  id:         string
+  worksiteId: string
+  firstName:  string
+  lastName:   string
+  position:   string | null
+}
+
 export interface EditRequest {
-  id:           string
-  code:         string
-  worksiteId:   string
-  urgency:      string
-  status:       string
-  notes:        string | null
-  items: EditItem[]
+  id:          string
+  code:        string
+  worksiteId:  string
+  requestType: string
+  urgency:     string
+  status:      string
+  notes:       string | null
+  items:       EditItem[]
 }
 
 interface EditItem {
-  id:              string
-  productId:       string | null
-  productNameFree: string | null
-  quantity:        number
-  unitOfMeasure:   string
-  urgency:         string
-  requiredDate:    string | null
-  notes:           string | null
-  attributes:      { attributeId: string | null; attributeName: string; value: string }[]
+  id:                  string
+  productId:           string | null
+  productNameFree:     string | null
+  quantity:            number
+  unitOfMeasure:       string
+  urgency:             string
+  requiredDate:        string | null
+  workerId:            string | null
+  suggestedSupplierId: string | null
+  supplierHint:        string | null
+  notes:               string | null
+  attributes:          { attributeId: string | null; attributeName: string; value: string }[]
 }
 
 // ── Local item state ──────────────────────────────────────────────────────────
 
 interface ItemRow {
-  _key:            string   // stable React key
-  id?:             string   // DB id on edit
-  productId:       string | null
-  productNameFree: string
-  quantity:        string
-  unitOfMeasure:   string
-  urgency:         string
-  requiredDate:    string
-  notes:           string
-  attributes:      AttrRow[]
+  _key:                string   // stable React key
+  id?:                 string   // DB id on edit
+  productId:           string | null
+  productNameFree:     string
+  quantity:            string
+  unitOfMeasure:       string
+  urgency:             string
+  requiredDate:        string
+  workerId:            string
+  suggestedSupplierId: string
+  supplierHint:        string
+  notes:               string
+  attributes:          AttrRow[]
+  isEpp:               boolean  // derived from product
   // transient UI
-  productName:     string
-  showAttrs:       boolean
+  productName:         string
+  showAttrs:           boolean
 }
 
 interface AttrRow {
@@ -89,17 +111,21 @@ interface AttrRow {
 
 function blankItem(key = "new-0"): ItemRow {
   return {
-    _key:            key,
-    productId:       null,
-    productNameFree: "",
-    quantity:        "1",
-    unitOfMeasure:   "unidad",
-    urgency:         "normal",
-    requiredDate:    "",
-    notes:           "",
-    attributes:      [],
-    productName:     "",
-    showAttrs:       false,
+    _key:                key,
+    productId:           null,
+    productNameFree:     "",
+    quantity:            "1",
+    unitOfMeasure:       "unidad",
+    urgency:             "normal",
+    requiredDate:        "",
+    workerId:            "",
+    suggestedSupplierId: "",
+    supplierHint:        "",
+    notes:               "",
+    attributes:          [],
+    isEpp:               false,
+    productName:         "",
+    showAttrs:           false,
   }
 }
 
@@ -114,7 +140,7 @@ function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
   }))
 }
 
-// ── Urgency helpers ───────────────────────────────────────────────────────────
+// ── Urgency & request-type helpers ────────────────────────────────────────────
 
 const URGENCY_OPTS = [
   { value: "normal",   label: "Normal"   },
@@ -122,28 +148,38 @@ const URGENCY_OPTS = [
   { value: "critical", label: "Crítica"  },
 ]
 
+const REQUEST_TYPE_OPTS = [
+  { value: "epp",        label: "EPP"        },
+  { value: "stock",      label: "Stock"      },
+  { value: "mantencion", label: "Mantención" },
+  { value: "otro",       label: "Otro"       },
+]
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface RequestFormProps {
-  worksites:   WorksiteOption[]
-  products:    ProductOption[]
+  worksites:    WorksiteOption[]
+  products:     ProductOption[]
+  suppliers:    SupplierOption[]
+  workers:      WorkerOption[]
   editRequest?: EditRequest
 }
 
-export function RequestForm({ worksites, products, editRequest }: RequestFormProps) {
+export function RequestForm({ worksites, products, suppliers, workers, editRequest }: RequestFormProps) {
   const router = useRouter()
   const isEdit  = !!editRequest
   const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
 
   // ── Form action state
-  const [draftState,  draftAction]  = useActionState<ActionState, FormData>(saveDraft,       INITIAL_STATE)
-  const [submitState, submitAction] = useActionState<ActionState, FormData>(submitRequest,    INITIAL_STATE)
-  const [cancelState, cancelAction] = useActionState<ActionState, FormData>(cancelRequest,    INITIAL_STATE)
+  const [draftState,  draftAction]  = useActionState<ActionState, FormData>(saveDraft,    INITIAL_STATE)
+  const [submitState, submitAction] = useActionState<ActionState, FormData>(submitRequest, INITIAL_STATE)
+  const [cancelState, cancelAction] = useActionState<ActionState, FormData>(cancelRequest, INITIAL_STATE)
 
   // ── Header fields
-  const [worksiteId,   setWorksiteId]   = useState(editRequest?.worksiteId   ?? (worksites[0]?.id ?? ""))
-  const [urgency,      setUrgency]      = useState(editRequest?.urgency      ?? "normal")
-  const [notes,        setNotes]        = useState(editRequest?.notes        ?? "")
+  const [worksiteId,  setWorksiteId]  = useState(editRequest?.worksiteId  ?? (worksites[0]?.id ?? ""))
+  const [requestType, setRequestType] = useState(editRequest?.requestType ?? "epp")
+  const [urgency,     setUrgency]     = useState(editRequest?.urgency     ?? "normal")
+  const [notes,       setNotes]       = useState(editRequest?.notes       ?? "")
 
   // ── Items
   const [items, setItems] = useState<ItemRow[]>(() => {
@@ -151,18 +187,22 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
       return editRequest.items.map((item) => {
         const prod = item.productId ? products.find((p) => p.id === item.productId) : null
         return {
-          _key:            item.id ?? `edit-${item.productId ?? item.productNameFree ?? "item"}`,
-          id:              item.id,
-          productId:       item.productId,
-          productNameFree: item.productNameFree ?? "",
-          quantity:        String(item.quantity),
-          unitOfMeasure:   item.unitOfMeasure,
-          urgency:         item.urgency,
-          requiredDate:    item.requiredDate ?? "",
-          notes:           item.notes ?? "",
-          productName:     prod?.name ?? item.productNameFree ?? "",
-          showAttrs:       item.attributes.length > 0,
-          attributes:      item.attributes.map((a) => {
+          _key:                item.id ?? `edit-${item.productId ?? item.productNameFree ?? "item"}`,
+          id:                  item.id,
+          productId:           item.productId,
+          productNameFree:     item.productNameFree ?? "",
+          quantity:            String(item.quantity),
+          unitOfMeasure:       item.unitOfMeasure,
+          urgency:             item.urgency,
+          requiredDate:        item.requiredDate ?? "",
+          workerId:            item.workerId ?? "",
+          suggestedSupplierId: item.suggestedSupplierId ?? "",
+          supplierHint:        item.supplierHint ?? "",
+          notes:               item.notes ?? "",
+          isEpp:               prod?.isEpp ?? false,
+          productName:         prod?.name ?? item.productNameFree ?? "",
+          showAttrs:           item.attributes.length > 0,
+          attributes:          item.attributes.map((a) => {
             const prodAttr = prod?.attributes.find((pa) => pa.id === a.attributeId)
             return {
               attributeId:   a.attributeId,
@@ -178,8 +218,6 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
     }
     return [blankItem()]
   })
-
-
 
   // ── Toast on draft save
   useEffect(() => {
@@ -216,6 +254,7 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
         productNameFree: "",
         productName:     prod.name,
         unitOfMeasure:   prod.unitOfMeasure,
+        isEpp:           prod.isEpp,
         attributes:      attrs,
         showAttrs:       attrs.length > 0,
       }
@@ -228,19 +267,20 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
     setItems((prev) => prev.map((i) =>
       i._key !== key ? i : {
         ...i,
-        productId: null,
+        productId:       null,
         productNameFree: trimmed,
-        productName: trimmed,
-        unitOfMeasure: i.unitOfMeasure || "unidad",
-        attributes: [],
-        showAttrs: false,
+        productName:     trimmed,
+        isEpp:           false,
+        unitOfMeasure:   i.unitOfMeasure || "unidad",
+        attributes:      [],
+        showAttrs:       false,
       },
     ))
   }, [])
 
   const clearProduct = useCallback((key: string) => {
     setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", attributes: [], showAttrs: false }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, attributes: [], showAttrs: false }
     ))
   }, [])
 
@@ -254,20 +294,26 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
 
   // Serialised payload for hidden inputs
   const itemsJson = JSON.stringify(items.map((item) => ({
-    id:              item.id,
-    productId:       item.productId,
-    productNameFree: item.productNameFree || null,
-    quantity:        Number(item.quantity) || 1,
-    unitOfMeasure:   item.unitOfMeasure,
-    urgency:         item.urgency,
-    requiredDate:    item.requiredDate || null,
-    notes:           item.notes || null,
-    attributes:      item.attributes.map((a) => ({
+    id:                  item.id,
+    productId:           item.productId,
+    productNameFree:     item.productNameFree || null,
+    quantity:            Number(item.quantity) || 1,
+    unitOfMeasure:       item.unitOfMeasure,
+    urgency:             item.urgency,
+    requiredDate:        item.requiredDate || null,
+    workerId:            item.workerId || null,
+    suggestedSupplierId: item.suggestedSupplierId || null,
+    supplierHint:        item.supplierHint || null,
+    notes:               item.notes || null,
+    attributes:          item.attributes.map((a) => ({
       attributeId:   a.attributeId,
       attributeName: a.attributeName,
       value:         a.value,
     })),
   })))
+
+  // Workers filtered by current worksite
+  const worksiteWorkers = workers.filter((w) => w.worksiteId === worksiteId)
 
   const readOnly = !isDraft
 
@@ -277,9 +323,10 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
       <form action={draftAction} className="space-y-6">
         {/* Hidden fields */}
         {isEdit && <input type="hidden" name="id" value={editRequest.id} />}
-        <input type="hidden" name="itemsJson" value={itemsJson} />
-        <input type="hidden" name="worksiteId" value={worksiteId} />
-        <input type="hidden" name="urgency" value={urgency} />
+        <input type="hidden" name="itemsJson"    value={itemsJson} />
+        <input type="hidden" name="worksiteId"   value={worksiteId} />
+        <input type="hidden" name="requestType"  value={requestType} />
+        <input type="hidden" name="urgency"      value={urgency} />
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <section className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 space-y-4">
@@ -305,7 +352,18 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
               </Select>
             </Field>
 
-
+            <Field label="Tipo de solicitud" htmlFor="requestType">
+              <Select value={requestType} onValueChange={setRequestType} disabled={readOnly}>
+                <SelectTrigger id="requestType">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REQUEST_TYPE_OPTS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
 
             <Field label="Urgencia" htmlFor="urgency">
               <Select value={urgency} onValueChange={setUrgency} disabled={readOnly}>
@@ -373,6 +431,8 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
                 item={item}
                 idx={idx}
                 products={products}
+                suppliers={suppliers}
+                workers={worksiteWorkers}
                 readOnly={readOnly}
                 onUpdate={(patch) => updateItem(item._key, patch)}
                 onSelectProduct={(pid) => selectProduct(item._key, pid)}
@@ -406,11 +466,12 @@ export function RequestForm({ worksites, products, editRequest }: RequestFormPro
       {/* ── Submit form (separate to distinguish the action) ─────────────── */}
       {isDraft && (
         <form action={submitAction} className="pt-0">
-          <input type="hidden" name="requestId" value={editRequest?.id ?? ""} />
-          <input type="hidden" name="itemsJson" value={itemsJson} />
-          <input type="hidden" name="worksiteId" value={worksiteId} />
-          <input type="hidden" name="urgency" value={urgency} />
-          <input type="hidden" name="notes" value={notes} />
+          <input type="hidden" name="requestId"   value={editRequest?.id ?? ""} />
+          <input type="hidden" name="itemsJson"   value={itemsJson} />
+          <input type="hidden" name="worksiteId"  value={worksiteId} />
+          <input type="hidden" name="requestType" value={requestType} />
+          <input type="hidden" name="urgency"     value={urgency} />
+          <input type="hidden" name="notes"       value={notes} />
           {submitState.message && !submitState.ok && (
             <p className="mb-3 text-xs text-[var(--color-danger)] flex items-center gap-1.5">
               <Warning size={14} />
@@ -450,6 +511,8 @@ interface ItemEditorProps {
   item:            ItemRow
   idx:             number
   products:        ProductOption[]
+  suppliers:       SupplierOption[]
+  workers:         WorkerOption[]
   readOnly:        boolean
   onUpdate:        (patch: Partial<ItemRow>) => void
   onSelectProduct: (pid: string) => void
@@ -461,9 +524,14 @@ interface ItemEditorProps {
 }
 
 function ItemEditor({
-  item, idx, products, readOnly,
+  item, idx, products, suppliers, workers, readOnly,
   onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
 }: ItemEditorProps) {
+  const showWorker         = item.isEpp
+  const hasWorkers         = workers.length > 0
+  const hasSuppliers       = suppliers.length > 0
+  const showSupplierSelect = !item.supplierHint || !!item.suggestedSupplierId
+
   return (
     <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-4">
       {/* Row header */}
@@ -531,7 +599,7 @@ function ItemEditor({
         )}
       </div>
 
-      {/* Quantity + unit */}
+      {/* Quantity + unit + urgency + date */}
       <div className="ml-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Field label="Cantidad" required htmlFor={`qty-${item._key}`}>
           <Input
@@ -583,6 +651,85 @@ function ItemEditor({
             disabled={readOnly}
           />
         </Field>
+      </div>
+
+      {/* Supplier hint + Worker (EPP only) */}
+      <div className="ml-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Proveedor sugerido */}
+        <Field label="Proveedor sugerido" htmlFor={`sup-${item._key}`}>
+          {readOnly ? (
+            <p className="text-sm text-[var(--color-text)]">
+              {item.suggestedSupplierId
+                ? (suppliers.find((s) => s.id === item.suggestedSupplierId)?.name ?? "—")
+                : (item.supplierHint || "—")}
+            </p>
+          ) : hasSuppliers && showSupplierSelect ? (
+            <Select
+              value={item.suggestedSupplierId || "__free__"}
+              onValueChange={(v) => {
+                if (v === "__free__") {
+                  onUpdate({ suggestedSupplierId: "", supplierHint: "" })
+                } else {
+                  onUpdate({ suggestedSupplierId: v, supplierHint: "" })
+                }
+              }}
+            >
+              <SelectTrigger id={`sup-${item._key}`} className="h-8 text-sm">
+                <SelectValue placeholder="Seleccionar proveedor..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__free__">Escribir nombre...</SelectItem>
+                {suppliers.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id={`sup-${item._key}`}
+              className="h-8 text-sm"
+              placeholder="ej: treck, apro..."
+              value={item.supplierHint}
+              onChange={(e) => onUpdate({ supplierHint: e.target.value, suggestedSupplierId: "" })}
+              disabled={readOnly}
+            />
+          )}
+        </Field>
+
+        {/* Destinatario / Trabajador (solo EPP) */}
+        {showWorker && (
+          <Field label="Destinatario (trabajador)" htmlFor={`wkr-${item._key}`}>
+            {readOnly ? (
+              <p className="text-sm text-[var(--color-text)]">
+                {(() => {
+                  const w = workers.find((w) => w.id === item.workerId)
+                  return w ? `${w.firstName} ${w.lastName}` : "—"
+                })()}
+              </p>
+            ) : hasWorkers ? (
+              <Select
+                value={item.workerId || ""}
+                onValueChange={(v) => onUpdate({ workerId: v || "" })}
+              >
+                <SelectTrigger id={`wkr-${item._key}`} className="h-8 text-sm">
+                  <SelectValue placeholder="Seleccionar trabajador..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sin asignar</SelectItem>
+                  {workers.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.firstName} {w.lastName}{w.position ? ` · ${w.position}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="text-xs text-[var(--color-text-subtle)] h-8 flex items-center">
+                Sin trabajadores en esta faena
+              </p>
+            )}
+          </Field>
+        )}
       </div>
 
       {/* Notes */}

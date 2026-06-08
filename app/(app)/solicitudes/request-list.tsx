@@ -7,6 +7,7 @@ import { DataTable } from "@/components/admin/data-table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { formatDate } from "@/lib/utils"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
@@ -15,6 +16,7 @@ import {
 export interface RequestRow {
   id:            string
   code:          string
+  requestType:   string
   worksiteName:  string
   urgency:       string
   status:        string
@@ -25,6 +27,7 @@ export interface RequestRow {
 
 const COLUMNS = [
   { key: "code",          label: "Código",     sortable: true,  width: "w-36" },
+  { key: "requestType",   label: "Tipo",       sortable: true,  width: "w-28" },
   { key: "worksiteName",  label: "Faena",      sortable: true  },
   { key: "urgency",       label: "Urgencia",   sortable: true,  width: "w-28" },
   { key: "itemCount",     label: "Ítems",      sortable: true,  numeric: true, width: "w-20" },
@@ -45,6 +48,20 @@ const URGENCY_DOT: Record<string, string> = {
   critical: "text-[var(--color-danger)]",
 }
 
+const REQUEST_TYPE_LABELS: Record<string, string> = {
+  epp:        "EPP",
+  stock:      "Stock",
+  mantencion: "Mantención",
+  otro:       "Otro",
+}
+
+const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
+  epp:        "info",
+  stock:      "success",
+  mantencion: "warning",
+  otro:       "default",
+}
+
 export function RequestList({
   requests,
   canCreate,
@@ -61,7 +78,7 @@ export function RequestList({
       <DataTable
         columns={COLUMNS}
         rows={requests as unknown as Record<string, unknown>[]}
-        searchKeys={["code", "worksiteName", "status"]}
+        searchKeys={["code", "worksiteName", "status", "requestType"]}
         pageSize={25}
         searchPlaceholder="Buscar solicitud, faena, código..."
         emptyTitle="Sin solicitudes"
@@ -106,6 +123,11 @@ export function RequestList({
             <TableRow key={r.id} className="group">
               <TableCell>
                 <span className="font-mono text-xs text-[var(--color-text)]">{r.code}</span>
+              </TableCell>
+              <TableCell>
+                <Badge variant={REQUEST_TYPE_VARIANTS[r.requestType] ?? "default"} size="sm">
+                  {REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}
+                </Badge>
               </TableCell>
               <TableCell className="text-sm text-[var(--color-text-muted)]">
                 {r.worksiteName}

@@ -43,6 +43,13 @@
       "when": 1780944713359,
       "tag": "0005_pink_nocturne",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1780949171645,
+      "tag": "0006_remediation_nota_pedido",
+      "breakpoints": true
     }
   ]
 }

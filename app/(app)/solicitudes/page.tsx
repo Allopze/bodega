@@ -36,6 +36,7 @@ export default async function SolicitudesPage() {
         code:         purchaseRequests.code,
         worksiteId:   purchaseRequests.worksiteId,
         urgency:      purchaseRequests.urgency,
+        requestType:  purchaseRequests.requestType,
         status:       purchaseRequests.status,
         submittedAt:  purchaseRequests.submittedAt,
         createdAt:    purchaseRequests.createdAt,
@@ -99,6 +100,7 @@ export default async function SolicitudesPage() {
   const rows = visible.map((r) => ({
     id:             r.id,
     code:           r.code,
+    requestType:    r.requestType,
     worksiteName:   wsMap[r.worksiteId] ?? r.worksiteId,
     urgency:        r.urgency,
     status:         r.status,

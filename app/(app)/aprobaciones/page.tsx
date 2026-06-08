@@ -3,7 +3,7 @@ import { redirect }       from "next/navigation"
 import { db }             from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
-  worksites, users as usersTable, products,
+  worksites, users as usersTable, products, workers, suppliers,
 } from "@/db/schema"
 import { eq, and, inArray, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
@@ -32,6 +32,7 @@ export default async function AprobacionesPage({
       code:         purchaseRequests.code,
       worksiteId:   purchaseRequests.worksiteId,
       urgency:      purchaseRequests.urgency,
+      requestType:  purchaseRequests.requestType,
       status:       purchaseRequests.status,
       requesterId:  purchaseRequests.requesterId,
       submittedAt:  purchaseRequests.submittedAt,
@@ -68,17 +69,20 @@ export default async function AprobacionesPage({
   // Load pending items first so we can load their attributes in one shot
   const pendingItems = await db
     .select({
-      id:              purchaseRequestItems.id,
-      requestId:       purchaseRequestItems.requestId,
-      productId:       purchaseRequestItems.productId,
-      productNameFree: purchaseRequestItems.productNameFree,
-      quantity:        purchaseRequestItems.quantity,
-      unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
-      urgency:         purchaseRequestItems.urgency,
-      requiredDate:    purchaseRequestItems.requiredDate,
-      notes:           purchaseRequestItems.notes,
-      status:          purchaseRequestItems.status,
-      sortOrder:       purchaseRequestItems.sortOrder,
+      id:                  purchaseRequestItems.id,
+      requestId:           purchaseRequestItems.requestId,
+      productId:           purchaseRequestItems.productId,
+      productNameFree:     purchaseRequestItems.productNameFree,
+      quantity:            purchaseRequestItems.quantity,
+      unitOfMeasure:       purchaseRequestItems.unitOfMeasure,
+      urgency:             purchaseRequestItems.urgency,
+      requiredDate:        purchaseRequestItems.requiredDate,
+      notes:               purchaseRequestItems.notes,
+      status:              purchaseRequestItems.status,
+      sortOrder:           purchaseRequestItems.sortOrder,
+      workerId:            purchaseRequestItems.workerId,
+      suggestedSupplierId: purchaseRequestItems.suggestedSupplierId,
+      supplierHint:        purchaseRequestItems.supplierHint,
     })
     .from(purchaseRequestItems)
     .where(
@@ -90,9 +94,11 @@ export default async function AprobacionesPage({
     .orderBy(asc(purchaseRequestItems.sortOrder))
 
   const pendingItemIds = pendingItems.map((i) => i.id)
+  const workerIds = [...new Set(pendingItems.map((i) => i.workerId).filter(Boolean))] as string[]
+  const supplierIds = [...new Set(pendingItems.map((i) => i.suggestedSupplierId).filter(Boolean))] as string[]
 
   // Batch load everything else in parallel
-  const [allAttrs, wsRows, requesterRows, productRows] = await Promise.all([
+  const [allAttrs, wsRows, requesterRows, productRows, workerRows, supplierRows] = await Promise.all([
     pendingItemIds.length > 0
       ? db
           .select({
@@ -119,12 +125,28 @@ export default async function AprobacionesPage({
     db
       .select({ id: products.id, sku: products.sku, name: products.name })
       .from(products),
+
+    workerIds.length > 0
+      ? db
+          .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName })
+          .from(workers)
+          .where(inArray(workers.id, workerIds))
+      : Promise.resolve([]),
+
+    supplierIds.length > 0
+      ? db
+          .select({ id: suppliers.id, name: suppliers.name })
+          .from(suppliers)
+          .where(inArray(suppliers.id, supplierIds))
+      : Promise.resolve([]),
   ])
 
   // Build lookup maps
-  const wsMap      = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
-  const userMap    = Object.fromEntries(requesterRows.map((u) => [u.id, u.name]))
-  const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
+  const wsMap       = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
+  const userMap     = Object.fromEntries(requesterRows.map((u) => [u.id, u.name]))
+  const productMap  = Object.fromEntries(productRows.map((p) => [p.id, p]))
+  const workerMap   = Object.fromEntries(workerRows.map((w) => [w.id, `${w.firstName} ${w.lastName}`]))
+  const supplierMap = Object.fromEntries(supplierRows.map((s) => [s.id, s.name]))
   const attrsMap: Record<string, { attributeName: string; value: string }[]> = {}
   for (const a of allAttrs) {
     if (!attrsMap[a.requestItemId]) attrsMap[a.requestItemId] = []
@@ -146,21 +168,25 @@ export default async function AprobacionesPage({
       const mappedItems: ApprovalItem[] = items.map((item): ApprovalItem => {
         const product = item.productId ? productMap[item.productId] : null
         return {
-          id:            item.id,
-          productName:   product?.name ?? item.productNameFree ?? "(sin nombre)",
-          productSku:    product?.sku ?? null,
-          quantity:      item.quantity,
-          unitOfMeasure: item.unitOfMeasure,
-          urgency:       item.urgency ?? "normal",
-          requiredDate:  item.requiredDate,
-          notes:         item.notes,
-          status:        item.status,
-          attributes:    attrsMap[item.id] ?? [],
+          id:                    item.id,
+          productName:           product?.name ?? item.productNameFree ?? "(sin nombre)",
+          productSku:            product?.sku ?? null,
+          quantity:              item.quantity,
+          unitOfMeasure:         item.unitOfMeasure,
+          urgency:               item.urgency ?? "normal",
+          requiredDate:          item.requiredDate,
+          notes:                 item.notes,
+          status:                item.status,
+          attributes:            attrsMap[item.id] ?? [],
+          workerName:            item.workerId ? workerMap[item.workerId] : null,
+          suggestedSupplierName: item.suggestedSupplierId ? supplierMap[item.suggestedSupplierId] : null,
+          supplierHint:          item.supplierHint,
         }
       })
       return {
         id:             r.id,
         code:           r.code,
+        requestType:    r.requestType,
         worksiteName:   wsMap[r.worksiteId]   ?? r.worksiteId,
         requesterName:  userMap[r.requesterId] ?? r.requesterId,
         requestUrgency: r.urgency,

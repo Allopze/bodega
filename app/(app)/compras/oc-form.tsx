@@ -17,6 +17,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { createOrderAction } from "./actions"
 import { formatQty, formatCLP } from "@/lib/utils"
 import { computeOrderTotals } from "@/lib/order-totals"
+import { Badge } from "@/components/ui/badge"
 import type { ActionState } from "@/lib/validation/operations"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
@@ -33,20 +34,22 @@ export interface WorksiteOption {
 }
 
 export interface PendingItemOption {
-  id:            string
-  requestId:     string
-  requestCode:   string
-  worksiteId:    string
-  worksiteName:  string
-  productName:   string
-  productSku:    string | null
-  productId:     string | null
-  productNameFree: string | null
-  quantity:      number
-  unitOfMeasure: string
-  urgency:       string
-  notes:         string | null
-  supplierPrices: Record<string, number>
+  id:                  string
+  requestId:           string
+  requestCode:         string
+  worksiteId:          string
+  worksiteName:        string
+  productName:         string
+  productSku:          string | null
+  productId:           string | null
+  productNameFree:     string | null
+  quantity:            number
+  unitOfMeasure:       string
+  urgency:             string
+  notes:               string | null
+  supplierPrices:      Record<string, number>
+  suggestedSupplierId?: string | null
+  supplierHint?:        string | null
 }
 
 /* ── Row in the OC items table ───────────────────────────────────────────────── */
@@ -149,6 +152,29 @@ export function OcForm({
   const filteredItems = worksiteId
     ? pendingItems.filter((i) => i.worksiteId === worksiteId)
     : pendingItems
+
+  // Auto-select suggested supplier if all filtered items share the same suggestedSupplierId
+  React.useEffect(() => {
+    if (supplierId) return
+    if (filteredItems.length === 0) return
+    const firstSuggested = filteredItems[0].suggestedSupplierId
+    if (!firstSuggested) return
+    const allSame = filteredItems.every((i) => i.suggestedSupplierId === firstSuggested)
+    if (allSame) {
+      setSupplierId(firstSuggested)
+      const nextSupplier = suppliers.find((s) => s.id === firstSuggested)
+      if (nextSupplier?.paymentTerms) setPaymentTerms(nextSupplier.paymentTerms)
+      // Apply suggested prices
+      setUnitPrices((prev) => {
+        const next = { ...prev }
+        for (const item of filteredItems) {
+          const price = item.supplierPrices[firstSuggested]
+          if (price !== undefined) next[item.id] = price
+        }
+        return next
+      })
+    }
+  }, [filteredItems, supplierId, suppliers])
 
   function toggleItem(itemId: string) {
     const shouldSelect = !selectedItems.has(itemId)
@@ -327,6 +353,18 @@ export function OcForm({
                       <span className="text-xs text-[var(--color-text-subtle)]">
                         · SOL {item.requestCode}
                       </span>
+                      {(() => {
+                        const suggestedSupplier = item.suggestedSupplierId
+                          ? suppliers.find((s) => s.id === item.suggestedSupplierId)
+                          : null
+                        const label = suggestedSupplier ? suggestedSupplier.name : item.supplierHint
+                        if (!label) return null
+                        return (
+                          <Badge variant="warning" size="sm" className="font-normal shrink-0">
+                            Sugerido: {label}
+                          </Badge>
+                        )
+                      })()}
                     </div>
                     <div className="mt-1 text-xs text-[var(--color-text-muted)]">
                       {formatQty(item.quantity, item.unitOfMeasure)}

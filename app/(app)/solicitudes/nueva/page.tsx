@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes } from "@/db/schema"
+import { worksites, products, productAttributes, suppliers, workers } from "@/db/schema"
 import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
@@ -19,7 +19,7 @@ export default async function NuevaSolicitudPage() {
   try { session = await requirePermission("requests:create") }
   catch { redirect("/dashboard") }
 
-  const [allWorksites, allProducts, allAttrs] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, allSuppliers, allWorkers] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -28,6 +28,12 @@ export default async function NuevaSolicitudPage() {
       .orderBy(asc(products.name)),
     db.select().from(productAttributes)
       .orderBy(asc(productAttributes.sortOrder)),
+    db.select().from(suppliers)
+      .where(eq(suppliers.isActive, true))
+      .orderBy(asc(suppliers.name)),
+    db.select().from(workers)
+      .where(eq(workers.isActive, true))
+      .orderBy(asc(workers.firstName)),
   ])
 
   // Scope worksites to the user's assignments
@@ -44,6 +50,7 @@ export default async function NuevaSolicitudPage() {
     id:             p.id,
     sku:            p.sku,
     name:           p.name,
+    isEpp:          p.isEpp,
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
@@ -56,6 +63,19 @@ export default async function NuevaSolicitudPage() {
         isRequired: a.isRequired,
         options:    a.options,
       })),
+  }))
+
+  const supplierOptions = allSuppliers.map((s) => ({
+    id:   s.id,
+    name: s.name,
+  }))
+
+  const workerOptions = allWorkers.map((w) => ({
+    id:         w.id,
+    worksiteId: w.worksiteId,
+    firstName:  w.firstName,
+    lastName:   w.lastName,
+    position:   w.position,
   }))
 
   if (worksiteOptions.length === 0) {
@@ -105,6 +125,8 @@ export default async function NuevaSolicitudPage() {
         <RequestForm
           worksites={worksiteOptions}
           products={productOptions}
+          suppliers={supplierOptions}
+          workers={workerOptions}
         />
       </div>
     </>

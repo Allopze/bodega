@@ -12,11 +12,26 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { INITIAL_STATE } from "@/components/admin/form-state"
+import { Badge } from "@/components/ui/badge"
 import {
   approveItemAction, rejectItemAction, bulkApproveRequestAction,
 } from "./actions"
 import { formatQty, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
+
+const REQUEST_TYPE_LABELS: Record<string, string> = {
+  epp:        "EPP",
+  stock:      "Stock",
+  mantencion: "Mantención",
+  otro:       "Otro",
+}
+
+const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
+  epp:        "info",
+  stock:      "success",
+  mantencion: "warning",
+  otro:       "default",
+}
 
 /* ── Data types (received from Server Component) ────────────────────────────── */
 
@@ -26,21 +41,25 @@ export interface ApprovalAttribute {
 }
 
 export interface ApprovalItem {
-  id:            string
-  productName:   string
-  productSku:    string | null
-  quantity:      number
-  unitOfMeasure: string
-  urgency:       string
-  requiredDate:  string | null
-  notes:         string | null
-  status:        string
-  attributes:    ApprovalAttribute[]
+  id:                    string
+  productName:           string
+  productSku:            string | null
+  quantity:              number
+  unitOfMeasure:         string
+  urgency:               string
+  requiredDate:          string | null
+  notes:                 string | null
+  status:                string
+  attributes:            ApprovalAttribute[]
+  workerName?:           string | null
+  suggestedSupplierName?: string | null
+  supplierHint?:         string | null
 }
 
 export interface ApprovalRequest {
   id:              string
   code:            string
+  requestType:     string
   worksiteName:    string
   requesterName:   string
   requestUrgency:  string
@@ -147,6 +166,22 @@ function ItemRow({ item }: { item: ApprovalItem }) {
                   {a.attributeName}: {a.value}
                 </span>
               ))}
+            </div>
+          )}
+
+          {/* Worker / Supplier metadata */}
+          {(item.workerName || item.suggestedSupplierName || item.supplierHint) && (
+            <div className="mt-1 flex gap-1.5 flex-wrap items-center">
+              {item.workerName && (
+                <Badge variant="info" size="sm" className="font-normal shrink-0">
+                  Destinatario: {item.workerName}
+                </Badge>
+              )}
+              {(item.suggestedSupplierName || item.supplierHint) && (
+                <Badge variant="warning" size="sm" className="font-normal shrink-0">
+                  Sugerido: {item.suggestedSupplierName || item.supplierHint}
+                </Badge>
+              )}
             </div>
           )}
 
@@ -347,6 +382,9 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
           <span className="font-mono text-sm font-semibold text-[var(--color-text)]">
             {request.code}
           </span>
+          <Badge variant={REQUEST_TYPE_VARIANTS[request.requestType] ?? "default"} size="sm" className="shrink-0">
+            {REQUEST_TYPE_LABELS[request.requestType] ?? request.requestType}
+          </Badge>
           <span className="text-sm text-[var(--color-text-muted)]">·</span>
           <span className="text-sm text-[var(--color-text-muted)] truncate">
             {request.worksiteName}

@@ -37,6 +37,8 @@ export default async function NuevaOcPage({
       urgency:         purchaseRequestItems.urgency,
       notes:           purchaseRequestItems.notes,
       status:          purchaseRequestItems.status,
+      suggestedSupplierId: purchaseRequestItems.suggestedSupplierId,
+      supplierHint:        purchaseRequestItems.supplierHint,
     })
     .from(purchaseRequestItems)
     .where(inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]))
@@ -121,6 +123,8 @@ export default async function NuevaOcPage({
         urgency:         item.urgency ?? "normal",
         notes:           item.notes,
         supplierPrices:  item.productId ? (supplierPriceMap[item.productId] ?? {}) : {},
+        suggestedSupplierId: item.suggestedSupplierId,
+        supplierHint:        item.supplierHint,
       } satisfies PendingItemOption
     })
     .filter((i): i is PendingItemOption => i !== null)

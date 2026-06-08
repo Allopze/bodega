@@ -43,6 +43,7 @@ async function persistDraft(
   const parsed = requestSchema.safeParse({
     id:           formData.get("id") || undefined,
     worksiteId:   formData.get("worksiteId"),
+    requestType:  formData.get("requestType") || "epp",
     urgency:      formData.get("urgency") || "normal",
     requiredDate: formData.get("requiredDate") || null,
     notes:        formData.get("notes") || "",
@@ -74,6 +75,7 @@ async function persistDraft(
  
       tx.update(purchaseRequests).set({
         worksiteId:   d.worksiteId,
+        requestType:  d.requestType,
         urgency:      d.urgency,
         status:       "draft",
         notes:        d.notes || null,
@@ -93,6 +95,7 @@ async function persistDraft(
         code,
         worksiteId:   d.worksiteId,
         requesterId:  session.user.id,
+        requestType:  d.requestType,
         urgency:      d.urgency,
         status:       "draft",
         notes:        d.notes || null,
@@ -113,18 +116,20 @@ async function persistDraft(
     for (const [i, item] of d.items.entries()) {
       const itemId = item.id ?? nanoid()
       tx.insert(purchaseRequestItems).values({
-        id:              itemId,
-        requestId:       requestId!,
-        productId:       item.productId || null,
-        productNameFree: item.productNameFree?.trim() || null,
-        quantity:        item.quantity,
-        unitOfMeasure:   item.unitOfMeasure,
-        status:          "draft",
-        urgency:         item.urgency,
-        requiredDate:    item.requiredDate || null,
-        workerId:        item.workerId || null,
-        sortOrder:       i,
-        notes:           item.notes || null,
+        id:                  itemId,
+        requestId:           requestId!,
+        productId:           item.productId || null,
+        productNameFree:     item.productNameFree?.trim() || null,
+        quantity:            item.quantity,
+        unitOfMeasure:       item.unitOfMeasure,
+        status:              "draft",
+        urgency:             item.urgency,
+        requiredDate:        item.requiredDate || null,
+        workerId:            item.workerId || null,
+        suggestedSupplierId: item.suggestedSupplierId || null,
+        supplierHint:        item.supplierHint || null,
+        sortOrder:           i,
+        notes:               item.notes || null,
       }).run()
 
       if (item.attributes.length > 0) {
@@ -257,6 +262,7 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
       code,
       worksiteId:   source.worksiteId,
       requesterId:  session.user.id,
+      requestType:  source.requestType,
       urgency:      source.urgency,
       status:       "draft",
       notes:        source.notes ? `[Duplicada de ${source.code}] ${source.notes}` : `[Duplicada de ${source.code}]`,
@@ -275,18 +281,20 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
     for (const [i, item] of source.items.entries()) {
       const itemId = nanoid()
       tx.insert(purchaseRequestItems).values({
-        id:              itemId,
-        requestId:       newId,
-        productId:       item.productId ?? null,
-        productNameFree: item.productNameFree ?? null,
-        quantity:        item.quantity,
-        unitOfMeasure:   item.unitOfMeasure,
-        status:          "draft",
-        urgency:         item.urgency,
-        requiredDate:    item.requiredDate ?? null,
-        workerId:        item.workerId ?? null,
-        sortOrder:       i,
-        notes:           item.notes ?? null,
+        id:                  itemId,
+        requestId:           newId,
+        productId:           item.productId ?? null,
+        productNameFree:     item.productNameFree ?? null,
+        quantity:            item.quantity,
+        unitOfMeasure:       item.unitOfMeasure,
+        status:              "draft",
+        urgency:             item.urgency,
+        requiredDate:        item.requiredDate ?? null,
+        workerId:            item.workerId ?? null,
+        suggestedSupplierId: item.suggestedSupplierId ?? null,
+        supplierHint:        item.supplierHint ?? null,
+        sortOrder:           i,
+        notes:               item.notes ?? null,
       }).run()
 
       if (item.attributes.length > 0) {
