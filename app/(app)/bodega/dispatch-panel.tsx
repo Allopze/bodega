@@ -122,7 +122,7 @@ export function DispatchPanel({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Bodega" htmlFor="dispatchWarehouseId" required error={state.fieldErrors?.warehouseId?.[0]}>
             <Select value={warehouseId} onValueChange={handleWarehouseChange}>
-              <SelectTrigger id="dispatchWarehouseId" error={!!state.fieldErrors?.warehouseId} aria-describedby={state.fieldErrors?.warehouseId ? "dispatchWarehouseId-error" : undefined}>
+              <SelectTrigger id="dispatchWarehouseId" error={!!state.fieldErrors?.warehouseId}>
                 <SelectValue placeholder="Selecciona bodega" />
               </SelectTrigger>
               <SelectContent>
@@ -135,7 +135,7 @@ export function DispatchPanel({
 
           <Field label="Faena destino" htmlFor="dispatchWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
             <Select value={worksiteId} onValueChange={handleWorksiteChange}>
-              <SelectTrigger id="dispatchWorksiteId" error={!!state.fieldErrors?.worksiteId} aria-describedby={state.fieldErrors?.worksiteId ? "dispatchWorksiteId-error" : undefined}>
+              <SelectTrigger id="dispatchWorksiteId" error={!!state.fieldErrors?.worksiteId}>
                 <SelectValue placeholder="Selecciona faena" />
               </SelectTrigger>
               <SelectContent>
@@ -150,7 +150,7 @@ export function DispatchPanel({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Producto" htmlFor="dispatchProductId" required error={state.fieldErrors?.productId?.[0]}>
             <Select value={productId} onValueChange={handleProductChange} disabled={!warehouseId}>
-              <SelectTrigger id="dispatchProductId" error={!!state.fieldErrors?.productId} aria-describedby={state.fieldErrors?.productId ? "dispatchProductId-error" : undefined}>
+              <SelectTrigger id="dispatchProductId" error={!!state.fieldErrors?.productId}>
                 <SelectValue placeholder={warehouseId ? "Selecciona producto" : "Elige bodega primero"} />
               </SelectTrigger>
               <SelectContent>

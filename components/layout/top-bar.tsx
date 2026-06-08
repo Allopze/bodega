@@ -49,6 +49,7 @@ export function TopBar({
             onClick={onToggleCollapse}
             className={cn(
               "hidden lg:flex items-center justify-center",
+              "min-h-[44px] min-w-[44px] lg:min-h-0 lg:min-w-0",
               "h-8 w-8 rounded-[var(--radius-sm)]",
               "text-[var(--color-text-muted)] hover:text-[var(--color-primary)]",
               "hover:bg-[var(--color-primary-50)]",
@@ -70,7 +71,7 @@ export function TopBar({
           onClick={onMenuToggle}
           className={cn(
             "lg:hidden flex items-center justify-center",
-            "h-8 w-8 rounded-[var(--radius-sm)]",
+            "min-h-[44px] min-w-[44px] rounded-[var(--radius-sm)]",
             "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
             "hover:bg-[var(--color-surface-2)]",
             "transition-colors duration-[var(--duration-fast)]",

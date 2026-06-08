@@ -1,12 +1,12 @@
 import ExcelJS from "exceljs"
 import type { Session } from "next-auth"
-import { inArray } from "drizzle-orm"
+import { and, eq, inArray, sql, type SQLWrapper } from "drizzle-orm"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, purchaseOrders,
   invoiceAttachments, products, worksites, suppliers,
 } from "@/db/schema"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { formatDate } from "@/lib/utils"
 
 export type ReportCell = string | number | null | undefined
@@ -79,6 +79,8 @@ export async function getReportData(tipo: string, session: Session | null): Prom
 }
 
 async function gastoPorFaena(session: Session | null): Promise<ReportData> {
+  const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
+
   const orders = await db
     .select({
       id:          purchaseOrders.id,
@@ -90,6 +92,7 @@ async function gastoPorFaena(session: Session | null): Promise<ReportData> {
       supplierId:  purchaseOrders.supplierId,
     })
     .from(purchaseOrders)
+    .where(orderFilter)
 
   const wsIds  = [...new Set(orders.map((o) => o.worksiteId))]
   const supIds = [...new Set(orders.map((o) => o.supplierId))]
@@ -101,13 +104,12 @@ async function gastoPorFaena(session: Session | null): Promise<ReportData> {
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
   const supMap = Object.fromEntries(supRows.map((s) => [s.id, s.name]))
-  const visible = orders.filter((o) => !session || canAccessWorksite(session, o.worksiteId))
 
   return {
     filenameBase: "gasto-por-faena",
     worksheetName: "Gasto por faena",
     headers: ["OC", "Faena", "Proveedor", "Estado", "Monto Total", "Fecha"],
-    rows: visible.map((o) => [
+    rows: orders.map((o) => [
       o.code,
       wsMap[o.worksiteId] ?? o.worksiteId,
       supMap[o.supplierId] ?? o.supplierId,
@@ -120,6 +122,7 @@ async function gastoPorFaena(session: Session | null): Promise<ReportData> {
 
 async function itemsSinOc(session: Session | null): Promise<ReportData> {
   const alertStates = ["approved", "pending_purchase"]
+  const requestFilter = buildWorksiteFilter(session, purchaseRequests.worksiteId)
 
   const items = await db
     .select({
@@ -133,7 +136,8 @@ async function itemsSinOc(session: Session | null): Promise<ReportData> {
       createdAt:       purchaseRequestItems.createdAt,
     })
     .from(purchaseRequestItems)
-    .where(inArray(purchaseRequestItems.status, alertStates))
+    .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+    .where(and(inArray(purchaseRequestItems.status, alertStates), requestFilter))
 
   const headers = ["Producto", "SKU", "Faena", "Solicitud", "Cantidad", "U/M", "Estado", "Fecha creación"]
   if (items.length === 0) {
@@ -162,16 +166,12 @@ async function itemsSinOc(session: Session | null): Promise<ReportData> {
   const reqMap  = Object.fromEntries(reqRows.map((r) => [r.id, r]))
   const prodMap = Object.fromEntries(prodRows.map((p) => [p.id, p]))
   const wsMap   = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
-  const visible = items.filter((i) => {
-    const req = reqMap[i.requestId]
-    return req && (!session || canAccessWorksite(session, req.worksiteId))
-  })
 
   return {
     filenameBase: "items-sin-oc",
     worksheetName: "Items sin OC",
     headers,
-    rows: visible.map((i) => {
+    rows: items.map((i) => {
       const req     = reqMap[i.requestId]
       const product = i.productId ? prodMap[i.productId] : null
       return [
@@ -189,6 +189,8 @@ async function itemsSinOc(session: Session | null): Promise<ReportData> {
 }
 
 async function ocPorEstado(session: Session | null): Promise<ReportData> {
+  const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
+
   const orders = await db
     .select({
       code:        purchaseOrders.code,
@@ -200,19 +202,19 @@ async function ocPorEstado(session: Session | null): Promise<ReportData> {
       confirmedAt: purchaseOrders.confirmedAt,
     })
     .from(purchaseOrders)
+    .where(orderFilter)
 
   const wsIds = [...new Set(orders.map((o) => o.worksiteId))]
   const wsRows = wsIds.length
     ? await db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds))
     : []
   const wsMap = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
-  const visible = orders.filter((o) => !session || canAccessWorksite(session, o.worksiteId))
 
   return {
     filenameBase: "oc-por-estado",
     worksheetName: "OC por estado",
     headers: ["OC", "Estado", "Faena", "Total", "Emitida", "Enviada", "Confirmada"],
-    rows: visible.map((o) => [
+    rows: orders.map((o) => [
       o.code,
       o.status,
       wsMap[o.worksiteId] ?? o.worksiteId,
@@ -225,6 +227,8 @@ async function ocPorEstado(session: Session | null): Promise<ReportData> {
 }
 
 async function facturasPendientes(session: Session | null): Promise<ReportData> {
+  const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
+
   const [orders, invoices] = await Promise.all([
     db
       .select({
@@ -234,7 +238,8 @@ async function facturasPendientes(session: Session | null): Promise<ReportData> 
         worksiteId: purchaseOrders.worksiteId,
         totalAmount: purchaseOrders.totalAmount,
       })
-      .from(purchaseOrders),
+      .from(purchaseOrders)
+      .where(orderFilter),
     db
       .select({
         targetId: invoiceAttachments.targetId,
@@ -243,14 +248,12 @@ async function facturasPendientes(session: Session | null): Promise<ReportData> 
         amount: invoiceAttachments.amount,
         status: invoiceAttachments.status,
       })
-      .from(invoiceAttachments),
+      .from(invoiceAttachments)
+      .where(eq(invoiceAttachments.targetType, "purchase_order")),
   ])
 
-  const visibleOrders = orders.filter((o) => !session || canAccessWorksite(session, o.worksiteId))
-  const orderIds = new Set(visibleOrders.map((order) => order.id))
-  const orderInvoices = invoices.filter((invoice) =>
-    invoice.targetType === "purchase_order" && orderIds.has(invoice.targetId)
-  )
+  const orderIds = new Set(orders.map((order) => order.id))
+  const orderInvoices = invoices.filter((invoice) => orderIds.has(invoice.targetId))
   const reconciledOrderIds = new Set(
     orderInvoices
       .filter((invoice) => invoice.status === "reconciled")
@@ -263,14 +266,14 @@ async function facturasPendientes(session: Session | null): Promise<ReportData> 
     invoicesByOrder.set(invoice.targetId, rows)
   }
 
-  const wsIds = [...new Set(visibleOrders.map((order) => order.worksiteId))]
+  const wsIds = [...new Set(orders.map((order) => order.worksiteId))]
   const wsRows = wsIds.length
     ? await db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds))
     : []
   const wsMap = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
 
   const rows: ReportCell[][] = []
-  for (const order of visibleOrders) {
+  for (const order of orders) {
     const pendingInvoices = (invoicesByOrder.get(order.id) ?? []).filter((invoice) => invoice.status !== "reconciled")
     if (pendingInvoices.length > 0) {
       for (const invoice of pendingInvoices) {
@@ -306,4 +309,20 @@ async function facturasPendientes(session: Session | null): Promise<ReportData> 
     headers: ["OC", "Faena", "Estado OC", "Factura", "Estado factura", "Monto OC", "Monto factura"],
     rows,
   }
+}
+
+/**
+ * Builds a Drizzle SQL fragment for a worksite column, matching the
+ * same scope rule as canAccessWorksite(). Global roles get undefined
+ * (no filter), faena requesters with no worksites get a no-rows
+ * predicate, and everyone else gets an `inArray(...)` filter.
+ */
+function buildWorksiteFilter(
+  session: Session | null,
+  column: SQLWrapper,
+) {
+  if (isGlobalRole(session)) return undefined
+  const ids = visibleWorksiteIds(session)
+  if (ids.length === 0) return sql`1 = 0`
+  return inArray(column, ids as never[])
 }

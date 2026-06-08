@@ -191,4 +191,11 @@ export type ActionState = {
   ok:           boolean
   message?:     string
   fieldErrors?: Record<string, string[]>
+  /**
+   * Optional structured payload returned by the action. Used to surface
+   * data that should NOT be displayed in a transient toast (e.g.
+   * invitation URLs that grant account access) and must be rendered in
+   * a deliberate, dismissable surface.
+   */
+  data?:        Record<string, unknown>
 }

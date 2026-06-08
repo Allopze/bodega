@@ -306,7 +306,7 @@ function InvoiceAttachmentItem({
 
       {/* Diff summary (always visible when we have orderTotalAmount) */}
       {diff !== null && (
-        <div className={`rounded-[var(--radius)] px-3 py-2 text-xs flex flex-wrap gap-x-4 gap-y-1 ${diff.hasDiff ? "bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-800" : "bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800"}`}>
+        <div className={`rounded-[var(--radius)] px-3 py-2 text-xs flex flex-wrap gap-x-4 gap-y-1 ${diff.hasDiff ? "bg-[var(--color-warning-50)] border border-[var(--color-warning-100)]" : "bg-[var(--color-success-50)] border border-[var(--color-success-100)]"}`}>
           <span className="text-[var(--color-text-muted)]">
             OC: <span className="font-mono font-medium text-[var(--color-text)]">{formatCLP(diff.orderAmount)}</span>
           </span>
@@ -314,13 +314,13 @@ function InvoiceAttachmentItem({
             Factura: <span className="font-mono font-medium text-[var(--color-text)]">{formatCLP(diff.invoiceAmount)}</span>
           </span>
           {diff.hasDiff ? (
-            <span className="font-medium text-amber-700 dark:text-amber-400">
+            <span className="font-medium text-[var(--color-warning)]">
               Diferencia: {formatCLP(Math.abs(diff.absoluteDiff))}
               {formatDiffPercent(diff) && ` (${formatDiffPercent(diff)})`}
               {diff.absoluteDiff > 0 ? " — factura mayor" : " — factura menor"}
             </span>
           ) : (
-            <span className="font-medium text-emerald-700 dark:text-emerald-400">Montos coinciden</span>
+            <span className="font-medium text-[var(--color-success)]">Montos coinciden</span>
           )}
         </div>
       )}

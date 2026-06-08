@@ -16,7 +16,23 @@ loadEnvConfig(process.cwd())
 const DB_URL = process.env.DATABASE_URL ?? "./db/stockflow.db"
 const adminName = process.env.SEED_ADMIN_NAME ?? "Administrador"
 const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@chome.cl").toLowerCase()
-const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "chome2026"
+const NODE_ENV = process.env.NODE_ENV ?? "development"
+const SEED_ALLOW_DEFAULT_PASSWORD = process.env.SEED_ALLOW_DEFAULT_PASSWORD === "true"
+
+function resolveSeedAdminPassword(): string {
+  const explicit = process.env.SEED_ADMIN_PASSWORD
+  if (explicit && explicit.length > 0) return explicit
+  if (NODE_ENV === "production" && !SEED_ALLOW_DEFAULT_PASSWORD) {
+    console.error(
+      "Refusing to seed: SEED_ADMIN_PASSWORD is not set and NODE_ENV=production.\n" +
+      "Define a strong password via SEED_ADMIN_PASSWORD, or set SEED_ALLOW_DEFAULT_PASSWORD=true\n" +
+      "to fall back to the development default (chome2026).",
+    )
+    process.exit(1)
+  }
+  return "chome2026"
+}
+const adminPassword = resolveSeedAdminPassword()
 const sqlite = new Database(DB_URL)
 sqlite.pragma("journal_mode = WAL")
 sqlite.pragma("foreign_keys = ON")

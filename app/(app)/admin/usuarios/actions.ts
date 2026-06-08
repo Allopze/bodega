@@ -62,28 +62,42 @@ export async function inviteUser(
   })
 
   let deliveryMessage = "Invitación creada"
+  let pendingInviteUrl: string | undefined
   try {
     const delivery = await sendInvitationEmail({
       to: d.email,
       inviteUrl,
       invitedByName: session.user.name,
     })
-    deliveryMessage = delivery.sent
-      ? `Invitación enviada a ${d.email}`
-      : `Invitación creada. SMTP no configurado, enlace: ${inviteUrl}`
+    if (delivery.sent) {
+      deliveryMessage = `Invitación enviada a ${d.email}`
+    } else {
+      // SMTP no está configurado: nunca mostramos el enlace crudo en el
+      // toast (queda visible en la UI). Lo entregamos por un canal
+      // separado (data.inviteUrl) para que el cliente lo presente
+      // explícitamente con un botón "Copiar enlace" en una sheet de
+      // confirmación, no en un toast efímero.
+      deliveryMessage = `Invitación creada. SMTP no está configurado; revisa la invitación pendiente.`
+      pendingInviteUrl = inviteUrl
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "error desconocido"
-    deliveryMessage = `Invitación creada, pero no se pudo enviar el correo (${reason}). Enlace: ${inviteUrl}`
+    deliveryMessage = `Invitación creada, pero no se pudo enviar el correo (${reason}).`
+    pendingInviteUrl = inviteUrl
   }
 
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "create", entityType: "user_invitation", entityId: invitationId,
-    newState: { email: d.email, roles: d.roleIds, expiresAt },
+    newState: { email: d.email, roles: d.roleIds, expiresAt, smtpSent: !pendingInviteUrl },
   })
 
   revalidatePath(REVALIDATE)
-  return { ok: true, message: deliveryMessage }
+  return {
+    ok: true,
+    message: deliveryMessage,
+    data: pendingInviteUrl ? { inviteUrl: pendingInviteUrl } : undefined,
+  }
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────

@@ -5,12 +5,13 @@ import {
   purchaseRequests, purchaseRequestItems, purchaseOrders,
   receipts, invoiceAttachments,
 } from "@/db/schema"
-import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
+import { requirePermission } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
 import { formatCLP } from "@/lib/utils"
-import { eq } from "drizzle-orm"
+import { eq, inArray, sql } from "drizzle-orm"
 import { ChartBar } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Reportes" }
@@ -26,6 +27,16 @@ export default async function Page() {
   try { session = await requirePermission("reports:view") }
   catch { redirect("/dashboard") }
 
+  const isGlobal = isGlobalRole(session)
+  const wsIds = visibleWorksiteIds(session)
+  const requestWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
+  const orderWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`)
+  const receiptWsFilter = isGlobal
+    ? undefined
+    : (wsIds.length > 0
+        ? sql`(${receipts.worksiteId} IS NULL OR ${inArray(receipts.worksiteId, wsIds)})`
+        : sql`${receipts.worksiteId} IS NULL AND 1 = 0`)
+
   const [
     requestRows,
     itemRows,
@@ -39,7 +50,8 @@ export default async function Page() {
         status: purchaseRequests.status,
         worksiteId: purchaseRequests.worksiteId,
       })
-      .from(purchaseRequests),
+      .from(purchaseRequests)
+      .where(requestWsFilter),
 
     db
       .select({
@@ -48,7 +60,8 @@ export default async function Page() {
         worksiteId: purchaseRequests.worksiteId,
       })
       .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eqRequestItemRequest()),
+      .innerJoin(purchaseRequests, eqRequestItemRequest())
+      .where(requestWsFilter),
 
     db
       .select({
@@ -57,7 +70,8 @@ export default async function Page() {
         worksiteId: purchaseOrders.worksiteId,
         totalAmount: purchaseOrders.totalAmount,
       })
-      .from(purchaseOrders),
+      .from(purchaseOrders)
+      .where(orderWsFilter),
 
     db
       .select({
@@ -65,7 +79,8 @@ export default async function Page() {
         status: receipts.status,
         worksiteId: receipts.worksiteId,
       })
-      .from(receipts),
+      .from(receipts)
+      .where(receiptWsFilter),
 
     db
       .select({
@@ -78,10 +93,10 @@ export default async function Page() {
       .from(invoiceAttachments),
   ])
 
-  const requests = requestRows.filter((r) => canAccessWorksite(session, r.worksiteId))
-  const items = itemRows.filter((i) => canAccessWorksite(session, i.worksiteId))
-  const orders = orderRows.filter((o) => canAccessWorksite(session, o.worksiteId))
-  const receiptsVisible = receiptRows.filter((r) => !r.worksiteId || canAccessWorksite(session, r.worksiteId))
+  const requests = requestRows
+  const items = itemRows
+  const orders = orderRows
+  const receiptsVisible = receiptRows
   const visibleRequestIds = new Set(requests.map((r) => r.id))
   const visibleOrderIds = new Set(orders.map((o) => o.id))
   const invoicesVisible = canViewInvoiceAttachments(session)

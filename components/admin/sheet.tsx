@@ -123,9 +123,10 @@ const SheetDescription = React.forwardRef<
 SheetDescription.displayName = "SheetDescription"
 
 // ── Close button ──────────────────────────────────────────────────────────────
-function SheetCloseButton() {
+function SheetCloseButton({ onClick }: { onClick?: React.MouseEventHandler<HTMLButtonElement> }) {
   return (
     <DialogPrimitive.Close
+      onClick={onClick}
       className={cn(
         "shrink-0 rounded-[var(--radius-sm)]",
         "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",

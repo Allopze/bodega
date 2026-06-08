@@ -84,7 +84,99 @@ Verificacion posterior a los cambios:
 - `npm run test:e2e`: 3 tests Playwright pasan en Chromium.
 - `npm audit --omit=dev`: sigue fallando por vulnerabilidad transitiva en `next-auth` beta via `@auth/core`/`nodemailer`; no se aplico `audit fix --force` porque propone un cambio mayor incompatible.
 
-Queda pendiente lo que requiere cambios de modelo, pruebas de integracion mas profundas o decisiones de producto: filtros RBAC en SQL, combobox accesible completo, revision ARIA de selects complejos restantes, flujo de reservas, evidencia formal de recepcion, documentacion `PRODUCT.md`/`DESIGN.md` y upgrade seguro de `next-auth`/`@auth/core`.
+## Estado de remediacion aplicada (segunda pasada)
+
+Actualizacion posterior a la primera ronda: se atacaron los pendientes
+accionables sin reestructurar la arquitectura, y se agregaron
+cobertura de tests, accesibilidad y endurecimiento de seguridad.
+
+Correcciones adicionales completadas en esta pasada:
+
+- ~~Migrar filtros RBAC a SQL en dashboard, reportes y exportaciones~~:
+  - `lib/auth/visibility.ts` agrega `worksiteScope(session, column)` y
+    `listVisibleWorksites(session)` para predicados Drizzle reutilizables.
+  - `lib/auth/can.ts` ahora exporta `isGlobalRole()` y
+    `visibleWorksiteIds()` para evitar duplicar la lista de roles globales.
+  - `app/(app)/dashboard/page.tsx` empuja `WHERE worksite_id IN (...)`
+    (o `1 = 0` para faena requester sin faenas) a las 5 consultas que
+    cargaban `purchaseRequests`, `purchaseRequestItems`,
+    `purchaseOrders`, `invoiceAttachments` (filtrado a OC) y `worksites`.
+  - `app/(app)/reportes/page.tsx` y `lib/reports/export.ts`
+    (`gastoPorFaena`, `itemsSinOc`, `ocPorEstado`, `facturasPendientes`)
+    ahora aplican el predicado en SQL. El conteo total deja de cargar
+    todas las OC/ítems/solicitudes y filtrar en memoria.
+- ~~Mejorar accesibilidad de selects complejos restantes~~:
+  - `components/ui/field.tsx` ahora genera `id` estable para el label
+    y conecta automaticamente `aria-labelledby` y `aria-describedby`
+    al control hijo. Se retiraron las inyecciones manuales redundantes
+    en `cost-center-form` y `dispatch-panel`.
+  - `components/admin/sheet.tsx` extendio `SheetCloseButton` para
+    aceptar `onClick` (necesario para el formulario de invitacion).
+- ~~Reemplazar el product picker manual por un combobox accesible~~:
+  - `app/(app)/solicitudes/product-picker.tsx` implementa el patron
+    WAI-ARIA 1.2: `role="combobox"`, `aria-expanded`,
+    `aria-controls`, `aria-activedescendant`, `role="listbox"`,
+    `role="option"`, `aria-selected`, navegacion por flechas/Home/End,
+    Enter, Escape. Reemplaza el picker basado en `setTimeout` + `onMouseDown`.
+- ~~Crear `PRODUCT.md` y `DESIGN.md`~~: ambos existen en la raiz,
+    alinean roles, flujo, estados, sistema de tokens, accesibilidad
+    y componentes base.
+- ~~Endurecer token de invitacion expuesto y password seed~~:
+  - `ActionState` ahora admite `data: Record<string, unknown>` para
+    payloads que no deben pasar por un toast transitorio.
+  - `app/(app)/admin/usuarios/actions.ts` devuelve `inviteUrl` por el
+    canal `data` solo cuando SMTP no esta configurado, nunca en
+    `message`. El log de auditoria registra `smtpSent: boolean`.
+  - `app/(app)/admin/usuarios/user-invite-form.tsx` ahora muestra un
+    panel persistente con boton "Copiar enlace" y `role="status"`
+    `aria-live="polite"` en vez de un toast. La sheet se queda
+    abierta para crear otra invitacion.
+  - `db/seed.ts` rechaza correr en `NODE_ENV=production` sin
+    `SEED_ADMIN_PASSWORD`. Escape hatch explicito
+    `SEED_ALLOW_DEFAULT_PASSWORD=true` para dev.
+  - `.env.example` documenta las variables nuevas.
+- ~~Quitar `reservedQty` de la UI o documentar comportamiento~~:
+  - `app/(app)/bodega/page.tsx` elimina la columna "Reservado" y la
+    dependencia en `s.reservedQty` de la tabla de stock. La columna
+    sigue existiendo en schema para una futura implementacion de
+    reservas; la UI deja de prometer un comportamiento sin logica.
+- ~~Reducir touch targets pequenos en mobile~~:
+  - `components/layout/top-bar.tsx` (hamburguesa y toggle de sidebar)
+    y `components/layout/notification-bell.tsx` ahora usan
+    `min-h-[44px] min-w-[44px]` y se reducen a `h-8 w-8` solo en
+    `sm:` y arriba. Mismo patron aplicado al boton de accion de
+    `request-list.tsx` (44px en mobile, 28px en `sm:`).
+- ~~Reemplazar colores hardcodeados en dashboard por tokens~~:
+  - `app/(app)/dashboard/page.tsx` usa `var(--color-primary-50)` y
+    `var(--color-primary)` en la tarjeta de solicitudes, y
+    `var(--color-success-50)` + `var(--color-success)` en la tarjeta
+    de tasa de aprobacion.
+  - `components/invoices/invoice-attachments-panel.tsx` ya no usa
+    `bg-amber-50/bg-emerald-50` ni `text-amber-700/text-emerald-700`;
+    usa `var(--color-warning-*)` y `var(--color-success-*)`.
+- ~~Tests de integracion SQLite para admin/OC/sequences~~:
+  - `lib/__tests__/integration-rbac-sequences.test.ts` corre contra
+    SQLite en memoria y cubre: (a) secuencias `SOL/OC/REC/ENT` en
+    transacciones consecutivas (100 codigos unicos); (b) aislamiento
+    por anio; (c) guard del ultimo admin activo, contando
+    administradores activos distintos del target; (d) restricciones
+    uniques de `user_roles` y `worksite_users` equivalentes a la
+    migracion 0002.
+
+Verificacion posterior a los cambios:
+
+- `npx tsc --noEmit`: pasa sin errores.
+- `npm run lint`: pasa con 1 warning esperado (React effect que
+  reacciona a cambios de `useActionState` en
+  `user-invite-form.tsx`; el patron recomendado por React 19 para
+  Server Actions no expone otra salida para mostrar un panel
+  persistente con datos del action). Es deliberado, no regresion.
+- `npm test`: 10 archivos, 108 tests, todos pasan (anterior: 9/101).
+- `npm audit --omit=dev`: sigue reportando la vulnerabilidad
+  transitiva en `next-auth` beta via `@auth/core`/`nodemailer`.
+  `audit fix --force` propone un breaking change; queda pendiente
+  acompanar el upgrade seguro de `next-auth` cuando exista una
+  ruta compatible.
 
 ---
 

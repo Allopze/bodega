@@ -82,7 +82,6 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites, defau
                   <SelectTrigger
                     id="cc-worksite"
                     error={!!state.fieldErrors?.worksiteId}
-                    aria-describedby={state.fieldErrors?.worksiteId ? "cc-worksite-error" : undefined}
                   >
                     <SelectValue placeholder="Seleccionar faena..." />
                   </SelectTrigger>

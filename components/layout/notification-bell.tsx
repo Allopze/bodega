@@ -81,7 +81,9 @@ export function NotificationBell() {
       <PopoverPrimitive.Trigger asChild>
         <button
           className={cn(
-            "relative flex items-center justify-center h-8 w-8 rounded-[var(--radius-sm)]",
+            "relative flex items-center justify-center",
+            "min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0",
+            "h-8 w-8 rounded-[var(--radius-sm)]",
             "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
             "hover:bg-[var(--color-surface-2)]",
             "transition-colors duration-[var(--duration-fast)]",

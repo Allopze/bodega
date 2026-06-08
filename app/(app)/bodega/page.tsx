@@ -199,9 +199,6 @@ export default async function BodegaPage() {
                           Stock
                         </th>
                         <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-32">
-                          Reservado
-                        </th>
-                        <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-32">
                           Disponible
                         </th>
                         <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-40">
@@ -211,7 +208,6 @@ export default async function BodegaPage() {
                     </thead>
                     <tbody className="divide-y divide-[var(--color-border)]">
                       {items.map((s) => {
-                        const available = s.quantity - (s.reservedQty ?? 0)
                         const unit      = s.product?.unitOfMeasure ?? "u"
                         const lowStock  = s.minStock > 0 && s.quantity <= s.minStock
 
@@ -237,11 +233,8 @@ export default async function BodegaPage() {
                             <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-muted)]">
                               {formatQty(s.quantity, unit)}
                             </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-subtle)]">
-                              {formatQty(s.reservedQty ?? 0, unit)}
-                            </td>
-                            <td className={`px-4 py-3 text-right tabular-nums font-medium ${available <= 0 ? "text-[var(--color-danger)]" : "text-[var(--color-text)]"}`}>
-                              {formatQty(available, unit)}
+                            <td className={`px-4 py-3 text-right tabular-nums font-medium ${s.quantity <= 0 ? "text-[var(--color-danger)]" : "text-[var(--color-text)]"}`}>
+                              {formatQty(s.quantity, unit)}
                             </td>
                             <td className="px-4 py-3 text-right text-xs text-[var(--color-text-subtle)]">
                               {s.lastMovementAt ? formatDate(s.lastMovementAt) : "—"}

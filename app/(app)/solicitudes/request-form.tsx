@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select"
 import { saveDraft, submitRequest, cancelRequest } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
+import { ProductPicker } from "./product-picker"
 import type { ActionState } from "@/lib/validation/operations"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -485,17 +486,6 @@ function ItemEditor({
   item, idx, products, readOnly,
   onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
 }: ItemEditorProps) {
-  const [search, setSearch] = useState("")
-  const [open,   setOpen]   = useState(false)
-
-  const filtered = search.trim()
-    ? products.filter(
-        (p) =>
-          p.name.toLowerCase().includes(search.toLowerCase()) ||
-          p.sku.toLowerCase().includes(search.toLowerCase()),
-      )
-    : products.slice(0, 50)
-
   return (
     <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-4">
       {/* Row header */}
@@ -541,54 +531,11 @@ function ItemEditor({
           ) : (
             /* Picker */
             !readOnly && (
-              <div className="relative">
-                <Input
-                  className="h-8 text-sm pr-8"
-                  placeholder="Buscar en catálogo o escribir producto..."
-                  value={search}
-                  onChange={(e) => { setSearch(e.target.value); setOpen(true) }}
-                  onFocus={() => setOpen(true)}
-                  onBlur={() => setTimeout(() => setOpen(false), 150)}
-                />
-                {open && (
-                  <div className="absolute z-20 top-full mt-1 left-0 right-0 max-h-52 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-md)] divide-y divide-[var(--color-border)]">
-                    {filtered.length === 0 ? (
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2.5 text-left transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)] active:scale-[0.99]"
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          onSelectFreeProduct(search)
-                          setSearch("")
-                          setOpen(false)
-                        }}
-                      >
-                        <span className="block text-sm font-medium text-[var(--color-text)]">Usar “{search.trim()}”</span>
-                        <span className="mt-0.5 block text-xs text-[var(--color-text-subtle)]">Ítem fuera de catálogo</span>
-                      </button>
-                    ) : (
-                      <div>
-                        {filtered.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className="w-full text-left px-3 py-2 hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
-                            onMouseDown={(e) => {
-                              e.preventDefault()
-                              onSelectProduct(p.id)
-                              setSearch("")
-                              setOpen(false)
-                            }}
-                          >
-                            <span className="text-xs font-mono text-[var(--color-text-subtle)] mr-2">{p.sku}</span>
-                            <span className="text-sm text-[var(--color-text)]">{p.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <ProductPicker
+                products={products}
+                onSelectProduct={(pid) => onSelectProduct(pid)}
+                onSelectFreeText={(name) => onSelectFreeProduct(name)}
+              />
             )
           )}
         </div>

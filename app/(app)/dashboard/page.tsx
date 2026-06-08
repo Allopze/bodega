@@ -5,8 +5,8 @@ import { auth } from "@/lib/auth/auth"
 import { PageHeader } from "@/components/ui/page-header"
 import { db } from "@/db"
 import { invoiceAttachments, purchaseRequestItems, purchaseRequests, purchaseOrders, worksites } from "@/db/schema"
-import { eq, inArray } from "drizzle-orm"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { and, eq, inArray, sql } from "drizzle-orm"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { cn } from "@/lib/utils"
 import {
   ClipboardText, CheckSquare, ShoppingCart, WarningCircle, Package,
@@ -151,7 +151,7 @@ export default async function DashboardPage() {
 
         {/* Solicitudes Totales */}
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5 flex items-center gap-4 shadow-[var(--shadow-sm)]">
-          <div className="h-10 w-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+          <div className="h-10 w-10 rounded-full bg-[var(--color-primary-50)] text-[var(--color-primary)] flex items-center justify-center shrink-0">
             <FileText size={22} weight="fill" />
           </div>
           <div>
@@ -162,7 +162,7 @@ export default async function DashboardPage() {
 
         {/* Tasa de Aprobación */}
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5 flex items-center gap-4 shadow-[var(--shadow-sm)]">
-          <div className="h-10 w-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+          <div className="h-10 w-10 rounded-full bg-[var(--color-success-50)] text-[var(--color-success)] flex items-center justify-center shrink-0">
             <CheckCircle size={22} weight="fill" />
           </div>
           <div>
@@ -256,6 +256,13 @@ export default async function DashboardPage() {
 }
 
 async function getDashboardData(session: Session) {
+  const isGlobal = isGlobalRole(session)
+  const wsIds = visibleWorksiteIds(session)
+  const requestWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
+  const itemWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
+  const orderWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`)
+  const worksiteRowsFilter = isGlobal ? eq(worksites.isActive, true) : (wsIds.length > 0 ? and(eq(worksites.isActive, true), inArray(worksites.id, wsIds)) : sql`1 = 0`)
+
   const [requestRows, pendingItemRows, orderRows, invoiceRows, worksiteRows] = await Promise.all([
     db
       .select({
@@ -264,7 +271,8 @@ async function getDashboardData(session: Session) {
         worksiteId: purchaseRequests.worksiteId,
         status: purchaseRequests.status,
       })
-      .from(purchaseRequests),
+      .from(purchaseRequests)
+      .where(requestWorksiteFilter),
 
     db
       .select({
@@ -274,7 +282,7 @@ async function getDashboardData(session: Session) {
       })
       .from(purchaseRequestItems)
       .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-      .where(inArray(purchaseRequestItems.status, ["requested", "approved", "pending_purchase"])),
+      .where(and(inArray(purchaseRequestItems.status, ["requested", "approved", "pending_purchase"]), itemWorksiteFilter)),
 
     db
       .select({
@@ -283,7 +291,8 @@ async function getDashboardData(session: Session) {
         status: purchaseOrders.status,
         totalAmount: purchaseOrders.totalAmount,
       })
-      .from(purchaseOrders),
+      .from(purchaseOrders)
+      .where(orderWorksiteFilter),
 
     db
       .select({
@@ -291,7 +300,8 @@ async function getDashboardData(session: Session) {
         targetType: invoiceAttachments.targetType,
         status: invoiceAttachments.status,
       })
-      .from(invoiceAttachments),
+      .from(invoiceAttachments)
+      .where(eq(invoiceAttachments.targetType, "purchase_order")),
 
     db
       .select({
@@ -300,54 +310,44 @@ async function getDashboardData(session: Session) {
         isActive: worksites.isActive,
       })
       .from(worksites)
-      .where(eq(worksites.isActive, true)),
+      .where(worksiteRowsFilter),
   ])
 
-  // Filter rows based on user worksite permissions
-  const visibleRequests = requestRows.filter((r) => canAccessWorksite(session, r.worksiteId))
-  const visibleItems = pendingItemRows.filter((i) => canAccessWorksite(session, i.worksiteId))
-  const visibleOrders = orderRows.filter((o) => canAccessWorksite(session, o.worksiteId))
-  const visibleOrderIds = new Set(visibleOrders.map((order) => order.id))
-  
-  const invoiceRowsByOrder = invoiceRows.filter((invoice) =>
-    invoice.targetType === "purchase_order" && visibleOrderIds.has(invoice.targetId)
-  )
+  const visibleOrderIds = new Set(orderRows.map((order) => order.id))
+  const invoiceRowsByOrder = invoiceRows.filter((invoice) => visibleOrderIds.has(invoice.targetId))
   const ordersWithReconciledInvoice = new Set(
     invoiceRowsByOrder
       .filter((invoice) => invoice.status === "reconciled")
       .map((invoice) => invoice.targetId),
   )
   const invoicesNeedingReview = invoiceRowsByOrder.filter((invoice) => invoice.status !== "reconciled").length
-  const receivedOrdersWithoutReconciledInvoice = visibleOrders.filter((order) =>
+  const receivedOrdersWithoutReconciledInvoice = orderRows.filter((order) =>
     order.status === "received" && !ordersWithReconciledInvoice.has(order.id)
   ).length
 
   const metrics: Record<MetricKey, number> = {
-    my_requests: visibleRequests.filter((r) => r.requesterId === session.user.id && r.status !== "cancelled").length,
-    pending_approvals: visibleItems.filter((i) => i.status === "requested").length,
-    approved_without_oc: visibleItems.filter((i) => i.status === "approved" || i.status === "pending_purchase").length,
-    orders_in_progress: visibleOrders.filter((o) => ["issued", "sent", "supplier_confirmed", "partially_received"].includes(o.status)).length,
-    orders_pending_receipt: visibleOrders.filter((o) => o.status === "sent" || o.status === "partially_received").length,
+    my_requests: requestRows.filter((r) => r.requesterId === session.user.id && r.status !== "cancelled").length,
+    pending_approvals: pendingItemRows.filter((i) => i.status === "requested").length,
+    approved_without_oc: pendingItemRows.filter((i) => i.status === "approved" || i.status === "pending_purchase").length,
+    orders_in_progress: orderRows.filter((o) => ["issued", "sent", "supplier_confirmed", "partially_received"].includes(o.status)).length,
+    orders_pending_receipt: orderRows.filter((o) => o.status === "sent" || o.status === "partially_received").length,
     invoice_pending: receivedOrdersWithoutReconciledInvoice + invoicesNeedingReview,
   }
 
-  // Summary KPIs
-  const totalCosts = visibleOrders
+  const totalCosts = orderRows
     .filter((o) => o.status !== "cancelled" && o.status !== "draft")
     .reduce((sum, o) => sum + (o.totalAmount || 0), 0)
-  
-  const totalRequests = visibleRequests.length
-  const approvedRequests = visibleRequests.filter((r) => 
+
+  const totalRequests = requestRows.length
+  const approvedRequests = requestRows.filter((r) =>
     ["approved", "closed", "in_purchasing"].includes(r.status)
   ).length
 
-  // Worksites breakdown
-  const visibleWorksites = worksiteRows.filter((w) => canAccessWorksite(session, w.id))
-  const worksitesBreakdown = visibleWorksites
+  const worksitesBreakdown = worksiteRows
     .map((w) => {
-      const requests = visibleRequests.filter((r) => r.worksiteId === w.id)
-      const orders = visibleOrders.filter((o) => o.worksiteId === w.id && o.status !== "cancelled" && o.status !== "draft")
-      const items = visibleItems.filter((i) => i.worksiteId === w.id)
+      const requests = requestRows.filter((r) => r.worksiteId === w.id)
+      const orders = orderRows.filter((o) => o.worksiteId === w.id && o.status !== "cancelled" && o.status !== "draft")
+      const items = pendingItemRows.filter((i) => i.worksiteId === w.id)
 
       const requestsCount = requests.length
       const pendingCount = items.filter((i) => i.status === "requested").length
@@ -364,7 +364,7 @@ async function getDashboardData(session: Session) {
       }
     })
     .filter((w) => w.requestsCount > 0 || w.totalCost > 0)
-    .sort((a, b) => b.totalCost - a.totalCost) // sort by cost descending
+    .sort((a, b) => b.totalCost - a.totalCost)
 
   return {
     metrics,

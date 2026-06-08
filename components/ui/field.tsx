@@ -40,11 +40,14 @@ function Field({ label, htmlFor, required, helper, error, className, children }:
   const descriptionId = htmlFor && (error || helper)
     ? `${htmlFor}-${error ? "error" : "helper"}`
     : undefined
-  const content = addDescriptionToSingleControl(children, descriptionId, !!error)
+  const labelId = htmlFor ? `${htmlFor}-label` : undefined
+  const content = labelId || descriptionId
+    ? addLabelAndDescriptionToSingleControl(children, labelId, descriptionId, !!error)
+    : children
 
   return (
     <div className={cn("flex flex-col gap-0", className)}>
-      <Label htmlFor={htmlFor} required={required}>
+      <Label htmlFor={htmlFor} required={required} id={labelId}>
         {label}
       </Label>
       {content}
@@ -61,8 +64,13 @@ function Field({ label, htmlFor, required, helper, error, className, children }:
   )
 }
 
-function addDescriptionToSingleControl(children: React.ReactNode, descriptionId: string | undefined, hasError: boolean) {
-  if (!descriptionId) return children
+function addLabelAndDescriptionToSingleControl(
+  children: React.ReactNode,
+  labelId: string | undefined,
+  descriptionId: string | undefined,
+  hasError: boolean,
+) {
+  if (!labelId && !descriptionId) return children
 
   const childArray = React.Children.toArray(children)
   if (childArray.length !== 1 || !React.isValidElement<Record<string, unknown>>(childArray[0])) {
@@ -70,11 +78,20 @@ function addDescriptionToSingleControl(children: React.ReactNode, descriptionId:
   }
 
   const child = childArray[0]
-  const existing = typeof child.props["aria-describedby"] === "string" ? child.props["aria-describedby"] : ""
-  return React.cloneElement(child, {
-    "aria-describedby": cn(existing, descriptionId),
-    "aria-invalid": hasError || child.props["aria-invalid"],
-  })
+  const patch: Record<string, unknown> = {}
+
+  if (labelId) {
+    const existing = typeof child.props["aria-labelledby"] === "string" ? child.props["aria-labelledby"] : ""
+    patch["aria-labelledby"] = cn(existing, labelId)
+  }
+
+  if (descriptionId) {
+    const existing = typeof child.props["aria-describedby"] === "string" ? child.props["aria-describedby"] : ""
+    patch["aria-describedby"] = cn(existing, descriptionId)
+    patch["aria-invalid"] = hasError || child.props["aria-invalid"]
+  }
+
+  return React.cloneElement(child, patch)
 }
 
 /* ── FieldGroup ───────────────────────────────────────────────────────────── */
