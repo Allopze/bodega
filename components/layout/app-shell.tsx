@@ -45,7 +45,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
   const showDrawer = mobileOpen || isClosing
 
   return (
-    <div className="flex flex-col h-dvh overflow-hidden bg-bg">
+    <div className="flex flex-col h-screen overflow-hidden bg-bg">
       {/* Skip link — connects to main-content below */}
       <a
         href="#main-content"
@@ -64,7 +64,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
       />
 
       {/* ── Body row: sidebar + content ── */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* ── Desktop sidebar ── */}
         <div className={cn(
@@ -110,11 +110,11 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
 
         {/* ── Main content ── */}
         <main
-          className="flex-1 overflow-y-auto"
+          className="flex-1 overflow-y-auto bg-bg"
           id="main-content"
           tabIndex={-1}
         >
-          <div className="px-4 md:px-6 py-5 max-w-350 mx-auto">
+          <div className="px-4 md:px-6 py-5 max-w-350 mx-auto min-h-full">
             {children}
           </div>
         </main>

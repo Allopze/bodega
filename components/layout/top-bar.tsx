@@ -1,15 +1,24 @@
 "use client"
 
 import * as React from "react"
-import { List, MagnifyingGlass, CaretLeft, CaretRight } from "@phosphor-icons/react"
-import type { Session } from "next-auth"
+import Link from "next/link"
+import { List, CaretLeft, CaretRight, SignOut } from "@phosphor-icons/react"
+import type { Session as AuthSession } from "next-auth"
 import { cn } from "@/lib/utils"
 import { Avatar } from "@/components/ui/avatar"
 import { NotificationBell } from "./notification-bell"
 import { BrandMark } from "./brand-mark"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 
 interface TopBarProps {
-  session:             Session
+  session:             AuthSession
   onMenuToggle:        () => void
   isCollapsed?:        boolean
   onToggleCollapse?:   () => void
@@ -81,23 +90,37 @@ export function TopBar({
 
       {/* ── Right zone ── */}
       <div className="flex items-center gap-1">
-        <button
-          className={cn(
-            "flex items-center justify-center h-8 w-8 rounded-[var(--radius-sm)]",
-            "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
-            "hover:bg-[var(--color-surface-2)]",
-            "transition-colors duration-[var(--duration-fast)]",
-            "active:scale-[0.95]",
-          )}
-          aria-label="Buscar"
-          title="Buscar (próximamente)"
-        >
-          <MagnifyingGlass size={16} />
-        </button>
         <NotificationBell />
-        <div className="ml-1">
-          <Avatar name={session.user.name ?? session.user.email ?? ""} size="sm" />
-        </div>
+        
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="ml-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] active:scale-[0.97] transition-transform shrink-0 cursor-pointer">
+              <Avatar name={session.user.name ?? session.user.email ?? ""} size="sm" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-semibold text-[var(--color-text)]">{session.user.name}</span>
+                <span className="text-xs text-[var(--color-text-subtle)] font-normal truncate max-w-[12rem]">{session.user.email}</span>
+                <span className="text-[10px] text-[var(--color-primary-700)] bg-[var(--color-primary-100)] font-bold px-1.5 py-0.5 rounded self-start mt-1.5 capitalize">
+                  {session.user.roles?.[0]?.replace("_", " ") ?? "usuario"}
+                </span>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link
+                href="/api/auth/signout"
+                prefetch={false}
+                className="flex items-center gap-2 text-[var(--color-danger)] focus:bg-[var(--color-danger-50)] focus:text-[var(--color-danger-700)] w-full"
+              >
+                <SignOut size={16} />
+                <span>Cerrar sesión</span>
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )

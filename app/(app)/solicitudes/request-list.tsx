@@ -2,12 +2,15 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Plus, ArrowRight } from "@phosphor-icons/react"
+import { Plus, ArrowRight, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils"
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
+} from "@/components/ui/dialog"
 
 export interface RequestRow {
   id:            string
@@ -43,75 +46,122 @@ const URGENCY_DOT: Record<string, string> = {
   critical: "text-[var(--color-danger)]",
 }
 
-export function RequestList({ requests, canCreate }: { requests: RequestRow[]; canCreate: boolean }) {
+export function RequestList({
+  requests,
+  canCreate,
+  hasWorksites = true,
+}: {
+  requests: RequestRow[]
+  canCreate: boolean
+  hasWorksites?: boolean
+}) {
+  const [showWarningModal, setShowWarningModal] = React.useState(false)
+
   return (
-    <DataTable
-      columns={COLUMNS}
-      rows={requests as unknown as Record<string, unknown>[]}
-      searchKeys={["code", "worksiteName", "status"]}
-      pageSize={25}
-      searchPlaceholder="Buscar solicitud, faena, código..."
-      emptyTitle="Sin solicitudes"
-      emptyDescription="Las solicitudes de compra aparecerán aquí."
-      emptyAction={
-        canCreate ? (
-          <Button variant="primary" size="sm" asChild>
-            <Link href="/solicitudes/nueva">
-              <Plus weight="bold" size={14} />
-              Nueva solicitud
-            </Link>
-          </Button>
-        ) : undefined
-      }
-      actions={
-        canCreate ? (
-          <Button variant="primary" size="sm" asChild>
-            <Link href="/solicitudes/nueva">
-              <Plus weight="bold" size={14} />
-              Nueva solicitud
-            </Link>
-          </Button>
-        ) : undefined
-      }
-      renderRow={(row) => {
-        const r = row as unknown as RequestRow
-        return (
-          <TableRow key={r.id} className="group">
-            <TableCell>
-              <span className="font-mono text-xs text-[var(--color-text)]">{r.code}</span>
-            </TableCell>
-            <TableCell className="text-sm text-[var(--color-text-muted)]">
-              {r.worksiteName}
-              {r.costCenterName && (
-                <span className="text-[var(--color-text-subtle)]"> · {r.costCenterName}</span>
-              )}
-            </TableCell>
-            <TableCell>
-              <span className={`text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>
-                {URGENCY_LABELS[r.urgency] ?? r.urgency}
-              </span>
-            </TableCell>
-            <TableCell className="tabular-nums text-sm text-[var(--color-text-muted)] text-right pr-6">
-              {r.itemCount}
-            </TableCell>
-            <TableCell>
-              <StateBadge state={r.status} entity="request" size="sm" />
-            </TableCell>
-            <TableCell className="text-xs text-[var(--color-text-subtle)]">
-              {formatDate(r.submittedAt ?? r.createdAt)}
-            </TableCell>
-            <TableCell className="text-right pr-3">
-              <Link
-                href={`/solicitudes/${r.id}`}
-                className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] opacity-0 group-hover:opacity-100"
-                aria-label={`Ver solicitud ${r.code}`}
-              >
-                <ArrowRight size={14} />
-              </Link>
-            </TableCell>
-          </TableRow>
-        )
-      }}
-    />
+    <>
+      <DataTable
+        columns={COLUMNS}
+        rows={requests as unknown as Record<string, unknown>[]}
+        searchKeys={["code", "worksiteName", "status"]}
+        pageSize={25}
+        searchPlaceholder="Buscar solicitud, faena, código..."
+        emptyTitle="Sin solicitudes"
+        emptyDescription="Las solicitudes de compra aparecerán aquí."
+        emptyAction={
+          canCreate ? (
+            hasWorksites ? (
+              <Button variant="primary" size="sm" asChild>
+                <Link href="/solicitudes/nueva">
+                  <Plus weight="bold" size={16} />
+                  Nueva solicitud
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="primary" size="sm" onClick={() => setShowWarningModal(true)}>
+                <Plus weight="bold" size={16} />
+                Nueva solicitud
+              </Button>
+            )
+          ) : undefined
+        }
+        actions={
+          canCreate ? (
+            hasWorksites ? (
+              <Button variant="primary" size="sm" asChild>
+                <Link href="/solicitudes/nueva">
+                  <Plus weight="bold" size={16} />
+                  Nueva solicitud
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="primary" size="sm" onClick={() => setShowWarningModal(true)}>
+                <Plus weight="bold" size={16} />
+                Nueva solicitud
+              </Button>
+            )
+          ) : undefined
+        }
+        renderRow={(row) => {
+          const r = row as unknown as RequestRow
+          return (
+            <TableRow key={r.id} className="group">
+              <TableCell>
+                <span className="font-mono text-xs text-[var(--color-text)]">{r.code}</span>
+              </TableCell>
+              <TableCell className="text-sm text-[var(--color-text-muted)]">
+                {r.worksiteName}
+                {r.costCenterName && (
+                  <span className="text-[var(--color-text-subtle)]"> · {r.costCenterName}</span>
+                )}
+              </TableCell>
+              <TableCell>
+                <span className={`text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>
+                  {URGENCY_LABELS[r.urgency] ?? r.urgency}
+                </span>
+              </TableCell>
+              <TableCell className="tabular-nums text-sm text-[var(--color-text-muted)] text-right pr-6">
+                {r.itemCount}
+              </TableCell>
+              <TableCell>
+                <StateBadge state={r.status} entity="request" size="sm" />
+              </TableCell>
+              <TableCell className="text-xs text-[var(--color-text-subtle)]">
+                {formatDate(r.submittedAt ?? r.createdAt)}
+              </TableCell>
+              <TableCell className="text-right pr-3">
+                <Link
+                  href={`/solicitudes/${r.id}`}
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] opacity-0 group-hover:opacity-100"
+                  aria-label={`Ver solicitud ${r.code}`}
+                >
+                  <ArrowRight size={16} />
+                </Link>
+              </TableCell>
+            </TableRow>
+          )
+        }}
+      />
+
+      <Dialog open={showWarningModal} onOpenChange={setShowWarningModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="flex flex-col items-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[oklch(0.975_0.02_90)] text-[oklch(0.52_0.11_85)] mb-3">
+              <Warning size={24} weight="bold" />
+            </div>
+            <DialogTitle>Sin faenas asignadas</DialogTitle>
+            <DialogDescription className="mt-2 text-sm text-center">
+              No tienes faenas activas asignadas a tu cuenta o no existen faenas en el sistema. Contacta a un administrador para que te asigne una faena antes de poder crear una solicitud.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-center">
+            <DialogClose asChild>
+              <Button type="button" variant="secondary" size="sm">
+                Entendido
+              </Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

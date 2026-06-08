@@ -2,9 +2,8 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems, worksites, costCenters } from "@/db/schema"
-import { desc, count, inArray } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
-import { can } from "@/lib/auth/can"
+import { desc, count, inArray, eq } from "drizzle-orm"
+import { requirePermission, can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { RequestList } from "./request-list"
 
@@ -20,21 +19,33 @@ export default async function SolicitudesPage() {
   // Build worksite filter — solicitantes see only their worksites
   const userWorksiteIds = session.user.worksiteIds ?? []
 
-  // Load requests scoped to visibility
-  const allRequests = await db
-    .select({
-      id:           purchaseRequests.id,
-      code:         purchaseRequests.code,
-      worksiteId:   purchaseRequests.worksiteId,
-      costCenterId: purchaseRequests.costCenterId,
-      urgency:      purchaseRequests.urgency,
-      status:       purchaseRequests.status,
-      submittedAt:  purchaseRequests.submittedAt,
-      createdAt:    purchaseRequests.createdAt,
-      requesterId:  purchaseRequests.requesterId,
-    })
-    .from(purchaseRequests)
-    .orderBy(desc(purchaseRequests.createdAt))
+  // Load requests and active worksites in parallel
+  const [allRequests, activeWorksites] = await Promise.all([
+    db
+      .select({
+        id:           purchaseRequests.id,
+        code:         purchaseRequests.code,
+        worksiteId:   purchaseRequests.worksiteId,
+        costCenterId: purchaseRequests.costCenterId,
+        urgency:      purchaseRequests.urgency,
+        status:       purchaseRequests.status,
+        submittedAt:  purchaseRequests.submittedAt,
+        createdAt:    purchaseRequests.createdAt,
+        requesterId:  purchaseRequests.requesterId,
+      })
+      .from(purchaseRequests)
+      .orderBy(desc(purchaseRequests.createdAt)),
+
+    db.select({ id: worksites.id })
+      .from(worksites)
+      .where(eq(worksites.isActive, true))
+  ])
+
+  // Filter worksites scoped to the user
+  const scopedWorksites = activeWorksites.filter(
+    (w) => canAccessWorksite(session, w.id),
+  )
+  const hasWorksites = scopedWorksites.length > 0
 
   // Faena requesters see only their own requests inside assigned worksites.
   const visible = viewAll
@@ -56,7 +67,7 @@ export default async function SolicitudesPage() {
             ]} />
           }
         />
-        <RequestList requests={[]} canCreate={can(session, "requests:create")} />
+        <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />
 
       </>
     )
@@ -112,7 +123,7 @@ export default async function SolicitudesPage() {
           ]} />
         }
       />
-      <RequestList requests={rows} canCreate={can(session, "requests:create")} />
+      <RequestList requests={rows} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />
     </>
   )
 }

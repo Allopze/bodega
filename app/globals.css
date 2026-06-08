@@ -10,12 +10,21 @@
   --font-sans: var(--font-source-sans), "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, "Cascadia Code", monospace;
 
+  /* ── Typography Scale Overrides ── */
+  --text-xs: 0.8125rem;  /* ~13px (from 12px) */
+  --text-sm: 0.9375rem;  /* ~15px (from 14px) */
+  --text-base: 1.0625rem; /* ~17px (from 16px) */
+  --text-lg: 1.1875rem;  /* ~19px (from 18px) */
+  --text-xl: 1.375rem;   /* ~22px (from 20px) */
+  --text-2xl: 1.625rem;  /* ~26px (from 24px) */
+
+
   /* ── Brand primaries ── */
-  --color-primary:      oklch(0.527 0.138 151);   /* #218649 chome-green     */
-  --color-primary-50:   oklch(0.969 0.016 155);   /* #ebf6f0 green-50        */
-  --color-primary-100:  oklch(0.934 0.032 155);   /* #d4ecdd green-100       */
-  --color-primary-600:  oklch(0.460 0.120 151);   /* darker for pressed CTA  */
-  --color-primary-700:  oklch(0.390 0.100 151);   /* darkest used for links  */
+  --color-primary:      oklch(0.650 0.170 154);   /* #10b981 emerald-500 equivalent */
+  --color-primary-50:   oklch(0.975 0.020 154);   /* very light tint */
+  --color-primary-100:  oklch(0.940 0.040 154);   /* light tint */
+  --color-primary-600:  oklch(0.580 0.160 154);   /* medium active */
+  --color-primary-700:  oklch(0.480 0.140 154);   /* darker for contrast/links */
 
   /* ── Never-miss signal — reserved for pending / no-incluido-en-OC ── */
   --color-signal:       oklch(0.724 0.174 56);    /* #f39200 chome-orange    */
@@ -46,13 +55,13 @@
   --color-text-subtle:  oklch(0.600 0.007 155);   /* captions, placeholders  */
 
   /* ── Dark brand moments (login, top-bar brand zone, PDF) ── */
-  --color-brand-surface:       oklch(0.216 0.045 155);  /* #0d2e1f forest     */
-  --color-brand-surface-raised: oklch(0.240 0.035 155); /* slightly lighter   */
+  --color-brand-surface:       oklch(0.280 0.060 154);  /* #17422b forest (lighter, fresher) */
+  --color-brand-surface-raised: oklch(0.310 0.050 154); /* slightly lighter green */
   --color-brand-surface-3:      oklch(0.261 0.024 100); /* #2e2e2c elevated   */
   --color-brand-night:          oklch(0.127 0.003 100); /* #0e0e0d            */
   --color-brand-text:           oklch(0.969 0.016 155); /* brand surface text */
   --color-brand-text-muted:     oklch(0.780 0.018 155); /* muted on dark      */
-  --color-brand-border:         oklch(0.300 0.020 155); /* border on dark     */
+  --color-brand-border:         oklch(0.360 0.040 154); /* border on dark     */
 
   /* ── Custom easing curves (Emil Kowalski / animations.dev) ── */
   --ease-out:     cubic-bezier(0.23, 1, 0.32, 1);
@@ -92,6 +101,7 @@
 }
 
 html {
+  min-height: 100dvh;
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -99,6 +109,7 @@ html {
 }
 
 body {
+  min-height: 100dvh;
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);

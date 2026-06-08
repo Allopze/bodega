@@ -7,6 +7,10 @@ import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { RequestForm } from "../request-form"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import { Warning } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Nueva solicitud de compra" }
 
@@ -67,7 +71,33 @@ export default async function NuevaSolicitudPage() {
   }))
 
   if (worksiteOptions.length === 0) {
-    redirect("/solicitudes")
+    return (
+      <>
+        <PageHeader
+          title="Nueva solicitud de compra"
+          description="Completa los datos y agrega los ítems que necesitas."
+          breadcrumb={
+            <Breadcrumbs items={[
+              { label: "Dashboard",   href: "/dashboard"   },
+              { label: "Solicitudes", href: "/solicitudes" },
+              { label: "Nueva"                             },
+            ]} />
+          }
+        />
+        <div className="max-w-md mx-auto mt-8 p-6 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)]">
+          <EmptyState
+            icon={<Warning size={28} className="text-[var(--color-warning)]" />}
+            title="Sin faenas asignadas"
+            description="No tienes faenas activas asignadas a tu cuenta o no existen faenas en el sistema. Contacta a un administrador para que te asigne una faena antes de poder crear una solicitud."
+            action={
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/solicitudes">Volver a solicitudes</Link>
+              </Button>
+            }
+          />
+        </div>
+      </>
+    )
   }
 
   return (

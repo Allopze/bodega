@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck,
-  SignOut, CaretRight, ArrowSquareOut,
+  SignOut, ArrowSquareOut, ChartLineUp, ChartBar,
 } from "@phosphor-icons/react"
 import type { IconWeight } from "@phosphor-icons/react"
 import type { Session } from "next-auth"
@@ -18,6 +18,7 @@ import { NAV_ITEMS, type NavItem } from "./nav-items"
 const ICONS: Record<string, React.ComponentType<{ size?: number; weight?: IconWeight; className?: string }>> = {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
+  ChartLineUp, ChartBar,
 }
 
 /* ── Permission filter ──────────────────────────────────────────────────── */
@@ -89,7 +90,7 @@ export function Sidebar({
               {isCollapsed ? (
                 index > 0 && <hr className="mx-2 my-2 border-[var(--color-brand-border)] opacity-30" />
               ) : (
-                <p className="px-2 py-1.5 text-xs font-bold uppercase tracking-wider text-[var(--color-brand-text-muted)] opacity-85">
+                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-brand-text-muted)] opacity-60">
                   {section.section}
                 </p>
               )}
@@ -106,37 +107,6 @@ export function Sidebar({
           )
         })}
       </nav>
-
-      {/* ── User footer ── */}
-      <div className="border-t border-[var(--color-brand-border)] p-3">
-        <div className={cn(
-          "flex items-center rounded-[var(--radius)]",
-          isCollapsed ? "flex-col gap-3 py-2 justify-center" : "gap-2.5 px-2 py-2"
-        )}>
-          <Avatar name={session.user.name ?? session.user.email ?? ""} size="default" />
-          {!isCollapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-[var(--color-brand-text)] truncate leading-tight">
-                {session.user.name}
-              </p>
-              <p className="text-xs text-[var(--color-brand-text-muted)] truncate capitalize">
-                {session.user.roles?.[0]?.replace("_", " ") ?? "usuario"}
-              </p>
-            </div>
-          )}
-          <Link
-            href="/api/auth/signout"
-            prefetch={false}
-            className={cn(
-              "text-[var(--color-brand-text-muted)] hover:text-[var(--color-brand-text)] transition-colors duration-[var(--duration-fast)]",
-              isCollapsed && "mt-1"
-            )}
-            title="Cerrar sesión"
-          >
-            <SignOut size={isCollapsed ? 18 : 16} />
-          </Link>
-        </div>
-      </div>
     </aside>
   )
 }
@@ -171,6 +141,14 @@ function NavLink({
       aria-current={isActive ? "page" : undefined}
       title={isCollapsed ? item.label : undefined}
     >
+      {/* Active state left indicator line */}
+      {isActive && (
+        <span
+          className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-[var(--color-primary)]"
+          aria-hidden="true"
+        />
+      )}
+
       {Icon && (
         <Icon
           size={isCollapsed ? 20 : 18}
@@ -193,18 +171,6 @@ function NavLink({
             {count > 99 ? "99+" : count}
           </span>
         )
-      )}
-      {/* Active indicator caret — fade in/out */}
-      {!isCollapsed && (
-        <CaretRight
-          size={14}
-          weight="bold"
-          className={cn(
-            "shrink-0 text-[var(--color-primary)]",
-            "transition-opacity duration-[var(--duration-fast)]",
-            isActive ? "opacity-100" : "opacity-0",
-          )}
-        />
       )}
     </Link>
   )
