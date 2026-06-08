@@ -220,7 +220,7 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
+            <table className="w-full text-left border-collapse text-sm" aria-label="Actividad y costos por faena">
               <thead>
                 <tr className="border-b border-[var(--color-border-strong)] text-[var(--color-text-muted)] font-semibold">
                   <th className="py-2.5 px-3">Faena</th>

@@ -8,11 +8,12 @@
  * Callers wrap in try/catch or use the safe `notifySafe()` helper.
  */
 
-import { eq, and, desc } from "drizzle-orm"
+import { eq, and, desc, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { notifications, rolePermissions, permissions } from "@/db/schema"
+import { notifications, rolePermissions, permissions, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { NotificationType } from "@/db/schema/audit"
+import { sendEmail, getAppBaseUrl } from "@/lib/email/smtp"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -44,6 +45,30 @@ export async function createNotification(input: CreateNotificationInput): Promis
     entityHref: input.entityHref ?? null,
     isRead:     false,
   })
+
+  // Send email asynchronously
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, input.userId),
+    columns: { email: true, name: true },
+  })
+  if (user?.email) {
+    const appUrl = getAppBaseUrl()
+    const text = `${input.title}\n\n${input.body ?? ""}`
+    const html = `
+      <p>Hola ${user.name ?? "Usuario"},</p>
+      <h3>${input.title}</h3>
+      ${input.body ? `<p>${input.body}</p>` : ""}
+      ${input.entityHref ? `<p><a href="${appUrl}${input.entityHref}">Ver detalle en Chome</a></p>` : ""}
+    `
+    sendEmail({
+      to:      user.email,
+      subject: input.title,
+      text,
+      html,
+    }).catch((err) => {
+      console.error(`[notifications] failed to send email to ${user.email}`, err)
+    })
+  }
 }
 
 /**
@@ -67,6 +92,33 @@ export async function createNotifications(
       isRead:     false,
     })),
   )
+
+  // Send emails asynchronously to all users
+  const targetUsers = await db
+    .select({ id: users.id, email: users.email, name: users.name })
+    .from(users)
+    .where(inArray(users.id, userIds))
+
+  const appUrl = getAppBaseUrl()
+  for (const u of targetUsers) {
+    if (u.email) {
+      const text = `${input.title}\n\n${input.body ?? ""}`
+      const html = `
+        <p>Hola ${u.name ?? "Usuario"},</p>
+        <h3>${input.title}</h3>
+        ${input.body ? `<p>${input.body}</p>` : ""}
+        ${input.entityHref ? `<p><a href="${appUrl}${input.entityHref}">Ver detalle en Chome</a></p>` : ""}
+      `
+      sendEmail({
+        to:      u.email,
+        subject: input.title,
+        text,
+        html,
+      }).catch((err) => {
+        console.error(`[notifications] failed to send email to ${u.email}`, err)
+      })
+    }
+  }
 }
 
 /**

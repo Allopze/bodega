@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core"
 import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
 import { worksites, workers } from "./worksites"
@@ -27,7 +27,10 @@ export const purchaseRequests = sqliteTable("purchase_requests", {
   notes:        text("notes"),
   createdAt:    text("created_at").notNull().default(sql`(datetime('now'))`),
   updatedAt:    text("updated_at").notNull().default(sql`(datetime('now'))`),
-})
+}, (table) => [
+  index("purchase_requests_worksite_id_status_idx").on(table.worksiteId, table.status),
+  index("purchase_requests_requester_id_created_at_idx").on(table.requesterId, table.createdAt),
+])
 
 /* ── Purchase Request Items ───────────────────────────────────────────────── */
 export const purchaseRequestItems = sqliteTable("purchase_request_items", {
@@ -46,7 +49,9 @@ export const purchaseRequestItems = sqliteTable("purchase_request_items", {
   notes:           text("notes"),
   createdAt:       text("created_at").notNull().default(sql`(datetime('now'))`),
   updatedAt:       text("updated_at").notNull().default(sql`(datetime('now'))`),
-})
+}, (table) => [
+  index("purchase_request_items_request_id_status_idx").on(table.requestId, table.status),
+])
 
 /* ── Request Item Attributes (talla, color, medida, etc.) ────────────────── */
 export const requestItemAttributes = sqliteTable("request_item_attributes", {

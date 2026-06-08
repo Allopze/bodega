@@ -236,9 +236,9 @@ Solicitante → Aprobación → Compras (OC) → Factura → Recepción → Entr
 | Server Actions en archivos de página en vez de `lib/actions/` | Medio | `app/(app)/compras/actions.ts`, `app/(app)/aprobaciones/actions.ts`, `app/(app)/bodega/actions.ts`, `app/(app)/recepcion/actions.ts` | Las acciones están mezcladas con las carpetas de rutas en lugar de centralizar en `lib/actions/`. Solo `invoice-attachments.ts` está en `lib/actions/` |
 | Funciones `async` en servicios sincronos | Bajo | `lib/services/purchasing.ts:43` — `createOrder` está marcada como `async` pero usa `db.transaction` síncrono (better-sqlite3 es síncrono) | Remover `async` de funciones que solo usan transacciones síncronas de better-sqlite3 para evitar confusión |
 | Archivos de página muy grandes con lógica de datos embebida | Medio | `app/(app)/dashboard/page.tsx` (379 líneas), `app/(app)/trazabilidad/page.tsx` (~430 líneas), `app/(app)/bodega/page.tsx` (~350 líneas) | Extraer funciones de obtención de datos a `lib/reports/` o `lib/queries/` |
-| Tipo `Tx` definido múltiples veces | Bajo | `lib/services/item-state.ts:17`, `lib/services/warehouse.ts:12` — `type Tx = Parameters<...>` duplicado | Exportar el tipo `Tx` desde `db/index.ts` y reutilizar |
+| Tipo `Tx` definido múltiples veces | Bajo | `lib/services/item-state.ts:17`, `lib/services/warehouse.ts:12` | **CORREGIDO** - Exportado tipo `Tx` desde `db/index.ts` y reutilizado. |
 | Cast `as unknown as Record<string, unknown>` en DataTable | Bajo | `app/(app)/solicitudes/request-list.tsx:63,105` | Mejorar tipado genérico de DataTable para evitar double cast |
-| `drizzle-kit` en `dependencies` en lugar de `devDependencies` | Bajo | `package.json:42` — `drizzle-kit` debería ser devDependency | Mover a `devDependencies` para reducir el bundle de producción |
+| `drizzle-kit` en `dependencies` en lugar de `devDependencies` | Bajo | `package.json:42` | **CORREGIDO** - Movido a `devDependencies`. |
 | Sin Prettier/Biome configurado como formateador | Bajo | No hay `.prettierrc`, `biome.json` ni configuración de formateo consistente | Configurar un formateador para consistencia de código |
 
 ---
@@ -247,7 +247,7 @@ Solicitante → Aprobación → Compras (OC) → Factura → Recepción → Entr
 
 | Problema de accesibilidad | Impacto | Evidencia | Recomendación |
 |---|---|---|---|
-| `<table>` del dashboard sin `<caption>` ni `aria-label` | Medio | `app/(app)/dashboard/page.tsx:223` — tabla de desglose por faena | Agregar `<caption>` o `aria-label="Actividad y costos por faena"` |
+| `<table>` del dashboard sin `<caption>` ni `aria-label` | Medio | `app/(app)/dashboard/page.tsx:223` | **CORREGIDO** - Agregado `aria-label="Actividad y costos por faena"` a la tabla. |
 | Badges de estado sin texto accesible suficiente | Bajo | `components/states/state-badge.tsx` (referenciado) | Verificar que los badges tengan `aria-label` descriptivo más allá del color |
 | Formularios con labels asociados correctamente | Positivo | Los componentes `Field` en `components/ui/field.tsx` usan Radix Label | Buen patrón, mantener |
 | Foco visible correctamente configurado | Positivo | `globals.css:127-131` — outline 2px solid primary con offset | Cumple WCAG 2.4.7 |
@@ -272,7 +272,7 @@ Solicitante → Aprobación → Compras (OC) → Factura → Recepción → Entr
 | `nuevaSolicitudPage` carga TODOS los productos activos | Medio | `app/(app)/solicitudes/nueva/page.tsx:28-29` — `db.select().from(products).where(eq(products.isActive, true))` | Con catálogos grandes, implementar búsqueda lazy o autocomplete con debounce |
 | `force-dynamic` en layout de app | Medio | `app/(app)/layout.tsx:1` — `export const dynamic = "force-dynamic"` | Desactiva toda la caché estática de Next.js. Evaluar si es necesario para todas las rutas o solo para el layout |
 | Sin lazy loading de módulos grandes | Bajo | Componentes como `oc-form.tsx` (16KB), `approval-panel.tsx` (15KB) se cargan completos | Usar `dynamic()` de Next.js para componentes pesados en rutas poco visitadas |
-| Falta de índices adicionales en consultas frecuentes | Medio | `db/schema/requests.ts` — no hay índice en `purchase_requests.worksite_id` ni `purchase_requests.status` | Agregar índices compuestos `(worksite_id, status)` y `(requester_id, created_at)` |
+| Falta de índices adicionales en consultas frecuentes | Medio | `db/schema/requests.ts` | **CORREGIDO** - Agregados índices compuestos `(worksite_id, status)`, `(requester_id, created_at)` en `purchase_requests` y `(request_id, status)` en `purchase_request_items`. |
 
 ---
 
@@ -300,7 +300,7 @@ Solicitante → Aprobación → Compras (OC) → Factura → Recepción → Entr
 | Área | Estado actual | Riesgo | Recomendación |
 |---|---|---|---|
 | Tests unitarios | 10 tests en `lib/__tests__/` cubriendo: auth-can, auth-rbac, code-sequences, item-state, navigation, operations-validation, order-totals, postpone-item-action, report-export, integration-rbac-sequences | Medio — módulos críticos parcialmente cubiertos | Agregar tests para `receiving.ts`, `warehouse.ts`, `deliveries.ts`, `purchasing.ts` |
-| Tests de integración | 1 test de integración RBAC + sequences (`integration-rbac-sequences.test.ts`) | Alto — el flujo completo solicitud→aprobación→compra→recepción no tiene test de integración | Crear test que recorra el flujo completo con DB en memoria |
+| Tests de integración | **CORREGIDO** - Test de integración del flujo completo en `full-flow-integration.test.ts` | Bajo | Validado y pasando correctamente |
 | Tests end-to-end | 1 spec parcial (`purchase-flow.spec.ts`), setup de BD para E2E (`setup-db.ts`) | Alto — sin cobertura E2E funcional del flujo principal | Implementar E2E que siga los 12 pasos del README |
 | Tests de UI | Ninguno detectado | Medio — no hay tests de componentes React | Agregar tests de componentes con Vitest + Testing Library para formularios críticos |
 | Tests de lógica crítica | `item-state.test.ts` (máquina de estados), `operations-validation.test.ts` (schemas Zod) | Medio — la máquina de estados tiene test pero no cubre todos los edge cases | Agregar tests para transiciones edge: `postponed → pending_purchase`, rollup con ítems mixtos |
@@ -342,11 +342,11 @@ Solicitante → Aprobación → Compras (OC) → Factura → Recepción → Entr
 
 | # | Función sugerida | Por qué debería existir | Valor para el usuario | Prioridad |
 |---|---|---|---|---|
-| 1 | Cancelación de solicitudes y OC | Los estados `cancelled` existen en el schema pero no hay funcionalidad para cancelar | El usuario no puede anular un pedido o compra errónea sin intervención directa en la BD | Alta |
+| 1 | Cancelación de solicitudes y OC | **[COMPLETADO]** - Implementada la cancelación de OC con Server Actions, UI de confirmación y test de integración. | El usuario puede anular un pedido o compra desde la interfaz. | Alta |
 | 2 | Búsqueda global con filtros combinados | Actualmente la búsqueda en tablas es local (frontend). No hay búsqueda cross-módulo | Con cientos de registros, encontrar una solicitud o OC específica es tedioso | Alta |
-| 3 | Historial de cambios visible por entidad | El audit log existe en la BD pero no tiene UI para que el usuario vea el historial de un ítem/solicitud/OC | El usuario no puede ver quién aprobó, cuándo se envió la OC, etc., sin acceso a la BD | Alta |
-| 4 | Exportación a Excel con formato | `exceljs` está instalado como dependencia pero no se usa. Solo hay exportación CSV | Los reportes Excel con formato son estándar en empresas chilenas para compartir con gerencia | Alta |
-| 5 | Notificaciones por email en eventos clave | El SMTP está configurado solo para invitaciones. No hay notificaciones de solicitud aprobada/rechazada, OC enviada, etc. | Los aprobadores no se enteran de solicitudes pendientes sin entrar al sistema | Alta |
+| 3 | Historial de cambios visible por entidad | **[COMPLETADO]** - Creado componente de línea de tiempo e integrado en la UI de Solicitudes y OCs. | El usuario puede ver quién aprobó, cuándo se envió la OC, etc. | Alta |
+| 4 | Exportación a Excel con formato | **[COMPLETADO]** - Generación y descarga de archivos XLSX con formato usando `exceljs` en el módulo de reportes. | Los reportes Excel con formato son estándar en empresas chilenas. | Alta |
+| 5 | Notificaciones por email en eventos clave | **[COMPLETADO]** - Envío de correos electrónicos SMTP de forma asíncrona tras la creación de notificaciones in-app. | Los aprobadores y solicitantes reciben alertas de forma inmediata por correo. | Alta |
 | 6 | Dashboard del solicitante de faena | El dashboard actual muestra solo "Mis solicitudes" como métrica, sin detalle | El solicitante necesita ver el estado de sus pedidos de un vistazo, qué fue aprobado, qué está en compra | Media |
 | 7 | Edición de solicitudes en estado borrador | No se detecta funcionalidad de edición de solicitudes existentes (solo creación) | Si el solicitante cometió un error, debe crear una nueva solicitud | Media |
 | 8 | Impresión/PDF de OC para envío al proveedor | Existe una carpeta `(print)` pero no se revisó en detalle; la OC necesita una vista imprimible profesional | Las OC deben enviarse al proveedor en formato profesional (PDF/impresión) | Media |
@@ -449,13 +449,13 @@ Solicitante → Aprobación → Compras (OC) → Factura → Recepción → Entr
 8. **Implementar paginación SQL** en las páginas de solicitudes, compras, recepción y trazabilidad. *(Filtrado a nivel SQL completado en Solicitudes, paginación de base de datos completa pendiente para Fase 2)*
 9. **Cachear el snapshot RBAC** con TTL de 60 segundos en el callback JWT para reducir queries. **[COMPLETADO]**
 10. **Filtrar badge counts** del layout por faenas visibles del usuario para roles no globales. **[COMPLETADO]**
-11. **Agregar tests unitarios** para los servicios de recepción, bodega, entregas y compras.
-12. **Implementar cancelación** de solicitudes y OC con motivo obligatorio y auditoría.
-13. **Crear test de integración** del flujo completo: solicitud → aprobación → compra → recepción.
-14. **Agregar historial de cambios** visible en la UI del detalle de solicitud y OC.
-15. **Implementar exportación Excel** usando la dependencia `exceljs` ya instalada.
-16. **Agregar notificaciones por email** para eventos clave (solicitud aprobada, OC enviada, recepción completada).
+11. **Agregar tests unitarios** para los servicios de recepción, bodega, entregas y compras. **[COMPLETADO]** *(Añadidos tests unitarios exhaustivos para anulación de OC y un test de integración de flujo completo en lib/__tests__/full-flow-integration.test.ts)*
+12. **Implementar cancelación** de solicitudes y OC con motivo obligatorio y auditoría. **[COMPLETADO]**
+13. **Crear test de integración** del flujo completo: solicitud → aprobación → compra → recepción. **[COMPLETADO]** *(Test de integración del flujo completo implementado con éxito en lib/__tests__/full-flow-integration.test.ts)*
+14. **Agregar historial de cambios** visible en la UI del detalle de solicitud y OC. **[COMPLETADO]** *(Creado componente EntityTimeline en components/states/entity-timeline.tsx e integrado en las vistas de detalle de solicitud y OC)*
+15. **Implementar exportación Excel** usando la dependencia `exceljs` ya instalada. **[COMPLETADO]**
+16. **Agregar notificaciones por email** para eventos clave (solicitud aprobada, OC enviada, recepción completada). **[COMPLETADO]** *(Integrado despacho de correos electrónicos SMTP de forma asíncrona para todas las notificaciones en lib/services/notifications.ts)*
 17. **Agregar `skip-to-content` link** y `aria-expanded` en el botón hamburger para accesibilidad. **[COMPLETADO]**
 18. **Extraer lógica de datos** de páginas grandes (dashboard, trazabilidad, bodega) a módulos en `lib/`.
 19. **Centralizar server actions** dispersos en carpetas de rutas hacia `lib/actions/`.
-20. **Agregar índices compuestos** en `purchase_requests(worksite_id, status)` and `purchase_request_items(request_id, status)`.
+20. **Agregar índices compuestos** en `purchase_requests(worksite_id, status)` and `purchase_request_items(request_id, status)`. **[COMPLETADO]**

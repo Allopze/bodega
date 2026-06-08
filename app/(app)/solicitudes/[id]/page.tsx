@@ -4,6 +4,7 @@ import { db } from "@/db"
 import {
   invoiceAttachments, purchaseRequests,
   worksites, products, productAttributes,
+  statusHistory, users,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -14,6 +15,7 @@ import { StateBadge } from "@/components/states/state-badge"
 import { InvoiceAttachmentsPanel } from "@/components/invoices/invoice-attachments-panel"
 import { RequestForm } from "../request-form"
 import { DuplicateButton } from "./duplicate-button"
+import { EntityTimeline } from "@/components/states/entity-timeline"
 
 export const metadata: Metadata = { title: "Solicitud de compra" }
 
@@ -44,7 +46,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   if (!hasAccess) notFound()
   const canViewInvoices = canViewInvoiceAttachments(session)
 
-  const [allWorksites, allProducts, allAttrs, invoiceRows] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, invoiceRows, timelineEvents] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
@@ -58,6 +60,26 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           orderBy: (ia) => [desc(ia.uploadedAt)],
         })
       : Promise.resolve([]),
+    db
+      .select({
+        id:          statusHistory.id,
+        fromStatus:  statusHistory.fromStatus,
+        toStatus:    statusHistory.toStatus,
+        changedBy:   statusHistory.changedBy,
+        changedAt:   statusHistory.changedAt,
+        reason:      statusHistory.reason,
+        userName:    users.name,
+        userEmail:   users.email,
+      })
+      .from(statusHistory)
+      .leftJoin(users, eq(statusHistory.changedBy, users.id))
+      .where(
+        and(
+          eq(statusHistory.entityType, "purchase_request"),
+          eq(statusHistory.entityId, request.id),
+        ),
+      )
+      .orderBy(desc(statusHistory.changedAt)),
   ])
 
   const worksiteOptions = allWorksites
@@ -152,7 +174,9 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
             }))}
           />
         )}
+        <EntityTimeline entityType="request" events={timelineEvents} />
       </div>
     </>
   )
 }
+

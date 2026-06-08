@@ -92,6 +92,37 @@ export async function sendInvitationEmail({ to, inviteUrl, invitedByName }: Invi
   return { sent: true as const }
 }
 
+export async function sendEmail({
+  to,
+  subject,
+  text,
+  html,
+}: {
+  to:      string
+  subject: string
+  text:    string
+  html:    string
+}) {
+  const config = getSmtpConfig()
+  if (!config) return { sent: false as const, reason: "SMTP no configurado" }
+
+  const client = await SmtpClient.connect(config)
+  try {
+    await client.sendMail({
+      fromHeader:  config.from,
+      fromAddress: extractEmailAddress(config.from),
+      toAddress:   extractEmailAddress(to),
+      subject,
+      text,
+      html,
+    })
+  } finally {
+    await client.close()
+  }
+
+  return { sent: true as const }
+}
+
 class SmtpClient {
   private socket: net.Socket | tls.TLSSocket
   private buffer = ""

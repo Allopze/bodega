@@ -7,14 +7,12 @@
  */
 
 import { eq, and, inArray } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, approvalDecisions,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 /** All valid states for a purchase request item */
 export type ItemStatus =

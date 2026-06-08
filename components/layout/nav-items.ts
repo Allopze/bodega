@@ -70,39 +70,4 @@ export const NAV_ITEMS: NavSection[] = [
       },
     ],
   },
-  {
-    section: "Administración",
-    items: [
-      {
-        label:       "Usuarios",
-        href:        "/admin/usuarios",
-        iconName:    "Users",
-        permissions: ["admin:users"],
-      },
-      {
-        label:       "Faenas",
-        href:        "/admin/faenas",
-        iconName:    "MapPin",
-        permissions: ["admin:worksites"],
-      },
-      {
-        label:       "Productos",
-        href:        "/admin/productos",
-        iconName:    "Cube",
-        permissions: ["admin:products"],
-      },
-      {
-        label:       "Proveedores",
-        href:        "/admin/proveedores",
-        iconName:    "Buildings",
-        permissions: ["admin:suppliers"],
-      },
-      {
-        label:       "Log de Auditoría",
-        href:        "/admin/auditoria",
-        iconName:    "ShieldCheck",
-        permissions: ["admin:audit_log"],
-      },
-    ],
-  },
 ]

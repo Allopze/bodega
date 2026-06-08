@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { issueOrderAction, sendOrderAction } from "../actions"
+import { issueOrderAction, sendOrderAction, cancelOrderAction } from "../actions"
 import type { ActionState } from "@/lib/validation/operations"
 
 export function OcActions({
@@ -20,11 +20,16 @@ export function OcActions({
   canManage: boolean
   canSend:   boolean
 }) {
+  const [showCancelForm, setShowCancelForm] = React.useState(false)
+
   const [issueState, issueAction] = useActionState<ActionState, FormData>(
     issueOrderAction, INITIAL_STATE,
   )
   const [sendState, sendAction] = useActionState<ActionState, FormData>(
     sendOrderAction, INITIAL_STATE,
+  )
+  const [cancelState, cancelAction] = useActionState<ActionState, FormData>(
+    cancelOrderAction, INITIAL_STATE,
   )
 
   React.useEffect(() => {
@@ -41,10 +46,55 @@ export function OcActions({
     }
   }, [sendState])
 
-  if (status !== "draft" && status !== "issued") return null
+  React.useEffect(() => {
+    if (cancelState.ok && cancelState.message) {
+      toast.success(cancelState.message)
+      setShowCancelForm(false)
+    } else if (cancelState.ok === false && cancelState.message && cancelState !== INITIAL_STATE) {
+      toast.error(cancelState.message)
+    }
+  }, [cancelState])
+
+  if (status !== "draft" && status !== "issued" && status !== "sent") return null
+
+  if (showCancelForm) {
+    return (
+      <form action={cancelAction} className="flex flex-col gap-2 mt-2 max-w-md border border-[var(--color-danger)] p-3.5 rounded-[var(--radius)] bg-[var(--color-surface-2)]">
+        <input type="hidden" name="orderId" value={orderId} />
+        <label className="text-xs font-semibold text-[var(--color-danger)]">Motivo de anulación (obligatorio)</label>
+        <textarea
+          name="reason"
+          placeholder="Explique el motivo por el cual se anula esta orden de compra..."
+          required
+          className="w-full text-xs p-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] resize-none"
+          rows={3}
+        />
+        {cancelState.ok === false && cancelState.message && cancelState !== INITIAL_STATE && (
+          <p className="text-xs text-[var(--color-danger)] flex items-center gap-1">
+            <Warning size={12} /> {cancelState.message}
+          </p>
+        )}
+        <div className="flex items-center gap-2 mt-1">
+          <SubmitButton
+            label="Confirmar anulación"
+            loadingLabel="Anulando..."
+            variant="destructive"
+            size="sm"
+          />
+          <button
+            type="button"
+            onClick={() => setShowCancelForm(false)}
+            className="text-xs px-2.5 py-1.5 rounded hover:bg-[var(--color-surface-3)] transition-colors cursor-pointer"
+          >
+            Volver
+          </button>
+        </div>
+      </form>
+    )
+  }
 
   return (
-    <div className="flex items-center gap-3 pt-2">
+    <div className="flex items-center gap-3 pt-2 flex-wrap">
       {status === "draft" && canManage && (
         <form action={issueAction}>
           <input type="hidden" name="orderId" value={orderId} />
@@ -64,6 +114,15 @@ export function OcActions({
             variant="primary"
           />
         </form>
+      )}
+      {canManage && (
+        <button
+          type="button"
+          onClick={() => setShowCancelForm(true)}
+          className="text-xs font-medium text-[var(--color-danger)] border border-[var(--color-danger)] hover:bg-[oklch(0.975_0.02_20)] px-3.5 py-2 rounded-[var(--radius)] transition-colors cursor-pointer"
+        >
+          Anular orden
+        </button>
       )}
       {issueState.ok === false && issueState.message && issueState !== INITIAL_STATE && (
         <p className="text-sm text-[var(--color-danger)] flex items-center gap-1.5">

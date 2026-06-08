@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { List, CaretLeft, CaretRight, SignOut } from "@phosphor-icons/react"
+import { List, CaretLeft, CaretRight, SignOut, ShieldCheck } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { cn } from "@/lib/utils"
 import { Avatar } from "@/components/ui/avatar"
@@ -113,6 +113,20 @@ export function TopBar({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {session.user.permissions?.some((p) => p.startsWith("admin:")) && (
+              <>
+                <DropdownMenuItem asChild>
+                  <Link
+                    href="/admin"
+                    className="flex items-center gap-2 text-sm text-[var(--color-text)] w-full cursor-pointer focus:bg-[var(--color-surface-2)]"
+                  >
+                    <ShieldCheck size={16} className="text-[var(--color-text-subtle)]" />
+                    <span>Administración</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuItem asChild>
               <Link
                 href="/api/auth/signout"

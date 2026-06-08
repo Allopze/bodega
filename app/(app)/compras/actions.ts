@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { createOrder, issueOrder, markOrderSent } from "@/lib/services/purchasing"
+import { createOrder, issueOrder, markOrderSent, cancelOrder } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
 import { createOrderSchema, type ActionState } from "@/lib/validation/operations"
 
@@ -243,5 +243,37 @@ export async function postponeItemAction(
   } catch (e) {
     console.error("[postponeItemAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al postergar ítem" }
+  }
+}
+
+// ── Cancel Order (draft/issued/sent → cancelled) ──────────────────────────────
+
+export async function cancelOrderAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("purchasing:create_order") }
+  catch { return { ok: false, message: "Sin permisos para anular la orden" } }
+
+  const orderId = formData.get("orderId") as string | null
+  const reason = (formData.get("reason") as string | null)?.trim()
+
+  if (!orderId) return { ok: false, message: "Orden no especificada" }
+  if (!reason) return { ok: false, message: "El motivo de anulación es obligatorio" }
+
+  const accessError = await assertOrderAccess(session, orderId)
+  if (accessError) return accessError
+
+  try {
+    await cancelOrder(orderId, session.user.id, reason, {
+      userEmail: session.user.email ?? undefined,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`/compras/${orderId}`)
+    return { ok: true, message: "Orden de compra anulada correctamente" }
+  } catch (e) {
+    console.error("[cancelOrderAction]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al anular orden" }
   }
 }

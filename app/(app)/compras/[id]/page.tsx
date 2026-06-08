@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
-import { invoiceAttachments, purchaseOrders } from "@/db/schema"
+import { invoiceAttachments, purchaseOrders, statusHistory, users } from "@/db/schema"
 import { and, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
@@ -11,6 +11,7 @@ import { StateBadge } from "@/components/states/state-badge"
 import { InvoiceAttachmentsPanel } from "@/components/invoices/invoice-attachments-panel"
 import { OcActions } from "./oc-actions"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
+import { EntityTimeline } from "@/components/states/entity-timeline"
 
 export const metadata: Metadata = { title: "Orden de compra" }
 
@@ -43,7 +44,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     .map((i) => i.productId)
     .filter((id): id is string => id !== null)
 
-  const [requestItemRows, productRows, invoiceRows] = await Promise.all([
+  const [requestItemRows, productRows, invoiceRows, timelineEvents] = await Promise.all([
     requestItemIds.length > 0
       ? db.query.purchaseRequestItems.findMany({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
@@ -68,6 +69,27 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
           orderBy: (ia) => [desc(ia.uploadedAt)],
         })
       : Promise.resolve([]),
+
+    db
+      .select({
+        id:          statusHistory.id,
+        fromStatus:  statusHistory.fromStatus,
+        toStatus:    statusHistory.toStatus,
+        changedBy:   statusHistory.changedBy,
+        changedAt:   statusHistory.changedAt,
+        reason:      statusHistory.reason,
+        userName:    users.name,
+        userEmail:   users.email,
+      })
+      .from(statusHistory)
+      .leftJoin(users, eq(statusHistory.changedBy, users.id))
+      .where(
+        and(
+          eq(statusHistory.entityType, "purchase_order"),
+          eq(statusHistory.entityId, order.id),
+        ),
+      )
+      .orderBy(desc(statusHistory.changedAt)),
   ])
 
   // Build maps
@@ -261,6 +283,8 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             canSend={canSend}
           />
         )}
+
+        <EntityTimeline entityType="oc" events={timelineEvents} />
       </div>
     </>
   )

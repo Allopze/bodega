@@ -230,3 +230,88 @@ export async function markOrderSent(
     }, tx)
   })
 }
+
+/* ── Cancel Order (draft/issued/sent → cancelled) ────────────────────────────── */
+
+export async function cancelOrder(
+  orderId: string,
+  userId: string,
+  reason: string,
+  opts?: { userEmail?: string },
+): Promise<void> {
+  db.transaction((tx) => {
+    const order = tx.query.purchaseOrders.findFirst({
+      where: eq(purchaseOrders.id, orderId),
+    }).sync()
+    if (!order) throw new Error(`Order ${orderId} not found`)
+    if (!["draft", "issued", "sent"].includes(order.status)) {
+      throw new Error(`Cannot cancel order in status '${order.status}'`)
+    }
+
+    const now = new Date().toISOString()
+    tx
+      .update(purchaseOrders)
+      .set({ status: "cancelled", updatedAt: now })
+      .where(eq(purchaseOrders.id, orderId)).run()
+
+    // Move associated request items back to "pending_purchase" status
+    const ocItems = tx
+      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId })
+      .from(purchaseOrderItems)
+      .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
+      .all()
+
+    const requestItemIds = ocItems
+      .map((i) => i.requestItemId)
+      .filter((id): id is string => id !== null)
+
+    if (requestItemIds.length > 0) {
+      tx
+        .update(purchaseRequestItems)
+        .set({ status: "pending_purchase", updatedAt: now })
+        .where(
+          and(
+            inArray(purchaseRequestItems.id, requestItemIds),
+            inArray(purchaseRequestItems.status, ["in_purchase_order", "purchased"])
+          )
+        ).run()
+
+      for (const reqItemId of requestItemIds) {
+        recordStatusChange({
+          entityType: "request_item",
+          entityId:   reqItemId,
+          fromStatus: "purchased",
+          toStatus:   "pending_purchase",
+          changedBy:  userId,
+        }, tx)
+      }
+    }
+
+    // Update purchaseOrderItems status to cancelled
+    tx
+      .update(purchaseOrderItems)
+      .set({ status: "cancelled" })
+      .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
+      .run()
+
+    recordStatusChange({
+      entityType: "purchase_order",
+      entityId:   orderId,
+      fromStatus: order.status,
+      toStatus:   "cancelled",
+      changedBy:  userId,
+    }, tx)
+
+    recordAudit({
+      userId,
+      userEmail:  opts?.userEmail,
+      action:     "status_change",
+      entityType: "purchase_order",
+      entityId:   orderId,
+      entityCode: order.code,
+      oldState:   { status: order.status },
+      newState:   { status: "cancelled" },
+      reason,
+    }, tx)
+  })
+}

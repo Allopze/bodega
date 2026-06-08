@@ -4,12 +4,10 @@
  */
 
 import { eq, and } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import { warehouses, warehouseStock, inventoryMovements } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 /* ── Movement types ─────────────────────────────────────────────────────────── */
 export type MovementType =

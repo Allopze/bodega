@@ -23,3 +23,4 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export type DB = typeof db
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
