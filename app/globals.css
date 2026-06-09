@@ -10,13 +10,20 @@
   --font-sans: var(--font-source-sans), "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, "Cascadia Code", monospace;
 
-  /* ── Typography Scale Overrides ── */
-  --text-xs: 0.8125rem;  /* ~13px (from 12px) */
-  --text-sm: 0.9375rem;  /* ~15px (from 14px) */
-  --text-base: 1.0625rem; /* ~17px (from 16px) */
-  --text-lg: 1.1875rem;  /* ~19px (from 18px) */
-  --text-xl: 1.375rem;   /* ~22px (from 20px) */
-  --text-2xl: 1.625rem;  /* ~26px (from 24px) */
+  /* ── Typography Scale (fluid, responsive, ratio ≥1.20 between heading steps) ── */
+  --text-xs:   clamp(0.75rem, 0.72rem + 0.15vw, 0.8125rem);     /* 12 → 13px – labels, badges     */
+  --text-sm:   clamp(0.875rem, 0.84rem + 0.2vw, 0.9375rem);     /* 14 → 15px – UI, table cells     */
+  --text-base: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);         /* 16 → 17px – body, paragraphs    */
+  --text-lg:   clamp(1.125rem, 1.07rem + 0.3vw, 1.25rem);       /* 18 → 20px – section headings    */
+  --text-xl:   clamp(1.375rem, 1.25rem + 0.55vw, 1.625rem);     /* 22 → 26px – page headings       */
+  --text-2xl:  clamp(1.75rem, 1.55rem + 1vw, 2.125rem);         /* 28 → 34px – hero, login title   */
+  --text-3xl:  clamp(2rem, 1.7rem + 1.5vw, 2.625rem);           /* 32 → 42px – login tagline       */
+
+  /* ── Line-heights by text role ── */
+  --leading-label:   1.1;    /* badges, buttons, micro-copy */
+  --leading-compact: 1.35;   /* table cells, dense lists    */
+  --leading-body:    1.55;   /* paragraphs, descriptions    */
+  --leading-display: 1.15;   /* headings, page titles       */
 
 
   /* ── Brand primaries ── */
@@ -30,11 +37,13 @@
   --color-signal:       oklch(0.724 0.174 56);    /* #f39200 chome-orange    */
   --color-signal-50:    oklch(0.966 0.025 60);    /* orange tint background  */
   --color-signal-100:   oklch(0.924 0.055 60);    /* badge fill              */
+  --color-signal-500:   oklch(0.620 0.150 56);   /* medium text on light    */
+  --color-signal-600:   oklch(0.520 0.150 56);   /* dark text/icon signal   */
 
   /* ── Warning / partial state ── */
   --color-warning:      oklch(0.888 0.178 93);    /* #ffd51e chome-amber     */
-  --color-warning-50:   oklch(0.975 0.020 90);
-  --color-warning-100:  oklch(0.948 0.042 90);
+  --color-warning-50:   oklch(0.975 0.020 93);
+  --color-warning-100:  oklch(0.948 0.042 93);
 
   /* ── Semantic state colors ── */
   --color-info:         oklch(0.600 0.120 248);   /* blue — in-progress      */
@@ -92,10 +101,10 @@
   --color-overlay: oklch(0.20 0.010 155 / 0.40);
 
   /* ── Extended semantic palette — text on light tint backgrounds ── */
-  --color-warning-700:  oklch(0.520 0.110 85);   /* amber text on warning-50/100  */
+  --color-warning-700:  oklch(0.520 0.110 93);   /* amber text on warning-50/100  */
   --color-signal-700:   oklch(0.480 0.130 56);   /* orange text on signal-50/100  */
   --color-info-700:     oklch(0.400 0.115 248);  /* blue text on info-50/100      */
-  --color-success-700:  oklch(0.480 0.140 154);  /* green text on success-50/100   */
+  --color-success-700:  oklch(0.450 0.130 168);  /* teal text on success-50/100   */
   --color-danger-700:   oklch(0.420 0.160 25);   /* red text on danger-50/100     */
 }
 
@@ -117,8 +126,8 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
-  font-size: 1rem; /* 16px — standard body size for improved readability */
-  line-height: 1.5;
+  font-size: 1rem;
+  line-height: var(--leading-body);
 }
 
 /* Tabular numbers for all monospaced contexts (quantities, money, SKUs) */
@@ -126,6 +135,24 @@ body {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
+
+/* ─── Light-on-dark compensation ──────────────────────────────────────── */
+/* Text on dark surfaces reads thinner — boost weight and line-height.     */
+[data-theme="dark"] body,
+.bg-brand-surface,
+.bg-brand-night {
+  & .light-on-dark {
+    letter-spacing: 0.01em;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+}
+
+/* ─── Responsive heading scale ────────────────────────────────────────── */
+@utility text-h1 {  font-family: var(--font-display); font-size: var(--text-xl); font-weight: 600; line-height: var(--leading-display); letter-spacing: -0.01em; }
+@utility text-h2 {  font-family: var(--font-sans);    font-size: var(--text-lg); font-weight: 600; line-height: var(--leading-compact); }
+@utility text-h3 {  font-family: var(--font-sans);    font-size: var(--text-base); font-weight: 600; line-height: var(--leading-compact); }
+@utility text-sub { font-family: var(--font-sans);    font-size: var(--text-sm); color: var(--color-text-muted); line-height: var(--leading-compact); }
 
 /* ─── Focus ring (single, consistent) ────────────────────────────────────── */
 :focus-visible {

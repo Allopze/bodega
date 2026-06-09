@@ -376,7 +376,7 @@ export default async function TrazabilidadPage({
                   key={row.itemId}
                   data-alert={row.alert ? "true" : undefined}
                   className={row.alert
-                    ? "bg-[var(--color-signal-50)] border-l-2 border-l-[oklch(0.52_0.15_56)]"
+                    ? "bg-[var(--color-signal-50)] border-l-2 border-l-[var(--color-signal-600)]"
                     : undefined}
                 >
                   {/* Product */}
@@ -421,7 +421,7 @@ export default async function TrazabilidadPage({
                     {row.alert && (
                       <Warning
                         weight="fill"
-                        className="inline ml-1 h-3.5 w-3.5 text-[oklch(0.52_0.15_56)]"
+                        className="inline ml-1 h-3.5 w-3.5 text-[var(--color-signal-600)]"
                         aria-label={`Faltan ${formatQty((row.approved ?? 0) - row.inOc, row.uom)} en OC`}
                       />
                     )}

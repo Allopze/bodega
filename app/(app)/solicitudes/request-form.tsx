@@ -330,7 +330,7 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <section className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-[var(--color-text)]">
+          <h2 className="text-h2 text-[var(--color-text)]">
             Datos de la solicitud
           </h2>
 
@@ -404,7 +404,7 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
         {/* ── Items ──────────────────────────────────────────────────────── */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-[var(--color-text)]">
+            <h2 className="text-h2 text-[var(--color-text)]">
               Ítems solicitados
               <span className="ml-2 text-xs font-normal text-[var(--color-text-subtle)]">
                 {items.length} {items.length === 1 ? "ítem" : "ítems"}

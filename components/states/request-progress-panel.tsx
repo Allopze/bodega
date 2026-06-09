@@ -13,7 +13,7 @@ export function RequestProgressPanel({ progress }: { progress: RequestProgress }
       <div className="border-b border-[var(--color-border)] px-4 py-3">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text)]">Seguimiento del pedido</h2>
+            <h2 className="text-h2 text-[var(--color-text)]">Seguimiento del pedido</h2>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{progress.nextAction}</p>
           </div>
           <span className="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)]">

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 const badgeVariants = cva(
   [
     "inline-flex items-center gap-1 rounded-full",
-    "text-xs font-medium leading-none",
+    "text-xs font-medium leading-[var(--leading-label)]",
     "whitespace-nowrap",
   ],
   {
@@ -15,7 +15,7 @@ const badgeVariants = cva(
         // primary and success intentionally share the same green palette; they are semantically
         // distinct (primary = confirmed/action, success = completed/approved) but visually unified.
         primary:     "bg-[var(--color-primary-50)] text-[var(--color-primary-700)] border border-[var(--color-primary-100)]",
-        success:     "bg-[var(--color-primary-50)] text-[var(--color-primary-700)] border border-[var(--color-primary-100)]",
+        success:     "bg-[var(--color-success-50)] text-[var(--color-success-700)] border border-[var(--color-success-100)]",
         warning:     "bg-[var(--color-warning-50)] text-[var(--color-warning-700)] border border-[var(--color-warning-100)]",
         signal:      "bg-[var(--color-signal-50)] text-[var(--color-signal-700)] border border-[var(--color-signal-100)]",
         info:        "bg-[var(--color-info-50)] text-[var(--color-info-700)] border border-[var(--color-info-100)]",

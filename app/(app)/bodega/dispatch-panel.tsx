@@ -115,7 +115,7 @@ export function DispatchPanel({
 
   return (
     <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5">
-      <h2 className="text-sm font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
+      <h2 className="text-h2 mb-4 flex items-center gap-2">
         <ArrowSquareOut size={16} className="text-[var(--color-text-muted)]" />
         Registrar entrega a faena
       </h2>

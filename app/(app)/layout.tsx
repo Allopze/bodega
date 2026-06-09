@@ -5,9 +5,11 @@ import { auth } from "@/lib/auth/auth"
 import { db } from "@/db"
 import { worksites, purchaseRequests, purchaseOrders } from "@/db/schema"
 import { eq, inArray, count, and, sql } from "drizzle-orm"
+import { Suspense } from "react"
 import { AppShell } from "@/components/layout/app-shell"
 import { SessionProvider } from "@/components/providers/session-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
+import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { Toaster } from "sonner"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 
@@ -61,6 +63,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <QueryProvider>
     <SessionProvider session={session}>
+      <Suspense fallback={null}>
+        <NavigationProgress />
+      </Suspense>
       <AppShell session={session} worksiteName={ws?.name} badgeCounts={badgeCounts}>
         {children}
       </AppShell>

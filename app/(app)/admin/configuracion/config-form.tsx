@@ -29,7 +29,7 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
     <form action={formAction} className="max-w-3xl space-y-6">
       <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
         <div className="mb-4">
-          <h2 className="text-base font-semibold text-[var(--color-text)]">
+          <h2 className="text-h2 text-[var(--color-text)]">
             Datos de empresa para órdenes de compra
           </h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">

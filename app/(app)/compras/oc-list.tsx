@@ -157,8 +157,8 @@ export function OcList({
       {/* Never-miss alert for approved items not on any OC */}
       {pendingCount > 0 && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-signal-50)] border border-[var(--color-signal-100)]">
-          <Warning size={16} className="text-[oklch(0.62_0.15_56)] shrink-0" />
-          <p className="text-sm text-[oklch(0.50_0.12_56)] flex-1">
+          <Warning size={16} className="text-[var(--color-signal-500)] shrink-0" />
+          <p className="text-sm text-[var(--color-signal-600)] flex-1">
             <span className="font-semibold">{pendingCount} ítem{pendingCount !== 1 ? "s" : ""}</span>
             {" "}aprobado{pendingCount !== 1 ? "s" : ""} sin incluir en ninguna OC.
           </p>

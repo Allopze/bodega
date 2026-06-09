@@ -92,7 +92,7 @@ export default async function RecepcionDetallePage({
 
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-[var(--color-text)]">Ítems recibidos</h2>
+            <h2 className="text-h2 text-[var(--color-text)]">Ítems recibidos</h2>
             <Badge variant="success" size="sm" dot>{receipt.status === "closed" ? "Cerrada" : receipt.status}</Badge>
           </div>
 

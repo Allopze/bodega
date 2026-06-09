@@ -5,6 +5,7 @@ import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { PageHeader } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Stagger } from "@/components/ui/stagger"
 import { db } from "@/db"
 import {
   products,
@@ -72,7 +73,7 @@ const PRIORITY_LABEL: Record<WorkPriority, string> = {
 
 const PRIORITY_CLASS: Record<WorkPriority, string> = {
   critical: "border-[var(--color-danger)] bg-[var(--color-danger-50)] text-[var(--color-danger)]",
-  high:     "border-[var(--color-warning-100)] bg-[var(--color-warning-50)] text-[oklch(0.52_0.11_85)]",
+  high:     "border-[var(--color-warning-100)] bg-[var(--color-warning-50)] text-[var(--color-warning-700)]",
   normal:   "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
   low:      "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-subtle)]",
 }
@@ -145,8 +146,8 @@ export default async function DashboardPage() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-base font-semibold text-[var(--color-text)]">Resumen operativo</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          <h2 className="text-h2 text-[var(--color-text)]">Resumen operativo</h2>
+          <p className="mt-1 text-sub">
             Indicadores rápidos para mirar carga, costos y alertas.
           </p>
         </div>
@@ -179,7 +180,7 @@ export default async function DashboardPage() {
       </section>
 
       <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-sm)]">
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">Actividad y costos por faena</h2>
+        <h2 className="text-h2">Actividad y costos por faena</h2>
         {data.worksitesBreakdown.length === 0 ? (
           <div className="py-8 text-center">
             <p className="text-sm text-[var(--color-text-subtle)]">No hay actividad registrada en las faenas visibles.</p>
@@ -202,7 +203,7 @@ export default async function DashboardPage() {
                     <td className="px-3 py-3 font-medium text-[var(--color-text)]">{row.name}</td>
                     <td className="px-3 py-3 text-right font-mono">{row.requestsCount}</td>
                     <td className="px-3 py-3 text-right font-mono">
-                      <span className={cn(row.pendingCount > 0 ? "font-bold text-[oklch(0.52_0.11_85)]" : "text-[var(--color-text-subtle)]")}>
+                      <span className={cn(row.pendingCount > 0 ? "font-bold text-[var(--color-warning-700)]" : "text-[var(--color-text-subtle)]")}>
                         {row.pendingCount}
                       </span>
                     </td>

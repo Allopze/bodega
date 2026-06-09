@@ -18,11 +18,11 @@ export function PageHeader({ title, description, actions, breadcrumb, className 
       )}
       <div className="flex items-start justify-between gap-4 min-h-[2rem]">
         <div>
-          <h1 className="font-display text-xl font-semibold text-[var(--color-text)] leading-tight">
+          <h1 className="text-h1 text-[var(--color-text)]">
             {title}
           </h1>
           {description && (
-            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+            <p className="mt-0.5 text-sub">
               {description}
             </p>
           )}

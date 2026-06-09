@@ -32,9 +32,12 @@ export function NotificationBell() {
         >
           <Bell size={16} />
           {hasUnread && data && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary)] text-[9px] font-bold text-white">
-              {data.unreadCount > 9 ? "9+" : data.unreadCount}
-            </span>
+            <>
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary)] text-[9px] font-bold text-white animate-in fade-in zoom-in-95 duration-[var(--duration-fast)]">
+                {data.unreadCount > 9 ? "9+" : data.unreadCount}
+              </span>
+              <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-[var(--color-primary)] animate-ping opacity-50" />
+            </>
           )}
         </button>
       </PopoverPrimitive.Trigger>

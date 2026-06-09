@@ -190,7 +190,7 @@ export default async function BodegaPage({
           const items = stockByWarehouse[warehouse.id] ?? []
           return (
             <div key={warehouse.id}>
-              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">
+              <h2 className="text-h2 mb-3">
                 {warehouse.name}
                 <span className="ml-2 text-xs font-mono text-[var(--color-text-subtle)] font-normal">
                   {warehouse.code}
@@ -240,7 +240,7 @@ export default async function BodegaPage({
                                   {s.product?.name ?? s.productId}
                                 </span>
                                 {lowStock && (
-                                  <span className="text-[10px] font-medium text-[oklch(0.62_0.15_56)] bg-[var(--color-signal-50)] border border-[var(--color-signal-100)] px-1.5 py-0.5 rounded">
+                                  <span className="text-[10px] font-medium text-[var(--color-signal-500)] bg-[var(--color-signal-50)] border border-[var(--color-signal-100)] px-1.5 py-0.5 rounded">
                                     Stock bajo
                                   </span>
                                 )}
@@ -284,7 +284,7 @@ export default async function BodegaPage({
         {/* Kardex — recent movements */}
         {recentMovements.length > 0 && (
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">
+            <h2 className="text-h2 mb-3">
               Kardex: últimos 50 movimientos
             </h2>
             <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">

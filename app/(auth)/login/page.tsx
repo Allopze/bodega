@@ -23,7 +23,7 @@ export default async function LoginPage() {
 
         {/* Tagline */}
         <div>
-          <p className="font-display text-[1.875rem] leading-tight font-semibold text-(--color-brand-text)">
+          <p className="font-display text-3xl font-semibold text-(--color-brand-text)">
             Control total del abastecimiento
           </p>
           <p className="mt-3 text-sm text-brand-text-muted leading-relaxed max-w-[32ch]">

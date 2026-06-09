@@ -95,7 +95,7 @@ export function ReceiptForm({
 
       {/* Items table */}
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">
+        <h2 className="text-h2 text-[var(--color-text)]">
           Ítems de la OC {orderCode}
         </h2>
 

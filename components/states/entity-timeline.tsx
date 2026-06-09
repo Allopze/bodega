@@ -33,7 +33,7 @@ export function EntityTimeline({ entityType, events }: EntityTimelineProps) {
     <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-4 py-3">
         <div>
-          <h2 className="text-sm font-semibold text-[var(--color-text)]">Historial de cambios</h2>
+          <h2 className="text-h2">Historial de cambios</h2>
           <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
             Registro de transiciones y auditoría
           </p>

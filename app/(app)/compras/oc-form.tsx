@@ -295,7 +295,7 @@ export function OcForm({
       {/* Item selection */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[var(--color-text)]">
+          <h2 className="text-h2 text-[var(--color-text)]">
             Ítems a incluir
           </h2>
           {filteredItems.length > 0 && (

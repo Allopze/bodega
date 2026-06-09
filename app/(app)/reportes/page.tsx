@@ -151,7 +151,7 @@ export default async function Page() {
       </div>
 
       <section className="mt-6 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">Estados principales</h2>
+        <h2 className="text-h2">Estados principales</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <StatusGroup title="Solicitudes" rows={statusRows(requests)} />
           <StatusGroup title="Ítems" rows={statusRows(items)} />
@@ -172,7 +172,7 @@ function ExportLinks({
   tone?: "neutral" | "signal"
 }) {
   const baseClass = tone === "signal"
-    ? "border-[var(--color-signal-100)] bg-[var(--color-signal-50)] text-[oklch(0.52_0.15_56)] hover:opacity-80"
+    ? "border-[var(--color-signal-100)] bg-[var(--color-signal-50)] text-[var(--color-signal-600)] hover:opacity-80"
     : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
 
   return (

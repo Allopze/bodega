@@ -18,7 +18,7 @@ const TooltipContent = React.forwardRef<
       sideOffset={sideOffset}
       className={cn(
         "z-50 rounded-[var(--radius-sm)]",
-        "bg-[var(--color-text)] text-[oklch(0.985_0.003_155)] text-xs px-2 py-1",
+        "bg-[var(--color-text)] text-[var(--color-surface)] text-xs px-2 py-1",
         "shadow-[var(--shadow-md)]",
         "max-w-[16rem] text-center select-none",
         // Emil: origin-aware — scale from trigger, not center

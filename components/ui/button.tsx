@@ -9,7 +9,7 @@ const buttonVariants = cva(
   // Base: pressable affordance per Emil (scale on :active) + clean transitions
   [
     "inline-flex items-center justify-center gap-2",
-    "font-sans font-medium text-sm leading-none",
+    "font-sans font-medium text-sm leading-[var(--leading-label)]",
     "rounded-[var(--radius)]",
     "select-none cursor-pointer",
     "transition-[transform,opacity,background-color,box-shadow]",

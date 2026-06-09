@@ -26,6 +26,7 @@ export function EmptyState({
     <div
       className={cn(
         "flex flex-col items-center justify-center text-center",
+        "animate-in fade-in slide-in-from-bottom-3 duration-[var(--duration-default)] ease-[var(--ease-out)]",
         compact ? "py-8 px-4" : "py-16 px-8",
         className,
       )}
