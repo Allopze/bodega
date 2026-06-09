@@ -5,7 +5,7 @@ import { can } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, Warehouse, UserCircle, Gear,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -53,13 +53,6 @@ export default async function AdminPage() {
       href:        "/admin/proveedores",
       icon:        Buildings,
       permission:  "admin:suppliers",
-    },
-    {
-      title:       "Bodegas",
-      description: "Configurar bodegas y centros físicos de inventario.",
-      href:        "/admin/bodegas",
-      icon:        Warehouse,
-      permission:  "admin:config",
     },
     {
       title:       "Configuración",

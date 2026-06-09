@@ -154,18 +154,6 @@ export const productSchema = z.object({
   suppliers:          z.array(productSupplierSchema).default([]),
 })
 
-// ── Warehouse (Bodega) ────────────────────────────────────────────────────────
-export const warehouseSchema = z.object({
-  id:          z.string().optional(),
-  name:        z.string().min(2, "Nombre requerido").max(80),
-  code:        z.string().min(1, "Código requerido").max(20).toUpperCase(),
-  type:        z.enum(["central", "worksite", "transit"]).default("central"),
-  worksiteId:  z.string().optional().nullable().or(z.literal("")),
-  address:     z.string().max(200).optional().or(z.literal("")),
-  notes:       z.string().max(300).optional().or(z.literal("")),
-  isActive:    z.coerce.boolean().default(true),
-})
-
 // ── Worker (Trabajador) ───────────────────────────────────────────────────────
 export const workerSchema = z.object({
   id:          z.string().optional(),

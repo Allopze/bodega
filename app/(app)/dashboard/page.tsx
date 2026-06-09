@@ -14,7 +14,7 @@ import {
   purchaseRequestItems,
   purchaseRequests,
   suppliers,
-  warehouseStock,
+  worksiteStock,
   worksites,
 } from "@/db/schema"
 import { and, count, eq, inArray, sql } from "drizzle-orm"
@@ -392,10 +392,10 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
 
     db
       .select({
-        productId: warehouseStock.productId,
+        productId: worksiteStock.productId,
       })
-      .from(warehouseStock)
-      .where(sql`${warehouseStock.quantity} > 0`),
+      .from(worksiteStock)
+      .where(sql`${worksiteStock.quantity} > 0`),
   ])
 
   const itemStatusesByRequest = new Map<string, string[]>()

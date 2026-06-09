@@ -2,17 +2,17 @@
 
 import { revalidatePath }    from "next/cache"
 import { db } from "@/db"
-import { deliveryItems, purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { deliveryItems, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { applyMovement }     from "@/lib/services/warehouse"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
-import { dispatchSchema, stockAdjustmentSchema, type ActionState }  from "@/lib/validation/operations"
+import { applyMovement } from "@/lib/services/stock"
+import { dispatchSchema, setMinStockSchema, returnStockSchema, type ActionState }  from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 
 const REVALIDATE = "/bodega"
 
-// ── Dispatch from warehouse to faena ─────────────────────────────────────────
+// ── Dispatch from worksite stock to worker ───────────────────────────────────
 
 export async function dispatchAction(
   _prev: ActionState,
@@ -23,7 +23,6 @@ export async function dispatchAction(
   catch { return { ok: false, message: "Sin permisos para registrar movimientos" } }
 
   const parsed = dispatchSchema.safeParse({
-    warehouseId:   formData.get("warehouseId"),
     worksiteId:    formData.get("worksiteId"),
     productId:     formData.get("productId"),
     requestItemId: formData.get("requestItemId"),
@@ -41,7 +40,7 @@ export async function dispatchAction(
     }
   }
 
-  const { warehouseId, worksiteId, productId, quantity: qty, unitOfMeasure: unit, receiverName: receiver, notes } = parsed.data
+  const { worksiteId, productId, quantity: qty, unitOfMeasure: unit, receiverName: receiver, notes } = parsed.data
   const requestItemId = parsed.data.requestItemId || null
 
   if (!canAccessWorksite(session, worksiteId)) {
@@ -84,7 +83,6 @@ export async function dispatchAction(
 
   try {
     await registerWorksiteDelivery({
-      warehouseId,
       worksiteId,
       productId,
       requestItemId,
@@ -106,51 +104,86 @@ export async function dispatchAction(
   }
 }
 
-// ── Manual stock adjustment ───────────────────────────────────────────────────
+// ── Set minStock threshold ───────────────────────────────────────────────────
 
-export async function adjustStockAction(
+export async function setMinStockAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("warehouse:adjust_stock") }
-  catch { return { ok: false, message: "Sin permisos para ajustar stock" } }
+  try { session = await requirePermission("warehouse:register_movement") }
+  catch { return { ok: false, message: "Sin permisos" } }
 
-  const parsed = stockAdjustmentSchema.safeParse({
-    warehouseId: formData.get("warehouseId"),
-    productId:   formData.get("productId"),
-    quantity:    formData.get("quantity"),
-    type:        formData.get("type"),
-    reason:      formData.get("reason"),
+  const parsed = setMinStockSchema.safeParse({
+    stockId:  formData.get("stockId"),
+    minStock: formData.get("minStock"),
+  })
+
+  if (!parsed.success) {
+    return { ok: false, message: "Valor inválido" }
+  }
+
+  const { stockId, minStock } = parsed.data
+
+  try {
+    await db.update(worksiteStock).set({ minStock }).where(eq(worksiteStock.id, stockId))
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: `Stock mínimo actualizado a ${minStock}` }
+  } catch (e) {
+    logger.error("[setMinStockAction]", e)
+    return { ok: false, message: "Error al actualizar stock mínimo" }
+  }
+}
+
+// ── Return stock to worksite ─────────────────────────────────────────────────
+
+export async function returnStockAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("warehouse:register_movement") }
+  catch { return { ok: false, message: "Sin permisos para registrar movimientos" } }
+
+  const parsed = returnStockSchema.safeParse({
+    worksiteId: formData.get("worksiteId"),
+    productId:  formData.get("productId"),
+    quantity:   formData.get("quantity"),
+    reason:     formData.get("reason"),
+    notes:      formData.get("notes"),
   })
 
   if (!parsed.success) {
     return {
       ok: false,
-      message: "Revisa los datos del ajuste",
+      message: "Revisa los datos de la devolución",
       fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
     }
   }
 
-  const { warehouseId, productId, quantity: qty, type: movType, reason } = parsed.data
-  const signedQty = movType === "ajuste_negativo" ? -qty : qty
+  const { worksiteId, productId, quantity, reason, notes } = parsed.data
+
+  if (!canAccessWorksite(session, worksiteId)) {
+    return { ok: false, message: "No tienes acceso a esta faena" }
+  }
 
   try {
     await applyMovement({
-      warehouseId,
+      worksiteId,
       productId,
-      type:        movType,
-      quantity:    signedQty,
-      referenceType: "manual_adjustment",
+      type: "ingreso_devolucion",
+      quantity,
+      referenceType: "return",
       performedBy: session.user.id,
-      userEmail:   session.user.email ?? undefined,
+      userEmail: session.user.email ?? undefined,
       reason,
+      notes: notes || undefined,
     })
 
     revalidatePath(REVALIDATE)
-    return { ok: true, message: "Ajuste registrado" }
+    return { ok: true, message: `Devolución registrada: ${quantity} unidades` }
   } catch (e) {
-    logger.error("[adjustStockAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al ajustar stock" }
+    logger.error("[returnStockAction]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar devolución" }
   }
 }

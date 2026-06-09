@@ -2,7 +2,7 @@
  * Full Flow Integration Test
  *
  * Simulates the end-to-end procurement pipeline:
- * 1. Seed worksite, product, supplier, warehouse, and user
+ * 1. Seed worksite, product, supplier, and user
  * 2. Create Purchase Request (SOL) in draft state
  * 3. Submit request (transitions request to submitted, item to requested)
  * 4. Approve request item (transitions item to approved, rolls up request to approved)
@@ -10,8 +10,8 @@
  * 6. Create Purchase Order (OC) (transitions item to in_purchase_order, creates draft OC)
  * 7. Issue OC (transitions OC to issued)
  * 8. Send OC (transitions OC to sent, item to purchased)
- * 9. Register Receipt of OC items into warehouse (transitions item to received, OC to received, request to closed)
- * 10. Verify warehouse stock is correctly incremented
+ * 9. Register Receipt of OC items into worksite (transitions item to received, OC to received, request to closed)
+ * 10. Verify worksite stock is correctly incremented
  */
 
 import Database from "better-sqlite3"
@@ -111,16 +111,6 @@ describe("Full procurement workflow integration", () => {
       updatedAt: now,
     }).run()
 
-    const warehouseId = "wh-1"
-    await inMemoryDb.insert(schema.warehouses).values({
-      id: warehouseId,
-      name: "Bodega Central Faena Quillota",
-      code: "BOD-QUILLOTA",
-      type: "central",
-      isActive: true,
-      createdAt: now,
-    }).run()
-
     // 2. Create Purchase Request (SOL) in draft state
     const requestId = "req-1"
     await inMemoryDb.insert(schema.purchaseRequests).values({
@@ -157,7 +147,7 @@ describe("Full procurement workflow integration", () => {
 
     // 3. Submit request item (transitions item to requested)
     await submitItem(requestItemId, userId, { userEmail: "juan@chome.cl" })
-    
+
     // Simulate request header status update to "submitted" as done in submitRequest server action
     await inMemoryDb.update(schema.purchaseRequests)
       .set({ status: "submitted", submittedAt: now, updatedAt: now })
@@ -245,14 +235,13 @@ describe("Full procurement workflow integration", () => {
     })
     expect(purchasedReq?.items[0].status).toBe("purchased")
 
-    // 9. Register Receipt of OC items into warehouse
+    // 9. Register Receipt of OC items into worksite
     const ocItemId = order?.items[0].id ?? ""
     const receiptId = await registerReceipt({
       purchaseOrderId: orderId,
       receivedBy: userId,
       userEmail: "juan@chome.cl",
-      locationType: "warehouse",
-      warehouseId: warehouseId,
+      worksiteId: worksiteId,
       dispatchGuideNo: "GUIA-999",
       items: [
         {
@@ -284,12 +273,12 @@ describe("Full procurement workflow integration", () => {
     expect(finalReq?.items[0].status).toBe("received")
     expect(finalReq?.status).toBe("closed")
 
-    // 10. Verify warehouse stock is correctly incremented
-    const stock = await inMemoryDb.query.warehouseStock.findFirst({
-      where: eq(schema.warehouseStock.warehouseId, warehouseId),
+    // 10. Verify worksite stock is correctly incremented
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: eq(schema.worksiteStock.worksiteId, worksiteId),
     })
     expect(stock).toBeDefined()
     expect(stock?.productId).toBe(productId)
-    expect(stock?.quantity).toBe(10) // 10 cascos in warehouse stock
+    expect(stock?.quantity).toBe(10) // 10 cascos in worksite stock
   })
 })

@@ -1,28 +1,18 @@
-import type { warehouses, products, warehouseStock, inventoryMovements } from "@/db/schema"
-
-export interface Warehouse {
+export interface WorksiteStockWithProduct {
   id: string
-  name: string
-  code: string
-  type: string
-  isActive: boolean
-}
-
-export interface WarehouseStockWithProduct {
-  id: string
-  warehouseId: string
+  worksiteId: string
   productId: string
   quantity: number
-  reservedQty: number
   minStock: number
   lastMovementAt: string | null
   updatedAt: string
   product: { name: string; sku: string | null; unitOfMeasure: string } | null
+  worksite: { name: string } | null
 }
 
 export interface InventoryMovementWithRelations {
   id: string
-  warehouseId: string
+  worksiteId: string
   productId: string
   type: string
   quantity: number
@@ -31,5 +21,5 @@ export interface InventoryMovementWithRelations {
   reason: string | null
   notes: string | null
   product: { name: string } | null
-  warehouse: { name: string } | null
+  worksite: { name: string } | null
 }

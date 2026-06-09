@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
 import { relations, sql } from "drizzle-orm"
+import { worksiteStock } from "./stock"
 
 /* ── Worksites (Faenas) ─────────────────────────────────────────────────── */
 export const worksites = sqliteTable("worksites", {
@@ -43,7 +44,8 @@ export const workers = sqliteTable("workers", {
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const worksitesRelations = relations(worksites, ({ many }) => ({
-  workers:     many(workers),
+  workers: many(workers),
+  stock:   many(worksiteStock),
 }))
 
 export const workersRelations = relations(workers, ({ one }) => ({

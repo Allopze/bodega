@@ -125,13 +125,14 @@ async function main() {
     isPreferred: true,
     lastUpdated: now,
   })
-  await db.insert(schema.warehouses).values({
-    id: "wh-e2e",
-    name: "Bodega Central E2E",
-    code: "BOD-E2E",
-    type: "central",
+  const wsId = "ws-e2e"
+  await db.insert(schema.worksites).values({
+    id: wsId,
+    name: "Faena E2E",
+    code: "WS-E2E",
     isActive: true,
     createdAt: now,
+    updatedAt: now,
   })
 
   sqlite.close()

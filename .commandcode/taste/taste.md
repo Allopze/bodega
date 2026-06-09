@@ -8,6 +8,13 @@
 # Project Identity
 - Project name is "Chome Solicitudes y Bodega", never "StockFlow". Confidence: 0.90
 
+# Warehouse (Bodega) Scope
+- Warehouse module is for basic EPP inventory only — track what EPP exists and how many; not a full WMS. Confidence: 0.85
+- No central warehouse exists; the faena (worksite) itself acts as the warehouse for stock. Stock lives at the faena level, not in a centralized bodega. Confidence: 0.85
+
+# Code Style
+- DataTable generic constraint requires `as unknown as Record<string, unknown>[]` cast — all 9+ list components use this pattern, don't try to "fix" it. Confidence: 0.70
+
 # Workflow Preferences
 - Keep workflows simple and explicit; avoid over-engineering. Confidence: 0.85
 - Approval flow: jefa de chome, secretaria, or prevencionista approve/reject requests. Confidence: 0.90

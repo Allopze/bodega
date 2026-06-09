@@ -1,25 +1,21 @@
 import { describe, it, expect, beforeAll } from "vitest"
 import { db } from "@/db"
-import { warehouses, products, warehouseStock, productCategories } from "@/db/schema"
+import { worksites, products, worksiteStock, productCategories } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { getStockAlerts, getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 
-/**
- * Stock-alerts unit tests.
- */
-
 describe("stock alerts", () => {
-  const warehouseId = nanoid()
+  const worksiteId = nanoid()
   const categoryId  = nanoid()
-  const safeProductId = nanoid()   // quantity=100, minStock=10 → no alert
-  const alertProductId = nanoid()  // quantity=3,  minStock=10 → critical alert
+  const safeProductId = nanoid()
+  const alertProductId = nanoid()
 
   beforeAll(() => {
     db.insert(productCategories)
       .values({ id: categoryId, name: "Test Category", slug: `test-cat-${nanoid()}` })
       .run()
-    db.insert(warehouses)
-      .values({ id: warehouseId, name: "Test Bodega Alertas", code: `TEST-ALERT-${nanoid().slice(0, 8)}` })
+    db.insert(worksites)
+      .values({ id: worksiteId, name: "Faena Test Alertas", code: `FA-ALERT-${nanoid().slice(0, 8)}` })
       .run()
     db.insert(products)
       .values({ id: safeProductId, categoryId, name: "Safe Product", sku: `SAFE-${nanoid().slice(0, 8)}`, unitOfMeasure: "unidad" })
@@ -27,11 +23,11 @@ describe("stock alerts", () => {
     db.insert(products)
       .values({ id: alertProductId, categoryId, name: "Alert Product", sku: `ALERT-${nanoid().slice(0, 8)}`, unitOfMeasure: "unidad" })
       .run()
-    db.insert(warehouseStock)
-      .values({ id: nanoid(), warehouseId, productId: safeProductId, quantity: 100, minStock: 10 })
+    db.insert(worksiteStock)
+      .values({ id: nanoid(), worksiteId, productId: safeProductId, quantity: 100, minStock: 10 })
       .run()
-    db.insert(warehouseStock)
-      .values({ id: nanoid(), warehouseId, productId: alertProductId, quantity: 3, minStock: 10 })
+    db.insert(worksiteStock)
+      .values({ id: nanoid(), worksiteId, productId: alertProductId, quantity: 3, minStock: 10 })
       .run()
   })
 

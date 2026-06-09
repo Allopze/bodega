@@ -55,6 +55,14 @@
       "version": "6",
       "when": 1781955100000,
       "tag": "0007_rate_limits",
-      "breakpoints": true    }
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781960000000,
+      "tag": "0008_stock_por_faena",
+      "breakpoints": true
+    }
   ]
 }

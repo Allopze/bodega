@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createOrderSchema, dispatchSchema, receiptSchema, stockAdjustmentSchema } from "@/lib/validation/operations"
+import { createOrderSchema, dispatchSchema, receiptSchema } from "@/lib/validation/operations"
 
 const validOrder = {
   worksiteId:        "worksite-1",
@@ -57,9 +57,7 @@ describe("createOrderSchema", () => {
 describe("receiptSchema", () => {
   const validReceipt = {
     purchaseOrderId: "po-1",
-    locationType: "faena",
     worksiteId: "worksite-1",
-    warehouseId: "",
     dispatchGuideNo: "GD-38291",
     notes: "",
     items: [
@@ -73,13 +71,8 @@ describe("receiptSchema", () => {
     ],
   }
 
-  it("accepts a direct-to-worksite receipt", () => {
+  it("accepts a worksite receipt", () => {
     expect(receiptSchema.safeParse(validReceipt).success).toBe(true)
-  })
-
-  it("requires a warehouse when receiving into warehouse stock", () => {
-    expect(receiptSchema.safeParse({ ...validReceipt, locationType: "warehouse", warehouseId: "" }).success).toBe(false)
-    expect(receiptSchema.safeParse({ ...validReceipt, locationType: "warehouse", warehouseId: "warehouse-1" }).success).toBe(true)
   })
 
   it("rejects negative and non-finite received quantities", () => {
@@ -97,7 +90,6 @@ describe("receiptSchema", () => {
 
 describe("dispatchSchema", () => {
   const validDispatch = {
-    warehouseId: "warehouse-1",
     worksiteId: "worksite-1",
     productId: "product-1",
     requestItemId: "",
@@ -117,35 +109,5 @@ describe("dispatchSchema", () => {
     expect(dispatchSchema.safeParse({ ...validDispatch, receiverName: "" }).success).toBe(false)
     expect(dispatchSchema.safeParse({ ...validDispatch, quantity: "0" }).success).toBe(false)
     expect(dispatchSchema.safeParse({ ...validDispatch, quantity: Number.NaN }).success).toBe(false)
-  })
-})
-
-describe("stockAdjustmentSchema", () => {
-  it("accepts positive and negative adjustment types", () => {
-    expect(stockAdjustmentSchema.safeParse({
-      warehouseId: "warehouse-1",
-      productId: "product-1",
-      quantity: 2,
-      type: "ajuste_positivo",
-      reason: "Conteo físico",
-    }).success).toBe(true)
-
-    expect(stockAdjustmentSchema.safeParse({
-      warehouseId: "warehouse-1",
-      productId: "product-1",
-      quantity: 2,
-      type: "ajuste_negativo",
-      reason: "Merma documentada",
-    }).success).toBe(true)
-  })
-
-  it("requires a reason and a positive finite quantity", () => {
-    expect(stockAdjustmentSchema.safeParse({
-      warehouseId: "warehouse-1",
-      productId: "product-1",
-      quantity: 0,
-      type: "ajuste_positivo",
-      reason: "",
-    }).success).toBe(false)
   })
 })

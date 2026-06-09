@@ -13,7 +13,7 @@ export const receipts = sqliteTable("receipts", {
   purchaseOrderId:    text("purchase_order_id").notNull().references(() => purchaseOrders.id),
   receivedBy:         text("received_by").notNull().references(() => users.id),
   receivedAt:         text("received_at").notNull().default(sql`(datetime('now'))`),
-  // Where was the delivery: faena, central_warehouse, worksite_warehouse, direct
+  // faena: always delivered directly to worksite
   locationType:       text("location_type").notNull().default("faena"),
   worksiteId:         text("worksite_id").references(() => worksites.id),
   dispatchGuideNo:    text("dispatch_guide_no"),

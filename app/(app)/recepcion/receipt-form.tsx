@@ -68,7 +68,6 @@ export function ReceiptForm({
     <form action={action} className="flex flex-col gap-6">
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
       <input type="hidden" name="itemsJson"        value={itemsJson} />
-      <input type="hidden" name="locationType"     value="faena" />
 
       {/* Header */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

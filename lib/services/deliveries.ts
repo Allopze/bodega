@@ -8,10 +8,9 @@ import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { deliverItemTx } from "@/lib/services/item-state"
-import { applyMovementTx } from "@/lib/services/warehouse"
+import { applyMovementTx } from "@/lib/services/stock"
 
 export interface RegisterWorksiteDeliveryInput {
-  warehouseId: string
   worksiteId: string
   productId: string
   requestItemId?: string | null
@@ -24,7 +23,6 @@ export interface RegisterWorksiteDeliveryInput {
 }
 
 export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryInput): Promise<string> {
-  if (!input.warehouseId) throw new Error("Selecciona una bodega")
   if (!input.worksiteId) throw new Error("Selecciona una faena")
   if (!input.productId) throw new Error("Selecciona un producto")
   if (!input.receiverName.trim()) throw new Error("Indica quién recibió")
@@ -99,9 +97,9 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
     }).run()
 
     applyMovementTx(tx, {
-      warehouseId: input.warehouseId,
+      worksiteId: input.worksiteId,
       productId: input.productId,
-      type: "egreso_faena",
+      type: "egreso_entrega",
       quantity: -input.quantity,
       referenceType: "delivery",
       referenceId: deliveryId,
@@ -127,7 +125,6 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
       entityId: deliveryId,
       entityCode: code,
       newState: {
-        warehouseId: input.warehouseId,
         worksiteId: input.worksiteId,
         productId: input.productId,
         requestItemId: input.requestItemId ?? null,

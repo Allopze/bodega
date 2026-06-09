@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { Suspense } from "react"
 import { db } from "@/db"
-import { deliveryItems, purchaseRequestItems, warehouses, worksites } from "@/db/schema"
+import { deliveryItems, purchaseRequestItems, worksites } from "@/db/schema"
 import { eq, asc, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can, canAccessWorksite } from "@/lib/auth/can"
@@ -11,10 +11,12 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { SkeletonPage } from "@/components/ui/skeleton"
 import { Warehouse } from "@phosphor-icons/react/dist/ssr"
 import { DispatchPanel } from "./dispatch-panel"
+import { ReturnPanel } from "./return-panel"
 import { StockTable } from "./stock-table"
 import { KardexTable } from "./kardex-table"
 import type { DeliverableOption, StockOption, WorksiteOption } from "./dispatch-panel"
-import type { Warehouse as WarehouseType, WarehouseStockWithProduct, InventoryMovementWithRelations } from "./types"
+import type { ReturnPanelStockOption } from "./return-panel"
+import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 
 export const metadata: Metadata = { title: "Bodega" }
 
@@ -32,35 +34,14 @@ export default async function BodegaPage({
 
   const canDispatch = can(session, "warehouse:register_movement")
 
-  const [allWarehouses, allWorksites] = await Promise.all([
-    db.select().from(warehouses).where(eq(warehouses.isActive, true)).orderBy(asc(warehouses.name)),
+  const [allWorksites, stockRows, recentMovements, receivedItems] = await Promise.all([
     db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
-  ])
-
-  if (allWarehouses.length === 0) {
-    return (
-      <>
-        <PageHeader title="Bodega" description="Control de stock e inventario."
-          breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
-        />
-        <EmptyState icon={<Warehouse size={24} />} title="Sin bodegas configuradas"
-          description="Configura las bodegas en el módulo de administración para ver el stock aquí."
-        />
-      </>
-    )
-  }
-
-  const warehouseIds = allWarehouses.map((w) => w.id)
-
-  const [stockRows, recentMovements, receivedItems] = await Promise.all([
-    db.query.warehouseStock.findMany({
-      where: (s, { inArray }) => inArray(s.warehouseId, warehouseIds),
-      with: { product: true, warehouse: true },
-      orderBy: (s, { asc }) => [asc(s.warehouseId)],
+    db.query.worksiteStock.findMany({
+      with: { product: true, worksite: true },
+      orderBy: (s, { asc }) => [asc(s.worksiteId)],
     }),
     db.query.inventoryMovements.findMany({
-      where: (m, { inArray }) => inArray(m.warehouseId, warehouseIds),
-      with: { product: true, warehouse: true },
+      with: { product: true, worksite: true },
       orderBy: (m, { desc }) => [desc(m.performedAt)],
       limit: 50,
     }),
@@ -70,17 +51,42 @@ export default async function BodegaPage({
     }),
   ])
 
+  if (allWorksites.length === 0) {
+    return (
+      <>
+        <PageHeader title="Bodega" description="Control de stock e inventario."
+          breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
+        />
+        <EmptyState icon={<Warehouse size={24} />} title="Sin faenas configuradas"
+          description="Configura las faenas en el módulo de administración para ver el stock aquí."
+        />
+      </>
+    )
+  }
+
+  const worksiteOptions: WorksiteOption[] = allWorksites
+    .filter((w) => canAccessWorksite(session, w.id))
+    .map((w) => ({ id: w.id, name: w.name }))
+
   const stockOptions: StockOption[] = stockRows
     .filter((s) => s.quantity > 0)
     .map((s) => ({
-      warehouseId: s.warehouseId, warehouseName: s.warehouse?.name ?? s.warehouseId,
+      worksiteId: s.worksiteId, worksiteName: s.worksite?.name ?? s.worksiteId,
       productId: s.productId, productName: s.product?.name ?? s.productId,
       productSku: s.product?.sku ?? null, quantity: s.quantity,
       unitOfMeasure: s.product?.unitOfMeasure ?? "unidad",
     }))
-  const worksiteOptions: WorksiteOption[] = allWorksites
-    .filter((w) => canAccessWorksite(session, w.id))
-    .map((w) => ({ id: w.id, name: w.name }))
+
+  const returnProducts: ReturnPanelStockOption[] = stockRows
+    .map((s) => ({
+      worksiteId: s.worksiteId,
+      worksiteName: s.worksite?.name ?? s.worksiteId,
+      productId: s.productId,
+      productName: s.product?.name ?? s.productId,
+      productSku: s.product?.sku ?? null,
+      unitOfMeasure: s.product?.unitOfMeasure ?? "unidad",
+    }))
+
   const requestItemIds = receivedItems.map((item) => item.id)
   const deliveredRows = requestItemIds.length > 0
     ? await db.select({ requestItemId: deliveryItems.requestItemId, quantity: deliveryItems.quantity })
@@ -107,13 +113,11 @@ export default async function BodegaPage({
   const initialWorksiteId = initialDeliverable?.worksiteId
     ?? (worksiteOptions.some((w) => w.id === requestedWorksiteId) ? requestedWorksiteId : undefined)
   const initialProductId = initialDeliverable?.productId
-  const initialWarehouseId = initialProductId
-    ? stockOptions.find((s) => s.productId === initialProductId)?.warehouseId : undefined
 
-  const stockByWarehouse: Record<string, typeof stockRows> = {}
+  const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const s of stockRows) {
-    if (!stockByWarehouse[s.warehouseId]) stockByWarehouse[s.warehouseId] = []
-    stockByWarehouse[s.warehouseId].push(s)
+    if (!stockByWorksite[s.worksiteId]) stockByWorksite[s.worksiteId] = []
+    stockByWorksite[s.worksiteId].push(s)
   }
 
   return (
@@ -123,35 +127,41 @@ export default async function BodegaPage({
       />
       <div className="flex flex-col gap-8">
         <Suspense fallback={<SkeletonPage rows={6} />}>
-          <StockSection warehouses={allWarehouses} stockByWarehouse={stockByWarehouse} />
+          <StockSection worksites={worksiteOptions} stockByWorksite={stockByWorksite} />
         </Suspense>
 
         {canDispatch && stockOptions.length > 0 && worksiteOptions.length > 0 && (
           <div className="max-w-2xl">
             <DispatchPanel stockItems={stockOptions} worksites={worksiteOptions} deliverableItems={deliverableOptions}
-              initialWarehouseId={initialWarehouseId} initialWorksiteId={initialWorksiteId}
+              initialWorksiteId={initialWorksiteId}
               initialProductId={initialProductId} initialRequestItemId={initialDeliverable?.requestItemId}
             />
           </div>
         )}
 
+        {canDispatch && returnProducts.length > 0 && worksiteOptions.length > 0 && (
+          <div className="max-w-2xl">
+            <ReturnPanel products={returnProducts} worksites={worksiteOptions} />
+          </div>
+        )}
+
         <Suspense fallback={<SkeletonPage rows={6} />}>
-          <KardexSection movements={recentMovements} />
+          <KardexSection movements={recentMovements as InventoryMovementWithRelations[]} />
         </Suspense>
       </div>
     </>
   )
 }
 
-function StockSection({ warehouses, stockByWarehouse }: {
-  warehouses: WarehouseType[]
-  stockByWarehouse: Record<string, WarehouseStockWithProduct[]>
+function StockSection({ worksites, stockByWorksite }: {
+  worksites: WorksiteOption[]
+  stockByWorksite: Record<string, WorksiteStockWithProduct[]>
 }) {
   return (
     <>
-      {warehouses.map((warehouse) => (
-        <StockTable key={warehouse.id} warehouse={warehouse}
-          items={stockByWarehouse[warehouse.id] ?? []} />
+      {worksites.map((ws) => (
+        <StockTable key={ws.id} worksiteName={ws.name}
+          items={stockByWorksite[ws.id] ?? []} />
       ))}
     </>
   )

@@ -17,8 +17,8 @@ import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 
 export interface StockOption {
-  warehouseId:   string
-  warehouseName: string
+  worksiteId:    string
+  worksiteName:  string
   productId:     string
   productName:   string
   productSku:    string | null
@@ -47,7 +47,6 @@ export function DispatchPanel({
   stockItems,
   worksites,
   deliverableItems,
-  initialWarehouseId,
   initialWorksiteId,
   initialProductId,
   initialRequestItemId,
@@ -55,12 +54,10 @@ export function DispatchPanel({
   stockItems: StockOption[]
   worksites: WorksiteOption[]
   deliverableItems: DeliverableOption[]
-  initialWarehouseId?: string
   initialWorksiteId?: string
   initialProductId?: string
   initialRequestItemId?: string
 }) {
-  const [warehouseId, setWarehouseId] = React.useState<string>(initialWarehouseId ?? "")
   const [worksiteId,  setWorksiteId]  = React.useState<string>(initialWorksiteId ?? worksites[0]?.id ?? "")
   const [productId,   setProductId]   = React.useState<string>(initialProductId ?? "")
   const [requestItemId, setRequestItemId] = React.useState<string>(initialRequestItemId ?? "")
@@ -72,19 +69,16 @@ export function DispatchPanel({
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
+      setWorksiteId(worksites[0]?.id ?? "")
+      setProductId("")
+      setRequestItemId("")
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
-  }, [state])
+  }, [state, worksites])
 
-  // Unique warehouses
-  const warehouses = Array.from(
-    new Map(stockItems.map((s) => [s.warehouseId, { id: s.warehouseId, name: s.warehouseName }])).values()
-  )
-
-  // Products available in selected warehouse
-  const availableProducts = warehouseId
-    ? stockItems.filter((s) => s.warehouseId === warehouseId && s.quantity > 0)
+  const availableProducts = worksiteId
+    ? stockItems.filter((s) => s.worksiteId === worksiteId && s.quantity > 0)
     : []
 
   const selectedStock = availableProducts.find((s) => s.productId === productId)
@@ -97,14 +91,9 @@ export function DispatchPanel({
     selectedDeliverable?.remainingQuantity ?? Number.POSITIVE_INFINITY,
   )
 
-  function handleWarehouseChange(nextWarehouseId: string) {
-    setWarehouseId(nextWarehouseId)
-    setProductId("")
-    setRequestItemId("")
-  }
-
   function handleWorksiteChange(nextWorksiteId: string) {
     setWorksiteId(nextWorksiteId)
+    setProductId("")
     setRequestItemId("")
   }
 
@@ -117,31 +106,17 @@ export function DispatchPanel({
     <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5">
       <h2 className="text-h2 mb-4 flex items-center gap-2">
         <ArrowSquareOut size={16} className="text-[var(--color-text-muted)]" />
-        Registrar entrega a faena
+        Registrar entrega a trabajador
       </h2>
 
       <form ref={formRef} action={action} className="flex flex-col gap-4">
-        <input type="hidden" name="warehouseId" value={warehouseId} />
         <input type="hidden" name="worksiteId"  value={worksiteId} />
         <input type="hidden" name="productId"   value={productId} />
         {requestItemId && <input type="hidden" name="requestItemId" value={requestItemId} />}
         <input type="hidden" name="unitOfMeasure" value={selectedStock?.unitOfMeasure ?? "unidad"} />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Bodega" htmlFor="dispatchWarehouseId" required error={state.fieldErrors?.warehouseId?.[0]}>
-            <Select value={warehouseId} onValueChange={handleWarehouseChange}>
-              <SelectTrigger id="dispatchWarehouseId" error={!!state.fieldErrors?.warehouseId}>
-                <SelectValue placeholder="Selecciona bodega" />
-              </SelectTrigger>
-              <SelectContent>
-                {warehouses.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Faena destino" htmlFor="dispatchWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
+          <Field label="Faena" htmlFor="dispatchWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
             <Select value={worksiteId} onValueChange={handleWorksiteChange}>
               <SelectTrigger id="dispatchWorksiteId" error={!!state.fieldErrors?.worksiteId}>
                 <SelectValue placeholder="Selecciona faena" />
@@ -153,22 +128,20 @@ export function DispatchPanel({
               </SelectContent>
             </Select>
           </Field>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Producto" htmlFor="dispatchProductId" required error={state.fieldErrors?.productId?.[0]}>
-            <Select value={productId} onValueChange={handleProductChange} disabled={!warehouseId}>
+            <Select value={productId} onValueChange={handleProductChange} disabled={!worksiteId}>
               <SelectTrigger id="dispatchProductId" error={!!state.fieldErrors?.productId}>
-                <SelectValue placeholder={warehouseId ? "Selecciona producto" : "Elige bodega primero"} />
+                <SelectValue placeholder={worksiteId ? "Selecciona producto" : "Elige faena primero"} />
               </SelectTrigger>
               <SelectContent>
                 {availableProducts.map((s) => (
                   <SelectItem key={s.productId} value={s.productId}>
                     {s.productSku ? `[${s.productSku}] ` : ""}{s.productName}
-                    {" "}({formatQty(s.quantity, s.unitOfMeasure)} disponible)
+                    {" "}({formatQty(s.quantity, s.unitOfMeasure)} en stock)
                   </SelectItem>
                 ))}
-                {availableProducts.length === 0 && warehouseId && (
+                {availableProducts.length === 0 && worksiteId && (
                   <SelectItem value="__none__" disabled>Sin stock disponible</SelectItem>
                 )}
               </SelectContent>
@@ -256,7 +229,7 @@ export function DispatchPanel({
             label="Registrar entrega"
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={!warehouseId || !worksiteId || !productId}
+            disabled={!worksiteId || !productId}
           />
         </div>
       </form>

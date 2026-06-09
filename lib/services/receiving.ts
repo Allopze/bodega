@@ -1,7 +1,7 @@
 /**
  * Receiving service — register receipt of goods from a purchase order.
  * Handles receipt + receipt items + OC quantity updates + item status transitions
- * + warehouse stock ingress (if destination is a warehouse).
+ * + worksite stock ingress.
  */
 
 import { eq } from "drizzle-orm"
@@ -14,7 +14,7 @@ import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { receiveItemTx } from "./item-state"
-import { applyMovementTx } from "./warehouse"
+import { applyMovementTx } from "./stock"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -30,10 +30,7 @@ export interface RegisterReceiptInput {
   purchaseOrderId:  string
   receivedBy:       string
   userEmail?:       string
-  /** "faena" = goes directly to the worksite, "warehouse" = goes to a warehouse */
-  locationType:     "faena" | "warehouse"
   worksiteId?:      string | null
-  warehouseId?:     string | null
   dispatchGuideNo?: string | null
   notes?:           string | null
   items:            ReceiptItemInput[]
@@ -42,9 +39,6 @@ export interface RegisterReceiptInput {
 /* ── Register receipt ────────────────────────────────────────────────────────── */
 
 export async function registerReceipt(input: RegisterReceiptInput): Promise<string> {
-  if (input.locationType === "warehouse" && !input.warehouseId) {
-    throw new Error("warehouseId is required when locationType is 'warehouse'")
-  }
   if (input.items.length === 0) {
     throw new Error("At least one received item is required")
   }
@@ -58,7 +52,6 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
   const year      = new Date().getFullYear()
   let code!: string
 
-  // Load the OC to validate it's in a receivable state
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, input.purchaseOrderId),
     with:  { items: true },
@@ -68,27 +61,26 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
     throw new Error(`Cannot receive against order in state '${order.status}'`)
   }
 
+  const worksiteId = input.worksiteId ?? order.worksiteId
+
   db.transaction((tx) => {
     code = nextCodeTx(tx, "REC", year)
 
-    // Create receipt header
     tx.insert(receipts).values({
       id:              receiptId,
       code,
       purchaseOrderId: input.purchaseOrderId,
       receivedBy:      input.receivedBy,
       receivedAt:      now,
-      locationType:    input.locationType,
-      worksiteId:      input.worksiteId ?? order.worksiteId,
+      locationType:    "faena",
+      worksiteId,
       dispatchGuideNo: input.dispatchGuideNo ?? null,
       status:          "closed",
       notes:           input.notes ?? null,
       createdAt:       now,
     }).run()
 
-    // Process each receipt item
     for (const ri of input.items) {
-      // Load the OC item
       const ocItem = order.items.find((i) => i.id === ri.purchaseOrderItemId)
       if (!ocItem) throw new Error(`OC item ${ri.purchaseOrderItemId} not in this order`)
 
@@ -131,17 +123,17 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
           userEmail: input.userEmail,
         })
 
-        if (input.locationType === "warehouse" && input.warehouseId && ocItem.productId) {
+        if (worksiteId && ocItem.productId) {
           applyMovementTx(tx, {
-            warehouseId:   input.warehouseId,
-            productId:     ocItem.productId,
-            type:          "ingreso_oc",
-            quantity:      qtyRec,
+            worksiteId,
+            productId:   ocItem.productId,
+            type:        "ingreso_oc",
+            quantity:    qtyRec,
             referenceType: "purchase_order",
-            referenceId:   input.purchaseOrderId,
-            performedBy:   input.receivedBy,
-            userEmail:     input.userEmail,
-            notes:         `Recepción ${code} — guía ${input.dispatchGuideNo ?? "s/n"}`,
+            referenceId: input.purchaseOrderId,
+            performedBy: input.receivedBy,
+            userEmail:   input.userEmail,
+            notes:       `Recepción ${code} — guía ${input.dispatchGuideNo ?? "s/n"}`,
           })
         }
       }
@@ -158,8 +150,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       entityCode: code,
       newState:   {
         purchaseOrderId: input.purchaseOrderId,
-        locationType:    input.locationType,
-        warehouseId:     input.warehouseId,
+        worksiteId,
         itemCount:       input.items.length,
       },
     }, tx)
@@ -191,7 +182,7 @@ function rollupOrderReceiptStatus(orderId: string, tx: Parameters<Parameters<typ
   } else if (anyReceived) {
     newStatus = "partially_received"
   } else {
-    return  // no change
+    return
   }
 
   const now = new Date().toISOString()

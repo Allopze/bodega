@@ -1,37 +1,90 @@
-import type { Warehouse, WarehouseStockWithProduct } from "./types"
+"use client"
+
+import * as React from "react"
+import { useActionState } from "react"
+import { toast } from "sonner"
+import { Check, PencilSimple } from "@phosphor-icons/react"
+import type { WorksiteStockWithProduct } from "./types"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Input } from "@/components/ui/input"
 import { formatQty, formatDate } from "@/lib/utils"
+import { setMinStockAction } from "./actions"
+import { INITIAL_STATE } from "@/components/admin/form-state"
+import type { ActionState } from "@/lib/validation/operations"
 
 export interface StockTableProps {
-  warehouse: Warehouse
-  items: WarehouseStockWithProduct[]
+  worksiteName: string
+  items: WorksiteStockWithProduct[]
 }
 
-export function StockTable({ warehouse, items }: StockTableProps) {
+function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: number }) {
+  const [editing, setEditing] = React.useState(false)
+  const [value, setValue] = React.useState(String(currentMin))
+  const formRef = React.useRef<HTMLFormElement>(null)
+
+  const [state, action] = useActionState<ActionState, FormData>(setMinStockAction, INITIAL_STATE)
+
+  React.useEffect(() => {
+    if (state.ok && state.message) {
+      toast.success(state.message)
+      setEditing(false)
+    }
+  }, [state])
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="flex items-center gap-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors"
+        title="Configurar stock mínimo"
+      >
+        <span className="font-mono tabular-nums">{currentMin > 0 ? formatQty(currentMin, "") : "—"}</span>
+        <PencilSimple size={11} />
+      </button>
+    )
+  }
+
+  return (
+    <form ref={formRef} action={action} className="flex items-center gap-1">
+      <input type="hidden" name="stockId" value={stockId} />
+      <Input
+        name="minStock"
+        type="number"
+        min="0"
+        step="1"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="w-20 h-7 text-xs tabular-nums"
+        autoFocus
+      />
+      <button type="submit" className="h-7 w-7 flex items-center justify-center rounded-sm text-[var(--color-success)] hover:bg-[var(--color-surface-2)] transition-colors">
+        <Check size={14} />
+      </button>
+    </form>
+  )
+}
+
+export function StockTable({ worksiteName, items }: StockTableProps) {
   return (
     <div>
-      <h2 className="text-h2 mb-3">
-        {warehouse.name}
-        <span className="ml-2 text-xs font-mono text-[var(--color-text-subtle)] font-normal">
-          {warehouse.code}
-        </span>
-      </h2>
+      <h2 className="text-h2 mb-3">{worksiteName}</h2>
 
       {items.length === 0 ? (
         <EmptyState
-          title="Sin stock en esta bodega"
+          title="Sin stock en esta faena"
           description="Los ingresos de OC aparecerán aquí."
           compact
         />
       ) : (
         <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
-          <table className="w-full text-sm" aria-label={`Stock en ${warehouse.name}`}>
-            <caption className="sr-only">Productos y cantidades en bodega {warehouse.name}</caption>
+          <table className="w-full text-sm" aria-label={`Stock en ${worksiteName}`}>
+            <caption className="sr-only">Productos y cantidades en faena {worksiteName}</caption>
             <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
               <tr>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Producto</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-32">Stock</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-32">Disponible</th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-28">Stock</th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-20">Mínimo</th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-40">Último mov.</th>
               </tr>
             </thead>
@@ -62,8 +115,8 @@ export function StockTable({ warehouse, items }: StockTableProps) {
                     <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-muted)]">
                       {formatQty(s.quantity, unit)}
                     </td>
-                    <td className={`px-4 py-3 text-right tabular-nums font-medium ${s.quantity <= 0 ? "text-[var(--color-danger)]" : "text-[var(--color-text)]"}`}>
-                      {formatQty(s.quantity, unit)}
+                    <td className="px-4 py-3 text-right">
+                      <MinStockCell stockId={s.id} currentMin={s.minStock} />
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-[var(--color-text-subtle)]">
                       {s.lastMovementAt ? formatDate(s.lastMovementAt) : "—"}

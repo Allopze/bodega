@@ -29,9 +29,7 @@ export async function registerReceiptAction(
 
   const parsed = receiptSchema.safeParse({
     purchaseOrderId: formData.get("purchaseOrderId"),
-    locationType:    formData.get("locationType"),
     worksiteId:      formData.get("worksiteId"),
-    warehouseId:     formData.get("warehouseId"),
     dispatchGuideNo: formData.get("dispatchGuideNo"),
     notes:           formData.get("notes"),
     items:           itemsRaw,
@@ -51,9 +49,7 @@ export async function registerReceiptAction(
 
   const {
     purchaseOrderId,
-    locationType,
     worksiteId,
-    warehouseId,
     dispatchGuideNo,
     notes,
     items,
@@ -78,9 +74,7 @@ export async function registerReceiptAction(
       purchaseOrderId,
       receivedBy:      session.user.id,
       userEmail:       session.user.email ?? undefined,
-      locationType,
-      worksiteId:      worksiteId  || order.worksiteId,
-      warehouseId:     warehouseId || null,
+      worksiteId:      worksiteId || order.worksiteId,
       dispatchGuideNo: dispatchGuideNo || null,
       notes:           notes || null,
       items:           nonZeroItems,
