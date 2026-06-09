@@ -18,7 +18,7 @@ import {
   TableRow, TableHead, TableCell, TableCellNum, TableCaption,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Warning, ArrowSquareOut, Funnel } from "@phosphor-icons/react/dist/ssr"
+import { Warning, ArrowSquareOut, Funnel, DownloadSimple } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Trazabilidad de ítems" }
 
@@ -320,6 +320,14 @@ export default async function TrazabilidadPage({
           <Funnel className="h-3.5 w-3.5" aria-hidden />
           Filtrar
         </Button>
+        <a
+          href="/api/trazabilidad/export"
+          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.97]"
+          aria-label="Exportar trazabilidad a CSV"
+        >
+          <DownloadSimple className="h-3.5 w-3.5" aria-hidden />
+          Exportar CSV
+        </a>
         {(filterFaenaId || filterEstado) && (
           <a
             href="/trazabilidad"
