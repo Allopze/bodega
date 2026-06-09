@@ -5,6 +5,6 @@ export default {
   out: "./db/migrations",
   dialect: "sqlite",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "./db/stockflow.db",
+    url: process.env.DATABASE_URL ?? "./db/chome.db",
   },
 } satisfies Config

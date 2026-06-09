@@ -34,7 +34,6 @@ export type ItemStatus =
 export const TERMINAL_STATES: ItemStatus[] = [
   "rejected",
   "delivered",
-  "postponed",
 ]
 
 /** State transition map — which transitions are allowed from each state */

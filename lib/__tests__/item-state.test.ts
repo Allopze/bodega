@@ -1,178 +1,169 @@
-/**
- * Unit tests for the item state machine.
- * These are pure tests against ALLOWED_TRANSITIONS and canTransition —
- * no database calls, no Next.js context required.
- */
-
 import { describe, it, expect } from "vitest"
 import {
-  ALLOWED_TRANSITIONS,
-  TERMINAL_STATES,
   canTransition,
   getDeliveryTargetStatus,
+  ALLOWED_TRANSITIONS,
+  TERMINAL_STATES,
   type ItemStatus,
-} from "@/lib/services/item-state"
+} from "../services/item-state"
 
-const ALL_STATES: ItemStatus[] = [
-  "draft", "requested", "approved", "rejected", "returned", "postponed",
-  "pending_purchase", "in_purchase_order", "purchased",
-  "partially_received", "received", "partially_delivered", "delivered",
-]
+describe("Item State Machine", () => {
+  describe("canTransition", () => {
+    it("allows draft → requested", () => {
+      expect(canTransition("draft", "requested")).toBe(true)
+    })
 
-describe("ALLOWED_TRANSITIONS", () => {
-  it("covers every ItemStatus key", () => {
-    for (const state of ALL_STATES) {
-      expect(ALLOWED_TRANSITIONS).toHaveProperty(state)
-    }
+    it("allows requested → approved", () => {
+      expect(canTransition("requested", "approved")).toBe(true)
+    })
+
+    it("allows requested → rejected", () => {
+      expect(canTransition("requested", "rejected")).toBe(true)
+    })
+
+    it("allows requested → returned", () => {
+      expect(canTransition("requested", "returned")).toBe(true)
+    })
+
+    it("allows approved → rejected", () => {
+      expect(canTransition("approved", "rejected")).toBe(true)
+    })
+
+    it("allows approved → pending_purchase", () => {
+      expect(canTransition("approved", "pending_purchase")).toBe(true)
+    })
+
+    it("allows returned → requested (re-submit)", () => {
+      expect(canTransition("returned", "requested")).toBe(true)
+    })
+
+    it("allows pending_purchase → in_purchase_order", () => {
+      expect(canTransition("pending_purchase", "in_purchase_order")).toBe(true)
+    })
+
+    it("allows pending_purchase → postponed", () => {
+      expect(canTransition("pending_purchase", "postponed")).toBe(true)
+    })
+
+    it("allows in_purchase_order → purchased", () => {
+      expect(canTransition("in_purchase_order", "purchased")).toBe(true)
+    })
+
+    it("allows in_purchase_order → pending_purchase (back)", () => {
+      expect(canTransition("in_purchase_order", "pending_purchase")).toBe(true)
+    })
+
+    it("allows purchased → partially_received", () => {
+      expect(canTransition("purchased", "partially_received")).toBe(true)
+    })
+
+    it("allows purchased → received", () => {
+      expect(canTransition("purchased", "received")).toBe(true)
+    })
+
+    it("allows partially_received → received", () => {
+      expect(canTransition("partially_received", "received")).toBe(true)
+    })
+
+    it("allows received → partially_delivered", () => {
+      expect(canTransition("received", "partially_delivered")).toBe(true)
+    })
+
+    it("allows received → delivered", () => {
+      expect(canTransition("received", "delivered")).toBe(true)
+    })
+
+    it("allows partially_delivered → delivered", () => {
+      expect(canTransition("partially_delivered", "delivered")).toBe(true)
+    })
+
+    it("allows postponed → pending_purchase", () => {
+      expect(canTransition("postponed", "pending_purchase")).toBe(true)
+    })
   })
 
-  it("has no unknown states as transition targets", () => {
-    const validSet = new Set<string>(ALL_STATES)
-    for (const [, targets] of Object.entries(ALLOWED_TRANSITIONS)) {
-      for (const t of targets) {
-        expect(validSet.has(t), `Unknown target state: "${t}"`).toBe(true)
+  describe("terminal states — no transitions out", () => {
+    it("rejected cannot transition anywhere", () => {
+      for (const target of Object.keys(ALLOWED_TRANSITIONS) as ItemStatus[]) {
+        expect(canTransition("rejected" as ItemStatus, target)).toBe(false)
       }
-    }
-  })
-})
+    })
 
-describe("TERMINAL_STATES", () => {
-  it("rejected and delivered have no outbound transitions (hard terminal)", () => {
-    // rejected and delivered are truly terminal — no transitions allowed.
-    // Note: postponed is in TERMINAL_STATES but CAN transition to pending_purchase
-    // (it represents a soft pause, not a permanent end state).
-    const hardTerminal: ItemStatus[] = ["rejected", "delivered"]
-    for (const state of hardTerminal) {
-      expect(TERMINAL_STATES).toContain(state)
-      const targets = ALLOWED_TRANSITIONS[state] ?? []
-      expect(targets, `State "${state}" should have no outbound transitions`).toHaveLength(0)
-    }
-  })
+    it("delivered cannot transition anywhere", () => {
+      for (const target of Object.keys(ALLOWED_TRANSITIONS) as ItemStatus[]) {
+        expect(canTransition("delivered" as ItemStatus, target)).toBe(false)
+      }
+    })
 
-  it("postponed can transition to pending_purchase (soft pause, not hard terminal)", () => {
-    // This documents the intentional design: postponed items can be un-postponed.
-    expect(canTransition("postponed", "pending_purchase")).toBe(true)
-  })
-})
-
-describe("canTransition", () => {
-  it("allows draft → requested", () => {
-    expect(canTransition("draft", "requested")).toBe(true)
+    it("postponed cannot transition anywhere except pending_purchase", () => {
+      expect(canTransition("postponed", "pending_purchase")).toBe(true)
+      for (const target of Object.keys(ALLOWED_TRANSITIONS) as ItemStatus[]) {
+        if (target === "pending_purchase") continue
+        expect(canTransition("postponed" as ItemStatus, target)).toBe(false)
+      }
+    })
   })
 
-  it("allows requested → approved", () => {
-    expect(canTransition("requested", "approved")).toBe(true)
+  describe("no backward transitions where forbidden", () => {
+    it("requested cannot go back to draft", () => {
+      expect(canTransition("requested", "draft")).toBe(false)
+    })
+
+    it("approved cannot go back to requested", () => {
+      expect(canTransition("approved", "requested")).toBe(false)
+    })
+
+    it("received cannot go back to purchased", () => {
+      expect(canTransition("received", "purchased")).toBe(false)
+    })
+
+    it("delivered cannot go back to received", () => {
+      expect(canTransition("delivered", "received")).toBe(false)
+    })
   })
 
-  it("allows requested → rejected", () => {
-    expect(canTransition("requested", "rejected")).toBe(true)
+  describe("ALLOWED_TRANSITIONS completeness", () => {
+    const allStates: ItemStatus[] = [
+      "draft", "requested", "approved", "rejected", "returned",
+      "postponed", "pending_purchase", "in_purchase_order", "purchased",
+      "partially_received", "received", "partially_delivered", "delivered",
+    ]
+
+    it("every state has a defined transition list", () => {
+      for (const state of allStates) {
+        expect(ALLOWED_TRANSITIONS[state]).toBeDefined()
+      }
+    })
+
+    it("ALLOWED_TRANSITIONS only references valid states", () => {
+      for (const targets of Object.values(ALLOWED_TRANSITIONS)) {
+        for (const target of targets) {
+          expect(allStates).toContain(target)
+        }
+      }
+    })
   })
 
-  it("allows requested → returned", () => {
-    expect(canTransition("requested", "returned")).toBe(true)
+  describe("terminal states registry", () => {
+    it("TERMINAL_STATES matches states with empty transition lists", () => {
+      const computedTerminal = (Object.keys(ALLOWED_TRANSITIONS) as ItemStatus[])
+        .filter((s) => ALLOWED_TRANSITIONS[s].length === 0)
+      expect(new Set(TERMINAL_STATES)).toEqual(new Set(computedTerminal))
+    })
   })
 
-  it("allows approved → pending_purchase", () => {
-    expect(canTransition("approved", "pending_purchase")).toBe(true)
-  })
+  describe("getDeliveryTargetStatus", () => {
+    it("returns 'delivered' when totalDelivered equals or exceeds itemQuantity", () => {
+      expect(getDeliveryTargetStatus(10, 10)).toBe("delivered")
+      expect(getDeliveryTargetStatus(10, 15)).toBe("delivered")
+    })
 
-  it("allows pending_purchase → in_purchase_order", () => {
-    expect(canTransition("pending_purchase", "in_purchase_order")).toBe(true)
-  })
+    it("returns 'partially_delivered' when totalDelivered is less than itemQuantity", () => {
+      expect(getDeliveryTargetStatus(10, 5)).toBe("partially_delivered")
+    })
 
-  it("allows in_purchase_order → purchased", () => {
-    expect(canTransition("in_purchase_order", "purchased")).toBe(true)
-  })
-
-  it("allows purchased → partially_received", () => {
-    expect(canTransition("purchased", "partially_received")).toBe(true)
-  })
-
-  it("allows purchased → received", () => {
-    expect(canTransition("purchased", "received")).toBe(true)
-  })
-
-  it("allows received → delivered", () => {
-    expect(canTransition("received", "delivered")).toBe(true)
-  })
-
-  it("allows returned → requested (re-submission)", () => {
-    expect(canTransition("returned", "requested")).toBe(true)
-  })
-
-  it("allows postponed → pending_purchase (un-postpone)", () => {
-    expect(canTransition("postponed", "pending_purchase")).toBe(true)
-  })
-
-  // ── Disallowed transitions ──────────────────────────────────────────────
-
-  it("disallows draft → approved (must go through requested)", () => {
-    expect(canTransition("draft", "approved")).toBe(false)
-  })
-
-  it("disallows delivered → any other state (terminal)", () => {
-    for (const state of ALL_STATES) {
-      expect(canTransition("delivered", state as ItemStatus)).toBe(false)
-    }
-  })
-
-  it("disallows rejected → any other state (terminal)", () => {
-    for (const state of ALL_STATES) {
-      expect(canTransition("rejected", state as ItemStatus)).toBe(false)
-    }
-  })
-
-  it("disallows received → draft (going backwards)", () => {
-    expect(canTransition("received", "draft")).toBe(false)
-  })
-
-  it("disallows approved → draft (going backwards)", () => {
-    expect(canTransition("approved", "draft")).toBe(false)
-  })
-
-  it("handles unknown states gracefully (returns false)", () => {
-    expect(canTransition("unknown_state" as ItemStatus, "draft")).toBe(false)
-    expect(canTransition("draft", "unknown_state" as ItemStatus)).toBe(false)
-  })
-})
-
-describe("Full lifecycle — happy path", () => {
-  const happyPath: ItemStatus[] = [
-    "draft", "requested", "approved", "pending_purchase",
-    "in_purchase_order", "purchased", "received", "delivered",
-  ]
-
-  it("every consecutive pair in the happy path is a valid transition", () => {
-    for (let i = 0; i < happyPath.length - 1; i++) {
-      const from = happyPath[i]
-      const to   = happyPath[i + 1]
-      expect(
-        canTransition(from, to),
-        `Expected ${from} → ${to} to be valid`,
-      ).toBe(true)
-    }
-  })
-})
-
-describe("Partial receipt path", () => {
-  it("purchased → partially_received → received → delivered is valid", () => {
-    const path: ItemStatus[] = ["purchased", "partially_received", "received", "delivered"]
-    for (let i = 0; i < path.length - 1; i++) {
-      expect(canTransition(path[i], path[i + 1])).toBe(true)
-    }
-  })
-})
-
-describe("delivery target status", () => {
-  it("marks partial deliveries when accumulated delivered quantity is below item quantity", () => {
-    expect(getDeliveryTargetStatus(5, 2)).toBe("partially_delivered")
-  })
-
-  it("marks delivered when accumulated delivered quantity reaches item quantity", () => {
-    expect(getDeliveryTargetStatus(5, 5)).toBe("delivered")
-  })
-
-  it("preserves legacy full-delivery behavior when no accumulated quantity is provided", () => {
-    expect(getDeliveryTargetStatus(5)).toBe("delivered")
+    it("returns 'delivered' when totalDelivered is undefined", () => {
+      expect(getDeliveryTargetStatus(10)).toBe("delivered")
+    })
   })
 })

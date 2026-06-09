@@ -83,8 +83,9 @@ export function visibleWorksiteIds(session: Session | null): string[] {
 }
 
 /**
- * Server-side: require permission or throw redirect.
- * Use in Server Components and Server Actions.
+ * Server-side: require permission. Returns session on success.
+ * For Server Components (redirects), use `ensurePermission()`.
+ * For Server Actions, catch the error and return `{ ok: false }`.
  */
 export async function requirePermission(permission: Permission): Promise<Session> {
   const session = await auth()
@@ -95,9 +96,44 @@ export async function requirePermission(permission: Permission): Promise<Session
 
 /**
  * Server-side: require authenticated session.
+ * For Server Components (redirects), use `ensureAuth()`.
  */
 export async function requireAuth(): Promise<Session> {
   const session = await auth()
   if (!session) throw new Error("Unauthorized: not authenticated")
   return session
+}
+
+/**
+ * Safe wrapper for Server Actions. Returns an ActionState instead of throwing.
+ * Usage: const { session, error } = await guardPermission("requests:create")
+ *         if (error) return error
+ */
+export async function guardPermission(permission: Permission): Promise<
+  | { session: Session; error: null }
+  | { session: null; error: { ok: false; message: string } }
+> {
+  try {
+    const session = await requirePermission(permission)
+    return { session, error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Acceso denegado"
+    return { session: null, error: { ok: false, message } }
+  }
+}
+
+/**
+ * Safe wrapper for Server Actions. Returns an ActionState instead of throwing.
+ */
+export async function guardAuth(): Promise<
+  | { session: Session; error: null }
+  | { session: null; error: { ok: false; message: string } }
+> {
+  try {
+    const session = await requireAuth()
+    return { session, error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No autenticado"
+    return { session: null, error: { ok: false, message } }
+  }
 }

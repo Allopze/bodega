@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm"
 
 loadEnvConfig(process.cwd())
 
-const DB_URL = process.env.DATABASE_URL ?? "./db/stockflow.db"
+const DB_URL = process.env.DATABASE_URL ?? "./db/chome.db"
 const adminName = process.env.SEED_ADMIN_NAME ?? "Administrador"
 const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@chome.cl").toLowerCase()
 const NODE_ENV = process.env.NODE_ENV ?? "development"

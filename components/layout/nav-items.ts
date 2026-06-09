@@ -58,6 +58,23 @@ export const NAV_ITEMS: NavSection[] = [
         badge:       "count",
       },
       {
+        label:       "Bodega",
+        href:        "/bodega",
+        iconName:    "Warehouse",
+        permissions: ["warehouse:view_stock"],
+      },
+      {
+        label:       "Entregas",
+        href:        "/entregas",
+        iconName:    "Truck",
+        permissions: ["warehouse:register_movement"],
+      },
+    ],
+  },
+  {
+    section: "Reportes",
+    items: [
+      {
         label:       "Trazabilidad",
         href:        "/trazabilidad",
         iconName:    "ChartLineUp",

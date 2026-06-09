@@ -76,3 +76,15 @@ function cleanupExpired(): void {
     .where(lt(rateLimits.lockUntil, threshold))
     .run()
 }
+
+/**
+ * Clean up all expired rate-limit entries. Safe to call from a cron/admin action.
+ * Returns number of deleted rows.
+ */
+export function cleanupRateLimits(): number {
+  const threshold = Date.now() - LOCK_TIME
+  const result = db.delete(rateLimits)
+    .where(lt(rateLimits.lockUntil, threshold))
+    .run()
+  return result.changes ?? 0
+}

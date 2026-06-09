@@ -3,11 +3,11 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { deliveries, deliveryItems, worksites } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Truck } from "@phosphor-icons/react/dist/ssr"
-import { desc, inArray } from "drizzle-orm"
+import { desc, inArray, or, isNull } from "drizzle-orm"
 import { DeliveriesTable } from "./deliveries-table"
 
 export const metadata: Metadata = { title: "Entregas" }
@@ -15,6 +15,15 @@ export const metadata: Metadata = { title: "Entregas" }
 export default async function Page() {
   const session = await auth()
   if (!session) redirect("/login")
+
+  const isGlobal = isGlobalRole(session)
+  const wsIds = visibleWorksiteIds(session)
+
+  const worksiteFilter = isGlobal
+    ? undefined
+    : wsIds.length > 0
+      ? or(inArray(deliveries.worksiteId, wsIds), isNull(deliveries.worksiteId))
+      : isNull(deliveries.worksiteId)
 
   const allDeliveries = await db
     .select({
@@ -26,15 +35,11 @@ export default async function Page() {
       notes: deliveries.notes,
     })
     .from(deliveries)
+    .where(worksiteFilter)
     .orderBy(desc(deliveries.deliveredAt))
 
-  const visible = allDeliveries.filter((delivery) => {
-    if (!delivery.worksiteId) return true
-    return canAccessWorksite(session, delivery.worksiteId)
-  })
-
-  const deliveryIds = visible.map((d) => d.id)
-  const worksiteIds = [...new Set(visible.map((d) => d.worksiteId).filter(Boolean))] as string[]
+  const deliveryIds = allDeliveries.map((d) => d.id)
+  const worksiteIds = [...new Set(allDeliveries.map((d) => d.worksiteId).filter(Boolean))] as string[]
 
   const [itemRows, worksiteRows] = await Promise.all([
     deliveryIds.length > 0
@@ -70,7 +75,7 @@ export default async function Page() {
         }
       />
 
-      {visible.length === 0 ? (
+      {allDeliveries.length === 0 ? (
         <EmptyState
           icon={<Truck size={22} />}
           title="Sin entregas registradas"
@@ -78,7 +83,7 @@ export default async function Page() {
         />
       ) : (
         <DeliveriesTable
-          deliveries={visible}
+          deliveries={allDeliveries}
           worksiteMap={worksiteMap}
           itemCountByDelivery={itemCountByDelivery}
         />
