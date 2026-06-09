@@ -8,12 +8,12 @@ import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { buildXlsxBuffer, getReportData } from "@/lib/reports/export"
+import { logger } from "@/lib/logger"
 
 const REPORT_TYPES = new Set([
   "gasto_faena",
   "items_sin_oc",
   "oc_por_estado",
-  "facturas_pendientes",
 ])
 
 export async function GET(req: NextRequest) {
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (err) {
-    console.error("[reportes/export]", err)
+    logger.error("[reportes/export]", err)
     return NextResponse.json({ error: "Error al generar el reporte" }, { status: 500 })
   }
 }

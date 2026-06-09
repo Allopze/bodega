@@ -4,7 +4,7 @@ import { and, eq, inArray, sql, type SQLWrapper } from "drizzle-orm"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, purchaseOrders,
-  invoiceAttachments, products, worksites, suppliers,
+  products, worksites, suppliers,
 } from "@/db/schema"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { formatDate } from "@/lib/utils"
@@ -57,8 +57,6 @@ export async function getReportData(tipo: string, session: Session | null): Prom
       return itemsSinOc(session)
     case "oc_por_estado":
       return ocPorEstado(session)
-    case "facturas_pendientes":
-      return facturasPendientes(session)
     case "gasto_faena":
     default:
       return gastoPorFaena(session)
@@ -210,91 +208,6 @@ async function ocPorEstado(session: Session | null): Promise<ReportData> {
       o.sentAt      ? formatDate(o.sentAt)      : "",
       o.confirmedAt ? formatDate(o.confirmedAt) : "",
     ]),
-  }
-}
-
-async function facturasPendientes(session: Session | null): Promise<ReportData> {
-  const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
-
-  const [orders, invoices] = await Promise.all([
-    db
-      .select({
-        id: purchaseOrders.id,
-        code: purchaseOrders.code,
-        status: purchaseOrders.status,
-        worksiteId: purchaseOrders.worksiteId,
-        totalAmount: purchaseOrders.totalAmount,
-      })
-      .from(purchaseOrders)
-      .where(orderFilter),
-    db
-      .select({
-        targetId: invoiceAttachments.targetId,
-        targetType: invoiceAttachments.targetType,
-        invoiceNumber: invoiceAttachments.invoiceNumber,
-        amount: invoiceAttachments.amount,
-        status: invoiceAttachments.status,
-      })
-      .from(invoiceAttachments)
-      .where(eq(invoiceAttachments.targetType, "purchase_order")),
-  ])
-
-  const orderIds = new Set(orders.map((order) => order.id))
-  const orderInvoices = invoices.filter((invoice) => orderIds.has(invoice.targetId))
-  const reconciledOrderIds = new Set(
-    orderInvoices
-      .filter((invoice) => invoice.status === "reconciled")
-      .map((invoice) => invoice.targetId),
-  )
-  const invoicesByOrder = new Map<string, typeof orderInvoices>()
-  for (const invoice of orderInvoices) {
-    const rows = invoicesByOrder.get(invoice.targetId) ?? []
-    rows.push(invoice)
-    invoicesByOrder.set(invoice.targetId, rows)
-  }
-
-  const wsIds = [...new Set(orders.map((order) => order.worksiteId))]
-  const wsRows = wsIds.length
-    ? await db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds))
-    : []
-  const wsMap = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
-
-  const rows: ReportCell[][] = []
-  for (const order of orders) {
-    const pendingInvoices = (invoicesByOrder.get(order.id) ?? []).filter((invoice) => invoice.status !== "reconciled")
-    if (pendingInvoices.length > 0) {
-      for (const invoice of pendingInvoices) {
-        rows.push([
-          order.code,
-          wsMap[order.worksiteId] ?? order.worksiteId,
-          order.status,
-          invoice.invoiceNumber,
-          invoice.status,
-          order.totalAmount,
-          invoice.amount,
-        ])
-      }
-      continue
-    }
-
-    if (order.status === "received" && !reconciledOrderIds.has(order.id)) {
-      rows.push([
-        order.code,
-        wsMap[order.worksiteId] ?? order.worksiteId,
-        order.status,
-        "",
-        "sin_factura",
-        order.totalAmount,
-        "",
-      ])
-    }
-  }
-
-  return {
-    filenameBase: "facturas-pendientes",
-    worksheetName: "Facturas pendientes",
-    headers: ["OC", "Faena", "Estado OC", "Factura", "Estado factura", "Monto OC", "Monto factura"],
-    rows,
   }
 }
 

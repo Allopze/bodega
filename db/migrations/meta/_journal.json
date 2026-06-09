@@ -49,7 +49,12 @@
       "version": "6",
       "when": 1780949171645,
       "tag": "0006_remediation_nota_pedido",
-      "breakpoints": true
-    }
+      "breakpoints": true    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1781955100000,
+      "tag": "0007_rate_limits",
+      "breakpoints": true    }
   ]
 }

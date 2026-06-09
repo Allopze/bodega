@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { registerReceipt } from "@/lib/services/receiving"
 import { receiptSchema, type ActionState } from "@/lib/validation/operations"
+import { logger } from "@/lib/logger"
 
 const REVALIDATE = "/recepcion"
 
@@ -89,7 +90,7 @@ export async function registerReceiptAction(
     revalidatePath("/compras")
     revalidatePath("/bodega")
   } catch (e) {
-    console.error("[registerReceiptAction]", e)
+    logger.error("[registerReceiptAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar recepción" }
   }
   redirect(`/recepcion/${receiptId}`)

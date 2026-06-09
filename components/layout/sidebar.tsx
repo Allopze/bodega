@@ -131,6 +131,7 @@ function NavLink({
   return (
     <Link
       href={item.href}
+      aria-current={isActive ? "page" : undefined}
       className={cn(
         "flex items-center rounded-[var(--radius)] transition-all duration-[var(--duration-fast)] group relative",
         isCollapsed
@@ -139,8 +140,9 @@ function NavLink({
         isActive
           ? "bg-[var(--color-brand-surface-raised)] text-[var(--color-brand-text)]"
           : "text-[var(--color-brand-text-muted)] hover:bg-[var(--color-brand-surface-raised)] hover:text-[var(--color-brand-text)]",
+        // Emil: press feedback
+        "active:scale-[0.97]",
       )}
-      aria-current={isActive ? "page" : undefined}
       aria-label={count > 0 ? titleText : undefined}
       title={isCollapsed || count > 0 ? titleText : undefined}
     >

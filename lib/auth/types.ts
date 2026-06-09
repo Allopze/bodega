@@ -36,8 +36,6 @@ export type Permission =
   | "warehouse:view_stock"
   | "warehouse:register_movement"
   | "warehouse:adjust_stock"
-  // Invoice attachments
-  | "invoice_attachments:manage"
   // Reports
   | "reports:view"
   // Admin

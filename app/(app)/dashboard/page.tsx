@@ -7,7 +7,6 @@ import { PageHeader } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { db } from "@/db"
 import {
-  invoiceAttachments,
   products,
   purchaseOrderItems,
   purchaseOrders,
@@ -26,10 +25,10 @@ import {
   CheckSquare,
   ClipboardText,
   Coins,
-  FileText,
   ShoppingCart,
   Truck,
   Warehouse,
+  Warning,
 } from "@phosphor-icons/react/dist/ssr"
 import {
   buildWorkTasks,
@@ -42,6 +41,7 @@ import {
   type WorkTask,
   type WorkTaskType,
 } from "@/lib/work-queue"
+import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -51,7 +51,6 @@ type MetricKey =
   | "approved_without_oc"
   | "orders_in_progress"
   | "orders_pending_receipt"
-  | "invoice_pending"
 
 type IconComponent = ComponentType<{ size: number; className?: string }>
 
@@ -62,7 +61,6 @@ const TASK_ICON: Record<WorkTaskType, IconComponent> = {
   purchase_order:    ShoppingCart,
   receipt:           Truck,
   warehouse_delivery:Warehouse,
-  invoice:           FileText,
 }
 
 const PRIORITY_LABEL: Record<WorkPriority, string> = {
@@ -104,6 +102,7 @@ export default async function DashboardPage() {
   ])
   const tasks = buildWorkTasks(buildActor(session), snapshot)
   const visibleTasks = tasks.slice(0, 12)
+  const stockAlertCount = getCriticalStockAlertCount()
 
   const approvalRate = data.summary.totalRequests > 0
     ? Math.round((data.summary.approvedRequests / data.summary.totalRequests) * 100)
@@ -159,7 +158,7 @@ export default async function DashboardPage() {
             value={formatCLP(data.summary.totalCosts)}
           />
           <MetricCard
-            icon={FileText}
+            icon={ClipboardText}
             label="Solicitudes visibles"
             value={String(data.summary.totalRequests)}
           />
@@ -175,7 +174,7 @@ export default async function DashboardPage() {
           <QuickLink href="/aprobaciones" label="Pendientes de aprobación" value={data.metrics.pending_approvals} />
           <QuickLink href="/compras/nueva" label="Aprobados sin OC" value={data.metrics.approved_without_oc} />
           <QuickLink href="/recepcion" label="OC por recibir" value={data.metrics.orders_pending_receipt} />
-          <QuickLink href="/reportes" label="Facturas pendientes" value={data.metrics.invoice_pending} />
+          <QuickLink href="/bodega" label="Alertas de stock" value={stockAlertCount} />
         </div>
       </section>
 
@@ -323,7 +322,6 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
     itemRows,
     orderRows,
     orderItemCounts,
-    invoiceRows,
     stockRows,
   ] = await Promise.all([
     db
@@ -393,14 +391,6 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
 
     db
       .select({
-        targetId: invoiceAttachments.targetId,
-        status:   invoiceAttachments.status,
-      })
-      .from(invoiceAttachments)
-      .where(eq(invoiceAttachments.targetType, "purchase_order")),
-
-    db
-      .select({
         productId: warehouseStock.productId,
       })
       .from(warehouseStock)
@@ -422,12 +412,6 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
   const stockProductIds = new Set(stockRows.map((row) => row.productId))
 
   const itemCountByOrder = new Map(orderItemCounts.map((row) => [row.purchaseOrderId, row.total]))
-  const invoiceStatusesByOrder = new Map<string, string[]>()
-  for (const invoice of invoiceRows) {
-    const statuses = invoiceStatusesByOrder.get(invoice.targetId) ?? []
-    statuses.push(invoice.status)
-    invoiceStatusesByOrder.set(invoice.targetId, statuses)
-  }
 
   const requests: WorkRequestRow[] = requestRows.map((request) => ({
     ...request,
@@ -454,7 +438,6 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
   const orders: WorkOrderRow[] = orderRows.map((order) => ({
     ...order,
     itemCount:       itemCountByOrder.get(order.id) ?? 0,
-    invoiceStatuses: invoiceStatusesByOrder.get(order.id) ?? [],
   }))
 
   return { requests, items, orders }
@@ -468,7 +451,7 @@ async function getDashboardData(session: Session) {
   const orderWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`)
   const worksiteRowsFilter = isGlobal ? eq(worksites.isActive, true) : (wsIds.length > 0 ? and(eq(worksites.isActive, true), inArray(worksites.id, wsIds)) : sql`1 = 0`)
 
-  const [requestRows, pendingItemRows, orderRows, invoiceRows, worksiteRows] = await Promise.all([
+  const [requestRows, pendingItemRows, orderRows, worksiteRows] = await Promise.all([
     db
       .select({
         id: purchaseRequests.id,
@@ -501,15 +484,6 @@ async function getDashboardData(session: Session) {
 
     db
       .select({
-        targetId: invoiceAttachments.targetId,
-        targetType: invoiceAttachments.targetType,
-        status: invoiceAttachments.status,
-      })
-      .from(invoiceAttachments)
-      .where(eq(invoiceAttachments.targetType, "purchase_order")),
-
-    db
-      .select({
         id: worksites.id,
         name: worksites.name,
         isActive: worksites.isActive,
@@ -518,25 +492,12 @@ async function getDashboardData(session: Session) {
       .where(worksiteRowsFilter),
   ])
 
-  const visibleOrderIds = new Set(orderRows.map((order) => order.id))
-  const invoiceRowsByOrder = invoiceRows.filter((invoice) => visibleOrderIds.has(invoice.targetId))
-  const ordersWithReconciledInvoice = new Set(
-    invoiceRowsByOrder
-      .filter((invoice) => invoice.status === "reconciled")
-      .map((invoice) => invoice.targetId),
-  )
-  const invoicesNeedingReview = invoiceRowsByOrder.filter((invoice) => invoice.status !== "reconciled").length
-  const receivedOrdersWithoutReconciledInvoice = orderRows.filter((order) =>
-    order.status === "received" && !ordersWithReconciledInvoice.has(order.id)
-  ).length
-
   const metrics: Record<MetricKey, number> = {
     my_requests: requestRows.filter((r) => r.requesterId === session.user.id && r.status !== "cancelled").length,
     pending_approvals: pendingItemRows.filter((i) => i.status === "requested").length,
     approved_without_oc: pendingItemRows.filter((i) => i.status === "approved" || i.status === "pending_purchase").length,
     orders_in_progress: orderRows.filter((o) => ["issued", "sent", "supplier_confirmed", "partially_received"].includes(o.status)).length,
     orders_pending_receipt: orderRows.filter((o) => o.status === "sent" || o.status === "partially_received").length,
-    invoice_pending: receivedOrdersWithoutReconciledInvoice + invoicesNeedingReview,
   }
 
   const totalCosts = orderRows

@@ -14,6 +14,7 @@ import { notifications, rolePermissions, permissions, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { NotificationType } from "@/db/schema/audit"
 import { sendEmail, getAppBaseUrl } from "@/lib/email/smtp"
+import { logger } from "@/lib/logger"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -66,7 +67,7 @@ export async function createNotification(input: CreateNotificationInput): Promis
       text,
       html,
     }).catch((err) => {
-      console.error(`[notifications] failed to send email to ${user.email}`, err)
+      logger.error(`[notifications] failed to send email to ${user.email}`, err)
     })
   }
 }
@@ -115,7 +116,7 @@ export async function createNotifications(
         text,
         html,
       }).catch((err) => {
-        console.error(`[notifications] failed to send email to ${u.email}`, err)
+        logger.error(`[notifications] failed to send email to ${u.email}`, err)
       })
     }
   }
@@ -127,7 +128,7 @@ export async function createNotifications(
  */
 export async function notifySafe(input: CreateNotificationInput): Promise<void> {
   try { await createNotification(input) }
-  catch (err) { console.error("[notifications] failed to create notification", err) }
+  catch (err) { logger.error("[notifications] failed to create notification", err) }
 }
 
 export async function notifyManyUser(
@@ -135,7 +136,7 @@ export async function notifyManyUser(
   input: Omit<CreateNotificationInput, "userId">,
 ): Promise<void> {
   try { await createNotifications(userIds, input) }
-  catch (err) { console.error("[notifications] failed to create notifications", err) }
+  catch (err) { logger.error("[notifications] failed to create notifications", err) }
 }
 
 /* ── Permission-based targeting ──────────────────────────────────────────────── */

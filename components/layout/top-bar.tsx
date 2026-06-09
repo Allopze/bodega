@@ -87,7 +87,7 @@ export function TopBar({
             "transition-colors duration-[var(--duration-fast)]",
             "active:scale-[0.95]",
           )}
-          aria-label="Abrir menú"
+          aria-label={isMenuOpen ? "Cerrar menú" : "Abrir menú"}
           aria-expanded={isMenuOpen}
         >
           <List size={18} weight="bold" />

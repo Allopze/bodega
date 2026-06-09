@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 
-test("flujo solicitud, aprobación, OC, factura, recepción y trazabilidad", async ({ page }) => {
+test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ page }) => {
   await login(page)
 
   await createCatalogRequest(page, "Guante E2E", "5")
@@ -24,18 +24,6 @@ test("flujo solicitud, aprobación, OC, factura, recepción y trazabilidad", asy
   await page.reload()
   await page.getByRole("button", { name: "Marcar como enviada" }).click()
   await expect(page.getByText("Orden enviada al proveedor. Siguiente paso: registrar recepción.")).toBeVisible()
-
-  await page.getByLabel("Número de factura").fill("F-E2E-001")
-  await page.getByLabel("Fecha").fill("2026-06-07")
-  await page.getByLabel("Monto").fill("5950")
-  await page.getByLabel("Archivo").setInputFiles({
-    name: "factura-e2e.pdf",
-    mimeType: "application/pdf",
-    buffer: Buffer.from("%PDF-1.4\n% factura e2e\n"),
-  })
-  await page.getByRole("button", { name: "Anexar factura" }).click()
-  await expect(page.getByText("Factura anexada")).toBeVisible()
-  await expect(page.getByText("F-E2E-001")).toBeVisible()
 
   await page.goto(`/recepcion/nueva?oc=${orderId}`)
   await expect(page.getByText("Recepción directa en faena")).toBeVisible()

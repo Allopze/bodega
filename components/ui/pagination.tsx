@@ -79,8 +79,10 @@ function PageButton({
       disabled={disabled}
       className={cn(
         "h-7 min-w-7 px-1.5 rounded-[var(--radius-sm)] text-xs font-medium",
-        "transition-colors duration-[var(--duration-fast)]",
+        // Emil: specify exact properties, not 'all'
+        "transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
         "disabled:pointer-events-none disabled:opacity-35",
+        // Emil: press feedback
         "active:scale-[0.95]",
         active
           ? "bg-[var(--color-primary)] text-white"

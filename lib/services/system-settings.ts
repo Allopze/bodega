@@ -2,6 +2,7 @@ import { db } from "@/db"
 import { systemSettings } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
+import { logger } from "@/lib/logger"
 
 export interface CompanyProfile {
   name:    string
@@ -46,7 +47,7 @@ export async function getPdfMaxSizeMb(): Promise<number> {
       }
     }
   } catch (err) {
-    console.error("Error fetching pdf_max_size_mb setting, using default 10MB:", err)
+    logger.error("Error fetching pdf_max_size_mb setting, using default 10MB:", err)
   }
   return 10
 }
@@ -80,7 +81,7 @@ export async function getCompanyProfile(): Promise<CompanyProfile> {
       website: cleanSetting(byKey[COMPANY_PROFILE_KEYS.website]),
     }
   } catch (err) {
-    console.error("Error fetching company profile settings, using defaults:", err)
+    logger.error("Error fetching company profile settings, using defaults:", err)
     return DEFAULT_COMPANY_PROFILE
   }
 }

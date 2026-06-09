@@ -53,6 +53,9 @@ const TabsContent = React.forwardRef<
     ref={ref}
     className={cn(
       "mt-4 focus-visible:outline-none",
+      // Emil: subtle fade on tab switch — prevents jarring content swap
+      "data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:slide-in-from-top-1",
+      "data-[state=active]:duration-[var(--duration-fast)] data-[state=active]:ease-[var(--ease-out)]",
       "data-[state=inactive]:hidden",
       className,
     )}

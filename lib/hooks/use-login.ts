@@ -1,0 +1,44 @@
+"use client"
+
+import { useMutation } from "@tanstack/react-query"
+import { signIn } from "next-auth/react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { safeInternalPath } from "@/lib/navigation"
+
+interface LoginInput {
+  email:    string
+  password: string
+}
+
+interface LoginResult {
+  ok:    boolean
+  error?: string
+}
+
+/**
+ * Handles credentials login with React Query.
+ * Returns `{ ok, error }` — callers show the error message directly.
+ */
+export function useLogin() {
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const callbackUrl  = safeInternalPath(searchParams.get("callbackUrl"))
+
+  return useMutation({
+    mutationFn: async ({ email, password }: LoginInput): Promise<LoginResult> => {
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      })
+
+      if (result?.error) {
+        return { ok: false, error: result.error }
+      }
+
+      router.push(callbackUrl)
+      router.refresh()
+      return { ok: true }
+    },
+  })
+}

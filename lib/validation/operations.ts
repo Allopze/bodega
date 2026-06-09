@@ -39,7 +39,7 @@ export const requestSchema = z.object({
   urgency:      z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate: z.string().optional().nullable(),
   notes:        z.string().max(500).optional().or(z.literal("")),
-  items:        z.array(requestItemSchema).min(1, "Agrega al menos un ítem"),
+  items:        z.array(requestItemSchema).min(1, "Agrega al menos un ítem").max(50, "Máximo 50 ítems por solicitud"),
 })
 
 export type RequestFormData = z.infer<typeof requestSchema>
@@ -130,27 +130,3 @@ export const stockAdjustmentSchema = z.object({
 export type ReceiptFormData = z.infer<typeof receiptSchema>
 export type DispatchFormData = z.infer<typeof dispatchSchema>
 export type StockAdjustmentFormData = z.infer<typeof stockAdjustmentSchema>
-
-// ── Invoice attachments ──────────────────────────────────────────────────────
-export const ALLOWED_INVOICE_MIME_TYPES = [
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-] as const
-
-export const MAX_INVOICE_FILE_SIZE = 10 * 1024 * 1024
-
-export const invoiceAttachmentSchema = z.object({
-  targetType: z.enum(["purchase_request", "purchase_order"], { message: "Destino de factura inválido" }),
-  targetId: z.string().min(1, "Destino no especificado"),
-  invoiceNumber: z.string().trim().min(1, "Número de factura requerido").max(80),
-  invoiceDate: z.string().min(1, "Fecha de factura requerida"),
-  amount: finiteMoneySchema,
-  notes: z.string().trim().max(500).nullable().optional().or(z.literal("")),
-  file: z.instanceof(File, { message: "Selecciona un archivo" })
-    .refine((file) => file.size > 0, "Selecciona un archivo")
-    .refine((file) => ALLOWED_INVOICE_MIME_TYPES.includes(file.type as typeof ALLOWED_INVOICE_MIME_TYPES[number]), "Solo se aceptan PDF, JPG, PNG o WebP"),
-})
-
-export type InvoiceAttachmentFormData = z.infer<typeof invoiceAttachmentSchema>

@@ -4,28 +4,33 @@ import Link from "next/link"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems,
-  purchaseOrderItems, receiptItems, invoiceAttachments,
+  purchaseOrderItems, receiptItems,
   approvalDecisions, products, worksites,
 } from "@/db/schema"
-import { asc, eq, inArray } from "drizzle-orm"
-import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm"
+import { isGlobalRole, requirePermission, visibleWorksiteIds } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatQty } from "@/lib/utils"
 import {
   TableRoot, Table, TableHeader, TableBody,
-  TableRow, TableHead, TableCell, TableCellNum,
+  TableRow, TableHead, TableCell, TableCellNum, TableCaption,
 } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
 import { Warning, ArrowSquareOut, Funnel } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Trazabilidad de ítems" }
 
 /** States that indicate an item has been approved (or past approval). */
-const APPROVED_STATES = new Set([
+const APPROVED_STATES = [
   "approved", "pending_purchase", "in_purchase_order", "purchased",
   "partially_received", "received",
-])
+] as const
+const APPROVED_STATE_SET = new Set<string>(APPROVED_STATES)
+
+const PAGE_SIZE = 50
+const ALERT_SCAN_LIMIT = 1_000
 
 export default async function TrazabilidadPage({
   searchParams,
@@ -39,62 +44,101 @@ export default async function TrazabilidadPage({
   const sp = await searchParams
   const filterFaenaId = typeof sp.faena === "string" ? sp.faena : ""
   const filterEstado  = typeof sp.estado === "string" ? sp.estado : ""
+  const currentPage   = Math.max(1, typeof sp.page === "string" ? parseInt(sp.page, 10) || 1 : 1)
+  const scopedWorksiteIds = visibleWorksiteIds(session)
+  const isGlobal = isGlobalRole(session)
+  const isAlertFilter = filterEstado === "alert"
 
-  /* ── Fetch all data in parallel ─────────────────────────────────────── */
-  const [
-    allItems, allRequests, allProducts, allWorksites,
-    allOcItems, allReceiptItems, allInvoiceAttachments, allApproveDecisions,
-  ] = await Promise.all([
+  const itemFilters = [
+    !isGlobal
+      ? scopedWorksiteIds.length > 0
+        ? inArray(purchaseRequests.worksiteId, scopedWorksiteIds)
+        : sql`1 = 0`
+      : undefined,
+    filterFaenaId ? eq(purchaseRequests.worksiteId, filterFaenaId) : undefined,
+    filterEstado === "pending"
+      ? inArray(purchaseRequestItems.status, ["approved", "pending_purchase"])
+      : undefined,
+    isAlertFilter
+      ? inArray(purchaseRequestItems.status, APPROVED_STATES)
+      : undefined,
+    filterEstado && !isAlertFilter && filterEstado !== "pending"
+      ? eq(purchaseRequestItems.status, filterEstado)
+      : undefined,
+  ].filter(Boolean)
+
+  const itemWhere = itemFilters.length > 0 ? and(...itemFilters) : undefined
+  const queryOffset = isAlertFilter ? 0 : (currentPage - 1) * PAGE_SIZE
+  const queryLimit = isAlertFilter ? ALERT_SCAN_LIMIT : PAGE_SIZE
+
+  /* ── Fetch scoped item rows first so downstream queries stay bounded ─── */
+  const [[totalRow], itemRows, allWorksites] = await Promise.all([
+    db.select({ n: count() })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .where(itemWhere),
+
     db.select({
       id:              purchaseRequestItems.id,
       requestId:       purchaseRequestItems.requestId,
+      requestCode:     purchaseRequests.code,
+      worksiteId:      purchaseRequests.worksiteId,
       productId:       purchaseRequestItems.productId,
       productNameFree: purchaseRequestItems.productNameFree,
+      productName:     products.name,
+      productSku:      products.sku,
       quantity:        purchaseRequestItems.quantity,
       unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
       status:          purchaseRequestItems.status,
-    }).from(purchaseRequestItems).orderBy(asc(purchaseRequestItems.createdAt)),
-
-    db.select({
-      id:         purchaseRequests.id,
-      code:       purchaseRequests.code,
-      worksiteId: purchaseRequests.worksiteId,
-    }).from(purchaseRequests),
-
-    db.select({ id: products.id, name: products.name, sku: products.sku }).from(products),
+    })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
+      .where(itemWhere)
+      .orderBy(desc(purchaseRequestItems.createdAt))
+      .limit(queryLimit)
+      .offset(queryOffset),
 
     db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
+  ])
 
+  const requestItemIds = itemRows.map((item) => item.id)
+  const [allOcItems, allReceiptItems, allApproveDecisions] = requestItemIds.length > 0
+    ? await Promise.all([
     db.select({
       id:            purchaseOrderItems.id,
       purchaseOrderId: purchaseOrderItems.purchaseOrderId,
       requestItemId: purchaseOrderItems.requestItemId,
       quantity:      purchaseOrderItems.quantity,
-    }).from(purchaseOrderItems),
+    })
+      .from(purchaseOrderItems)
+      .where(inArray(purchaseOrderItems.requestItemId, requestItemIds)),
 
     db.select({
       purchaseOrderItemId: receiptItems.purchaseOrderItemId,
       quantityReceived:    receiptItems.quantityReceived,
-    }).from(receiptItems),
-
-    db.select({
-      targetId: invoiceAttachments.targetId,
-      status:   invoiceAttachments.status,
-    }).from(invoiceAttachments).where(eq(invoiceAttachments.targetType, "purchase_order")),
+    })
+      .from(receiptItems)
+      .innerJoin(purchaseOrderItems, eq(receiptItems.purchaseOrderItemId, purchaseOrderItems.id))
+      .where(inArray(purchaseOrderItems.requestItemId, requestItemIds)),
 
     // Approval decisions may be recorded as "approve" or "modify" when quantity changes.
     db.select({
       requestItemId: approvalDecisions.requestItemId,
       modifiedQty:   approvalDecisions.modifiedQty,
-    }).from(approvalDecisions).where(inArray(approvalDecisions.type, ["approve", "modify"])),
+    })
+      .from(approvalDecisions)
+      .where(and(
+        inArray(approvalDecisions.type, ["approve", "modify"]),
+        inArray(approvalDecisions.requestItemId, requestItemIds),
+      )),
   ])
+    : [[], [], []] as const
 
   /* ── Build lookup maps ──────────────────────────────────────────────── */
-  const requestMap    = Object.fromEntries(allRequests.map((r) => [r.id, r]))
-  const productMap    = Object.fromEntries(allProducts.map((p) => [p.id, p]))
   const worksiteMap   = Object.fromEntries(allWorksites.map((w) => [w.id, w.name]))
 
   // OC items indexed by requestItemId → list of OC items
@@ -113,15 +157,6 @@ export default async function TrazabilidadPage({
       ri.purchaseOrderItemId,
       (receivedByOcItem.get(ri.purchaseOrderItemId) ?? 0) + ri.quantityReceived,
     )
-  }
-
-  const invoiceStatusByOrder = new Map<string, string>()
-  for (const invoice of allInvoiceAttachments) {
-    const current = invoiceStatusByOrder.get(invoice.targetId)
-    if (current === "observed") continue
-    if (invoice.status === "observed" || current !== "reconciled") {
-      invoiceStatusByOrder.set(invoice.targetId, invoice.status)
-    }
   }
 
   // Last approve decision modifiedQty indexed by requestItemId
@@ -148,33 +183,18 @@ export default async function TrazabilidadPage({
     inOc:         number
     received:     number
     status:       string
-    invoiceStatus: string
     /** True when approved > inOc — the core missing-item alert */
     alert:        boolean
   }
 
   const rows: MatrixRow[] = []
 
-  for (const item of allItems) {
-    const request = requestMap[item.requestId]
-    if (!request) continue
-    if (!canAccessWorksite(session, request.worksiteId)) continue
-
+  for (const item of itemRows) {
     const ocItems = ocByItemId.get(item.id) ?? []
     const inOc     = ocItems.reduce((s, oi) => s + oi.quantity, 0)
     const received = ocItems.reduce((s, oi) => s + (receivedByOcItem.get(oi.id) ?? 0), 0)
-    const orderInvoiceStatuses = ocItems
-      .map((oi) => invoiceStatusByOrder.get(oi.purchaseOrderId))
-      .filter((status): status is string => !!status)
-    const invoiceStatus = orderInvoiceStatuses.includes("observed")
-      ? "Observada"
-      : orderInvoiceStatuses.includes("reconciled")
-        ? "Conciliada"
-        : orderInvoiceStatuses.length > 0
-          ? "Adjunta"
-          : "Sin factura"
 
-    const isApproved = APPROVED_STATES.has(item.status)
+    const isApproved = APPROVED_STATE_SET.has(item.status)
     let approved: number | null = null
     if (isApproved) {
       // modifiedQty null means no change; undefined means no decision found (use original)
@@ -184,49 +204,57 @@ export default async function TrazabilidadPage({
 
     const alert = isApproved && approved !== null && inOc < approved
 
-    const product     = item.productId ? productMap[item.productId] : null
-    const productName = product?.name ?? item.productNameFree ?? "—"
-    const productSku  = product?.sku ?? null
+    const productName = item.productName ?? item.productNameFree ?? "—"
+    const productSku  = item.productSku ?? null
 
     rows.push({
       itemId:       item.id,
-      requestId:    request.id,
-      requestCode:  request.code,
+      requestId:    item.requestId,
+      requestCode:  item.requestCode,
       productName,
       productSku,
-      worksiteId:   request.worksiteId,
-      worksiteName: worksiteMap[request.worksiteId] ?? request.worksiteId,
+      worksiteId:   item.worksiteId,
+      worksiteName: worksiteMap[item.worksiteId] ?? item.worksiteId,
       uom:          item.unitOfMeasure,
       requested:    item.quantity,
       approved,
       inOc,
       received,
       status:       item.status,
-      invoiceStatus,
       alert,
     })
   }
 
   /* ── Apply filters ──────────────────────────────────────────────────── */
   const filtered = rows.filter((r) => {
-    if (filterFaenaId && r.worksiteId !== filterFaenaId) return false
     if (filterEstado === "alert"   && !r.alert) return false
-    if (filterEstado === "pending" && !["approved", "pending_purchase"].includes(r.status)) return false
-    if (filterEstado && filterEstado !== "alert" && filterEstado !== "pending" && r.status !== filterEstado) return false
     return true
   })
+
+  /* ── Paginate ───────────────────────────────────────────────────────── */
+  const totalFiltered = isAlertFilter ? filtered.length : (totalRow?.n ?? 0)
+  const totalPages    = Math.ceil(totalFiltered / PAGE_SIZE)
+  const safePage      = Math.min(currentPage, Math.max(totalPages, 1))
+  const paginated     = isAlertFilter
+    ? filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+    : filtered
 
   const alertCount = rows.filter((r) => r.alert).length
 
   /* ── Filter options visible to this user ───────────────────────────── */
-  const visibleWorksiteIds = new Set(rows.map((r) => r.worksiteId))
-  const visibleWorksites   = allWorksites.filter((w) => visibleWorksiteIds.has(w.id))
+  const visibleRowWorksiteIds = new Set(rows.map((r) => r.worksiteId))
+  const visibleWorksites      = allWorksites.filter((w) => visibleRowWorksiteIds.has(w.id))
 
   const inputCls = [
     "h-9 rounded-[var(--radius)] border border-[var(--color-border)]",
     "bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]",
     "focus:outline-none focus:border-[var(--color-primary)]",
   ].join(" ")
+  const baseParams = {
+    ...(filterFaenaId ? { faena: filterFaenaId } : {}),
+    ...(filterEstado ? { estado: filterEstado } : {}),
+  }
+  const pageHref = (page: number) => `/trazabilidad?${new URLSearchParams({ ...baseParams, page: String(page) }).toString()}`
 
   return (
     <>
@@ -288,13 +316,10 @@ export default async function TrazabilidadPage({
             <option value="postponed">Postergado</option>
           </select>
         </div>
-        <button
-          type="submit"
-          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors"
-        >
+        <Button type="submit" variant="secondary">
           <Funnel className="h-3.5 w-3.5" aria-hidden />
           Filtrar
-        </button>
+        </Button>
         {(filterFaenaId || filterEstado) && (
           <a
             href="/trazabilidad"
@@ -304,22 +329,27 @@ export default async function TrazabilidadPage({
           </a>
         )}
         <span className="ml-auto self-end text-xs text-[var(--color-text-subtle)]">
-          {filtered.length} de {rows.length} ítems
+          {totalFiltered} de {totalRow?.n ?? 0} ítems
+          {totalPages > 1 && ` · Pág. ${safePage} de ${totalPages}`}
+          {isAlertFilter && (totalRow?.n ?? 0) > ALERT_SCAN_LIMIT && ` · primeras ${ALERT_SCAN_LIMIT} filas revisadas`}
         </span>
       </form>
 
       {/* ── Matrix table ──────────────────────────────────────────────── */}
-      {filtered.length === 0 ? (
+      {paginated.length === 0 ? (
         <EmptyState
           title="Sin ítems"
           description={rows.length === 0
             ? "Aún no hay solicitudes con ítems en el sistema."
-            : "No hay ítems que coincidan con los filtros seleccionados."}
+            : "No hay ítems que coincidan con los filtros seleccionados. Intenta con otros filtros."}
           compact
         />
       ) : (
         <TableRoot>
           <Table>
+            <TableCaption className="sr-only">
+              Matriz de trazabilidad de ítems por producto, faena, solicitud, cantidades y estado.
+            </TableCaption>
             <TableHeader>
               <TableRow>
                 <TableHead>Producto</TableHead>
@@ -329,12 +359,11 @@ export default async function TrazabilidadPage({
                 <TableHead className="text-right">Aprobado</TableHead>
                 <TableHead className="text-right">En OC</TableHead>
                 <TableHead className="text-right">Recibido</TableHead>
-                <TableHead>Factura</TableHead>
                 <TableHead>Estado</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((row) => (
+              {paginated.map((row) => (
                 <TableRow
                   key={row.itemId}
                   data-alert={row.alert ? "true" : undefined}
@@ -391,7 +420,6 @@ export default async function TrazabilidadPage({
                   </TableCellNum>
 
                   <TableCellNum>{formatQty(row.received, row.uom)}</TableCellNum>
-                  <TableCell className="text-sm text-[var(--color-text-muted)]">{row.invoiceStatus}</TableCell>
 
                   {/* Status badge */}
                   <TableCell>
@@ -402,6 +430,42 @@ export default async function TrazabilidadPage({
             </TableBody>
           </Table>
         </TableRoot>
+      )}
+
+      {/* ── Pagination ────────────────────────────────────────────────── */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between gap-4 border-t border-[var(--color-border)] px-4 py-3">
+          <p className="text-xs text-[var(--color-text-subtle)]">
+            <span className="font-mono tabular-nums">{(safePage - 1) * PAGE_SIZE + 1}</span>
+            {" – "}
+            <span className="font-mono tabular-nums">{Math.min(safePage * PAGE_SIZE, totalFiltered)}</span>
+            {" de "}
+            <span className="font-mono tabular-nums">{totalFiltered}</span>
+          </p>
+          <div className="flex items-center gap-1">
+            {safePage > 1 && (
+              <a
+                href={pageHref(safePage - 1)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.93]"
+                aria-label="Página anterior"
+              >
+                ←
+              </a>
+            )}
+            <span className="px-3 text-xs text-[var(--color-text-subtle)]">
+              Pág. {safePage} de {totalPages}
+            </span>
+            {safePage < totalPages && (
+              <a
+                href={pageHref(safePage + 1)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.93]"
+                aria-label="Página siguiente"
+              >
+                →
+              </a>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── Legend ────────────────────────────────────────────────────── */}

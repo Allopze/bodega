@@ -9,6 +9,7 @@ import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createOrder, issueOrder, markOrderSent, cancelOrder } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
 import { getUserIdsWithPermission, notifyManyUser } from "@/lib/services/notifications"
+import { logger } from "@/lib/logger"
 import { createOrderSchema, type ActionState } from "@/lib/validation/operations"
 
 const REVALIDATE = "/compras"
@@ -89,8 +90,11 @@ export async function createOrderAction(
     if (dbItem.request.worksiteId !== worksiteId || !canAccessWorksite(session, dbItem.request.worksiteId)) {
       return { ok: false, message: "La orden contiene ítems de una faena no autorizada" }
     }
-    if (item.quantity !== dbItem.quantity) {
-      return { ok: false, message: "La cantidad de compra debe coincidir con la cantidad aprobada" }
+    if (item.quantity > dbItem.quantity) {
+      return { ok: false, message: `La cantidad de compra (${item.quantity}) no puede superar la cantidad aprobada (${dbItem.quantity})` }
+    }
+    if (item.quantity <= 0) {
+      return { ok: false, message: "La cantidad de compra debe ser mayor a 0" }
     }
   }
 
@@ -121,7 +125,7 @@ export async function createOrderAction(
     redirect(`/compras/${orderId}`)
   } catch (e) {
     if (e instanceof Error && e.message.includes("NEXT_REDIRECT")) throw e
-    console.error("[createOrderAction]", e)
+    logger.error("[createOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al crear la orden" }
   }
 }
@@ -149,7 +153,7 @@ export async function issueOrderAction(
     revalidatePath(`/compras/${orderId}`)
     return { ok: true, message: "Orden emitida" }
   } catch (e) {
-    console.error("[issueOrderAction]", e)
+    logger.error("[issueOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al emitir orden" }
   }
 }
@@ -209,7 +213,7 @@ export async function sendOrderAction(
     revalidatePath("/", "layout")
     return { ok: true, message: "Orden enviada al proveedor. Siguiente paso: registrar recepción." }
   } catch (e) {
-    console.error("[sendOrderAction]", e)
+    logger.error("[sendOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al enviar orden" }
   }
 }
@@ -274,7 +278,7 @@ export async function postponeItemAction(
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Ítem postergado" }
   } catch (e) {
-    console.error("[postponeItemAction]", e)
+    logger.error("[postponeItemAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al postergar ítem" }
   }
 }
@@ -306,7 +310,7 @@ export async function cancelOrderAction(
     revalidatePath(`/compras/${orderId}`)
     return { ok: true, message: "Orden de compra anulada correctamente" }
   } catch (e) {
-    console.error("[cancelOrderAction]", e)
+    logger.error("[cancelOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al anular orden" }
   }
 }

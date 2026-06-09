@@ -647,9 +647,6 @@ function statusLabel(status: string): string {
     supplier_confirmed:  "Confirmada por proveedor",
     partially_received:  "Parcialmente recibida",
     received:            "Recibida",
-    partially_invoiced:  "Parcialmente facturada",
-    invoiced:            "Facturada",
-    reconciled:          "Conciliada",
     closed:              "Cerrada",
     cancelled:           "Anulada",
   }

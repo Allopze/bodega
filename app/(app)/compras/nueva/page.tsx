@@ -102,13 +102,13 @@ export default async function NuevaOcPage({
   const scopedWs = allWorksites.filter((w) => canAccessWorksite(session, w.id))
 
   const pendingItems: PendingItemOption[] = rawItems
-    .map((item) => {
+    .flatMap((item): PendingItemOption[] => {
       const req     = reqMap[item.requestId]
       const product = item.productId ? productMap[item.productId] : null
-      if (!req) return null
+      if (!req) return []
       // Only show items from worksites this user can access
-      if (!canAccessWorksite(session, req.worksiteId)) return null
-      return {
+      if (!canAccessWorksite(session, req.worksiteId)) return []
+      return [{
         id:              item.id,
         requestId:       item.requestId,
         requestCode:     req.code,
@@ -125,9 +125,8 @@ export default async function NuevaOcPage({
         supplierPrices:  item.productId ? (supplierPriceMap[item.productId] ?? {}) : {},
         suggestedSupplierId: item.suggestedSupplierId,
         supplierHint:        item.supplierHint,
-      } satisfies PendingItemOption
+      }]
     })
-    .filter((i): i is PendingItemOption => i !== null)
 
   const supplierOptions: SupplierOption[] = allSuppliers.map((s) => ({
     id:           s.id,

@@ -141,6 +141,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 <TableHead
                   key={col.key}
                   className={cn(col.width, col.numeric && "text-right")}
+                  aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
                 >
                   {col.sortable ? (
                     <button
@@ -153,6 +154,7 @@ export function DataTable<T extends Record<string, unknown>>({
                         "motion-safe:active:scale-[0.97]",
                         "select-none",
                       )}
+                      aria-label={`Ordenar por ${col.label}${sortKey === col.key ? ` (${sortDir === "asc" ? "ascendente" : "descendente"})` : ""}`}
                     >
                       {col.label}
                       <SortIcon colKey={col.key} sortKey={sortKey} sortDir={sortDir} />

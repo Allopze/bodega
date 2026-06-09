@@ -7,6 +7,7 @@ import { purchaseRequestItems } from "@/db/schema"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { approveItem, rejectItem, returnItem } from "@/lib/services/item-state"
 import { notifySafe } from "@/lib/services/notifications"
+import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
 
 const REVALIDATE = "/aprobaciones"
@@ -76,7 +77,7 @@ export async function approveItemAction(
 
     return { ok: true, message: "Ítem aprobado" }
   } catch (e) {
-    console.error("[approveItemAction]", e)
+    logger.error("[approveItemAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al aprobar ítem" }
   }
 }
@@ -128,7 +129,7 @@ export async function rejectItemAction(
 
     return { ok: true, message: "Ítem rechazado" }
   } catch (e) {
-    console.error("[rejectItemAction]", e)
+    logger.error("[rejectItemAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al rechazar ítem" }
   }
 }
@@ -166,7 +167,7 @@ export async function returnItemAction(
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Ítem devuelto al solicitante" }
   } catch (e) {
-    console.error("[returnItemAction]", e)
+    logger.error("[returnItemAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al devolver ítem" }
   }
 }
@@ -210,7 +211,7 @@ export async function bulkApproveRequestAction(
       approved++
     } catch (e) {
       errors.push(id)
-      console.error(`[bulkApproveRequestAction] item ${id}:`, e)
+      logger.error(`[bulkApproveRequestAction] item ${id}:`, e)
     }
   }
 

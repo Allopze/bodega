@@ -102,7 +102,6 @@ const snapshot: WorkQueueSnapshot = {
       sentAt:          "2026-01-06T10:00:00.000Z",
       itemCount:       2,
       totalAmount:     10000,
-      invoiceStatuses: [],
     },
     {
       id:              "oc-2",
@@ -116,7 +115,6 @@ const snapshot: WorkQueueSnapshot = {
       sentAt:          "2026-01-09T10:00:00.000Z",
       itemCount:       1,
       totalAmount:     5000,
-      invoiceStatuses: ["registered"],
     },
   ],
 }
@@ -194,19 +192,6 @@ describe("buildWorkTasks", () => {
     ])
   })
 
-  it("shows received orders without reconciled invoices as invoice tasks", () => {
-    const tasks = buildWorkTasks(
-      { ...baseActor, permissions: ["invoice_attachments:manage"] },
-      snapshot,
-    )
-
-    expect(tasks).toEqual([
-      expect.objectContaining({
-        type: "invoice",
-        href: "/compras/oc-2",
-      }),
-    ])
-  })
 })
 
 describe("request progress labels", () => {

@@ -2,46 +2,28 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { signIn } from "next-auth/react"
-import { useRouter, useSearchParams } from "next/navigation"
 import { WarningCircle } from "@phosphor-icons/react"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { safeInternalPath } from "@/lib/navigation"
+import { useLogin } from "@/lib/hooks/use-login"
 
 export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }) {
-  const router       = useRouter()
-  const searchParams = useSearchParams()
-  const callbackUrl  = safeInternalPath(searchParams.get("callbackUrl"))
-
-  const [error,   setError]   = React.useState<string | null>(null)
-  const [loading, setLoading] = React.useState(false)
+  const login = useLogin()
+  const [error, setError] = React.useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
-    setLoading(true)
 
     const formData = new FormData(e.currentTarget)
     const email    = String(formData.get("email") ?? "").trim().toLowerCase()
     const password = String(formData.get("password") ?? "").trim()
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    })
-
-    setLoading(false)
-
-    if (result?.error) {
-      setError("Correo o contraseña incorrectos. Intenta nuevamente.")
-      return
+    const result = await login.mutateAsync({ email, password })
+    if (!result.ok && result.error) {
+      setError(result.error)
     }
-
-    router.push(callbackUrl)
-    router.refresh()
   }
 
   return (
@@ -83,9 +65,9 @@ export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }
         type="submit"
         className="w-full mt-5"
         size="lg"
-        loading={loading}
+        loading={login.isPending}
       >
-        Ingresar
+        {login.isPending ? "Ingresando..." : "Ingresar"}
       </Button>
 
       <div className="mt-6 pt-5 border-t border-border text-center text-xs text-text-subtle space-y-2">

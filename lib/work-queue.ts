@@ -5,7 +5,6 @@ export type WorkTaskType =
   | "purchase_order"
   | "receipt"
   | "warehouse_delivery"
-  | "invoice"
 
 export type WorkPriority = "critical" | "high" | "normal" | "low"
 
@@ -70,7 +69,6 @@ export interface WorkOrderRow {
   sentAt:          string | null
   itemCount:       number
   totalAmount:     number
-  invoiceStatuses: string[]
 }
 
 export interface WorkQueueSnapshot {
@@ -110,7 +108,7 @@ const APPROVAL_ITEM_STATUSES = new Set(["requested"])
 const PURCHASE_ITEM_STATUSES = new Set(["approved", "pending_purchase"])
 const DELIVERY_ITEM_STATUSES = new Set(["received", "partially_delivered"])
 const RECEIVABLE_ORDER_STATUSES = new Set(["sent", "partially_received"])
-const INVOICE_ORDER_STATUSES = new Set(["received", "closed"])
+
 
 const PRIORITY_RANK: Record<WorkPriority, number> = {
   critical: 0,
@@ -212,23 +210,6 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         createdAt:   item.createdAt,
         href:        `/bodega?faena=${item.worksiteId}&item=${item.id}`,
         ctaLabel:    "Registrar entrega",
-      })
-    }
-  }
-
-  if (hasPermission(actor, "invoice_attachments:manage")) {
-    for (const order of snapshot.orders.filter((order) => INVOICE_ORDER_STATUSES.has(order.status) && canSeeWorksite(actor, order.worksiteId))) {
-      if (order.invoiceStatuses.includes("reconciled")) continue
-      tasks.push({
-        id:          `invoice:${order.id}`,
-        type:        "invoice",
-        title:       `Anexar factura ${order.code}`,
-        subtitle:    `${order.worksiteName} · ${order.supplierName}`,
-        statusLabel: order.invoiceStatuses.length > 0 ? "Factura por conciliar" : "Sin factura",
-        priority:    "low",
-        createdAt:   order.sentAt ?? order.createdAt,
-        href:        `/compras/${order.id}`,
-        ctaLabel:    "Ver OC",
       })
     }
   }

@@ -8,51 +8,16 @@ import { z } from "zod"
 import { applyRbacToToken, getUserRbacById } from "@/lib/auth/rbac"
 
 import { headers } from "next/headers"
+import {
+  checkRateLimit as persistentCheckRateLimit,
+  recordFailure as persistentRecordFailure,
+  recordSuccess as persistentRecordSuccess,
+} from "@/lib/services/rate-limit"
 
 const loginSchema = z.object({
   email:    z.string().email(),
   password: z.string().min(1),
 })
-
-const LIMIT_ATTEMPTS = 5
-const LOCK_TIME = 15 * 60 * 1000 // 15 mins
-
-interface RateLimitRecord {
-  count:     number
-  lockUntil: number
-}
-
-const rateLimitMap = new Map<string, RateLimitRecord>()
-
-function checkRateLimit(key: string): { allowed: boolean; waitTimeRemainingMs: number } {
-  const record = rateLimitMap.get(key)
-  if (!record) return { allowed: true, waitTimeRemainingMs: 0 }
-  
-  const now = Date.now()
-  if (record.lockUntil > now) {
-    return { allowed: false, waitTimeRemainingMs: record.lockUntil - now }
-  }
-  
-  if (record.lockUntil <= now && record.count >= LIMIT_ATTEMPTS) {
-    rateLimitMap.delete(key)
-    return { allowed: true, waitTimeRemainingMs: 0 }
-  }
-  
-  return { allowed: true, waitTimeRemainingMs: 0 }
-}
-
-function recordFailure(key: string) {
-  const record = rateLimitMap.get(key) || { count: 0, lockUntil: 0 }
-  record.count += 1
-  if (record.count >= LIMIT_ATTEMPTS) {
-    record.lockUntil = Date.now() + LOCK_TIME
-  }
-  rateLimitMap.set(key, record)
-}
-
-function recordSuccess(key: string) {
-  rateLimitMap.delete(key)
-}
 
 /** Load user with full roles/permissions from DB */
 async function getUserWithAuth(email: string) {
@@ -92,32 +57,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           // Fallback if headers are not available
         }
 
-        const ipCheck = checkRateLimit(clientIp)
+        const ipCheck = persistentCheckRateLimit(clientIp)
         if (!ipCheck.allowed) {
           throw new Error(`Demasiados intentos de inicio de sesión desde esta dirección IP. Intente de nuevo en ${Math.ceil(ipCheck.waitTimeRemainingMs / 60000)} minutos.`)
         }
 
-        const emailCheck = checkRateLimit(email)
+        const emailCheck = persistentCheckRateLimit(email)
         if (!emailCheck.allowed) {
           throw new Error(`Esta cuenta ha sido bloqueada temporalmente por múltiples intentos fallidos. Intente de nuevo en ${Math.ceil(emailCheck.waitTimeRemainingMs / 60000)} minutos.`)
         }
 
         const userWithAuth = await getUserWithAuth(email)
         if (!userWithAuth) {
-          recordFailure(clientIp)
-          recordFailure(email)
+          persistentRecordFailure(clientIp)
+          persistentRecordFailure(email)
           return null
         }
 
         const valid = await bcrypt.compare(parsed.data.password, userWithAuth._hashedPassword)
         if (!valid) {
-          recordFailure(clientIp)
-          recordFailure(email)
+          persistentRecordFailure(clientIp)
+          persistentRecordFailure(email)
           return null
         }
 
-        recordSuccess(clientIp)
-        recordSuccess(email)
+        persistentRecordSuccess(clientIp)
+        persistentRecordSuccess(email)
 
         const { _hashedPassword: _, ...safeUser } = userWithAuth
         return safeUser
@@ -136,7 +101,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token
       }
       if (token.id) {
-        const snapshot = await getUserRbacById(token.id as string)
+        // Check if user profile was updated since the token was issued.
+        // If so, bypass the RBAC cache to pick up role/permission changes immediately.
+        const userRow = db
+          .select({ updatedAt: users.updatedAt })
+          .from(users)
+          .where(eq(users.id, token.id as string))
+          .get()
+
+        const tokenIat = token.iat ? token.iat * 1000 : 0
+        const profileChanged = userRow && tokenIat > 0
+          ? new Date(userRow.updatedAt).getTime() > tokenIat
+          : false
+
+        const snapshot = await getUserRbacById(token.id as string, profileChanged)
         applyRbacToToken(token, snapshot)
       }
       return token

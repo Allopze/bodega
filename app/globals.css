@@ -154,12 +154,44 @@ body {
   to   { transform: translateX(100%); }
 }
 
-/* ─── Reduced motion ──────────────────────────────────────────────────────── */
+/* ─── Fade-in keyframe (for @starting-style and standalone use) ───────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ─── Slide-up keyframe ──────────────────────────────────────────────────── */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Reduced motion (Emil: keep opacity/color transitions for comprehension) ── */
 @media (prefers-reduced-motion: reduce) {
+  /* Keep opacity and color transitions — they aid comprehension */
+  /* Remove movement and position animations — they cause discomfort */
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    --duration-fast: 0ms;
+    --duration-default: 0ms;
+    --duration-slow: 0ms;
     scroll-behavior: auto !important;
+  }
+
+  /* Only kill transform-based motion — keep fade transitions */
+  .animate-in,
+  .animate-out {
+    animation-duration: 0.01ms !important;
+  }
+
+  /* Prevent unwanted scale transforms in reduced motion */
+  [data-pressable]:active,
+  button:active,
+  .btn:active {
+    transform: none !important;
+  }
+
+  @keyframes shimmer {
+    from { opacity: 0.5; }
+    to { opacity: 0.5; }
   }
 }

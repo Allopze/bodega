@@ -44,11 +44,12 @@ const DialogContent = React.forwardRef<
         "border border-[var(--color-border)]",
         "shadow-[var(--shadow-lg)]",
         "p-6",
-        // Entry: scale from center (modal stays centered per Emil's rule)
+        // Emil: modal stays centered (exception to origin-aware rule)
+        // Emil: under 300ms for UI animations
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-        "duration-[var(--duration-default)]",
+        "duration-[var(--duration-default)] ease-[var(--ease-out)]",
         className,
       )}
       {...props}

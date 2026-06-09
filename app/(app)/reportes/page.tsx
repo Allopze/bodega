@@ -3,11 +3,10 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, purchaseOrders,
-  receipts, invoiceAttachments,
+  receipts,
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
-import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
 import { formatCLP } from "@/lib/utils"
@@ -42,7 +41,6 @@ export default async function Page() {
     itemRows,
     orderRows,
     receiptRows,
-    invoiceRows,
   ] = await Promise.all([
     db
       .select({
@@ -81,16 +79,6 @@ export default async function Page() {
       })
       .from(receipts)
       .where(receiptWsFilter),
-
-    db
-      .select({
-        id: invoiceAttachments.id,
-        targetType: invoiceAttachments.targetType,
-        targetId: invoiceAttachments.targetId,
-        amount: invoiceAttachments.amount,
-        status: invoiceAttachments.status,
-      })
-      .from(invoiceAttachments),
   ])
 
   const requests = requestRows
@@ -98,15 +86,6 @@ export default async function Page() {
   const orders = orderRows
   const receiptsVisible = receiptRows
   const visibleRequestIds = new Set(requests.map((r) => r.id))
-  const visibleOrderIds = new Set(orders.map((o) => o.id))
-  const invoicesVisible = canViewInvoiceAttachments(session)
-    ? invoiceRows.filter((invoice) => (
-        invoice.targetType === "purchase_request"
-          ? visibleRequestIds.has(invoice.targetId)
-          : visibleOrderIds.has(invoice.targetId)
-      ))
-    : []
-
   const metrics: ReportMetric[] = [
     {
       label: "Solicitudes",
@@ -132,11 +111,6 @@ export default async function Page() {
       label: "OC pendientes",
       value: orders.filter((o) => ["sent", "partially_received"].includes(o.status)).length,
       detail: "Compras enviadas aún no marcadas como recibidas",
-    },
-    {
-      label: "Facturas anexas",
-      value: invoicesVisible.length,
-      detail: `${invoicesVisible.filter((invoice) => invoice.status !== "reconciled").length} pendientes u observadas`,
     },
   ]
 

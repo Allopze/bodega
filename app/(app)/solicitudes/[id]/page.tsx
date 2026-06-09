@@ -2,18 +2,15 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import {
-  invoiceAttachments, purchaseRequests,
+  purchaseRequests,
   worksites, products, productAttributes,
   statusHistory, users, suppliers, workers,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
-import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
-import { InvoiceAttachmentsPanel } from "@/components/invoices/invoice-attachments-panel"
-import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { RequestForm } from "../request-form"
 import { DuplicateButton } from "./duplicate-button"
 import { EntityTimeline } from "@/components/states/entity-timeline"
@@ -47,22 +44,11 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   const hasViewAll = session.user.permissions.includes("requests:view_all")
   const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))
   if (!hasAccess) notFound()
-  const canViewInvoices = canViewInvoiceAttachments(session)
 
-  const [allWorksites, allProducts, allAttrs, invoiceRows, timelineEvents, maxPdfSizeMb, allSuppliers, allWorkers] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, timelineEvents, allSuppliers, allWorkers] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
-    canViewInvoices
-      ? db.query.invoiceAttachments.findMany({
-          where: and(
-            eq(invoiceAttachments.targetType, "purchase_request"),
-            eq(invoiceAttachments.targetId, request.id),
-          ),
-          with: { uploader: true },
-          orderBy: (ia) => [desc(ia.uploadedAt)],
-        })
-      : Promise.resolve([]),
     db
       .select({
         id:          statusHistory.id,
@@ -83,7 +69,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         ),
       )
       .orderBy(desc(statusHistory.changedAt)),
-    getPdfMaxSizeMb(),
     db.select().from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
     db.select().from(workers).where(eq(workers.isActive, true)).orderBy(asc(workers.firstName)),
   ])
@@ -191,29 +176,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           workers={workerOptions}
           editRequest={editRequest}
         />
-        {canViewInvoices && (
-          <InvoiceAttachmentsPanel
-            targetType="purchase_request"
-            targetId={request.id}
-            targetLabel={`la solicitud ${request.code}`}
-            canManage={can(session, "invoice_attachments:manage")}
-            maxPdfSizeMb={maxPdfSizeMb}
-            attachments={invoiceRows.map((invoice) => ({
-              id:                  invoice.id,
-              invoiceNumber:       invoice.invoiceNumber,
-              invoiceDate:         invoice.invoiceDate,
-              amount:              invoice.amount,
-              fileName:            invoice.fileName,
-              fileSize:            invoice.fileSize,
-              mimeType:            invoice.mimeType,
-              notes:               invoice.notes,
-              uploadedAt:          invoice.uploadedAt,
-              uploaderName:        invoice.uploader?.name ?? null,
-              status:              (invoice.status as "registered" | "observed" | "reconciled") ?? "registered",
-              reconciliationNotes: invoice.reconciliationNotes ?? null,
-            }))}
-          />
-        )}
         <EntityTimeline entityType="request" events={timelineEvents} />
       </div>
     </>

@@ -8,6 +8,7 @@ import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { applyMovement }     from "@/lib/services/warehouse"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
 import { dispatchSchema, stockAdjustmentSchema, type ActionState }  from "@/lib/validation/operations"
+import { logger } from "@/lib/logger"
 
 const REVALIDATE = "/bodega"
 
@@ -100,7 +101,7 @@ export async function dispatchAction(
     revalidatePath("/trazabilidad")
     return { ok: true, message: `Entrega registrada: ${qty} unidades` }
   } catch (e) {
-    console.error("[dispatchAction]", e)
+    logger.error("[dispatchAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar entrega" }
   }
 }
@@ -149,7 +150,7 @@ export async function adjustStockAction(
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Ajuste registrado" }
   } catch (e) {
-    console.error("[adjustStockAction]", e)
+    logger.error("[adjustStockAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al ajustar stock" }
   }
 }

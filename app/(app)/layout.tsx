@@ -7,6 +7,7 @@ import { worksites, purchaseRequests, purchaseOrders } from "@/db/schema"
 import { eq, inArray, count, and, sql } from "drizzle-orm"
 import { AppShell } from "@/components/layout/app-shell"
 import { SessionProvider } from "@/components/providers/session-provider"
+import { QueryProvider } from "@/components/providers/query-provider"
 import { Toaster } from "sonner"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 
@@ -58,20 +59,30 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
+    <QueryProvider>
     <SessionProvider session={session}>
       <AppShell session={session} worksiteName={ws?.name} badgeCounts={badgeCounts}>
         {children}
       </AppShell>
       <Toaster
         position="top-right"
+        visibleToasts={4}
+        expand
+        offset={16}
+        gap={8}
         toastOptions={{
+          duration: 4000,
           classNames: {
-            toast:       "font-sans text-sm shadow-[var(--shadow-md)] border border-[var(--color-border)]",
+            toast:
+              "font-sans text-sm shadow-[var(--shadow-md)] border border-[var(--color-border)] " +
+              "data-[swipe=end]:opacity-0 data-[swipe=end]:translate-x-full " +
+              "!transition-all !duration-[var(--duration-default)] !ease-[var(--ease-out)]",
             title:       "font-medium text-[var(--color-text)]",
             description: "text-[var(--color-text-muted)]",
           },
         }}
       />
     </SessionProvider>
+    </QueryProvider>
   )
 }

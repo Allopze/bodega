@@ -57,7 +57,6 @@ async function main() {
     { id: "p-adm-sup", name: "admin:suppliers", module: "admin", description: "Proveedores" },
     { id: "p-adm-cfg", name: "admin:config", module: "admin", description: "Config" },
     { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Auditoría" },
-    { id: "p-inv-att", name: "invoice_attachments:manage", module: "attachments", description: "Facturas" },
   ]
 
   await db.insert(schema.permissions).values(permissions)

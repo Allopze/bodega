@@ -26,14 +26,15 @@ import * as schema from "@/db/schema"
 const sqlite = new Database(":memory:")
 sqlite.pragma("foreign_keys = ON")
 const inMemoryDb = drizzle(sqlite, { schema })
+const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
 
 // Store in global singleton so that services can access it
-;(global as any).__db = inMemoryDb
+testGlobal.__db = inMemoryDb
 
 // Mock the db module using a getter to avoid Vitest hoisting ReferenceError
 vi.mock("@/db", () => ({
   get db() {
-    return (global as any).__db
+    return testGlobal.__db
   },
 }))
 

@@ -5,76 +5,15 @@ import * as PopoverPrimitive from "@radix-ui/react-popover"
 import Link from "next/link"
 import { Bell, CheckCircle } from "@phosphor-icons/react"
 import { cn, formatDate } from "@/lib/utils"
-
-interface NotificationItem {
-  id:         string
-  type:       string
-  title:      string
-  body:       string | null
-  entityHref: string | null
-  isRead:     boolean
-  createdAt:  string
-}
-
-interface ApiResponse {
-  items:       NotificationItem[]
-  unreadCount: number
-}
+import { useNotifications, useMarkRead, useMarkAllRead } from "@/lib/hooks/use-notifications"
+import type { NotificationItem } from "@/lib/hooks/use-notifications"
 
 export function NotificationBell() {
-  const [data,    setData]    = React.useState<ApiResponse>({ items: [], unreadCount: 0 })
-  const [loading, setLoading] = React.useState(false)
+  const { data, isLoading } = useNotifications()
+  const markRead   = useMarkRead()
+  const markAllRead = useMarkAllRead()
 
-  const fetchNotifications = React.useCallback(async () => {
-    try {
-      const res = await fetch("/api/notifications")
-      if (res.ok) {
-        const json = await res.json() as ApiResponse
-        setData(json)
-      }
-    } catch { /* ignore */ }
-  }, [])
-
-  React.useEffect(() => {
-    const firstFetch = setTimeout(() => {
-      void fetchNotifications()
-    }, 0)
-    const interval = setInterval(fetchNotifications, 60_000)
-    return () => {
-      clearTimeout(firstFetch)
-      clearInterval(interval)
-    }
-  }, [fetchNotifications])
-
-  async function markAllRead() {
-    setLoading(true)
-    try {
-      await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markAll: true }),
-      })
-      await fetchNotifications()
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function markRead(id: string) {
-    try {
-      await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      })
-      setData((prev) => ({
-        unreadCount: Math.max(0, prev.unreadCount - 1),
-        items: prev.items.map((n) => n.id === id ? { ...n, isRead: true } : n),
-      }))
-    } catch { /* ignore */ }
-  }
-
-  const hasUnread = data.unreadCount > 0
+  const hasUnread = (data?.unreadCount ?? 0) > 0
 
   return (
     <PopoverPrimitive.Root>
@@ -89,10 +28,10 @@ export function NotificationBell() {
             "transition-colors duration-[var(--duration-fast)]",
             "active:scale-[0.95]",
           )}
-          aria-label={`Notificaciones${hasUnread ? ` (${data.unreadCount} sin leer)` : ""}`}
+          aria-label={`Notificaciones${hasUnread ? ` (${data?.unreadCount} sin leer)` : ""}`}
         >
           <Bell size={16} />
-          {hasUnread && (
+          {hasUnread && data && (
             <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary)] text-[9px] font-bold text-white">
               {data.unreadCount > 9 ? "9+" : data.unreadCount}
             </span>
@@ -109,12 +48,14 @@ export function NotificationBell() {
             "border border-[var(--color-border)]",
             "bg-[var(--color-surface)] shadow-[var(--shadow-md)]",
             "overflow-hidden",
+            // Emil: origin-aware — scale from trigger
+            "origin-[var(--radix-popover-content-transform-origin)]",
             // Animate in/out via Radix data-state
             "data-[state=open]:animate-in data-[state=closed]:animate-out",
             "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
             "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
             "data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
-            "duration-[var(--duration-fast)]",
+            "duration-[var(--duration-fast)] ease-[var(--ease-out)]",
           )}
         >
           {/* Header */}
@@ -122,8 +63,8 @@ export function NotificationBell() {
             <span className="text-sm font-semibold text-[var(--color-text)]">Notificaciones</span>
             {hasUnread && (
               <button
-                onClick={markAllRead}
-                disabled={loading}
+                onClick={() => markAllRead.mutate()}
+                disabled={markAllRead.isPending}
                 className="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-600)] transition-colors disabled:opacity-50"
               >
                 <CheckCircle size={12} />
@@ -134,17 +75,19 @@ export function NotificationBell() {
 
           {/* List */}
           <div className="max-h-80 overflow-y-auto divide-y divide-[var(--color-border)]">
-            {data.items.length === 0 ? (
+            {!data || data.items.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-8 text-center">
                 <Bell size={24} className="text-[var(--color-text-subtle)]" />
-                <p className="text-sm text-[var(--color-text-muted)]">Sin notificaciones</p>
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  {isLoading ? "Cargando..." : "Sin notificaciones"}
+                </p>
               </div>
-            ) : (
+            ) : data && (
               data.items.map((notif) => (
                 <NotificationRow
                   key={notif.id}
                   notification={notif}
-                  onRead={() => markRead(notif.id)}
+                  onRead={() => markRead.mutate(notif.id)}
                 />
               ))
             )}

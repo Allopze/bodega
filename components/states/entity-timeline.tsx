@@ -84,7 +84,7 @@ export function EntityTimeline({ entityType, events }: EntityTimelineProps) {
                     {/* Reason */}
                     {event.reason && (
                       <div className="mt-1.5 p-2 rounded-[var(--radius)] bg-[var(--color-surface-2)] text-xs text-[var(--color-text-muted)] border-l-2 border-[var(--color-warning)] italic">
-                        "{event.reason}"
+                        &ldquo;{event.reason}&rdquo;
                       </div>
                     )}
                   </div>

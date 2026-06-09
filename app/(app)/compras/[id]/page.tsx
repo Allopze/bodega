@@ -1,18 +1,16 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
-import { invoiceAttachments, purchaseOrders, statusHistory, users } from "@/db/schema"
+import { purchaseOrders, statusHistory, users } from "@/db/schema"
 import { and, desc, eq } from "drizzle-orm"
-import { can, requirePermission } from "@/lib/auth/can"
+import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
-import { canViewInvoiceAttachments } from "@/lib/auth/invoice-attachments"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { StateBadge } from "@/components/states/state-badge"
-import { InvoiceAttachmentsPanel } from "@/components/invoices/invoice-attachments-panel"
-import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { OcActions } from "./oc-actions"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { EntityTimeline } from "@/components/states/entity-timeline"
+import { Button } from "@/components/ui/button"
 
 export const metadata: Metadata = { title: "Orden de compra" }
 
@@ -34,7 +32,6 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
 
   if (!order) notFound()
   if (!canAccessWorksite(session, order.worksiteId)) notFound()
-  const canViewInvoices = canViewInvoiceAttachments(session)
 
   // Load linked request items + request codes for traceability
   const requestItemIds = order.items
@@ -45,7 +42,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     .map((i) => i.productId)
     .filter((id): id is string => id !== null)
 
-  const [requestItemRows, productRows, invoiceRows, timelineEvents, maxPdfSizeMb] = await Promise.all([
+  const [requestItemRows, productRows, timelineEvents] = await Promise.all([
     requestItemIds.length > 0
       ? db.query.purchaseRequestItems.findMany({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
@@ -57,17 +54,6 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
       ? db.query.products.findMany({
           where: (p, { inArray }) => inArray(p.id, productIds),
           columns: { id: true, sku: true, name: true },
-        })
-      : Promise.resolve([]),
-
-    canViewInvoices
-      ? db.query.invoiceAttachments.findMany({
-          where: and(
-            eq(invoiceAttachments.targetType, "purchase_order"),
-            eq(invoiceAttachments.targetId, order.id),
-          ),
-          with: { uploader: true },
-          orderBy: (ia) => [desc(ia.uploadedAt)],
         })
       : Promise.resolve([]),
 
@@ -91,7 +77,6 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
         ),
       )
       .orderBy(desc(statusHistory.changedAt)),
-    getPdfMaxSizeMb(),
   ])
 
   // Build maps
@@ -109,14 +94,15 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
         actions={
           <div className="flex items-center gap-2">
             <StateBadge state={order.status} entity="oc" />
-            <a
-              href={`/compras/${order.id}/print`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-50)] hover:border-[var(--color-primary-100)]"
-            >
-              Imprimir / PDF
-            </a>
+            <Button asChild variant="secondary" size="sm">
+              <a
+                href={`/compras/${order.id}/print`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Imprimir / PDF
+              </a>
+            </Button>
           </div>
         }
         breadcrumb={
@@ -250,31 +236,6 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             <p className="text-xs text-[var(--color-text-subtle)] mb-1">Notas</p>
             <p className="text-sm text-[var(--color-text-muted)]">{order.notes}</p>
           </div>
-        )}
-
-        {canViewInvoices && (
-          <InvoiceAttachmentsPanel
-            targetType="purchase_order"
-            targetId={order.id}
-            targetLabel={`la OC ${order.code}`}
-            canManage={can(session, "invoice_attachments:manage")}
-            orderTotalAmount={order.totalAmount}
-            maxPdfSizeMb={maxPdfSizeMb}
-            attachments={invoiceRows.map((invoice) => ({
-              id:                  invoice.id,
-              invoiceNumber:       invoice.invoiceNumber,
-              invoiceDate:         invoice.invoiceDate,
-              amount:              invoice.amount,
-              fileName:            invoice.fileName,
-              fileSize:            invoice.fileSize,
-              mimeType:            invoice.mimeType,
-              notes:               invoice.notes,
-              uploadedAt:          invoice.uploadedAt,
-              uploaderName:        invoice.uploader?.name ?? null,
-              status:              (invoice.status as "registered" | "observed" | "reconciled") ?? "registered",
-              reconciliationNotes: invoice.reconciliationNotes ?? null,
-            }))}
-          />
         )}
 
         {/* Actions (issue/send) */}

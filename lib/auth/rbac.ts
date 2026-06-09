@@ -16,10 +16,15 @@ export interface UserRbacSnapshot {
 
 const rbacCache = new Map<string, { snapshot: UserRbacSnapshot | null; expiresAt: number }>()
 
-export async function getUserRbacById(userId: string): Promise<UserRbacSnapshot | null> {
-  const cached = rbacCache.get(userId)
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.snapshot
+export async function getUserRbacById(
+  userId: string,
+  bypassCache = false,
+): Promise<UserRbacSnapshot | null> {
+  if (!bypassCache) {
+    const cached = rbacCache.get(userId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.snapshot
+    }
   }
 
   const user = await db.query.users.findFirst({

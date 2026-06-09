@@ -189,8 +189,6 @@ async function main() {
     { id: "p-wh-stock",       name: "warehouse:view_stock",         module: "warehouse",  description: "Ver stock" },
     { id: "p-wh-mov",         name: "warehouse:register_movement",  module: "warehouse",  description: "Registrar movimientos" },
     { id: "p-wh-adj",         name: "warehouse:adjust_stock",       module: "warehouse",  description: "Ajustar stock" },
-    // Invoice attachments
-    { id: "p-inv-att",        name: "invoice_attachments:manage",   module: "attachments", description: "Anexar facturas a solicitudes y OC" },
     // Reports
     { id: "p-rep-view",       name: "reports:view",                 module: "reports",    description: "Ver reportes y matriz de trazabilidad" },
     // Admin
