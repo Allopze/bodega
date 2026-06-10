@@ -10,6 +10,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { toCode } from "@/lib/utils"
+import { Checkbox } from "@/components/ui/checkbox"
 import { createCategory, updateCategory } from "./actions"
 
 export interface CategoryForEdit {
@@ -81,14 +82,8 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
                 <Input id="cat-sort" name="sortOrder" type="number" defaultValue={editCategory?.sortOrder ?? 0} className="w-24" />
               </Field>
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" id="cat-epp" name="isEpp" value="on" defaultChecked={editCategory?.isEpp ?? false} className="h-4 w-4 accent-[var(--color-primary)]" />
-                  <label htmlFor="cat-epp" className="text-sm text-[var(--color-text)]">Es EPP (equipo de protección personal)</label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" id="cat-prev" name="requiresPrevencion" value="on" defaultChecked={editCategory?.requiresPrevencion ?? false} className="h-4 w-4 accent-[var(--color-primary)]" />
-                  <label htmlFor="cat-prev" className="text-sm text-[var(--color-text)]">Requiere aprobación de Prevención</label>
-                </div>
+                <Checkbox id="cat-epp" name="isEpp" value="on" defaultChecked={editCategory?.isEpp ?? false} label="Es EPP (equipo de protección personal)" />
+                <Checkbox id="cat-prev" name="requiresPrevencion" value="on" defaultChecked={editCategory?.requiresPrevencion ?? false} label="Requiere aprobación de Prevención" />
               </div>
             </FieldGroup>
           </SheetBody>

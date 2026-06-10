@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { createProduct, updateProduct } from "./actions"
 
@@ -178,18 +179,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                   </Field>
 
                   <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="p-epp" name="isEpp" value="on" defaultChecked={editProduct?.isEpp ?? false} className="h-4 w-4 accent-primary" />
-                      <label htmlFor="p-epp" className="text-sm text-text">Es EPP</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="p-prev" name="requiresPrevencion" value="on" defaultChecked={editProduct?.requiresPrevencion ?? false} className="h-4 w-4 accent-primary" />
-                      <label htmlFor="p-prev" className="text-sm text-text">Requiere aprobación de Prevención</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="p-active" name="isActive" value="on" defaultChecked={editProduct?.isActive ?? true} className="h-4 w-4 accent-primary" />
-                      <label htmlFor="p-active" className="text-sm text-text">Producto activo</label>
-                    </div>
+                    <Checkbox id="p-epp" name="isEpp" value="on" defaultChecked={editProduct?.isEpp ?? false} label="Es EPP" />
+                    <Checkbox id="p-prev" name="requiresPrevencion" value="on" defaultChecked={editProduct?.requiresPrevencion ?? false} label="Requiere aprobación de Prevención" />
+                    <Checkbox id="p-active" name="isActive" value="on" defaultChecked={editProduct?.isActive ?? true} label="Producto activo" />
                   </div>
                 </FieldGroup>
               </TabsContent>
@@ -224,9 +216,8 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                             <Input id={`attr-opts-${i}`} value={attr.options} onChange={(e) => updateAttr(i, { options: e.target.value })} placeholder="S, M, L, XL" />
                           </Field>
                         )}
-                        <div className="col-span-2 flex items-center gap-2">
-                          <input type="checkbox" id={`attr-req-${i}`} checked={attr.isRequired} onChange={(e) => updateAttr(i, { isRequired: e.target.checked })} className="h-4 w-4 accent-primary" />
-                          <label htmlFor={`attr-req-${i}`} className="text-sm text-text">Obligatorio</label>
+                        <div className="col-span-2">
+                          <Checkbox id={`attr-req-${i}`} checked={attr.isRequired} onChange={(e) => updateAttr(i, { isRequired: e.target.checked })} label="Obligatorio" />
                         </div>
                       </div>
                       <button type="button" onClick={() => removeAttr(i)} className="mt-6 p-1.5 rounded-sm text-text-subtle hover:text-danger hover:bg-danger-50 transition-colors duration-(--duration-fast) active:scale-[0.97]">
@@ -261,9 +252,8 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                         <Field label="Notas" htmlFor={`sup-notes-${i}`}>
                           <Input id={`sup-notes-${i}`} value={sr.notes} onChange={(e) => updateSupp(i, { notes: e.target.value })} placeholder="Tiempo de entrega..." />
                         </Field>
-                        <div className="col-span-2 flex items-center gap-2">
-                          <input type="checkbox" id={`sup-pref-${i}`} checked={sr.isPreferred} onChange={(e) => updateSupp(i, { isPreferred: e.target.checked })} className="h-4 w-4 accent-primary" />
-                          <label htmlFor={`sup-pref-${i}`} className="text-sm text-text">Proveedor preferido</label>
+                        <div className="col-span-2">
+                          <Checkbox id={`sup-pref-${i}`} checked={sr.isPreferred} onChange={(e) => updateSupp(i, { isPreferred: e.target.checked })} label="Proveedor preferido" />
                         </div>
                       </div>
                       <button type="button" onClick={() => removeSupp(i)} className="mt-6 p-1.5 rounded-sm text-text-subtle hover:text-danger hover:bg-danger-50 transition-colors duration-(--duration-fast) active:scale-[0.97]">

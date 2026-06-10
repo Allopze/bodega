@@ -9,6 +9,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { toCode } from "@/lib/utils"
+import { Checkbox } from "@/components/ui/checkbox"
 import { createWorksite, updateWorksite } from "./actions"
 import * as React from "react"
 
@@ -97,10 +98,7 @@ export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps)
                 <Input id="ws-address" name="address" defaultValue={editWorksite?.address ?? ""} placeholder="Ruta B-35 km 42..." />
               </Field>
 
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="ws-isActive" name="isActive" value="on" defaultChecked={editWorksite?.isActive ?? true} className="h-4 w-4 accent-[var(--color-primary)]" />
-                <label htmlFor="ws-isActive" className="text-sm text-[var(--color-text)]">Faena activa</label>
-              </div>
+              <Checkbox id="ws-isActive" name="isActive" value="on" defaultChecked={editWorksite?.isActive ?? true} label="Faena activa" />
             </FieldGroup>
           </SheetBody>
 

@@ -54,6 +54,13 @@ export function formatDateTime(date: Date | string | number): string {
   }).format(d)
 }
 
+/** Convert a string to title-case (each word capitalized). */
+export function toTitleCase(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 /** Generate initials from a full name (for Avatar) */
 export function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/)

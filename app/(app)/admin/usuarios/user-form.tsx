@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { createUser, updateUser } from "./actions"
 
@@ -186,19 +187,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
               </Field>
 
               {/* Active toggle */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isActive"
-                  name="isActive"
-                  value="on"
-                  defaultChecked={editUser?.isActive ?? true}
-                  className="h-4 w-4 rounded-[var(--radius-sm)] border-[var(--color-border)] text-[var(--color-primary)] accent-[var(--color-primary)]"
-                />
-                <label htmlFor="isActive" className="text-sm text-[var(--color-text)]">
-                  Usuario activo
-                </label>
-              </div>
+              <Checkbox id="isActive" name="isActive" value="on" defaultChecked={editUser?.isActive ?? true} label="Usuario activo" />
             </FieldGroup>
 
             {/* Roles */}

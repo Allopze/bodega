@@ -10,6 +10,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { createWorker, updateWorker } from "./actions"
 
@@ -123,16 +124,7 @@ export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormP
                 )}
               </Field>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox" id="wrk-isActive" name="isActive" value="on"
-                  defaultChecked={editWorker?.isActive ?? true}
-                  className="h-4 w-4 accent-[var(--color-primary)]"
-                />
-                <label htmlFor="wrk-isActive" className="text-sm text-[var(--color-text)]">
-                  Trabajador activo
-                </label>
-              </div>
+              <Checkbox id="wrk-isActive" name="isActive" value="on" defaultChecked={editWorker?.isActive ?? true} label="Trabajador activo" />
             </FieldGroup>
           </SheetBody>
 
