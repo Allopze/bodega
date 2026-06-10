@@ -2,15 +2,20 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { WarningCircle } from "@phosphor-icons/react"
+import { useSearchParams } from "next/navigation"
+import { WarningCircle, Info } from "@phosphor-icons/react"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useLogin } from "@/lib/hooks/use-login"
 
 export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }) {
+  const searchParams = useSearchParams()
+  const callbackUrl = searchParams.get("callbackUrl")
   const login = useLogin()
   const [error, setError] = React.useState<string | null>(null)
+
+  const showCallbackInfo = callbackUrl && callbackUrl !== "/" && callbackUrl !== "/dashboard"
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -53,6 +58,13 @@ export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }
           />
         </Field>
       </FieldGroup>
+
+      {showCallbackInfo && (
+        <div className="mt-3 flex items-start gap-2 rounded-(--radius) bg-primary-50 border border-primary-100 px-3 py-2.5 animate-in fade-in duration-150">
+          <Info size={16} weight="fill" className="mt-0.5 shrink-0 text-primary" />
+          <p className="text-sm text-primary-700">Inicia sesión para acceder a la página solicitada.</p>
+        </div>
+      )}
 
       {error && (
         <div role="alert" className="mt-3 flex items-start gap-2 rounded-(--radius) bg-danger-50 border border-danger-100 px-3 py-2.5 animate-in fade-in duration-150">

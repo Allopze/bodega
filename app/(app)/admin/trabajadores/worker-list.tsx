@@ -67,6 +67,48 @@ export function WorkerList({
         emptyDescription="Registra el primer trabajador para gestionar entregas de EPP."
         emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo trabajador</Button>}
         actions={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo trabajador</Button>}
+        renderMobileCard={(row) => {
+          const w = row as unknown as WorkerRow
+          return (
+            <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-medium text-[var(--color-text)] truncate">
+                    {w.firstName} {w.lastName}
+                  </h2>
+                  <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{w.rut ?? "—"}</p>
+                </div>
+                <Badge variant={w.isActive ? "success" : "default"} dot>
+                  {w.isActive ? "Activo" : "Inactivo"}
+                </Badge>
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div>
+                  <dt className="text-[var(--color-text-subtle)]">Cargo</dt>
+                  <dd className="text-[var(--color-text-muted)] truncate">{w.position ?? "—"}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="text-[var(--color-text-subtle)]">Faena</dt>
+                  <dd className="text-[var(--color-text-muted)] truncate">{w.worksiteName}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+                <button onClick={() => openEdit(w)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title="Editar">
+                  <PencilSimple size={16} />
+                </button>
+                <form action={toggleAction}>
+                  <input type="hidden" name="id" value={w.id} />
+                  <input type="hidden" name="activate" value={String(!w.isActive)} />
+                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={w.isActive ? "Desactivar" : "Activar"}>
+                    {w.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
+                  </button>
+                </form>
+              </div>
+            </article>
+          )
+        }}
         renderRow={(row) => {
           const w = row as unknown as WorkerRow
           return (

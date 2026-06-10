@@ -56,6 +56,45 @@ export function AuditLog({ entries }: { entries: AuditRow[] }) {
       searchPlaceholder="Buscar usuario, entidad, código..."
       emptyTitle="Sin entradas de auditoría"
       emptyDescription="Las acciones del sistema aparecerán aquí."
+      renderMobileCard={(row) => {
+        const e = row as unknown as AuditRow
+        return (
+          <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Badge variant={ACTION_VARIANTS[e.action] ?? "default"} size="sm">
+                  {e.action}
+                </Badge>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  {ENTITY_LABELS[e.entityType] ?? e.entityType}
+                </p>
+              </div>
+              <p className="text-xs font-mono text-[var(--color-text-subtle)] whitespace-nowrap">
+                {formatDateTime(e.createdAt)}
+              </p>
+            </div>
+
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <div>
+                <dt className="text-[var(--color-text-subtle)]">Usuario</dt>
+                <dd className="text-[var(--color-text-muted)] truncate">{e.userEmail ?? "Sistema"}</dd>
+              </div>
+              <div className="text-right">
+                <dt className="text-[var(--color-text-subtle)]">Código/ID</dt>
+                <dd className="font-mono text-[var(--color-text-muted)] truncate">
+                  {e.entityCode ?? e.entityId.slice(0, 8) + "…"}
+                </dd>
+              </div>
+            </dl>
+
+            {e.reason && (
+              <p className="mt-2 text-xs text-[var(--color-text-subtle)] line-clamp-2 border-t border-[var(--color-border)] pt-2">
+                {e.reason}
+              </p>
+            )}
+          </article>
+        )
+      }}
       renderRow={(row) => {
         const e = row as unknown as AuditRow
         return (

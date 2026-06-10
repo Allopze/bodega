@@ -117,6 +117,45 @@ export function RequestList({
             )
           ) : undefined
         }
+        renderMobileCard={(row) => {
+          const r = row as unknown as RequestRow
+          return (
+            <Link href={`/solicitudes/${r.id}`} className="block">
+              <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 active:scale-[0.99] transition-transform">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs text-[var(--color-text-subtle)]">{r.code}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <Badge variant={REQUEST_TYPE_VARIANTS[r.requestType] ?? "default"} size="sm">
+                        {REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}
+                      </Badge>
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>
+                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                        {URGENCY_LABELS[r.urgency] ?? r.urgency}
+                      </span>
+                    </div>
+                  </div>
+                  <StateBadge state={r.status} entity="request" size="sm" />
+                </div>
+
+                <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 text-xs">
+                  <div>
+                    <dt className="text-[var(--color-text-subtle)]">Faena</dt>
+                    <dd className="text-[var(--color-text-muted)] truncate">{r.worksiteName}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[var(--color-text-subtle)]">Ítems</dt>
+                    <dd className="font-mono tabular-nums text-[var(--color-text)]">{r.itemCount}</dd>
+                  </div>
+                  <div className="text-right">
+                    <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
+                    <dd className="text-[var(--color-text-muted)]">{formatDate(r.submittedAt ?? r.createdAt)}</dd>
+                  </div>
+                </dl>
+              </article>
+            </Link>
+          )
+        }}
         renderRow={(row) => {
           const r = row as unknown as RequestRow
           return (

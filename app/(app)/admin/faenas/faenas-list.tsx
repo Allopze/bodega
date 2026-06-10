@@ -65,6 +65,42 @@ export function FaenasList({ worksites }: { worksites: WorksiteRow[] }) {
             <Plus size={14} />Nueva faena
           </Button>
         }
+        renderMobileCard={(row) => {
+          const ws = row as unknown as WorksiteRow
+          return (
+            <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-medium text-[var(--color-text)] truncate">{ws.name}</h2>
+                  <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</p>
+                </div>
+                <Badge variant={ws.isActive ? "success" : "default"} dot>
+                  {ws.isActive ? "Activa" : "Inactiva"}
+                </Badge>
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div>
+                  <dt className="text-[var(--color-text-subtle)]">Región</dt>
+                  <dd className="text-[var(--color-text-muted)]">{ws.region ?? "—"}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+                <button onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title="Editar">
+                  <PencilSimple size={16} />
+                </button>
+                <form action={wsToggleAction}>
+                  <input type="hidden" name="id" value={ws.id} />
+                  <input type="hidden" name="activate" value={String(!ws.isActive)} />
+                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={ws.isActive ? "Desactivar" : "Activar"}>
+                    {ws.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
+                  </button>
+                </form>
+              </div>
+            </article>
+          )
+        }}
         renderRow={(row) => {
           const ws = row as unknown as WorksiteRow
           return (

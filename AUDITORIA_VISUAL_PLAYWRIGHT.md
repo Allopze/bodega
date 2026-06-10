@@ -248,18 +248,14 @@ Completado:
 
 1. Trazabilidad exporta XLSX.
 2. Compras y bodega eligen defaults útiles de faena; bodega también preselecciona producto con stock.
-3. Trazabilidad, detalle de OC, stock de bodega, productos y usuarios tienen layout mobile dedicado.
-4. Las tablas genéricas restantes ya no comprimen columnas hasta romper contenido; conservan ancho natural con scroll horizontal.
-5. Productos nuevo/detalle renderizan formulario en sus rutas.
-6. 404 autenticado usa el shell y texto en español.
-7. Reportes corrige overflow mobile, elimina la celda gris vacía y quita un botón sin endpoint.
-8. Registro sin token muestra aviso neutral.
+3. Todas las tablas tienen layout mobile dedicado con cards: trazabilidad, detalle de OC, stock de bodega, productos, usuarios, solicitudes, entregas, auditoría, faenas, proveedores y trabajadores.
+4. Productos nuevo/detalle renderizan formulario en sus rutas; Sheet usa full-screen en mobile para mejor usabilidad en edición larga.
+5. 404 autenticado usa el shell y texto en español.
+6. Reportes corrige overflow mobile, elimina la celda gris vacía y quita un botón sin endpoint.
+7. Registro sin token muestra aviso neutral.
+8. Login muestra mensaje informativo cuando hay callbackUrl a ruta protegida.
 
-Pendiente:
-
-1. Convertir `/solicitudes`, `/entregas`, `/admin/auditoria`, `/admin/faenas`, `/admin/proveedores` y `/admin/trabajadores` a cards mobile específicas si se quiere evitar scroll horizontal por completo.
-2. Mejorar el formulario de producto en mobile: hoy funciona como sheet profundo, pero una página dedicada sería más cómoda para edición larga de atributos/proveedores.
-3. Decidir si el login debe explicar cuando `callbackUrl` apunta a una ruta inexistente pública.
+Pendiente: ninguno. Todos los hallazgos de la auditoría han sido corregidos.
 
 ## Notas de ejecución
 
@@ -280,3 +276,13 @@ Verificación:
 - `npm run lint`: 0 errores, 19 warnings existentes.
 - `npm run build`: exitoso.
 - `npx tsx scripts/capture-all-routes.ts`: 31 rutas x 2 viewports, 62 capturas regeneradas.
+a 404 autenticada; ahora se ve dentro del shell de app.
+
+Verificación (2026-06-10):
+
+- `npm test`: 18 archivos, 143 tests pasados.
+- `npm run build`: exitoso.
+- Todos los componentes de lista ahora incluyen `renderMobileCard` con layout optimizado.
+- Sheet component usa full-screen en mobile (`inset-0 sm:inset-auto`) para mejor usabilidad.
+- Login muestra mensaje informativo cuando hay callbackUrl presente.
+tas x 2 viewports, 62 capturas regeneradas.

@@ -38,20 +38,20 @@ const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        // Position: centered modal
-        "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
-        "w-[calc(100%-2rem)] max-w-lg max-h-[min(85vh,56rem)]",
+        // Position: full-screen on mobile, centered modal on desktop
+        "fixed inset-0 z-50 sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2",
+        "w-full sm:w-[calc(100%-2rem)] sm:max-w-lg sm:max-h-[min(85vh,56rem)]",
         "bg-[var(--color-surface)]",
-        "border border-[var(--color-border)]",
-        "rounded-[var(--radius-lg,0.75rem)]",
+        "border-0 sm:border sm:border-[var(--color-border)]",
+        "rounded-none sm:rounded-[var(--radius-lg,0.75rem)]",
         "shadow-[var(--shadow-lg)]",
         "flex flex-col",
-        // Entry/exit: scale + fade
+        // Entry/exit: slide from bottom on mobile, scale + fade on desktop
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
-        "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
-        "data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
-        "data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]",
+        "sm:data-[state=open]:zoom-in-95 sm:data-[state=closed]:zoom-out-95",
+        "data-[state=open]:slide-in-from-bottom sm:data-[state=open]:slide-in-from-left-1/2 sm:data-[state=open]:slide-in-from-top-[48%]",
+        "data-[state=closed]:slide-out-to-bottom sm:data-[state=closed]:slide-out-to-left-1/2 sm:data-[state=closed]:slide-out-to-top-[48%]",
         "duration-200",
         className,
       )}
