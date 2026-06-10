@@ -21,7 +21,7 @@ export default async function LoginPage() {
         style={{ background: "radial-gradient(ellipse 60% 50% at 20% 10%, oklch(0.280 0.055 155), oklch(0.216 0.045 155))" }}
       >
         {/* Logo */}
-        <BrandMark variant="dark" size={36} subtitle titleSize="lg" />
+        <BrandMark variant="dark" size={52} subtitle titleSize="lg" />
 
         {/* Tagline */}
         <div>
@@ -56,7 +56,7 @@ export default async function LoginPage() {
         <div className="w-full max-w-sm bg-surface border border-border rounded-(--radius-xl) shadow-(--shadow-md) px-8 py-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
           {/* Mobile logo */}
           <div className="mb-8 lg:hidden">
-            <BrandMark variant="light" size={32} subtitle="Chome Solicitudes y Bodega" titleSize="base" />
+            <BrandMark variant="light" size={44} subtitle="Chome Solicitudes y Bodega" titleSize="lg" />
           </div>
 
           <h1 className="font-display text-2xl font-semibold text-text mb-6">

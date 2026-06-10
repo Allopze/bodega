@@ -118,6 +118,8 @@ export default async function BodegaPage({
     ?? worksiteOptions[0]?.id
   const initialProductId = initialDeliverable?.productId
     ?? stockOptions.find((item) => item.worksiteId === initialWorksiteId)?.productId
+  const showDispatchPanel = canDispatch && stockOptions.length > 0 && worksiteOptions.length > 0
+  const showReturnPanel = canDispatch && returnProducts.length > 0 && worksiteOptions.length > 0
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const s of stockRows) {
@@ -130,23 +132,23 @@ export default async function BodegaPage({
       <PageHeader title="Bodega" description="Stock por producto y kardex de movimientos."
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
       />
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
         <Suspense fallback={<SkeletonPage rows={6} />}>
           <StockSection worksites={worksiteOptions} stockByWorksite={stockByWorksite} initialWorksiteId={initialWorksiteId} />
         </Suspense>
 
-        {canDispatch && stockOptions.length > 0 && worksiteOptions.length > 0 && (
-          <div className="max-w-2xl">
-            <DispatchPanel stockItems={stockOptions} worksites={worksiteOptions} deliverableItems={deliverableOptions}
-              initialWorksiteId={initialWorksiteId}
-              initialProductId={initialProductId} initialRequestItemId={initialDeliverable?.requestItemId}
-            />
-          </div>
-        )}
+        {(showDispatchPanel || showReturnPanel) && (
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
+            {showDispatchPanel && (
+              <DispatchPanel stockItems={stockOptions} worksites={worksiteOptions} deliverableItems={deliverableOptions}
+                initialWorksiteId={initialWorksiteId}
+                initialProductId={initialProductId} initialRequestItemId={initialDeliverable?.requestItemId}
+              />
+            )}
 
-        {canDispatch && returnProducts.length > 0 && worksiteOptions.length > 0 && (
-          <div className="max-w-2xl">
-            <ReturnPanel products={returnProducts} worksites={worksiteOptions} />
+            {showReturnPanel && (
+              <ReturnPanel products={returnProducts} worksites={worksiteOptions} />
+            )}
           </div>
         )}
 

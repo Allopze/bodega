@@ -48,7 +48,7 @@ export function TopBar({
       "flex items-center h-14 px-4 gap-3",
       "border-b border-[var(--color-border)]",
       "bg-[var(--color-surface)]",
-      "shrink-0 z-30",
+      "sticky top-0 shrink-0 z-30",
       className,
     )}>
       {/* ── Left zone ── */}
