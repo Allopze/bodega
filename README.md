@@ -27,11 +27,14 @@ SMTP_PASS=clave
 SMTP_FROM="Chome Solicitudes y Bodega <bodega@tudominio.cl>"
 SMTP_SECURE=false
 SMTP_EHLO_NAME=localhost
-APP_URL=https://bodega.allopze.dev
+APP_URL=https://bodega.chome.dev
+AUTH_URL=https://bodega.chome.dev
 ```
 
 Con `SMTP_SECURE=false`, el servidor debe ofrecer STARTTLS antes de autenticar.
 Usa `SMTP_SECURE=true` para SMTP sobre TLS directo, tipicamente en el puerto 465.
+
+En producción, `AUTH_URL` debe coincidir exactamente con el origen público que se abre en el navegador. Si falta o apunta a otro dominio/protocolo, Auth.js puede crear una cookie de sesión que luego no reconoce al entrar a rutas protegidas, provocando que el usuario vuelva a `/login` después de autenticarse.
 
 ## Datos reales o de prueba con flujo real
 

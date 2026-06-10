@@ -9,6 +9,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
+import { REQUEST_STATE_META, ITEM_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
 import { formatCLP } from "@/lib/utils"
 import { eq, inArray, sql } from "drizzle-orm"
 import { ChartBar } from "@phosphor-icons/react/dist/ssr"
@@ -151,9 +152,9 @@ export default async function Page() {
       <section className="mt-6 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
         <h2 className="text-h2">Estados principales</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <StatusGroup title="Solicitudes" rows={statusRows(requests)} />
-          <StatusGroup title="Ítems" rows={statusRows(items)} />
-          <StatusGroup title="OC" rows={statusRows(orders)} />
+          <StatusGroup title="Solicitudes" entity="request" rows={statusRows(requests)} />
+          <StatusGroup title="Ítems" entity="item" rows={statusRows(items)} />
+          <StatusGroup title="OC" entity="oc" rows={statusRows(orders)} />
         </div>
       </section>
     </>
@@ -198,7 +199,15 @@ function statusRows(rows: { status: string }[]) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])
 }
 
-function StatusGroup({ title, rows }: { title: string; rows: [string, number][] }) {
+/** Map a raw DB status to its Spanish label, falling back to the raw value. */
+function stateLabel(entity: "request" | "item" | "oc", status: string): string {
+  const map = entity === "request" ? REQUEST_STATE_META
+    : entity === "oc" ? OC_STATE_META
+    : ITEM_STATE_META
+  return (map as Record<string, { label: string }>)[status]?.label ?? status
+}
+
+function StatusGroup({ title, entity, rows }: { title: string; entity: "request" | "item" | "oc"; rows: [string, number][] }) {
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">{title}</p>
@@ -207,7 +216,7 @@ function StatusGroup({ title, rows }: { title: string; rows: [string, number][] 
           <p className="py-2 text-sm text-[var(--color-text-muted)]">Sin datos</p>
         ) : rows.map(([status, count]) => (
           <div key={status} className="flex items-center justify-between gap-3 py-2">
-            <span className="text-sm text-[var(--color-text-muted)]">{status}</span>
+            <span className="text-sm text-[var(--color-text-muted)]">{stateLabel(entity, status)}</span>
             <span className="font-mono text-sm text-[var(--color-text)]">{count}</span>
           </div>
         ))}

@@ -32,7 +32,7 @@ export const rutSchema = z
 export const userCreateSchema = z.object({
   name:     z.string().min(2, "Nombre demasiado corto").max(80),
   email:    z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
-  password: z.string().min(6, "Mínimo 6 caracteres"),
+  password: z.string().min(8, "Mínimo 8 caracteres"),
   isActive: z.coerce.boolean().default(true),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
   worksiteAssignments: z.array(
@@ -47,7 +47,7 @@ export const userUpdateSchema = z.object({
   id:       z.string().min(1),
   name:     z.string().min(2, "Nombre demasiado corto").max(80),
   email:    z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
-  password: z.string().min(6, "Mínimo 6 caracteres").or(z.literal("")).optional(),
+  password: z.string().min(8, "Mínimo 8 caracteres").or(z.literal("")).optional(),
   isActive: z.coerce.boolean().default(true),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
   worksiteAssignments: z.array(

@@ -180,7 +180,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
               >
                 <Input
                   id="password" name="password" type="password"
-                  placeholder={isEdit ? "••••••••" : "Mínimo 6 caracteres"}
+                  placeholder={isEdit ? "••••••••" : "Mínimo 8 caracteres"}
                   error={!!state.fieldErrors?.password}
                   autoComplete="new-password"
                 />

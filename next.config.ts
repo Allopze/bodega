@@ -9,6 +9,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["bodega.allopze.dev", "bodega.chome.dev"],
   async headers() {
     return [
       {

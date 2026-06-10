@@ -19,6 +19,14 @@ const loginSchema = z.object({
   password: z.string().min(1),
 })
 
+const authUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? (
+  process.env.NODE_ENV === "production" ? process.env.APP_URL : undefined
+)
+
+if (authUrl) {
+  process.env.AUTH_URL ??= authUrl
+}
+
 /** Load user with full roles/permissions from DB */
 async function getUserWithAuth(email: string) {
   const user = await db.query.users.findFirst({
