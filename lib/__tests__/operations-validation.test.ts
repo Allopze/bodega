@@ -64,6 +64,15 @@ describe("createOrderSchema", () => {
     expect(result.success).toBe(true)
   })
 
+  it("accepts a supplier per order item for supplier-split purchase orders", () => {
+    const result = createOrderSchema.safeParse({
+      ...validOrder,
+      items: [{ ...validOrder.items[0], supplierId: "supplier-2" }],
+    })
+
+    expect(result.success).toBe(true)
+  })
+
   it("rejects non-finite prices and quantities", () => {
     const result = createOrderSchema.safeParse({
       ...validOrder,

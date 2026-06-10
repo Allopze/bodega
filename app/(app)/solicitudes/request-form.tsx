@@ -213,6 +213,10 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
   }, [draftState])
 
   useEffect(() => {
+    if (submitState.message && !submitState.ok) toast.error(submitState.message)
+  }, [submitState])
+
+  useEffect(() => {
     if (cancelState.message && !cancelState.ok) toast.error(cancelState.message)
   }, [cancelState])
 
@@ -297,6 +301,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
   })))
 
   const readOnly = !isDraft
+  const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]
 
   return (
     <div className="space-y-8 pb-16">
@@ -407,9 +412,9 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
             )}
           </div>
 
-          {draftState.fieldErrors?.items && (
+          {itemsError && (
             <p className="text-xs text-[var(--color-danger)]">
-              {draftState.fieldErrors.items[0]}
+              {itemsError}
             </p>
           )}
 

@@ -45,7 +45,7 @@ migrate(inMemoryDb, { migrationsFolder })
 
 // Import the services to test (they now reference the mocked in-memory database)
 import { submitItem, approveItem, markItemPendingPurchase } from "@/lib/services/item-state"
-import { createOrder, issueOrder, markOrderSent } from "@/lib/services/purchasing"
+import { createOrder, createOrdersBySupplier, issueOrder, markOrderSent } from "@/lib/services/purchasing"
 import { registerReceipt } from "@/lib/services/receiving"
 import { registerWorkerEppDelivery } from "@/lib/services/deliveries"
 
@@ -327,5 +327,174 @@ describe("Full procurement workflow integration", () => {
       with: { items: true },
     })
     expect(deliveredReq?.items[0].status).toBe("delivered")
+  })
+
+  it("creates separate purchase orders for items assigned to different suppliers", async () => {
+    const now = new Date().toISOString()
+    const userId = "u-multi-supplier"
+    const worksiteId = "ws-multi-supplier"
+    const supplierAId = "sup-multi-a"
+    const supplierBId = "sup-multi-b"
+    const categoryId = "cat-multi-supplier"
+    const productAId = "prod-multi-a"
+    const productBId = "prod-multi-b"
+    const requestId = "req-multi-supplier"
+    const itemAId = "item-multi-a"
+    const itemBId = "item-multi-b"
+
+    await inMemoryDb.insert(schema.users).values({
+      id: userId,
+      name: "Comprador Multi",
+      email: "comprador-multi@chome.cl",
+      hashedPassword: "hashed_password_placeholder",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    }).run()
+
+    await inMemoryDb.insert(schema.worksites).values({
+      id: worksiteId,
+      name: "Faena Multi Proveedor",
+      code: "F-MULTI-PROV",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    }).run()
+
+    await inMemoryDb.insert(schema.suppliers).values([
+      {
+        id: supplierAId,
+        name: "Proveedor Multi A",
+        rut: "76.000.001-1",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: supplierBId,
+        name: "Proveedor Multi B",
+        rut: "76.000.002-2",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]).run()
+
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: categoryId,
+      name: "Multi proveedor",
+      slug: "multi-proveedor",
+      isEpp: false,
+      sortOrder: 2,
+    }).run()
+
+    await inMemoryDb.insert(schema.products).values([
+      {
+        id: productAId,
+        sku: "MULTI-A",
+        name: "Item proveedor A",
+        categoryId,
+        unitOfMeasure: "unidad",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: productBId,
+        sku: "MULTI-B",
+        name: "Item proveedor B",
+        categoryId,
+        unitOfMeasure: "unidad",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]).run()
+
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId,
+      code: "SOL-2026-MULTI",
+      worksiteId,
+      requesterId: userId,
+      requestType: "stock",
+      urgency: "normal",
+      status: "approved",
+      createdAt: now,
+      updatedAt: now,
+    }).run()
+
+    await inMemoryDb.insert(schema.purchaseRequestItems).values([
+      {
+        id: itemAId,
+        requestId,
+        productId: productAId,
+        quantity: 2,
+        unitOfMeasure: "unidad",
+        status: "pending_purchase",
+        suggestedSupplierId: supplierAId,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: itemBId,
+        requestId,
+        productId: productBId,
+        quantity: 3,
+        unitOfMeasure: "unidad",
+        status: "pending_purchase",
+        suggestedSupplierId: supplierBId,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]).run()
+
+    const orderIds = await createOrdersBySupplier({
+      worksiteId,
+      createdBy: userId,
+      userEmail: "comprador-multi@chome.cl",
+      orders: [
+        {
+          supplierId: supplierAId,
+          items: [{
+            requestItemId: itemAId,
+            productId: productAId,
+            productNameFree: null,
+            quantity: 2,
+            unitOfMeasure: "unidad",
+            unitPrice: 1000,
+          }],
+        },
+        {
+          supplierId: supplierBId,
+          items: [{
+            requestItemId: itemBId,
+            productId: productBId,
+            productNameFree: null,
+            quantity: 3,
+            unitOfMeasure: "unidad",
+            unitPrice: 2000,
+          }],
+        },
+      ],
+    })
+
+    expect(orderIds).toHaveLength(2)
+
+    const orders = await inMemoryDb.query.purchaseOrders.findMany({
+      with: { items: true },
+    })
+    const createdOrders = orders.filter((order) => orderIds.includes(order.id))
+
+    expect(createdOrders.map((order) => order.supplierId).sort()).toEqual([supplierAId, supplierBId])
+    expect(createdOrders.every((order) => order.items.length === 1)).toBe(true)
+
+    const itemA = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, itemAId),
+    })
+    const itemB = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, itemBId),
+    })
+    expect(itemA?.status).toBe("in_purchase_order")
+    expect(itemB?.status).toBe("in_purchase_order")
   })
 })

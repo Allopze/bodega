@@ -63,6 +63,7 @@ const nonNegativeQuantitySchema = z.coerce
 
 export const createOrderItemSchema = z.object({
   requestItemId:   z.string().min(1, "Ítem requerido"),
+  supplierId:      z.string().nullable().optional(),
   productId:       z.string().nullable().optional(),
   productNameFree: z.string().nullable().optional(),
   quantity:        z.coerce.number().refine(Number.isFinite, "Cantidad inválida").positive("Cantidad debe ser mayor a 0"),

@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useActionState } from "react"
 import { toast } from "sonner"
-import { ArrowRight, Plus, Warning } from "@phosphor-icons/react"
+import { ArrowRight, CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -147,13 +147,24 @@ export function OcList({
   orders,
   pendingCount,
   canCreate,
+  createdCount = 0,
 }: {
   orders:       OcRow[]
   pendingCount: number
   canCreate:    boolean
+  createdCount?: number
 }) {
   return (
     <div className="flex flex-col gap-4">
+      {createdCount > 1 && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-50)] border border-[var(--color-success-100)]">
+          <CheckCircle size={16} className="text-[var(--color-success-700)] shrink-0" />
+          <p className="text-sm text-[var(--color-success-700)] flex-1">
+            Se crearon <span className="font-semibold">{createdCount} órdenes de compra</span>, separadas por proveedor.
+          </p>
+        </div>
+      )}
+
       {/* Never-miss alert for approved items not on any OC */}
       {pendingCount > 0 && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-signal-50)] border border-[var(--color-signal-100)]">

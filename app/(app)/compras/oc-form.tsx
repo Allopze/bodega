@@ -55,8 +55,9 @@ export interface PendingItemOption {
 /* ── Row in the OC items table ───────────────────────────────────────────────── */
 
 interface OcItemRow extends PendingItemOption {
-  unitPrice: number
-  discount:  number
+  unitPrice:        number
+  discount:         number
+  targetSupplierId: string
 }
 
 /* ── OC form ─────────────────────────────────────────────────────────────────── */
@@ -90,7 +91,11 @@ export function OcForm({
     }
   }, [state])
 
-  function suggestedPrice(item: PendingItemOption, nextSupplierId = supplierId) {
+  function itemSupplierId(item: PendingItemOption, nextSupplierId = supplierId) {
+    return item.suggestedSupplierId || nextSupplierId || ""
+  }
+
+  function suggestedPrice(item: PendingItemOption, nextSupplierId = itemSupplierId(item)) {
     return nextSupplierId ? item.supplierPrices[nextSupplierId] : undefined
   }
 
@@ -98,7 +103,7 @@ export function OcForm({
     setUnitPrices((prev) => {
       const next = { ...prev }
       for (const item of items) {
-        const price = suggestedPrice(item, nextSupplierId)
+        const price = suggestedPrice(item, itemSupplierId(item, nextSupplierId))
         if (price !== undefined) next[item.id] = price
       }
       return next
@@ -168,7 +173,7 @@ export function OcForm({
       setUnitPrices((prev) => {
         const next = { ...prev }
         for (const item of filteredItems) {
-          const price = item.supplierPrices[firstSuggested]
+          const price = item.supplierPrices[item.suggestedSupplierId || firstSuggested]
           if (price !== undefined) next[item.id] = price
         }
         return next
@@ -206,14 +211,17 @@ export function OcForm({
       ...i,
       unitPrice: itemPrice(i),
       discount:  itemDiscount(i.id),
+      targetSupplierId: itemSupplierId(i),
     }))
 
   const totals = computeOrderTotals(includedItems)
+  const supplierGroupCount = new Set(includedItems.map((i) => i.targetSupplierId).filter(Boolean)).size
 
   // Serialize items to JSON for form submission
   const itemsJson = JSON.stringify(
     includedItems.map((i) => ({
       requestItemId:   i.id,
+      supplierId:      i.targetSupplierId || null,
       productId:       i.productId,
       productNameFree: i.productNameFree,
       quantity:        i.quantity,
@@ -243,7 +251,7 @@ export function OcForm({
           </Select>
         </Field>
 
-        <Field label="Proveedor" required>
+        <Field label="Proveedor por defecto" required>
           <Select value={supplierId} onValueChange={onSupplierValueChange}>
             <SelectTrigger id="supplierId"><SelectValue placeholder="Selecciona proveedor" /></SelectTrigger>
             <SelectContent>
@@ -429,6 +437,13 @@ export function OcForm({
       {includedItems.length > 0 && (
         <div className="flex justify-end">
           <div className="flex flex-col gap-1 min-w-[240px] border border-[var(--color-border)] rounded-[var(--radius)] p-4">
+            {supplierGroupCount > 1 && (
+              <div className="mb-2 flex justify-end">
+                <Badge variant="info" size="sm">
+                  {supplierGroupCount} OC por proveedor
+                </Badge>
+              </div>
+            )}
             <div className="flex justify-between text-sm text-[var(--color-text-muted)]">
               <span>Neto</span>
               <span className="tabular-nums">{formatCLP(totals.netAmount)}</span>

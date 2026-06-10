@@ -16,10 +16,17 @@ import { purchaseRequestItems } from "@/db/schema"
 
 export const metadata: Metadata = { title: "Órdenes de compra" }
 
-export default async function ComprasPage() {
+export default async function ComprasPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("purchasing:view") }
   catch { redirect("/dashboard") }
+  const sp = await searchParams
+  const createdCountRaw = typeof sp.creadas === "string" ? Number(sp.creadas) : 0
+  const createdCount = Number.isFinite(createdCountRaw) && createdCountRaw > 1 ? createdCountRaw : 0
 
   // ── Approved / pending_purchase items (never-miss alert) ────────────────────
   const pendingApproved = await db
@@ -65,7 +72,7 @@ export default async function ComprasPage() {
             ]} />
           }
         />
-        <OcList orders={[]} pendingCount={0} canCreate={can(session, "purchasing:create_order")} />
+        <OcList orders={[]} pendingCount={0} canCreate={can(session, "purchasing:create_order")} createdCount={createdCount} />
       </>
     )
   }
@@ -131,6 +138,7 @@ export default async function ComprasPage() {
         orders={rows}
         pendingCount={pendingCount}
         canCreate={can(session, "purchasing:create_order")}
+        createdCount={createdCount}
       />
     </>
   )

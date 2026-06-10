@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests, suppliers, worksites } from "@/db/schema"
 import { count, eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { createOrder, issueOrder, markOrderSent, cancelOrder } from "@/lib/services/purchasing"
+import { createOrdersBySupplier, issueOrder, markOrderSent, cancelOrder } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
 import { getUserIdsWithPermission, notifyManyUser } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
@@ -98,31 +98,63 @@ export async function createOrderAction(
     }
   }
 
+  const supplierIdsByItem = new Map<string, string>()
+  for (const item of items) {
+    const dbItem = dbItemMap.get(item.requestItemId)
+    const targetSupplierId = item.supplierId || dbItem?.suggestedSupplierId || supplierId
+    if (!targetSupplierId) {
+      return { ok: false, message: "Cada ítem debe tener un proveedor asignado" }
+    }
+    supplierIdsByItem.set(item.requestItemId, targetSupplierId)
+  }
+
+  const targetSupplierIds = [...new Set(supplierIdsByItem.values())]
+  const activeSuppliers = await db.query.suppliers.findMany({
+    where: (supplier, { and, eq, inArray }) => and(
+      inArray(supplier.id, targetSupplierIds),
+      eq(supplier.isActive, true),
+    ),
+  })
+  if (activeSuppliers.length !== targetSupplierIds.length) {
+    return { ok: false, message: "Uno o más proveedores no están activos o no existen" }
+  }
+
+  const groups = new Map<string, typeof items>()
+  for (const item of items) {
+    const targetSupplierId = supplierIdsByItem.get(item.requestItemId)!
+    const supplierItems = groups.get(targetSupplierId) ?? []
+    supplierItems.push(item)
+    groups.set(targetSupplierId, supplierItems)
+  }
+
   try {
-    const orderId = await createOrder({
+    const orderIds = await createOrdersBySupplier({
       worksiteId,
-      supplierId,
       createdBy:          session.user.id,
       userEmail:          session.user.email ?? undefined,
       paymentTerms:       paymentTerms || null,
       estimatedDelivery:  estimatedDelivery || null,
       deliveryAddress:    deliveryAddress || null,
       notes:              notes || null,
-      items: items.map((item, i) => ({
-        requestItemId:   item.requestItemId,
-        productId:       item.productId ?? null,
-        productNameFree: item.productNameFree ?? null,
-        quantity:        item.quantity,
-        unitOfMeasure:   item.unitOfMeasure,
-        unitPrice:       item.unitPrice,
-        discount:        item.discount ?? 0,
-        notes:           item.notes ?? null,
-        sortOrder:       i,
+      orders: [...groups.entries()].map(([groupSupplierId, groupItems]) => ({
+        supplierId: groupSupplierId,
+        items: groupItems.map((item, i) => ({
+          requestItemId:   item.requestItemId,
+          productId:       item.productId ?? null,
+          productNameFree: item.productNameFree ?? null,
+          quantity:        item.quantity,
+          unitOfMeasure:   item.unitOfMeasure,
+          unitPrice:       item.unitPrice,
+          discount:        item.discount ?? 0,
+          notes:           item.notes ?? null,
+          sortOrder:       i,
+        })),
       })),
     })
 
     revalidatePath(REVALIDATE)
-    redirect(`/compras/${orderId}`)
+    if (orderIds.length === 1) redirect(`/compras/${orderIds[0]}`)
+    redirect(`${REVALIDATE}?creadas=${orderIds.length}`)
   } catch (e) {
     if (e instanceof Error && e.message.includes("NEXT_REDIRECT")) throw e
     logger.error("[createOrderAction]", e)

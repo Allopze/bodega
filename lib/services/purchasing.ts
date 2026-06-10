@@ -38,79 +38,118 @@ export interface CreateOrderInput {
   items:              CreateOrderItemInput[]
 }
 
+export interface CreateOrderGroupInput {
+  supplierId: string
+  items:      CreateOrderItemInput[]
+}
+
+export interface CreateOrdersBySupplierInput extends Omit<CreateOrderInput, "supplierId" | "items"> {
+  orders: CreateOrderGroupInput[]
+}
+
 /* ── Create OC ───────────────────────────────────────────────────────────────── */
 
 export async function createOrder(input: CreateOrderInput): Promise<string> {
-  const orderId   = nanoid()
+  const [orderId] = await createOrdersBySupplier({
+    worksiteId:         input.worksiteId,
+    createdBy:          input.createdBy,
+    userEmail:          input.userEmail,
+    paymentTerms:       input.paymentTerms,
+    estimatedDelivery:  input.estimatedDelivery,
+    deliveryAddress:    input.deliveryAddress,
+    notes:              input.notes,
+    orders: [{
+      supplierId: input.supplierId,
+      items:      input.items,
+    }],
+  })
+  return orderId!
+}
+
+export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput): Promise<string[]> {
+  if (input.orders.length === 0) throw new Error("No hay órdenes para crear")
+  if (input.orders.some((order) => order.items.length === 0)) {
+    throw new Error("No se puede crear una OC sin ítems")
+  }
+
   const now       = new Date().toISOString()
   const year      = new Date().getFullYear()
-  const totals      = computeOrderTotals(input.items)
-  let code!: string
+  const orderIds: string[] = []
 
   db.transaction((tx) => {
-    code = nextCodeTx(tx, "OC", year)
+    for (const orderInput of input.orders) {
+      const orderId = nanoid()
+      const code    = nextCodeTx(tx, "OC", year)
+      const totals  = computeOrderTotals(orderInput.items)
+      orderIds.push(orderId)
 
-    // Create the order header
-    tx.insert(purchaseOrders).values({
-      id:                orderId,
-      code,
-      worksiteId:        input.worksiteId,
-      supplierId:        input.supplierId,
-      createdBy:         input.createdBy,
-      status:            "draft",
-      paymentTerms:      input.paymentTerms ?? null,
-      estimatedDelivery: input.estimatedDelivery ?? null,
-      deliveryAddress:   input.deliveryAddress ?? null,
-      notes:             input.notes ?? null,
-      netAmount:         totals.netAmount,
-      taxAmount:         totals.taxAmount,
-      totalAmount:       totals.totalAmount,
-      createdAt:         now,
-      updatedAt:         now,
-    }).run()
-
-    // Insert OC items
-    for (let i = 0; i < input.items.length; i++) {
-      const item     = input.items[i]
-      const subtotal = Math.round(
-        item.quantity * item.unitPrice * (1 - (item.discount ?? 0) / 100)
-      )
-      tx.insert(purchaseOrderItems).values({
-        id:              nanoid(),
-        purchaseOrderId: orderId,
-        requestItemId:   item.requestItemId,
-        productId:       item.productId,
-        productNameFree: item.productNameFree,
-        quantity:        item.quantity,
-        unitOfMeasure:   item.unitOfMeasure,
-        unitPrice:       item.unitPrice,
-        discount:        item.discount ?? 0,
-        subtotal,
-        quantityReceived: 0,
-        status:          "issued",
-        sortOrder:       item.sortOrder ?? i,
-        notes:           item.notes ?? null,
+      // Create the order header
+      tx.insert(purchaseOrders).values({
+        id:                orderId,
+        code,
+        worksiteId:        input.worksiteId,
+        supplierId:        orderInput.supplierId,
+        createdBy:         input.createdBy,
+        status:            "draft",
+        paymentTerms:      input.paymentTerms ?? null,
+        estimatedDelivery: input.estimatedDelivery ?? null,
+        deliveryAddress:   input.deliveryAddress ?? null,
+        notes:             input.notes ?? null,
+        netAmount:         totals.netAmount,
+        taxAmount:         totals.taxAmount,
+        totalAmount:       totals.totalAmount,
+        createdAt:         now,
+        updatedAt:         now,
       }).run()
-    }
 
-    recordAudit({
-      userId:     input.createdBy,
-      userEmail:  input.userEmail,
-      action:     "create",
-      entityType: "purchase_order",
-      entityId:   orderId,
-      entityCode: code,
-      newState:   { status: "draft", totalAmount: totals.totalAmount, itemCount: input.items.length },
-    }, tx)
+      // Insert OC items
+      for (let i = 0; i < orderInput.items.length; i++) {
+        const item     = orderInput.items[i]
+        const subtotal = Math.round(
+          item.quantity * item.unitPrice * (1 - (item.discount ?? 0) / 100)
+        )
+        tx.insert(purchaseOrderItems).values({
+          id:              nanoid(),
+          purchaseOrderId: orderId,
+          requestItemId:   item.requestItemId,
+          productId:       item.productId,
+          productNameFree: item.productNameFree,
+          quantity:        item.quantity,
+          unitOfMeasure:   item.unitOfMeasure,
+          unitPrice:       item.unitPrice,
+          discount:        item.discount ?? 0,
+          subtotal,
+          quantityReceived: 0,
+          status:          "issued",
+          sortOrder:       item.sortOrder ?? i,
+          notes:           item.notes ?? null,
+        }).run()
+      }
 
-    for (const item of input.items) {
-      addItemToPurchaseOrderTx(tx, item.requestItemId, orderId, input.createdBy, {
-        userEmail: input.userEmail,
-      })
+      recordAudit({
+        userId:     input.createdBy,
+        userEmail:  input.userEmail,
+        action:     "create",
+        entityType: "purchase_order",
+        entityId:   orderId,
+        entityCode: code,
+        newState:   {
+          status:      "draft",
+          supplierId:  orderInput.supplierId,
+          totalAmount: totals.totalAmount,
+          itemCount:   orderInput.items.length,
+        },
+      }, tx)
+
+      for (const item of orderInput.items) {
+        addItemToPurchaseOrderTx(tx, item.requestItemId, orderId, input.createdBy, {
+          userEmail: input.userEmail,
+        })
+      }
     }
   })
 
-  return orderId
+  return orderIds
 }
 
 /* ── Issue OC (draft → issued) ───────────────────────────────────────────────── */

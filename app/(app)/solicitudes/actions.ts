@@ -15,6 +15,7 @@ import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { submitItemTx } from "@/lib/services/item-state"
 import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
+import { logger } from "@/lib/logger"
 
 const REVALIDATE = "/solicitudes"
 
@@ -50,7 +51,15 @@ async function persistDraft(
     items:        itemsRaw,
   })
   if (!parsed.success) {
-    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+    const flattened = parsed.error.flatten()
+    const fieldErrors = flattened.fieldErrors as Record<string, string[]>
+    return {
+      ok: false,
+      message: fieldErrors.items?.[0]
+        ? `Revisa los ítems de la solicitud: ${fieldErrors.items[0]}`
+        : "Revisa los datos de la solicitud",
+      fieldErrors,
+    }
   }
   const d = parsed.data
  
@@ -61,7 +70,8 @@ async function persistDraft(
  
   let requestId = d.id
  
-  db.transaction((tx) => {
+  try {
+    db.transaction((tx) => {
     if (isEdit) {
       // Verify ownership — solicitantes can only edit their own drafts
       const existing = tx.query.purchaseRequests.findFirst({
@@ -146,7 +156,11 @@ async function persistDraft(
         ).run()
       }
     }
-  })
+    })
+  } catch (e) {
+    logger.error("[persistDraft]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al guardar la solicitud" }
+  }
 
   return { ok: true, message: "Borrador guardado", requestId }
 }
@@ -182,36 +196,41 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
 
   const now = new Date().toISOString()
 
-  db.transaction((tx) => {
-    // Transition the request to submitted
-    tx.update(purchaseRequests).set({
-      status:      "submitted",
-      submittedAt: now,
-      updatedAt:   now,
-    }).where(eq(purchaseRequests.id, requestId)).run()
+  try {
+    db.transaction((tx) => {
+      // Transition the request to submitted
+      tx.update(purchaseRequests).set({
+        status:      "submitted",
+        submittedAt: now,
+        updatedAt:   now,
+      }).where(eq(purchaseRequests.id, requestId)).run()
 
-    recordStatusChange({
-      entityType: "purchase_request",
-      entityId:   requestId,
-      fromStatus: "draft",
-      toStatus:   "submitted",
-      changedBy:  session.user.id,
-    }, tx)
-    recordAudit({
-      userId:     session.user.id,
-      userEmail:  session.user.email ?? undefined,
-      action:     "status_change",
-      entityType: "purchase_request",
-      entityId:   requestId,
-      entityCode: request.code,
-      oldState:   { status: "draft" },
-      newState:   { status: "submitted" },
-    }, tx)
+      recordStatusChange({
+        entityType: "purchase_request",
+        entityId:   requestId,
+        fromStatus: "draft",
+        toStatus:   "submitted",
+        changedBy:  session.user.id,
+      }, tx)
+      recordAudit({
+        userId:     session.user.id,
+        userEmail:  session.user.email ?? undefined,
+        action:     "status_change",
+        entityType: "purchase_request",
+        entityId:   requestId,
+        entityCode: request.code,
+        oldState:   { status: "draft" },
+        newState:   { status: "submitted" },
+      }, tx)
 
-    for (const item of request.items) {
-      submitItemTx(tx, item.id, session.user.id, { userEmail: session.user.email ?? undefined })
-    }
-  })
+      for (const item of request.items) {
+        submitItemTx(tx, item.id, session.user.id, { userEmail: session.user.email ?? undefined })
+      }
+    })
+  } catch (e) {
+    logger.error("[submitRequest]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
+  }
 
   // Notify approvers (fire-and-forget — never blocks the main flow)
   void getUserIdsWithPermission("approvals:approve").then((approverIds) =>

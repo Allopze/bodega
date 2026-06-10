@@ -30,7 +30,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 
 const mockCancelOrder = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/services/purchasing", () => ({
-  createOrder: vi.fn(),
+  createOrdersBySupplier: vi.fn(),
   issueOrder: vi.fn(),
   markOrderSent: vi.fn(),
   cancelOrder: mockCancelOrder,
