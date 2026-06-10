@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createOrderSchema, dispatchSchema, receiptSchema, requestSchema } from "@/lib/validation/operations"
+import { createOrderSchema, dispatchSchema, receiptSchema, requestSchema, workerDeliverySchema } from "@/lib/validation/operations"
 
 const validRequest = {
   worksiteId: "worksite-1",
@@ -145,5 +145,28 @@ describe("dispatchSchema", () => {
     expect(dispatchSchema.safeParse({ ...validDispatch, receiverName: "" }).success).toBe(false)
     expect(dispatchSchema.safeParse({ ...validDispatch, quantity: "0" }).success).toBe(false)
     expect(dispatchSchema.safeParse({ ...validDispatch, quantity: Number.NaN }).success).toBe(false)
+  })
+})
+
+describe("workerDeliverySchema", () => {
+  const validDelivery = {
+    worksiteId: "worksite-1",
+    workerId: "worker-1",
+    requestItemId: "item-1",
+    quantity: "2",
+    receiverName: "",
+    notes: "",
+  }
+
+  it("accepts a worker EPP delivery payload", () => {
+    const result = workerDeliverySchema.safeParse(validDelivery)
+    expect(result.success).toBe(true)
+    expect(result.data?.quantity).toBe(2)
+  })
+
+  it("rejects missing worker, item and invalid quantities", () => {
+    expect(workerDeliverySchema.safeParse({ ...validDelivery, workerId: "" }).success).toBe(false)
+    expect(workerDeliverySchema.safeParse({ ...validDelivery, requestItemId: "" }).success).toBe(false)
+    expect(workerDeliverySchema.safeParse({ ...validDelivery, quantity: "0" }).success).toBe(false)
   })
 })

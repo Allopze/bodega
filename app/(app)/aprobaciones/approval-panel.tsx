@@ -51,7 +51,6 @@ export interface ApprovalItem {
   notes:                 string | null
   status:                string
   attributes:            ApprovalAttribute[]
-  workerName?:           string | null
   suggestedSupplierName?: string | null
   supplierHint?:         string | null
 }
@@ -169,14 +168,9 @@ function ItemRow({ item }: { item: ApprovalItem }) {
             </div>
           )}
 
-          {/* Worker / Supplier metadata */}
-          {(item.workerName || item.suggestedSupplierName || item.supplierHint) && (
+          {/* Supplier metadata */}
+          {(item.suggestedSupplierName || item.supplierHint) && (
             <div className="mt-1 flex gap-1.5 flex-wrap items-center">
-              {item.workerName && (
-                <Badge variant="info" size="sm" className="font-normal shrink-0">
-                  Destinatario: {item.workerName}
-                </Badge>
-              )}
               {(item.suggestedSupplierName || item.supplierHint) && (
                 <Badge variant="warning" size="sm" className="font-normal shrink-0">
                   Sugerido: {item.suggestedSupplierName || item.supplierHint}

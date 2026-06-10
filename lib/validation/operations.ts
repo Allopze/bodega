@@ -113,6 +113,15 @@ export const dispatchSchema = z.object({
   notes:          z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
 
+export const workerDeliverySchema = z.object({
+  worksiteId:    z.string().min(1, "Selecciona una faena"),
+  workerId:      z.string().min(1, "Selecciona un trabajador"),
+  requestItemId: z.string().min(1, "Selecciona un EPP recibido"),
+  quantity:      positiveQuantitySchema,
+  receiverName:  z.string().trim().max(120).nullable().optional().or(z.literal("")),
+  notes:         z.string().trim().max(500).nullable().optional().or(z.literal("")),
+})
+
 // ── Stock min threshold ─────────────────────────────────────────────────────
 export const setMinStockSchema = z.object({
   stockId:   z.string().min(1),
@@ -130,5 +139,6 @@ export const returnStockSchema = z.object({
 
 export type ReceiptFormData = z.infer<typeof receiptSchema>
 export type DispatchFormData = z.infer<typeof dispatchSchema>
+export type WorkerDeliveryFormData = z.infer<typeof workerDeliverySchema>
 export type SetMinStockFormData = z.infer<typeof setMinStockSchema>
 export type ReturnStockFormData = z.infer<typeof returnStockSchema>

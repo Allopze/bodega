@@ -12,6 +12,7 @@
  * 8. Send OC (transitions OC to sent, item to purchased)
  * 9. Register Receipt of OC items into worksite (transitions item to received, OC to received, request to closed)
  * 10. Verify worksite stock is correctly incremented
+ * 11. Register EPP delivery to a worker and verify stock + traceability
  */
 
 import Database from "better-sqlite3"
@@ -46,6 +47,7 @@ migrate(inMemoryDb, { migrationsFolder })
 import { submitItem, approveItem, markItemPendingPurchase } from "@/lib/services/item-state"
 import { createOrder, issueOrder, markOrderSent } from "@/lib/services/purchasing"
 import { registerReceipt } from "@/lib/services/receiving"
+import { registerWorkerEppDelivery } from "@/lib/services/deliveries"
 
 describe("Full procurement workflow integration", () => {
   afterAll(() => {
@@ -95,6 +97,7 @@ describe("Full procurement workflow integration", () => {
       id: categoryId,
       name: "Seguridad y EPP",
       slug: "seguridad-y-epp",
+      isEpp: true,
       sortOrder: 1,
     }).run()
 
@@ -106,9 +109,22 @@ describe("Full procurement workflow integration", () => {
       categoryId: categoryId,
       unitOfMeasure: "unidad",
       referencePrice: 5000,
+      isEpp: true,
       isActive: true,
       createdAt: now,
       updatedAt: now,
+    }).run()
+
+    const workerId = "worker-1"
+    await inMemoryDb.insert(schema.workers).values({
+      id: workerId,
+      rut: "11.111.111-1",
+      firstName: "Pedro",
+      lastName: "Rojas",
+      position: "Operador",
+      worksiteId,
+      isActive: true,
+      createdAt: now,
     }).run()
 
     // 2. Create Purchase Request (SOL) in draft state
@@ -280,5 +296,36 @@ describe("Full procurement workflow integration", () => {
     expect(stock).toBeDefined()
     expect(stock?.productId).toBe(productId)
     expect(stock?.quantity).toBe(10) // 10 cascos in worksite stock
+
+    // 11. Deliver received EPP to a worker
+    const deliveryId = await registerWorkerEppDelivery({
+      worksiteId,
+      workerId,
+      requestItemId,
+      quantity: 10,
+      receiverName: "",
+      deliveredBy: userId,
+      userEmail: "juan@chome.cl",
+    })
+
+    const delivery = await inMemoryDb.query.deliveries.findFirst({
+      where: eq(schema.deliveries.id, deliveryId),
+      with: { items: true },
+    })
+    expect(delivery).toBeDefined()
+    expect(delivery?.destinationType).toBe("worker")
+    expect(delivery?.workerId).toBe(workerId)
+    expect(delivery?.items[0].requestItemId).toBe(requestItemId)
+
+    const stockAfterDelivery = await inMemoryDb.query.worksiteStock.findFirst({
+      where: eq(schema.worksiteStock.worksiteId, worksiteId),
+    })
+    expect(stockAfterDelivery?.quantity).toBe(0)
+
+    const deliveredReq = await inMemoryDb.query.purchaseRequests.findFirst({
+      where: eq(schema.purchaseRequests.id, requestId),
+      with: { items: true },
+    })
+    expect(deliveredReq?.items[0].status).toBe("delivered")
   })
 })

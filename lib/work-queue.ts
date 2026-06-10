@@ -208,7 +208,7 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         statusLabel: item.status === "partially_delivered" ? "Entrega parcial" : "Recibido en bodega",
         priority:    normalizePriority(item.urgency),
         createdAt:   item.createdAt,
-        href:        `/bodega?faena=${item.worksiteId}&item=${item.id}`,
+        href:        `/entregas?faena=${item.worksiteId}&item=${item.id}`,
         ctaLabel:    "Registrar entrega",
       })
     }

@@ -3,7 +3,7 @@ import { redirect }       from "next/navigation"
 import { db }             from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
-  worksites, users as usersTable, products, workers, suppliers,
+  worksites, users as usersTable, products, suppliers,
 } from "@/db/schema"
 import { eq, and, inArray, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
@@ -80,7 +80,6 @@ export default async function AprobacionesPage({
       notes:               purchaseRequestItems.notes,
       status:              purchaseRequestItems.status,
       sortOrder:           purchaseRequestItems.sortOrder,
-      workerId:            purchaseRequestItems.workerId,
       suggestedSupplierId: purchaseRequestItems.suggestedSupplierId,
       supplierHint:        purchaseRequestItems.supplierHint,
     })
@@ -94,11 +93,10 @@ export default async function AprobacionesPage({
     .orderBy(asc(purchaseRequestItems.sortOrder))
 
   const pendingItemIds = pendingItems.map((i) => i.id)
-  const workerIds = [...new Set(pendingItems.map((i) => i.workerId).filter(Boolean))] as string[]
   const supplierIds = [...new Set(pendingItems.map((i) => i.suggestedSupplierId).filter(Boolean))] as string[]
 
   // Batch load everything else in parallel
-  const [allAttrs, wsRows, requesterRows, productRows, workerRows, supplierRows] = await Promise.all([
+  const [allAttrs, wsRows, requesterRows, productRows, supplierRows] = await Promise.all([
     pendingItemIds.length > 0
       ? db
           .select({
@@ -126,13 +124,6 @@ export default async function AprobacionesPage({
       .select({ id: products.id, sku: products.sku, name: products.name })
       .from(products),
 
-    workerIds.length > 0
-      ? db
-          .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName })
-          .from(workers)
-          .where(inArray(workers.id, workerIds))
-      : Promise.resolve([]),
-
     supplierIds.length > 0
       ? db
           .select({ id: suppliers.id, name: suppliers.name })
@@ -145,7 +136,6 @@ export default async function AprobacionesPage({
   const wsMap       = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
   const userMap     = Object.fromEntries(requesterRows.map((u) => [u.id, u.name]))
   const productMap  = Object.fromEntries(productRows.map((p) => [p.id, p]))
-  const workerMap   = Object.fromEntries(workerRows.map((w) => [w.id, `${w.firstName} ${w.lastName}`]))
   const supplierMap = Object.fromEntries(supplierRows.map((s) => [s.id, s.name]))
   const attrsMap: Record<string, { attributeName: string; value: string }[]> = {}
   for (const a of allAttrs) {
@@ -178,7 +168,6 @@ export default async function AprobacionesPage({
           notes:                 item.notes,
           status:                item.status,
           attributes:            attrsMap[item.id] ?? [],
-          workerName:            item.workerId ? workerMap[item.workerId] : null,
           suggestedSupplierName: item.suggestedSupplierId ? supplierMap[item.suggestedSupplierId] : null,
           supplierHint:          item.supplierHint,
         }

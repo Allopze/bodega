@@ -4,7 +4,7 @@ import { db } from "@/db"
 import {
   purchaseRequests,
   worksites, products, productAttributes,
-  statusHistory, users, suppliers, workers,
+  statusHistory, users, suppliers,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -45,7 +45,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))
   if (!hasAccess) notFound()
 
-  const [allWorksites, allProducts, allAttrs, timelineEvents, allSuppliers, allWorkers] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, timelineEvents, allSuppliers] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
@@ -70,7 +70,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       )
       .orderBy(desc(statusHistory.changedAt)),
     db.select().from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
-    db.select().from(workers).where(eq(workers.isActive, true)).orderBy(asc(workers.firstName)),
   ])
 
   const worksiteOptions = allWorksites
@@ -96,14 +95,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   const supplierOptions = allSuppliers.map((s) => ({
     id:   s.id,
     name: s.name,
-  }))
-
-  const workerOptions = allWorkers.map((w) => ({
-    id:         w.id,
-    worksiteId: w.worksiteId,
-    firstName:  w.firstName,
-    lastName:   w.lastName,
-    position:   w.position,
   }))
 
   const productNameById = new Map(allProducts.map((product) => [product.id, product.name]))
@@ -134,7 +125,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       quantity:            item.quantity,
       unitOfMeasure:       item.unitOfMeasure,
       urgency:             item.urgency ?? "normal",
-      workerId:            item.workerId,
       suggestedSupplierId: item.suggestedSupplierId,
       supplierHint:        item.supplierHint,
       notes:               item.notes,
@@ -173,7 +163,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           worksites={worksiteOptions}
           products={productOptions}
           suppliers={supplierOptions}
-          workers={workerOptions}
           editRequest={editRequest}
         />
         <EntityTimeline entityType="request" events={timelineEvents} />

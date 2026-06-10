@@ -187,7 +187,7 @@ describe("buildWorkTasks", () => {
     expect(tasks).toEqual([
       expect.objectContaining({
         type: "warehouse_delivery",
-        href: "/bodega?faena=ws-1&item=item-3",
+        href: "/entregas?faena=ws-1&item=item-3",
       }),
     ])
   })

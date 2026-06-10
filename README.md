@@ -52,9 +52,9 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 
 ## Reglas operativas
 
-- El flujo operativo actual no usa entrega a trabajadores ni despacho desde bodega.
-- La recepcion se registra directamente contra la faena de la OC.
-- Marcar una OC como recibida cierra el seguimiento operativo de sus ítems recibidos.
+- El flujo operativo entrega EPP recibido a trabajadores desde el módulo Entregas.
+- La recepcion se registra contra la faena de la OC y deja stock disponible.
+- La entrega de EPP a trabajador cierra el seguimiento operativo de sus ítems recibidos.
 - La prevencionista participa en aprobaciones de todos los productos.
 - La aprobacion simple actual es suficiente: no hay cadena obligatoria.
 - Las facturas anexas son visibles para administrador, jefa Chome, secretaria y prevencionista.

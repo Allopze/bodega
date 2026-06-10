@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers, workers } from "@/db/schema"
+import { worksites, products, productAttributes, suppliers } from "@/db/schema"
 import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
@@ -19,7 +19,7 @@ export default async function NuevaSolicitudPage() {
   try { session = await requirePermission("requests:create") }
   catch { redirect("/dashboard") }
 
-  const [allWorksites, allProducts, allAttrs, allSuppliers, allWorkers] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, allSuppliers] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -31,9 +31,6 @@ export default async function NuevaSolicitudPage() {
     db.select().from(suppliers)
       .where(eq(suppliers.isActive, true))
       .orderBy(asc(suppliers.name)),
-    db.select().from(workers)
-      .where(eq(workers.isActive, true))
-      .orderBy(asc(workers.firstName)),
   ])
 
   // Scope worksites to the user's assignments
@@ -68,14 +65,6 @@ export default async function NuevaSolicitudPage() {
   const supplierOptions = allSuppliers.map((s) => ({
     id:   s.id,
     name: s.name,
-  }))
-
-  const workerOptions = allWorkers.map((w) => ({
-    id:         w.id,
-    worksiteId: w.worksiteId,
-    firstName:  w.firstName,
-    lastName:   w.lastName,
-    position:   w.position,
   }))
 
   if (worksiteOptions.length === 0) {
@@ -126,7 +115,6 @@ export default async function NuevaSolicitudPage() {
           worksites={worksiteOptions}
           products={productOptions}
           suppliers={supplierOptions}
-          workers={workerOptions}
         />
       </div>
     </>

@@ -81,3 +81,9 @@ export const deliveriesRelations = relations(deliveries, ({ one, many }) => ({
   worker:      one(workers, { fields: [deliveries.workerId], references: [workers.id] }),
   items:       many(deliveryItems),
 }))
+
+export const deliveryItemsRelations = relations(deliveryItems, ({ one }) => ({
+  delivery: one(deliveries, { fields: [deliveryItems.deliveryId], references: [deliveries.id] }),
+  requestItem: one(purchaseRequestItems, { fields: [deliveryItems.requestItemId], references: [purchaseRequestItems.id] }),
+  product: one(products, { fields: [deliveryItems.productId], references: [products.id] }),
+}))

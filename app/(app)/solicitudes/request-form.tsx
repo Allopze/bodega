@@ -44,14 +44,6 @@ export interface SupplierOption {
   name: string
 }
 
-export interface WorkerOption {
-  id:         string
-  worksiteId: string
-  firstName:  string
-  lastName:   string
-  position:   string | null
-}
-
 export interface EditRequest {
   id:          string
   code:        string
@@ -71,7 +63,6 @@ interface EditItem {
   quantity:            number
   unitOfMeasure:       string
   urgency:             string
-  workerId:            string | null
   suggestedSupplierId: string | null
   supplierHint:        string | null
   notes:               string | null
@@ -88,7 +79,6 @@ interface ItemRow {
   quantity:            string
   unitOfMeasure:       string
   urgency:             string
-  workerId:            string
   suggestedSupplierId: string
   supplierHint:        string
   notes:               string
@@ -116,7 +106,6 @@ function blankItem(key = "new-0"): ItemRow {
     quantity:            "1",
     unitOfMeasure:       "unidad",
     urgency:             "normal",
-    workerId:            "",
     suggestedSupplierId: "",
     supplierHint:        "",
     notes:               "",
@@ -159,11 +148,10 @@ interface RequestFormProps {
   worksites:    WorksiteOption[]
   products:     ProductOption[]
   suppliers:    SupplierOption[]
-  workers:      WorkerOption[]
   editRequest?: EditRequest
 }
 
-export function RequestForm({ worksites, products, suppliers, workers, editRequest }: RequestFormProps) {
+export function RequestForm({ worksites, products, suppliers, editRequest }: RequestFormProps) {
   const router = useRouter()
   const isEdit  = !!editRequest
   const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
@@ -193,7 +181,6 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
           quantity:            String(item.quantity),
           unitOfMeasure:       item.unitOfMeasure,
           urgency:             item.urgency,
-          workerId:            item.workerId ?? "",
           suggestedSupplierId: item.suggestedSupplierId ?? "",
           supplierHint:        item.supplierHint ?? "",
           notes:               item.notes ?? "",
@@ -299,7 +286,6 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
     unitOfMeasure:       item.unitOfMeasure,
     urgency:             item.urgency,
     requiredDate:        requiredDate || null,
-    workerId:            item.workerId || null,
     suggestedSupplierId: item.suggestedSupplierId || null,
     supplierHint:        item.supplierHint || null,
     notes:               item.notes || null,
@@ -309,9 +295,6 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
       value:         a.value,
     })),
   })))
-
-  // Workers filtered by current worksite
-  const worksiteWorkers = workers.filter((w) => w.worksiteId === worksiteId)
 
   const readOnly = !isDraft
 
@@ -438,7 +421,6 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
                 idx={idx}
                 products={products}
                 suppliers={suppliers}
-                workers={worksiteWorkers}
                 readOnly={readOnly}
                 onUpdate={(patch) => updateItem(item._key, patch)}
                 onSelectProduct={(pid) => selectProduct(item._key, pid)}
@@ -519,7 +501,6 @@ interface ItemEditorProps {
   idx:             number
   products:        ProductOption[]
   suppliers:       SupplierOption[]
-  workers:         WorkerOption[]
   readOnly:        boolean
   onUpdate:        (patch: Partial<ItemRow>) => void
   onSelectProduct: (pid: string) => void
@@ -531,11 +512,9 @@ interface ItemEditorProps {
 }
 
 function ItemEditor({
-  item, idx, products, suppliers, workers, readOnly,
+  item, idx, products, suppliers, readOnly,
   onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
 }: ItemEditorProps) {
-  const showWorker         = item.isEpp
-  const hasWorkers         = workers.length > 0
   const hasSuppliers       = suppliers.length > 0
   const showSupplierSelect = !item.supplierHint || !!item.suggestedSupplierId
 
@@ -649,8 +628,8 @@ function ItemEditor({
         </Field>
       </div>
 
-      {/* Supplier hint + Worker (EPP only) */}
-      <div className="ml-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Supplier hint */}
+      <div className="ml-8 grid grid-cols-1 gap-3">
         {/* Proveedor sugerido */}
         <Field label="Proveedor sugerido" htmlFor={`sup-${item._key}`}>
           {readOnly ? (
@@ -692,40 +671,6 @@ function ItemEditor({
           )}
         </Field>
 
-        {/* Destinatario / Trabajador (solo EPP) */}
-        {showWorker && (
-          <Field label="Destinatario (trabajador)" htmlFor={`wkr-${item._key}`}>
-            {readOnly ? (
-              <p className="text-sm text-[var(--color-text)]">
-                {(() => {
-                  const w = workers.find((w) => w.id === item.workerId)
-                  return w ? `${w.firstName} ${w.lastName}` : "—"
-                })()}
-              </p>
-            ) : hasWorkers ? (
-              <Select
-                value={item.workerId || ""}
-                onValueChange={(v) => onUpdate({ workerId: v || "" })}
-              >
-                <SelectTrigger id={`wkr-${item._key}`} className="h-8 text-sm">
-                  <SelectValue placeholder="Seleccionar trabajador..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Sin asignar</SelectItem>
-                  {workers.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.firstName} {w.lastName}{w.position ? ` · ${w.position}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <p className="text-xs text-[var(--color-text-subtle)] h-8 flex items-center">
-                Sin trabajadores en esta faena
-              </p>
-            )}
-          </Field>
-        )}
       </div>
 
       {/* Notes */}
