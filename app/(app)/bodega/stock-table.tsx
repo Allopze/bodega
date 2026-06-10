@@ -88,7 +88,7 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
                   key={s.id}
                   className={[
                     "rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3",
-                    lowStock ? "bg-[var(--color-signal-50)] ring-1 ring-inset ring-[var(--color-signal-100)]" : "",
+                    lowStock ? "bg-[var(--color-signal-tint)] ring-1 ring-inset ring-[var(--color-signal-line)]" : "",
                   ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -99,7 +99,7 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
                       </p>
                     </div>
                     {lowStock && (
-                      <span className="shrink-0 rounded border border-[var(--color-signal-100)] bg-[var(--color-signal-50)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-signal-500)]">
+                      <span className="shrink-0 rounded border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-signal-ink)]">
                         Stock bajo
                       </span>
                     )}
@@ -140,7 +140,7 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
                   const lowStock = s.minStock > 0 && s.quantity <= s.minStock
 
                   return (
-                    <tr key={s.id} className={`hover:bg-[var(--color-surface-2)] transition-colors ${lowStock ? "bg-[var(--color-signal-50)]" : ""}`}>
+                    <tr key={s.id} className={`hover:bg-[var(--color-surface-2)] transition-colors ${lowStock ? "bg-[var(--color-signal-tint)]" : ""}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           {s.product?.sku && (
@@ -152,7 +152,7 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
                             {s.product?.name ?? s.productId}
                           </span>
                           {lowStock && (
-                            <span className="text-[10px] font-medium text-[var(--color-signal-500)] bg-[var(--color-signal-50)] border border-[var(--color-signal-100)] px-1.5 py-0.5 rounded">
+                            <span className="text-[10px] font-medium text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)] border border-[var(--color-signal-line)] px-1.5 py-0.5 rounded">
                               Stock bajo
                             </span>
                           )}

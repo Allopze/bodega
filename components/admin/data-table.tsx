@@ -151,8 +151,7 @@ export function DataTable<T extends Record<string, unknown>>({
                       onClick={() => toggleSort(col.key)}
                       className={cn(
                         "inline-flex items-center gap-1",
-                        "text-xs font-medium uppercase tracking-wide",
-                        "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
+                        "text-eyebrow hover:text-[var(--color-text)]",
                         "transition-[color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
                         "motion-safe:active:scale-[0.97]",
                         "select-none",

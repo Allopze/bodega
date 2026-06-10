@@ -79,7 +79,7 @@ const URGENCY_LABEL: Record<string, string> = {
 
 const URGENCY_CLASS: Record<string, string> = {
   normal:   "text-[var(--color-text-muted)]",
-  high:     "text-[var(--color-signal-500)] font-medium",
+  high:     "text-[var(--color-signal-ink)] font-medium",
   critical: "text-[var(--color-danger)] font-semibold",
 }
 

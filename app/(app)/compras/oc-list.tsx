@@ -157,9 +157,9 @@ export function OcList({
   return (
     <div className="flex flex-col gap-4">
       {createdCount > 1 && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-50)] border border-[var(--color-success-100)]">
-          <CheckCircle size={16} className="text-[var(--color-success-700)] shrink-0" />
-          <p className="text-sm text-[var(--color-success-700)] flex-1">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-tint)] border border-[var(--color-success-line)]">
+          <CheckCircle size={16} className="text-[var(--color-success-ink)] shrink-0" />
+          <p className="text-sm text-[var(--color-success-ink)] flex-1">
             Se crearon <span className="font-semibold">{createdCount} órdenes de compra</span>, separadas por proveedor.
           </p>
         </div>
@@ -167,9 +167,9 @@ export function OcList({
 
       {/* Never-miss alert for approved items not on any OC */}
       {pendingCount > 0 && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-signal-50)] border border-[var(--color-signal-100)]">
-          <Warning size={16} className="text-[var(--color-signal-500)] shrink-0" />
-          <p className="text-sm text-[var(--color-signal-600)] flex-1">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-signal-tint)] border border-[var(--color-signal-line)]">
+          <Warning size={16} className="text-[var(--color-signal-ink)] shrink-0" />
+          <p className="text-sm text-[var(--color-signal-ink)] flex-1">
             <span className="font-semibold">{pendingCount} ítem{pendingCount !== 1 ? "s" : ""}</span>
             {" "}aprobado{pendingCount !== 1 ? "s" : ""} sin incluir en ninguna OC.
           </p>

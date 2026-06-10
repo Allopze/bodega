@@ -271,7 +271,7 @@ export default async function TrazabilidadPage({
 
       {/* ── Alert summary ─────────────────────────────────────────────── */}
       {alertCount > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-signal-100)] bg-[var(--color-signal-50)] px-4 py-3">
+        <div className="mb-4 flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-4 py-3">
           <Warning weight="fill" className="h-4 w-4 shrink-0 text-[oklch(0.52_0.15_56)]" aria-hidden />
           <p className="text-sm font-medium text-[oklch(0.52_0.15_56)]">
             {alertCount} {alertCount === 1 ? "ítem aprobado falta" : "ítems aprobados faltan"} en órdenes de compra
@@ -361,7 +361,7 @@ export default async function TrazabilidadPage({
                 key={row.itemId}
                 className={[
                   "rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3",
-                  row.alert ? "bg-[var(--color-signal-50)] ring-1 ring-inset ring-[var(--color-signal-100)]" : "",
+                  row.alert ? "bg-[var(--color-signal-tint)] ring-1 ring-inset ring-[var(--color-signal-line)]" : "",
                 ].join(" ")}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -403,7 +403,7 @@ export default async function TrazabilidadPage({
                       {row.alert && (
                         <Warning
                           weight="fill"
-                          className="ml-1 inline h-3.5 w-3.5 text-[var(--color-signal-600)]"
+                          className="ml-1 inline h-3.5 w-3.5 text-[var(--color-signal-ink)]"
                           aria-label={`Faltan ${formatQty((row.approved ?? 0) - row.inOc, row.uom)} en OC`}
                         />
                       )}
@@ -441,7 +441,7 @@ export default async function TrazabilidadPage({
                     key={row.itemId}
                     data-alert={row.alert ? "true" : undefined}
                     className={row.alert
-                      ? "bg-[var(--color-signal-50)] ring-1 ring-inset ring-[var(--color-signal-100)]"
+                      ? "bg-[var(--color-signal-tint)] ring-1 ring-inset ring-[var(--color-signal-line)]"
                       : undefined}
                   >
                     {/* Product */}
@@ -486,7 +486,7 @@ export default async function TrazabilidadPage({
                       {row.alert && (
                         <Warning
                           weight="fill"
-                          className="inline ml-1 h-3.5 w-3.5 text-[var(--color-signal-600)]"
+                          className="inline ml-1 h-3.5 w-3.5 text-[var(--color-signal-ink)]"
                           aria-label={`Faltan ${formatQty((row.approved ?? 0) - row.inOc, row.uom)} en OC`}
                         />
                       )}

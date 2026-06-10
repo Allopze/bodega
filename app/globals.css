@@ -2,116 +2,113 @@
 @import "tw-animate-css";
 
 /* ─── Chome Solicitudes y Bodega — Design Tokens ──────────────────────────── */
-/* All colors in OKLCH; hex provenance in comments. Chroma reduced at extremes. */
+/* Direction: Operations Logbook — editorial precision, evidence-forward.     */
+/* Color is neutral with one signal hue. Borders carry hierarchy.             */
 
 @theme {
   /* ── Fonts ── */
   --font-display: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, "Cascadia Code", monospace;
+  --font-sans:    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif:   "Source Serif 4", "Source Serif Pro", ui-serif, Georgia, serif;
+  --font-mono:    var(--font-geist-mono), "Geist Mono", ui-monospace, "Cascadia Code", monospace;
 
-  /* ── Typography Scale (fluid, responsive, ratio ≥1.20 between heading steps) ── */
-  --text-xs:   clamp(0.75rem, 0.72rem + 0.15vw, 0.8125rem);     /* 12 → 13px – labels, badges     */
-  --text-sm:   clamp(0.875rem, 0.84rem + 0.2vw, 0.9375rem);     /* 14 → 15px – UI, table cells     */
-  --text-base: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);         /* 16 → 17px – body, paragraphs    */
-  --text-lg:   clamp(1.125rem, 1.07rem + 0.3vw, 1.25rem);       /* 18 → 20px – section headings    */
-  --text-xl:   clamp(1.375rem, 1.25rem + 0.55vw, 1.625rem);     /* 22 → 26px – page headings       */
-  --text-2xl:  clamp(1.75rem, 1.55rem + 1vw, 2.125rem);         /* 28 → 34px – hero, login title   */
-  --text-3xl:  clamp(2rem, 1.7rem + 1.5vw, 2.625rem);           /* 32 → 42px – login tagline       */
+  /* ── Typography Scale ── */
+  --text-xs:   0.75rem;     /* 12px – labels, micro                    */
+  --text-sm:   0.8125rem;   /* 13px – UI, table cells, dense lists     */
+  --text-base: 0.9375rem;   /* 15px – body, paragraphs                  */
+  --text-lg:   1.0625rem;   /* 17px – section heads                     */
+  --text-xl:   1.375rem;    /* 22px – page heads                        */
+  --text-2xl:  1.75rem;     /* 28px – display, login title              */
+  --text-3xl:  2.25rem;     /* 36px – brand moment                      */
 
-  /* ── Line-heights by text role ── */
-  --leading-label:   1.1;    /* badges, buttons, micro-copy */
-  --leading-compact: 1.35;   /* table cells, dense lists    */
-  --leading-body:    1.55;   /* paragraphs, descriptions    */
-  --leading-display: 1.15;   /* headings, page titles       */
+  /* ── Line-heights ── */
+  --leading-label:   1.15;
+  --leading-compact: 1.4;
+  --leading-body:    1.55;
+  --leading-display: 1.1;
 
+  /* ── Brand primary — desaturated forest, used for actions & focus only ── */
+  --color-primary:        oklch(0.498 0.060 154);  /* #2f6b4d — quiet green */
+  --color-primary-tint:   oklch(0.965 0.010 154);  /* surface tint           */
+  --color-primary-line:   oklch(0.890 0.025 154);  /* border / hover line    */
+  --color-primary-ink:    oklch(0.295 0.045 154);  /* dark text on tint      */
 
-  /* ── Brand primaries ── */
-  --color-primary:      oklch(0.650 0.170 154);   /* #10b981 emerald-500 equivalent */
-  --color-primary-50:   oklch(0.975 0.020 154);   /* very light tint */
-  --color-primary-100:  oklch(0.940 0.040 154);   /* light tint */
-  --color-primary-600:  oklch(0.580 0.160 154);   /* medium active */
-  --color-primary-700:  oklch(0.480 0.140 154);   /* darker for contrast/links */
+  /* ── Signal — the one saturated hue. Reserved exclusively for "pendiente" ── */
+  --color-signal:         oklch(0.628 0.162 49);   /* chome orange          */
+  --color-signal-tint:    oklch(0.965 0.022 60);
+  --color-signal-line:    oklch(0.892 0.052 60);
+  --color-signal-ink:     oklch(0.402 0.130 49);
 
-  /* ── Never-miss signal — reserved for pending / no-incluido-en-OC ── */
-  --color-signal:       oklch(0.724 0.174 56);    /* #f39200 chome-orange    */
-  --color-signal-50:    oklch(0.966 0.025 60);    /* orange tint background  */
-  --color-signal-100:   oklch(0.924 0.055 60);    /* badge fill              */
-  --color-signal-500:   oklch(0.620 0.150 56);   /* medium text on light    */
-  --color-signal-600:   oklch(0.520 0.150 56);   /* dark text/icon signal   */
+  /* ── Semantic state colors — all desaturated, all earn their place ── */
+  --color-info:           oklch(0.520 0.080 240);  /* blue — in progress     */
+  --color-info-tint:      oklch(0.965 0.008 240);
+  --color-info-line:      oklch(0.892 0.020 240);
+  --color-info-ink:       oklch(0.330 0.075 240);
 
-  /* ── Warning / partial state ── */
-  --color-warning:      oklch(0.888 0.178 93);    /* #ffd51e chome-amber     */
-  --color-warning-50:   oklch(0.975 0.020 93);
-  --color-warning-100:  oklch(0.948 0.042 93);
+  --color-success:        oklch(0.520 0.090 154);  /* green — completed      */
+  --color-success-tint:   oklch(0.965 0.010 154);
+  --color-success-line:   oklch(0.890 0.025 154);
+  --color-success-ink:    oklch(0.330 0.080 154);
 
-  /* ── Semantic state colors ── */
-  --color-info:         oklch(0.600 0.120 248);   /* blue — in-progress      */
-  --color-info-50:      oklch(0.966 0.014 250);
-  --color-info-100:     oklch(0.924 0.030 250);
-  --color-success:      oklch(0.650 0.170 154);   /* green — approved/success */
-  --color-success-50:   oklch(0.975 0.020 154);
-  --color-success-100:  oklch(0.940 0.040 154);
-  --color-danger:       oklch(0.575 0.180 25);    /* red — rejected/danger   */
-  --color-danger-50:    oklch(0.970 0.018 25);
-  --color-danger-100:   oklch(0.934 0.040 25);
+  --color-warning:        oklch(0.720 0.140 78);   /* amber — partial        */
+  --color-warning-tint:   oklch(0.970 0.030 85);
+  --color-warning-line:   oklch(0.900 0.060 82);
+  --color-warning-ink:    oklch(0.395 0.110 75);
 
-  /* ── Operational neutrals — warm-green tinted ── */
-  --color-bg:           oklch(0.974 0.005 155);   /* #f5f7f6 light surface   */
-  --color-surface:      oklch(0.985 0.003 155);   /* pure content surface    */
-  --color-surface-2:    oklch(0.962 0.007 155);   /* secondary panel bg      */
-  --color-border:       oklch(0.882 0.008 155);   /* default border          */
-  --color-border-strong: oklch(0.800 0.012 155);  /* dividers, table lines   */
-  --color-text:         oklch(0.218 0.006 100);   /* #1d1d1b near-black      */
-  --color-text-muted:   oklch(0.421 0.010 155);   /* #4b4f54 gray            */
-  --color-text-subtle:  oklch(0.600 0.007 155);   /* captions, placeholders  */
+  --color-danger:         oklch(0.520 0.155 27);   /* red — rejected         */
+  --color-danger-tint:    oklch(0.965 0.012 27);
+  --color-danger-line:    oklch(0.890 0.030 27);
+  --color-danger-ink:     oklch(0.355 0.135 27);
 
-  /* ── Dark brand moments (login, top-bar brand zone, PDF) ── */
-  --color-brand-surface:       oklch(0.280 0.060 154);  /* #17422b forest (lighter, fresher) */
-  --color-brand-surface-raised: oklch(0.310 0.050 154); /* slightly lighter green */
-  --color-brand-surface-3:      oklch(0.261 0.024 100); /* #2e2e2c elevated   */
-  --color-brand-night:          oklch(0.127 0.003 100); /* #0e0e0d            */
-  --color-brand-text:           oklch(0.969 0.016 155); /* brand surface text */
-  --color-brand-text-muted:     oklch(0.780 0.018 155); /* muted on dark      */
-  --color-brand-border:         oklch(0.360 0.040 154); /* border on dark     */
+  /* ── Neutrals — slightly cool, paper-like ── */
+  --color-bg:             oklch(0.985 0.002 90);   /* page canvas            */
+  --color-surface:        oklch(1.000 0     0);    /* content surface        */
+  --color-surface-2:      oklch(0.972 0.003 90);   /* secondary panel        */
+  --color-surface-3:      oklch(0.952 0.005 90);   /* tertiary, headers      */
+  --color-border:         oklch(0.910 0.004 90);   /* default border         */
+  --color-border-strong:  oklch(0.838 0.005 90);   /* rule, divider          */
+  --color-rule:           oklch(0.225 0.005 90);   /* strong typographic rule */
 
-  /* ── Custom easing curves (Emil Kowalski / animations.dev) ── */
-  --ease-out:     cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out:  cubic-bezier(0.77, 0, 0.175, 1);
-  --ease-drawer:  cubic-bezier(0.32, 0.72, 0, 1);
+  --color-text:           oklch(0.180 0.004 90);   /* #1f1f1c — near black   */
+  --color-text-muted:     oklch(0.430 0.005 90);
+  --color-text-subtle:    oklch(0.605 0.005 90);
+  --color-text-faint:     oklch(0.740 0.004 90);
 
-  /* ── Motion durations ── */
-  --duration-fast:    150ms;
-  --duration-default: 200ms;
-  --duration-slow:    300ms;
+  /* ── Brand surface — a quiet, paper-white moment for top-bar brand zone ── */
+  --color-brand-surface:       oklch(0.985 0.002 90);
+  --color-brand-text:          oklch(0.180 0.004 90);
+  --color-brand-text-muted:    oklch(0.430 0.005 90);
+  --color-brand-border:        oklch(0.910 0.004 90);
 
-  /* ── Border radii ── */
-  --radius-sm:  0.25rem;
-  --radius:     0.375rem;
-  --radius-md:  0.5rem;
-  --radius-lg:  0.75rem;
-  --radius-xl:  1rem;
+  /* ── Motion ── */
+  --ease-out:     cubic-bezier(0.20, 0.80, 0.30, 1);
+  --ease-in-out:  cubic-bezier(0.60, 0, 0.20, 1);
+  --ease-drawer:  cubic-bezier(0.30, 0.80, 0.10, 1);
 
-  /* ── Elevation / shadows (OKLCH-tinted, warm-green) ── */
-  --shadow-sm:  0 1px 2px oklch(0.20 0.010 155 / 0.10);
-  --shadow-md:  0 4px 16px oklch(0.20 0.010 155 / 0.12), 0 1px 3px oklch(0.20 0.010 155 / 0.08);
-  --shadow-lg:  0 20px 50px oklch(0.20 0.010 155 / 0.18), 0 4px 12px oklch(0.20 0.010 155 / 0.10);
+  --duration-fast:    120ms;
+  --duration-default: 180ms;
+  --duration-slow:    280ms;
 
-  /* ── Overlay backdrop (shared between dialog, drawer, mobile menu) ── */
-  --color-overlay: oklch(0.20 0.010 155 / 0.40);
+  /* ── Radii — restrained. The new shape language is square. ── */
+  --radius-xs:   0.125rem;
+  --radius-sm:   0.1875rem;
+  --radius:      0.25rem;
+  --radius-md:   0.375rem;
+  --radius-lg:   0.5rem;
+  --radius-xl:   0.75rem;
 
-  /* ── Extended semantic palette — text on light tint backgrounds ── */
-  --color-warning-700:  oklch(0.520 0.110 93);   /* amber text on warning-50/100  */
-  --color-signal-700:   oklch(0.480 0.130 56);   /* orange text on signal-50/100  */
-  --color-info-700:     oklch(0.400 0.115 248);  /* blue text on info-50/100      */
-  --color-success-700:  oklch(0.450 0.130 168);  /* teal text on success-50/100   */
-  --color-danger-700:   oklch(0.420 0.160 25);   /* red text on danger-50/100     */
+  /* ── Shadows — minimal. We carry hierarchy with borders, not depth. ── */
+  --shadow-xs:  0 1px 0 oklch(0.180 0.004 90 / 0.04);
+  --shadow-sm:  0 1px 2px oklch(0.180 0.004 90 / 0.05);
+  --shadow-md:  0 2px 8px oklch(0.180 0.004 90 / 0.06), 0 1px 2px oklch(0.180 0.004 90 / 0.04);
+  --shadow-lg:  0 12px 32px oklch(0.180 0.004 90 / 0.10), 0 2px 6px oklch(0.180 0.004 90 / 0.06);
+
+  /* ── Overlay ── */
+  --color-overlay: oklch(0.180 0.004 90 / 0.32);
 }
 
-/* ─── Base ──────────────────────────────────────────────────────────────────── */
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
 
 html {
   min-height: 100dvh;
@@ -126,97 +123,102 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
-  font-size: 1rem;
+  font-size: 0.9375rem;
   line-height: var(--leading-body);
+  font-feature-settings: "ss01", "cv11";
 }
 
-/* Tabular numbers for all monospaced contexts (quantities, money, SKUs) */
 .font-mono, [data-mono] {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
 
-/* ─── Light-on-dark compensation ──────────────────────────────────────── */
-/* Text on dark surfaces reads thinner — boost weight and line-height.     */
-[data-theme="dark"] body,
-.bg-brand-surface,
-.bg-brand-night {
-  & .light-on-dark {
-    letter-spacing: 0.01em;
-    font-weight: 500;
-    line-height: 1.5;
-  }
+/* ─── Heading utilities (consistent voice: serif for display, sans for UI) ── */
+@utility text-display {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-display);
+  letter-spacing: -0.015em;
+}
+@utility text-h1 {
+  font-family: var(--font-sans);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: var(--leading-display);
+  letter-spacing: -0.01em;
+}
+@utility text-h2 {
+  font-family: var(--font-sans);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: var(--leading-compact);
+  letter-spacing: -0.005em;
+}
+@utility text-h3 {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: var(--leading-compact);
+}
+@utility text-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+@utility text-sub {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: var(--leading-compact);
 }
 
-/* ─── Responsive heading scale ────────────────────────────────────────── */
-@utility text-h1 {  font-family: var(--font-display); font-size: var(--text-xl); font-weight: 600; line-height: var(--leading-display); letter-spacing: -0.01em; }
-@utility text-h2 {  font-family: var(--font-sans);    font-size: var(--text-lg); font-weight: 600; line-height: var(--leading-compact); }
-@utility text-h3 {  font-family: var(--font-sans);    font-size: var(--text-base); font-weight: 600; line-height: var(--leading-compact); }
-@utility text-sub { font-family: var(--font-sans);    font-size: var(--text-sm); color: var(--color-text-muted); line-height: var(--leading-compact); }
-
-/* ─── Focus ring (single, consistent) ────────────────────────────────────── */
+/* ─── Focus ring ── */
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
 }
 
-/* ─── Scrollbar (subtle, not custom) ─────────────────────────────────────── */
+/* ─── Scrollbar ── */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-strong) transparent;
 }
 
-/* ─── Pressable affordance (Emil: scale on active) ───────────────────────── */
-/* Gated: transform without transition — only suppress if user prefers reduced motion */
+/* ─── Pressable (no scale on active — logbook is calm) ── */
 @media (prefers-reduced-motion: no-preference) {
-  [data-pressable]:active {
-    transform: scale(0.97);
-  }
+  [data-pressable] { transition: background-color var(--duration-fast) var(--ease-out); }
 }
 
-/* ─── Shimmer keyframe for skeleton sweep ─────────────────────────────────── */
+/* ─── Keyframes ── */
 @keyframes shimmer {
   from { transform: translateX(-100%); }
   to   { transform: translateX(100%); }
 }
-
-/* ─── Fade-in keyframe (for @starting-style and standalone use) ───────────── */
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-/* ─── Slide-up keyframe ──────────────────────────────────────────────────── */
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ─── Reduced motion (Emil: keep opacity/color transitions for comprehension) ── */
+/* ─── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
-  /* Keep opacity and color transitions — they aid comprehension */
-  /* Remove movement and position animations — they cause discomfort */
   *, *::before, *::after {
     --duration-fast: 0ms;
     --duration-default: 0ms;
     --duration-slow: 0ms;
     scroll-behavior: auto !important;
   }
-
-  /* Only kill transform-based motion — keep fade transitions */
-  .animate-in,
-  .animate-out {
+  .animate-in, .animate-out {
     animation-duration: 0.01ms !important;
   }
-
-  /* Prevent unwanted scale transforms in reduced motion */
   [data-pressable]:active,
-  button:active,
-  .btn:active {
+  button:active {
     transform: none !important;
   }
-
   @keyframes shimmer {
     from { opacity: 0.5; }
     to { opacity: 0.5; }

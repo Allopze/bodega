@@ -152,7 +152,7 @@ export function ProductPicker({
           className={cn(
             "h-8 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] pl-7 pr-3 text-sm",
             "text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)]",
-            "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-100)]",
+            "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)]",
             "transition-[border-color,box-shadow] duration-[var(--duration-fast)]",
           )}
           placeholder={placeholder}
@@ -199,7 +199,7 @@ export function ProductPicker({
                 "flex items-center gap-2 px-3 py-2 cursor-pointer text-left",
                 "transition-colors duration-[var(--duration-fast)]",
                 i === safeActiveIndex
-                  ? "bg-[var(--color-primary-50)] text-[var(--color-primary-700)]"
+                  ? "bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]"
                   : "hover:bg-[var(--color-surface-2)]",
               )}
             >
@@ -220,7 +220,7 @@ export function ProductPicker({
                 "border-t border-[var(--color-border)]",
                 "transition-colors duration-[var(--duration-fast)]",
                 safeActiveIndex === filtered.length
-                  ? "bg-[var(--color-primary-50)] text-[var(--color-primary-700)]"
+                  ? "bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]"
                   : "hover:bg-[var(--color-surface-2)]",
               )}
             >

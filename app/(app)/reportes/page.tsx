@@ -170,7 +170,7 @@ function ExportLinks({
   tone?: "neutral" | "signal"
 }) {
   const baseClass = tone === "signal"
-    ? "border-[var(--color-signal-100)] bg-[var(--color-signal-50)] text-[var(--color-signal-600)] hover:opacity-80"
+    ? "border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)] hover:opacity-80"
     : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
 
   return (

@@ -3,9 +3,8 @@ import type { Session } from "next-auth"
 import type { ComponentType } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
-import { PageHeader } from "@/components/ui/page-header"
+import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Stagger } from "@/components/ui/stagger"
 import { db } from "@/db"
 import {
   products,
@@ -29,7 +28,6 @@ import {
   ShoppingCart,
   Truck,
   Warehouse,
-  Warning,
 } from "@phosphor-icons/react/dist/ssr"
 import {
   buildWorkTasks,
@@ -71,13 +69,6 @@ const PRIORITY_LABEL: Record<WorkPriority, string> = {
   low:      "Baja",
 }
 
-const PRIORITY_CLASS: Record<WorkPriority, string> = {
-  critical: "border-[var(--color-danger)] bg-[var(--color-danger-50)] text-[var(--color-danger)]",
-  high:     "border-[var(--color-warning-100)] bg-[var(--color-warning-50)] text-[var(--color-warning-700)]",
-  normal:   "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
-  low:      "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-subtle)]",
-}
-
 function formatCLP(amount: number) {
   return new Intl.NumberFormat("es-CL", {
     style: "currency",
@@ -110,68 +101,71 @@ export default async function DashboardPage() {
     : 0
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-[var(--duration-default)]">
+    <div className="space-y-10 animate-in fade-in duration-[var(--duration-default)]">
       <PageHeader
+        eyebrow="Tablero"
         title="Trabajo de hoy"
         description={`Hola, ${session.user.name?.split(" ")[0] ?? "usuario"}. Estas son las acciones que mantienen los pedidos avanzando.`}
       />
 
-      <section className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      {/* ── Tareas ── */}
+      <section>
+        <header className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-2 mb-4">
           <div>
-            <h2 className="text-base font-semibold text-[var(--color-text)]">Tareas pendientes</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Ordenadas por urgencia y antigüedad. Cada tarjeta te lleva al siguiente paso.
-            </p>
+            <p className="text-eyebrow">01 — Pendientes</p>
+            <h2 className="text-h2 mt-1">Tareas</h2>
           </div>
-          <span className="text-xs font-medium text-[var(--color-text-subtle)]">
-            {tasks.length} tarea{tasks.length !== 1 ? "s" : ""}
-          </span>
-        </div>
+          <p className="font-mono text-xs text-[var(--color-text-muted)] tabular-nums">
+            {tasks.length} {tasks.length === 1 ? "tarea" : "tareas"}
+          </p>
+        </header>
 
         {visibleTasks.length === 0 ? (
           <EmptyState
-            icon={<CheckCircle size={24} />}
+            icon={<CheckCircle size={22} />}
             title="Sin tareas pendientes"
             description="No hay aprobaciones, órdenes de compra, recepciones o entregas que requieran acción en este momento."
           />
         ) : (
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-            {visibleTasks.map((task) => (
-              <TaskCard key={task.id} task={task} />
+          <ol className="border border-[var(--color-border)] divide-y divide-[var(--color-border)] bg-[var(--color-surface)]">
+            {visibleTasks.map((task, i) => (
+              <li key={task.id}>
+                <TaskRow task={task} index={i} />
+              </li>
             ))}
-          </div>
+          </ol>
         )}
       </section>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-h2 text-[var(--color-text)]">Resumen operativo</h2>
-          <p className="mt-1 text-sub">
-            Indicadores rápidos para mirar carga, costos y alertas.
-          </p>
-        </div>
+      {/* ── Indicadores ── */}
+      <section>
+        <header className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-2 mb-4">
+          <div>
+            <p className="text-eyebrow">02 — Indicadores</p>
+            <h2 className="text-h2 mt-1">Resumen operativo</h2>
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">Carga, costos y alertas</p>
+        </header>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <MetricCard
+        <dl className="grid grid-cols-1 md:grid-cols-3 border border-[var(--color-border)] divide-y md:divide-y-0 md:divide-x divide-[var(--color-border)] bg-[var(--color-surface)]">
+          <MetricCell
             icon={Coins}
             label="Inversión en OC emitidas"
             value={formatCLP(data.summary.totalCosts)}
           />
-          <MetricCard
+          <MetricCell
             icon={ClipboardText}
             label="Solicitudes visibles"
             value={String(data.summary.totalRequests)}
           />
-          <MetricCard
+          <MetricCell
             icon={CheckCircle}
             label="Tasa de aprobación"
             value={`${approvalRate}%`}
-            tone="success"
           />
-        </div>
+        </dl>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 lg:grid-cols-4 border border-[var(--color-border)] divide-x divide-[var(--color-border)] bg-[var(--color-surface)]">
           <QuickLink href="/aprobaciones" label="Pendientes de aprobación" value={data.metrics.pending_approvals} />
           <QuickLink href="/compras/nueva" label="Aprobados sin OC" value={data.metrics.approved_without_oc} />
           <QuickLink href="/recepcion" label="OC por recibir" value={data.metrics.orders_pending_receipt} />
@@ -179,38 +173,47 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-sm)]">
-        <h2 className="text-h2">Actividad y costos por faena</h2>
+      {/* ── Faenas ── */}
+      <section>
+        <header className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-2 mb-4">
+          <div>
+            <p className="text-eyebrow">03 — Faenas</p>
+            <h2 className="text-h2 mt-1">Actividad y costos por faena</h2>
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">Ordenado por OC emitida</p>
+        </header>
+
         {data.worksitesBreakdown.length === 0 ? (
-          <div className="py-8 text-center">
+          <div className="border border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center">
             <p className="text-sm text-[var(--color-text-subtle)]">No hay actividad registrada en las faenas visibles.</p>
           </div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm" aria-label="Actividad y costos por faena">
+          <div className="border border-[var(--color-border)] bg-[var(--color-surface)] overflow-x-auto">
+            <table className="w-full border-collapse text-left text-[13px]" aria-label="Actividad y costos por faena">
               <thead>
                 <tr className="border-b border-[var(--color-border-strong)] text-[var(--color-text-muted)]">
-                  <th className="px-3 py-2.5 font-medium">Faena</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Solicitudes</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Pendientes aprob.</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Aprobadas</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Total OC emitidas</th>
+                  <th scope="col" className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Faena</th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-medium text-xs uppercase tracking-wider">Solicitudes</th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-medium text-xs uppercase tracking-wider">Pendientes</th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-medium text-xs uppercase tracking-wider">Aprobadas</th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-medium text-xs uppercase tracking-wider">Total OC</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
-                {data.worksitesBreakdown.map((row) => (
-                  <tr key={row.id} className="transition-colors hover:bg-[var(--color-surface-2)]">
-                    <td className="px-3 py-3 font-medium text-[var(--color-text)]">{row.name}</td>
-                    <td className="px-3 py-3 text-right font-mono">{row.requestsCount}</td>
-                    <td className="px-3 py-3 text-right font-mono">
-                      <span className={cn(row.pendingCount > 0 ? "font-bold text-[var(--color-warning-700)]" : "text-[var(--color-text-subtle)]")}>
-                        {row.pendingCount}
-                      </span>
+              <tbody>
+                {data.worksitesBreakdown.map((row, i) => (
+                  <tr key={row.id} className={cn(
+                    "transition-colors hover:bg-[var(--color-surface-2)]",
+                    i > 0 && "border-t border-[var(--color-border)]",
+                  )}>
+                    <td className="px-4 py-3 font-medium text-[var(--color-text)]">{row.name}</td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.requestsCount}</td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums">
+                      {row.pendingCount > 0
+                        ? <span className="font-semibold text-[var(--color-signal-ink)]">{row.pendingCount}</span>
+                        : <span className="text-[var(--color-text-faint)]">0</span>}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono">{row.approvedCount}</td>
-                    <td className="px-3 py-3 text-right font-mono font-medium text-[var(--color-text)]">
-                      {formatCLP(row.totalCost)}
-                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.approvedCount}</td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums font-medium text-[var(--color-text)]">{formatCLP(row.totalCost)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -222,70 +225,80 @@ export default async function DashboardPage() {
   )
 }
 
-function TaskCard({ task }: { task: WorkTask }) {
+function TaskRow({ task, index }: { task: WorkTask; index: number }) {
   const Icon = TASK_ICON[task.type]
-
   return (
     <Link
       href={task.href}
       className={cn(
-        "group grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4",
-        "transition-[background-color,border-color,box-shadow,transform] duration-[var(--duration-default)] ease-[var(--ease-out)]",
-        "hover:-translate-y-0.5 hover:border-[var(--color-primary-100)] hover:bg-[var(--color-primary-50)] hover:shadow-[var(--shadow-sm)] active:scale-[0.99]",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
+        "group grid grid-cols-[2.25rem_1fr_auto] md:grid-cols-[3rem_2.5rem_1fr_auto] items-center gap-3 px-4 py-3",
+        "transition-colors hover:bg-[var(--color-surface-2)]",
       )}
     >
-      <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-surface)] group-hover:text-[var(--color-primary)]">
-        <Icon size={20} />
-      </div>
-
+      <span className="font-mono text-[11px] text-[var(--color-text-faint)] tabular-nums">
+        {String(index + 1).padStart(2, "0")}
+      </span>
+      <span className="hidden md:flex h-8 w-8 items-center justify-center text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">
+        <Icon size={16} />
+      </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">{task.title}</h3>
-          <span className={cn("rounded-[var(--radius-sm)] border px-1.5 py-0.5 text-[10px] font-medium", PRIORITY_CLASS[task.priority])}>
-            {PRIORITY_LABEL[task.priority]}
-          </span>
+          <h3 className="truncate text-[13.5px] font-semibold text-[var(--color-text)]">{task.title}</h3>
+          <PriorityTag priority={task.priority} />
         </div>
-        <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">{task.subtitle}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[var(--color-text-muted)]">
-            {task.statusLabel}
-          </span>
-          <span className="text-[var(--color-text-subtle)]">{formatShortDate(task.createdAt)}</span>
-        </div>
+        <p className="mt-0.5 truncate text-[12px] text-[var(--color-text-muted)]">{task.subtitle}</p>
+        <p className="mt-1 font-mono text-[10.5px] uppercase tracking-wider text-[var(--color-text-faint)]">
+          {task.statusLabel} · {formatShortDate(task.createdAt)}
+        </p>
       </div>
-
-      <div className="hidden items-center gap-1 text-sm font-medium text-[var(--color-primary)] sm:flex">
+      <div className="hidden md:flex items-center gap-1 text-xs font-medium text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">
         {task.ctaLabel}
-        <ArrowRight size={14} className="transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5" />
+        <ArrowRight size={12} className="transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5" />
       </div>
     </Link>
   )
 }
 
-function MetricCard({
+function PriorityTag({ priority }: { priority: WorkPriority }) {
+  if (priority === "critical") {
+    return (
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--color-signal-ink)]">
+        ● {PRIORITY_LABEL[priority]}
+      </span>
+    )
+  }
+  if (priority === "high") {
+    return (
+      <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[var(--color-warning-ink)]">
+        ● {PRIORITY_LABEL[priority]}
+      </span>
+    )
+  }
+  return (
+    <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">
+      ● {PRIORITY_LABEL[priority]}
+    </span>
+  )
+}
+
+function MetricCell({
   icon: Icon,
   label,
   value,
-  tone = "primary",
 }: {
   icon: IconComponent
   label: string
   value: string
-  tone?: "primary" | "success"
 }) {
   return (
-    <div className="flex items-center gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-sm)]">
-      <div className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius)]",
-        tone === "success" ? "bg-[var(--color-success-50)] text-[var(--color-success)]" : "bg-[var(--color-primary-50)] text-[var(--color-primary)]",
-      )}>
-        <Icon size={22} />
+    <div className="px-5 py-5">
+      <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
+        <Icon size={14} />
+        <p className="text-eyebrow">{label}</p>
       </div>
-      <div>
-        <p className="text-xs font-medium text-[var(--color-text-muted)]">{label}</p>
-        <p className="mt-0.5 text-xl font-bold text-[var(--color-text)]">{value}</p>
-      </div>
+      <p className="mt-3 font-serif text-[1.75rem] leading-none font-medium text-[var(--color-text)] tracking-tight">
+        {value}
+      </p>
     </div>
   )
 }
@@ -294,10 +307,12 @@ function QuickLink({ href, label, value }: { href: string; label: string; value:
   return (
     <Link
       href={href}
-      className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors duration-[var(--duration-fast)] hover:border-[var(--color-primary-100)] hover:bg-[var(--color-primary-50)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+      className="block px-4 py-3 transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
     >
-      <p className="text-2xl font-bold leading-none text-[var(--color-text)]">{value}</p>
-      <p className="mt-1 text-xs text-[var(--color-text-muted)]">{label}</p>
+      <p className="font-serif text-[1.5rem] font-medium leading-none text-[var(--color-text)] tracking-tight tabular-nums">
+        {value}
+      </p>
+      <p className="mt-1.5 text-[12px] text-[var(--color-text-muted)]">{label}</p>
     </Link>
   )
 }

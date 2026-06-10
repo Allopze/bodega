@@ -202,7 +202,7 @@ export function RequestList({
       <Dialog open={showWarningModal} onOpenChange={setShowWarningModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="flex flex-col items-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-warning-50)] text-[var(--color-warning-700)] mb-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)] mb-3">
               <Warning size={24} weight="bold" />
             </div>
             <DialogTitle>Sin faenas asignadas</DialogTitle>

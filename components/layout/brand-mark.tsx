@@ -2,28 +2,11 @@
 
 import Image from "next/image"
 
-/* ── BrandMark ─────────────────────────────────────────────────────────────
-   Muestra el logo de Chome + el nombre + subtítulo opcional.
-
-   variant "dark"  → logo blanco, texto claro  (fondos oscuros: sidebar, login-desktop)
-   variant "light" → logo verde,  texto oscuro (fondos claros: login-móvil, registro)
-   ─────────────────────────────────────────────────────────────────────── */
-
 interface BrandMarkProps {
-  /** "dark" para fondos oscuros (brand-surface), "light" para fondos claros */
   variant?: "dark" | "light"
-  /** Tamaño del logo en px (ancho y alto). Default 32. */
   size?: number
-  /**
-   * Muestra el subtítulo "Solicitudes y Bodega".
-   * - `true`   → texto en dos líneas (Chome / Solicitudes y Bodega)
-   * - `string` → texto en una sola línea junto al título
-   * - `false`  → solo muestra "Chome"
-   */
   subtitle?: boolean | string
-  /** Override del tamaño del título. Default "sm". */
   titleSize?: "sm" | "base" | "lg"
-  /** Oculta el texto del logo (título y subtítulo) */
   hideText?: boolean
 }
 
@@ -45,11 +28,9 @@ export function BrandMark({
   titleSize  = "sm",
   hideText   = false,
 }: BrandMarkProps) {
-  const isDark      = variant === "dark"
-  const titleColor  = isDark ? "text-[var(--color-brand-text)]"       : "text-[var(--color-text)]"
+  const isDark        = variant === "dark"
+  const titleColor    = isDark ? "text-[var(--color-brand-text)]"       : "text-[var(--color-text)]"
   const subtitleColor = isDark ? "text-[var(--color-brand-text-muted)]" : "text-[var(--color-text-muted)]"
-
-  /* subtitle como string → se muestra inline junto al título en una sola línea */
   const inlineSubtitle = typeof subtitle === "string"
 
   return (
@@ -66,16 +47,16 @@ export function BrandMark({
       {!hideText && (
         <div>
           {inlineSubtitle ? (
-            <p className={`font-display font-bold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
+            <p className={`font-sans font-semibold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
               {subtitle}
             </p>
           ) : (
             <>
-              <p className={`font-display font-bold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
+              <p className={`font-sans font-semibold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
                 Chome
               </p>
               {subtitle === true && (
-                <p className={`text-[10px] ${subtitleColor} leading-tight`}>
+                <p className={`text-[10px] font-mono uppercase tracking-wider ${subtitleColor} leading-tight mt-0.5`}>
                   Solicitudes y Bodega
                 </p>
               )}

@@ -72,7 +72,7 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
         />
 
         <p className="mt-5 text-center text-xs text-[var(--color-text-subtle)]">
-          <Link href="/login" className="text-[var(--color-primary-700)] hover:underline">
+          <Link href="/login" className="text-[var(--color-primary-ink)] hover:underline">
             Volver a iniciar sesión
           </Link>
         </p>

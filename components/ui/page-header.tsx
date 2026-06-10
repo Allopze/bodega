@@ -8,21 +8,26 @@ interface PageHeaderProps {
   actions?:    React.ReactNode
   breadcrumb?: React.ReactNode
   className?:  string
+  /** Optional eyebrow text rendered above the title (e.g., section number). */
+  eyebrow?:    string
 }
 
-export function PageHeader({ title, description, actions, breadcrumb, className }: PageHeaderProps) {
+export function PageHeader({ title, description, actions, breadcrumb, className, eyebrow }: PageHeaderProps) {
   return (
-    <div className={cn("pb-4 mb-4 border-b border-[var(--color-border)]", className)}>
+    <div className={cn("pb-5 mb-6 border-b border-[var(--color-rule)]", className)}>
       {breadcrumb && (
-        <div className="mb-2">{breadcrumb}</div>
+        <div className="mb-3">{breadcrumb}</div>
       )}
-      <div className="flex min-h-[2rem] flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div>
+      <div className="flex min-h-[2rem] flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+        <div className="min-w-0">
+          {eyebrow && (
+            <p className="text-eyebrow mb-1.5">{eyebrow}</p>
+          )}
           <h1 className="text-h1 text-[var(--color-text)]">
             {title}
           </h1>
           {description && (
-            <p className="mt-0.5 text-sub">
+            <p className="mt-1.5 max-w-[68ch] text-sub">
               {description}
             </p>
           )}
@@ -37,7 +42,6 @@ export function PageHeader({ title, description, actions, breadcrumb, className 
   )
 }
 
-/* ── Breadcrumbs ──────────────────────────────────────────────────────────── */
 interface BreadcrumbItem {
   label: string
   href?: string
@@ -50,11 +54,11 @@ interface BreadcrumbsProps {
 
 export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
   return (
-    <nav aria-label="Navegación estructural" className={cn("flex items-center gap-1", className)}>
+    <nav aria-label="Navegación estructural" className={cn("flex items-center gap-1.5", className)}>
       {items.map((item, i) => (
         <React.Fragment key={i}>
           {i > 0 && (
-            <span className="text-[var(--color-text-subtle)] text-xs" aria-hidden>/</span>
+            <span className="text-[var(--color-text-faint)] text-xs font-mono" aria-hidden>/</span>
           )}
           {item.href ? (
             <Link

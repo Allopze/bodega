@@ -1,7 +1,16 @@
 import type { Metadata } from "next"
 import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
+import { Source_Serif_4 } from "next/font/google"
 import "./globals.css"
+
+const serif = Source_Serif_4({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal"],
+  variable: "--font-serif",
+  display: "swap",
+})
 
 export const metadata: Metadata = {
   title: {
@@ -20,7 +29,7 @@ export default function RootLayout({
   return (
     <html
       lang="es-CL"
-      className={`${GeistSans.variable} ${GeistMono.variable}`}
+      className={`${GeistSans.variable} ${GeistMono.variable} ${serif.variable}`}
     >
       <body>{children}</body>
     </html>

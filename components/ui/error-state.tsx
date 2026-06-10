@@ -39,7 +39,7 @@ export function ErrorState({
       {icon ?? (
         <div className={cn(
           "flex items-center justify-center rounded-xl",
-          "bg-[var(--color-danger-50)] text-[var(--color-danger)]",
+          "bg-[var(--color-danger-tint)] text-[var(--color-danger)]",
           compact ? "h-11 w-11 mb-3" : "h-14 w-14 mb-4",
         )}>
           <Warning size={compact ? 22 : 24} weight="fill" />

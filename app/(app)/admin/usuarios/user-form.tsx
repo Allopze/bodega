@@ -192,7 +192,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
 
             {/* Roles */}
             <div className="mt-5">
-              <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)] mb-2">
+              <p className="text-eyebrow mb-2">
                 Roles
               </p>
               {state.fieldErrors?.roleIds?.[0] && (
@@ -212,7 +212,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
                           "transition-[background-color,border-color,color] duration-[var(--duration-fast)]",
                           "active:scale-[0.97]",
                           checked
-                            ? "bg-[var(--color-primary-50)] border-[var(--color-primary-100)] text-[var(--color-primary-700)] font-medium"
+                            ? "bg-[var(--color-primary-tint)] border-[var(--color-primary-line)] text-[var(--color-primary-ink)] font-medium"
                             : "bg-[var(--color-surface-2)] border-[var(--color-border)] text-[var(--color-text-muted)]",
                         ].join(" ")
                       }
@@ -226,7 +226,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
 
             {/* Faenas */}
             <div className="mt-5">
-              <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)] mb-2">
+              <p className="text-eyebrow mb-2">
                 Faenas asignadas
               </p>
               {state.fieldErrors?.worksiteAssignments?.[0] && (

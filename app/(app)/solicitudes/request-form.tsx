@@ -549,7 +549,7 @@ function ItemEditor({
               )}
             </div>
           ) : item.productNameFree ? (
-            <div className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-warning-100)] bg-[var(--color-warning-50)] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2">
               <Package size={14} className="text-[var(--color-text-subtle)] shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-[var(--color-text)]">{item.productNameFree}</p>
@@ -559,7 +559,7 @@ function ItemEditor({
                 <button
                   type="button"
                   onClick={() => onUpdate({ productNameFree: "" })}
-                  className="shrink-0 text-xs text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-700)] active:scale-[0.97]"
+                  className="shrink-0 text-xs text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-ink)] active:scale-[0.97]"
                 >
                   Elegir catálogo
                 </button>

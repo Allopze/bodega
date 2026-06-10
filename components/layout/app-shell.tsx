@@ -16,37 +16,22 @@ interface AppShellProps {
 export function AppShell({ session, worksiteName, badgeCounts, children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [isClosing,  setIsClosing]  = React.useState(false)
-  const [isCollapsed, setIsCollapsed] = React.useState(false)
 
   React.useEffect(() => {
-    // Read the collapsed preference from localStorage after mounting to avoid hydration mismatch
     const saved = localStorage.getItem("sidebar-collapsed")
-    if (saved === "true") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsCollapsed(true)
-    }
+    if (saved !== null) return
   }, [])
-
-  const toggleCollapse = () => {
-    setIsCollapsed((prev) => {
-      const next = !prev
-      localStorage.setItem("sidebar-collapsed", String(next))
-      return next
-    })
-  }
 
   function openDrawer()  { setMobileOpen(true);  setIsClosing(false) }
   function closeDrawer() {
     setIsClosing(true)
-    // Remove after slide-out finishes (--duration-slow = 300ms)
-    setTimeout(() => { setMobileOpen(false); setIsClosing(false) }, 310)
+    setTimeout(() => { setMobileOpen(false); setIsClosing(false) }, 290)
   }
 
   const showDrawer = mobileOpen || isClosing
 
   return (
-    <div className="min-h-[100dvh] bg-bg">
-      {/* Skip link — connects to main-content below */}
+    <div className="min-h-[100dvh] bg-bg text-text">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-100 focus:rounded-(--radius) focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:shadow-(--shadow-md) focus:outline-2 focus:outline-primary"
@@ -54,37 +39,26 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
         Saltar al contenido
       </a>
 
-      {/* ── Header full-width ── */}
       <TopBar
         session={session}
         onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
-        isCollapsed={isCollapsed}
-        onToggleCollapse={toggleCollapse}
         worksiteName={worksiteName}
         isMenuOpen={mobileOpen}
       />
 
-      {/* ── Body row: sidebar + content ── */}
-      <div className="flex min-h-[calc(100dvh-3.5rem)]">
+      <div className="flex min-h-[calc(100dvh-3.25rem)]">
 
-        {/* ── Desktop sidebar ── */}
-        <div className={cn(
-          "hidden lg:sticky lg:top-14 lg:flex lg:h-[calc(100dvh-3.5rem)] lg:flex-col lg:shrink-0 bg-[var(--color-brand-surface)] transition-all duration-300 ease-drawer",
-          isCollapsed ? "lg:w-18" : "lg:w-64"
-        )}>
+        {/* Desktop rail — flat surface, no dark panel, no shadow */}
+        <div className="hidden lg:sticky lg:top-[3.25rem] lg:flex lg:h-[calc(100dvh-3.25rem)] lg:flex-col lg:shrink-0 bg-surface border-r border-[var(--color-border)] lg:w-60">
           <Sidebar
             session={session}
             worksiteName={worksiteName}
             badgeCounts={badgeCounts}
-            isCollapsed={isCollapsed}
-            onToggleCollapse={toggleCollapse}
           />
         </div>
 
-        {/* ── Mobile sidebar (drawer with enter + exit animations) ── */}
         {showDrawer && (
           <>
-            {/* Overlay */}
             <div
               className={cn(
                 "fixed inset-0 z-40 lg:hidden",
@@ -96,10 +70,8 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
               onClick={closeDrawer}
               aria-hidden
             />
-            {/* Drawer */}
             <div className={cn(
-              "fixed inset-y-0 left-0 z-50 w-64 lg:hidden",
-              "shadow-(--shadow-lg)",
+              "fixed inset-y-0 left-0 z-50 w-64 lg:hidden bg-surface border-r border-[var(--color-border)]",
               isClosing
                 ? "animate-out slide-out-to-left duration-(--duration-slow) ease-drawer"
                 : "animate-in slide-in-from-left duration-(--duration-slow) ease-drawer",
@@ -109,13 +81,12 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
           </>
         )}
 
-        {/* ── Main content ── */}
         <main
           className="flex-1 min-w-0 bg-bg"
           id="main-content"
           tabIndex={-1}
         >
-          <div className="px-4 md:px-6 py-5 max-w-350 mx-auto min-h-full">
+          <div className="px-4 md:px-8 py-6 max-w-360 mx-auto min-h-full">
             {children}
           </div>
         </main>

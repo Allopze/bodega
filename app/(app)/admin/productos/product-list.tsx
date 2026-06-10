@@ -215,7 +215,7 @@ export function ProductList({ products, categories, allSuppliers }: {
       {categories.length > 0 && (
         <div className="mt-6 pt-5 border-t border-[var(--color-border)]">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
+            <p className="text-eyebrow">
               Categorías ({categories.length})
             </p>
             <button onClick={openNewCat} className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1 active:scale-[0.97] transition-transform">
@@ -228,7 +228,7 @@ export function ProductList({ products, categories, allSuppliers }: {
                 key={c.id}
                 type="button"
                 onClick={() => openEditCat(c)}
-                className="group flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary-100)] hover:bg-[var(--color-primary-50)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                className="group flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-primary-tint)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
               >
                 <span className="text-[var(--color-text)]">{c.name}</span>
                 {c.isEpp && <Badge variant="info" size="sm">EPP</Badge>}

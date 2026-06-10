@@ -68,7 +68,7 @@ export function NotificationBell() {
               <button
                 onClick={() => markAllRead.mutate()}
                 disabled={markAllRead.isPending}
-                className="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-600)] transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-ink)] transition-colors disabled:opacity-50"
               >
                 <CheckCircle size={12} />
                 Marcar todas leídas
@@ -118,7 +118,7 @@ function NotificationRow({
     "hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)]",
     "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
     "active:scale-[0.99]",
-    !notification.isRead && "bg-[var(--color-primary-50)]",
+    !notification.isRead && "bg-[var(--color-primary-tint)]",
   )
 
   const content = (

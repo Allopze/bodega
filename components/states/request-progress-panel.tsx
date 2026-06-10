@@ -35,8 +35,8 @@ export function RequestProgressPanel({ progress }: { progress: RequestProgress }
                 key={stage}
                 className={cn(
                   "flex items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-xs",
-                  isDone && "border-[var(--color-success-100)] bg-[var(--color-success-50)] text-[var(--color-success)]",
-                  isCurrent && !isDone && "border-[var(--color-primary-100)] bg-[var(--color-primary-50)] text-[var(--color-primary)]",
+                  isDone && "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success)]",
+                  isCurrent && !isDone && "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] text-[var(--color-primary)]",
                   !isDone && !isCurrent && "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]",
                 )}
               >

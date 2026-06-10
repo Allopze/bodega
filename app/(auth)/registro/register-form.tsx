@@ -49,7 +49,7 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
       <input type="hidden" name="token" value={token} />
 
       {tokenError && (
-        <p className="mb-4 rounded-[var(--radius)] border border-[var(--color-danger-100)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger)]">
+        <p className="mb-4 rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
           {tokenError}
         </p>
       )}

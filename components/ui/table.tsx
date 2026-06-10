@@ -64,7 +64,7 @@ const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTML
       className={cn(
         "transition-colors duration-[var(--duration-fast)]",
         "hover:bg-[var(--color-surface-2)]",
-        "data-[selected=true]:bg-[var(--color-primary-50)]",
+        "data-[selected=true]:bg-[var(--color-primary-tint)]",
         className,
       )}
       {...props}

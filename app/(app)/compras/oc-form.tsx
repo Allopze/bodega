@@ -335,7 +335,7 @@ export function OcForm({
                 <div
                   key={item.id}
                   className={`flex items-start gap-3 px-4 py-3 transition-colors duration-[var(--duration-fast)] ${
-                    isSelected ? "bg-[var(--color-primary-50)]" : "bg-[var(--color-surface)]"
+                    isSelected ? "bg-[var(--color-primary-tint)]" : "bg-[var(--color-surface)]"
                   }`}
                 >
                   {/* Checkbox */}

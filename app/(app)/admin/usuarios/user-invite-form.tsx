@@ -115,7 +115,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
               <div
                 role="status"
                 aria-live="polite"
-                className="rounded-[var(--radius)] border border-[var(--color-warning-100)] bg-[var(--color-warning-50)] p-4"
+                className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4"
               >
                 <div className="flex items-start gap-2">
                   <Envelope size={16} weight="bold" className="mt-0.5 text-[var(--color-warning)]" />
@@ -231,7 +231,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
               </FieldGroup>
 
               <div className="mt-5">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
+                <p className="mb-2 text-eyebrow">
                   Roles
                 </p>
                 {state.fieldErrors?.roleIds?.[0] && (
@@ -249,7 +249,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                           "rounded-[var(--radius)] border px-3 py-1 text-xs",
                           "transition-[background-color,border-color,color] duration-[var(--duration-fast)] active:scale-[0.97]",
                           checked
-                            ? "border-[var(--color-primary-100)] bg-[var(--color-primary-50)] font-medium text-[var(--color-primary-700)]"
+                            ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] font-medium text-[var(--color-primary-ink)]"
                             : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
                         ].join(" ")}
                       >
@@ -261,7 +261,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
               </div>
 
               <div className="mt-5">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
+                <p className="mb-2 text-eyebrow">
                   Faenas asignadas
                 </p>
                 {state.fieldErrors?.worksiteAssignments?.[0] && (

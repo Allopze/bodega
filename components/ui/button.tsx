@@ -6,33 +6,26 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  // Base: pressable affordance per Emil (scale on :active) + clean transitions
   [
     "inline-flex items-center justify-center gap-2",
-    "font-sans font-medium text-sm leading-[var(--leading-label)]",
-    "rounded-[var(--radius)]",
+    "font-sans font-medium text-[13px] leading-[var(--leading-label)]",
+    "rounded-[var(--radius-sm)]",
     "select-none cursor-pointer",
-    "transition-[transform,opacity,background-color,box-shadow]",
-    "duration-[var(--duration-fast)]",
-    "ease-[var(--ease-out)]",
+    "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
     "disabled:pointer-events-none disabled:opacity-45",
-    // Emil: :active scale — physical press feedback
-    "active:scale-[0.97]",
-    "data-[pressable]:active:scale-[0.97]",
   ],
   {
     variants: {
       variant: {
         primary: [
           "bg-[var(--color-primary)] text-white",
-          "hover:bg-[var(--color-primary-600)]",
-          "shadow-[0_1px_2px_oklch(0_0_0/0.12)]",
+          "hover:bg-[var(--color-primary-ink)]",
         ],
         secondary: [
-          "bg-[var(--color-surface-2)] text-[var(--color-text)]",
+          "bg-[var(--color-surface)] text-[var(--color-text)]",
           "border border-[var(--color-border)]",
-          "hover:bg-[var(--color-primary-50)] hover:border-[var(--color-primary-100)]",
+          "hover:bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
         ],
         ghost: [
           "text-[var(--color-text-muted)]",
@@ -40,25 +33,24 @@ const buttonVariants = cva(
         ],
         destructive: [
           "bg-[var(--color-danger)] text-white",
-          "hover:bg-[var(--color-danger-700)]",
+          "hover:bg-[var(--color-danger-ink)]",
         ],
         signal: [
-          // For the "pendiente/no-incluido" never-miss call to action
-          "bg-[var(--color-signal-50)] text-[var(--color-signal-700)]",
-          "border border-[var(--color-signal-100)]",
-          "hover:bg-[var(--color-signal-100)]",
+          "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]",
+          "border border-[var(--color-signal-line)]",
+          "hover:bg-[var(--color-signal-line)]",
         ],
         link: [
-          "text-[var(--color-primary-700)] underline-offset-4",
+          "text-[var(--color-primary-ink)] underline-offset-4",
           "hover:underline",
           "p-0 h-auto",
         ],
       },
       size: {
-        sm:      "h-7 px-3 text-xs rounded-[var(--radius-sm)]",
-        default: "h-9 px-4",
-        lg:      "h-10 px-5 text-base",
-        icon:    "h-9 w-9 p-0",
+        sm:      "h-7 px-2.5 text-xs",
+        default: "h-8 px-3.5",
+        lg:      "h-9 px-4 text-[13px]",
+        icon:    "h-8 w-8 p-0",
         "icon-sm": "h-7 w-7 p-0",
       },
     },
@@ -84,7 +76,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={cn(buttonVariants({ variant, size }), className)}
         disabled={disabled || loading}
-        data-pressable
         aria-busy={loading}
         {...props}
       >

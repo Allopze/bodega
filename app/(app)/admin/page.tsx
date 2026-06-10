@@ -91,9 +91,9 @@ export default async function AdminPage() {
             <Link
               key={m.href}
               href={m.href}
-              className="flex items-start gap-4 p-5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)] hover:border-[var(--color-primary-100)] hover:shadow-sm transition-all duration-[var(--duration-fast)] group cursor-pointer"
+              className="flex items-start gap-4 p-5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)] hover:border-[var(--color-primary-line)] hover:shadow-sm transition-all duration-[var(--duration-fast)] group cursor-pointer"
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] group-hover:bg-[var(--color-primary-50)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]">
                 <Icon size={20} />
               </div>
               <div className="min-w-0">

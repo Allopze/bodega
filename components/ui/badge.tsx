@@ -4,28 +4,26 @@ import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
   [
-    "inline-flex items-center gap-1 rounded-full",
-    "text-xs font-medium leading-[var(--leading-label)]",
+    "inline-flex items-center gap-1.5",
+    "font-mono text-[10px] font-semibold uppercase tracking-wider",
     "whitespace-nowrap",
   ],
   {
     variants: {
       variant: {
-        default:     "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]",
-        // primary and success intentionally share the same green palette; they are semantically
-        // distinct (primary = confirmed/action, success = completed/approved) but visually unified.
-        primary:     "bg-[var(--color-primary-50)] text-[var(--color-primary-700)] border border-[var(--color-primary-100)]",
-        success:     "bg-[var(--color-success-50)] text-[var(--color-success-700)] border border-[var(--color-success-100)]",
-        warning:     "bg-[var(--color-warning-50)] text-[var(--color-warning-700)] border border-[var(--color-warning-100)]",
-        signal:      "bg-[var(--color-signal-50)] text-[var(--color-signal-700)] border border-[var(--color-signal-100)]",
-        info:        "bg-[var(--color-info-50)] text-[var(--color-info-700)] border border-[var(--color-info-100)]",
-        danger:      "bg-[var(--color-danger-50)] text-[var(--color-danger-700)] border border-[var(--color-danger-100)]",
-        outline:     "border border-[var(--color-border)] text-[var(--color-text-muted)]",
+        default:  "text-[var(--color-text-muted)]",
+        primary:  "text-[var(--color-primary-ink)]",
+        success:  "text-[var(--color-success-ink)]",
+        warning:  "text-[var(--color-warning-ink)]",
+        signal:   "text-[var(--color-signal-ink)]",
+        info:     "text-[var(--color-info-ink)]",
+        danger:   "text-[var(--color-danger-ink)]",
+        outline:  "text-[var(--color-text-muted)] border border-[var(--color-border)] px-1.5 py-0.5",
       },
       size: {
-        sm:      "px-1.5 py-0.5 text-[10px]",
-        default: "px-2 py-1",
-        lg:      "px-2.5 py-1 text-sm",
+        sm:      "text-[9.5px]",
+        default: "text-[10px]",
+        lg:      "text-[11px]",
       },
     },
     defaultVariants: {

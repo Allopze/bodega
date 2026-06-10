@@ -21,11 +21,11 @@ const SelectTrigger = React.forwardRef<
       "px-3 py-1.5 text-sm text-[var(--color-text)]",
       "transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
       "hover:border-[var(--color-border-strong)]",
-      "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-100)]",
+      "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)]",
       "disabled:cursor-not-allowed disabled:opacity-50",
       "data-[placeholder]:text-[var(--color-text-subtle)]",
       "active:scale-[0.99]",
-      error && "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-[var(--color-danger-100)]",
+      error && "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-[var(--color-danger-line)]",
       className,
     )}
     {...props}
@@ -129,7 +129,7 @@ const SelectItem = React.forwardRef<
       "relative flex w-full cursor-default select-none items-center",
       "rounded-[var(--radius-sm)] py-1.5 pl-2 pr-8 text-sm",
       "text-[var(--color-text)] outline-none",
-      "focus:bg-[var(--color-primary-50)] focus:text-[var(--color-primary-700)]",
+      "focus:bg-[var(--color-primary-tint)] focus:text-[var(--color-primary-ink)]",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-45",
       "transition-colors duration-[var(--duration-fast)]",
       className,

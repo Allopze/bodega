@@ -14,57 +14,58 @@ export default async function LoginPage() {
   const userCount = await getUserCount()
 
   return (
-    <div className="min-h-[100dvh] flex items-stretch">
-      {/* ── Brand panel (dark forest — brand moment) ── */}
-      <div
-        className="hidden lg:flex lg:w-115 lg:shrink-0 lg:flex-col px-10 py-12 justify-between"
-        style={{ background: "radial-gradient(ellipse 60% 50% at 20% 10%, oklch(0.280 0.055 155), oklch(0.216 0.045 155))" }}
-      >
-        {/* Logo */}
-        <BrandMark variant="dark" size={52} subtitle titleSize="lg" />
+    <div className="min-h-[100dvh] grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      {/* ── Brand panel — flat, editorial, single column of evidence ── */}
+      <aside className="hidden lg:flex lg:flex-col px-12 py-12 justify-between bg-[var(--color-surface)] border-r border-[var(--color-border)]">
+        <BrandMark variant="light" size={48} subtitle titleSize="lg" />
 
-        {/* Tagline */}
-        <div>
-          <p className="font-display text-3xl font-semibold text-(--color-brand-text)">
-            Control total del abastecimiento
+        <div className="max-w-[42ch]">
+          <p className="text-eyebrow mb-4">Sistema interno</p>
+          <p className="text-display text-[var(--color-text)]">
+            Control total del abastecimiento.
           </p>
-          <p className="mt-3 text-sm text-brand-text-muted leading-relaxed max-w-[32ch]">
+          <p className="mt-4 text-[15px] leading-relaxed text-[var(--color-text-muted)] max-w-[40ch]">
             Desde la solicitud de faena hasta la factura conciliada, sin perder un solo ítem.
           </p>
-          <ul className="mt-6 flex flex-col gap-3">
+
+          <dl className="mt-10 grid grid-cols-1 gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
             {[
-              "Trazabilidad del 100% de los ítems",
-              "Sin pérdidas desde despacho hasta bodega",
-              "Bodega activa Nivel 1 con OC y conciliación",
-            ].map((text) => (
-              <li key={text} className="flex items-start gap-2.5 text-sm text-brand-text-muted">
-                <span className="mt-[0.35rem] w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                {text}
-              </li>
+              ["01", "Trazabilidad del 100% de los ítems"],
+              ["02", "Sin pérdidas desde despacho hasta bodega"],
+              ["03", "Bodega activa Nivel 1 con OC y conciliación"],
+            ].map(([n, t]) => (
+              <div key={n} className="grid grid-cols-[3rem_1fr] items-center bg-[var(--color-surface)] px-4 py-3">
+                <dt className="text-eyebrow font-mono">{n}</dt>
+                <dd className="text-sm text-[var(--color-text)]">{t}</dd>
+              </div>
             ))}
-          </ul>
+          </dl>
         </div>
 
-        {/* Footer */}
-        <p className="text-[10px] text-brand-text-muted">
-          Sistema interno Chome — uso exclusivo del personal autorizado.
+        <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-faint)]">
+          Uso exclusivo del personal autorizado
         </p>
-      </div>
+      </aside>
 
-      {/* ── Login form (light panel) ── */}
-      <div className="flex flex-1 items-center justify-center px-8 py-16 bg-white">
-        <div className="w-full max-w-sm bg-surface border border-border rounded-(--radius-xl) shadow-(--shadow-md) px-8 py-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          {/* Mobile logo */}
-          <div className="mb-8 lg:hidden">
-            <BrandMark variant="light" size={44} subtitle="Chome Solicitudes y Bodega" titleSize="lg" />
+      {/* ── Login form (right) ── */}
+      <div className="flex items-center justify-center px-6 py-16 lg:px-16 bg-[var(--color-bg)]">
+        <div className="w-full max-w-[24rem]">
+          {/* Mobile brand */}
+          <div className="mb-10 lg:hidden">
+            <BrandMark variant="light" size={40} subtitle="Chome Solicitudes y Bodega" titleSize="base" />
           </div>
 
-          <h1 className="font-display text-2xl font-semibold text-text mb-6">
+          <p className="text-eyebrow">Acceso</p>
+          <h1 className="mt-2 text-display text-[var(--color-text)]">
             Iniciar sesión
           </h1>
-          <Suspense fallback={null}>
-            <LoginForm showBootstrap={userCount === 0} />
-          </Suspense>
+          <p className="mt-2 text-sub">Ingresa tus credenciales para continuar.</p>
+
+          <div className="mt-8">
+            <Suspense fallback={null}>
+              <LoginForm showBootstrap={userCount === 0} />
+            </Suspense>
+          </div>
         </div>
       </div>
     </div>
