@@ -14,7 +14,7 @@ import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
 import { purchaseRequestItems } from "@/db/schema"
 
-export const metadata: Metadata = { title: "Compras" }
+export const metadata: Metadata = { title: "Órdenes de compra" }
 
 export default async function ComprasPage() {
   let session
@@ -56,12 +56,12 @@ export default async function ComprasPage() {
     return (
       <>
         <PageHeader
-          title="Compras"
+          title="Órdenes de compra"
           description="Órdenes de compra y bandeja de ítems aprobados."
           breadcrumb={
             <Breadcrumbs items={[
               { label: "Dashboard", href: "/dashboard" },
-              { label: "Compras" },
+              { label: "Órdenes de compra" },
             ]} />
           }
         />
@@ -118,12 +118,12 @@ export default async function ComprasPage() {
   return (
     <>
       <PageHeader
-        title="Compras"
+        title="Órdenes de compra"
         description="Órdenes de compra y bandeja de ítems aprobados."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Compras" },
+            { label: "Órdenes de compra" },
           ]} />
         }
       />

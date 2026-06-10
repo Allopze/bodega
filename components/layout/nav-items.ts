@@ -44,7 +44,7 @@ export const NAV_ITEMS: NavSection[] = [
         badge:       "count",
       },
       {
-        label:       "Compras",
+        label:       "Órdenes de compra",
         href:        "/compras",
         iconName:    "ShoppingCart",
         permissions: ["purchasing:view"],

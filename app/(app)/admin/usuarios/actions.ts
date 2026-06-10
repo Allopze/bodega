@@ -310,7 +310,7 @@ async function validateRoleWorksiteRules(
     return {
       ok: false,
       fieldErrors: {
-        worksiteAssignments: ["El solicitante de faena debe tener al menos una faena asignada"],
+        worksiteAssignments: ["El prevencionista de faena debe tener al menos una faena asignada"],
       },
     }
   }

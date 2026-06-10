@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     default: "Chome Solicitudes y Bodega",
     template: "%s — Chome Solicitudes y Bodega",
   },
-  description: "Sistema de abastecimiento, compras y bodega — Chome",
+  description: "Sistema de abastecimiento, órdenes de compra y bodega — Chome",
   robots: { index: false, follow: false },
 }
 

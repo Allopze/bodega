@@ -5,11 +5,11 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Compras"
+        title="Órdenes de compra"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Compras" },
+            { label: "Órdenes de compra" },
           ]} />
         }
       />

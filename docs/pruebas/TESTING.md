@@ -199,14 +199,14 @@ npm run dev                 # http://localhost:3000
 | Rol | Faenas | Descripción |
 |-----|--------|-------------|
 | Administrador | Cualquiera | Control total |
-| Jefa Chome | Cualquiera | Aprueba y gestiona compras |
-| Solicitante de faena | Faena específica | Crea solicitudes |
+| Jefa Chome | Cualquiera | Aprueba y gestiona órdenes de compra |
+| Prevencionista de faena | Faena específica | Crea solicitudes |
 | Secretaria | Cualquiera | Apoyo administrativo |
 | Prevencionista | Cualquiera | Aprueba EPP |
 
 #### Paso 4 — Flujo de solicitud
 
-1. Inicia sesión como **Solicitante de faena**
+1. Inicia sesión como **Prevencionista de faena**
 2. Ve a `/solicitudes/nueva`
 3. Selecciona faena y centro de costo
 4. Busca un producto del catálogo o escribe uno libre

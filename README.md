@@ -1,6 +1,6 @@
 # Chome Solicitudes y Bodega
 
-Sistema interno para solicitudes por faena, aprobaciones, compras, recepcion y bodega.
+Sistema interno para solicitudes por faena, aprobaciones, órdenes de compra, recepcion y bodega.
 
 ## Puesta en marcha
 
@@ -42,8 +42,8 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 3. Crea categorias, productos, atributos y proveedores asociados en `/admin/productos`.
 4. Crea bodegas en `/admin/bodegas`.
 5. Crea usuarios por rol y asignales faenas en `/admin/usuarios`.
-6. Crea un usuario `Solicitante de faena` y asignale al menos una faena.
-7. Entra como solicitante de faena y crea una solicitud en `/solicitudes/nueva`.
+6. Crea un usuario `Prevencionista de faena` y asignale al menos una faena.
+7. Entra como prevencionista de faena y crea una solicitud en `/solicitudes/nueva`.
 8. Entra como jefa, secretaria, prevencionista o administrador y aprueba en `/aprobaciones`.
 9. Entra como jefa, secretaria o administrador, genera una OC en `/compras/nueva` y emite/envia la orden.
 10. Anexa facturas desde el detalle de una solicitud u orden de compra cuando llegue el respaldo.

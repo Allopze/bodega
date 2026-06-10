@@ -108,7 +108,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Compras",   href: "/compras"   },
+            { label: "Órdenes de compra", href: "/compras" },
             { label: order.code                       },
           ]} />
         }

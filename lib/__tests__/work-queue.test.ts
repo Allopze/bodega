@@ -202,7 +202,7 @@ describe("request progress labels", () => {
 
   it("returns the next human action for every main stage", () => {
     expect(requestNextAction("submitted", ["requested"])).toBe("Aprobación debe revisar los ítems pendientes.")
-    expect(requestNextAction("approved", ["pending_purchase"])).toBe("Compras debe generar la orden de compra.")
+    expect(requestNextAction("approved", ["pending_purchase"])).toBe("El módulo de órdenes de compra debe generar la orden de compra.")
     expect(requestNextAction("in_purchasing", ["purchased"])).toBe("Esperando recepción del proveedor.")
     expect(requestNextAction("in_purchasing", ["received"])).toBe("Bodega debe registrar la entrega a faena.")
     expect(requestNextAction("closed", ["delivered"])).toBe("Pedido entregado en faena.")

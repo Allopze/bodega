@@ -109,7 +109,7 @@ export default async function Page() {
     {
       label: "OC pendientes",
       value: orders.filter((o) => ["sent", "partially_received"].includes(o.status)).length,
-      detail: "Compras enviadas aún no marcadas como recibidas",
+      detail: "Órdenes de compra enviadas aún no marcadas como recibidas",
     },
   ]
 

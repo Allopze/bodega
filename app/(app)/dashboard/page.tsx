@@ -133,7 +133,7 @@ export default async function DashboardPage() {
           <EmptyState
             icon={<CheckCircle size={24} />}
             title="Sin tareas pendientes"
-            description="No hay aprobaciones, compras, recepciones o entregas que requieran acción en este momento."
+            description="No hay aprobaciones, órdenes de compra, recepciones o entregas que requieran acción en este momento."
           />
         ) : (
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">

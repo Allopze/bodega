@@ -47,7 +47,7 @@ const REQUEST_STATE_META: Record<RequestStatus, StateMeta> = {
   approved:           { label: "Aprobada",             variant: "success",  family: "success"  },
   rejected:           { label: "Rechazada",            variant: "danger",   family: "danger"   },
   returned:           { label: "Devuelta",             variant: "warning",  family: "warning"  },
-  in_purchasing:      { label: "En compras",           variant: "info",     family: "info"     },
+  in_purchasing:      { label: "En OC",                variant: "info",     family: "info"     },
   closed:             { label: "Cerrada",              variant: "default",  family: "neutral"  },
   cancelled:          { label: "Cancelada",            variant: "default",  family: "neutral"  },
 }

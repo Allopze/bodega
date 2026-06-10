@@ -41,7 +41,7 @@ async function main() {
     { id: "p-req-all", name: "requests:view_all", module: "requests", description: "Ver todas" },
     { id: "p-req-submit", name: "requests:submit", module: "requests", description: "Enviar solicitudes" },
     { id: "p-apr", name: "approvals:approve", module: "approvals", description: "Aprobar" },
-    { id: "p-pur-view", name: "purchasing:view", module: "purchasing", description: "Ver compras" },
+    { id: "p-pur-view", name: "purchasing:view", module: "purchasing", description: "Ver órdenes de compra" },
     { id: "p-pur-create", name: "purchasing:create_order", module: "purchasing", description: "Crear OC" },
     { id: "p-pur-send", name: "purchasing:send_order", module: "purchasing", description: "Enviar OC" },
     { id: "p-rec-reg", name: "receiving:register", module: "receiving", description: "Registrar recepción" },

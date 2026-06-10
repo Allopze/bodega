@@ -167,7 +167,7 @@ async function main() {
     { id: "rol-jefa", name: "jefa_chome", label: "Jefa Chome", description: "Revisa, aprueba y administra la operación" },
     { id: "rol-sec", name: "secretaria", label: "Secretaria", description: "Revisa, aprueba y gestiona operación diaria" },
     { id: "rol-prev", name: "prevencionista", label: "Prevencionista", description: "Revisa y aprueba solicitudes" },
-    { id: "rol-sol-faena", name: "solicitante_faena", label: "Solicitante de faena", description: "Solicita ítems para sus faenas asignadas" },
+    { id: "rol-sol-faena", name: "solicitante_faena", label: "Prevencionista de faena", description: "Solicita ítems para sus faenas asignadas" },
   ]
   for (const role of roleData) {
     await db.insert(schema.roles).values(role).onConflictDoUpdate({
@@ -190,7 +190,7 @@ async function main() {
     // Approvals
     { id: "p-apr",            name: "approvals:approve",            module: "approvals",  description: "Revisar y aprobar solicitudes" },
     // Purchasing
-    { id: "p-pur-view",       name: "purchasing:view",              module: "purchasing", description: "Ver módulo de compras" },
+    { id: "p-pur-view",       name: "purchasing:view",              module: "purchasing", description: "Ver módulo de órdenes de compra" },
     { id: "p-pur-create",     name: "purchasing:create_order",      module: "purchasing", description: "Crear órdenes de compra" },
     { id: "p-pur-send",       name: "purchasing:send_order",        module: "purchasing", description: "Enviar OC a proveedor" },
     { id: "p-pur-sup",        name: "purchasing:manage_suppliers",  module: "purchasing", description: "Administrar proveedores" },
@@ -238,7 +238,6 @@ async function main() {
     "p-pur-view", "p-pur-create", "p-pur-send", "p-pur-sup",
     "p-rec-reg", "p-rec-view",
     "p-wh-stock", "p-wh-mov", "p-wh-adj",
-    "p-inv-att",
     "p-rep-view",
     "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup", "p-adm-cfg", "p-adm-audit",
   ]

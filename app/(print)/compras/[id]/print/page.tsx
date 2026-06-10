@@ -58,7 +58,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
   )
   const orderDetailLines = [
     order.notes,
-    order.deliveryAddress ? `enviar a ${order.deliveryAddress}` : order.worksite?.address ? `enviar a ${order.worksite.address}` : null,
+    company.address ? `enviar a ${company.address}` : null,
     requestCodes.length > 0 ? `NP ${requestCodes.join("-")}` : null,
     order.worksite?.name ? `Faena ${order.worksite.name}` : null,
   ].filter((line): line is string => !!line?.trim())
@@ -281,6 +281,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           color: #17221b;
           padding: 4px 5px;
           text-align: left;
+          vertical-align: middle;
           font-size: 7.6pt;
           font-weight: 760;
           border-bottom: 1px solid #b8c6bd;
