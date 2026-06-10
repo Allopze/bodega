@@ -58,7 +58,8 @@ export function DispatchPanel({
   initialProductId?: string
   initialRequestItemId?: string
 }) {
-  const [worksiteId,  setWorksiteId]  = React.useState<string>(initialWorksiteId ?? worksites[0]?.id ?? "")
+  const defaultWorksiteId = initialWorksiteId ?? worksites[0]?.id ?? ""
+  const [worksiteId,  setWorksiteId]  = React.useState<string>(defaultWorksiteId)
   const [productId,   setProductId]   = React.useState<string>(initialProductId ?? "")
   const [requestItemId, setRequestItemId] = React.useState<string>(initialRequestItemId ?? "")
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -69,13 +70,13 @@ export function DispatchPanel({
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
-      setWorksiteId(worksites[0]?.id ?? "")
+      setWorksiteId(defaultWorksiteId)
       setProductId("")
       setRequestItemId("")
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
-  }, [state, worksites])
+  }, [state, defaultWorksiteId])
 
   const availableProducts = worksiteId
     ? stockItems.filter((s) => s.worksiteId === worksiteId && s.quantity > 0)

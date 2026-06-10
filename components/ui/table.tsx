@@ -6,7 +6,7 @@ const TableRoot = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivE
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("w-full overflow-x-auto", className)}
+      className={cn("w-full overflow-x-auto overscroll-x-contain", className)}
       {...props}
     />
   )
@@ -17,7 +17,7 @@ const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableE
   ({ className, ...props }, ref) => (
     <table
       ref={ref}
-      className={cn("w-full caption-bottom text-sm border-collapse", className)}
+      className={cn("w-full min-w-max caption-bottom text-sm border-collapse", className)}
       {...props}
     />
   )

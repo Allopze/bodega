@@ -24,10 +24,11 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
   let initialEmail = ""
   let initialName = ""
   let inviteError: string | undefined
+  let inviteNotice: string | undefined
 
   if (mode === "invite") {
     if (!token) {
-      inviteError = "Necesitas una invitación para registrarte."
+      inviteNotice = "Para crear tu cuenta necesitas abrir el enlace de invitación enviado por el administrador."
     } else {
       const invitation = await db.query.userInvitations.findFirst({
         where: and(
@@ -67,6 +68,7 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
           initialName={initialName}
           initialEmail={initialEmail}
           inviteError={inviteError}
+          inviteNotice={inviteNotice}
         />
 
         <p className="mt-5 text-center text-xs text-[var(--color-text-subtle)]">

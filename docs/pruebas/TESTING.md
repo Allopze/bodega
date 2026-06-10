@@ -250,7 +250,7 @@ npm run dev                 # http://localhost:3000
 #### Paso 10 — Reportes
 
 - Ve a `/reportes` para ver métricas
-- Exporta a CSV o Excel con los botones correspondientes
+- Exporta a Excel con los botones correspondientes
 
 ### 4.3. Datos de prueba rápidos (seed)
 

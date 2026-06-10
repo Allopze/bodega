@@ -1,12 +1,12 @@
 /**
  * GET /api/trazabilidad/export
  *
- * Returns the full trazabilidad matrix as a CSV download.
+ * Returns the full trazabilidad matrix as an XLSX download.
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
-import { getTrazabilidadCsv } from "@/lib/services/trazabilidad-export"
+import { getTrazabilidadXlsx } from "@/lib/services/trazabilidad-export"
 import { logger } from "@/lib/logger"
 
 export async function GET(_req: NextRequest) {
@@ -19,12 +19,12 @@ export async function GET(_req: NextRequest) {
   }
 
   try {
-    const { csv, filename } = await getTrazabilidadCsv(session)
+    const { buffer, filename } = await getTrazabilidadXlsx(session)
 
-    return new NextResponse(csv, {
+    return new NextResponse(buffer, {
       status: 200,
       headers: {
-        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="${filename}"`,
       },
     })

@@ -30,6 +30,8 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   searchKeys:   (keyof T)[]
   /** Render a <tr> for a given row. Receives the row + the columns list. */
   renderRow:    (row: T, index: number) => React.ReactNode
+  /** Optional compact rendering for narrow screens. */
+  renderMobileCard?: (row: T, index: number) => React.ReactNode
   emptyTitle?:  string
   emptyDescription?: string
   emptyAction?: React.ReactNode
@@ -51,6 +53,7 @@ export function DataTable<T extends Record<string, unknown>>({
   rows,
   searchKeys,
   renderRow,
+  renderMobileCard,
   emptyTitle = "Sin resultados",
   emptyDescription,
   emptyAction,
@@ -117,7 +120,7 @@ export function DataTable<T extends Record<string, unknown>>({
   return (
     <div className={cn("flex flex-col", className)}>
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-3 mb-3">
+      <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between">
         <Input
           type="search"
           placeholder={searchPlaceholder}
@@ -126,14 +129,14 @@ export function DataTable<T extends Record<string, unknown>>({
             setSearch(e.target.value)
             setPage(1)
           }}
-          className="max-w-xs h-8 text-xs"
+          className="h-8 text-xs sm:max-w-xs"
           aria-label="Buscar en la tabla"
         />
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
 
       {/* Table */}
-      <TableRoot>
+      <TableRoot className={renderMobileCard ? "hidden md:block" : undefined}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -196,6 +199,29 @@ export function DataTable<T extends Record<string, unknown>>({
           </TableBody>
         </Table>
       </TableRoot>
+
+      {renderMobileCard && (
+        <div className="grid gap-2 md:hidden">
+          {loading ? (
+            Array.from({ length: Math.min(pageSize, 5) }).map((_, i) => (
+              <SkeletonRow key={i} cols={2} />
+            ))
+          ) : paginated.length === 0 ? (
+            <EmptyState
+              title={emptyTitle}
+              description={emptyDescription}
+              action={emptyAction}
+              compact
+            />
+          ) : (
+            paginated.map((row, i) => (
+              <React.Fragment key={(row.id as string | number | undefined) ?? i}>
+                {renderMobileCard(row, i)}
+              </React.Fragment>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Pagination */}
       <Pagination

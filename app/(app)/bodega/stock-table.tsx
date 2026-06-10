@@ -77,56 +77,103 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
           compact
         />
       ) : (
-        <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
-          <table className="w-full text-sm" aria-label={`Stock en ${worksiteName}`}>
-            <caption className="sr-only">Productos y cantidades en faena {worksiteName}</caption>
-            <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
-              <tr>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Producto</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-28">Stock</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-20">Mínimo</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-40">Último mov.</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
-              {items.map((s) => {
-                const unit = s.product?.unitOfMeasure ?? "u"
-                const lowStock = s.minStock > 0 && s.quantity <= s.minStock
+        <>
+          <div className="grid gap-2 md:hidden">
+            {items.map((s) => {
+              const unit = s.product?.unitOfMeasure ?? "u"
+              const lowStock = s.minStock > 0 && s.quantity <= s.minStock
 
-                return (
-                  <tr key={s.id} className={`hover:bg-[var(--color-surface-2)] transition-colors ${lowStock ? "bg-[var(--color-signal-50)]" : ""}`}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {s.product?.sku && (
-                          <span className="font-mono text-[11px] text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
-                            {s.product.sku}
+              return (
+                <article
+                  key={s.id}
+                  className={[
+                    "rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3",
+                    lowStock ? "bg-[var(--color-signal-50)] ring-1 ring-inset ring-[var(--color-signal-100)]" : "",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-[var(--color-text)]">{s.product?.name ?? s.productId}</p>
+                      <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                        {s.product?.sku ? <span className="font-mono">{s.product.sku}</span> : "Sin SKU"}
+                      </p>
+                    </div>
+                    {lowStock && (
+                      <span className="shrink-0 rounded border border-[var(--color-signal-100)] bg-[var(--color-signal-50)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-signal-500)]">
+                        Stock bajo
+                      </span>
+                    )}
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div>
+                      <dt className="text-[var(--color-text-subtle)]">Stock</dt>
+                      <dd className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(s.quantity, unit)}</dd>
+                    </div>
+                    <div className="text-right">
+                      <dt className="text-[var(--color-text-subtle)]">Mínimo</dt>
+                      <dd className="flex justify-end"><MinStockCell stockId={s.id} currentMin={s.minStock} /></dd>
+                    </div>
+                    <div className="col-span-2">
+                      <dt className="text-[var(--color-text-subtle)]">Último movimiento</dt>
+                      <dd className="text-[var(--color-text-muted)]">{s.lastMovementAt ? formatDate(s.lastMovementAt) : "—"}</dd>
+                    </div>
+                  </dl>
+                </article>
+              )
+            })}
+          </div>
+
+          <div className="hidden overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] md:block">
+            <table className="w-full text-sm" aria-label={`Stock en ${worksiteName}`}>
+              <caption className="sr-only">Productos y cantidades en faena {worksiteName}</caption>
+              <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
+                <tr>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Producto</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-28">Stock</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-20">Mínimo</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-40">Último mov.</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)]">
+                {items.map((s) => {
+                  const unit = s.product?.unitOfMeasure ?? "u"
+                  const lowStock = s.minStock > 0 && s.quantity <= s.minStock
+
+                  return (
+                    <tr key={s.id} className={`hover:bg-[var(--color-surface-2)] transition-colors ${lowStock ? "bg-[var(--color-signal-50)]" : ""}`}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {s.product?.sku && (
+                            <span className="font-mono text-[11px] text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
+                              {s.product.sku}
+                            </span>
+                          )}
+                          <span className="font-medium text-[var(--color-text)]">
+                            {s.product?.name ?? s.productId}
                           </span>
-                        )}
-                        <span className="font-medium text-[var(--color-text)]">
-                          {s.product?.name ?? s.productId}
-                        </span>
-                        {lowStock && (
-                          <span className="text-[10px] font-medium text-[var(--color-signal-500)] bg-[var(--color-signal-50)] border border-[var(--color-signal-100)] px-1.5 py-0.5 rounded">
-                            Stock bajo
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-muted)]">
-                      {formatQty(s.quantity, unit)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <MinStockCell stockId={s.id} currentMin={s.minStock} />
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs text-[var(--color-text-subtle)]">
-                      {s.lastMovementAt ? formatDate(s.lastMovementAt) : "—"}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                          {lowStock && (
+                            <span className="text-[10px] font-medium text-[var(--color-signal-500)] bg-[var(--color-signal-50)] border border-[var(--color-signal-100)] px-1.5 py-0.5 rounded">
+                              Stock bajo
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-muted)]">
+                        {formatQty(s.quantity, unit)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <MinStockCell stockId={s.id} currentMin={s.minStock} />
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-[var(--color-text-subtle)]">
+                        {s.lastMovementAt ? formatDate(s.lastMovementAt) : "—"}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )

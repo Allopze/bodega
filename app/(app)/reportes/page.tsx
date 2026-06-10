@@ -85,7 +85,6 @@ export default async function Page() {
   const items = itemRows
   const orders = orderRows
   const receiptsVisible = receiptRows
-  const visibleRequestIds = new Set(requests.map((r) => r.id))
   const metrics: ReportMetric[] = [
     {
       label: "Solicitudes",
@@ -126,18 +125,17 @@ export default async function Page() {
           ]} />
         }
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
             <ExportLinks tipo="items_sin_oc" label="Ítems sin OC" tone="signal" />
             <ExportLinks tipo="gasto_faena" label="Gasto por faena" />
             <ExportLinks tipo="oc_por_estado" label="OC por estado" />
-            <ExportLinks tipo="facturas_pendientes" label="Facturas pendientes" />
           </div>
         }
       />
 
-      <div className="grid gap-px overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-border)] md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {metrics.map((metric) => (
-          <section key={metric.label} className="bg-[var(--color-surface)] p-5">
+          <section key={metric.label} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <ChartBar size={16} className="text-[var(--color-text-subtle)]" />
@@ -179,7 +177,7 @@ function ExportLinks({
     <a
       href={`/api/reportes/export?tipo=${tipo}`}
       aria-label={`Exportar Excel: ${label}`}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border px-3 text-xs font-medium transition-colors ${baseClass}`}
+      className={`inline-flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] border px-3 text-xs font-medium transition-colors ${baseClass}`}
     >
       Exportar {label}
     </a>

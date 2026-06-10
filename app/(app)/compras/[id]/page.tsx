@@ -139,8 +139,66 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
 
-        {/* Items table */}
-        <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
+        {/* Items */}
+        <div className="grid gap-2 md:hidden">
+          {order.items.map((item) => {
+            const reqItem  = item.requestItemId ? reqItemMap[item.requestItemId] : null
+            const product  = item.productId ? productMap[item.productId] : null
+            const name     = product?.name ?? item.productNameFree ?? "(sin nombre)"
+            const sku      = product?.sku ?? null
+            const reqCode  = (reqItem as { request?: { code: string } } | null)?.request?.code
+
+            return (
+              <article key={item.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-text)]">{name}</p>
+                  <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                    {sku ? <span className="font-mono">{sku} · </span> : null}
+                    {reqCode ? `Solicitud ${reqCode}` : "Sin solicitud asociada"}
+                  </p>
+                </div>
+                {item.notes && (
+                  <p className="mt-2 text-xs italic text-[var(--color-text-subtle)]">{item.notes}</p>
+                )}
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <div>
+                    <dt className="text-[var(--color-text-subtle)]">Cantidad</dt>
+                    <dd className="font-mono tabular-nums text-[var(--color-text)]">
+                      {formatQty(item.quantity, item.unitOfMeasure)}
+                    </dd>
+                  </div>
+                  <div className="text-right">
+                    <dt className="text-[var(--color-text-subtle)]">Precio unit.</dt>
+                    <dd className="font-mono tabular-nums text-[var(--color-text)]">{formatCLP(item.unitPrice)}</dd>
+                  </div>
+                  <div className="col-span-2 border-t border-[var(--color-border)] pt-2 text-right">
+                    <dt className="text-[var(--color-text-subtle)]">Subtotal</dt>
+                    <dd className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                      {formatCLP(item.subtotal)}
+                    </dd>
+                  </div>
+                </dl>
+              </article>
+            )
+          })}
+
+          <dl className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
+            <div className="flex items-center justify-between gap-3 py-1">
+              <dt className="text-[var(--color-text-muted)]">Neto</dt>
+              <dd className="font-mono tabular-nums text-[var(--color-text-muted)]">{formatCLP(order.netAmount)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-1">
+              <dt className="text-[var(--color-text-subtle)]">IVA (19%)</dt>
+              <dd className="font-mono tabular-nums text-[var(--color-text-subtle)]">{formatCLP(order.taxAmount)}</dd>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
+              <dt className="font-semibold text-[var(--color-text)]">Total</dt>
+              <dd className="font-mono font-bold tabular-nums text-[var(--color-text)]">{formatCLP(order.totalAmount)}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="hidden overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] md:block">
           <table className="w-full text-sm">
             <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
               <tr>

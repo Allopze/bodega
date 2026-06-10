@@ -64,12 +64,12 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 ## Pendiente para integraciones reales
 
 Dashboard y reportes consultan datos persistidos de solicitudes, OC, recepciones, stock y facturas anexas.
-Los reportes principales ya tienen exportacion CSV desde `/reportes`.
+Los reportes principales ya tienen exportacion XLSX desde `/reportes`.
 
 Hace falta implementar:
 
 - Importadores o conectores externos si los maestros vienen de ERP, planillas o proveedor contable.
-- Exportacion Excel si los reportes deben salir con formato de planilla.
+- Ajustes de formato avanzado si los reportes XLSX requieren plantillas contables.
 - Facturacion contable avanzada con lineas de factura, estados de pago e integracion externa.
 - Pruebas E2E que creen datos por UI/API siguiendo el flujo anterior.
 
@@ -86,4 +86,3 @@ La documentación del proyecto, especificaciones, arquitectura y auditorías ha 
     *   [AUDITORIA_PROYECTO.md](file:///home/allopze/dev/chome/bodega/docs/auditoria/AUDITORIA_PROYECTO.md) - Análisis, reporte de seguridad y mejoras necesarias.
     *   [EPP_PROVEEDORES_ESTRUCTURADO.md](file:///home/allopze/dev/chome/bodega/docs/auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md) - Datos maestros estructurados de proveedores y catálogo.
 *   **Pruebas:** [TESTING.md](file:///home/allopze/dev/chome/bodega/docs/pruebas/TESTING.md) - Información sobre la ejecución y cobertura de pruebas.
-

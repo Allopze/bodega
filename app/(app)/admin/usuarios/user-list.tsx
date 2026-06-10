@@ -148,6 +148,66 @@ export function UserList({ users, allRoles, allWorksites }: UserListProps) {
             </TableRow>
           )
         }}
+        renderMobileCard={(row) => {
+          const u = row as unknown as UserRow
+          return (
+            <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Avatar name={u.name} size="sm" />
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-medium text-[var(--color-text)]">{u.name}</h2>
+                    <p className="truncate text-xs text-[var(--color-text-subtle)]">{u.email}</p>
+                  </div>
+                </div>
+                <Badge variant={u.isActive ? "success" : "default"} dot>
+                  {u.isActive ? "Activo" : "Inactivo"}
+                </Badge>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-1">
+                {u.roleLabels.map((label) => (
+                  <Badge key={label} variant="default" size="sm">{label}</Badge>
+                ))}
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div>
+                  <dt className="text-[var(--color-text-subtle)]">Faenas</dt>
+                  <dd className="font-mono tabular-nums text-[var(--color-text)]">{u.worksiteCount}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="text-[var(--color-text-subtle)]">Alta</dt>
+                  <dd className="text-[var(--color-text-muted)]">{formatDate(u.createdAt)}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+                <button
+                  onClick={() => openEdit(u)}
+                  className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                  title="Editar"
+                >
+                  <PencilSimple size={16} />
+                </button>
+                <form action={toggleAction}>
+                  <input type="hidden" name="id" value={u.id} />
+                  <input type="hidden" name="activate" value={String(!u.isActive)} />
+                  <button
+                    type="submit"
+                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                    title={u.isActive ? "Desactivar" : "Activar"}
+                  >
+                    {u.isActive
+                      ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
+                      : <ToggleLeft size={20} />
+                    }
+                  </button>
+                </form>
+              </div>
+            </article>
+          )
+        }}
       />
 
       <UserForm

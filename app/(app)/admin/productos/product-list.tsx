@@ -158,6 +158,57 @@ export function ProductList({ products, categories, allSuppliers }: {
             </TableRow>
           )
         }}
+        renderMobileCard={(row) => {
+          const p = row as unknown as ProductRow
+          return (
+            <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs text-[var(--color-text-subtle)]">{p.sku}</p>
+                  <h2 className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{p.name}</h2>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {p.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
+                    {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
+                  </div>
+                </div>
+                <Badge variant={p.isActive ? "success" : "default"} dot>
+                  {p.isActive ? "Activo" : "Inactivo"}
+                </Badge>
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div>
+                  <dt className="text-[var(--color-text-subtle)]">Categoría</dt>
+                  <dd className="text-[var(--color-text-muted)]">{p.categoryName}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="text-[var(--color-text-subtle)]">Precio ref.</dt>
+                  <dd className="font-mono tabular-nums text-[var(--color-text)]">
+                    {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+                <button
+                  onClick={() => openEditProduct(p.id)}
+                  disabled={loadingEditId === p.id}
+                  className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
+                  title="Editar"
+                >
+                  <PencilSimple size={16} className={loadingEditId === p.id ? "animate-spin" : ""} />
+                </button>
+                <form action={toggleAction}>
+                  <input type="hidden" name="id" value={p.id} />
+                  <input type="hidden" name="activate" value={String(!p.isActive)} />
+                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={p.isActive ? "Desactivar" : "Activar"}>
+                    {p.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
+                  </button>
+                </form>
+              </div>
+            </article>
+          )
+        }}
       />
 
       {/* Category management inline list */}

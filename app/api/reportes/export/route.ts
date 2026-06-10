@@ -1,7 +1,7 @@
 /**
- * GET /api/reportes/export?tipo=<tipo>&formato=csv|xlsx
+ * GET /api/reportes/export?tipo=<tipo>
  *
- * Exports the requested report. CSV remains the default format.
+ * Exports the requested report as XLSX.
  */
 
 import { type NextRequest, NextResponse } from "next/server"

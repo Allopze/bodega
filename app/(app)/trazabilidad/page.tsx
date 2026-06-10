@@ -320,21 +320,22 @@ export default async function TrazabilidadPage({
           <Funnel className="h-3.5 w-3.5" aria-hidden />
           Filtrar
         </Button>
-        <a
+        <Link
           href="/api/trazabilidad/export"
+          prefetch={false}
           className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.97]"
-          aria-label="Exportar trazabilidad a CSV"
+          aria-label="Exportar trazabilidad a Excel"
         >
           <DownloadSimple className="h-3.5 w-3.5" aria-hidden />
-          Exportar CSV
-        </a>
+          Exportar Excel
+        </Link>
         {(filterFaenaId || filterEstado) && (
-          <a
+          <Link
             href="/trazabilidad"
             className="inline-flex h-9 items-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] underline underline-offset-2"
           >
             Quitar filtros
-          </a>
+          </Link>
         )}
         <span className="ml-auto self-end text-xs text-[var(--color-text-subtle)]">
           {totalFiltered} de {totalRow?.n ?? 0} ítems
@@ -353,91 +354,156 @@ export default async function TrazabilidadPage({
           compact
         />
       ) : (
-        <TableRoot>
-          <Table>
-            <TableCaption className="sr-only">
-              Matriz de trazabilidad de ítems por producto, faena, solicitud, cantidades y estado.
-            </TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Producto</TableHead>
-                <TableHead>Faena</TableHead>
-                <TableHead>Solicitud</TableHead>
-                <TableHead className="text-right">Solicitado</TableHead>
-                <TableHead className="text-right">Aprobado</TableHead>
-                <TableHead className="text-right">En OC</TableHead>
-                <TableHead className="text-right">Recibido</TableHead>
-                <TableHead>Estado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginated.map((row) => (
-                <TableRow
-                  key={row.itemId}
-                  data-alert={row.alert ? "true" : undefined}
-                  className={row.alert
-                    ? "bg-[var(--color-signal-50)] border-l-2 border-l-[var(--color-signal-600)]"
-                    : undefined}
-                >
-                  {/* Product */}
-                  <TableCell className="max-w-[220px]">
-                    <div className="font-medium text-[var(--color-text)] truncate" title={row.productName}>
-                      {row.productName}
-                    </div>
-                    {row.productSku && (
-                      <div className="text-xs text-[var(--color-text-subtle)] font-mono">{row.productSku}</div>
-                    )}
-                  </TableCell>
+        <>
+          <div className="grid gap-2 md:hidden">
+            {paginated.map((row) => (
+              <article
+                key={row.itemId}
+                className={[
+                  "rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3",
+                  row.alert ? "bg-[var(--color-signal-50)] ring-1 ring-inset ring-[var(--color-signal-100)]" : "",
+                ].join(" ")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-medium text-[var(--color-text)]">{row.productName}</h2>
+                    <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                      {row.productSku ? <span className="font-mono">{row.productSku} · </span> : null}
+                      {row.worksiteName}
+                    </p>
+                  </div>
+                  <StateBadge state={row.status} entity="item" size="sm" />
+                </div>
 
-                  {/* Worksite */}
-                  <TableCell className="text-sm text-[var(--color-text-muted)] whitespace-nowrap">
-                    {row.worksiteName}
-                  </TableCell>
-
-                  {/* Request code + link */}
-                  <TableCell>
+                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <div>
+                    <p className="text-[var(--color-text-subtle)]">Solicitud</p>
                     <Link
                       href={`/solicitudes/${row.requestId}`}
-                      className="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline underline-offset-2"
+                      className="inline-flex items-center gap-1 font-medium text-[var(--color-primary)]"
                     >
                       {row.requestCode}
                       <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
                     </Link>
-                  </TableCell>
-
-                  {/* Quantities */}
-                  <TableCellNum>{formatQty(row.requested, row.uom)}</TableCellNum>
-
-                  <TableCellNum>
-                    {row.approved !== null ? formatQty(row.approved, row.uom) : (
-                      <span className="text-[var(--color-text-subtle)]">—</span>
-                    )}
-                  </TableCellNum>
-
-                  <TableCellNum>
-                    <span className={row.alert ? "font-semibold text-[oklch(0.52_0.15_56)]" : undefined}>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[var(--color-text-subtle)]">Solicitado</p>
+                    <p className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(row.requested, row.uom)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[var(--color-text-subtle)]">Aprobado</p>
+                    <p className="font-mono tabular-nums text-[var(--color-text)]">
+                      {row.approved !== null ? formatQty(row.approved, row.uom) : "—"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[var(--color-text-subtle)]">En OC</p>
+                    <p className={["font-mono tabular-nums", row.alert ? "font-semibold text-[oklch(0.52_0.15_56)]" : "text-[var(--color-text)]"].join(" ")}>
                       {formatQty(row.inOc, row.uom)}
-                    </span>
-                    {row.alert && (
-                      <Warning
-                        weight="fill"
-                        className="inline ml-1 h-3.5 w-3.5 text-[var(--color-signal-600)]"
-                        aria-label={`Faltan ${formatQty((row.approved ?? 0) - row.inOc, row.uom)} en OC`}
-                      />
-                    )}
-                  </TableCellNum>
+                      {row.alert && (
+                        <Warning
+                          weight="fill"
+                          className="ml-1 inline h-3.5 w-3.5 text-[var(--color-signal-600)]"
+                          aria-label={`Faltan ${formatQty((row.approved ?? 0) - row.inOc, row.uom)} en OC`}
+                        />
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[var(--color-text-subtle)]">Recibido</p>
+                    <p className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(row.received, row.uom)}</p>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
 
-                  <TableCellNum>{formatQty(row.received, row.uom)}</TableCellNum>
-
-                  {/* Status badge */}
-                  <TableCell>
-                    <StateBadge state={row.status} entity="item" size="sm" />
-                  </TableCell>
+          <TableRoot className="hidden md:block">
+            <Table>
+              <TableCaption className="sr-only">
+                Matriz de trazabilidad de ítems por producto, faena, solicitud, cantidades y estado.
+              </TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Producto</TableHead>
+                  <TableHead>Faena</TableHead>
+                  <TableHead>Solicitud</TableHead>
+                  <TableHead className="text-right">Solicitado</TableHead>
+                  <TableHead className="text-right">Aprobado</TableHead>
+                  <TableHead className="text-right">En OC</TableHead>
+                  <TableHead className="text-right">Recibido</TableHead>
+                  <TableHead>Estado</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableRoot>
+              </TableHeader>
+              <TableBody>
+                {paginated.map((row) => (
+                  <TableRow
+                    key={row.itemId}
+                    data-alert={row.alert ? "true" : undefined}
+                    className={row.alert
+                      ? "bg-[var(--color-signal-50)] ring-1 ring-inset ring-[var(--color-signal-100)]"
+                      : undefined}
+                  >
+                    {/* Product */}
+                    <TableCell className="max-w-[220px]">
+                      <div className="font-medium text-[var(--color-text)] truncate" title={row.productName}>
+                        {row.productName}
+                      </div>
+                      {row.productSku && (
+                        <div className="text-xs text-[var(--color-text-subtle)] font-mono">{row.productSku}</div>
+                      )}
+                    </TableCell>
+
+                    {/* Worksite */}
+                    <TableCell className="text-sm text-[var(--color-text-muted)] whitespace-nowrap">
+                      {row.worksiteName}
+                    </TableCell>
+
+                    {/* Request code + link */}
+                    <TableCell>
+                      <Link
+                        href={`/solicitudes/${row.requestId}`}
+                        className="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline underline-offset-2"
+                      >
+                        {row.requestCode}
+                        <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
+                      </Link>
+                    </TableCell>
+
+                    {/* Quantities */}
+                    <TableCellNum>{formatQty(row.requested, row.uom)}</TableCellNum>
+
+                    <TableCellNum>
+                      {row.approved !== null ? formatQty(row.approved, row.uom) : (
+                        <span className="text-[var(--color-text-subtle)]">—</span>
+                      )}
+                    </TableCellNum>
+
+                    <TableCellNum>
+                      <span className={row.alert ? "font-semibold text-[oklch(0.52_0.15_56)]" : undefined}>
+                        {formatQty(row.inOc, row.uom)}
+                      </span>
+                      {row.alert && (
+                        <Warning
+                          weight="fill"
+                          className="inline ml-1 h-3.5 w-3.5 text-[var(--color-signal-600)]"
+                          aria-label={`Faltan ${formatQty((row.approved ?? 0) - row.inOc, row.uom)} en OC`}
+                        />
+                      )}
+                    </TableCellNum>
+
+                    <TableCellNum>{formatQty(row.received, row.uom)}</TableCellNum>
+
+                    {/* Status badge */}
+                    <TableCell>
+                      <StateBadge state={row.status} entity="item" size="sm" />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableRoot>
+        </>
       )}
 
       {/* ── Pagination ────────────────────────────────────────────────── */}

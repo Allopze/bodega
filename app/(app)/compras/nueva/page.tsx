@@ -138,9 +138,10 @@ export default async function NuevaOcPage({
     id:   w.id,
     name: w.name,
   }))
-  const initialWorksiteId = worksiteOptions.some((w) => w.id === requestedWorksiteId)
+  const firstPendingWorksiteId = pendingItems[0]?.worksiteId
+  const initialWorksiteId = requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId)
     ? requestedWorksiteId
-    : undefined
+    : firstPendingWorksiteId ?? worksiteOptions[0]?.id
 
   return (
     <>

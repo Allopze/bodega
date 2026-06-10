@@ -16,13 +16,14 @@ interface RegisterFormProps {
   initialName?: string
   initialEmail?: string
   inviteError?: string
+  inviteNotice?: string
 }
 
-export function RegisterForm({ token, mode, initialName, initialEmail, inviteError }: RegisterFormProps) {
+export function RegisterForm({ token, mode, initialName, initialEmail, inviteError, inviteNotice }: RegisterFormProps) {
   const [state, formAction] = useActionState<ActionState, FormData>(registerUser, INITIAL_STATE)
   const isSuccess = state.ok
   const tokenError = state.fieldErrors?.token?.[0] ?? inviteError
-  const disabledByInvite = mode === "invite" && !!inviteError
+  const disabledByInvite = mode === "invite" && (!!inviteError || !!inviteNotice)
 
   if (isSuccess) {
     return (
@@ -50,6 +51,11 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
       {tokenError && (
         <p className="mb-4 rounded-[var(--radius)] border border-[var(--color-danger-100)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger)]">
           {tokenError}
+        </p>
+      )}
+      {!tokenError && inviteNotice && (
+        <p className="mb-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+          {inviteNotice}
         </p>
       )}
 

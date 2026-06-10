@@ -16,7 +16,7 @@ export function PageHeader({ title, description, actions, breadcrumb, className 
       {breadcrumb && (
         <div className="mb-2">{breadcrumb}</div>
       )}
-      <div className="flex items-start justify-between gap-4 min-h-[2rem]">
+      <div className="flex min-h-[2rem] flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <h1 className="text-h1 text-[var(--color-text)]">
             {title}
@@ -28,7 +28,7 @@ export function PageHeader({ title, description, actions, breadcrumb, className 
           )}
         </div>
         {actions && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
             {actions}
           </div>
         )}

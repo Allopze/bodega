@@ -1,8 +1,8 @@
 /**
- * Trazabilidad CSV export.
+ * Trazabilidad XLSX export.
  *
  * Reuses the same matrix-building queries as the trazabilidad page
- * but returns CSV text instead of rendering JSX.
+ * but returns workbook data instead of rendering JSX.
  */
 import { db } from "@/db"
 import {
@@ -13,29 +13,18 @@ import {
 import { asc, eq, inArray } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { canAccessWorksite } from "@/lib/auth/can"
+import { buildXlsxBuffer } from "@/lib/reports/export"
+import { buildTrazabilidadReportData, type TrazabilidadExportRow } from "@/lib/services/trazabilidad-export-format"
 
 const APPROVED_STATES = new Set([
   "approved", "pending_purchase", "in_purchase_order", "purchased",
   "partially_received", "received",
 ])
 
-interface MatrixRow {
-  productName:  string
-  productSku:   string | null
-  worksiteName: string
-  requestCode:  string
-  requested:    number
-  approved:     number | null
-  inOc:         number
-  received:     number
-  status:       string
-  alert:        boolean
-}
-
 /**
  * Builds the full trazabilidad matrix (same logic as the trazabilidad page).
  */
-async function buildMatrix(session: Session): Promise<MatrixRow[]> {
+async function buildMatrix(session: Session): Promise<TrazabilidadExportRow[]> {
   const [
     allItems, allRequests, allProducts, allWorksites,
     allOcItems, allReceiptItems, allApproveDecisions,
@@ -107,7 +96,7 @@ async function buildMatrix(session: Session): Promise<MatrixRow[]> {
     modifiedQtyByItemId.set(d.requestItemId, d.modifiedQty)
   }
 
-  const rows: MatrixRow[] = []
+  const rows: TrazabilidadExportRow[] = []
 
   for (const item of allItems) {
     const request = requestMap[item.requestId]
@@ -149,59 +138,16 @@ async function buildMatrix(session: Session): Promise<MatrixRow[]> {
 }
 
 /**
- * Generates CSV text from the trazabilidad matrix.
+ * GET handler helper: returns XLSX bytes + filename for the trazabilidad export.
  */
-function matrixToCsv(rows: MatrixRow[]): string {
-  const header = [
-    "Producto",
-    "SKU",
-    "Faena",
-    "Solicitud",
-    "Solicitado",
-    "Aprobado",
-    "En OC",
-    "Recibido",
-    "Estado",
-    "Alerta",
-  ]
-
-  const lines = [header.map(escapeCsv).join(",")]
-
-  for (const row of rows) {
-    lines.push([
-      escapeCsv(row.productName),
-      escapeCsv(row.productSku ?? ""),
-      escapeCsv(row.worksiteName),
-      escapeCsv(row.requestCode),
-      String(row.requested),
-      row.approved !== null ? String(row.approved) : "",
-      String(row.inOc),
-      String(row.received),
-      escapeCsv(row.status),
-      row.alert ? "Sí" : "No",
-    ].join(","))
-  }
-
-  return lines.join("\n")
-}
-
-function escapeCsv(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
-
-/**
- * GET handler helper — returns CSV string + filename for the trazabilidad export.
- */
-export async function getTrazabilidadCsv(session: Session): Promise<{
-  csv: string
+export async function getTrazabilidadXlsx(session: Session): Promise<{
+  buffer: ArrayBuffer
   filename: string
 }> {
   const rows = await buildMatrix(session)
+  const report = buildTrazabilidadReportData(rows)
   return {
-    csv: matrixToCsv(rows),
-    filename: `trazabilidad-${new Date().toISOString().slice(0, 10)}.csv`,
+    buffer: await buildXlsxBuffer(report),
+    filename: `${report.filenameBase}.xlsx`,
   }
 }

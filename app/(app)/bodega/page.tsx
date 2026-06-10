@@ -110,9 +110,14 @@ export default async function BodegaPage({
     }).filter((item) => item.remainingQuantity > 0)
   const initialDeliverable = requestedItemId
     ? deliverableOptions.find((item) => item.requestItemId === requestedItemId) : undefined
+  const firstStockWorksiteId = stockOptions.find((item) => worksiteOptions.some((w) => w.id === item.worksiteId))?.worksiteId
   const initialWorksiteId = initialDeliverable?.worksiteId
-    ?? (worksiteOptions.some((w) => w.id === requestedWorksiteId) ? requestedWorksiteId : undefined)
+    ?? (requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId) ? requestedWorksiteId : undefined)
+    ?? firstStockWorksiteId
+    ?? deliverableOptions[0]?.worksiteId
+    ?? worksiteOptions[0]?.id
   const initialProductId = initialDeliverable?.productId
+    ?? stockOptions.find((item) => item.worksiteId === initialWorksiteId)?.productId
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const s of stockRows) {
@@ -127,7 +132,7 @@ export default async function BodegaPage({
       />
       <div className="flex flex-col gap-8">
         <Suspense fallback={<SkeletonPage rows={6} />}>
-          <StockSection worksites={worksiteOptions} stockByWorksite={stockByWorksite} />
+          <StockSection worksites={worksiteOptions} stockByWorksite={stockByWorksite} initialWorksiteId={initialWorksiteId} />
         </Suspense>
 
         {canDispatch && stockOptions.length > 0 && worksiteOptions.length > 0 && (
@@ -153,13 +158,23 @@ export default async function BodegaPage({
   )
 }
 
-function StockSection({ worksites, stockByWorksite }: {
+function StockSection({ worksites, stockByWorksite, initialWorksiteId }: {
   worksites: WorksiteOption[]
   stockByWorksite: Record<string, WorksiteStockWithProduct[]>
+  initialWorksiteId?: string
 }) {
+  const sortedWorksites = [...worksites].sort((a, b) => {
+    const aHasStock = (stockByWorksite[a.id] ?? []).some((item) => item.quantity > 0)
+    const bHasStock = (stockByWorksite[b.id] ?? []).some((item) => item.quantity > 0)
+    if (a.id === initialWorksiteId) return -1
+    if (b.id === initialWorksiteId) return 1
+    if (aHasStock !== bHasStock) return aHasStock ? -1 : 1
+    return a.name.localeCompare(b.name, "es")
+  })
+
   return (
     <>
-      {worksites.map((ws) => (
+      {sortedWorksites.map((ws) => (
         <StockTable key={ws.id} worksiteName={ws.name}
           items={stockByWorksite[ws.id] ?? []} />
       ))}
