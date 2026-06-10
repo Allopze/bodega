@@ -125,16 +125,6 @@ async function main() {
     isPreferred: true,
     lastUpdated: now,
   })
-  const wsId = "ws-e2e"
-  await db.insert(schema.worksites).values({
-    id: wsId,
-    name: "Faena E2E",
-    code: "WS-E2E",
-    isActive: true,
-    createdAt: now,
-    updatedAt: now,
-  })
-
   sqlite.close()
 }
 

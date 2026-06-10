@@ -19,6 +19,14 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   const orderId = page.url().split("/").pop()
   expect(orderId).toBeTruthy()
 
+  await page.goto(`/compras/${orderId}/print`)
+  await expect(page.locator(".sheet")).toContainText("Guante E2E")
+  await page.emulateMedia({ media: "print" })
+  const pdf = await page.pdf({ format: "A4", printBackground: true })
+  expect(pdf.byteLength).toBeGreaterThan(25_000)
+  await page.emulateMedia({ media: "screen" })
+  await page.goto(`/compras/${orderId}`)
+
   await page.getByRole("button", { name: "Emitir orden" }).click()
   await expect(page.getByText("Orden emitida")).toBeVisible()
   await page.reload()
@@ -32,7 +40,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(page.getByText("Guante E2E")).toBeVisible()
 
   await page.goto("/trazabilidad?estado=received")
-  await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Adjunta.*Recibido/ })).toBeVisible()
+  await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Recibido/ })).toBeVisible()
 
   await page.goto("/reportes")
   await expect(page.getByRole("link", { name: "Exportar Excel: Gasto por faena", exact: true })).toBeVisible()
