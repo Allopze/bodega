@@ -28,7 +28,9 @@ export default async function ProveedoresPage() {
       />
       <SupplierList suppliers={allSuppliers.map((s) => ({
         id: s.id, name: s.name, rut: s.rut, contactName: s.contactName,
+        businessActivity: s.businessActivity,
         email: s.email, phone: s.phone, address: s.address,
+        commune: s.commune, city: s.city,
         paymentTerms: s.paymentTerms, notes: s.notes,
         isActive: s.isActive, createdAt: s.createdAt,
       }))} />

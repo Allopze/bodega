@@ -15,10 +15,13 @@ interface SupplierForEdit {
   id:           string
   name:         string
   rut:          string | null
+  businessActivity: string | null
   contactName:  string | null
   email:        string | null
   phone:        string | null
   address:      string | null
+  commune:      string | null
+  city:         string | null
   paymentTerms: string | null
   notes:        string | null
   isActive:     boolean
@@ -74,6 +77,10 @@ export function SupplierForm({ open, onClose, editSupplier }: SupplierFormProps)
                 <Input id="sup-rut" name="rut" defaultValue={editSupplier?.rut ?? ""} placeholder="12345678-9" error={!!state.fieldErrors?.rut} className="font-mono" />
               </Field>
 
+              <Field label="Giro" htmlFor="sup-business-activity" error={state.fieldErrors?.businessActivity?.[0]}>
+                <Input id="sup-business-activity" name="businessActivity" defaultValue={editSupplier?.businessActivity ?? ""} placeholder="Venta de equipos de protección personal" error={!!state.fieldErrors?.businessActivity} />
+              </Field>
+
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Contacto" htmlFor="sup-contact">
                   <Input id="sup-contact" name="contactName" defaultValue={editSupplier?.contactName ?? ""} placeholder="Nombre contacto" />
@@ -90,6 +97,15 @@ export function SupplierForm({ open, onClose, editSupplier }: SupplierFormProps)
               <Field label="Dirección" htmlFor="sup-address">
                 <Input id="sup-address" name="address" defaultValue={editSupplier?.address ?? ""} placeholder="Av. Industrial 1234, Santiago" />
               </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Comuna" htmlFor="sup-commune" error={state.fieldErrors?.commune?.[0]}>
+                  <Input id="sup-commune" name="commune" defaultValue={editSupplier?.commune ?? ""} placeholder="San Joaquín" error={!!state.fieldErrors?.commune} />
+                </Field>
+                <Field label="Ciudad" htmlFor="sup-city" error={state.fieldErrors?.city?.[0]}>
+                  <Input id="sup-city" name="city" defaultValue={editSupplier?.city ?? ""} placeholder="Santiago" error={!!state.fieldErrors?.city} />
+                </Field>
+              </div>
 
               <Field label="Condiciones de pago" htmlFor="sup-payment" helper='Ej: "30 días", "contado", "60 días factura"'>
                 <Input id="sup-payment" name="paymentTerms" defaultValue={editSupplier?.paymentTerms ?? ""} placeholder="30 días" />

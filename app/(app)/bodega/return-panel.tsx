@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/select"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { returnStockAction } from "./actions"
-import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 
 export interface ReturnPanelStockOption {
@@ -91,7 +90,7 @@ export function ReturnPanel({
               <SelectContent>
                 {availableProducts.map((p) => (
                   <SelectItem key={p.productId} value={p.productId}>
-                    {p.productSku ? `[${p.productSku}] ` : ""}{p.productName}
+                    {p.productName}
                   </SelectItem>
                 ))}
                 {availableProducts.length === 0 && worksiteId && (

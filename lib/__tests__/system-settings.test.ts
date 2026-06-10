@@ -36,12 +36,14 @@ describe("system settings company profile", () => {
     mocks.findFirst.mockResolvedValue(null)
 
     await expect(getCompanyProfile()).resolves.toEqual({
-      name:    "Chome",
-      rut:     "",
-      address: "",
-      phone:   "",
-      email:   "",
-      website: "",
+      name:             "Chome",
+      rut:              "",
+      businessActivity: "",
+      address:          "",
+      branchAddress:    "",
+      phone:            "",
+      email:            "",
+      website:          "",
     })
   })
 
@@ -49,18 +51,22 @@ describe("system settings company profile", () => {
     mocks.findFirst
       .mockResolvedValueOnce({ key: "company_name", value: "Chome SpA" })
       .mockResolvedValueOnce({ key: "company_rut", value: "76123456-7" })
+      .mockResolvedValueOnce({ key: "company_business_activity", value: "Servicios industriales" })
       .mockResolvedValueOnce({ key: "company_address", value: "Av. Principal 457" })
+      .mockResolvedValueOnce({ key: "company_branch_address", value: "Sucursal Concepcion" })
       .mockResolvedValueOnce({ key: "company_phone", value: "+56 9 8765 4321" })
       .mockResolvedValueOnce({ key: "company_email", value: "compras@chome.cl" })
       .mockResolvedValueOnce({ key: "company_website", value: "www.chome.cl" })
 
     await expect(getCompanyProfile()).resolves.toEqual({
-      name:    "Chome SpA",
-      rut:     "76123456-7",
-      address: "Av. Principal 457",
-      phone:   "+56 9 8765 4321",
-      email:   "compras@chome.cl",
-      website: "www.chome.cl",
+      name:             "Chome SpA",
+      rut:              "76123456-7",
+      businessActivity: "Servicios industriales",
+      address:          "Av. Principal 457",
+      branchAddress:    "Sucursal Concepcion",
+      phone:            "+56 9 8765 4321",
+      email:            "compras@chome.cl",
+      website:          "www.chome.cl",
     })
   })
 
@@ -69,18 +75,20 @@ describe("system settings company profile", () => {
 
     await setCompanyProfile(
       {
-        name:    " Chome SpA ",
-        rut:     " 76123456-7 ",
-        address: " Av. Principal 457 ",
-        phone:   " +56 9 8765 4321 ",
-        email:   " compras@chome.cl ",
-        website: " www.chome.cl ",
+        name:             " Chome SpA ",
+        rut:              " 76123456-7 ",
+        businessActivity: " Servicios industriales ",
+        address:          " Av. Principal 457 ",
+        branchAddress:    " Sucursal Concepcion ",
+        phone:            " +56 9 8765 4321 ",
+        email:            " compras@chome.cl ",
+        website:          " www.chome.cl ",
       },
       "usr-admin",
       "admin@chome.cl",
     )
 
-    expect(mocks.insert).toHaveBeenCalledTimes(6)
+    expect(mocks.insert).toHaveBeenCalledTimes(8)
     expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({
       key:   "company_name",
       value: "Chome SpA",

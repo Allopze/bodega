@@ -138,8 +138,7 @@ export function DispatchPanel({
               <SelectContent>
                 {availableProducts.map((s) => (
                   <SelectItem key={s.productId} value={s.productId}>
-                    {s.productSku ? `[${s.productSku}] ` : ""}{s.productName}
-                    {" "}({formatQty(s.quantity, s.unitOfMeasure)} en stock)
+                    {s.productName}
                   </SelectItem>
                 ))}
                 {availableProducts.length === 0 && worksiteId && (

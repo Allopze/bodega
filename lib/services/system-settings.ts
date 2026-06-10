@@ -5,30 +5,36 @@ import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 
 export interface CompanyProfile {
-  name:    string
-  rut:     string
-  address: string
-  phone:   string
-  email:   string
-  website: string
+  name:             string
+  rut:              string
+  businessActivity: string
+  address:          string
+  branchAddress:    string
+  phone:            string
+  email:            string
+  website:          string
 }
 
 const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
-  name:    "Chome",
-  rut:     "",
-  address: "",
-  phone:   "",
-  email:   "",
-  website: "",
+  name:             "Chome",
+  rut:              "",
+  businessActivity: "",
+  address:          "",
+  branchAddress:    "",
+  phone:            "",
+  email:            "",
+  website:          "",
 }
 
 const COMPANY_PROFILE_KEYS = {
-  name:    "company_name",
-  rut:     "company_rut",
-  address: "company_address",
-  phone:   "company_phone",
-  email:   "company_email",
-  website: "company_website",
+  name:             "company_name",
+  rut:              "company_rut",
+  businessActivity: "company_business_activity",
+  address:          "company_address",
+  branchAddress:    "company_branch_address",
+  phone:            "company_phone",
+  email:            "company_email",
+  website:          "company_website",
 } as const satisfies Record<keyof CompanyProfile, string>
 
 /**
@@ -73,12 +79,14 @@ export async function getCompanyProfile(): Promise<CompanyProfile> {
     )
 
     return {
-      name:    cleanSetting(byKey[COMPANY_PROFILE_KEYS.name]) || DEFAULT_COMPANY_PROFILE.name,
-      rut:     cleanSetting(byKey[COMPANY_PROFILE_KEYS.rut]),
-      address: cleanSetting(byKey[COMPANY_PROFILE_KEYS.address]),
-      phone:   cleanSetting(byKey[COMPANY_PROFILE_KEYS.phone]),
-      email:   cleanSetting(byKey[COMPANY_PROFILE_KEYS.email]),
-      website: cleanSetting(byKey[COMPANY_PROFILE_KEYS.website]),
+      name:             cleanSetting(byKey[COMPANY_PROFILE_KEYS.name]) || DEFAULT_COMPANY_PROFILE.name,
+      rut:              cleanSetting(byKey[COMPANY_PROFILE_KEYS.rut]),
+      businessActivity: cleanSetting(byKey[COMPANY_PROFILE_KEYS.businessActivity]),
+      address:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.address]),
+      branchAddress:    cleanSetting(byKey[COMPANY_PROFILE_KEYS.branchAddress]),
+      phone:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.phone]),
+      email:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.email]),
+      website:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.website]),
     }
   } catch (err) {
     logger.error("Error fetching company profile settings, using defaults:", err)
@@ -134,12 +142,14 @@ export async function setCompanyProfile(
 ): Promise<void> {
   const oldValue = await getCompanyProfile()
   const normalized: CompanyProfile = {
-    name:    cleanSetting(profile.name) || DEFAULT_COMPANY_PROFILE.name,
-    rut:     cleanSetting(profile.rut),
-    address: cleanSetting(profile.address),
-    phone:   cleanSetting(profile.phone),
-    email:   cleanSetting(profile.email),
-    website: cleanSetting(profile.website),
+    name:             cleanSetting(profile.name) || DEFAULT_COMPANY_PROFILE.name,
+    rut:              cleanSetting(profile.rut),
+    businessActivity: cleanSetting(profile.businessActivity),
+    address:          cleanSetting(profile.address),
+    branchAddress:    cleanSetting(profile.branchAddress),
+    phone:            cleanSetting(profile.phone),
+    email:            cleanSetting(profile.email),
+    website:          cleanSetting(profile.website),
   }
 
   const now = new Date().toISOString()

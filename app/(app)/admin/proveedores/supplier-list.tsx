@@ -14,7 +14,9 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 
 interface SupplierRow {
   id: string; name: string; rut: string | null; contactName: string | null
+  businessActivity: string | null
   email: string | null; phone: string | null; address: string | null
+  commune: string | null; city: string | null
   paymentTerms: string | null; notes: string | null
   isActive: boolean; createdAt: string
 }
@@ -22,7 +24,7 @@ interface SupplierRow {
 const COLUMNS = [
   { key: "name",         label: "Proveedor",          sortable: true  },
   { key: "rut",          label: "RUT",                sortable: true, width: "w-32" },
-  { key: "contactName",  label: "Contacto",           sortable: true  },
+  { key: "businessActivity", label: "Giro",           sortable: true  },
   { key: "paymentTerms", label: "Pago",               sortable: true, width: "w-28" },
   { key: "isActive",     label: "Estado",             sortable: true, width: "w-24" },
   { key: "",             label: "",                   sortable: false, width: "w-16" },
@@ -48,7 +50,7 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
       <DataTable
         columns={COLUMNS}
         rows={suppliers as unknown as Record<string, unknown>[]}
-        searchKeys={["name", "rut", "contactName"]}
+        searchKeys={["name", "rut", "businessActivity", "commune", "city"]}
         pageSize={25}
         searchPlaceholder="Buscar proveedor o RUT..."
         emptyTitle="Sin proveedores"
@@ -71,8 +73,8 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
 
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                 <div>
-                  <dt className="text-[var(--color-text-subtle)]">Contacto</dt>
-                  <dd className="text-[var(--color-text-muted)] truncate">{s.contactName ?? "—"}</dd>
+                  <dt className="text-[var(--color-text-subtle)]">Giro</dt>
+                  <dd className="text-[var(--color-text-muted)] truncate">{s.businessActivity ?? "—"}</dd>
                 </div>
                 <div className="text-right">
                   <dt className="text-[var(--color-text-subtle)]">Pago</dt>
@@ -112,8 +114,8 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
                 <span className="font-mono text-xs text-[var(--color-text-muted)]">{s.rut ?? "—"}</span>
               </TableCell>
               <TableCell className="text-sm text-[var(--color-text-muted)]">
-                {s.contactName ?? "—"}
-                {s.phone && <span className="block text-xs font-mono">{s.phone}</span>}
+                {s.businessActivity ?? "—"}
+                {(s.commune || s.city) && <span className="block text-xs">{[s.commune, s.city].filter(Boolean).join(", ")}</span>}
               </TableCell>
               <TableCell className="text-xs text-[var(--color-text-muted)]">{s.paymentTerms ?? "—"}</TableCell>
               <TableCell>

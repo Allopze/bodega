@@ -19,10 +19,13 @@ export const suppliers = sqliteTable("suppliers", {
   id:          text("id").primaryKey(),
   name:        text("name").notNull(),
   rut:         text("rut").unique(),            // Chilean RUT
+  businessActivity: text("business_activity"),
   contactName: text("contact_name"),
   email:       text("email"),
   phone:       text("phone"),
   address:     text("address"),
+  commune:     text("commune"),
+  city:        text("city"),
   paymentTerms: text("payment_terms"),          // "30 días", "contado", etc.
   isActive:    integer("is_active", { mode: "boolean" }).notNull().default(true),
   notes:       text("notes"),

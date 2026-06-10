@@ -89,6 +89,36 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
             />
           </Field>
 
+          <Field
+            label="Giro"
+            htmlFor="company-business-activity"
+            helper="Se imprimirá como giro de Chome en la orden de compra."
+            error={state.fieldErrors?.companyBusinessActivity?.[0]}
+          >
+            <Input
+              id="company-business-activity"
+              name="companyBusinessActivity"
+              defaultValue={initialCompanyProfile.businessActivity}
+              placeholder="Servicios industriales"
+              error={!!state.fieldErrors?.companyBusinessActivity}
+            />
+          </Field>
+
+          <Field
+            label="Otra dirección o sucursal"
+            htmlFor="company-branch-address"
+            helper="Opcional. Aparece bajo el bloque de sucursales de la OC."
+            error={state.fieldErrors?.companyBranchAddress?.[0]}
+          >
+            <Input
+              id="company-branch-address"
+              name="companyBranchAddress"
+              defaultValue={initialCompanyProfile.branchAddress}
+              placeholder="Pedro Aguirre Cerda 1156 Block 4to, Concepción"
+              error={!!state.fieldErrors?.companyBranchAddress}
+            />
+          </Field>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Field
               label="Teléfono"
