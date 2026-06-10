@@ -63,6 +63,13 @@
       "when": 1781960000000,
       "tag": "0008_stock_por_faena",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1782046400000,
+      "tag": "0009_request_required_date",
+      "breakpoints": true
     }
   ]
 }

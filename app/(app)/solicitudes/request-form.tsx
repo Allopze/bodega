@@ -58,6 +58,7 @@ export interface EditRequest {
   worksiteId:  string
   requestType: string
   urgency:     string
+  requiredDate: string | null
   status:      string
   notes:       string | null
   items:       EditItem[]
@@ -70,7 +71,6 @@ interface EditItem {
   quantity:            number
   unitOfMeasure:       string
   urgency:             string
-  requiredDate:        string | null
   workerId:            string | null
   suggestedSupplierId: string | null
   supplierHint:        string | null
@@ -88,7 +88,6 @@ interface ItemRow {
   quantity:            string
   unitOfMeasure:       string
   urgency:             string
-  requiredDate:        string
   workerId:            string
   suggestedSupplierId: string
   supplierHint:        string
@@ -117,7 +116,6 @@ function blankItem(key = "new-0"): ItemRow {
     quantity:            "1",
     unitOfMeasure:       "unidad",
     urgency:             "normal",
-    requiredDate:        "",
     workerId:            "",
     suggestedSupplierId: "",
     supplierHint:        "",
@@ -179,6 +177,7 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
   const [worksiteId,  setWorksiteId]  = useState(editRequest?.worksiteId  ?? (worksites[0]?.id ?? ""))
   const [requestType, setRequestType] = useState(editRequest?.requestType ?? "epp")
   const [urgency,     setUrgency]     = useState(editRequest?.urgency     ?? "normal")
+  const [requiredDate, setRequiredDate] = useState(editRequest?.requiredDate ?? "")
   const [notes,       setNotes]       = useState(editRequest?.notes       ?? "")
 
   // ── Items
@@ -194,7 +193,6 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
           quantity:            String(item.quantity),
           unitOfMeasure:       item.unitOfMeasure,
           urgency:             item.urgency,
-          requiredDate:        item.requiredDate ?? "",
           workerId:            item.workerId ?? "",
           suggestedSupplierId: item.suggestedSupplierId ?? "",
           supplierHint:        item.supplierHint ?? "",
@@ -300,7 +298,7 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
     quantity:            Number(item.quantity) || 1,
     unitOfMeasure:       item.unitOfMeasure,
     urgency:             item.urgency,
-    requiredDate:        item.requiredDate || null,
+    requiredDate:        requiredDate || null,
     workerId:            item.workerId || null,
     suggestedSupplierId: item.suggestedSupplierId || null,
     supplierHint:        item.supplierHint || null,
@@ -378,11 +376,19 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
               </Select>
             </Field>
 
-            <Field label="Fecha requerida" htmlFor="requiredDate">
+            <Field
+              label="Fecha requerida"
+              required
+              htmlFor="requiredDate"
+              error={draftState.fieldErrors?.requiredDate?.[0] ?? submitState.fieldErrors?.requiredDate?.[0]}
+            >
               <Input
                 id="requiredDate"
                 type="date"
                 name="requiredDate"
+                value={requiredDate}
+                onChange={(event) => setRequiredDate(event.target.value)}
+                required
                 disabled={readOnly}
               />
             </Field>
@@ -471,6 +477,7 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
           <input type="hidden" name="worksiteId"  value={worksiteId} />
           <input type="hidden" name="requestType" value={requestType} />
           <input type="hidden" name="urgency"     value={urgency} />
+          <input type="hidden" name="requiredDate" value={requiredDate} />
           <input type="hidden" name="notes"       value={notes} />
           {submitState.message && !submitState.ok && (
             <p className="mb-3 text-xs text-[var(--color-danger)] flex items-center gap-1.5">
@@ -599,8 +606,8 @@ function ItemEditor({
         )}
       </div>
 
-      {/* Quantity + unit + urgency + date */}
-      <div className="ml-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Quantity + unit + urgency */}
+      <div className="ml-8 grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Field label="Cantidad" required htmlFor={`qty-${item._key}`}>
           <Input
             id={`qty-${item._key}`}
@@ -639,17 +646,6 @@ function ItemEditor({
               ))}
             </SelectContent>
           </Select>
-        </Field>
-
-        <Field label="Fecha requerida" htmlFor={`rd-${item._key}`}>
-          <Input
-            id={`rd-${item._key}`}
-            type="date"
-            className="h-8 text-sm"
-            value={item.requiredDate}
-            onChange={(e) => onUpdate({ requiredDate: e.target.value })}
-            disabled={readOnly}
-          />
         </Field>
       </div>
 

@@ -1,5 +1,41 @@
 import { describe, expect, it } from "vitest"
-import { createOrderSchema, dispatchSchema, receiptSchema } from "@/lib/validation/operations"
+import { createOrderSchema, dispatchSchema, receiptSchema, requestSchema } from "@/lib/validation/operations"
+
+const validRequest = {
+  worksiteId: "worksite-1",
+  requestType: "epp",
+  urgency: "normal",
+  requiredDate: "2026-07-15",
+  notes: "",
+  items: [
+    {
+      productId: "product-1",
+      productNameFree: null,
+      quantity: 2,
+      unitOfMeasure: "unidad",
+      urgency: "normal",
+      requiredDate: "2026-07-15",
+      workerId: null,
+      suggestedSupplierId: null,
+      supplierHint: "",
+      sortOrder: 0,
+      notes: "",
+      attributes: [],
+    },
+  ],
+}
+
+describe("requestSchema", () => {
+  it("accepts a request with one shared required date", () => {
+    const result = requestSchema.safeParse(validRequest)
+    expect(result.success).toBe(true)
+  })
+
+  it("rejects a request without a required date", () => {
+    const result = requestSchema.safeParse({ ...validRequest, requiredDate: "" })
+    expect(result.success).toBe(false)
+  })
+})
 
 const validOrder = {
   worksiteId:        "worksite-1",

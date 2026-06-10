@@ -124,6 +124,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     worksiteId:   request.worksiteId,
     requestType:  request.requestType,
     urgency:      request.urgency,
+    requiredDate: request.requiredDate ?? request.items.find((item) => item.requiredDate)?.requiredDate ?? null,
     status:       request.status,
     notes:        request.notes,
     items: request.items.map((item) => ({
@@ -133,7 +134,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       quantity:            item.quantity,
       unitOfMeasure:       item.unitOfMeasure,
       urgency:             item.urgency ?? "normal",
-      requiredDate:        item.requiredDate,
       workerId:            item.workerId,
       suggestedSupplierId: item.suggestedSupplierId,
       supplierHint:        item.supplierHint,

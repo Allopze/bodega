@@ -22,6 +22,7 @@ export const purchaseRequests = sqliteTable("purchase_requests", {
 
   requestType:  text("request_type").notNull().default("epp"), // epp | stock | mantencion | otro
   urgency:      text("urgency").notNull().default("normal"),   // normal | high | critical
+  requiredDate: text("required_date"),
   status:       text("status").notNull().default("draft"),
   submittedAt:  text("submitted_at"),
   closedAt:     text("closed_at"),

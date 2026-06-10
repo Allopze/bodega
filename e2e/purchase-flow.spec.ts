@@ -75,6 +75,7 @@ async function createCatalogRequest(
 ) {
   await page.goto("/solicitudes/nueva")
   await selectRadixById(page, "worksiteId", "Faena E2E")
+  await page.getByLabel("Fecha requerida").fill("2026-07-15")
   await page.getByPlaceholder("Buscar en catálogo o escribir producto...").fill(productName)
   if (options.freeText) {
     await page.getByRole("option", { name: new RegExp(`Usar “${productName}”`) }).click()
