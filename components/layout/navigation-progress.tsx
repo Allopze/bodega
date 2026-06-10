@@ -9,16 +9,15 @@ export function NavigationProgress() {
   const [loading, setLoading] = React.useState(false)
   const [width, setWidth] = React.useState("0%")
   const prevPathRef = React.useRef(pathname)
-  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const timerRefs = React.useRef<ReturnType<typeof setTimeout>[]>([])
 
-  React.useEffect(() => {
-    if (prevPathRef.current !== pathname) {
-      prevPathRef.current = pathname
-      start()
-    }
-  }, [pathname, searchParams])
+  const clearTimers = React.useCallback(() => {
+    for (const timer of timerRefs.current) clearTimeout(timer)
+    timerRefs.current = []
+  }, [])
 
-  function start() {
+  const start = React.useCallback(() => {
+    clearTimers()
     setLoading(true)
     setWidth("0%")
     // Simulate a loading bar that starts fast then slows
@@ -29,22 +28,27 @@ export function NavigationProgress() {
       { delay: 1000, width: "90%" },
     ]
     for (const step of steps) {
-      timerRef.current = setTimeout(() => setWidth(step.width), step.delay)
+      timerRefs.current.push(setTimeout(() => setWidth(step.width), step.delay))
     }
-    timerRef.current = setTimeout(() => {
+    timerRefs.current.push(setTimeout(() => {
       setWidth("100%")
-      timerRef.current = setTimeout(() => {
+      timerRefs.current.push(setTimeout(() => {
         setLoading(false)
         setWidth("0%")
-      }, 200)
-    }, 1500)
-  }
+      }, 200))
+    }, 1500))
+  }, [clearTimers])
 
   React.useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
+    if (prevPathRef.current !== pathname) {
+      prevPathRef.current = pathname
+      start()
     }
-  }, [])
+  }, [pathname, searchParams, start])
+
+  React.useEffect(() => {
+    return clearTimers
+  }, [clearTimers])
 
   if (!loading) return null
 

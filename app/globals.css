@@ -6,8 +6,8 @@
 
 @theme {
   /* ── Fonts ── */
-  --font-display: var(--font-exo), "Exo 2", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-source-sans), "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, "Cascadia Code", monospace;
 
   /* ── Typography Scale (fluid, responsive, ratio ≥1.20 between heading steps) ── */

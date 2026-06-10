@@ -4,6 +4,8 @@ import { BrandMark } from "@/components/layout/brand-mark"
 import { getUserCount } from "@/lib/auth/bootstrap"
 import { LoginForm } from "./login-form"
 
+export const dynamic = "force-dynamic"
+
 export const metadata: Metadata = {
   title: "Iniciar sesión",
 }
