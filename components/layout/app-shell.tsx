@@ -48,8 +48,8 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
 
       <div className="flex min-h-[calc(100dvh-3.25rem)]">
 
-        {/* Desktop rail — flat surface, no dark panel, no shadow */}
-        <div className="hidden lg:sticky lg:top-[3.25rem] lg:flex lg:h-[calc(100dvh-3.25rem)] lg:flex-col lg:shrink-0 bg-surface border-r border-[var(--color-border)] lg:w-60">
+        {/* Desktop rail */}
+        <div className="hidden lg:sticky lg:top-[3.25rem] lg:flex lg:h-[calc(100dvh-3.25rem)] lg:flex-col lg:shrink-0 bg-[var(--color-surface)] border-r border-[var(--color-border)] lg:w-60">
           <Sidebar
             session={session}
             worksiteName={worksiteName}

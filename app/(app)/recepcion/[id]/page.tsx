@@ -76,7 +76,7 @@ export default async function RecepcionDetallePage({
         actions={
           <Link
             href={`/compras/${receipt.purchaseOrderId}`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text)] transition-transform duration-[var(--duration-fast)] active:scale-[0.98]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-full)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] px-3 text-xs font-medium text-[var(--color-text)] transition-transform duration-[var(--duration-fast)] active:scale-[0.98]"
           >
             Ver OC
             <ArrowSquareOut size={13} />

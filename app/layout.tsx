@@ -1,14 +1,11 @@
 import type { Metadata } from "next"
-import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
-import { Source_Serif_4 } from "next/font/google"
+import { Plus_Jakarta_Sans } from "next/font/google"
 import "./globals.css"
 
-const serif = Source_Serif_4({
+const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal"],
-  variable: "--font-serif",
+  variable: "--font-jakarta",
   display: "swap",
 })
 
@@ -29,7 +26,7 @@ export default function RootLayout({
   return (
     <html
       lang="es-CL"
-      className={`${GeistSans.variable} ${GeistMono.variable} ${serif.variable}`}
+      className={`${jakarta.variable} ${GeistMono.variable}`}
     >
       <body>{children}</body>
     </html>

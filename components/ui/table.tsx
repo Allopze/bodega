@@ -6,7 +6,11 @@ const TableRoot = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivE
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("w-full overflow-x-auto overscroll-x-contain", className)}
+      className={cn(
+        "w-full overflow-x-auto overscroll-x-contain",
+        "rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)]",
+        className,
+      )}
       {...props}
     />
   )

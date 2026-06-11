@@ -43,7 +43,7 @@ const SheetContent = React.forwardRef<
         "w-full sm:w-[calc(100%-2rem)] sm:max-w-lg sm:max-h-[min(85vh,56rem)]",
         "bg-[var(--color-surface)]",
         "border-0 sm:border sm:border-[var(--color-border)]",
-        "rounded-none sm:rounded-[var(--radius-lg,0.75rem)]",
+        "rounded-none sm:rounded-[var(--radius-2xl)]",
         "shadow-[var(--shadow-lg)]",
         "flex flex-col",
         // Entry/exit: slide from bottom on mobile, scale + fade on desktop
@@ -106,7 +106,7 @@ const SheetTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("font-display text-base font-semibold text-[var(--color-text)]", className)}
+    className={cn("text-h2 text-[var(--color-text)]", className)}
     {...props}
   />
 ))
@@ -130,9 +130,9 @@ function SheetCloseButton({ onClick }: { onClick?: React.MouseEventHandler<HTMLB
     <DialogPrimitive.Close
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-[var(--radius-sm)]",
-        "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
-        "transition-[color,transform] duration-[var(--duration-fast)]",
+        "shrink-0 h-7 w-7 flex items-center justify-center rounded-[var(--radius-md)]",
+        "text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]",
+        "transition-[color,background-color,transform] duration-[var(--duration-fast)]",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
         "active:scale-[0.95]",
       )}

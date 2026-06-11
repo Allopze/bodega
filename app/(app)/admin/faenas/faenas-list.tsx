@@ -68,7 +68,7 @@ export function FaenasList({ worksites }: { worksites: WorksiteRow[] }) {
         renderMobileCard={(row) => {
           const ws = row as unknown as WorksiteRow
           return (
-            <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="text-sm font-medium text-[var(--color-text)] truncate">{ws.name}</h2>

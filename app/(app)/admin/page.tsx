@@ -91,7 +91,7 @@ export default async function AdminPage() {
             <Link
               key={m.href}
               href={m.href}
-              className="flex items-start gap-4 p-5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)] hover:border-[var(--color-primary-line)] hover:shadow-sm transition-all duration-[var(--duration-fast)] group cursor-pointer"
+              className="flex items-start gap-4 p-5 rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-md)] transition-all duration-[var(--duration-fast)] group cursor-pointer active:scale-[0.98]"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]">
                 <Icon size={20} />

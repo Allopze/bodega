@@ -5,23 +5,25 @@ import { cn } from "@/lib/utils"
 const badgeVariants = cva(
   [
     "inline-flex items-center gap-1.5",
-    "font-mono text-[10px] font-semibold uppercase tracking-wider",
+    "font-mono font-semibold uppercase tracking-wider",
+    "rounded-[var(--radius-full)]",
+    "px-2 py-0.5",
     "whitespace-nowrap",
   ],
   {
     variants: {
       variant: {
-        default:  "text-[var(--color-text-muted)]",
-        primary:  "text-[var(--color-primary-ink)]",
-        success:  "text-[var(--color-success-ink)]",
-        warning:  "text-[var(--color-warning-ink)]",
-        signal:   "text-[var(--color-signal-ink)]",
-        info:     "text-[var(--color-info-ink)]",
-        danger:   "text-[var(--color-danger-ink)]",
-        outline:  "text-[var(--color-text-muted)] border border-[var(--color-border)] px-1.5 py-0.5",
+        default:  "text-[var(--color-text-muted)] bg-[var(--color-surface-2)]",
+        primary:  "text-[var(--color-primary-ink)] bg-[var(--color-primary-tint)]",
+        success:  "text-[var(--color-success-ink)] bg-[var(--color-success-tint)]",
+        warning:  "text-[var(--color-warning-ink)] bg-[var(--color-warning-tint)]",
+        signal:   "text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)]",
+        info:     "text-[var(--color-info-ink)] bg-[var(--color-info-tint)]",
+        danger:   "text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)]",
+        outline:  "text-[var(--color-text-muted)] border border-[var(--color-border)] bg-transparent",
       },
       size: {
-        sm:      "text-[9.5px]",
+        sm:      "text-[9px]",
         default: "text-[10px]",
         lg:      "text-[11px]",
       },

@@ -36,47 +36,32 @@ interface SidebarProps {
 
 export function Sidebar({ session, worksiteName, badgeCounts }: SidebarProps) {
   const pathname = usePathname()
-  const [now, setNow] = React.useState<string>("")
-
-  React.useEffect(() => {
-    const f = new Intl.DateTimeFormat("es-CL", { weekday: "long", day: "2-digit", month: "long" })
-    setNow(f.format(new Date()))
-  }, [])
 
   return (
-    <aside className="flex flex-col h-full w-full bg-surface text-text">
-      {/* Worksite context — flat, table-like */}
+    <aside className="flex flex-col h-full w-full bg-[var(--color-surface)] text-text">
+      {/* Worksite context */}
       {worksiteName && (
-        <div className="px-4 py-3 border-b border-[var(--color-border)]">
-          <p className="text-eyebrow">Faena</p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <MapPin size={12} weight="bold" className="text-[var(--color-text-muted)] shrink-0" />
-            <span className="text-sm font-medium truncate">{worksiteName}</span>
+        <div className="px-3 py-3 border-b border-[var(--color-border)]">
+          <p className="text-eyebrow mb-0.5">Faena activa</p>
+          <div className="flex items-center gap-1.5">
+            <MapPin size={12} weight="bold" className="text-[var(--color-primary)] shrink-0" />
+            <span className="text-sm font-semibold text-[var(--color-text)] truncate">{worksiteName}</span>
           </div>
         </div>
       )}
 
-      <div className="px-4 py-2 border-b border-[var(--color-border)]">
-        <p className="text-eyebrow">Sesión</p>
-        <p className="mt-0.5 text-[11px] font-mono uppercase tracking-wide text-[var(--color-text-muted)] truncate">
-          {now}
-        </p>
-      </div>
-
-      {/* Nav — sequential, numbered, with hairline dividers */}
+      {/* Nav */}
       <nav
-        className="flex-1 overflow-y-auto py-1"
+        className="flex-1 overflow-y-auto p-2"
         aria-label="Navegación principal"
       >
-        {NAV_ITEMS.map((section, index) => {
+        {NAV_ITEMS.map((section) => {
           const visibleItems = section.items.filter((item) => canSeeItem(item, session))
           if (visibleItems.length === 0) return null
           return (
-            <div key={section.section} className="border-b border-[var(--color-border)] last:border-b-0">
-              <p className="px-4 pt-3 pb-1.5 text-eyebrow">
-                {String(index + 1).padStart(2, "0")} · {section.section}
-              </p>
-              <ul>
+            <div key={section.section} className="mb-4">
+              <p className="px-3 mb-1 text-eyebrow">{section.section}</p>
+              <ul className="space-y-0.5">
                 {visibleItems.map((item) => (
                   <li key={item.href}>
                     <NavLink
@@ -92,7 +77,7 @@ export function Sidebar({ session, worksiteName, badgeCounts }: SidebarProps) {
         })}
       </nav>
 
-      <div className="px-4 py-3 border-t border-[var(--color-border)]">
+      <div className="px-3 py-3 border-t border-[var(--color-border)]">
         <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-faint)]">
           chome / solicitudes-y-bodega
         </p>
@@ -122,11 +107,11 @@ function NavLink({
       href={item.href}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "group flex items-center gap-2.5 pl-4 pr-3 h-9 text-[13px]",
-        "border-l-2 transition-colors duration-[var(--duration-fast)]",
+        "group flex items-center gap-2.5 px-3 h-9 text-[13px] rounded-[var(--radius-lg)]",
+        "transition-[background-color,color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
         isActive
-          ? "border-l-[var(--color-text)] bg-[var(--color-surface-2)] text-[var(--color-text)] font-medium"
-          : "border-l-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]",
+          ? "bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)] font-semibold"
+          : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]",
       )}
       aria-label={count > 0 ? titleText : undefined}
       title={count > 0 ? titleText : undefined}
@@ -137,13 +122,13 @@ function NavLink({
           weight={isActive ? "bold" : "regular"}
           className={cn(
             "shrink-0",
-            isActive ? "text-[var(--color-text)]" : "text-[var(--color-text-subtle)] group-hover:text-[var(--color-text)]",
+            isActive ? "text-[var(--color-primary)]" : "text-[var(--color-text-subtle)] group-hover:text-[var(--color-text)]",
           )}
         />
       )}
       <span className="truncate flex-1">{item.label}</span>
       {count > 0 && (
-        <span className="font-mono text-[10px] font-semibold text-[var(--color-signal-ink)] tabular-nums">
+        <span className="font-mono text-[10px] font-semibold text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)] px-1.5 py-0.5 rounded-[var(--radius-full)] tabular-nums">
           {count > 99 ? "99+" : count}
         </span>
       )}

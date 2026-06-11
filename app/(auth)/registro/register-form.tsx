@@ -27,7 +27,7 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
 
   if (isSuccess) {
     return (
-      <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+      <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
         <div className="flex items-start gap-3">
           <CheckCircle size={22} weight="fill" className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
           <div>

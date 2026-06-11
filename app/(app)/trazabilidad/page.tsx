@@ -276,14 +276,14 @@ export default async function TrazabilidadPage({
       {/* ── Alert summary ─────────────────────────────────────────────── */}
       {alertCount > 0 && (
         <div className="mb-4 flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-4 py-3">
-          <Warning weight="fill" className="h-4 w-4 shrink-0 text-[oklch(0.52_0.15_56)]" aria-hidden />
-          <p className="text-sm font-medium text-[oklch(0.52_0.15_56)]">
+          <Warning weight="fill" className="h-4 w-4 shrink-0 text-[var(--color-signal-ink)]" aria-hidden />
+          <p className="text-sm font-medium text-[var(--color-signal-ink)]">
             {alertCount} {alertCount === 1 ? "ítem aprobado falta" : "ítems aprobados faltan"} en órdenes de compra
           </p>
           {filterEstado !== "alert" && (
             <a
               href={`/trazabilidad?estado=alert${filterFaenaId ? `&faena=${filterFaenaId}` : ""}`}
-              className="ml-auto text-xs font-medium text-[oklch(0.52_0.15_56)] underline underline-offset-2"
+              className="ml-auto text-xs font-medium text-[var(--color-signal-ink)] underline underline-offset-2"
             >
               Ver solo alertas
             </a>
@@ -327,7 +327,7 @@ export default async function TrazabilidadPage({
         <Link
           href="/api/trazabilidad/export"
           prefetch={false}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.97]"
+          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-full)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.97]"
           aria-label="Exportar trazabilidad a Excel"
         >
           <DownloadSimple className="h-3.5 w-3.5" aria-hidden />
@@ -364,8 +364,8 @@ export default async function TrazabilidadPage({
               <article
                 key={row.itemId}
                 className={[
-                  "rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3",
-                  row.alert ? "bg-[var(--color-signal-tint)] ring-1 ring-inset ring-[var(--color-signal-line)]" : "",
+                  "rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4",
+                  row.alert ? "ring-1 ring-inset ring-[var(--color-signal-line)]" : "",
                 ].join(" ")}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -402,7 +402,7 @@ export default async function TrazabilidadPage({
                   </div>
                   <div className="text-right">
                     <p className="text-[var(--color-text-subtle)]">En OC</p>
-                    <p className={["font-mono tabular-nums", row.alert ? "font-semibold text-[oklch(0.52_0.15_56)]" : "text-[var(--color-text)]"].join(" ")}>
+                    <p className={["font-mono tabular-nums", row.alert ? "font-semibold text-[var(--color-signal-ink)]" : "text-[var(--color-text)]"].join(" ")}>
                       {formatQty(row.inOc, row.uom)}
                       {row.alert && (
                         <Warning
@@ -484,7 +484,7 @@ export default async function TrazabilidadPage({
                     </TableCellNum>
 
                     <TableCellNum>
-                      <span className={row.alert ? "font-semibold text-[oklch(0.52_0.15_56)]" : undefined}>
+                      <span className={row.alert ? "font-semibold text-[var(--color-signal-ink)]" : undefined}>
                         {formatQty(row.inOc, row.uom)}
                       </span>
                       {row.alert && (

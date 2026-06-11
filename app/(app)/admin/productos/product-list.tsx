@@ -161,7 +161,7 @@ export function ProductList({ products, categories, allSuppliers }: {
         renderMobileCard={(row) => {
           const p = row as unknown as ProductRow
           return (
-            <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{p.sku}</p>
@@ -228,7 +228,7 @@ export function ProductList({ products, categories, allSuppliers }: {
                 key={c.id}
                 type="button"
                 onClick={() => openEditCat(c)}
-                className="group flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-primary-tint)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                className="group flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-[var(--radius-full)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
               >
                 <span className="text-[var(--color-text)]">{c.name}</span>
                 {c.isEpp && <Badge variant="info" size="sm">EPP</Badge>}

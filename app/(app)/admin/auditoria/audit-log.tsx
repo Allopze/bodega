@@ -59,7 +59,7 @@ export function AuditLog({ entries }: { entries: AuditRow[] }) {
       renderMobileCard={(row) => {
         const e = row as unknown as AuditRow
         return (
-          <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <Badge variant={ACTION_VARIANTS[e.action] ?? "default"} size="sm">

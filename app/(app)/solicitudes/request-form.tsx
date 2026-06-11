@@ -320,7 +320,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
         <input type="hidden" name="urgency"      value={urgency} />
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
-        <section className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 space-y-4">
+        <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5 space-y-4">
           <h2 className="text-h2 text-[var(--color-text)]">
             Datos de la solicitud
           </h2>
@@ -502,7 +502,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
       )}
       </div>
 
-      <aside className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 lg:sticky lg:top-6">
+      <aside className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 lg:sticky lg:top-6">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text)]">Resumen</h2>
@@ -612,7 +612,7 @@ function ItemEditor({
   const showSupplierSelect = !item.supplierHint || !!item.suggestedSupplierId
 
   return (
-    <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-4">
+    <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 space-y-4">
       {/* Row header */}
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[10px] font-mono text-[var(--color-text-muted)]">

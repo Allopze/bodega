@@ -3,8 +3,8 @@ import type { Session } from "next-auth"
 import type { ComponentType } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/db"
 import {
   products,
@@ -21,6 +21,7 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { cn } from "@/lib/utils"
 import {
   ArrowRight,
+  ArrowUpRight,
   CheckCircle,
   CheckSquare,
   ClipboardText,
@@ -28,6 +29,7 @@ import {
   ShoppingCart,
   Truck,
   Warehouse,
+  Warning,
 } from "@phosphor-icons/react/dist/ssr"
 import {
   buildWorkTasks,
@@ -100,128 +102,234 @@ export default async function DashboardPage() {
     ? Math.round((data.summary.approvedRequests / data.summary.totalRequests) * 100)
     : 0
 
-  return (
-    <div className="space-y-10 animate-in fade-in duration-[var(--duration-default)]">
-      <PageHeader
-        eyebrow="Tablero"
-        title="Trabajo de hoy"
-        description={`Hola, ${session.user.name?.split(" ")[0] ?? "usuario"}. Estas son las acciones que mantienen los pedidos avanzando.`}
-      />
+  const firstName = session.user.name?.split(" ")[0] ?? "usuario"
 
-      {/* ── Tareas ── */}
+  return (
+    <div className="space-y-6 animate-in fade-in duration-[var(--duration-default)]">
+
+      {/* ── Header de saludo ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <p className="text-eyebrow mb-1">Tablero</p>
+          <h1 className="text-h1 text-[var(--color-text)]">Hola, {firstName}</h1>
+          <p className="text-sub mt-1">
+            {tasks.length > 0
+              ? `Tienes ${tasks.length} tarea${tasks.length === 1 ? "" : "s"} pendiente${tasks.length === 1 ? "" : "s"} hoy.`
+              : "No hay tareas pendientes. Todo al día."}
+          </p>
+        </div>
+        {tasks.length > 0 && (
+          <Link
+            href="/aprobaciones"
+            className={cn(
+              "inline-flex items-center gap-2 self-start sm:self-center",
+              "px-4 h-9 rounded-[var(--radius-full)]",
+              "bg-[var(--color-primary)] text-white text-[13px] font-semibold",
+              "transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+              "hover:bg-[var(--color-primary-strong)] active:scale-[0.97]",
+            )}
+          >
+            Ver tareas
+            <ArrowRight size={14} />
+          </Link>
+        )}
+      </div>
+
+      {/* ── KPI tiles ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Hero card — drenched green */}
+        <Card className="col-span-2 lg:col-span-1 bg-[var(--color-primary-deep)]">
+          <CardContent className="pt-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/60 mb-2">
+              Tareas pendientes
+            </p>
+            <p className="text-[2.5rem] font-bold leading-none text-white tabular-nums">
+              {tasks.length}
+            </p>
+            <p className="mt-2 text-[12px] text-white/50">
+              {tasks.length === 0 ? "Sin trabajo pendiente" : "requieren acción"}
+            </p>
+          </CardContent>
+        </Card>
+
+        <KpiCard
+          label="Pendientes aprobación"
+          value={data.metrics.pending_approvals}
+          href="/aprobaciones"
+          highlight={data.metrics.pending_approvals > 0}
+        />
+        <KpiCard
+          label="Aprobados sin OC"
+          value={data.metrics.approved_without_oc}
+          href="/compras/nueva"
+          highlight={data.metrics.approved_without_oc > 0}
+        />
+        <KpiCard
+          label="OC por recibir"
+          value={data.metrics.orders_pending_receipt}
+          href="/recepcion"
+          highlight={data.metrics.orders_pending_receipt > 0}
+        />
+      </div>
+
+      {/* ── Fila secondary: inversión + alertas + tasa ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Coins size={14} className="text-[var(--color-text-muted)]" />
+              <p className="text-eyebrow">Inversión OC emitidas</p>
+            </div>
+            <p className="text-[1.75rem] font-bold leading-none text-[var(--color-text)] tabular-nums tracking-tight">
+              {formatCLP(data.summary.totalCosts)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Warning size={14} className={stockAlertCount > 0 ? "text-[var(--color-signal)]" : "text-[var(--color-text-muted)]"} />
+              <p className="text-eyebrow">Alertas de stock</p>
+            </div>
+            <Link href="/bodega" className="group block">
+              <p className={cn(
+                "text-[1.75rem] font-bold leading-none tabular-nums tracking-tight",
+                stockAlertCount > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
+              )}>
+                {stockAlertCount}
+              </p>
+            </Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle size={14} className="text-[var(--color-text-muted)]" />
+              <p className="text-eyebrow">Tasa de aprobación</p>
+            </div>
+            <div className="flex items-end gap-2">
+              <p className="text-[1.75rem] font-bold leading-none text-[var(--color-text)] tabular-nums tracking-tight">
+                {approvalRate}%
+              </p>
+              <div className="flex-1 mb-1">
+                <div className="h-1.5 rounded-full bg-[var(--color-surface-2)] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[var(--color-primary)] transition-all duration-500"
+                    style={{ width: `${approvalRate}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Cola de trabajo ── */}
       <section>
-        <header className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-2 mb-4">
-          <div>
-            <p className="text-eyebrow">01 — Pendientes</p>
-            <h2 className="text-h2 mt-1">Tareas</h2>
-          </div>
-          <p className="font-mono text-xs text-[var(--color-text-muted)] tabular-nums">
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
+          <p className="text-xs text-[var(--color-text-muted)]">
             {tasks.length} {tasks.length === 1 ? "tarea" : "tareas"}
           </p>
-        </header>
+        </div>
 
         {visibleTasks.length === 0 ? (
-          <EmptyState
-            icon={<CheckCircle size={22} />}
-            title="Sin tareas pendientes"
-            description="No hay aprobaciones, órdenes de compra, recepciones o entregas que requieran acción en este momento."
-          />
+          <Card>
+            <CardContent className="pt-5">
+              <EmptyState
+                icon={<CheckCircle size={22} />}
+                title="Sin tareas pendientes"
+                description="No hay aprobaciones, órdenes de compra, recepciones o entregas que requieran acción."
+              />
+            </CardContent>
+          </Card>
         ) : (
-          <ol className="border border-[var(--color-border)] divide-y divide-[var(--color-border)] bg-[var(--color-surface)]">
-            {visibleTasks.map((task, i) => (
-              <li key={task.id}>
-                <TaskRow task={task} index={i} />
-              </li>
-            ))}
-          </ol>
+          <Card>
+            <ul className="divide-y divide-[var(--color-border)]">
+              {visibleTasks.map((task, i) => (
+                <li key={task.id} className={cn(
+                  i === 0 && "rounded-t-[var(--radius-2xl)] overflow-hidden",
+                  i === visibleTasks.length - 1 && "rounded-b-[var(--radius-2xl)] overflow-hidden",
+                )}>
+                  <TaskRow task={task} index={i} />
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
       </section>
 
-      {/* ── Indicadores ── */}
-      <section>
-        <header className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-2 mb-4">
-          <div>
-            <p className="text-eyebrow">02 — Indicadores</p>
-            <h2 className="text-h2 mt-1">Resumen operativo</h2>
-          </div>
-          <p className="text-xs text-[var(--color-text-muted)]">Carga, costos y alertas</p>
-        </header>
-
-        <dl className="grid grid-cols-1 md:grid-cols-3 border border-[var(--color-border)] divide-y md:divide-y-0 md:divide-x divide-[var(--color-border)] bg-[var(--color-surface)]">
-          <MetricCell
-            icon={Coins}
-            label="Inversión en OC emitidas"
-            value={formatCLP(data.summary.totalCosts)}
-          />
-          <MetricCell
-            icon={ClipboardText}
-            label="Solicitudes visibles"
-            value={String(data.summary.totalRequests)}
-          />
-          <MetricCell
-            icon={CheckCircle}
-            label="Tasa de aprobación"
-            value={`${approvalRate}%`}
-          />
-        </dl>
-
-        <div className="mt-3 grid grid-cols-2 lg:grid-cols-4 border border-[var(--color-border)] divide-x divide-[var(--color-border)] bg-[var(--color-surface)]">
-          <QuickLink href="/aprobaciones" label="Pendientes de aprobación" value={data.metrics.pending_approvals} />
-          <QuickLink href="/compras/nueva" label="Aprobados sin OC" value={data.metrics.approved_without_oc} />
-          <QuickLink href="/recepcion" label="OC por recibir" value={data.metrics.orders_pending_receipt} />
-          <QuickLink href="/bodega" label="Alertas de stock" value={stockAlertCount} />
-        </div>
-      </section>
-
-      {/* ── Faenas ── */}
-      <section>
-        <header className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-2 mb-4">
-          <div>
-            <p className="text-eyebrow">03 — Faenas</p>
-            <h2 className="text-h2 mt-1">Actividad y costos por faena</h2>
-          </div>
-          <p className="text-xs text-[var(--color-text-muted)]">Ordenado por OC emitida</p>
-        </header>
-
-        {data.worksitesBreakdown.length === 0 ? (
-          <div className="border border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center">
-            <p className="text-sm text-[var(--color-text-subtle)]">No hay actividad registrada en las faenas visibles.</p>
-          </div>
-        ) : (
-          <div className="border border-[var(--color-border)] bg-[var(--color-surface)] overflow-x-auto">
-            <table className="w-full border-collapse text-left text-[13px]" aria-label="Actividad y costos por faena">
-              <thead>
-                <tr className="border-b border-[var(--color-border-strong)] text-[var(--color-text-muted)]">
-                  <th scope="col" className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Faena</th>
-                  <th scope="col" className="px-4 py-2.5 text-right font-medium text-xs uppercase tracking-wider">Solicitudes</th>
-                  <th scope="col" className="px-4 py-2.5 text-right font-medium text-xs uppercase tracking-wider">Pendientes</th>
-                  <th scope="col" className="px-4 py-2.5 text-right font-medium text-xs uppercase tracking-wider">Aprobadas</th>
-                  <th scope="col" className="px-4 py-2.5 text-right font-medium text-xs uppercase tracking-wider">Total OC</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.worksitesBreakdown.map((row, i) => (
-                  <tr key={row.id} className={cn(
-                    "transition-colors hover:bg-[var(--color-surface-2)]",
-                    i > 0 && "border-t border-[var(--color-border)]",
-                  )}>
-                    <td className="px-4 py-3 font-medium text-[var(--color-text)]">{row.name}</td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.requestsCount}</td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums">
-                      {row.pendingCount > 0
-                        ? <span className="font-semibold text-[var(--color-signal-ink)]">{row.pendingCount}</span>
-                        : <span className="text-[var(--color-text-faint)]">0</span>}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.approvedCount}</td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums font-medium text-[var(--color-text)]">{formatCLP(row.totalCost)}</td>
+      {/* ── Actividad por faena ── */}
+      {data.worksitesBreakdown.length > 0 && (
+        <section>
+          <h2 className="text-h2 text-[var(--color-text)] mb-3">Actividad por faena</h2>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-[13px]" aria-label="Actividad y costos por faena">
+                <thead>
+                  <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]">
+                    <th scope="col" className="px-5 py-3 font-semibold text-xs uppercase tracking-wider">Faena</th>
+                    <th scope="col" className="px-5 py-3 text-right font-semibold text-xs uppercase tracking-wider">Solicitudes</th>
+                    <th scope="col" className="px-5 py-3 text-right font-semibold text-xs uppercase tracking-wider">Pendientes</th>
+                    <th scope="col" className="px-5 py-3 text-right font-semibold text-xs uppercase tracking-wider">Aprobadas</th>
+                    <th scope="col" className="px-5 py-3 text-right font-semibold text-xs uppercase tracking-wider">Total OC</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {data.worksitesBreakdown.map((row, i) => (
+                    <tr key={row.id} className={cn(
+                      "transition-colors hover:bg-[var(--color-surface-2)]",
+                      i > 0 && "border-t border-[var(--color-border)]",
+                    )}>
+                      <td className="px-5 py-3 font-medium text-[var(--color-text)]">{row.name}</td>
+                      <td className="px-5 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.requestsCount}</td>
+                      <td className="px-5 py-3 text-right font-mono tabular-nums">
+                        {row.pendingCount > 0
+                          ? <span className="font-semibold text-[var(--color-signal-ink)]">{row.pendingCount}</span>
+                          : <span className="text-[var(--color-text-faint)]">0</span>}
+                      </td>
+                      <td className="px-5 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.approvedCount}</td>
+                      <td className="px-5 py-3 text-right font-mono tabular-nums font-medium text-[var(--color-text)]">{formatCLP(row.totalCost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </section>
+      )}
     </div>
+  )
+}
+
+function KpiCard({
+  label, value, href, highlight,
+}: {
+  label: string
+  value: number
+  href: string
+  highlight?: boolean
+}) {
+  return (
+    <Link href={href} className="block group">
+      <Card className="transition-[box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:shadow-[var(--shadow-md)] active:scale-[0.98]">
+        <CardContent className="pt-5">
+          <p className="text-eyebrow mb-2 line-clamp-2">{label}</p>
+          <div className="flex items-end justify-between">
+            <p className={cn(
+              "text-[2rem] font-bold leading-none tabular-nums tracking-tight",
+              highlight ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
+            )}>
+              {value}
+            </p>
+            <ArrowUpRight
+              size={16}
+              className="text-[var(--color-text-faint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] mb-1"
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   )
 }
 
@@ -231,15 +339,15 @@ function TaskRow({ task, index }: { task: WorkTask; index: number }) {
     <Link
       href={task.href}
       className={cn(
-        "group grid grid-cols-[2.25rem_1fr_auto] md:grid-cols-[3rem_2.5rem_1fr_auto] items-center gap-3 px-4 py-3",
-        "transition-colors hover:bg-[var(--color-surface-2)]",
+        "group grid grid-cols-[2.25rem_1fr_auto] md:grid-cols-[3rem_2.5rem_1fr_auto] items-center gap-3 px-5 py-3.5",
+        "transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)]",
       )}
     >
       <span className="font-mono text-[11px] text-[var(--color-text-faint)] tabular-nums">
         {String(index + 1).padStart(2, "0")}
       </span>
-      <span className="hidden md:flex h-8 w-8 items-center justify-center text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">
-        <Icon size={16} />
+      <span className="hidden md:flex h-8 w-8 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]">
+        <Icon size={15} />
       </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -247,11 +355,8 @@ function TaskRow({ task, index }: { task: WorkTask; index: number }) {
           <PriorityTag priority={task.priority} />
         </div>
         <p className="mt-0.5 truncate text-[12px] text-[var(--color-text-muted)]">{task.subtitle}</p>
-        <p className="mt-1 font-mono text-[10.5px] uppercase tracking-wider text-[var(--color-text-faint)]">
-          {task.statusLabel} · {formatShortDate(task.createdAt)}
-        </p>
       </div>
-      <div className="hidden md:flex items-center gap-1 text-xs font-medium text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">
+      <div className="hidden md:flex items-center gap-1 text-xs font-medium text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)]">
         {task.ctaLabel}
         <ArrowRight size={12} className="transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5" />
       </div>
@@ -262,59 +367,19 @@ function TaskRow({ task, index }: { task: WorkTask; index: number }) {
 function PriorityTag({ priority }: { priority: WorkPriority }) {
   if (priority === "critical") {
     return (
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--color-signal-ink)]">
-        ● {PRIORITY_LABEL[priority]}
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius-full)] text-[10px] font-semibold uppercase tracking-wider bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]">
+        {PRIORITY_LABEL[priority]}
       </span>
     )
   }
   if (priority === "high") {
     return (
-      <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[var(--color-warning-ink)]">
-        ● {PRIORITY_LABEL[priority]}
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius-full)] text-[10px] font-semibold uppercase tracking-wider bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]">
+        {PRIORITY_LABEL[priority]}
       </span>
     )
   }
-  return (
-    <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">
-      ● {PRIORITY_LABEL[priority]}
-    </span>
-  )
-}
-
-function MetricCell({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: IconComponent
-  label: string
-  value: string
-}) {
-  return (
-    <div className="px-5 py-5">
-      <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
-        <Icon size={14} />
-        <p className="text-eyebrow">{label}</p>
-      </div>
-      <p className="mt-3 font-serif text-[1.75rem] leading-none font-medium text-[var(--color-text)] tracking-tight">
-        {value}
-      </p>
-    </div>
-  )
-}
-
-function QuickLink({ href, label, value }: { href: string; label: string; value: number }) {
-  return (
-    <Link
-      href={href}
-      className="block px-4 py-3 transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
-    >
-      <p className="font-serif text-[1.5rem] font-medium leading-none text-[var(--color-text)] tracking-tight tabular-nums">
-        {value}
-      </p>
-      <p className="mt-1.5 text-[12px] text-[var(--color-text-muted)]">{label}</p>
-    </Link>
-  )
+  return null
 }
 
 function buildActor(session: Session): WorkActor {

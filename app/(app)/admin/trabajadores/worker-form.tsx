@@ -112,7 +112,7 @@ export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormP
                 <select
                   id="wrk-ws" name="worksiteId"
                   defaultValue={editWorker?.worksiteId ?? ""}
-                  className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)]"
+                  className="h-9 w-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)]"
                 >
                   <option value="">Selecciona una faena</option>
                   {worksites.map((w) => (

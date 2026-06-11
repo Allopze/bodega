@@ -27,7 +27,7 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
 
   return (
     <form action={formAction} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-      <div className="min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+      <div className="min-w-0 rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-6">
         <div className="mb-4">
           <h2 className="text-h2 text-[var(--color-text)]">
             Datos de empresa para órdenes de compra
@@ -170,7 +170,7 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
       <aside className="space-y-6 lg:sticky lg:top-6">
         <OcHeaderPreview profile={initialCompanyProfile} />
 
-        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+        <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
           <h2 className="text-base font-semibold text-[var(--color-text)] mb-4">
             Parámetros de carga
           </h2>
@@ -212,7 +212,7 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
 
 function OcHeaderPreview({ profile }: { profile: CompanyProfile }) {
   return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+    <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
       <div className="mb-3">
         <h2 className="text-sm font-semibold text-[var(--color-text)]">Vista en OC</h2>
         <p className="mt-1 text-xs text-[var(--color-text-subtle)]">

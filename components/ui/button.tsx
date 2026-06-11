@@ -8,24 +8,26 @@ import { cn } from "@/lib/utils"
 const buttonVariants = cva(
   [
     "inline-flex items-center justify-center gap-2",
-    "font-sans font-medium text-[13px] leading-[var(--leading-label)]",
-    "rounded-[var(--radius-sm)]",
+    "font-sans font-semibold text-[13px] leading-[var(--leading-label)]",
+    "rounded-[var(--radius-full)]",
     "select-none cursor-pointer",
-    "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+    "transition-[background-color,transform,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
     "disabled:pointer-events-none disabled:opacity-45",
+    "active:scale-[0.97]",
   ],
   {
     variants: {
       variant: {
         primary: [
           "bg-[var(--color-primary)] text-white",
-          "hover:bg-[var(--color-primary-ink)]",
+          "hover:bg-[var(--color-primary-strong)]",
         ],
         secondary: [
           "bg-[var(--color-surface)] text-[var(--color-text)]",
           "border border-[var(--color-border)]",
           "hover:bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
+          "shadow-[var(--shadow-xs)]",
         ],
         ghost: [
           "text-[var(--color-text-muted)]",
@@ -47,10 +49,10 @@ const buttonVariants = cva(
         ],
       },
       size: {
-        sm:      "h-7 px-2.5 text-xs",
-        default: "h-8 px-3.5",
-        lg:      "h-9 px-4 text-[13px]",
-        icon:    "h-8 w-8 p-0",
+        sm:        "h-7 px-3 text-xs",
+        default:   "h-8 px-4",
+        lg:        "h-9 px-5 text-[13px]",
+        icon:      "h-8 w-8 p-0",
         "icon-sm": "h-7 w-7 p-0",
       },
     },

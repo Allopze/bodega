@@ -43,7 +43,7 @@ export function TopBar({
     <header className={cn(
       "flex items-center h-[3.25rem] px-4 md:px-6 gap-3",
       "border-b border-[var(--color-border)]",
-      "bg-[var(--color-brand-surface)]",
+      "bg-[var(--color-surface)]",
       "sticky top-0 shrink-0 z-30",
       className,
     )}>
@@ -52,10 +52,10 @@ export function TopBar({
           onClick={onMenuToggle}
           className={cn(
             "lg:hidden flex items-center justify-center",
-            "min-h-[44px] min-w-[44px] rounded-[var(--radius-sm)]",
+            "min-h-[44px] min-w-[44px] rounded-[var(--radius-lg)]",
             "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
             "hover:bg-[var(--color-surface-2)]",
-            "transition-colors duration-[var(--duration-fast)]",
+            "transition-[color,background-color] duration-[var(--duration-fast)]",
           )}
           aria-label={isMenuOpen ? "Cerrar menú" : "Abrir menú"}
           aria-expanded={isMenuOpen}
@@ -68,7 +68,7 @@ export function TopBar({
 
       <div className="flex-1 min-w-0" />
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         <NotificationBell />
 
         <DropdownMenu>
@@ -80,14 +80,11 @@ export function TopBar({
               <Avatar name={session.user.name ?? session.user.email ?? ""} size="sm" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="min-w-[13rem]">
             <DropdownMenuLabel>
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-semibold text-[var(--color-text)]">{session.user.name}</span>
                 <span className="text-xs text-[var(--color-text-subtle)] font-normal truncate max-w-[12rem]">{session.user.email}</span>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)] mt-1.5">
-                  {session.user.roles?.[0]?.replace("_", " ") ?? "usuario"}
-                </span>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -96,7 +93,7 @@ export function TopBar({
                 <DropdownMenuItem asChild>
                   <Link
                     href="/admin"
-                    className="flex items-center gap-2 text-sm text-[var(--color-text)] w-full cursor-pointer focus:bg-[var(--color-surface-2)]"
+                    className="flex items-center gap-2 text-sm text-[var(--color-text)] w-full cursor-pointer"
                   >
                     <ShieldCheck size={16} className="text-[var(--color-text-subtle)]" />
                     <span>Administración</span>
@@ -110,7 +107,7 @@ export function TopBar({
                 type="button"
                 onClick={handleSignOut}
                 disabled={isSigningOut}
-                className="flex w-full items-center gap-2 text-[var(--color-danger-ink)] focus:bg-[var(--color-danger-tint)] disabled:cursor-wait disabled:opacity-70"
+                className="flex w-full items-center gap-2 text-[var(--color-danger-ink)] disabled:cursor-wait disabled:opacity-70"
               >
                 <SignOut size={16} />
                 <span>{isSigningOut ? "Cerrando..." : "Cerrar sesión"}</span>

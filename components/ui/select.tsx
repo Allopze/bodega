@@ -16,9 +16,9 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-9 w-full items-center justify-between gap-2 rounded-[var(--radius)]",
+      "flex h-9 w-full items-center justify-between gap-2 rounded-[var(--radius-lg)]",
       "border border-[var(--color-border)] bg-[var(--color-surface)]",
-      "px-3 py-1.5 text-sm text-[var(--color-text)]",
+      "px-3.5 py-1.5 text-sm text-[var(--color-text)]",
       "transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
       "hover:border-[var(--color-border-strong)]",
       "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)]",
@@ -75,7 +75,7 @@ const SelectContent = React.forwardRef<
       ref={ref}
       className={cn(
         "relative z-50 min-w-[8rem] overflow-hidden",
-        "rounded-[var(--radius-md)] border border-[var(--color-border)]",
+        "rounded-[var(--radius-xl)] border border-[var(--color-border)]",
         "bg-[var(--color-surface)] shadow-[var(--shadow-md)]",
         "origin-[var(--radix-select-content-transform-origin)]",
         // Entry animation — scale from trigger, ease-out (Emil)

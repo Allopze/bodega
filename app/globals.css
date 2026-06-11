@@ -2,14 +2,14 @@
 @import "tw-animate-css";
 
 /* ─── Chome Solicitudes y Bodega — Design Tokens ──────────────────────────── */
-/* Direction: Operations Logbook — editorial precision, evidence-forward.     */
-/* Color is neutral with one signal hue. Borders carry hierarchy.             */
+/* Direction: Rounded, warm, green-forward. Cards float over a gray canvas.   */
+/* Elevation carries hierarchy. Signal orange reserved for pending states.     */
 
 @theme {
   /* ── Fonts ── */
-  --font-display: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-sans:    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-serif:   "Source Serif 4", "Source Serif Pro", ui-serif, Georgia, serif;
+  --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-sans:    var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-serif:   var(--font-jakarta), ui-sans-serif, system-ui, sans-serif; /* kept for compat, maps to sans */
   --font-mono:    var(--font-geist-mono), "Geist Mono", ui-monospace, "Cascadia Code", monospace;
 
   /* ── Typography Scale ── */
@@ -27,58 +27,60 @@
   --leading-body:    1.55;
   --leading-display: 1.1;
 
-  /* ── Brand primary — desaturated forest, used for actions & focus only ── */
-  --color-primary:        oklch(0.498 0.060 154);  /* #2f6b4d — quiet green */
-  --color-primary-tint:   oklch(0.965 0.010 154);  /* surface tint           */
-  --color-primary-line:   oklch(0.890 0.025 154);  /* border / hover line    */
-  --color-primary-ink:    oklch(0.295 0.045 154);  /* dark text on tint      */
+  /* ── Brand primary — vibrant green, protagonist ── */
+  --color-primary:        oklch(0.470 0.140 154);  /* rich Chome green */
+  --color-primary-tint:   oklch(0.962 0.018 154);  /* surface tint      */
+  --color-primary-line:   oklch(0.880 0.045 154);  /* border / hover    */
+  --color-primary-ink:    oklch(0.270 0.095 154);  /* dark text on tint */
+  --color-primary-strong: oklch(0.380 0.140 154);  /* hover state       */
+  --color-primary-deep:   oklch(0.270 0.110 154);  /* hero card bg      */
 
-  /* ── Signal — the one saturated hue. Reserved exclusively for "pendiente" ── */
+  /* ── Signal — the one orange hue. Reserved exclusively for "pendiente" ── */
   --color-signal:         oklch(0.628 0.162 49);   /* chome orange          */
   --color-signal-tint:    oklch(0.965 0.022 60);
   --color-signal-line:    oklch(0.892 0.052 60);
   --color-signal-ink:     oklch(0.402 0.130 49);
 
-  /* ── Semantic state colors — all desaturated, all earn their place ── */
-  --color-info:           oklch(0.520 0.080 240);  /* blue — in progress     */
+  /* ── Semantic state colors ── */
+  --color-info:           oklch(0.520 0.080 240);
   --color-info-tint:      oklch(0.965 0.008 240);
   --color-info-line:      oklch(0.892 0.020 240);
   --color-info-ink:       oklch(0.330 0.075 240);
 
-  --color-success:        oklch(0.520 0.090 154);  /* green — completed      */
-  --color-success-tint:   oklch(0.965 0.010 154);
-  --color-success-line:   oklch(0.890 0.025 154);
-  --color-success-ink:    oklch(0.330 0.080 154);
+  --color-success:        oklch(0.500 0.110 154);
+  --color-success-tint:   oklch(0.962 0.018 154);
+  --color-success-line:   oklch(0.880 0.045 154);
+  --color-success-ink:    oklch(0.270 0.095 154);
 
-  --color-warning:        oklch(0.720 0.140 78);   /* amber — partial        */
+  --color-warning:        oklch(0.720 0.140 78);
   --color-warning-tint:   oklch(0.970 0.030 85);
   --color-warning-line:   oklch(0.900 0.060 82);
   --color-warning-ink:    oklch(0.395 0.110 75);
 
-  --color-danger:         oklch(0.520 0.155 27);   /* red — rejected         */
+  --color-danger:         oklch(0.520 0.155 27);
   --color-danger-tint:    oklch(0.965 0.012 27);
   --color-danger-line:    oklch(0.890 0.030 27);
   --color-danger-ink:     oklch(0.355 0.135 27);
 
-  /* ── Neutrals — slightly cool, paper-like ── */
-  --color-bg:             oklch(0.985 0.002 90);   /* page canvas            */
-  --color-surface:        oklch(1.000 0     0);    /* content surface        */
-  --color-surface-2:      oklch(0.972 0.003 90);   /* secondary panel        */
-  --color-surface-3:      oklch(0.952 0.005 90);   /* tertiary, headers      */
-  --color-border:         oklch(0.910 0.004 90);   /* default border         */
-  --color-border-strong:  oklch(0.838 0.005 90);   /* rule, divider          */
-  --color-rule:           oklch(0.225 0.005 90);   /* strong typographic rule */
+  /* ── Neutrals — warm gray canvas, cards float above ── */
+  --color-bg:             oklch(0.952 0.005 90);   /* warm gray canvas   */
+  --color-surface:        oklch(1.000 0     0);    /* card surface       */
+  --color-surface-2:      oklch(0.974 0.004 90);   /* hover, secondary   */
+  --color-surface-3:      oklch(0.955 0.005 90);   /* tertiary, inset    */
+  --color-border:         oklch(0.918 0.004 90);   /* hairline border    */
+  --color-border-strong:  oklch(0.848 0.005 90);   /* divider            */
+  --color-rule:           oklch(0.225 0.005 90);   /* strong rule        */
 
-  --color-text:           oklch(0.180 0.004 90);   /* #1f1f1c — near black   */
+  --color-text:           oklch(0.180 0.004 90);   /* near black         */
   --color-text-muted:     oklch(0.430 0.005 90);
   --color-text-subtle:    oklch(0.605 0.005 90);
   --color-text-faint:     oklch(0.740 0.004 90);
 
-  /* ── Brand surface — a quiet, paper-white moment for top-bar brand zone ── */
-  --color-brand-surface:       oklch(0.985 0.002 90);
+  /* ── Brand surface ── */
+  --color-brand-surface:       oklch(1.000 0 0);
   --color-brand-text:          oklch(0.180 0.004 90);
   --color-brand-text-muted:    oklch(0.430 0.005 90);
-  --color-brand-border:        oklch(0.910 0.004 90);
+  --color-brand-border:        oklch(0.918 0.004 90);
 
   /* ── Motion ── */
   --ease-out:     cubic-bezier(0.20, 0.80, 0.30, 1);
@@ -89,19 +91,22 @@
   --duration-default: 180ms;
   --duration-slow:    280ms;
 
-  /* ── Radii — restrained. The new shape language is square. ── */
-  --radius-xs:   0.125rem;
-  --radius-sm:   0.1875rem;
-  --radius:      0.25rem;
-  --radius-md:   0.375rem;
-  --radius-lg:   0.5rem;
-  --radius-xl:   0.75rem;
+  /* ── Radii — generous, Donezo-style ── */
+  --radius-xs:   0.25rem;   /* 4px  */
+  --radius-sm:   0.375rem;  /* 6px  */
+  --radius:      0.625rem;  /* 10px */
+  --radius-md:   0.75rem;   /* 12px */
+  --radius-lg:   1rem;      /* 16px */
+  --radius-xl:   1.25rem;   /* 20px */
+  --radius-2xl:  1.5rem;    /* 24px — large cards */
+  --radius-full: 9999px;    /* pills */
 
-  /* ── Shadows — minimal. We carry hierarchy with borders, not depth. ── */
-  --shadow-xs:  0 1px 0 oklch(0.180 0.004 90 / 0.04);
-  --shadow-sm:  0 1px 2px oklch(0.180 0.004 90 / 0.05);
-  --shadow-md:  0 2px 8px oklch(0.180 0.004 90 / 0.06), 0 1px 2px oklch(0.180 0.004 90 / 0.04);
-  --shadow-lg:  0 12px 32px oklch(0.180 0.004 90 / 0.10), 0 2px 6px oklch(0.180 0.004 90 / 0.06);
+  /* ── Shadows — soft elevation, cards float over canvas ── */
+  --shadow-xs:   0 1px 2px oklch(0.180 0.004 90 / 0.06);
+  --shadow-sm:   0 2px 4px oklch(0.180 0.004 90 / 0.07), 0 1px 2px oklch(0.180 0.004 90 / 0.04);
+  --shadow-card: 0 1px 3px oklch(0.180 0.004 90 / 0.08), 0 1px 2px oklch(0.180 0.004 90 / 0.05);
+  --shadow-md:   0 4px 12px oklch(0.180 0.004 90 / 0.08), 0 2px 4px oklch(0.180 0.004 90 / 0.05);
+  --shadow-lg:   0 8px 24px oklch(0.180 0.004 90 / 0.10), 0 2px 6px oklch(0.180 0.004 90 / 0.06);
 
   /* ── Overlay ── */
   --color-overlay: oklch(0.180 0.004 90 / 0.32);
@@ -133,27 +138,27 @@ body {
   font-feature-settings: "tnum";
 }
 
-/* ─── Heading utilities (consistent voice: serif for display, sans for UI) ── */
+/* ─── Heading utilities ── */
 @utility text-display {
-  font-family: var(--font-serif);
-  font-weight: 500;
+  font-family: var(--font-sans);
+  font-weight: 700;
   font-size: var(--text-2xl);
   line-height: var(--leading-display);
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
 }
 @utility text-h1 {
   font-family: var(--font-sans);
   font-size: var(--text-xl);
-  font-weight: 600;
+  font-weight: 700;
   line-height: var(--leading-display);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 @utility text-h2 {
   font-family: var(--font-sans);
   font-size: var(--text-lg);
   font-weight: 600;
   line-height: var(--leading-compact);
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
 }
 @utility text-h3 {
   font-family: var(--font-sans);
@@ -165,7 +170,7 @@ body {
   font-family: var(--font-sans);
   font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
@@ -180,7 +185,7 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
 }
 
 /* ─── Scrollbar ── */
@@ -189,9 +194,15 @@ body {
   scrollbar-color: var(--color-border-strong) transparent;
 }
 
-/* ─── Pressable (no scale on active — logbook is calm) ── */
+/* ─── Pressable — subtle scale feedback on press ── */
 @media (prefers-reduced-motion: no-preference) {
-  [data-pressable] { transition: background-color var(--duration-fast) var(--ease-out); }
+  [data-pressable] {
+    transition: background-color var(--duration-fast) var(--ease-out),
+                transform var(--duration-fast) var(--ease-out);
+  }
+  [data-pressable]:active {
+    transform: scale(0.97);
+  }
 }
 
 /* ─── Keyframes ── */

@@ -87,8 +87,8 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
                 <article
                   key={s.id}
                   className={[
-                    "rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3",
-                    lowStock ? "bg-[var(--color-signal-tint)] ring-1 ring-inset ring-[var(--color-signal-line)]" : "",
+                    "rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4",
+                    lowStock ? "ring-1 ring-inset ring-[var(--color-signal-line)]" : "",
                   ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -123,7 +123,7 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
             })}
           </div>
 
-          <div className="hidden overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] md:block">
+          <div className="hidden overflow-hidden rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)] md:block">
             <table className="w-full text-sm" aria-label={`Stock en ${worksiteName}`}>
               <caption className="sr-only">Productos y cantidades en faena {worksiteName}</caption>
               <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">

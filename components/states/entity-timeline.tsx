@@ -30,7 +30,7 @@ export function EntityTimeline({ entityType, events }: EntityTimelineProps) {
   }
 
   return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-4 py-3">
         <div>
           <h2 className="text-h2">Historial de cambios</h2>

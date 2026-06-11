@@ -182,7 +182,7 @@ export function ProductPicker({
           aria-labelledby={labelId}
           className={cn(
             "absolute z-20 top-full mt-1 left-0 right-0 max-h-52 overflow-y-auto",
-            "rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]",
+            "rounded-[var(--radius-xl)] bg-[var(--color-surface)]",
             "shadow-[var(--shadow-md)] py-1",
           )}
         >

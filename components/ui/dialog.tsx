@@ -40,12 +40,9 @@ const DialogContent = React.forwardRef<
       className={cn(
         "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
         "w-full max-w-lg",
-        "bg-[var(--color-surface)] rounded-[var(--radius-lg)]",
-        "border border-[var(--color-border)]",
+        "bg-[var(--color-surface)] rounded-[var(--radius-2xl)]",
         "shadow-[var(--shadow-lg)]",
         "p-6",
-        // Emil: modal stays centered (exception to origin-aware rule)
-        // Emil: under 300ms for UI animations
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
@@ -57,14 +54,16 @@ const DialogContent = React.forwardRef<
       {children}
       <DialogPrimitive.Close
         className={cn(
-          "absolute right-4 top-4 rounded-[var(--radius-sm)]",
+          "absolute right-4 top-4 rounded-[var(--radius-md)]",
+          "h-7 w-7 flex items-center justify-center",
           "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
-          "transition-colors duration-[var(--duration-fast)]",
+          "hover:bg-[var(--color-surface-2)]",
+          "transition-[color,background-color,transform] duration-[var(--duration-fast)]",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
           "active:scale-[0.95]",
         )}
       >
-        <X size={16} weight="bold" />
+        <X size={15} weight="bold" />
         <span className="sr-only">Cerrar</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
@@ -73,7 +72,7 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("mb-4 pr-6", className)} {...props} />
+  <div className={cn("mb-4 pr-7", className)} {...props} />
 )
 DialogHeader.displayName = "DialogHeader"
 
@@ -88,7 +87,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("font-display text-base font-semibold text-[var(--color-text)]", className)}
+    className={cn("text-h2 text-[var(--color-text)]", className)}
     {...props}
   />
 ))

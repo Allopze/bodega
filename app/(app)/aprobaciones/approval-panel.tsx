@@ -136,7 +136,7 @@ function ItemRow({ item }: { item: ApprovalItem }) {
   }
 
   return (
-    <li className="border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">
+    <li className="rounded-[var(--radius-xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden">
       {/* Item header row */}
       <div className="flex items-start gap-3 p-3">
         <div className="flex-1 min-w-0">
@@ -360,7 +360,7 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
   const allApproved = bulkState.ok === true
 
   return (
-    <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
+    <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden">
       {/* Request header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
         <button
@@ -394,7 +394,7 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
               · {formatDate(request.submittedAt)}
             </span>
           )}
-          <span className="text-xs font-medium text-[var(--color-text-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full px-2 py-0.5">
+          <span className="text-xs font-medium text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)] rounded-full px-2 py-0.5">
             {request.pendingCount} pendiente{request.pendingCount !== 1 ? "s" : ""}
           </span>
 

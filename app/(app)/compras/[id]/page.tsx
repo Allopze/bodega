@@ -116,7 +116,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             const reqCode  = (reqItem as { request?: { code: string } } | null)?.request?.code
 
             return (
-              <article key={item.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+              <article key={item.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-[var(--color-text)]">{name}</p>
                   <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
@@ -149,7 +149,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             )
           })}
 
-          <dl className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
+          <dl className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 text-sm">
             <div className="flex items-center justify-between gap-3 py-1">
               <dt className="text-[var(--color-text-muted)]">Neto</dt>
               <dd className="font-mono tabular-nums text-[var(--color-text-muted)]">{formatCLP(order.netAmount)}</dd>
@@ -165,7 +165,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
           </dl>
         </div>
 
-        <div className="hidden overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] md:block">
+        <div className="hidden overflow-hidden rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)] md:block">
           <table className="w-full text-sm">
             <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
               <tr>
@@ -231,7 +231,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
 
         {/* Notes */}
         {order.notes && (
-          <div className="p-4 border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-surface-2)]">
+          <div className="p-4 rounded-[var(--radius-xl)] bg-[var(--color-surface-2)]">
             <p className="text-xs text-[var(--color-text-subtle)] mb-1">Notas</p>
             <p className="text-sm text-[var(--color-text-muted)]">{order.notes}</p>
           </div>
@@ -239,7 +239,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
         </div>
 
         <aside className="space-y-6 lg:sticky lg:top-6">
-          <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <div className="flex items-center justify-between gap-3">
               <StateBadge state={order.status} entity="oc" />
               <Button asChild variant="secondary" size="sm">
@@ -261,7 +261,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             </dl>
           </section>
 
-          <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <h2 className="text-sm font-semibold text-[var(--color-text)]">Totales</h2>
             <dl className="mt-3 space-y-2 text-sm">
               <AmountLine label="Neto" value={formatCLP(order.netAmount)} />
@@ -274,7 +274,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
           </section>
 
           {canShowOrderActions && (
-            <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Acciones</h2>
               <OcActions
                 orderId={order.id}

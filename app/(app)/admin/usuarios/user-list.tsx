@@ -156,7 +156,7 @@ export function UserList({ users, allRoles, allWorksites }: UserListProps) {
         renderMobileCard={(row) => {
           const u = row as unknown as UserRow
           return (
-            <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <Avatar name={u.name} size="sm" />

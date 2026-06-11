@@ -58,7 +58,7 @@ export function ReturnPanel({
     : []
 
   return (
-    <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5">
+    <div className="bg-[var(--color-surface)] rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] p-5">
       <h2 className="text-h2 mb-4 flex items-center gap-2">
         <ArrowBendUpLeft size={16} className="text-[var(--color-text-muted)]" />
         Devolver a stock

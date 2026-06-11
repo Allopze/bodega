@@ -23,7 +23,7 @@ export function KardexTable({ movements }: KardexTableProps) {
   return (
     <div>
       <h2 className="text-h2 mb-3">Kardex: últimos 50 movimientos</h2>
-      <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
+      <div className="rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)] overflow-hidden">
         <table className="w-full text-sm" aria-label="Kardex de movimientos de inventario">
           <caption className="sr-only">Últimos 50 movimientos de inventario registrados en todas las faenas</caption>
           <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">

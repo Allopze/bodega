@@ -41,7 +41,7 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
       renderMobileCard={(row) => {
         const delivery = row as unknown as DeliveryRow
         return (
-          <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex items-start gap-2">
                 <User size={18} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" />

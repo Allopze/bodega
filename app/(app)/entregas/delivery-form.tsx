@@ -85,7 +85,7 @@ export function DeliveryForm({
   }
 
   return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+    <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
       <div className="mb-4 flex flex-col gap-1">
         <h2 className="text-base font-semibold text-[var(--color-text)]">Registrar entrega de EPP</h2>
         <p className="text-sm text-[var(--color-text-muted)]">
