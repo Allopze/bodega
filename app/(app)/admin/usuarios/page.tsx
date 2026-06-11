@@ -10,7 +10,8 @@ import { UserList } from "./user-list"
 export const metadata: Metadata = { title: "Usuarios" }
 
 export default async function UsuariosPage() {
-  try { await requirePermission("admin:users") }
+  let session
+  try { session = await requirePermission("admin:users") }
   catch { redirect("/dashboard") }
 
   // Load all users
@@ -23,6 +24,7 @@ export default async function UsuariosPage() {
     .select({
       userId:    userRoles.userId,
       roleId:    userRoles.roleId,
+      roleName:  roles.name,
       roleLabel: roles.label,
     })
     .from(userRoles)
@@ -32,10 +34,12 @@ export default async function UsuariosPage() {
   const allWsUsers = await db.query.worksiteUsers.findMany()
 
   // Assemble user rows
-  const userRows = allUsers.map((u) => {
+  const canManageAdmins = session.user.roles.includes("administrador")
+  const userRows = allUsers.flatMap((u) => {
     const uRoles = allUserRoleRows.filter((r) => r.userId === u.id)
+    if (!canManageAdmins && uRoles.some((role) => role.roleName === "administrador")) return []
     const uWs    = allWsUsers.filter((w) => w.userId === u.id)
-    return {
+    return [{
       id:          u.id,
       name:        u.name,
       email:       u.email,
@@ -46,7 +50,7 @@ export default async function UsuariosPage() {
       roleLabels:  uRoles.map((r) => r.roleLabel),
       worksiteAssignments: uWs.map((w) => ({ worksiteId: w.worksiteId, isPrimary: w.isPrimary })),
       worksiteCount: uWs.length,
-    }
+    }]
   })
 
   // Load available roles + active worksites for the form selects
@@ -71,7 +75,9 @@ export default async function UsuariosPage() {
       />
       <UserList
         users={userRows}
-        allRoles={allRolesData.map((r) => ({ id: r.id, name: r.name, label: r.label }))}
+        allRoles={allRolesData
+          .filter((r) => canManageAdmins || r.name !== "administrador")
+          .map((r) => ({ id: r.id, name: r.name, label: r.label }))}
         allWorksites={allWorksitesData.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
       />
     </>

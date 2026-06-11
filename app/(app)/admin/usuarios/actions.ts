@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import type { Session } from "next-auth"
 import { and, eq, ne } from "drizzle-orm"
 import bcrypt from "bcryptjs"
 import { db } from "@/db"
@@ -37,7 +38,11 @@ export async function inviteUser(
   }
 
   const d = parsed.data
-  const roleError = await validateRoleWorksiteRules(d.roleIds, d.worksiteAssignments)
+  const roleError = await validateRoleWorksiteRules(
+    d.roleIds,
+    d.worksiteAssignments,
+    canManageAdministratorRole(session),
+  )
   if (roleError) return roleError
 
   const existing = await db.query.users.findFirst({ where: eq(users.email, d.email) })
@@ -124,7 +129,11 @@ export async function createUser(
   }
 
   const d = parsed.data
-  const roleError = await validateRoleWorksiteRules(d.roleIds, d.worksiteAssignments)
+  const roleError = await validateRoleWorksiteRules(
+    d.roleIds,
+    d.worksiteAssignments,
+    canManageAdministratorRole(session),
+  )
   if (roleError) return roleError
 
   // Check email uniqueness
@@ -191,7 +200,20 @@ export async function updateUser(
   }
 
   const d = parsed.data
-  const roleError = await validateRoleWorksiteRules(d.roleIds, d.worksiteAssignments)
+  // Load current state for audit diff
+  const current = await db.query.users.findFirst({ where: eq(users.id, d.id) })
+  if (!current) return { ok: false, message: "Usuario no encontrado" }
+
+  const actorCanManageAdmins = canManageAdministratorRole(session)
+  if (!actorCanManageAdmins && await userHasAdministratorRole(d.id)) {
+    return { ok: false, message: "Solo un administrador puede modificar usuarios administradores" }
+  }
+
+  const roleError = await validateRoleWorksiteRules(
+    d.roleIds,
+    d.worksiteAssignments,
+    actorCanManageAdmins,
+  )
   if (roleError) return roleError
 
   // Check email uniqueness (excluding self)
@@ -199,10 +221,6 @@ export async function updateUser(
   if (emailConflict && emailConflict.id !== d.id) {
     return { ok: false, fieldErrors: { email: ["Este correo ya está registrado"] } }
   }
-
-  // Load current state for audit diff
-  const current = await db.query.users.findFirst({ where: eq(users.id, d.id) })
-  if (!current) return { ok: false, message: "Usuario no encontrado" }
 
   const updates: Partial<typeof users.$inferInsert> = {
     name:     d.name,
@@ -257,14 +275,13 @@ export async function toggleUserActive(
 
   if (!id) return { ok: false, message: "ID requerido" }
 
-  // Guard: don't deactivate the last admin
-  if (!activate) {
-    const targetAdmin = await db
-      .select({ userId: userRoles.userId })
-      .from(userRoles)
-      .innerJoin(roles, eq(userRoles.roleId, roles.id))
-      .where(and(eq(roles.name, "administrador"), eq(userRoles.userId, id)))
+  const targetIsAdmin = await userHasAdministratorRole(id)
+  if (targetIsAdmin && !canManageAdministratorRole(session)) {
+    return { ok: false, message: "Solo un administrador puede activar o desactivar administradores" }
+  }
 
+  // Guard: don't deactivate the last admin
+  if (!activate && targetIsAdmin) {
     const otherActiveAdmins = await db
       .select({ userId: users.id })
       .from(users)
@@ -272,7 +289,7 @@ export async function toggleUserActive(
       .innerJoin(roles, eq(userRoles.roleId, roles.id))
       .where(and(eq(roles.name, "administrador"), eq(users.isActive, true), ne(users.id, id)))
 
-    if (targetAdmin.length > 0 && otherActiveAdmins.length === 0) {
+    if (otherActiveAdmins.length === 0) {
       return { ok: false, message: "No puedes desactivar al único administrador" }
     }
   }
@@ -302,9 +319,19 @@ function buildWorksiteAssignments(formData: FormData) {
 async function validateRoleWorksiteRules(
   roleIds: string[],
   worksiteAssignments: { worksiteId: string; isPrimary: boolean }[],
+  canManageAdmins = false,
 ): Promise<ActionState | null> {
   const allRoles = await db.query.roles.findMany()
   const selected = allRoles.filter((role) => roleIds.includes(role.id))
+  const includesAdmin = selected.some((role) => role.name === "administrador")
+  if (includesAdmin && !canManageAdmins) {
+    return {
+      ok: false,
+      fieldErrors: {
+        roleIds: ["Solo un administrador puede asignar el rol Administrador"],
+      },
+    }
+  }
   const isFaenaRequester = selected.some((role) => role.name === "solicitante_faena")
   if (isFaenaRequester && worksiteAssignments.length === 0) {
     return {
@@ -315,6 +342,19 @@ async function validateRoleWorksiteRules(
     }
   }
   return null
+}
+
+function canManageAdministratorRole(session: Session) {
+  return session.user.roles.includes("administrador")
+}
+
+async function userHasAdministratorRole(userId: string) {
+  const rows = await db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(and(eq(roles.name, "administrador"), eq(userRoles.userId, userId)))
+  return rows.length > 0
 }
 
 function hashStr(str: string): number {

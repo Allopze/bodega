@@ -1,14 +1,15 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { WorkerList } from "./worker-list"
 
 export const metadata: Metadata = { title: "Trabajadores" }
 
 export default async function TrabajadoresPage() {
-  try { await requirePermission("admin:workers") }
+  let session
+  try { session = await requirePermission("admin:workers") }
   catch { redirect("/dashboard") }
 
   const [allWorkers, allWorksites] = await Promise.all([
@@ -36,7 +37,7 @@ export default async function TrabajadoresPage() {
         }
       />
       <WorkerList
-        workers={allWorkers.map((w) => ({
+        workers={allWorkers.filter((w) => canAccessWorksite(session, w.worksiteId)).map((w) => ({
           id:           w.id,
           rut:          w.rut,
           firstName:    w.firstName,
@@ -47,7 +48,7 @@ export default async function TrabajadoresPage() {
           isActive:     w.isActive,
           createdAt:    w.createdAt,
         }))}
-        worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))}
+        worksites={allWorksites.filter((ws) => canAccessWorksite(session, ws.id)).map((ws) => ({ id: ws.id, name: ws.name }))}
       />
     </>
   )

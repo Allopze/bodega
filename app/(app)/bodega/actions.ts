@@ -126,6 +126,12 @@ export async function setMinStockAction(
   const { stockId, minStock } = parsed.data
 
   try {
+    const stockRow = await db.query.worksiteStock.findFirst({ where: eq(worksiteStock.id, stockId) })
+    if (!stockRow) return { ok: false, message: "Stock no encontrado" }
+    if (!canAccessWorksite(session, stockRow.worksiteId)) {
+      return { ok: false, message: "No tienes acceso a esta faena" }
+    }
+
     await db.update(worksiteStock).set({ minStock }).where(eq(worksiteStock.id, stockId))
     revalidatePath(REVALIDATE)
     return { ok: true, message: `Stock mínimo actualizado a ${minStock}` }

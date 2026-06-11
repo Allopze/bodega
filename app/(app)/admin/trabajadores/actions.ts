@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { workers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { workerSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/trabajadores"
@@ -26,6 +26,10 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
   })
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
+
+  if (!canAccessWorksite(session, d.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
+  }
 
   if (d.rut) {
     const rutConflict = await db.query.workers.findFirst({ where: eq(workers.rut, d.rut) })
@@ -81,6 +85,9 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
 
   const current = await db.query.workers.findFirst({ where: eq(workers.id, d.id) })
   if (!current) return { ok: false, message: "Trabajador no encontrado" }
+  if (!canAccessWorksite(session, current.worksiteId) || !canAccessWorksite(session, d.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
+  }
 
   await db.update(workers).set({
     rut:        d.rut ?? null,
@@ -113,6 +120,12 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
   const id       = formData.get("id") as string
   const activate = formData.get("activate") === "true"
   if (!id) return { ok: false, message: "ID requerido" }
+
+  const current = await db.query.workers.findFirst({ where: eq(workers.id, id) })
+  if (!current) return { ok: false, message: "Trabajador no encontrado" }
+  if (!canAccessWorksite(session, current.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de este trabajador" }
+  }
 
   await db.update(workers).set({ isActive: activate }).where(eq(workers.id, id))
 

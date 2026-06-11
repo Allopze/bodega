@@ -65,8 +65,10 @@ export default async function BodegaPage({
   const worksiteOptions: WorksiteOption[] = allWorksites
     .filter((w) => canAccessWorksite(session, w.id))
     .map((w) => ({ id: w.id, name: w.name }))
+  const visibleStockRows = stockRows.filter((s) => canAccessWorksite(session, s.worksiteId))
+  const visibleMovements = recentMovements.filter((m) => canAccessWorksite(session, m.worksiteId))
 
-  const returnProducts: ReturnPanelStockOption[] = stockRows
+  const returnProducts: ReturnPanelStockOption[] = visibleStockRows
     .map((s) => ({
       worksiteId: s.worksiteId,
       worksiteName: s.worksite?.name ?? s.worksiteId,
@@ -76,14 +78,14 @@ export default async function BodegaPage({
       unitOfMeasure: s.product?.unitOfMeasure ?? "unidad",
     }))
 
-  const firstStockWorksiteId = stockRows.find((item) => worksiteOptions.some((w) => w.id === item.worksiteId) && item.quantity > 0)?.worksiteId
+  const firstStockWorksiteId = visibleStockRows.find((item) => item.quantity > 0)?.worksiteId
   const initialWorksiteId = (requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId) ? requestedWorksiteId : undefined)
     ?? firstStockWorksiteId
     ?? worksiteOptions[0]?.id
   const showReturnPanel = canRegisterMovements && returnProducts.length > 0 && worksiteOptions.length > 0
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
-  for (const s of stockRows) {
+  for (const s of visibleStockRows) {
     if (!stockByWorksite[s.worksiteId]) stockByWorksite[s.worksiteId] = []
     stockByWorksite[s.worksiteId].push(s)
   }
@@ -100,7 +102,7 @@ export default async function BodegaPage({
           </Suspense>
 
           <Suspense fallback={<SkeletonPage rows={6} />}>
-            <KardexSection movements={recentMovements as InventoryMovementWithRelations[]} />
+            <KardexSection movements={visibleMovements as InventoryMovementWithRelations[]} />
           </Suspense>
         </div>
 
