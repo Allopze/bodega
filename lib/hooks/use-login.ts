@@ -15,6 +15,14 @@ interface LoginResult {
   error?: string
 }
 
+function authErrorMessage(error: string) {
+  if (error === "CredentialsSignin") {
+    return "Correo o contraseña incorrectos."
+  }
+
+  return "No pudimos iniciar sesión. Intenta nuevamente."
+}
+
 /**
  * Handles credentials login with React Query.
  * Returns `{ ok, error }` — callers show the error message directly.
@@ -33,7 +41,7 @@ export function useLogin() {
       })
 
       if (result?.error) {
-        return { ok: false, error: result.error }
+        return { ok: false, error: authErrorMessage(result.error) }
       }
 
       router.push(callbackUrl)

@@ -22,10 +22,11 @@ export function NotificationBell() {
           className={cn(
             "relative flex items-center justify-center",
             "min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0",
-            "h-8 w-8 rounded-[var(--radius-sm)]",
+            "h-8 w-8 rounded-[var(--radius-lg)]",
+            "bg-[var(--color-surface-2)]",
             "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
-            "hover:bg-[var(--color-surface-2)]",
-            "transition-colors duration-[var(--duration-fast)]",
+            "hover:bg-[var(--color-surface-3)]",
+            "transition-[background-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
             "active:scale-[0.95]",
           )}
           aria-label={`Notificaciones${hasUnread ? ` (${data?.unreadCount} sin leer)` : ""}`}

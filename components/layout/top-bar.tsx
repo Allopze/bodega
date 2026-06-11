@@ -42,12 +42,11 @@ export function TopBar({
   return (
     <header className={cn(
       "flex items-center h-[3.25rem] px-4 md:px-6 gap-3",
-      "border-b border-[var(--color-border)]",
       "bg-[var(--color-surface)]",
-      "sticky top-0 shrink-0 z-30",
+      "shrink-0",
       className,
     )}>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 lg:hidden">
         <button
           onClick={onMenuToggle}
           className={cn(
