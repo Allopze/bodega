@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Image from "next/image"
 import { Suspense } from "react"
 import { BrandMark } from "@/components/layout/brand-mark"
 import { getUserCount } from "@/lib/auth/bootstrap"
@@ -15,44 +16,75 @@ export default async function LoginPage() {
 
   return (
     <div className="min-h-[100dvh] grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      {/* ── Brand panel — flat, editorial, single column of evidence ── */}
-      <aside className="hidden lg:flex lg:flex-col px-12 py-12 justify-between bg-[var(--color-surface)] border-r border-[var(--color-border)]">
-        <BrandMark variant="light" size={48} subtitle titleSize="lg" />
+      {/* ── Brand hero — B1 Ultra Minimal ── */}
+      <aside
+        className="hidden lg:flex lg:flex-col justify-between relative overflow-hidden"
+        style={{
+          background:
+            "radial-gradient(120% 90% at 80% 8%, oklch(0.31 0.13 154) 0%, oklch(0.18 0.08 154) 70%)",
+        }}
+      >
+        {/* Capa 1 — textura de puntos */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(rgba(255,255,255,.10) 1px, transparent 1px)",
+            backgroundSize: "16px 16px",
+            opacity: 0.5,
+          }}
+        />
 
-        <div className="max-w-[42ch]">
-          <p className="text-eyebrow mb-4">Sistema interno</p>
-          <p className="text-display text-[var(--color-text)]">
-            Control total del abastecimiento.
-          </p>
-          <p className="mt-4 text-[15px] leading-relaxed text-[var(--color-text-muted)] max-w-[40ch]">
-            Desde la solicitud de faena hasta la factura conciliada, sin perder un solo ítem.
-          </p>
+        {/* Capa 2 — marca de agua: logo gigante tenue */}
+        <Image
+          src="/chome_logo_white.svg"
+          alt=""
+          aria-hidden
+          width={420}
+          height={420}
+          unoptimized
+          style={{ width: 420, height: 420 }}
+          className="pointer-events-none absolute -right-16 -bottom-20 opacity-[0.055] z-0 select-none"
+        />
 
-          <dl className="mt-10 grid grid-cols-1 gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
-            {[
-              ["01", "Trazabilidad del 100% de los ítems"],
-              ["02", "Sin pérdidas desde despacho hasta bodega"],
-              ["03", "Bodega activa Nivel 1 con OC y conciliación"],
-            ].map(([n, t]) => (
-              <div key={n} className="grid grid-cols-[3rem_1fr] items-center bg-[var(--color-surface)] px-4 py-3">
-                <dt className="text-eyebrow font-mono">{n}</dt>
-                <dd className="text-sm text-[var(--color-text)]">{t}</dd>
-              </div>
-            ))}
-          </dl>
+        {/* Zona superior — wordmark */}
+        <div className="relative z-10 px-12 pt-12">
+          <div className="flex items-center gap-3">
+            <Image
+              src="/chome_logo_white.svg"
+              alt="Chome"
+              width={36}
+              height={36}
+              unoptimized
+              style={{ width: 36, height: 36 }}
+              className="shrink-0"
+            />
+            <div>
+              <p className="font-sans font-semibold text-base leading-tight tracking-tight text-white">
+                Chome
+              </p>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-white/45 leading-tight mt-0.5">
+                Solicitudes y Bodega
+              </p>
+            </div>
+          </div>
         </div>
 
-        <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-faint)]">
-          Uso exclusivo del personal autorizado
-        </p>
+        {/* Zona inferior — solo eyebrow */}
+        <div className="relative z-10 px-12 pb-12">
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/50">
+            Solicitudes y Bodega
+          </p>
+        </div>
       </aside>
 
-      {/* ── Login form (right) ── */}
-      <div className="flex items-center justify-center px-6 py-16 lg:px-16 bg-[var(--color-bg)]">
-        <div className="w-full max-w-[24rem]">
-          {/* Mobile brand */}
-          <div className="mb-10 lg:hidden">
-            <BrandMark variant="light" size={40} subtitle="Chome Solicitudes y Bodega" titleSize="base" />
+      {/* ── Login form (right) — lienzo gris + card flotante ── */}
+      <div className="flex items-center justify-center px-6 py-12 lg:px-16 bg-[var(--color-bg)]">
+        <div className="w-full max-w-[26rem] rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)] p-8">
+          {/* Mobile brand — solo visible sin el hero */}
+          <div className="mb-8 lg:hidden">
+            <BrandMark variant="light" size={40} subtitle titleSize="base" />
           </div>
 
           <p className="text-eyebrow">Acceso</p>
