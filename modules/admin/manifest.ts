@@ -1,0 +1,68 @@
+/**
+ * modules/admin/manifest.ts
+ *
+ * Módulo de administración del sistema.
+ * Gestiona datos maestros (faenas, proveedores, trabajadores, productos, usuarios)
+ * y configuración del sistema.
+ *
+ * Nota: el enlace de /admin aparece en el dropdown del TopBar para cualquier
+ * usuario con al menos un permiso admin:*, no en la barra lateral principal.
+ */
+
+import type { ModuleManifest } from "@/core/module-kit"
+
+export const adminModule = {
+  id: "admin",
+
+  permissions: [
+    // Usuarios y roles
+    "admin:users",
+    // Datos maestros
+    "admin:worksites",
+    "admin:workers",
+    "admin:products",
+    "admin:suppliers",
+    // Sistema
+    "admin:config",
+    "admin:audit_log",
+  ] as const,
+
+  // No aparece en el sidebar principal; el TopBar lo descubre dinámicamente
+  nav: [],
+
+  /**
+   * Grants por defecto al hacer seed.
+   * Mapea 1:1 con SYSTEM_ROLE_PERMISSIONS en lib/auth/bootstrap.ts.
+   * En Fase 3 el seed usará estos grants en lugar de bootstrap.ts.
+   */
+  defaultGrants: [
+    // Administrador — todos los permisos del módulo
+    { roleSlug: "administrador", permission: "admin:users" },
+    { roleSlug: "administrador", permission: "admin:worksites" },
+    { roleSlug: "administrador", permission: "admin:workers" },
+    { roleSlug: "administrador", permission: "admin:products" },
+    { roleSlug: "administrador", permission: "admin:suppliers" },
+    { roleSlug: "administrador", permission: "admin:config" },
+    { roleSlug: "administrador", permission: "admin:audit_log" },
+    // Jefatura
+    { roleSlug: "jefa_chome", permission: "admin:users" },
+    { roleSlug: "jefa_chome", permission: "admin:worksites" },
+    { roleSlug: "jefa_chome", permission: "admin:workers" },
+    { roleSlug: "jefa_chome", permission: "admin:products" },
+    { roleSlug: "jefa_chome", permission: "admin:suppliers" },
+    // Secretaría
+    { roleSlug: "secretaria", permission: "admin:users" },
+    { roleSlug: "secretaria", permission: "admin:worksites" },
+    { roleSlug: "secretaria", permission: "admin:workers" },
+    { roleSlug: "secretaria", permission: "admin:products" },
+    { roleSlug: "secretaria", permission: "admin:suppliers" },
+    // Prevencionista oficina
+    { roleSlug: "prevencionista", permission: "admin:users" },
+    { roleSlug: "prevencionista", permission: "admin:worksites" },
+    { roleSlug: "prevencionista", permission: "admin:workers" },
+    { roleSlug: "prevencionista", permission: "admin:products" },
+    { roleSlug: "prevencionista", permission: "admin:suppliers" },
+    // Prevencionista faena — solo trabajadores (para EPP tracking)
+    { roleSlug: "solicitante_faena", permission: "admin:workers" },
+  ],
+} as const satisfies ModuleManifest

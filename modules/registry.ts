@@ -10,8 +10,7 @@
 
 import type { ModuleManifest } from "@/core/module-kit"
 
-// — Los módulos se irán importando aquí a medida que se creen en las Fases 2+ —
-// import { adminModule }       from "@/modules/admin/manifest"
+import { adminModule } from "@/modules/admin/manifest"
 // import { requestsModule }    from "@/modules/requests/manifest"
 // import { approvalsModule }   from "@/modules/approvals/manifest"
 // import { purchasingModule }  from "@/modules/purchasing/manifest"
@@ -28,8 +27,9 @@ import type { ModuleManifest } from "@/core/module-kit"
  * mantener una lista manual.
  */
 export const registry = [
-  // adminModule,
+  adminModule,
   // requestsModule,
+  // approvalsModule,
   // ...
 ] as const satisfies readonly ModuleManifest[]
 
