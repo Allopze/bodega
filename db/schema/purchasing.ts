@@ -7,6 +7,7 @@ import { purchaseRequestItems } from "./requests"
 
 /* ── Purchase Order States ───────────────────────────────────────────────── */
 // draft | issued | sent | supplier_confirmed
+// partially_office_received | office_received
 // partially_received | received | closed | cancelled
 
 /* ── Purchase Orders ─────────────────────────────────────────────────────── */
@@ -44,6 +45,7 @@ export const purchaseOrderItems = sqliteTable("purchase_order_items", {
   unitPrice:            real("unit_price").notNull().default(0),
   discount:             real("discount").notNull().default(0),
   subtotal:             real("subtotal").notNull().default(0),
+  quantityOfficeReceived: real("quantity_office_received").notNull().default(0),
   quantityReceived:     real("quantity_received").notNull().default(0),
   status:               text("status").notNull().default("issued"),
   sortOrder:            integer("sort_order").notNull().default(0),

@@ -33,8 +33,15 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await page.getByRole("button", { name: "Marcar como enviada" }).click()
   await expect(page.getByText("Orden enviada al proveedor. Siguiente paso: registrar recepción.")).toBeVisible()
 
+  // Stage 1 — arrival at Chome office (mandatory first step, no stock).
   await page.goto(`/recepcion/nueva?oc=${orderId}`)
-  await expect(page.getByText("Recepción directa en faena")).toBeVisible()
+  await expect(page.getByText("Recepción en oficina")).toBeVisible()
+  await page.getByRole("button", { name: "Marcar como recibido" }).click()
+  await expect(page).toHaveURL(/\/recepcion\/[^/]+$/)
+
+  // Stage 2 — receipt at the worksite (generates stock + traceability).
+  await page.goto(`/recepcion/nueva?oc=${orderId}`)
+  await page.getByRole("button", { name: /Recepción en faena/ }).click()
   await page.getByRole("button", { name: "Marcar como recibido" }).click()
   await expect(page).toHaveURL(/\/recepcion\/[^/]+$/)
   await expect(page.getByText("Guante E2E")).toBeVisible()

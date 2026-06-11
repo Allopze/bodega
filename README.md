@@ -45,22 +45,22 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 3. Crea categorias, productos, atributos y proveedores asociados en `/admin/productos`.
 4. Crea bodegas en `/admin/bodegas`.
 5. Crea usuarios por rol y asignales faenas en `/admin/usuarios`.
-6. Crea un usuario `Prevencionista de faena` y asignale al menos una faena.
-7. Entra como prevencionista de faena y crea una solicitud en `/solicitudes/nueva`.
-8. Entra como jefa, secretaria, prevencionista o administrador y aprueba en `/aprobaciones`.
-9. Entra como jefa, secretaria o administrador, genera una OC en `/compras/nueva` y emite/envia la orden.
+6. Crea un usuario `Prevencionista faena` y asignale al menos una faena.
+7. Entra como prevencionista faena y crea una solicitud en `/solicitudes/nueva`.
+8. Entra como jefatura, secretaría, prevencionista oficina o administrador y aprueba en `/aprobaciones`.
+9. Entra como jefatura, secretaría o administrador, genera una OC en `/compras/nueva` y emite/envia la orden.
 10. Anexa facturas desde el detalle de una solicitud u orden de compra cuando llegue el respaldo.
-11. Marca la OC como recibida desde `/recepcion/nueva`.
+11. Registra recepción en oficina desde `/recepcion/nueva` y luego recepción en bodega/faena cuando Chome distribuya los productos.
 12. Revisa el avance por ítem en `/trazabilidad` y los pendientes en `/reportes`.
 
 ## Reglas operativas
 
 - El flujo operativo entrega EPP recibido a trabajadores desde el módulo Entregas.
-- La recepcion se registra contra la faena de la OC y deja stock disponible.
+- La recepción en oficina no deja stock disponible; la recepción en bodega/faena sí se registra contra la faena de la OC y deja stock disponible.
 - La entrega de EPP a trabajador cierra el seguimiento operativo de sus ítems recibidos.
-- La prevencionista participa en aprobaciones de todos los productos.
+- La prevencionista oficina participa en aprobaciones de todos los productos.
 - La aprobacion simple actual es suficiente: no hay cadena obligatoria.
-- Las facturas anexas son visibles para administrador, jefa Chome, secretaria y prevencionista.
+- Las facturas anexas son visibles para administrador, jefatura, secretaría y prevencionista oficina.
 - Los EPP con talla, color o modelo se mantienen como productos comprables separados, con atributos normalizados para busqueda y solicitud.
 - La base SQLite local no se versiona; schema, migraciones y seed son la fuente reproducible.
 

@@ -36,12 +36,12 @@ describe("system settings company profile", () => {
     mocks.findFirst.mockResolvedValue(null)
 
     await expect(getCompanyProfile()).resolves.toEqual({
-      name:             "Chome",
-      rut:              "",
-      businessActivity: "",
-      address:          "",
-      branchAddress:    "",
-      phone:            "",
+      name:             "Servicios Industriales Chome Limitada",
+      rut:              "78.023.530-6",
+      businessActivity: "Servicios Industrial",
+      address:          "Camino de Luna 91 Villa Portal del Sol - Panguipulli - Panguipulli - Chile",
+      branchAddress:    "Pedro Aguirre Cerda 1156 Block 4to, Concepcion",
+      phone:            "41-3251368",
       email:            "",
       website:          "",
     })

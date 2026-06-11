@@ -26,8 +26,8 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
   }, [state])
 
   return (
-    <form action={formAction} className="max-w-3xl space-y-6">
-      <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+    <form action={formAction} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+      <div className="min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
         <div className="mb-4">
           <h2 className="text-h2 text-[var(--color-text)]">
             Datos de empresa para órdenes de compra
@@ -167,41 +167,95 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
         </FieldGroup>
       </div>
 
-      <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-[var(--color-text)] mb-4">
-          Parámetros de carga de archivos
-        </h2>
+      <aside className="space-y-6 lg:sticky lg:top-6">
+        <OcHeaderPreview profile={initialCompanyProfile} />
 
-        <FieldGroup className="gap-6">
-          <Field
-            label="Límite de tamaño de archivo PDF (MB)"
-            htmlFor="pdf-max-size"
-            required
-            helper="Define el tamaño máximo en Megabytes para la subida de facturas anexas en formato PDF."
-            error={state.fieldErrors?.pdfMaxSizeMb?.[0]}
-          >
-            <div className="flex items-center gap-3">
-              <Input
-                id="pdf-max-size"
-                name="pdfMaxSizeMb"
-                type="number"
-                min="1"
-                max="500"
-                defaultValue={initialPdfMaxSizeMb}
-                error={!!state.fieldErrors?.pdfMaxSizeMb}
-                className="w-32 font-mono text-center"
-              />
-              <span className="text-sm font-medium text-[var(--color-text-muted)]">
-                MB
-              </span>
-            </div>
-          </Field>
-        </FieldGroup>
-      </div>
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-[var(--color-text)] mb-4">
+            Parámetros de carga
+          </h2>
 
-      <div className="flex justify-end">
-        <SubmitButton label="Guardar Configuración" loadingLabel="Guardando..." variant="primary" />
-      </div>
+          <FieldGroup className="gap-6">
+            <Field
+              label="Límite de archivo PDF (MB)"
+              htmlFor="pdf-max-size"
+              required
+              helper="Tamaño máximo para facturas anexas en PDF."
+              error={state.fieldErrors?.pdfMaxSizeMb?.[0]}
+            >
+              <div className="flex items-center gap-3">
+                <Input
+                  id="pdf-max-size"
+                  name="pdfMaxSizeMb"
+                  type="number"
+                  min="1"
+                  max="500"
+                  defaultValue={initialPdfMaxSizeMb}
+                  error={!!state.fieldErrors?.pdfMaxSizeMb}
+                  className="w-32 font-mono text-center"
+                />
+                <span className="text-sm font-medium text-[var(--color-text-muted)]">
+                  MB
+                </span>
+              </div>
+            </Field>
+          </FieldGroup>
+        </div>
+
+        <div className="flex justify-end">
+          <SubmitButton label="Guardar Configuración" loadingLabel="Guardando..." variant="primary" />
+        </div>
+      </aside>
     </form>
+  )
+}
+
+function OcHeaderPreview({ profile }: { profile: CompanyProfile }) {
+  return (
+    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold text-[var(--color-text)]">Vista en OC</h2>
+        <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+          Encabezado que verá el proveedor.
+        </p>
+      </div>
+
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold leading-tight text-[var(--color-text)]">
+              {profile.name || "Chome"}
+            </p>
+            <div className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
+              <PreviewLine label="Giro" value={profile.businessActivity} />
+              <PreviewLine label="Casa Matriz" value={profile.address} />
+              <PreviewLine label="Fono" value={profile.phone} />
+              {profile.branchAddress && (
+                <>
+                  <p className="pt-1 text-[var(--color-text-subtle)]">Otras Direcciones o Sucursales:</p>
+                  <p>{profile.branchAddress}</p>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-primary-line)] px-2 py-1 text-right text-[10px] font-semibold uppercase text-[var(--color-primary-ink)]">
+            <p>R.U.T.: {profile.rut || "—"}</p>
+            <p>Orden de compra</p>
+            <p className="mt-1 font-mono text-xs">Nº 0001</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function PreviewLine({ label, value }: { label: string; value: string }) {
+  if (!value.trim()) return null
+  return (
+    <p>
+      <span className="text-[var(--color-text-subtle)]">{label}: </span>
+      {value}
+    </p>
   )
 }

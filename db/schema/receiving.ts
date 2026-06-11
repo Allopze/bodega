@@ -13,8 +13,8 @@ export const receipts = sqliteTable("receipts", {
   purchaseOrderId:    text("purchase_order_id").notNull().references(() => purchaseOrders.id),
   receivedBy:         text("received_by").notNull().references(() => users.id),
   receivedAt:         text("received_at").notNull().default(sql`(datetime('now'))`),
-  // faena: always delivered directly to worksite
-  locationType:       text("location_type").notNull().default("faena"),
+  // office: arrival at Chome office (checkpoint, no stock); faena: receipt at worksite (generates stock)
+  locationType:       text("location_type").notNull().default("office"),
   worksiteId:         text("worksite_id").references(() => worksites.id),
   dispatchGuideNo:    text("dispatch_guide_no"),
   status:             text("status").notNull().default("open"),  // open | closed

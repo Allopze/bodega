@@ -110,13 +110,11 @@ export default async function NuevaSolicitudPage() {
           ]} />
         }
       />
-      <div className="max-w-3xl">
-        <RequestForm
-          worksites={worksiteOptions}
-          products={productOptions}
-          suppliers={supplierOptions}
-        />
-      </div>
+      <RequestForm
+        worksites={worksiteOptions}
+        products={productOptions}
+        suppliers={supplierOptions}
+      />
     </>
   )
 }

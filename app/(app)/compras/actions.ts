@@ -227,7 +227,7 @@ export async function sendOrderAction(
       userEmail: session.user.email ?? undefined,
     })
 
-    void getUserIdsWithPermission("receiving:register").then((receiverIds) =>
+    void getUserIdsWithPermission("receiving:register_office").then((receiverIds) =>
       notifyManyUser(receiverIds, {
         type:       "oc_sent",
         title:      `OC lista para recepción: ${orderSummary?.code ?? "Orden enviada"}`,

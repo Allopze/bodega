@@ -174,8 +174,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         }
 
         .logo-mark {
-          width: 72px;
-          height: 72px;
+          width: 144px;
+          height: 144px;
           object-fit: contain;
           flex: 0 0 auto;
         }
@@ -198,10 +198,10 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         .doc-box {
           justify-self: end;
           width: 45mm;
-          min-height: 22mm;
+          min-height: 17mm;
           border: 1px solid #17422b;
           color: #17422b;
-          padding: 6px 7px;
+          padding: 5px 7px;
           text-align: center;
         }
 
@@ -213,9 +213,9 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         }
 
         .doc-box-code {
-          margin-top: 8px;
+          margin-top: 5px;
           font-family: "GeistMono", "Cascadia Code", monospace;
-          font-size: 13pt;
+          font-size: 12pt;
           font-weight: 700;
           color: #17422b;
         }
@@ -445,11 +445,10 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
       <main className="sheet" aria-label={`Orden de compra ${order.code}`}>
         <header className="doc-header">
           <div className="brand-row">
-            <Image className="logo-mark" src="/chome_logo.svg" alt="Logo Chome" width={72} height={72} priority />
+            <Image className="logo-mark" src="/chome_logo.svg" alt="Logo Chome" width={144} height={144} priority />
             <div>
               <div className="company-name">{company.name}</div>
               <div className="company-lines">
-                {company.rut              && <span>R.U.T.: {company.rut}</span>}
                 {company.businessActivity && <span>Giro: {company.businessActivity}</span>}
                 {company.address          && <span>Casa Matriz: {company.address}</span>}
                 {company.phone            && <span>Fono: {company.phone}</span>}

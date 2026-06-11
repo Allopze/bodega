@@ -22,10 +22,13 @@ export interface ReceiptOcItem {
   productName:      string
   productSku:       string | null
   quantity:         number
+  quantityOfficeReceived: number
   quantityReceived: number   // already received in previous receipts
   unitOfMeasure:    string
   notes:            string | null
 }
+
+type ReceiptStage = "office" | "faena"
 
 /* ── Receipt form ─────────────────────────────────────────────────────────────── */
 
@@ -34,19 +37,37 @@ export function ReceiptForm({
   orderCode,
   orderWorksiteName,
   items,
+  canOffice,
+  canFaena,
 }: {
   purchaseOrderId: string
   orderCode:       string
   orderWorksiteName: string
   items:           ReceiptOcItem[]
+  canOffice:       boolean
+  canFaena:        boolean
 }) {
-  const [guideNo,       setGuideNo]       = React.useState<string>("")
-  const [notes,         setNotes]         = React.useState<string>("")
-  const [qtys,          setQtys]          = React.useState<Record<string, number>>(() =>
-    Object.fromEntries(items.map((i) => [i.id, Math.max(0, i.quantity - i.quantityReceived)]))
-  )
+  const getRemaining = React.useCallback((item: ReceiptOcItem, stage: ReceiptStage) => {
+    // Office caps at the ordered quantity; faena caps STRICTLY at what already arrived at
+    // office (no fallback to full quantity → goods must pass through office first).
+    if (stage === "office") return Math.max(0, item.quantity - item.quantityOfficeReceived)
+    return Math.max(0, item.quantityOfficeReceived - item.quantityReceived)
+  }, [])
+
+  // A stage is offered only when the user can perform it AND there is something left to receive.
+  const officeAvailable = canOffice && items.some((i) => getRemaining(i, "office") > 0)
+  const faenaAvailable  = canFaena  && items.some((i) => getRemaining(i, "faena")  > 0)
+
+  const [guideNo, setGuideNo] = React.useState<string>("")
+  const [notes,   setNotes]   = React.useState<string>("")
+  const [stage,   setStage]   = React.useState<ReceiptStage>(officeAvailable ? "office" : "faena")
+  const [qtys,    setQtys]    = React.useState<Record<string, number>>({})
 
   const [state, action] = useActionState<ActionState, FormData>(registerReceiptAction, INITIAL_STATE)
+
+  React.useEffect(() => {
+    setQtys(Object.fromEntries(items.map((i) => [i.id, getRemaining(i, stage)])))
+  }, [items, stage, getRemaining])
 
   React.useEffect(() => {
     if (state.ok === false && state.message && state !== INITIAL_STATE) {
@@ -68,6 +89,7 @@ export function ReceiptForm({
     <form action={action} className="flex flex-col gap-6">
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
       <input type="hidden" name="itemsJson"        value={itemsJson} />
+      <input type="hidden" name="stage"            value={stage} />
 
       {/* Header */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -82,12 +104,36 @@ export function ReceiptForm({
           />
         </Field>
 
-        <Field label="Destino" className="md:col-span-2">
-          <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-            <p className="text-sm font-medium text-[var(--color-text)]">Recepción directa en faena</p>
-            <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
-              La recepción quedará registrada contra {orderWorksiteName}, sin bodega ni entrega posterior.
-            </p>
+        <Field label="Tipo de recepción" className="md:col-span-2" error={state.fieldErrors?.stage?.[0]}>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {canOffice && (
+              <button
+                type="button"
+                onClick={() => setStage("office")}
+                disabled={!officeAvailable}
+                className={`rounded-[var(--radius)] border px-3 py-2 text-left transition-colors disabled:opacity-50 ${stage === "office" ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)]"}`}
+              >
+                <p className="text-sm font-medium text-[var(--color-text)]">Recepción en oficina</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                  Proveedor entrega en oficina Chome. No suma stock ni cierra ítems.
+                </p>
+              </button>
+            )}
+            {canFaena && (
+              <button
+                type="button"
+                onClick={() => setStage("faena")}
+                disabled={!faenaAvailable}
+                className={`rounded-[var(--radius)] border px-3 py-2 text-left transition-colors disabled:opacity-50 ${stage === "faena" ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)]"}`}
+              >
+                <p className="text-sm font-medium text-[var(--color-text)]">Recepción en faena</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                  {faenaAvailable
+                    ? `Oficina distribuye a ${orderWorksiteName}. Actualiza stock y trazabilidad.`
+                    : "Disponible una vez registrada la llegada a oficina."}
+                </p>
+              </button>
+            )}
           </div>
         </Field>
       </div>
@@ -106,7 +152,7 @@ export function ReceiptForm({
           </div>
 
           {items.map((item) => {
-            const remaining = Math.max(0, item.quantity - item.quantityReceived)
+            const remaining = getRemaining(item, stage)
             const pending   = remaining > 0
 
             return (
@@ -122,6 +168,7 @@ export function ReceiptForm({
                   </div>
                   <div className="text-xs text-[var(--color-text-subtle)] mt-0.5">
                     Pedido: {formatQty(item.quantity, item.unitOfMeasure)}
+                    {item.quantityOfficeReceived > 0 && ` · En oficina: ${formatQty(item.quantityOfficeReceived, item.unitOfMeasure)}`}
                     {item.quantityReceived > 0 && ` · Ya recibido: ${formatQty(item.quantityReceived, item.unitOfMeasure)}`}
                     {!pending && " · Completamente recibido"}
                   </div>

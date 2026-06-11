@@ -16,9 +16,16 @@ export async function registerReceiptAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  // Each stage has its own permission: office reception is global, faena reception is scoped.
+  const stage = formData.get("stage") === "faena" ? "faena" : "office"
+  const requiredPermission = stage === "faena" ? "receiving:register_faena" : "receiving:register_office"
+
   let session
-  try { session = await requirePermission("receiving:register") }
-  catch { return { ok: false, message: "Sin permisos para registrar recepciones" } }
+  try { session = await requirePermission(requiredPermission) }
+  catch {
+    const label = stage === "faena" ? "recepciones en faena" : "llegadas a oficina"
+    return { ok: false, message: `Sin permisos para registrar ${label}` }
+  }
 
   let itemsRaw: unknown[] = []
   try {
@@ -29,6 +36,7 @@ export async function registerReceiptAction(
 
   const parsed = receiptSchema.safeParse({
     purchaseOrderId: formData.get("purchaseOrderId"),
+    stage,
     worksiteId:      formData.get("worksiteId"),
     dispatchGuideNo: formData.get("dispatchGuideNo"),
     notes:           formData.get("notes"),
@@ -59,7 +67,8 @@ export async function registerReceiptAction(
     where: eq(purchaseOrders.id, purchaseOrderId),
   })
   if (!order) return { ok: false, message: "OC no encontrada" }
-  if (!canAccessWorksite(session, order.worksiteId)) {
+  // Faena reception is scoped to the OC's worksite; office reception is global.
+  if (stage === "faena" && !canAccessWorksite(session, order.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de esta OC" }
   }
 
@@ -74,6 +83,7 @@ export async function registerReceiptAction(
       purchaseOrderId,
       receivedBy:      session.user.id,
       userEmail:       session.user.email ?? undefined,
+      stage,
       worksiteId:      worksiteId || order.worksiteId,
       dispatchGuideNo: dispatchGuideNo || null,
       notes:           notes || null,

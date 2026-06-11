@@ -55,6 +55,7 @@ const REQUEST_STATE_META: Record<RequestStatus, StateMeta> = {
 /* ── OC states ───────────────────────────────────────────────────────────── */
 export type OcStatus =
   | "draft" | "issued" | "sent" | "supplier_confirmed"
+  | "partially_office_received" | "office_received"
   | "partially_received" | "received" | "closed" | "cancelled"
 
 const OC_STATE_META: Record<OcStatus, StateMeta> = {
@@ -62,6 +63,8 @@ const OC_STATE_META: Record<OcStatus, StateMeta> = {
   issued:             { label: "Emitida",              variant: "info",     family: "info"     },
   sent:               { label: "Enviada",              variant: "info",     family: "info"     },
   supplier_confirmed: { label: "Confirmada",           variant: "primary",  family: "success"  },
+  partially_office_received: { label: "Oficina parcial", variant: "warning", family: "warning" },
+  office_received:    { label: "En oficina",           variant: "info",     family: "info"     },
   partially_received: { label: "Rec. parcial",         variant: "warning",  family: "warning"  },
   received:           { label: "Recibida",             variant: "success",  family: "success"  },
   closed:             { label: "Cerrada",              variant: "default",  family: "neutral"  },

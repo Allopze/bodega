@@ -115,7 +115,7 @@ describe("last-active-administrator guard (SQL filter)", () => {
   function seedAdminAndMembers() {
     const db = makeDb()
     db.insert(schema.roles).values({ id: "rol-admin", name: "administrador", label: "Admin" }).run()
-    db.insert(schema.roles).values({ id: "rol-user",  name: "solicitante_faena", label: "Solicitante" }).run()
+    db.insert(schema.roles).values({ id: "rol-user",  name: "solicitante_faena", label: "Prevencionista faena" }).run()
     db.insert(schema.users).values({ id: "u-1", name: "Admin 1", email: "a1@x.cl", hashedPassword: "x", isActive: true }).run()
     db.insert(schema.users).values({ id: "u-2", name: "Admin 2", email: "a2@x.cl", hashedPassword: "x", isActive: true }).run()
     db.insert(schema.users).values({ id: "u-3", name: "Admin 3 (inactive)", email: "a3@x.cl", hashedPassword: "x", isActive: false }).run()

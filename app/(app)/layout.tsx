@@ -35,9 +35,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       )
 
   const receivingFilter = isGlobal
-    ? inArray(purchaseOrders.status, ["sent", "partially_received"])
+    ? inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"])
     : and(
-        inArray(purchaseOrders.status, ["sent", "partially_received"]),
+        inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]),
         wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`
       )
 

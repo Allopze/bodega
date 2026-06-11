@@ -251,12 +251,33 @@ describe("Full procurement workflow integration", () => {
     })
     expect(purchasedReq?.items[0].status).toBe("purchased")
 
-    // 9. Register Receipt of OC items into worksite
+    // 9a. Stage 1 — arrival at Chome office (mandatory first step, no stock).
     const ocItemId = order?.items[0].id ?? ""
+    await registerReceipt({
+      purchaseOrderId: orderId,
+      receivedBy: userId,
+      userEmail: "juan@chome.cl",
+      stage: "office",
+      dispatchGuideNo: "GUIA-OFI-999",
+      items: [
+        {
+          purchaseOrderItemId: ocItemId,
+          quantityReceived: 10,
+        },
+      ],
+    })
+
+    const officeOrder = await inMemoryDb.query.purchaseOrders.findFirst({
+      where: eq(schema.purchaseOrders.id, orderId),
+    })
+    expect(officeOrder?.status).toBe("office_received")
+
+    // 9b. Stage 2 — receipt at worksite (generates stock).
     const receiptId = await registerReceipt({
       purchaseOrderId: orderId,
       receivedBy: userId,
       userEmail: "juan@chome.cl",
+      stage: "faena",
       worksiteId: worksiteId,
       dispatchGuideNo: "GUIA-999",
       items: [

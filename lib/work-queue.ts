@@ -107,7 +107,10 @@ const ACTIVE_REQUEST_STATUSES = new Set([
 const APPROVAL_ITEM_STATUSES = new Set(["requested"])
 const PURCHASE_ITEM_STATUSES = new Set(["approved", "pending_purchase"])
 const DELIVERY_ITEM_STATUSES = new Set(["received", "partially_delivered"])
-const RECEIVABLE_ORDER_STATUSES = new Set(["sent", "partially_received"])
+// Office can still receive while the order isn't fully at office yet.
+const OFFICE_RECEIVABLE_STATUSES = new Set(["sent", "partially_office_received"])
+// Faena can receive only once something arrived at office.
+const FAENA_RECEIVABLE_STATUSES = new Set(["partially_office_received", "office_received", "partially_received"])
 
 
 const PRIORITY_RANK: Record<WorkPriority, number> = {
@@ -182,18 +185,36 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
     }
   }
 
-  if (hasPermission(actor, "receiving:register")) {
-    for (const order of snapshot.orders.filter((order) => RECEIVABLE_ORDER_STATUSES.has(order.status) && canSeeWorksite(actor, order.worksiteId))) {
+  // Stage 1 — arrival at office (mandatory first step), for office staff.
+  if (hasPermission(actor, "receiving:register_office")) {
+    for (const order of snapshot.orders.filter((order) => OFFICE_RECEIVABLE_STATUSES.has(order.status) && canSeeWorksite(actor, order.worksiteId))) {
       tasks.push({
-        id:          `receipt:${order.id}`,
+        id:          `receipt-office:${order.id}`,
         type:        "receipt",
-        title:       `Recibir ${order.code}`,
+        title:       `Llegada a oficina ${order.code}`,
         subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
-        statusLabel: order.status === "partially_received" ? "Recepción parcial" : "Esperando recepción",
+        statusLabel: order.status === "partially_office_received" ? "Oficina parcial" : "Esperando llegada",
         priority:    "normal",
         createdAt:   order.sentAt ?? order.createdAt,
         href:        `/recepcion/nueva?oc=${order.id}`,
-        ctaLabel:    "Registrar recepción",
+        ctaLabel:    "Registrar llegada",
+      })
+    }
+  }
+
+  // Stage 2 — receipt at worksite (generates stock), for faena staff.
+  if (hasPermission(actor, "receiving:register_faena")) {
+    for (const order of snapshot.orders.filter((order) => FAENA_RECEIVABLE_STATUSES.has(order.status) && canSeeWorksite(actor, order.worksiteId))) {
+      tasks.push({
+        id:          `receipt-faena:${order.id}`,
+        type:        "receipt",
+        title:       `Recibir en faena ${order.code}`,
+        subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
+        statusLabel: order.status === "partially_received" ? "Recepción parcial" : "Pendiente de faena",
+        priority:    "normal",
+        createdAt:   order.sentAt ?? order.createdAt,
+        href:        `/recepcion/nueva?oc=${order.id}`,
+        ctaLabel:    "Recibir en faena",
       })
     }
   }
@@ -292,7 +313,7 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
   if (statuses.some((status) => status === "requested")) return "Aprobación debe revisar los ítems pendientes."
   if (statuses.some((status) => ["approved", "pending_purchase", "postponed"].includes(status))) return "El módulo de órdenes de compra debe generar la orden de compra."
   if (statuses.some((status) => status === "in_purchase_order")) return "El módulo de órdenes de compra debe emitir y enviar la OC al proveedor."
-  if (statuses.some((status) => ["purchased", "partially_received"].includes(status))) return "Esperando recepción del proveedor."
+  if (statuses.some((status) => ["purchased", "partially_received"].includes(status))) return "Esperando recepción en oficina o bodega."
   if (statuses.some((status) => ["received", "partially_delivered"].includes(status))) return "Bodega debe registrar la entrega a faena."
   if (CLOSED_REQUEST_STATUSES.has(requestStatus)) return "La solicitud ya no requiere acciones."
   return "Revisa el detalle para ver el siguiente paso."

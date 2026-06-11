@@ -105,12 +105,12 @@ export default async function Page() {
     {
       label: "Recepciones",
       value: receiptsVisible.length,
-      detail: `${orders.filter((o) => ["sent", "partially_received"].includes(o.status)).length} OC pendientes de recepción`,
+      detail: `${orders.filter((o) => ["sent", "partially_office_received", "office_received", "partially_received"].includes(o.status)).length} OC pendientes de recepción`,
     },
     {
       label: "OC pendientes",
-      value: orders.filter((o) => ["sent", "partially_received"].includes(o.status)).length,
-      detail: "Órdenes de compra enviadas aún no marcadas como recibidas",
+      value: orders.filter((o) => ["sent", "partially_office_received", "office_received", "partially_received"].includes(o.status)).length,
+      detail: "Órdenes enviadas pendientes de oficina o bodega/faena",
     },
   ]
 

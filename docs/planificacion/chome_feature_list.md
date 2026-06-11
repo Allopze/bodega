@@ -5,8 +5,8 @@ Necesito que me ayudes a diseñar, especificar y posteriormente desarrollar un s
 La empresa actualmente tiene un proceso manual y propenso a errores para gestionar solicitudes de compra desde distintas faenas. El sistema actual funciona aproximadamente así:
 
 1. Cada faena prepara un archivo Excel con lo que necesita comprar.
-2. Ese Excel se envía a una secretaria o encargada administrativa.
-3. La secretaria revisa manualmente el Excel y genera una orden de compra a un proveedor.
+2. Ese Excel se envía a una secretaría o encargada administrativa.
+3. La secretaría revisa manualmente el Excel y genera una orden de compra a un proveedor.
 4. Luego la compra se relaciona de alguna forma con el sistema de facturación.
 5. En el proceso, muchas veces se pierden ítems: la faena pide ciertas cosas, pero al generar la orden de compra no se incluyen todos los productos por error.
 6. No existe suficiente trazabilidad entre lo solicitado, lo aprobado, lo comprado, lo recibido, lo entregado y lo facturado.
@@ -44,7 +44,7 @@ El problema más importante del sistema actual es que entre lo que pide la faena
 Ejemplo:
 
 * La faena pide 10 cascos, 20 guantes y 5 pares de zapatos.
-* La secretaria genera una orden de compra, pero por error solo incluye los cascos y los zapatos.
+* La secretaría genera una orden de compra, pero por error solo incluye los cascos y los zapatos.
 * Los guantes no quedan comprados ni formalmente rechazados.
 * Nadie sabe si están pendientes, olvidados o descartados.
 * Después la factura tampoco permite reconstruir fácilmente qué pasó.
@@ -179,7 +179,7 @@ No debería crear solicitudes operativas salvo que tenga también un rol adicion
 
 ---
 
-## 2. Solicitante de faena
+## 2. Prevencionista faena
 
 Es el usuario que trabaja desde una faena y necesita pedir productos, indumentaria, herramientas, EPP u otros insumos.
 
@@ -272,7 +272,7 @@ No debe poder:
 
 ---
 
-## 5. Compras / secretaria / encargado administrativo
+## 5. Compras / secretaría / encargado administrativo
 
 Este rol es clave. Reemplaza el proceso manual de tomar Excel y generar órdenes de compra.
 
@@ -324,7 +324,7 @@ Debe poder operar en dos escenarios:
 Debe poder:
 
 * Ver órdenes de compra pendientes de recepción.
-* Registrar recepción directa en faena.
+* Registrar recepción en oficina Chome y posterior recepción en bodega/faena.
 * Registrar recepción parcial.
 * Registrar recepción completa.
 * Registrar productos rechazados.
@@ -1015,7 +1015,7 @@ Implementar reglas como:
 
 Diseñar la interfaz considerando estas pantallas:
 
-### Para solicitante de faena
+### Para prevencionista faena
 
 * Dashboard de mis solicitudes.
 * Crear solicitud.

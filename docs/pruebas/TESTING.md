@@ -199,14 +199,14 @@ npm run dev                 # http://localhost:3000
 | Rol | Faenas | Descripción |
 |-----|--------|-------------|
 | Administrador | Cualquiera | Control total |
-| Jefa Chome | Cualquiera | Aprueba y gestiona órdenes de compra |
-| Prevencionista de faena | Faena específica | Crea solicitudes |
-| Secretaria | Cualquiera | Apoyo administrativo |
-| Prevencionista | Cualquiera | Aprueba EPP |
+| Jefatura | Cualquiera | Aprueba y gestiona órdenes de compra |
+| Prevencionista faena | Faena específica | Crea solicitudes |
+| Secretaría | Cualquiera | Apoyo administrativo |
+| Prevencionista oficina | Cualquiera | Aprueba EPP |
 
 #### Paso 4 — Flujo de solicitud
 
-1. Inicia sesión como **Prevencionista de faena**
+1. Inicia sesión como **Prevencionista faena**
 2. Ve a `/solicitudes/nueva`
 3. Selecciona faena y centro de costo
 4. Busca un producto del catálogo o escribe uno libre
@@ -214,7 +214,7 @@ npm run dev                 # http://localhost:3000
 
 #### Paso 5 — Aprobación
 
-1. Inicia sesión como **Jefa Chome** o **Administrador**
+1. Inicia sesión como **Jefatura** o **Administrador**
 2. Ve a `/aprobaciones`
 3. Revisa los ítems pendientes
 4. Haz clic en **Aprobar** (o **Rechazar** con motivo)

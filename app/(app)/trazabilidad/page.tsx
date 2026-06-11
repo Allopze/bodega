@@ -4,7 +4,7 @@ import Link from "next/link"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems,
-  purchaseOrderItems, receiptItems,
+  purchaseOrderItems, receipts, receiptItems,
   approvalDecisions, products, worksites,
 } from "@/db/schema"
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm"
@@ -122,8 +122,12 @@ export default async function TrazabilidadPage({
       quantityReceived:    receiptItems.quantityReceived,
     })
       .from(receiptItems)
+      .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
       .innerJoin(purchaseOrderItems, eq(receiptItems.purchaseOrderItemId, purchaseOrderItems.id))
-      .where(inArray(purchaseOrderItems.requestItemId, requestItemIds)),
+      .where(and(
+        inArray(purchaseOrderItems.requestItemId, requestItemIds),
+        eq(receipts.locationType, "faena"),
+      )),
 
     // Approval decisions may be recorded as "approve" or "modify" when quantity changes.
     db.select({
@@ -545,7 +549,7 @@ export default async function TrazabilidadPage({
       {/* ── Legend ────────────────────────────────────────────────────── */}
       <p className="mt-4 text-xs text-[var(--color-text-subtle)]">
         Las filas resaltadas indican ítems aprobados cuya cantidad en órdenes de compra es inferior a la aprobada.
-        La recepción directa en faena cierra el seguimiento operativo del ítem.
+        La recepción en bodega/faena cierra el seguimiento operativo del ítem; la llegada a oficina queda como paso previo.
       </p>
     </>
   )

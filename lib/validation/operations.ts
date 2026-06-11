@@ -97,6 +97,7 @@ export const receiptItemSchema = z.object({
 
 export const receiptSchema = z.object({
   purchaseOrderId:  z.string().min(1, "OC no especificada"),
+  stage:            z.enum(["office", "faena"]).default("office"),
   worksiteId:       z.string().nullable().optional().or(z.literal("")),
   dispatchGuideNo:  z.string().max(80).nullable().optional().or(z.literal("")),
   notes:            z.string().max(500).nullable().optional().or(z.literal("")),

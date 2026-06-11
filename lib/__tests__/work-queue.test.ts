@@ -164,18 +164,29 @@ describe("buildWorkTasks", () => {
     )).toBe(true)
   })
 
-  it("shows sent orders as receiving tasks", () => {
+  it("shows sent orders as office arrival tasks for office staff", () => {
     const tasks = buildWorkTasks(
-      { ...baseActor, permissions: ["receiving:register"] },
+      { ...baseActor, permissions: ["receiving:register_office"] },
       snapshot,
     )
 
     expect(tasks).toEqual([
       expect.objectContaining({
+        id:   "receipt-office:oc-1",
         type: "receipt",
         href: "/recepcion/nueva?oc=oc-1",
       }),
     ])
+  })
+
+  it("does not show a sent order as a faena task before office reception", () => {
+    const tasks = buildWorkTasks(
+      { ...baseActor, permissions: ["receiving:register_faena"] },
+      snapshot,
+    )
+
+    // oc-1 is only "sent" (nothing at office yet) → no faena task.
+    expect(tasks).toEqual([])
   })
 
   it("shows received items with stock as warehouse delivery tasks", () => {
@@ -203,7 +214,7 @@ describe("request progress labels", () => {
   it("returns the next human action for every main stage", () => {
     expect(requestNextAction("submitted", ["requested"])).toBe("Aprobación debe revisar los ítems pendientes.")
     expect(requestNextAction("approved", ["pending_purchase"])).toBe("El módulo de órdenes de compra debe generar la orden de compra.")
-    expect(requestNextAction("in_purchasing", ["purchased"])).toBe("Esperando recepción del proveedor.")
+    expect(requestNextAction("in_purchasing", ["purchased"])).toBe("Esperando recepción en oficina o bodega.")
     expect(requestNextAction("in_purchasing", ["received"])).toBe("Bodega debe registrar la entrega a faena.")
     expect(requestNextAction("closed", ["delivered"])).toBe("Pedido entregado en faena.")
   })

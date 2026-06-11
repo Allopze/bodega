@@ -49,7 +49,7 @@ test("admin: crear producto con categoría, verificarlo en catálogo", async ({ 
   await expect(page.getByText("Producto Secundario E2E")).toBeVisible()
 })
 
-test("admin: crear usuario con rol solicitante y faena, verificar login", async ({ page, browser }) => {
+test("admin: crear usuario con rol prevencionista faena, verificar login", async ({ page, browser }) => {
   await login(page)
 
   await page.goto("/admin/usuarios")

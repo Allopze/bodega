@@ -30,7 +30,8 @@ export type Permission =
   | "purchasing:send_order"
   | "purchasing:manage_suppliers"
   // Receiving
-  | "receiving:register"
+  | "receiving:register_office"
+  | "receiving:register_faena"
   | "receiving:view"
   // Warehouse
   | "warehouse:view_stock"

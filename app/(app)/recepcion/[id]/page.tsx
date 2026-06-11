@@ -57,7 +57,9 @@ export default async function RecepcionDetallePage({
     : []
 
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
-  const destinationLabel = `Directo a ${receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "faena"}`
+  const destinationLabel = receipt.locationType === "office"
+    ? "Oficina Chome"
+    : `Faena ${receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? ""}`.trim()
 
   return (
     <>
@@ -92,7 +94,9 @@ export default async function RecepcionDetallePage({
 
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-h2 text-[var(--color-text)]">Ítems recibidos</h2>
+            <h2 className="text-h2 text-[var(--color-text)]">
+              {receipt.locationType === "office" ? "Ítems recibidos en oficina" : "Ítems recibidos en faena"}
+            </h2>
             <Badge variant="success" size="sm" dot>{receipt.status === "closed" ? "Cerrada" : receipt.status}</Badge>
           </div>
 
@@ -110,6 +114,7 @@ export default async function RecepcionDetallePage({
                   const ocItem = item.purchaseOrderItem
                   const product = ocItem.productId ? productMap[ocItem.productId] : null
                   const productName = product?.name ?? ocItem.productNameFree ?? "(sin nombre)"
+                  const pendingToFaena = Math.max(0, (ocItem.quantityOfficeReceived ?? 0) - (ocItem.quantityReceived ?? 0))
 
                   return (
                     <TableRow key={item.id}>
@@ -119,7 +124,13 @@ export default async function RecepcionDetallePage({
                           <div className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{product.sku}</div>
                         )}
                       </TableCell>
-                      <TableCellNum>{formatQty(item.quantityReceived, ocItem.unitOfMeasure)}</TableCellNum>
+                      <TableCellNum>
+                        {formatQty(item.quantityReceived, ocItem.unitOfMeasure)}
+                        <div className="mt-0.5 text-[11px] font-normal text-[var(--color-text-subtle)]">
+                          En oficina: {formatQty(ocItem.quantityOfficeReceived ?? 0, ocItem.unitOfMeasure)}
+                          {pendingToFaena > 0 && ` · pend. faena: ${formatQty(pendingToFaena, ocItem.unitOfMeasure)}`}
+                        </div>
+                      </TableCellNum>
                       <TableCell className="text-sm text-[var(--color-text-muted)]">{item.notes ?? "—"}</TableCell>
                     </TableRow>
                   )

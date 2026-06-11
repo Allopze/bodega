@@ -242,7 +242,7 @@ Estos hallazgos se repiten en múltiples pantallas:
 
 | Sev | Hallazgo |
 |-----|----------|
-| 🟠 | Los **chips de roles** ("Administrador", "Jefa Chome", etc.) no muestran cuál está seleccionado — ninguno tiene estado visual activo. El usuario no sabe si debe hacer click para seleccionar uno. ¿Son radio buttons? ¿Checkboxes? ¿Toggles? El patrón necesita un estado de "selected" claro (fondo sólido, checkmark, borde más grueso). |
+| 🟠 | Los **chips de roles** ("Administrador", "Jefatura", etc.) no muestran cuál está seleccionado — ninguno tiene estado visual activo. El usuario no sabe si debe hacer click para seleccionar uno. ¿Son radio buttons? ¿Checkboxes? ¿Toggles? El patrón necesita un estado de "selected" claro (fondo sólido, checkmark, borde más grueso). |
 | 🟡 | La sección "FAENAS ASIGNADAS" muestra nombre + código en mayúscula ("Cabrero CABRERO") — el código técnico en all-caps es ruido visual. Mostrar solo el nombre o el código como subtexto pequeño. |
 | 🟡 | El campo contraseña tiene placeholder "Mínimo 6 caracteres" — pero en `/registro` dice "Mínimo 8 caracteres". Inconsistencia en requisitos mínimos de contraseña. Unificar. |
 | 🔵 | El modal no tiene indicación de scroll si hubiera más faenas — considerar altura máxima + scroll interno para la sección de faenas. |

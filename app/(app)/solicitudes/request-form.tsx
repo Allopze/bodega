@@ -302,9 +302,14 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
 
   const readOnly = !isDraft
   const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]
+  const requestTypeLabel = REQUEST_TYPE_OPTS.find((option) => option.value === requestType)?.label ?? requestType
+  const urgencyLabel = URGENCY_OPTS.find((option) => option.value === urgency)?.label ?? urgency
+  const worksiteLabel = worksites.find((worksite) => worksite.id === worksiteId)?.name ?? "Sin faena"
+  const missingItems = buildRequestSummaryIssues({ worksiteId, requiredDate, items })
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+      <div className="min-w-0 space-y-8">
       {/* ── Draft/Submit form ─────────────────────────────────────────────── */}
       <form action={draftAction} className="space-y-6">
         {/* Hidden fields */}
@@ -495,8 +500,91 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
           Esta solicitud está en estado <strong>{editRequest?.status}</strong> y no puede modificarse.
         </p>
       )}
+      </div>
+
+      <aside className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 lg:sticky lg:top-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">Resumen</h2>
+            <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+              Revisa la solicitud antes de enviarla.
+            </p>
+          </div>
+          <span className="rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2 py-1 text-xs font-medium text-[var(--color-text-muted)]">
+            {items.length} {items.length === 1 ? "ítem" : "ítems"}
+          </span>
+        </div>
+
+        <dl className="mt-4 divide-y divide-[var(--color-border)] text-sm">
+          <SummaryLine label="Faena" value={worksiteLabel} />
+          <SummaryLine label="Tipo" value={requestTypeLabel} />
+          <SummaryLine label="Urgencia" value={urgencyLabel} />
+          <SummaryLine label="Fecha requerida" value={requiredDate || "Pendiente"} muted={!requiredDate} />
+        </dl>
+
+        <div className="mt-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+          <p className="text-xs font-medium text-[var(--color-text)]">
+            {missingItems.length === 0 ? "Listo para enviar" : "Pendientes"}
+          </p>
+          {missingItems.length === 0 ? (
+            <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+              Los campos requeridos y los ítems tienen la información mínima.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
+              {missingItems.map((issue) => (
+                <li key={issue} className="flex gap-2">
+                  <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--color-warning)]" />
+                  <span>{issue}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </aside>
     </div>
   )
+}
+
+function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2.5">
+      <dt className="text-xs text-[var(--color-text-subtle)]">{label}</dt>
+      <dd className={muted ? "text-right text-xs text-[var(--color-text-subtle)]" : "text-right text-xs font-medium text-[var(--color-text)]"}>
+        {value}
+      </dd>
+    </div>
+  )
+}
+
+function buildRequestSummaryIssues({
+  worksiteId,
+  requiredDate,
+  items,
+}: {
+  worksiteId: string
+  requiredDate: string
+  items: ItemRow[]
+}): string[] {
+  const issues: string[] = []
+  if (!worksiteId) issues.push("Selecciona una faena.")
+  if (!requiredDate) issues.push("Indica la fecha requerida.")
+
+  items.forEach((item, index) => {
+    const label = `Ítem ${index + 1}`
+    if (!item.productId && !item.productNameFree.trim()) {
+      issues.push(`${label}: selecciona o describe un producto.`)
+    }
+    if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0) {
+      issues.push(`${label}: ingresa una cantidad válida.`)
+    }
+    const missingAttrs = item.attributes.filter((attr) => attr.isRequired && !attr.value.trim())
+    if (missingAttrs.length > 0) {
+      issues.push(`${label}: completa ${missingAttrs.map((attr) => attr.attributeName).join(", ")}.`)
+    }
+  })
+
+  return issues
 }
 
 // ── Item editor sub-component ─────────────────────────────────────────────────

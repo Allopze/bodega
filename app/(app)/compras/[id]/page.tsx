@@ -85,26 +85,16 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
 
   const canManage = session.user.permissions.includes("purchasing:create_order")
   const canSend   = session.user.permissions.includes("purchasing:send_order")
+  const canShowOrderActions =
+    (order.status === "draft" && canManage) ||
+    (order.status === "issued" && (canManage || canSend)) ||
+    (order.status === "sent" && canManage)
 
   return (
     <>
       <PageHeader
         title={order.code}
         description={`${order.worksite?.name ?? "—"} · ${order.supplier?.name ?? "—"}`}
-        actions={
-          <div className="flex items-center gap-2">
-            <StateBadge state={order.status} entity="oc" />
-            <Button asChild variant="secondary" size="sm">
-              <a
-                href={`/compras/${order.id}/print`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Imprimir / PDF
-              </a>
-            </Button>
-          </div>
-        }
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -114,31 +104,8 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
         }
       />
 
-      <div className="max-w-3xl flex flex-col gap-6">
-        {/* OC header summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border border-[var(--color-border)] rounded-[var(--radius-lg)] bg-[var(--color-surface-2)]">
-          <div>
-            <p className="text-xs text-[var(--color-text-subtle)] mb-0.5">Proveedor</p>
-            <p className="text-sm font-medium text-[var(--color-text)]">{order.supplier?.name ?? "—"}</p>
-          </div>
-          <div>
-            <p className="text-xs text-[var(--color-text-subtle)] mb-0.5">Condición de pago</p>
-            <p className="text-sm text-[var(--color-text-muted)]">{order.paymentTerms ?? "—"}</p>
-          </div>
-          <div>
-            <p className="text-xs text-[var(--color-text-subtle)] mb-0.5">Entrega estimada</p>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              {order.estimatedDelivery ? formatDate(order.estimatedDelivery) : "—"}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-[var(--color-text-subtle)] mb-0.5">Total</p>
-            <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">
-              {formatCLP(order.totalAmount)}
-            </p>
-          </div>
-        </div>
-
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        <div className="min-w-0 flex flex-col gap-6">
         {/* Items */}
         <div className="grid gap-2 md:hidden">
           {order.items.map((item) => {
@@ -259,32 +226,6 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
                 )
               })}
             </tbody>
-            <tfoot className="bg-[var(--color-surface-2)] border-t border-[var(--color-border)]">
-              <tr>
-                <td colSpan={3} className="px-4 py-2.5 text-xs text-right text-[var(--color-text-muted)]">
-                  Neto
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[var(--color-text-muted)]">
-                  {formatCLP(order.netAmount)}
-                </td>
-              </tr>
-              <tr>
-                <td colSpan={3} className="px-4 py-1 text-xs text-right text-[var(--color-text-subtle)]">
-                  IVA (19%)
-                </td>
-                <td className="px-4 py-1 text-right tabular-nums text-sm text-[var(--color-text-subtle)]">
-                  {formatCLP(order.taxAmount)}
-                </td>
-              </tr>
-              <tr className="border-t border-[var(--color-border)]">
-                <td colSpan={3} className="px-4 py-2.5 text-sm font-semibold text-right text-[var(--color-text)]">
-                  Total
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-sm font-bold text-[var(--color-text)]">
-                  {formatCLP(order.totalAmount)}
-                </td>
-              </tr>
-            </tfoot>
           </table>
         </div>
 
@@ -295,19 +236,76 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             <p className="text-sm text-[var(--color-text-muted)]">{order.notes}</p>
           </div>
         )}
+        </div>
 
-        {/* Actions (issue/send) */}
-        {(canManage || canSend) && (
-          <OcActions
-            orderId={order.id}
-            status={order.status}
-            canManage={canManage}
-            canSend={canSend}
-          />
-        )}
+        <aside className="space-y-6 lg:sticky lg:top-6">
+          <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <StateBadge state={order.status} entity="oc" />
+              <Button asChild variant="secondary" size="sm">
+                <a
+                  href={`/compras/${order.id}/print`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Imprimir / PDF
+                </a>
+              </Button>
+            </div>
 
-        <EntityTimeline entityType="oc" events={timelineEvents} />
+            <dl className="mt-4 divide-y divide-[var(--color-border)]">
+              <DetailLine label="Proveedor" value={order.supplier?.name ?? "—"} />
+              <DetailLine label="Faena" value={order.worksite?.name ?? "—"} />
+              <DetailLine label="Condición de pago" value={order.paymentTerms ?? "—"} />
+              <DetailLine label="Entrega estimada" value={order.estimatedDelivery ? formatDate(order.estimatedDelivery) : "—"} />
+            </dl>
+          </section>
+
+          <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">Totales</h2>
+            <dl className="mt-3 space-y-2 text-sm">
+              <AmountLine label="Neto" value={formatCLP(order.netAmount)} />
+              <AmountLine label="IVA (19%)" value={formatCLP(order.taxAmount)} muted />
+              <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
+                <dt className="font-semibold text-[var(--color-text)]">Total</dt>
+                <dd className="font-mono font-bold tabular-nums text-[var(--color-text)]">{formatCLP(order.totalAmount)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          {canShowOrderActions && (
+            <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Acciones</h2>
+              <OcActions
+                orderId={order.id}
+                status={order.status}
+                canManage={canManage}
+                canSend={canSend}
+              />
+            </section>
+          )}
+
+          <EntityTimeline entityType="oc" events={timelineEvents} />
+        </aside>
       </div>
     </>
+  )
+}
+
+function DetailLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2.5">
+      <dt className="text-xs text-[var(--color-text-subtle)]">{label}</dt>
+      <dd className="text-right text-xs font-medium text-[var(--color-text)]">{value}</dd>
+    </div>
+  )
+}
+
+function AmountLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className={muted ? "text-[var(--color-text-subtle)]" : "text-[var(--color-text-muted)]"}>{label}</dt>
+      <dd className={muted ? "font-mono tabular-nums text-[var(--color-text-subtle)]" : "font-mono tabular-nums text-[var(--color-text-muted)]"}>{value}</dd>
+    </div>
   )
 }

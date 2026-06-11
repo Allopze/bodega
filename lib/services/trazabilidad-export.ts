@@ -7,7 +7,7 @@
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems,
-  purchaseOrderItems, receiptItems,
+  purchaseOrderItems, receipts, receiptItems,
   approvalDecisions, products, worksites,
 } from "@/db/schema"
 import { asc, eq, inArray } from "drizzle-orm"
@@ -62,7 +62,10 @@ async function buildMatrix(session: Session): Promise<TrazabilidadExportRow[]> {
     db.select({
       purchaseOrderItemId: receiptItems.purchaseOrderItemId,
       quantityReceived:    receiptItems.quantityReceived,
-    }).from(receiptItems),
+    })
+      .from(receiptItems)
+      .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+      .where(eq(receipts.locationType, "faena")),
 
     db.select({
       requestItemId: approvalDecisions.requestItemId,

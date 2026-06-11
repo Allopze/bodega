@@ -512,8 +512,8 @@ async function getDashboardData(session: Session) {
     my_requests: requestRows.filter((r) => r.requesterId === session.user.id && r.status !== "cancelled").length,
     pending_approvals: pendingItemRows.filter((i) => i.status === "requested").length,
     approved_without_oc: pendingItemRows.filter((i) => i.status === "approved" || i.status === "pending_purchase").length,
-    orders_in_progress: orderRows.filter((o) => ["issued", "sent", "supplier_confirmed", "partially_received"].includes(o.status)).length,
-    orders_pending_receipt: orderRows.filter((o) => o.status === "sent" || o.status === "partially_received").length,
+    orders_in_progress: orderRows.filter((o) => ["issued", "sent", "supplier_confirmed", "partially_office_received", "office_received", "partially_received"].includes(o.status)).length,
+    orders_pending_receipt: orderRows.filter((o) => ["sent", "partially_office_received", "office_received", "partially_received"].includes(o.status)).length,
   }
 
   const totalCosts = orderRows

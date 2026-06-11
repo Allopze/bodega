@@ -90,6 +90,17 @@ const EPP_SUPPLIERS: schema.suppliers["$inferInsert"][] = [
   },
 ]
 
+const COMPANY_PROFILE_SETTINGS: schema.systemSettings["$inferInsert"][] = [
+  { key: "company_name", value: "Servicios Industriales Chome Limitada" },
+  { key: "company_rut", value: "78.023.530-6" },
+  { key: "company_business_activity", value: "Servicios Industrial" },
+  { key: "company_address", value: "Camino de Luna 91 Villa Portal del Sol - Panguipulli - Panguipulli - Chile" },
+  { key: "company_branch_address", value: "Pedro Aguirre Cerda 1156 Block 4to, Concepcion" },
+  { key: "company_phone", value: "41-3251368" },
+  { key: "company_email", value: "" },
+  { key: "company_website", value: "" },
+]
+
 const attr = (name: string, value: string): EppAttribute => ({ name, value })
 
 const EPP_CATALOG_ITEMS: EppCatalogItem[] = [
@@ -161,13 +172,18 @@ function sourceNote(item: EppCatalogItem) {
 async function main() {
   console.log("Inicializando datos base de Chome Solicitudes y Bodega...")
 
+  /* ── Configuración de empresa para OC ─────────────────────────────────── */
+  for (const setting of COMPANY_PROFILE_SETTINGS) {
+    await db.insert(schema.systemSettings).values(setting).onConflictDoNothing()
+  }
+
   /* ── Roles ────────────────────────────────────────────────────────────── */
   const roleData: schema.roles["$inferInsert"][] = [
     { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total técnico del sistema" },
-    { id: "rol-jefa", name: "jefa_chome", label: "Jefa Chome", description: "Revisa, aprueba y administra la operación" },
-    { id: "rol-sec", name: "secretaria", label: "Secretaria", description: "Revisa, aprueba y gestiona operación diaria" },
-    { id: "rol-prev", name: "prevencionista", label: "Prevencionista", description: "Revisa y aprueba solicitudes" },
-    { id: "rol-sol-faena", name: "solicitante_faena", label: "Prevencionista de faena", description: "Solicita ítems para sus faenas asignadas" },
+    { id: "rol-jefa", name: "jefa_chome", label: "Jefatura", description: "Revisa, aprueba y administra la operación" },
+    { id: "rol-sec", name: "secretaria", label: "Secretaría", description: "Revisa, aprueba y gestiona operación diaria" },
+    { id: "rol-prev", name: "prevencionista", label: "Prevencionista oficina", description: "Revisa y aprueba solicitudes" },
+    { id: "rol-sol-faena", name: "solicitante_faena", label: "Prevencionista faena", description: "Solicita ítems para sus faenas asignadas" },
   ]
   for (const role of roleData) {
     await db.insert(schema.roles).values(role).onConflictDoUpdate({
@@ -195,7 +211,8 @@ async function main() {
     { id: "p-pur-send",       name: "purchasing:send_order",        module: "purchasing", description: "Enviar OC a proveedor" },
     { id: "p-pur-sup",        name: "purchasing:manage_suppliers",  module: "purchasing", description: "Administrar proveedores" },
     // Receiving
-    { id: "p-rec-reg",        name: "receiving:register",           module: "receiving",  description: "Registrar recepciones" },
+    { id: "p-rec-reg-office", name: "receiving:register_office",    module: "receiving",  description: "Registrar llegada a oficina" },
+    { id: "p-rec-reg-faena",  name: "receiving:register_faena",     module: "receiving",  description: "Registrar recepción en faena" },
     { id: "p-rec-view",       name: "receiving:view",               module: "receiving",  description: "Ver recepciones" },
     // Warehouse
     { id: "p-wh-stock",       name: "warehouse:view_stock",         module: "warehouse",  description: "Ver stock" },
@@ -232,21 +249,43 @@ async function main() {
 
   /* ── Role → Permission mapping ───────────────────────────────────────── */
   const rp = (roleId: string, permId: string) => ({ roleId, permissionId: permId })
-  const leadership = [
+  const jefatura = [
+    "p-req-all",
+    "p-apr",
+    "p-pur-view",
+    "p-rec-view",
+    "p-wh-stock",
+    "p-rep-view",
+  ]
+  const secretaria = [
     "p-req-create", "p-req-own", "p-req-all", "p-req-submit",
     "p-apr",
     "p-pur-view", "p-pur-create", "p-pur-send", "p-pur-sup",
-    "p-rec-reg", "p-rec-view",
-    "p-wh-stock", "p-wh-mov", "p-wh-adj",
+    "p-rec-reg-office", "p-rec-reg-faena", "p-rec-view",
+    "p-wh-stock", "p-wh-mov",
     "p-rep-view",
-    "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup", "p-adm-cfg", "p-adm-audit",
+    "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup",
+  ]
+  const prevencionistaOficina = [
+    "p-req-create", "p-req-own", "p-req-all", "p-req-submit",
+    "p-apr",
+    "p-rec-reg-office", "p-rec-view",
+    "p-wh-stock", "p-wh-mov",
+    "p-rep-view",
+    "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup",
+  ]
+  const prevencionistaFaena = [
+    "p-req-create", "p-req-own", "p-req-submit",
+    "p-rec-reg-faena", "p-rec-view",
+    "p-wh-stock", "p-wh-mov",
+    "p-adm-wrk",
   ]
   const rolePermData = [
     ...perms.map((p) => rp("rol-admin", p.id)),
-    ...leadership.map((permId) => rp("rol-jefa", permId)),
-    ...leadership.map((permId) => rp("rol-sec", permId)),
-    rp("rol-prev", "p-req-all"), rp("rol-prev", "p-apr"), rp("rol-prev", "p-rep-view"),
-    rp("rol-sol-faena", "p-req-create"), rp("rol-sol-faena", "p-req-own"), rp("rol-sol-faena", "p-req-submit"),
+    ...jefatura.map((permId) => rp("rol-jefa", permId)),
+    ...secretaria.map((permId) => rp("rol-sec", permId)),
+    ...prevencionistaOficina.map((permId) => rp("rol-prev", permId)),
+    ...prevencionistaFaena.map((permId) => rp("rol-sol-faena", permId)),
   ]
   await db.insert(schema.rolePermissions).values(rolePermData)
 

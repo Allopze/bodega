@@ -32,14 +32,14 @@ Notas:
 ## Flujo principal
 
 ```
-Solicitante  →  Aprobación  →  Compras (OC)  →  Recepción  →  Entrega  →  Trazabilidad
-   (faena)       (jefa/sec/      (secretaria/     (solicitante   (bodega →    (matriz +
+Prevencionista faena  →  Aprobación  →  Compras (OC)  →  Recepción  →  Entrega  →  Trazabilidad
+   (faena)       (jefatura/sec/   (secretaría/     (prevencionista (bodega →    (matriz +
                  prevencionista) jefa_chome)      o bodega)      faena)       reportes)
 ```
 
 1. **Maestros.** El administrador configura faenas, centros de costo,
    proveedores, productos, bodegas, usuarios y roles.
-2. **Solicitud.** El solicitante de faena crea una solicitud con ítems
+2. **Solicitud.** El prevencionista faena crea una solicitud con ítems
    catalogados o libres. La solicitud queda en `draft` y se envía a
    aprobación.
 3. **Aprobación.** Los roles autorizados aprueban, rechazan, devuelven
@@ -50,9 +50,9 @@ Solicitante  →  Aprobación  →  Compras (OC)  →  Recepción  →  Entrega 
 5. **Factura.** El personal autorizado anexa la factura del proveedor
    como archivo (PDF/JPG/PNG/WebP) con número, fecha y monto. La
    factura se concilia contra la OC.
-6. **Recepción.** La mercadería se recibe contra la OC, ya sea
-   directamente en faena o en bodega (lo que dispara un ingreso de
-   stock).
+6. **Recepción.** La mercadería se registra primero como llegada a
+   oficina Chome y luego como recepción en bodega/faena, que dispara el
+   ingreso de stock.
 7. **Entrega.** Desde bodega se despachan productos a faena. La entrega
    puede asociarse a un ítem de solicitud para mantener la trazabilidad.
 8. **Trazabilidad y reportes.** La matriz de trazabilidad muestra el
@@ -116,6 +116,6 @@ received | closed | cancelled`
 - **Centro de costo** — Unidad contable dentro de una faena.
 - **EPP** — Elemento de protección personal. Requiere aprobación de
   Prevención.
-- **Prevencionista** — Persona que valida ítems de seguridad.
+- **Prevencionista oficina** — Persona que valida ítems de seguridad.
 - **Trazabilidad** — Capacidad de seguir un ítem desde la solicitud
   hasta la entrega en faena.

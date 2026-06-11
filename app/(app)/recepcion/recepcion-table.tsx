@@ -4,6 +4,7 @@ import Link from "next/link"
 import { DataTable } from "@/components/admin/data-table"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
 import { formatDate } from "@/lib/utils"
@@ -22,6 +23,7 @@ interface RecepcionTableProps {
   orders:       OrderRow[]
   wsMap:        Record<string, string>
   supMap:       Record<string, string>
+  gapMap:       Record<string, number>
   canRegister:  boolean
 }
 
@@ -30,11 +32,12 @@ const COLUMNS = [
   { key: "worksiteId",   label: "Faena",      sortable: true  },
   { key: "supplierId",   label: "Proveedor",  sortable: true  },
   { key: "status",       label: "Estado",     sortable: true,  width: "w-40" },
+  { key: "transit",      label: "En tránsito", sortable: false, width: "w-32" },
   { key: "sentAt",       label: "Enviada",    sortable: true,  width: "w-32" },
   { key: "",             label: "",           sortable: false, width: "w-12" },
 ]
 
-export function RecepcionTable({ orders, wsMap, supMap, canRegister }: RecepcionTableProps) {
+export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister }: RecepcionTableProps) {
   return (
     <DataTable
       columns={COLUMNS}
@@ -43,7 +46,7 @@ export function RecepcionTable({ orders, wsMap, supMap, canRegister }: Recepcion
       pageSize={20}
       searchPlaceholder="Buscar OC..."
       emptyTitle="Sin OCs pendientes de recepción"
-      emptyDescription="Las órdenes de compra enviadas al proveedor aparecerán aquí cuando deban marcarse como recibidas."
+      emptyDescription="Las órdenes enviadas aparecerán aquí para registrar llegada a oficina y distribución a faena."
       renderRow={(row) => {
         const o = row as unknown as OrderRow
         return (
@@ -66,6 +69,11 @@ export function RecepcionTable({ orders, wsMap, supMap, canRegister }: Recepcion
                   </Button>
                 )}
               </div>
+            </TableCell>
+            <TableCell>
+              {gapMap[o.id] > 0
+                ? <Badge variant="warning" size="sm">{gapMap[o.id]} pend. faena</Badge>
+                : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
               {o.sentAt ? formatDate(o.sentAt) : "—"}

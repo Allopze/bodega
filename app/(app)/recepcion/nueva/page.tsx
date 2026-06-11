@@ -5,8 +5,7 @@ import {
   purchaseOrders,
 } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
-import { canAccessWorksite }  from "@/lib/auth/can"
+import { requireAuth, can, canAny, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { ReceiptForm } from "../receipt-form"
 import type { ReceiptOcItem } from "../receipt-form"
@@ -20,8 +19,12 @@ export default async function NuevaRecepcionPage({
   searchParams: Promise<{ oc?: string }>
 }) {
   let session
-  try { session = await requirePermission("receiving:register") }
+  try { session = await requireAuth() }
   catch { redirect("/recepcion") }
+  if (!canAny(session, "receiving:register_office", "receiving:register_faena")) redirect("/recepcion")
+
+  const canOffice = can(session, "receiving:register_office")
+  const canFaena  = can(session, "receiving:register_faena")
 
   const { oc: orderId } = await searchParams
   if (!orderId) redirect("/recepcion")
@@ -36,7 +39,7 @@ export default async function NuevaRecepcionPage({
 
   if (!order) notFound()
   if (!canAccessWorksite(session, order.worksiteId)) notFound()
-  if (!["sent", "partially_received"].includes(order.status)) {
+  if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
     redirect("/recepcion")
   }
 
@@ -61,6 +64,7 @@ export default async function NuevaRecepcionPage({
       productName:      product?.name ?? item.productNameFree ?? "(sin nombre)",
       productSku:       product?.sku ?? null,
       quantity:         item.quantity,
+      quantityOfficeReceived: item.quantityOfficeReceived ?? 0,
       quantityReceived: item.quantityReceived ?? 0,
       unitOfMeasure:    item.unitOfMeasure,
       notes:            item.notes,
@@ -71,7 +75,7 @@ export default async function NuevaRecepcionPage({
     <>
       <PageHeader
         title={`Recepción OC ${order.code}`}
-        description="Marca los ítems recibidos directamente en la faena de la OC."
+        description="Registra primero la llegada a oficina Chome y luego la recepción en faena."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard",  href: "/dashboard" },
@@ -86,6 +90,8 @@ export default async function NuevaRecepcionPage({
           orderCode={order.code}
           orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
           items={items}
+          canOffice={canOffice}
+          canFaena={canFaena}
         />
       </div>
     </>

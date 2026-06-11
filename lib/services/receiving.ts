@@ -4,7 +4,7 @@
  * + worksite stock ingress.
  */
 
-import { eq } from "drizzle-orm"
+import { eq, and, notInArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   receipts, receiptItems,
@@ -30,6 +30,7 @@ export interface RegisterReceiptInput {
   purchaseOrderId:  string
   receivedBy:       string
   userEmail?:       string
+  stage:            "office" | "faena"
   worksiteId?:      string | null
   dispatchGuideNo?: string | null
   notes?:           string | null
@@ -57,8 +58,12 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
     with:  { items: true },
   })
   if (!order) throw new Error(`Purchase order ${input.purchaseOrderId} not found`)
-  if (!["sent", "partially_received"].includes(order.status)) {
+  if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
     throw new Error(`Cannot receive against order in state '${order.status}'`)
+  }
+  // Office is the mandatory first stage: a worksite receipt cannot happen before anything arrived at office.
+  if (input.stage === "faena" && order.status === "sent") {
+    throw new Error("Debes registrar primero la llegada a oficina antes de recibir en faena")
   }
 
   const worksiteId = input.worksiteId ?? order.worksiteId
@@ -72,7 +77,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       purchaseOrderId: input.purchaseOrderId,
       receivedBy:      input.receivedBy,
       receivedAt:      now,
-      locationType:    "faena",
+      locationType:    input.stage,
       worksiteId,
       dispatchGuideNo: input.dispatchGuideNo ?? null,
       status:          "closed",
@@ -87,7 +92,14 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       const qtyRec = ri.quantityReceived
       const qtyRej = ri.quantityRejected ?? 0
       const qtyDmg = ri.quantityDamaged  ?? 0
-      const remaining = ocItem.quantity - (ocItem.quantityReceived ?? 0)
+      // Office stage caps at the ordered quantity; faena stage caps STRICTLY at what already
+      // arrived at office (no fallback to the full quantity → the direct-to-faena path is closed).
+      const currentReceived = input.stage === "office"
+        ? (ocItem.quantityOfficeReceived ?? 0)
+        : (ocItem.quantityReceived ?? 0)
+      const remaining = input.stage === "office"
+        ? ocItem.quantity - (ocItem.quantityOfficeReceived ?? 0)
+        : (ocItem.quantityOfficeReceived ?? 0) - (ocItem.quantityReceived ?? 0)
 
       if (!Number.isFinite(qtyRec) || qtyRec <= 0) {
         throw new Error("Received quantity must be greater than 0")
@@ -99,7 +111,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
         throw new Error("Rejected and damaged quantities cannot be negative")
       }
 
-      const totalNowReceived = (ocItem.quantityReceived ?? 0) + qtyRec
+      const totalNowReceived = currentReceived + qtyRec
       tx.insert(receiptItems).values({
         id:                  nanoid(),
         receiptId,
@@ -113,10 +125,12 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
 
       tx
         .update(purchaseOrderItems)
-        .set({ quantityReceived: totalNowReceived })
+        .set(input.stage === "office"
+          ? { quantityOfficeReceived: totalNowReceived }
+          : { quantityReceived: totalNowReceived })
         .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId)).run()
 
-      if (ocItem.requestItemId) {
+      if (input.stage === "faena" && ocItem.requestItemId) {
         const fullReceived = totalNowReceived >= ocItem.quantity
         receiveItemTx(tx, ocItem.requestItemId, input.receivedBy, {
           fullReceived,
@@ -150,6 +164,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       entityCode: code,
       newState:   {
         purchaseOrderId: input.purchaseOrderId,
+        stage:           input.stage,
         worksiteId,
         itemCount:       input.items.length,
       },
@@ -161,11 +176,15 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
 
 /* ── Roll up OC status based on received quantities ────────────────────────────  */
 
-function rollupOrderReceiptStatus(orderId: string, tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): void {
+function rollupOrderReceiptStatus(
+  orderId: string,
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+): void {
   const ocItems = tx
     .select({
-      quantity:         purchaseOrderItems.quantity,
-      quantityReceived: purchaseOrderItems.quantityReceived,
+      quantity:               purchaseOrderItems.quantity,
+      quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
+      quantityReceived:       purchaseOrderItems.quantityReceived,
     })
     .from(purchaseOrderItems)
     .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
@@ -173,21 +192,28 @@ function rollupOrderReceiptStatus(orderId: string, tx: Parameters<Parameters<typ
 
   if (ocItems.length === 0) return
 
-  const allFullyReceived = ocItems.every((i) => (i.quantityReceived ?? 0) >= i.quantity)
-  const anyReceived      = ocItems.some((i) => (i.quantityReceived ?? 0) > 0)
+  // Deterministic rollup from item quantities. Office is always first, so the
+  // invariant quantityReceived ≤ quantityOfficeReceived ≤ quantity holds, giving a
+  // monotonic chain: sent → partially_office_received → office_received → partially_received → received.
+  const allFaena  = ocItems.every((i) => (i.quantityReceived       ?? 0) >= i.quantity)
+  const anyFaena  = ocItems.some( (i) => (i.quantityReceived       ?? 0) > 0)
+  const allOffice = ocItems.every((i) => (i.quantityOfficeReceived ?? 0) >= i.quantity)
+  const anyOffice = ocItems.some( (i) => (i.quantityOfficeReceived ?? 0) > 0)
 
   let newStatus: string
-  if (allFullyReceived) {
-    newStatus = "received"
-  } else if (anyReceived) {
-    newStatus = "partially_received"
-  } else {
-    return
-  }
+  if (allFaena)        newStatus = "received"
+  else if (anyFaena)   newStatus = "partially_received"
+  else if (allOffice)  newStatus = "office_received"
+  else if (anyOffice)  newStatus = "partially_office_received"
+  else return
 
   const now = new Date().toISOString()
   tx
     .update(purchaseOrders)
     .set({ status: newStatus, updatedAt: now })
-    .where(eq(purchaseOrders.id, orderId)).run()
+    // Never pull a manually closed/cancelled order back into the receiving flow.
+    .where(and(
+      eq(purchaseOrders.id, orderId),
+      notInArray(purchaseOrders.status, ["closed", "cancelled"]),
+    )).run()
 }

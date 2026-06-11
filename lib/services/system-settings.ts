@@ -16,12 +16,12 @@ export interface CompanyProfile {
 }
 
 const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
-  name:             "Chome",
-  rut:              "",
-  businessActivity: "",
-  address:          "",
-  branchAddress:    "",
-  phone:            "",
+  name:             "Servicios Industriales Chome Limitada",
+  rut:              "78.023.530-6",
+  businessActivity: "Servicios Industrial",
+  address:          "Camino de Luna 91 Villa Portal del Sol - Panguipulli - Panguipulli - Chile",
+  branchAddress:    "Pedro Aguirre Cerda 1156 Block 4to, Concepcion",
+  phone:            "41-3251368",
   email:            "",
   website:          "",
 }
@@ -80,13 +80,13 @@ export async function getCompanyProfile(): Promise<CompanyProfile> {
 
     return {
       name:             cleanSetting(byKey[COMPANY_PROFILE_KEYS.name]) || DEFAULT_COMPANY_PROFILE.name,
-      rut:              cleanSetting(byKey[COMPANY_PROFILE_KEYS.rut]),
-      businessActivity: cleanSetting(byKey[COMPANY_PROFILE_KEYS.businessActivity]),
-      address:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.address]),
-      branchAddress:    cleanSetting(byKey[COMPANY_PROFILE_KEYS.branchAddress]),
-      phone:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.phone]),
-      email:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.email]),
-      website:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.website]),
+      rut:              cleanSetting(byKey[COMPANY_PROFILE_KEYS.rut]) || DEFAULT_COMPANY_PROFILE.rut,
+      businessActivity: cleanSetting(byKey[COMPANY_PROFILE_KEYS.businessActivity]) || DEFAULT_COMPANY_PROFILE.businessActivity,
+      address:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.address]) || DEFAULT_COMPANY_PROFILE.address,
+      branchAddress:    cleanSetting(byKey[COMPANY_PROFILE_KEYS.branchAddress]) || DEFAULT_COMPANY_PROFILE.branchAddress,
+      phone:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.phone]) || DEFAULT_COMPANY_PROFILE.phone,
+      email:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.email]) || DEFAULT_COMPANY_PROFILE.email,
+      website:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.website]) || DEFAULT_COMPANY_PROFILE.website,
     }
   } catch (err) {
     logger.error("Error fetching company profile settings, using defaults:", err)

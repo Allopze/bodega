@@ -93,20 +93,22 @@ export default async function BodegaPage({
       <PageHeader title="Bodega" description="Stock por producto y kardex de movimientos."
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
       />
-      <div className="flex flex-col gap-6">
-        <Suspense fallback={<SkeletonPage rows={6} />}>
-          <StockSection worksites={worksiteOptions} stockByWorksite={stockByWorksite} initialWorksiteId={initialWorksiteId} />
-        </Suspense>
+      <div className={showReturnPanel ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start" : "flex flex-col gap-6"}>
+        <div className="min-w-0 space-y-6">
+          <Suspense fallback={<SkeletonPage rows={6} />}>
+            <StockSection worksites={worksiteOptions} stockByWorksite={stockByWorksite} initialWorksiteId={initialWorksiteId} />
+          </Suspense>
+
+          <Suspense fallback={<SkeletonPage rows={6} />}>
+            <KardexSection movements={recentMovements as InventoryMovementWithRelations[]} />
+          </Suspense>
+        </div>
 
         {showReturnPanel && (
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
+          <aside className="xl:sticky xl:top-6">
             <ReturnPanel products={returnProducts} worksites={worksiteOptions} />
-          </div>
+          </aside>
         )}
-
-        <Suspense fallback={<SkeletonPage rows={6} />}>
-          <KardexSection movements={recentMovements as InventoryMovementWithRelations[]} />
-        </Suspense>
       </div>
     </>
   )
