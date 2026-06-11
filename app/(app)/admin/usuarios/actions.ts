@@ -3,13 +3,13 @@
 import { revalidatePath } from "next/cache"
 import type { Session } from "next-auth"
 import { and, eq, ne } from "drizzle-orm"
-import bcrypt from "bcryptjs"
 import { db } from "@/db"
 import { users, userRoles, worksiteUsers, roles, userInvitations } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { generateInvitationToken, hashInvitationToken } from "@/lib/auth/bootstrap"
+import { createPendingPasswordMarker, displayNameFromEmail } from "@/lib/auth/password-setup"
 import { getAppBaseUrl, sendInvitationEmail } from "@/lib/email/smtp"
 import { userCreateSchema, userInvitationSchema, userUpdateSchema, type ActionState } from "@/lib/validation/masters"
 
@@ -115,9 +115,8 @@ export async function createUser(
   catch { return { ok: false, message: "Sin permisos para crear usuarios" } }
 
   const raw = {
-    name:     formData.get("name"),
+    name:     formData.get("name") || "",
     email:    formData.get("email"),
-    password: formData.get("password"),
     isActive: formData.get("isActive") === "on",
     roleIds:  formData.getAll("roleIds"),
     worksiteAssignments: buildWorksiteAssignments(formData),
@@ -143,13 +142,13 @@ export async function createUser(
   }
 
   const id           = nanoid()
-  const hashedPass   = await bcrypt.hash(d.password, 10)
-  const avatarColor  = String(Math.abs(hashStr(d.name)) % 360)
+  const displayName  = d.name?.trim() || displayNameFromEmail(d.email)
+  const avatarColor  = String(Math.abs(hashStr(displayName)) % 360)
 
   db.transaction((tx) => {
     tx.insert(users).values({
-      id, name: d.name, email: d.email,
-      hashedPassword: hashedPass,
+      id, name: displayName, email: d.email,
+      hashedPassword: createPendingPasswordMarker(),
       avatarColor,
       isActive: d.isActive,
     }).run()
@@ -168,11 +167,11 @@ export async function createUser(
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "create", entityType: "user", entityId: id,
-    newState: { name: d.name, email: d.email, roles: d.roleIds },
+    newState: { name: displayName, email: d.email, roles: d.roleIds, passwordSetupPending: true },
   })
 
   revalidatePath(REVALIDATE)
-  return { ok: true, message: `Usuario ${d.name} creado` }
+  return { ok: true, message: `Usuario ${displayName} creado. Definirá su contraseña al iniciar sesión.` }
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -188,7 +187,6 @@ export async function updateUser(
     id:       formData.get("id"),
     name:     formData.get("name"),
     email:    formData.get("email"),
-    password: formData.get("password") || "",
     isActive: formData.get("isActive") === "on",
     roleIds:  formData.getAll("roleIds"),
     worksiteAssignments: buildWorksiteAssignments(formData),
@@ -227,9 +225,6 @@ export async function updateUser(
     email:    d.email,
     isActive: d.isActive,
     updatedAt: new Date().toISOString(),
-  }
-  if (d.password) {
-    updates.hashedPassword = await bcrypt.hash(d.password, 10)
   }
 
   db.transaction((tx) => {

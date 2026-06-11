@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { roles, userRoles, worksites } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
+import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { UserList } from "./user-list"
 
@@ -44,6 +45,7 @@ export default async function UsuariosPage() {
       name:        u.name,
       email:       u.email,
       isActive:    u.isActive,
+      passwordSetupPending: isPasswordSetupPending(u.hashedPassword),
       createdAt:   u.createdAt,
       avatarColor: u.avatarColor,
       roleIds:     uRoles.map((r) => r.roleId),

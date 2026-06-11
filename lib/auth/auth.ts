@@ -6,6 +6,7 @@ import { users } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { applyRbacToToken, getUserRbacById } from "@/lib/auth/rbac"
+import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 
 import { headers } from "next/headers"
 import {
@@ -39,6 +40,7 @@ async function getUserWithAuth(email: string) {
   return {
     ...rbac,
     _hashedPassword: user.hashedPassword,
+    _passwordSetupPending: isPasswordSetupPending(user.hashedPassword),
   }
 }
 
@@ -82,6 +84,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null
         }
 
+        if (userWithAuth._passwordSetupPending) {
+          persistentRecordFailure(clientIp)
+          persistentRecordFailure(email)
+          return null
+        }
+
         const valid = await bcrypt.compare(parsed.data.password, userWithAuth._hashedPassword)
         if (!valid) {
           persistentRecordFailure(clientIp)
@@ -92,7 +100,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         persistentRecordSuccess(clientIp)
         persistentRecordSuccess(email)
 
-        const { _hashedPassword: _, ...safeUser } = userWithAuth
+        const { _hashedPassword: _, _passwordSetupPending: __, ...safeUser } = userWithAuth
         return safeUser
       },
     }),
@@ -104,7 +112,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         // First sign-in: embed RBAC into JWT
-        const u = user as Omit<NonNullable<Awaited<ReturnType<typeof getUserWithAuth>>>, "_hashedPassword">
+        const u = user as Omit<NonNullable<Awaited<ReturnType<typeof getUserWithAuth>>>, "_hashedPassword" | "_passwordSetupPending">
         applyRbacToToken(token, u)
         return token
       }

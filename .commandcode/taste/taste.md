@@ -17,9 +17,12 @@
 
 # Workflow Preferences
 - Keep workflows simple and explicit; avoid over-engineering. Confidence: 0.85
-- Approval flow: jefa de chome, secretaria, or prevencionista approve/reject requests. Confidence: 0.90
-- No worker deliveries in current scope; focus on request → approval → purchase order → receipt. Confidence: 0.85
+- Approval flow: jefatura, secretaría, or prevencionista oficina approve/reject requests. Confidence: 0.90
+- Worker deliveries (prevencionista oficina delivers EPP to workers) are now in scope. Confidence: 0.80
 - Solicitante (requester) is always scoped per faena (worksite), never global. Confidence: 0.90
+
+# Layout / UI Patterns
+- For task-heavy desktop screens, use two-column workspaces: main content area + sticky right rail (e.g., `lg:grid-cols-[minmax(0,1fr)_320px]`). Right rail holds summary, actions, timeline, or secondary tools. Confidence: 0.70
 
 # Scope Management
 - When asked to implement, first list what's missing or incomplete rather than making assumptions. Confidence: 0.80
@@ -27,4 +30,4 @@
 
 # Role Structure
 - Finanzas role should not exist; invoices are attachments only, not a financial module. Confidence: 0.85
-- Minimal role types: administrador, jefa_chome, secretaria, prevencionista, solicitante_faena. Confidence: 0.85
+- Role types: administrador, jefatura, secretaría, prevencionista oficina, prevencionista faena. Confidence: 0.90

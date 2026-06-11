@@ -30,9 +30,8 @@ export const rutSchema = z
 
 // ── User ──────────────────────────────────────────────────────────────────────
 export const userCreateSchema = z.object({
-  name:     z.string().min(2, "Nombre demasiado corto").max(80),
+  name:     z.string().max(80).optional().or(z.literal("")),
   email:    z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
-  password: z.string().min(8, "Mínimo 8 caracteres"),
   isActive: z.coerce.boolean().default(true),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
   worksiteAssignments: z.array(

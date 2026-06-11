@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { userInvitations, userRoles, users, worksiteUsers } from "@/db/schema"
 import { ensureSystemRbac, getUserCount, hashInvitationToken } from "@/lib/auth/bootstrap"
+import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { nanoid } from "@/lib/id"
 import { registerUserSchema, type ActionState } from "@/lib/validation/masters"
 
@@ -30,7 +31,8 @@ export async function registerUser(
   const data = parsed.data
   const userCount = await getUserCount()
   const existing = await db.query.users.findFirst({ where: eq(users.email, data.email) })
-  if (existing) {
+  const existingCanCompleteSetup = existing ? isPasswordSetupPending(existing.hashedPassword) : false
+  if (existing && !existingCanCompleteSetup) {
     return { ok: false, fieldErrors: { email: ["Este correo ya está registrado"] } }
   }
 
@@ -67,19 +69,31 @@ export async function registerUser(
     invitationId = invitation.id
   }
 
-  const id = nanoid()
+  const id = existing?.id ?? nanoid()
   const hashedPassword = await bcrypt.hash(data.password, 12)
-  const avatarColor = String(Math.abs(hashStr(data.name)) % 360)
+  const avatarColor = existing?.avatarColor ?? String(Math.abs(hashStr(data.name)) % 360)
 
   db.transaction((tx) => {
-    tx.insert(users).values({
-      id,
-      name: data.name,
-      email: data.email,
-      hashedPassword,
-      avatarColor,
-      isActive: true,
-    }).run()
+    if (existing) {
+      tx.update(users).set({
+        name: data.name,
+        hashedPassword,
+        avatarColor,
+        isActive: true,
+        updatedAt: new Date().toISOString(),
+      }).where(eq(users.id, existing.id)).run()
+      tx.delete(userRoles).where(eq(userRoles.userId, existing.id)).run()
+      tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, existing.id)).run()
+    } else {
+      tx.insert(users).values({
+        id,
+        name: data.name,
+        email: data.email,
+        hashedPassword,
+        avatarColor,
+        isActive: true,
+      }).run()
+    }
 
     tx.insert(userRoles).values(roleIds.map((roleId) => ({ userId: id, roleId }))).run()
 

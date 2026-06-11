@@ -84,9 +84,12 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
 
   const action = isEdit ? updateUser : createUser
   const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
+  const lastSeenStateRef = React.useRef<ActionState>(INITIAL_STATE)
 
   // Toast + close on success
   useEffect(() => {
+    if (state === lastSeenStateRef.current) return
+    lastSeenStateRef.current = state
     if (state.ok) {
       toast.success(state.message ?? (isEdit ? "Usuario actualizado" : "Usuario creado"))
       onClose()
@@ -119,7 +122,11 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
   const { selectedRoles, selectedWsIds, primaryWorksiteId } = selection
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
+    <Sheet open={open} onOpenChange={(v) => {
+      if (!v) {
+        onClose()
+      }
+    }}>
       <SheetContent>
         <form action={formAction}>
           {isEdit && <input type="hidden" name="id" value={editUser.id} />}
@@ -138,7 +145,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
             <div>
               <SheetTitle>{isEdit ? "Editar usuario" : "Nuevo usuario"}</SheetTitle>
               <SheetDescription>
-                {isEdit ? `Modificar datos de ${editUser.name}` : "Completa los datos del nuevo usuario"}
+                {isEdit ? `Modificar datos de ${editUser.name}` : "Crea el acceso; el usuario definirá su contraseña."}
               </SheetDescription>
             </div>
             <SheetCloseButton />
@@ -151,15 +158,17 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
             )}
 
             <FieldGroup className="gap-4">
-              <Field label="Nombre completo" htmlFor="name" required error={state.fieldErrors?.name?.[0]}>
-                <Input
-                  id="name" name="name"
-                  defaultValue={editUser?.name ?? ""}
-                  placeholder="Nombre Apellido"
-                  error={!!state.fieldErrors?.name}
-                  autoComplete="off"
-                />
-              </Field>
+              {isEdit && (
+                <Field label="Nombre completo" htmlFor="name" required error={state.fieldErrors?.name?.[0]}>
+                  <Input
+                    id="name" name="name"
+                    defaultValue={editUser?.name ?? ""}
+                    placeholder="Nombre Apellido"
+                    error={!!state.fieldErrors?.name}
+                    autoComplete="off"
+                  />
+                </Field>
+              )}
 
               <Field label="Correo electrónico" htmlFor="email" required error={state.fieldErrors?.email?.[0]}>
                 <Input
@@ -168,21 +177,6 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
                   placeholder="usuario@chome.cl"
                   error={!!state.fieldErrors?.email}
                   autoComplete="off"
-                />
-              </Field>
-
-              <Field
-                label={isEdit ? "Nueva contraseña" : "Contraseña"}
-                htmlFor="password"
-                required={!isEdit}
-                helper={isEdit ? "Dejar en blanco para mantener la contraseña actual" : undefined}
-                error={state.fieldErrors?.password?.[0]}
-              >
-                <Input
-                  id="password" name="password" type="password"
-                  placeholder={isEdit ? "••••••••" : "Mínimo 8 caracteres"}
-                  error={!!state.fieldErrors?.password}
-                  autoComplete="new-password"
                 />
               </Field>
 

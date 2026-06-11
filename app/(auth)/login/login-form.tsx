@@ -8,22 +8,52 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useLogin } from "@/lib/hooks/use-login"
+import { getPasswordSetupState, setInitialPassword } from "./actions"
 
 export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }) {
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get("callbackUrl")
   const login = useLogin()
   const [error, setError] = React.useState<string | null>(null)
+  const [setupEmail, setSetupEmail] = React.useState<string | null>(null)
+  const [setupFieldErrors, setSetupFieldErrors] = React.useState<Record<string, string[]>>({})
+  const [setupPending, setSetupPending] = React.useState(false)
 
   const showCallbackInfo = callbackUrl && callbackUrl !== "/" && callbackUrl !== "/dashboard"
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
+    setSetupFieldErrors({})
 
     const formData = new FormData(e.currentTarget)
     const email    = String(formData.get("email") ?? "").trim().toLowerCase()
     const password = String(formData.get("password") ?? "").trim()
+
+    if (setupEmail) {
+      const confirmPassword = String(formData.get("confirmPassword") ?? "").trim()
+      setSetupPending(true)
+      const result = await setInitialPassword({ email: setupEmail, password, confirmPassword })
+      setSetupPending(false)
+
+      if (!result.ok) {
+        setSetupFieldErrors(result.fieldErrors ?? {})
+        if (result.message) setError(result.message)
+        return
+      }
+
+      const loginResult = await login.mutateAsync({ email: setupEmail, password })
+      if (!loginResult.ok && loginResult.error) {
+        setError(loginResult.error)
+      }
+      return
+    }
+
+    const setup = await getPasswordSetupState(email)
+    if (setup.setupRequired) {
+      setSetupEmail(setup.email ?? email)
+      return
+    }
 
     const result = await login.mutateAsync({ email, password })
     if (!result.ok && result.error) {
@@ -37,26 +67,54 @@ export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }
         <Field label="Correo electrónico" htmlFor="email" required>
           <Input
             id="email"
+            key={setupEmail ? "setup-email" : "login-email"}
             name="email"
             type="email"
+            defaultValue={setupEmail ?? undefined}
             autoComplete="email"
             autoFocus
             required
             placeholder="nombre@chome.cl"
             error={!!error}
+            readOnly={!!setupEmail}
           />
         </Field>
-        <Field label="Contraseña" htmlFor="password" required>
+        <Field
+          label={setupEmail ? "Crear contraseña" : "Contraseña"}
+          htmlFor="password"
+          required
+          error={setupFieldErrors.password?.[0]}
+        >
           <Input
             id="password"
+            key={setupEmail ? "setup-password" : "login-password"}
             name="password"
             type="password"
-            autoComplete="current-password"
+            autoComplete={setupEmail ? "new-password" : "current-password"}
             required
-            placeholder="••••••••"
-            error={!!error}
+            placeholder={setupEmail ? "Mínimo 8 caracteres" : "••••••••"}
+            error={!!error || !!setupFieldErrors.password}
           />
         </Field>
+
+        {setupEmail && (
+          <Field
+            label="Confirmar contraseña"
+            htmlFor="confirmPassword"
+            required
+            error={setupFieldErrors.confirmPassword?.[0]}
+          >
+            <Input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+              placeholder="Repite tu contraseña"
+              error={!!setupFieldErrors.confirmPassword}
+            />
+          </Field>
+        )}
       </FieldGroup>
 
       {showCallbackInfo && (
@@ -77,10 +135,27 @@ export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }
         type="submit"
         className="w-full mt-5"
         size="lg"
-        loading={login.isPending}
+        loading={login.isPending || setupPending}
       >
-        {login.isPending ? "Ingresando..." : "Ingresar"}
+        {setupEmail
+          ? (login.isPending || setupPending ? "Creando..." : "Crear contraseña")
+          : (login.isPending ? "Ingresando..." : "Ingresar")}
       </Button>
+
+      {setupEmail && (
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full mt-2"
+          onClick={() => {
+            setSetupEmail(null)
+            setError(null)
+            setSetupFieldErrors({})
+          }}
+        >
+          Usar otro correo
+        </Button>
+      )}
 
       <div className="mt-6 pt-5 border-t border-border text-center text-xs text-text-subtle space-y-2">
         <p>Sistema de uso interno. Contacta al administrador si no tienes acceso.</p>

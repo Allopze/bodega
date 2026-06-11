@@ -23,6 +23,7 @@ interface UserRow {
   name:        string
   email:       string
   isActive:    boolean
+  passwordSetupPending: boolean
   createdAt:   string
   avatarColor: string | null
   roleIds:     string[]
@@ -111,8 +112,12 @@ export function UserList({ users, allRoles, allWorksites }: UserListProps) {
               </TableCell>
               {/* Status */}
               <TableCell>
-                <Badge variant={u.isActive ? "success" : "default"} dot className="w-20 justify-center">
-                  {u.isActive ? "Activo" : "Inactivo"}
+                <Badge
+                  variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "default"}
+                  dot
+                  className="w-24 justify-center"
+                >
+                  {u.passwordSetupPending ? "Pendiente" : u.isActive ? "Activo" : "Inactivo"}
                 </Badge>
               </TableCell>
               {/* Created */}
@@ -160,8 +165,8 @@ export function UserList({ users, allRoles, allWorksites }: UserListProps) {
                     <p className="truncate text-xs text-[var(--color-text-subtle)]">{u.email}</p>
                   </div>
                 </div>
-                <Badge variant={u.isActive ? "success" : "default"} dot>
-                  {u.isActive ? "Activo" : "Inactivo"}
+                <Badge variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "default"} dot>
+                  {u.passwordSetupPending ? "Pendiente" : u.isActive ? "Activo" : "Inactivo"}
                 </Badge>
               </div>
 
