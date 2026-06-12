@@ -10,9 +10,9 @@ import {
   purchaseOrderItems, receipts, receiptItems,
   approvalDecisions, products, worksites,
 } from "@/db/schema"
-import { asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray } from "drizzle-orm"
 import type { Session } from "next-auth"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { canAccessWorksite, isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import { buildTrazabilidadReportData, type TrazabilidadExportRow } from "@/lib/services/trazabilidad-export-format"
 
@@ -24,32 +24,66 @@ const APPROVED_STATES = new Set([
 /**
  * Builds the full trazabilidad matrix (same logic as the trazabilidad page).
  */
-async function buildMatrix(session: Session): Promise<TrazabilidadExportRow[]> {
-  const [
-    allItems, allRequests, allProducts, allWorksites,
-    allOcItems, allReceiptItems, allApproveDecisions,
-  ] = await Promise.all([
-    db.select({
-      id:              purchaseRequestItems.id,
-      requestId:       purchaseRequestItems.requestId,
-      productId:       purchaseRequestItems.productId,
-      productNameFree: purchaseRequestItems.productNameFree,
-      quantity:        purchaseRequestItems.quantity,
-      unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
-      status:          purchaseRequestItems.status,
-    }).from(purchaseRequestItems).orderBy(asc(purchaseRequestItems.createdAt)),
+export async function buildTrazabilidadRows(session: Session): Promise<TrazabilidadExportRow[]> {
+  const userHasGlobalScope = isGlobalRole(session)
+  const allowedWorksiteIds = visibleWorksiteIds(session)
 
-    db.select({
+  if (!userHasGlobalScope && allowedWorksiteIds.length === 0) {
+    return []
+  }
+
+  const requestQuery = db.select({
       id:         purchaseRequests.id,
       code:       purchaseRequests.code,
       worksiteId: purchaseRequests.worksiteId,
-    }).from(purchaseRequests),
+    }).from(purchaseRequests)
 
-    db.select({ id: products.id, name: products.name, sku: products.sku }).from(products),
+  const allRequests = userHasGlobalScope
+    ? await requestQuery
+    : await requestQuery.where(inArray(purchaseRequests.worksiteId, allowedWorksiteIds))
+
+  if (allRequests.length === 0) {
+    return []
+  }
+
+  const requestIds = allRequests.map((request) => request.id)
+  const worksiteIds = [...new Set(allRequests.map((request) => request.worksiteId))]
+
+  const allItems = await db.select({
+    id:              purchaseRequestItems.id,
+    requestId:       purchaseRequestItems.requestId,
+    productId:       purchaseRequestItems.productId,
+    productNameFree: purchaseRequestItems.productNameFree,
+    quantity:        purchaseRequestItems.quantity,
+    unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
+    status:          purchaseRequestItems.status,
+  })
+    .from(purchaseRequestItems)
+    .where(inArray(purchaseRequestItems.requestId, requestIds))
+    .orderBy(asc(purchaseRequestItems.createdAt))
+
+  if (allItems.length === 0) {
+    return []
+  }
+
+  const itemIds = allItems.map((item) => item.id)
+  const productIds = [
+    ...new Set(allItems.flatMap((item) => item.productId ? [item.productId] : [])),
+  ]
+
+  const [
+    allProducts, allWorksites,
+    allOcItems, allApproveDecisions,
+  ] = await Promise.all([
+    productIds.length > 0
+      ? db.select({ id: products.id, name: products.name, sku: products.sku })
+        .from(products)
+        .where(inArray(products.id, productIds))
+      : Promise.resolve([]),
 
     db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
-      .where(eq(worksites.isActive, true))
+      .where(and(eq(worksites.isActive, true), inArray(worksites.id, worksiteIds)))
       .orderBy(asc(worksites.name)),
 
     db.select({
@@ -57,21 +91,34 @@ async function buildMatrix(session: Session): Promise<TrazabilidadExportRow[]> {
       purchaseOrderId: purchaseOrderItems.purchaseOrderId,
       requestItemId: purchaseOrderItems.requestItemId,
       quantity:      purchaseOrderItems.quantity,
-    }).from(purchaseOrderItems),
+    })
+      .from(purchaseOrderItems)
+      .where(inArray(purchaseOrderItems.requestItemId, itemIds)),
 
     db.select({
+      requestItemId: approvalDecisions.requestItemId,
+      modifiedQty:   approvalDecisions.modifiedQty,
+    })
+      .from(approvalDecisions)
+      .where(and(
+        inArray(approvalDecisions.requestItemId, itemIds),
+        inArray(approvalDecisions.type, ["approve", "modify"]),
+      )),
+  ])
+
+  const ocItemIds = allOcItems.map((item) => item.id)
+  const allReceiptItems = ocItemIds.length > 0
+    ? await db.select({
       purchaseOrderItemId: receiptItems.purchaseOrderItemId,
       quantityReceived:    receiptItems.quantityReceived,
     })
       .from(receiptItems)
       .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
-      .where(eq(receipts.locationType, "faena")),
-
-    db.select({
-      requestItemId: approvalDecisions.requestItemId,
-      modifiedQty:   approvalDecisions.modifiedQty,
-    }).from(approvalDecisions).where(inArray(approvalDecisions.type, ["approve", "modify"])),
-  ])
+      .where(and(
+        eq(receipts.locationType, "faena"),
+        inArray(receiptItems.purchaseOrderItemId, ocItemIds),
+      ))
+    : []
 
   const requestMap    = Object.fromEntries(allRequests.map((r) => [r.id, r]))
   const productMap    = Object.fromEntries(allProducts.map((p) => [p.id, p]))
@@ -147,7 +194,7 @@ export async function getTrazabilidadXlsx(session: Session): Promise<{
   buffer: ArrayBuffer
   filename: string
 }> {
-  const rows = await buildMatrix(session)
+  const rows = await buildTrazabilidadRows(session)
   const report = buildTrazabilidadReportData(rows)
   return {
     buffer: await buildXlsxBuffer(report),

@@ -4,6 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { useEffect } from "react"
 import { toast } from "sonner"
+import { Check, Copy, Envelope } from "@phosphor-icons/react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
@@ -37,6 +38,11 @@ interface UserSelectionState {
   selectedRoles:     string[]
   selectedWsIds:     string[]
   primaryWorksiteId: string
+}
+
+interface PendingInvite {
+  email:     string
+  inviteUrl: string
 }
 
 type UserSelectionAction =
@@ -85,6 +91,8 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
   const action = isEdit ? updateUser : createUser
   const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
   const lastSeenStateRef = React.useRef<ActionState>(INITIAL_STATE)
+  const [pending, setPending] = React.useState<PendingInvite | null>(null)
+  const [copied, setCopied] = React.useState(false)
 
   // Toast + close on success
   useEffect(() => {
@@ -92,7 +100,12 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
     lastSeenStateRef.current = state
     if (state.ok) {
       toast.success(state.message ?? (isEdit ? "Usuario actualizado" : "Usuario creado"))
-      onClose()
+      const data = state.data as { email?: string; inviteUrl?: string } | undefined
+      if (!isEdit && data?.inviteUrl) {
+        setPending({ email: data.email ?? "", inviteUrl: data.inviteUrl })
+      } else {
+        onClose()
+      }
     } else if (state.message && !state.ok && state.message !== "") {
       // Top-level error without field errors
       if (!state.fieldErrors) toast.error(state.message)
@@ -119,15 +132,93 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
     updateSelection({ type: "toggle-worksite", id })
   }
 
+  async function copyInvite() {
+    if (!pending) return
+    try {
+      await navigator.clipboard.writeText(pending.inviteUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error("No se pudo copiar al portapapeles")
+    }
+  }
+
   const { selectedRoles, selectedWsIds, primaryWorksiteId } = selection
 
   return (
     <Sheet open={open} onOpenChange={(v) => {
       if (!v) {
+        setPending(null)
+        setCopied(false)
         onClose()
       }
     }}>
       <SheetContent>
+        {pending ? (
+          <>
+            <SheetHeader>
+              <div>
+                <SheetTitle>Invitación pendiente</SheetTitle>
+                <SheetDescription>
+                  SMTP no está configurado. Comparte este enlace con {pending.email || "el usuario"} por un canal seguro.
+                </SheetDescription>
+              </div>
+              <SheetCloseButton onClick={() => { setPending(null); setCopied(false); onClose() }} />
+            </SheetHeader>
+
+            <SheetBody>
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4"
+              >
+                <div className="flex items-start gap-2">
+                  <Envelope size={16} weight="bold" className="mt-0.5 text-[var(--color-warning)]" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[var(--color-text)]">
+                      Enlace para crear contraseña
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Caduca automáticamente. No lo pegues en canales públicos.
+                    </p>
+                    <div className="mt-3 flex items-stretch gap-2">
+                      <code className="flex-1 break-all rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs font-mono text-[var(--color-text)]">
+                        {pending.inviteUrl}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={copyInvite}
+                        aria-label="Copiar enlace al portapapeles"
+                      >
+                        {copied ? <Check size={14} /> : <Copy size={14} />}
+                        {copied ? "Copiado" : "Copiar"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </SheetBody>
+
+            <SheetFooter>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => { setPending(null); setCopied(false) }}
+              >
+                Crear otro usuario
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => { setPending(null); setCopied(false); onClose() }}
+              >
+                Cerrar
+              </Button>
+            </SheetFooter>
+          </>
+        ) : (
         <form action={formAction}>
           {isEdit && <input type="hidden" name="id" value={editUser.id} />}
           {/* Hidden inputs for roles and worksite assignments */}
@@ -282,6 +373,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
             />
           </SheetFooter>
         </form>
+        )}
       </SheetContent>
     </Sheet>
   )

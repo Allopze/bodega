@@ -101,7 +101,7 @@ export async function inviteUser(
   return {
     ok: true,
     message: deliveryMessage,
-    data: pendingInviteUrl ? { inviteUrl: pendingInviteUrl } : undefined,
+    data: pendingInviteUrl ? { email: d.email, inviteUrl: pendingInviteUrl } : undefined,
   }
 }
 
@@ -144,6 +144,10 @@ export async function createUser(
   const id           = nanoid()
   const displayName  = d.name?.trim() || displayNameFromEmail(d.email)
   const avatarColor  = String(Math.abs(hashStr(displayName)) % 360)
+  const token        = generateInvitationToken()
+  const inviteUrl    = `${getAppBaseUrl()}/registro?token=${encodeURIComponent(token)}`
+  const expiresAt    = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  const invitationId = nanoid()
 
   db.transaction((tx) => {
     tx.insert(users).values({
@@ -162,16 +166,48 @@ export async function createUser(
         }))
       ).run()
     }
+    tx.insert(userInvitations).values({
+      id: invitationId,
+      email: d.email,
+      name: displayName,
+      tokenHash: hashInvitationToken(token),
+      roleIdsJson: JSON.stringify(d.roleIds),
+      worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
+      invitedByUserId: session.user.id,
+      expiresAt,
+    }).run()
   })
+
+  let deliveryMessage = `Usuario ${displayName} creado. Invitación enviada para definir contraseña.`
+  let pendingInviteUrl: string | undefined
+  try {
+    const delivery = await sendInvitationEmail({
+      to: d.email,
+      inviteUrl,
+      invitedByName: session.user.name,
+    })
+    if (!delivery.sent) {
+      deliveryMessage = `Usuario ${displayName} creado. SMTP no está configurado; comparte el enlace de registro.`
+      pendingInviteUrl = inviteUrl
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "error desconocido"
+    deliveryMessage = `Usuario ${displayName} creado, pero no se pudo enviar la invitación (${reason}).`
+    pendingInviteUrl = inviteUrl
+  }
 
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "create", entityType: "user", entityId: id,
-    newState: { name: displayName, email: d.email, roles: d.roleIds, passwordSetupPending: true },
+    newState: { name: displayName, email: d.email, roles: d.roleIds, passwordSetupPending: true, invitationId, smtpSent: !pendingInviteUrl },
   })
 
   revalidatePath(REVALIDATE)
-  return { ok: true, message: `Usuario ${displayName} creado. Definirá su contraseña al iniciar sesión.` }
+  return {
+    ok: true,
+    message: deliveryMessage,
+    data: pendingInviteUrl ? { email: d.email, inviteUrl: pendingInviteUrl } : undefined,
+  }
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────

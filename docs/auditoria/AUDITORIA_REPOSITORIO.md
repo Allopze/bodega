@@ -4,16 +4,16 @@ Fecha de auditoria: 2026-06-12
 
 ## Resumen ejecutivo
 
-Estado general: el repo esta bastante avanzado para un sistema interno Next.js/SQLite con RBAC, server actions, XLSX, tests unitarios y E2E. `npm run build`, `npm run lint` y `npm test` pasan, pero hay un P0 real en el flujo de contrasena inicial, E2E roto, secretos locales expuestos en `.env.local`, y deuda de consistencia entre arquitectura modular declarada y codigo real.
+Estado general: el repo esta bastante avanzado para un sistema interno Next.js/SQLite con RBAC, server actions, XLSX, tests unitarios y E2E. Tras los fixes del 2026-06-12, `npm run build`, `npm run lint`, `npm test`, `npm audit --omit=dev` y `npm run test:e2e -- e2e/admin-flow.spec.ts` pasan. Queda pendiente una decision externa sobre rotacion/saneamiento de `.env.local` y deuda de consistencia entre arquitectura modular declarada y codigo real.
 
 Nivel de confianza: medio-alto. Se reviso estructura, documentacion, guias locales de Next.js 16, autenticacion, Server Actions, API routes, exports, schema DB, tests y tooling. No se hicieron cambios de codigo durante la auditoria.
 
 Areas mas criticas:
 
-- Bloquear el flujo de password setup sin token.
-- Rotar secretos locales encontrados.
-- Reparar E2E admin.
-- Resolver o mitigar vulnerabilidades runtime de dependencias.
+- Password setup sin token: mitigado con token one-time de invitacion.
+- Rotar o sanear secretos locales encontrados en `.env.local`.
+- E2E admin: reparado y verificado.
+- Vulnerabilidades runtime de dependencias: mitigadas con override de `nodemailer@8.0.11`.
 - Completar la migracion real a permisos derivados del registry.
 
 ## Stack y arquitectura detectada
@@ -30,7 +30,7 @@ Areas mas criticas:
 
 ## Hallazgos criticos y de alta prioridad
 
-### 1. Toma de cuentas precreadas por email
+### 1. Toma de cuentas precreadas por email NOTA: Decisión de diseño!! — MITIGADO 2026-06-12
 
 - **Severidad:** Critica
 - **Prioridad:** P0
@@ -41,8 +41,10 @@ Areas mas criticas:
 - **Causa probable:** se mezclaron dos flujos: invitacion con token y usuario creado por admin que define contrasena al iniciar sesion.
 - **Solucion recomendada:** exigir token one-time para `setInitialPassword`; guardar hash, expiracion y consumo del token; no revelar desde `getPasswordSetupState` si una cuenta existe o esta pendiente.
 - **Tests sugeridos:** Server Action test donde `setInitialPassword` falla sin token, falla con token expirado/usado, y consume un token valido exactamente una vez.
+- **Fix aplicado 2026-06-12:** `setInitialPassword` ahora exige token de invitacion, valida email/expiracion/uso, consume `user_invitations.acceptedAt` en la misma transaccion y `getPasswordSetupState` ya no revela cuentas pendientes. `createUser` genera invitacion one-time para completar registro por `/registro?token=...`; si SMTP no esta configurado, `user-form.tsx` muestra el enlace en una superficie copiable y descartable.
+- **Verificacion 2026-06-12:** `lib/__tests__/login-password-setup-action.test.ts` cubre rechazo sin token y consumo de token valido.
 
-### 2. Secretos reales o sensibles presentes en `.env.local`
+### 2. Secretos reales o sensibles presentes en `.env.local` NOTA: Este entorno es de prueba!! De alguna forma debo probar si todo funciona!!!
 
 - **Severidad:** Alta
 - **Prioridad:** P0/P1
@@ -53,8 +55,9 @@ Areas mas criticas:
 - **Causa probable:** uso de archivo local real para desarrollo.
 - **Solucion recomendada:** rotar SMTP/passwords, mover secretos a gestor de secretos y dejar `.env.local` saneado para trabajo compartido.
 - **Tests sugeridos:** check de CI o pre-commit que bloquee secretos conocidos y `.env*` fuera de allowlist.
+- **Mitigacion aplicada 2026-06-12:** se agrego `.env.example` como unico env file permitido en git, `scripts/check-env-files.ts` y `npm run check:secrets`; CI ejecuta este check antes de lint/test/build. La rotacion real de credenciales sigue pendiente porque debe hacerse en el proveedor/gestor de secretos.
 
-### 3. E2E roto en flujos admin
+### 3. E2E roto en flujos admin — CORREGIDO 2026-06-12
 
 - **Severidad:** Alta
 - **Prioridad:** P1
@@ -65,8 +68,10 @@ Areas mas criticas:
 - **Causa probable:** locators fragiles y/o UI actualizada sin actualizar E2E.
 - **Solucion recomendada:** usar locators especificos como `getByRole("textbox", { name: "Codigo" })`, actualizar textos esperados y dividir smoke tests criticos de pruebas largas.
 - **Tests sugeridos:** E2E admin minimo para crear faena, producto, proveedor e invitacion, con locators por role/name estables.
+- **Fix aplicado 2026-06-12:** `e2e/admin-flow.spec.ts` se actualizo a la UI real: sheets en vez de rutas para producto, boton `Invitar`, locators scoped al dialog activo, submits robustos para sheets largas y fixtures validos de RUT.
+- **Verificacion 2026-06-12:** `npm run test:e2e -- e2e/admin-flow.spec.ts` paso con 5/5 tests en Chromium.
 
-### 4. Vulnerabilidad runtime en cadena `next-auth`
+### 4. Vulnerabilidad runtime en cadena `next-auth` — MITIGADO 2026-06-12
 
 - **Severidad:** Alta/Media
 - **Prioridad:** P1
@@ -77,6 +82,8 @@ Areas mas criticas:
 - **Causa probable:** dependencia beta de Auth.js con transitive vulnerable.
 - **Solucion recomendada:** evaluar version corregida de Auth.js/NextAuth beta o mitigacion explicita; no aplicar `npm audit fix --force` sin plan de migracion.
 - **Tests sugeridos:** smoke auth completo tras cualquier actualizacion de `next-auth`.
+- **Fix aplicado 2026-06-12:** se agrego `overrides.nodemailer = 8.0.11` para resolver el transitive vulnerable sin aplicar el downgrade/breaking change sugerido por `npm audit fix --force`.
+- **Verificacion 2026-06-12:** `npm install --package-lock-only` y `npm audit --omit=dev` reportaron 0 vulnerabilidades.
 
 ## Hallazgos de severidad media y baja
 
@@ -84,6 +91,7 @@ Areas mas criticas:
 
 - **Severidad:** Media
 - **Prioridad:** P2
+- **Estado:** Mitigado el 2026-06-12
 - **Ubicacion:** `lib/services/trazabilidad-export.ts:31`
 - **Descripcion:** export trae todos los items, solicitudes, productos, faenas, OC y recepciones; filtra por `canAccessWorksite` dentro del loop.
 - **Impacto:** mala minimizacion de datos y performance degradada al crecer la base.
@@ -91,6 +99,8 @@ Areas mas criticas:
 - **Causa probable:** reutilizacion rapida de logica de matriz.
 - **Solucion recomendada:** empujar filtros por faena a SQL y consultar entidades relacionadas solo para ids visibles.
 - **Tests sugeridos:** test de usuario scoped que confirme que no se consultan ni exportan faenas no visibles.
+- **Fix aplicado 2026-06-12:** `buildTrazabilidadRows` ahora parte desde `purchase_requests` filtradas por `visibleWorksiteIds(session)` para usuarios scoped, retorna vacio si no hay faenas visibles y deriva items, productos, faenas, OC, recepciones y aprobaciones solo desde ids visibles. Se extrajeron helpers puros de alcance a `lib/auth/scope.ts` para evitar dependencias runtime de auth en reportes.
+- **Verificacion 2026-06-12:** `lib/__tests__/trazabilidad-export-scope.test.ts` cubre una sesion `solicitante_faena` y confirma que el export solo devuelve filas de la faena visible.
 
 ### 6. Reglas de integridad criticas viven solo en aplicacion
 
@@ -128,7 +138,7 @@ Areas mas criticas:
 - **Solucion recomendada:** derivar seed desde `ALL_MODULE_PERMISSIONS` y hacer que `Permission = RegistryPermission`.
 - **Tests sugeridos:** test que compare permisos de registry, tipo/runtime seed y DB seeded.
 
-### 9. Warnings de lint acumulados
+### 9. Warnings de lint acumulados — RESUELTO 2026-06-12
 
 - **Severidad:** Baja
 - **Prioridad:** P3
@@ -138,6 +148,7 @@ Areas mas criticas:
 - **Evidencia:** warnings de `react-hooks/set-state-in-effect`, imports/variables no usados y eslint-disable innecesarios.
 - **Solucion recomendada:** limpiar warnings faciles y decidir patron para sincronizacion de formularios.
 - **Tests sugeridos:** CI con presupuesto de warnings o fail-on-warning cuando el backlog este limpio.
+- **Verificacion 2026-06-12:** `npm run lint` se ejecuto sin errores ni warnings.
 
 ## Bugs potenciales por flujo funcional
 
@@ -155,7 +166,7 @@ Areas mas criticas:
 ### Trazabilidad y reportes
 
 - Export XLSX cumple la regla de formato.
-- Trazabilidad filtra en memoria tras leer datos globales.
+- Trazabilidad ya empuja el scope de faena a SQL en el export XLSX; se mantiene un guard final de `canAccessWorksite` como defensa en profundidad.
 
 ### Entregas y adjuntos
 
@@ -166,23 +177,23 @@ Areas mas criticas:
 
 - `docs/planificacion/PLAN.md` menciona exportacion CSV, contradiciendo `AGENTS.md` y la implementacion XLSX.
 - `docs/pruebas/TESTING.md` describe E2E con 2 tests y flujo con factura, pero hoy hay 9 tests y fallan en admin.
-- `.github/workflows` no existe; no hay CI visible para lint/test/build/e2e.
+- CI minimo agregado en `.github/workflows/ci.yml` con check de env files, lint, unit, build y smoke E2E admin.
 - La arquitectura dice que permisos y seed se derivan automaticamente del registry, pero hay listas manuales en `db/seed.ts` y `lib/auth/types.ts`.
 
 ## Seguridad
 
 Riesgos encontrados:
 
-- P0: password setup sin token.
+- P0: password setup sin token. Mitigado 2026-06-12.
 - P0/P1: secretos locales presentes en `.env.local`.
-- P1: vulnerabilidad transitive en `next-auth`.
+- P1: vulnerabilidad transitive en `next-auth`. Mitigada 2026-06-12 con override de `nodemailer`.
 - P2: trazabilidad no minimiza consultas por scope.
 
 Cambios minimos antes de produccion:
 
-- Exigir token one-time en password setup.
-- Rotar credenciales SMTP y password seed.
-- Resolver/mitigar dependencia vulnerable.
+- Exigir token one-time en password setup. Hecho 2026-06-12.
+- Rotar credenciales SMTP y password seed. Pendiente externo; guardrail anti-env-track aplicado 2026-06-12.
+- Resolver/mitigar dependencia vulnerable. Hecho 2026-06-12.
 - Confirmar CI minimo para build, lint, unit y E2E smoke.
 
 ## Performance y optimizacion
@@ -213,7 +224,7 @@ Cambios minimos antes de produccion:
 
 ## Mejoras de DX, documentacion y tooling
 
-- Agregar `.github/workflows` con `npm ci`, `npm run lint`, `npm test`, `npm run build` y al menos un E2E smoke.
+- Agregar `.github/workflows` con `npm ci`, `npm run lint`, `npm test`, `npm run build` y al menos un E2E smoke. Hecho 2026-06-12.
 - Actualizar docs que mencionan CSV.
 - Actualizar docs de E2E para reflejar cantidad real de tests y estado de admin flows.
 - Anadir una guia segura de variables de entorno, diferenciando `.env.example`, desarrollo local y produccion.
@@ -223,17 +234,17 @@ Cambios minimos antes de produccion:
 
 ### Fase 1: Correcciones urgentes
 
-- [ ] Bloquear `setInitialPassword` sin token one-time.
-- [ ] Rotar secretos presentes en `.env.local`.
-- [ ] Corregir E2E admin roto.
-- [ ] Evaluar mitigacion para vulnerabilidad de `next-auth`/`nodemailer`.
+- [x] Bloquear `setInitialPassword` sin token one-time. Fix 2026-06-12: token obligatorio, validacion contra invitacion vigente y consumo atomico.
+- [ ] Rotar secretos presentes en `.env.local`. Mitigacion repo 2026-06-12: CI bloquea env files sensibles trackeados; queda pendiente rotacion externa.
+- [x] Corregir E2E admin roto. Fix 2026-06-12: locators y flujo admin actualizados; smoke admin 5/5.
+- [x] Evaluar mitigacion para vulnerabilidad de `next-auth`/`nodemailer`. Fix 2026-06-12: override de `nodemailer@8.0.11`; audit runtime en 0 vulnerabilidades.
 
 ### Fase 2: Estabilizacion
 
-- [ ] Agregar CI con lint, unit, build y E2E smoke.
-- [ ] Mover filtros de trazabilidad a SQL.
+- [x] Agregar CI con lint, unit, build y E2E smoke. Fix 2026-06-12: `.github/workflows/ci.yml` + `npm run check:secrets`.
+- [x] Mover filtros de trazabilidad a SQL. Fix 2026-06-12: `buildTrazabilidadRows` consulta solicitudes visibles y luego entidades relacionadas por ids visibles.
 - [ ] Anadir tests de RBAC por Server Actions criticas.
-- [ ] Limpiar warnings de lint mas simples.
+- [x] Limpiar warnings de lint mas simples. Verificacion 2026-06-12: `npm run lint` sin warnings.
 
 ### Fase 3: Optimizacion y mantenimiento
 
@@ -246,7 +257,7 @@ Cambios minimos antes de produccion:
 
 - Se asume que las credenciales de `.env.local` pueden ser reales; si son ficticias, aun conviene sanear el archivo compartido.
 - No se confirmo si el target de produccion sera serverful con disco persistente o serverless.
-- No se completo la suite E2E porque se interrumpio tras fallos largos repetidos.
+- Suite E2E admin completada el 2026-06-12 con 5/5 tests pasando; falta definir si se agregara un smoke E2E a CI.
 - No se hizo exploracion manual completa de UI por navegador.
 
 ## Archivos revisados

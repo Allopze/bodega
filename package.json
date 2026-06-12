@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "lint": "eslint",
+    "check:secrets": "tsx scripts/check-env-files.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -80,7 +81,8 @@
       "esbuild": "0.25.12"
     },
     "postcss": "8.5.15",
-    "uuid": "11.1.1"
+    "uuid": "11.1.1",
+    "nodemailer": "8.0.11"
   },
   "pnpm": {
     "overrides": {
