@@ -5,6 +5,7 @@ import { suppliers } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { ProductList } from "./product-list"
 
 export const metadata: Metadata = { title: "Catálogo de productos" }
@@ -28,7 +29,7 @@ export default async function ProductosPage() {
   ])
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Catálogo de productos"
         description="Productos, categorías, atributos y EPP."
@@ -51,6 +52,6 @@ export default async function ProductosPage() {
         categories={allCategories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion, sortOrder: c.sortOrder }))}
         allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
       />
-    </>
+    </PageContainer>
   )
 }

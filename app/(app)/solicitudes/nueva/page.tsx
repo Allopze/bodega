@@ -6,6 +6,7 @@ import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { RequestForm } from "../request-form"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
@@ -69,7 +70,7 @@ export default async function NuevaSolicitudPage() {
 
   if (worksiteOptions.length === 0) {
     return (
-      <>
+      <PageContainer width="form">
         <PageHeader
           title="Nueva solicitud de compra"
           description="Completa los datos y agrega los ítems que necesitas."
@@ -93,12 +94,12 @@ export default async function NuevaSolicitudPage() {
             }
           />
         </div>
-      </>
+      </PageContainer>
     )
   }
 
   return (
-    <>
+    <PageContainer width="form">
       <PageHeader
         title="Nueva solicitud de compra"
         description="Completa los datos y agrega los ítems que necesitas."
@@ -115,6 +116,6 @@ export default async function NuevaSolicitudPage() {
         products={productOptions}
         suppliers={supplierOptions}
       />
-    </>
+    </PageContainer>
   )
 }

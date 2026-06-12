@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { WorkerList } from "./worker-list"
 
 export const metadata: Metadata = { title: "Trabajadores" }
@@ -24,7 +25,7 @@ export default async function TrabajadoresPage() {
   ])
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Trabajadores"
         description="Registro de trabajadores por faena para entrega de EPP y trazabilidad."
@@ -50,6 +51,6 @@ export default async function TrabajadoresPage() {
         }))}
         worksites={allWorksites.filter((ws) => canAccessWorksite(session, ws.id)).map((ws) => ({ id: ws.id, name: ws.name }))}
       />
-    </>
+    </PageContainer>
   )
 }

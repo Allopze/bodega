@@ -7,9 +7,9 @@
 
 @theme {
   /* ── Fonts ── */
-  --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
-  --font-sans:    var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
-  --font-serif:   var(--font-jakarta), ui-sans-serif, system-ui, sans-serif; /* kept for compat, maps to sans */
+  --font-display: var(--font-exo),    ui-sans-serif, system-ui, sans-serif;  /* Exo — marca Chome    */
+  --font-sans:    var(--font-myriad), ui-sans-serif, system-ui, sans-serif;  /* Myriad Pro — cuerpo  */
+  --font-serif:   var(--font-exo),    ui-sans-serif, system-ui, sans-serif;  /* kept for compat      */
   --font-mono:    var(--font-geist-mono), "Geist Mono", ui-monospace, "Cascadia Code", monospace;
 
   /* ── Typography Scale ── */
@@ -27,19 +27,25 @@
   --leading-body:    1.55;
   --leading-display: 1.1;
 
-  /* ── Brand primary — vibrant green, protagonist ── */
-  --color-primary:        oklch(0.470 0.140 154);  /* rich Chome green */
-  --color-primary-tint:   oklch(0.962 0.018 154);  /* surface tint      */
-  --color-primary-line:   oklch(0.880 0.045 154);  /* border / hover    */
-  --color-primary-ink:    oklch(0.270 0.095 154);  /* dark text on tint */
-  --color-primary-strong: oklch(0.380 0.140 154);  /* hover state       */
-  --color-primary-deep:   oklch(0.270 0.110 154);  /* hero card bg      */
+  /* ── Brand primary — Chome green #218649 ── */
+  --color-primary:        oklch(0.546 0.118 156);  /* #218649 — verde Chome */
+  --color-primary-tint:   oklch(0.962 0.018 156);  /* surface tint          */
+  --color-primary-line:   oklch(0.880 0.045 156);  /* border / hover        */
+  --color-primary-ink:    oklch(0.270 0.095 156);  /* dark text on tint     */
+  --color-primary-strong: oklch(0.440 0.118 156);  /* hover state           */
+  --color-primary-deep:   oklch(0.270 0.110 156);  /* hero card bg          */
 
-  /* ── Signal — the one orange hue. Reserved exclusively for "pendiente" ── */
-  --color-signal:         oklch(0.628 0.162 49);   /* chome orange          */
-  --color-signal-tint:    oklch(0.965 0.022 60);
-  --color-signal-line:    oklch(0.892 0.052 60);
-  --color-signal-ink:     oklch(0.402 0.130 49);
+  /* ── Signal — naranja Chome #f39200. Reservado para "pendiente" ── */
+  --color-signal:         oklch(0.705 0.165 62);   /* #f39200 — naranja Chome */
+  --color-signal-tint:    oklch(0.965 0.022 62);
+  --color-signal-line:    oklch(0.892 0.052 62);
+  --color-signal-ink:     oklch(0.402 0.130 62);
+
+  /* ── Accent — amber Chome #ffd51e. Para realces puntuales ── */
+  --color-accent:         oklch(0.893 0.165 89);   /* #ffd51e — amber Chome */
+  --color-accent-tint:    oklch(0.975 0.030 89);
+  --color-accent-line:    oklch(0.920 0.065 89);
+  --color-accent-ink:     oklch(0.450 0.120 89);
 
   /* ── Semantic state colors ── */
   --color-info:           oklch(0.520 0.080 240);
@@ -47,10 +53,10 @@
   --color-info-line:      oklch(0.892 0.020 240);
   --color-info-ink:       oklch(0.330 0.075 240);
 
-  --color-success:        oklch(0.500 0.110 154);
-  --color-success-tint:   oklch(0.962 0.018 154);
-  --color-success-line:   oklch(0.880 0.045 154);
-  --color-success-ink:    oklch(0.270 0.095 154);
+  --color-success:        oklch(0.546 0.118 156);  /* alineado al verde Chome */
+  --color-success-tint:   oklch(0.962 0.018 156);
+  --color-success-line:   oklch(0.880 0.045 156);
+  --color-success-ink:    oklch(0.270 0.095 156);
 
   --color-warning:        oklch(0.720 0.140 78);
   --color-warning-tint:   oklch(0.970 0.030 85);
@@ -140,28 +146,28 @@ body {
 
 /* ─── Heading utilities ── */
 @utility text-display {
-  font-family: var(--font-sans);
+  font-family: var(--font-display);  /* Exo — marca Chome */
   font-weight: 700;
   font-size: var(--text-2xl);
   line-height: var(--leading-display);
   letter-spacing: 0;
 }
 @utility text-h1 {
-  font-family: var(--font-sans);
+  font-family: var(--font-display);  /* Exo — marca Chome */
   font-size: var(--text-xl);
   font-weight: 700;
   line-height: var(--leading-display);
   letter-spacing: 0;
 }
 @utility text-h2 {
-  font-family: var(--font-sans);
+  font-family: var(--font-display);  /* Exo — marca Chome */
   font-size: var(--text-lg);
   font-weight: 600;
   line-height: var(--leading-compact);
   letter-spacing: 0;
 }
 @utility text-h3 {
-  font-family: var(--font-sans);
+  font-family: var(--font-display);  /* Exo — marca Chome */
   font-size: var(--text-base);
   font-weight: 600;
   line-height: var(--leading-compact);

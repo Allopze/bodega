@@ -9,6 +9,7 @@ import { eq, inArray, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { OcForm } from "../oc-form"
 import type { PendingItemOption, SupplierOption, WorksiteOption } from "../oc-form"
 
@@ -144,7 +145,7 @@ export default async function NuevaOcPage({
     : firstPendingWorksiteId ?? worksiteOptions[0]?.id
 
   return (
-    <>
+    <PageContainer width="form">
       <PageHeader
         title="Nueva orden de compra"
         description="Selecciona ítems aprobados, elige el proveedor y fija los precios."
@@ -156,14 +157,12 @@ export default async function NuevaOcPage({
           ]} />
         }
       />
-      <div className="max-w-4xl">
-        <OcForm
-          suppliers={supplierOptions}
-          worksites={worksiteOptions}
-          pendingItems={pendingItems}
-          initialWorksiteId={initialWorksiteId}
-        />
-      </div>
-    </>
+      <OcForm
+        suppliers={supplierOptions}
+        worksites={worksiteOptions}
+        pendingItems={pendingItems}
+        initialWorksiteId={initialWorksiteId}
+      />
+    </PageContainer>
   )
 }

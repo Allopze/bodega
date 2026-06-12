@@ -23,6 +23,10 @@
 
 # Layout / UI Patterns
 - For task-heavy desktop screens, use two-column workspaces: main content area + sticky right rail (e.g., `lg:grid-cols-[minmax(0,1fr)_320px]`). Right rail holds summary, actions, timeline, or secondary tools. Confidence: 0.70
+- Sidebar and header must be visually and structurally separated — they are independent surfaces, not a single unified bar. Confidence: 0.80
+
+# Design Workflow
+- For UI/design tasks, use the impeccable and emil-design-eng skills. Confidence: 0.65
 
 # Scope Management
 - When asked to implement, first list what's missing or incomplete rather than making assumptions. Confidence: 0.80

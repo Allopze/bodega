@@ -5,6 +5,7 @@ import { desc } from "drizzle-orm"
 import { auditLog } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { AuditLog } from "./audit-log"
 
 export const dynamic = "force-dynamic"
@@ -21,7 +22,7 @@ export default async function AuditoriaPage() {
     .limit(500)
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Log de auditoría"
         description="Historial de acciones y cambios de estado del sistema."
@@ -45,6 +46,6 @@ export default async function AuditoriaPage() {
         reason:     e.reason,
         createdAt:  e.createdAt,
       }))} />
-    </>
+    </PageContainer>
   )
 }

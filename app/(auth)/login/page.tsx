@@ -53,18 +53,18 @@ export default async function LoginPage() {
           <div className="flex items-center gap-3">
             <Image
               src="/chome_logo_white.svg"
-              alt="Chome"
-              width={36}
-              height={36}
+              alt="Servicios Chome"
+              width={96}
+              height={96}
               unoptimized
-              style={{ width: 36, height: 36 }}
+              style={{ width: 96, height: 96 }}
               className="shrink-0"
             />
             <div>
-              <p className="font-sans font-semibold text-base leading-tight tracking-tight text-white">
-                Chome
+              <p className="font-sans font-semibold text-2xl leading-tight tracking-tight text-white">
+                Servicios Chome
               </p>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-white/45 leading-tight mt-0.5">
+              <p className="text-xs font-mono uppercase tracking-wider text-white/45 leading-tight mt-0.5">
                 Solicitudes y Bodega
               </p>
             </div>
@@ -84,7 +84,7 @@ export default async function LoginPage() {
         <div className="w-full max-w-[26rem] rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)] p-8">
           {/* Mobile brand — solo visible sin el hero */}
           <div className="mb-8 lg:hidden">
-            <BrandMark variant="light" size={40} subtitle titleSize="base" />
+            <BrandMark variant="light" size={48} subtitle titleSize="base" />
           </div>
 
           <p className="text-eyebrow">Acceso</p>

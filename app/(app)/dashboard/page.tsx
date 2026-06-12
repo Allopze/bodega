@@ -4,6 +4,7 @@ import type { ComponentType } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { EmptyState } from "@/components/ui/empty-state"
+import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/db"
 import {
@@ -105,7 +106,8 @@ export default async function DashboardPage() {
   const firstName = session.user.name?.split(" ")[0] ?? "usuario"
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-[var(--duration-default)]">
+    <PageContainer>
+      <div className="space-y-6 animate-in fade-in duration-[var(--duration-default)]">
 
       {/* ── Header de saludo ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -298,7 +300,8 @@ export default async function DashboardPage() {
           </Card>
         </section>
       )}
-    </div>
+      </div>
+    </PageContainer>
   )
 }
 

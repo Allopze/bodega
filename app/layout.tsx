@@ -1,12 +1,29 @@
 import type { Metadata } from "next"
 import { GeistMono } from "geist/font/mono"
-import { Plus_Jakarta_Sans } from "next/font/google"
+import localFont from "next/font/local"
 import "./globals.css"
 
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-jakarta",
+const exo = localFont({
+  variable: "--font-exo",
   display: "swap",
+  src: [
+    { path: "../fonts/exo/Exo-Regular.otf",   weight: "400", style: "normal" },
+    { path: "../fonts/exo/Exo-Medium.otf",    weight: "500", style: "normal" },
+    { path: "../fonts/exo/Exo-DemiBold.otf",  weight: "600", style: "normal" },
+    { path: "../fonts/exo/Exo-Bold.otf",      weight: "700", style: "normal" },
+    { path: "../fonts/exo/Exo-ExtraBold.otf", weight: "800", style: "normal" },
+  ],
+})
+
+const myriad = localFont({
+  variable: "--font-myriad",
+  display: "swap",
+  src: [
+    { path: "../fonts/myriad-pro/myriadpro-light.otf",      weight: "300", style: "normal" },
+    { path: "../fonts/myriad-pro/myriadpro-regular.otf",    weight: "400", style: "normal" },
+    { path: "../fonts/myriad-pro/myriadpro-semibold.otf",   weight: "600", style: "normal" },
+    { path: "../fonts/myriad-pro/myriadpro-bold.otf",       weight: "700", style: "normal" },
+  ],
 })
 
 export const metadata: Metadata = {
@@ -26,7 +43,7 @@ export default function RootLayout({
   return (
     <html
       lang="es-CL"
-      className={`${jakarta.variable} ${GeistMono.variable}`}
+      className={`${exo.variable} ${myriad.variable} ${GeistMono.variable}`}
     >
       <body>{children}</body>
     </html>

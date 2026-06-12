@@ -6,6 +6,7 @@ import { and, desc, eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
 import { OcActions } from "./oc-actions"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
@@ -91,7 +92,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     (order.status === "sent" && canManage)
 
   return (
-    <>
+    <PageContainer width="form">
       <PageHeader
         title={order.code}
         description={`${order.worksite?.name ?? "—"} · ${order.supplier?.name ?? "—"}`}
@@ -288,7 +289,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
           <EntityTimeline entityType="oc" events={timelineEvents} />
         </aside>
       </div>
-    </>
+    </PageContainer>
   )
 }
 

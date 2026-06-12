@@ -5,6 +5,7 @@ import { db } from "@/db"
 import { suppliers } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { getProductForEdit } from "../actions"
 import { ProductRouteSheet } from "../product-route-sheet"
 
@@ -29,7 +30,7 @@ export default async function EditarProductoPage({ params }: { params: Promise<{
   if (!product) notFound()
 
   return (
-    <>
+    <PageContainer width="form">
       <PageHeader
         title={product.name}
         description={`Editar SKU ${product.sku}`}
@@ -47,6 +48,6 @@ export default async function EditarProductoPage({ params }: { params: Promise<{
         allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
         editProduct={product}
       />
-    </>
+    </PageContainer>
   )
 }

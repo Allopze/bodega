@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { List, SignOut, ShieldCheck } from "@phosphor-icons/react"
+import { List, MapPin, SignOut, ShieldCheck } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
@@ -31,12 +31,14 @@ export function TopBar({
   onMenuToggle,
   className,
   isMenuOpen = false,
+  worksiteName,
 }: TopBarProps) {
   const [isSigningOut, setIsSigningOut] = React.useState(false)
 
   async function handleSignOut() {
     setIsSigningOut(true)
-    await signOut({ redirectTo: "/login" })
+    await signOut({ redirect: false })
+    window.location.href = "/login"
   }
 
   return (
@@ -65,7 +67,17 @@ export function TopBar({
         <BrandMark variant="light" size={26} subtitle titleSize="sm" />
       </div>
 
-      <div className="flex-1 min-w-0" />
+      {/* Desktop: chip de faena activa */}
+      <div className="flex-1 min-w-0 flex items-center">
+        {worksiteName && (
+          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-surface-2 border border-(--color-border)">
+            <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" />
+            <span className="text-xs font-mono text-(--color-text-muted) truncate max-w-[20rem]">
+              {worksiteName}
+            </span>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-1.5">
         <NotificationBell />

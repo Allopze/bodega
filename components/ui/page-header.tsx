@@ -14,7 +14,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, actions, breadcrumb, className, eyebrow }: PageHeaderProps) {
   return (
-    <div className={cn("pb-5 mb-6", className)}>
+    <div className={cn("pb-4 mb-5", className)}>
       {breadcrumb && (
         <div className="mb-3">{breadcrumb}</div>
       )}

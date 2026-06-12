@@ -7,6 +7,7 @@ import { eq, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SkeletonPage } from "@/components/ui/skeleton"
 import { Warehouse } from "@phosphor-icons/react/dist/ssr"
@@ -51,14 +52,14 @@ export default async function BodegaPage({
 
   if (allWorksites.length === 0) {
     return (
-      <>
+      <PageContainer>
         <PageHeader title="Bodega" description="Control de stock e inventario."
           breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
         />
         <EmptyState icon={<Warehouse size={24} />} title="Sin faenas configuradas"
           description="Configura las faenas en el módulo de administración para ver el stock aquí."
         />
-      </>
+      </PageContainer>
     )
   }
 
@@ -91,7 +92,7 @@ export default async function BodegaPage({
   }
 
   return (
-    <>
+    <PageContainer>
       <PageHeader title="Bodega" description="Stock por producto y kardex de movimientos."
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
       />
@@ -112,7 +113,7 @@ export default async function BodegaPage({
           </aside>
         )}
       </div>
-    </>
+    </PageContainer>
   )
 }
 

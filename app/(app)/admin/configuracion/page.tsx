@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { getCompanyProfile, getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { ConfigForm } from "./config-form"
 
@@ -20,7 +21,7 @@ export default async function ConfiguracionPage() {
   ])
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Configuración del Sistema"
         description="Ajustar parámetros globales de Chome Solicitudes y Bodega."
@@ -35,6 +36,6 @@ export default async function ConfiguracionPage() {
         }
       />
       <ConfigForm initialPdfMaxSizeMb={pdfMaxSizeMb} initialCompanyProfile={companyProfile} />
-    </>
+    </PageContainer>
   )
 }

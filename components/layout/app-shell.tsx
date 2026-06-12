@@ -115,9 +115,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
             id="main-content"
             tabIndex={-1}
           >
-            <div className="px-4 md:px-8 py-6 max-w-360 mx-auto">
-              {children}
-            </div>
+            {children}
           </main>
 
         </div>

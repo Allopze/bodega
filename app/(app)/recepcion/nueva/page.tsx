@@ -7,6 +7,7 @@ import {
 import { eq } from "drizzle-orm"
 import { requireAuth, can, canAny, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { ReceiptForm } from "../receipt-form"
 import type { ReceiptOcItem } from "../receipt-form"
 
@@ -72,7 +73,7 @@ export default async function NuevaRecepcionPage({
   })
 
   return (
-    <>
+    <PageContainer width="form">
       <PageHeader
         title={`Recepción OC ${order.code}`}
         description="Registra primero la llegada a oficina Chome y luego la recepción en faena."
@@ -84,16 +85,14 @@ export default async function NuevaRecepcionPage({
           ]} />
         }
       />
-      <div className="max-w-3xl">
-        <ReceiptForm
-          purchaseOrderId={order.id}
-          orderCode={order.code}
-          orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
-          items={items}
-          canOffice={canOffice}
-          canFaena={canFaena}
-        />
-      </div>
-    </>
+      <ReceiptForm
+        purchaseOrderId={order.id}
+        orderCode={order.code}
+        orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
+        items={items}
+        canOffice={canOffice}
+        canFaena={canFaena}
+      />
+    </PageContainer>
   )
 }

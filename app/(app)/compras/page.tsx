@@ -10,6 +10,7 @@ import { inArray, count, desc, eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
 import { purchaseRequestItems } from "@/db/schema"
@@ -61,7 +62,7 @@ export default async function ComprasPage({
 
   if (visibleOrders.length === 0 && pendingCount === 0) {
     return (
-      <>
+      <PageContainer>
         <PageHeader
           title="Órdenes de compra"
           description="Órdenes de compra y bandeja de ítems aprobados."
@@ -73,7 +74,7 @@ export default async function ComprasPage({
           }
         />
         <OcList orders={[]} pendingCount={0} canCreate={can(session, "purchasing:create_order")} createdCount={createdCount} />
-      </>
+      </PageContainer>
     )
   }
 
@@ -123,7 +124,7 @@ export default async function ComprasPage({
   }))
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Órdenes de compra"
         description="Órdenes de compra y bandeja de ítems aprobados."
@@ -140,6 +141,6 @@ export default async function ComprasPage({
         canCreate={can(session, "purchasing:create_order")}
         createdCount={createdCount}
       />
-    </>
+    </PageContainer>
   )
 }

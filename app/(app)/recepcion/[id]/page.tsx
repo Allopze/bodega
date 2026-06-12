@@ -6,6 +6,7 @@ import { receipts } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
 import {
   TableRoot, Table, TableHeader, TableBody,
@@ -62,7 +63,7 @@ export default async function RecepcionDetallePage({
     : `Faena ${receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? ""}`.trim()
 
   return (
-    <>
+    <PageContainer width="form">
       <PageHeader
         title={receipt.code}
         description={`Recepción de ${receipt.purchaseOrder.code} · ${receipt.purchaseOrder.supplier?.name ?? "Proveedor sin nombre"}`}
@@ -84,7 +85,7 @@ export default async function RecepcionDetallePage({
         }
       />
 
-      <div className="max-w-4xl space-y-5">
+      <div className="space-y-6">
         <section className="grid gap-px overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-border)] md:grid-cols-4">
           <SummaryCell label="Destino" value={destinationLabel} />
           <SummaryCell label="Guía" value={receipt.dispatchGuideNo ?? "Sin guía"} mono />
@@ -140,7 +141,7 @@ export default async function RecepcionDetallePage({
           </TableRoot>
         </section>
       </div>
-    </>
+    </PageContainer>
   )
 }
 

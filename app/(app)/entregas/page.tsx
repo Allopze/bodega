@@ -13,6 +13,7 @@ import {
 } from "@/db/schema"
 import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Package, User } from "@phosphor-icons/react/dist/ssr"
 import { and, asc, desc, eq, inArray } from "drizzle-orm"
@@ -206,7 +207,7 @@ export default async function Page({
 
   if (worksiteOptions.length === 0) {
     return (
-      <>
+      <PageContainer>
         <PageHeader
           title="Entregas"
           description="Asignación de EPP recibido a trabajadores."
@@ -217,12 +218,12 @@ export default async function Page({
           title="Sin faenas asignadas"
           description="No tienes faenas activas disponibles para registrar entregas."
         />
-      </>
+      </PageContainer>
     )
   }
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Entregas"
         description="Asignación de EPP recibido a trabajadores."
@@ -270,6 +271,6 @@ export default async function Page({
           )}
         </section>
       </div>
-    </>
+    </PageContainer>
   )
 }

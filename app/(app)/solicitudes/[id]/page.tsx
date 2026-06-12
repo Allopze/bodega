@@ -10,6 +10,7 @@ import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
 import { RequestForm } from "../request-form"
 import { DuplicateButton } from "./duplicate-button"
@@ -137,7 +138,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   }
 
   return (
-    <>
+    <PageContainer width="form">
       <PageHeader
         title={request.code}
         description={`Solicitado por ${request.requester?.name ?? "—"} · ${request.worksite?.name ?? "—"}`}
@@ -157,7 +158,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           ]} />
         }
       />
-      <div className="max-w-3xl space-y-6">
+      <div className="space-y-6">
         <RequestProgressPanel progress={progress} />
         <RequestForm
           worksites={worksiteOptions}
@@ -167,6 +168,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         />
         <EntityTimeline entityType="request" events={timelineEvents} />
       </div>
-    </>
+    </PageContainer>
   )
 }

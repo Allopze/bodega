@@ -5,6 +5,7 @@ import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
 import { desc, count, inArray, eq, and, sql } from "drizzle-orm"
 import { requirePermission, can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { RequestList } from "./request-list"
 
 export const metadata: Metadata = { title: "Solicitudes de compra" }
@@ -62,7 +63,7 @@ export default async function SolicitudesPage() {
 
   if (visible.length === 0) {
     return (
-      <>
+      <PageContainer>
         <PageHeader
           title="Solicitudes de compra"
           description="Historial de solicitudes de compra por faena."
@@ -75,7 +76,7 @@ export default async function SolicitudesPage() {
         />
         <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />
 
-      </>
+      </PageContainer>
     )
   }
 
@@ -110,7 +111,7 @@ export default async function SolicitudesPage() {
   }))
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Solicitudes de compra"
         description="Historial de solicitudes de compra por faena."
@@ -122,6 +123,6 @@ export default async function SolicitudesPage() {
         }
       />
       <RequestList requests={rows} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />
-    </>
+    </PageContainer>
   )
 }

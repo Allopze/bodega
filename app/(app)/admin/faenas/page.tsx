@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { FaenasList } from "./faenas-list"
 
 export const metadata: Metadata = { title: "Faenas" }
@@ -14,7 +15,7 @@ export default async function FaenasPage() {
   const worksites   = await db.query.worksites.findMany({ orderBy: (w, { asc }) => [asc(w.name)] })
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Faenas"
         description="Configura las faenas activas de la organización."
@@ -33,6 +34,6 @@ export default async function FaenasPage() {
           isActive: w.isActive, createdAt: w.createdAt, updatedAt: w.updatedAt,
         }))}
       />
-    </>
+    </PageContainer>
   )
 }

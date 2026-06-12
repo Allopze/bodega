@@ -9,6 +9,7 @@ import { eq, and, inArray, asc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { ApprovalPanel } from "./approval-panel"
 import type { ApprovalItem, ApprovalRequest } from "./approval-panel"
 
@@ -46,7 +47,7 @@ export default async function AprobacionesPage({
 
   if (visible.length === 0) {
     return (
-      <>
+      <PageContainer>
         <PageHeader
           title="Aprobaciones"
           description="Revisión y aprobación de ítems solicitados por faena."
@@ -58,7 +59,7 @@ export default async function AprobacionesPage({
           }
         />
         <ApprovalPanel requests={[]} />
-      </>
+      </PageContainer>
     )
   }
 
@@ -191,7 +192,7 @@ export default async function AprobacionesPage({
   const totalPending = displayedRows.reduce((n, r) => n + r.pendingCount, 0)
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Aprobaciones"
         description={
@@ -207,6 +208,6 @@ export default async function AprobacionesPage({
         }
       />
       <ApprovalPanel requests={displayedRows} />
-    </>
+    </PageContainer>
   )
 }

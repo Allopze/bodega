@@ -7,6 +7,7 @@ import {
 import { inArray, desc } from "drizzle-orm"
 import { requirePermission, canAny, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
@@ -67,7 +68,7 @@ export default async function RecepcionPage() {
   const canRegister = canAny(session, "receiving:register_office", "receiving:register_faena")
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Recepción"
         description="Registra llegada a oficina Chome y posterior recepción en faena."
@@ -86,6 +87,6 @@ export default async function RecepcionPage() {
         gapMap={gapMap}
         canRegister={canRegister}
       />
-    </>
+    </PageContainer>
   )
 }

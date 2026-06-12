@@ -5,6 +5,7 @@ import { db } from "@/db"
 import { suppliers } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { ProductRouteSheet } from "../product-route-sheet"
 
 export const metadata: Metadata = { title: "Nuevo producto" }
@@ -24,7 +25,7 @@ export default async function NuevoProductoPage() {
   ])
 
   return (
-    <>
+    <PageContainer width="form">
       <PageHeader
         title="Nuevo producto"
         description="Registra un producto del catálogo."
@@ -41,6 +42,6 @@ export default async function NuevoProductoPage() {
         categories={allCategories.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))}
         allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
       />
-    </>
+    </PageContainer>
   )
 }

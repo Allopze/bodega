@@ -10,6 +10,7 @@ import {
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm"
 import { isGlobalRole, requirePermission, visibleWorksiteIds } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatQty } from "@/lib/utils"
@@ -261,7 +262,7 @@ export default async function TrazabilidadPage({
   const pageHref = (page: number) => `/trazabilidad?${new URLSearchParams({ ...baseParams, page: String(page) }).toString()}`
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Trazabilidad de ítems"
         description="Estado de cada ítem a lo largo del flujo: solicitud → aprobación → OC → recepción → entrega."
@@ -551,6 +552,6 @@ export default async function TrazabilidadPage({
         Las filas resaltadas indican ítems aprobados cuya cantidad en órdenes de compra es inferior a la aprobada.
         La recepción en bodega/faena cierra el seguimiento operativo del ítem; la llegada a oficina queda como paso previo.
       </p>
-    </>
+    </PageContainer>
   )
 }

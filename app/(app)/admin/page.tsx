@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
   Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear,
@@ -73,7 +74,7 @@ export default async function AdminPage() {
   const visibleModules = modules.filter((m) => can(session, m.permission as never))
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Panel de Administración"
         description="Configura los parámetros, catálogos y accesos de Chome Solicitudes y Bodega."
@@ -108,6 +109,6 @@ export default async function AdminPage() {
           )
         })}
       </div>
-    </>
+    </PageContainer>
   )
 }

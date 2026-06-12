@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { SupplierList } from "./supplier-list"
 
 export const metadata: Metadata = { title: "Proveedores" }
@@ -14,7 +15,7 @@ export default async function ProveedoresPage() {
   const allSuppliers = await db.query.suppliers.findMany({ orderBy: (s, { asc }) => [asc(s.name)] })
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Proveedores"
         description="Gestión de proveedores y precios referenciales."
@@ -34,6 +35,6 @@ export default async function ProveedoresPage() {
         paymentTerms: s.paymentTerms, notes: s.notes,
         isActive: s.isActive, createdAt: s.createdAt,
       }))} />
-    </>
+    </PageContainer>
   )
 }

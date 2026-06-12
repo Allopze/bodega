@@ -8,6 +8,7 @@ import {
 import { requirePermission } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
 import { REQUEST_STATE_META, ITEM_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
 import { formatCLP } from "@/lib/utils"
@@ -115,7 +116,7 @@ export default async function Page() {
   ]
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Reportes"
         description="Resumen operativo desde datos persistidos."
@@ -157,7 +158,7 @@ export default async function Page() {
           <StatusGroup title="OC" entity="oc" rows={statusRows(orders)} />
         </div>
       </section>
-    </>
+    </PageContainer>
   )
 }
 

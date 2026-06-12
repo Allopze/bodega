@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 import { UserList } from "./user-list"
 
 export const metadata: Metadata = { title: "Usuarios" }
@@ -63,7 +64,7 @@ export default async function UsuariosPage() {
   })
 
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Usuarios"
         description="Gestión de usuarios del sistema, roles y acceso a faenas."
@@ -82,6 +83,6 @@ export default async function UsuariosPage() {
           .map((r) => ({ id: r.id, name: r.name, label: r.label }))}
         allWorksites={allWorksitesData.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
       />
-    </>
+    </PageContainer>
   )
 }
