@@ -7,7 +7,7 @@ export const traceabilityModule = {
   permissions: [] as const,
   nav: [
     {
-      section: "Operaciones",
+      section: "Reportes",
       items: [
         {
           label:       "Trazabilidad",

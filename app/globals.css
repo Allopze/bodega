@@ -199,6 +199,10 @@ select:focus-visible {
   outline: none;
 }
 
+[role="menuitem"]:focus-visible {
+  outline: none;
+}
+
 /* ─── Scrollbar ── */
 * {
   scrollbar-width: thin;

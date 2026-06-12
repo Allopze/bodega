@@ -5,7 +5,8 @@ import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { db } from "@/db"
 import {
   products,
@@ -72,6 +73,15 @@ const PRIORITY_LABEL: Record<WorkPriority, string> = {
   low:      "Baja",
 }
 
+const TASK_TYPE_LABEL: Record<WorkTaskType, string> = {
+  request_followup:   "Solicitud",
+  approval:           "Aprobación",
+  purchase:           "Compra",
+  purchase_order:     "OC",
+  receipt:            "Recepción",
+  warehouse_delivery: "Entrega",
+}
+
 function formatCLP(amount: number) {
   return new Intl.NumberFormat("es-CL", {
     style: "currency",
@@ -98,6 +108,11 @@ export default async function DashboardPage() {
   const tasks = buildWorkTasks(buildActor(session), snapshot)
   const visibleTasks = tasks.slice(0, 12)
   const stockAlertCount = getCriticalStockAlertCount()
+  const criticalTaskCount = tasks.filter((task) => task.priority === "critical").length
+  const deliveryTaskCount = tasks.filter((task) => task.type === "warehouse_delivery").length
+  const approvalTaskCount = tasks.filter((task) => task.type === "approval").length
+  const nextTask = visibleTasks[0]
+  const maxWorksiteCost = Math.max(...data.worksitesBreakdown.map((row) => row.totalCost), 1)
 
   const approvalRate = data.summary.totalRequests > 0
     ? Math.round((data.summary.approvedRequests / data.summary.totalRequests) * 100)
@@ -138,40 +153,85 @@ export default async function DashboardPage() {
       </div>
 
       {/* ── KPI tiles ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(18rem,0.95fr)]">
         {/* Hero card — drenched green */}
-        <Card className="col-span-2 lg:col-span-1 bg-[var(--color-primary-deep)]">
-          <CardContent className="pt-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/60 mb-2">
-              Tareas pendientes
-            </p>
-            <p className="text-[2.5rem] font-bold leading-none text-white tabular-nums">
-              {tasks.length}
-            </p>
-            <p className="mt-2 text-[12px] text-white/50">
-              {tasks.length === 0 ? "Sin trabajo pendiente" : "requieren acción"}
-            </p>
+        <Card className="bg-[var(--color-primary-deep)]">
+          <CardContent className="flex h-full min-h-[17.5rem] flex-col justify-between p-5 md:p-6">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-white/60">
+                  Tareas pendientes
+                </p>
+                <div className="flex items-end gap-3">
+                  <p className="font-mono text-[3.25rem] font-semibold leading-none text-white tabular-nums">
+                    {tasks.length}
+                  </p>
+                  <p className="pb-1.5 text-[12px] text-white/55">
+                    {tasks.length === 0 ? "sin trabajo pendiente" : "requieren acción"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 sm:min-w-[18rem]">
+                <HeroStat label="Críticas" value={criticalTaskCount} tone={criticalTaskCount > 0 ? "signal" : "neutral"} />
+                <HeroStat label="Entregas" value={deliveryTaskCount} />
+                <HeroStat label="Revisiones" value={approvalTaskCount} />
+              </div>
+            </div>
+
+            {nextTask ? (
+              <Link
+                href={nextTask.href}
+                className={cn(
+                  "mt-5 flex flex-col gap-3 rounded-[var(--radius-lg)] border border-white/15 bg-white/8 p-3.5 text-white",
+                  "transition-[background-color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+                  "hover:border-white/30 hover:bg-white/12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white",
+                  "sm:flex-row sm:items-center sm:justify-between",
+                )}
+              >
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/55">Siguiente acción</p>
+                  <p className="mt-1 truncate text-sm font-semibold">{nextTask.title}</p>
+                  <p className="mt-0.5 truncate text-xs text-white/60">{nextTask.subtitle}</p>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-white">
+                  {nextTask.ctaLabel}
+                  <ArrowRight size={13} />
+                </span>
+              </Link>
+            ) : (
+              <div className="mt-5 rounded-[var(--radius-lg)] border border-white/12 bg-white/8 p-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/55">Estado operativo</p>
+                <p className="mt-1 text-sm font-semibold text-white">Sin bloqueos abiertos</p>
+                <p className="mt-0.5 text-xs text-white/60">No hay aprobaciones, compras, recepciones o entregas pendientes.</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        <KpiCard
-          label="Pendientes aprobación"
-          value={data.metrics.pending_approvals}
-          href="/aprobaciones"
-          highlight={data.metrics.pending_approvals > 0}
-        />
-        <KpiCard
-          label="Aprobados sin OC"
-          value={data.metrics.approved_without_oc}
-          href="/compras/nueva"
-          highlight={data.metrics.approved_without_oc > 0}
-        />
-        <KpiCard
-          label="OC por recibir"
-          value={data.metrics.orders_pending_receipt}
-          href="/recepcion"
-          highlight={data.metrics.orders_pending_receipt > 0}
-        />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1">
+          <KpiCard
+            label="Pendientes aprobación"
+            value={data.metrics.pending_approvals}
+            href="/aprobaciones"
+            description="requieren revisión"
+            highlight={data.metrics.pending_approvals > 0}
+          />
+          <KpiCard
+            label="Aprobados sin OC"
+            value={data.metrics.approved_without_oc}
+            href="/compras/nueva"
+            description="listos para compra"
+            highlight={data.metrics.approved_without_oc > 0}
+          />
+          <KpiCard
+            label="OC por recibir"
+            value={data.metrics.orders_pending_receipt}
+            href="/recepcion"
+            description="esperan recepción"
+            highlight={data.metrics.orders_pending_receipt > 0}
+          />
+        </div>
       </div>
 
       {/* ── Fila secondary: inversión + alertas + tasa ── */}
@@ -291,7 +351,17 @@ export default async function DashboardPage() {
                           : <span className="text-[var(--color-text-faint)]">0</span>}
                       </td>
                       <td className="px-5 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.approvedCount}</td>
-                      <td className="px-5 py-3 text-right font-mono tabular-nums font-medium text-[var(--color-text)]">{formatCLP(row.totalCost)}</td>
+                      <td className="px-5 py-3 text-right">
+                        <div className="ml-auto flex max-w-[15rem] flex-col items-end gap-1.5">
+                          <span className="font-mono font-medium tabular-nums text-[var(--color-text)]">{formatCLP(row.totalCost)}</span>
+                          <span className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" aria-hidden>
+                            <span
+                              className="block h-full rounded-full bg-[var(--color-primary)]"
+                              style={{ width: `${Math.max(4, Math.round((row.totalCost / maxWorksiteCost) * 100))}%` }}
+                            />
+                          </span>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -307,32 +377,57 @@ export default async function DashboardPage() {
 
 function KpiCard({
   label, value, href, highlight,
+  description,
 }: {
   label: string
   value: number
   href: string
+  description: string
   highlight?: boolean
 }) {
   return (
     <Link href={href} className="block group">
-      <Card className="transition-[box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:shadow-[var(--shadow-md)] active:scale-[0.98]">
-        <CardContent className="pt-5">
-          <p className="text-eyebrow mb-2 line-clamp-2">{label}</p>
-          <div className="flex items-end justify-between">
+      <Card className="h-full transition-[background-color,box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)] hover:shadow-[var(--shadow-md)] active:scale-[0.98]">
+        <CardContent className="flex h-full items-center justify-between gap-4 p-4">
+          <div>
+            <p className="text-eyebrow mb-1 line-clamp-2">{label}</p>
             <p className={cn(
-              "text-[2rem] font-bold leading-none tabular-nums tracking-tight",
+              "font-mono text-[1.85rem] font-semibold leading-none tabular-nums tracking-tight",
               highlight ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
             )}>
               {value}
             </p>
-            <ArrowUpRight
-              size={16}
-              className="text-[var(--color-text-faint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] mb-1"
-            />
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">{description}</p>
           </div>
+          <ArrowUpRight
+            size={16}
+            className="shrink-0 text-[var(--color-text-faint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]"
+          />
         </CardContent>
       </Card>
     </Link>
+  )
+}
+
+function HeroStat({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string
+  value: number
+  tone?: "neutral" | "signal"
+}) {
+  return (
+    <div className="rounded-[var(--radius)] border border-white/12 bg-white/8 px-3 py-2.5">
+      <p className={cn(
+        "font-mono text-lg font-semibold leading-none tabular-nums",
+        tone === "signal" ? "text-[var(--color-accent)]" : "text-white",
+      )}>
+        {value}
+      </p>
+      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-white/50">{label}</p>
+    </div>
   )
 }
 
@@ -342,24 +437,34 @@ function TaskRow({ task, index }: { task: WorkTask; index: number }) {
     <Link
       href={task.href}
       className={cn(
-        "group grid grid-cols-[2.25rem_1fr_auto] md:grid-cols-[3rem_2.5rem_1fr_auto] items-center gap-3 px-5 py-3.5",
-        "transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)]",
+        "group grid grid-cols-[2.25rem_1fr] gap-3 px-4 py-3 sm:grid-cols-[2.75rem_2.25rem_minmax(0,1fr)_8rem_8.5rem_auto] sm:items-center sm:px-5",
+        "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-surface-2)]",
+        "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
       )}
     >
       <span className="font-mono text-[11px] text-[var(--color-text-faint)] tabular-nums">
         {String(index + 1).padStart(2, "0")}
       </span>
-      <span className="hidden md:flex h-8 w-8 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]">
+      <span className="hidden h-8 w-8 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] sm:flex">
         <Icon size={15} />
       </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="truncate text-[13.5px] font-semibold text-[var(--color-text)]">{task.title}</h3>
-          <PriorityTag priority={task.priority} />
+          <span className="sm:hidden"><PriorityTag priority={task.priority} /></span>
         </div>
         <p className="mt-0.5 truncate text-[12px] text-[var(--color-text-muted)]">{task.subtitle}</p>
       </div>
-      <div className="hidden md:flex items-center gap-1 text-xs font-medium text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)]">
+      <div className="hidden sm:block">
+        <PriorityTag priority={task.priority} />
+      </div>
+      <div className="hidden min-w-0 sm:block">
+        <p className="truncate text-xs font-medium text-[var(--color-text)]">
+          {TASK_TYPE_LABEL[task.type]} · {task.statusLabel}
+        </p>
+        <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{formatShortDate(task.createdAt)}</p>
+      </div>
+      <div className="col-start-2 flex items-center gap-1 text-xs font-medium text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] sm:col-start-auto sm:justify-end">
         {task.ctaLabel}
         <ArrowRight size={12} className="transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5" />
       </div>
@@ -370,19 +475,19 @@ function TaskRow({ task, index }: { task: WorkTask; index: number }) {
 function PriorityTag({ priority }: { priority: WorkPriority }) {
   if (priority === "critical") {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius-full)] text-[10px] font-semibold uppercase tracking-wider bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]">
+      <Badge variant="signal" size="sm" dot>
         {PRIORITY_LABEL[priority]}
-      </span>
+      </Badge>
     )
   }
   if (priority === "high") {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius-full)] text-[10px] font-semibold uppercase tracking-wider bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]">
+      <Badge variant="warning" size="sm" dot>
         {PRIORITY_LABEL[priority]}
-      </span>
+      </Badge>
     )
   }
-  return null
+  return <span className="hidden" aria-hidden>{PRIORITY_LABEL[priority]}</span>
 }
 
 function buildActor(session: Session): WorkActor {

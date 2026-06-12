@@ -76,14 +76,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
           />
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-none bg-[var(--color-surface)] lg:rounded-[var(--radius-2xl)] lg:shadow-[var(--shadow-card)]">
-          <TopBar
-            session={session}
-            onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
-            worksiteName={worksiteName}
-            isMenuOpen={mobileOpen}
-          />
-
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Mobile drawer — fixed/viewport-relative, unaffected by panel overflow-hidden */}
           {showDrawer && (
             <>
@@ -115,6 +108,13 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
             id="main-content"
             tabIndex={-1}
           >
+            <TopBar
+              session={session}
+              onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
+              worksiteName={worksiteName}
+              isMenuOpen={mobileOpen}
+              className="sticky top-3 mt-3 mx-3 md:mx-4 mb-4 z-10"
+            />
             {children}
           </main>
 

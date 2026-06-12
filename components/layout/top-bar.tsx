@@ -2,13 +2,16 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { List, MapPin, SignOut, ShieldCheck } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import { Avatar } from "@/components/ui/avatar"
+import { Breadcrumbs } from "@/components/ui/page-header"
 import { NotificationBell } from "./notification-bell"
 import { BrandMark } from "./brand-mark"
+import { NAV_ITEMS } from "./nav-items"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -34,6 +37,20 @@ export function TopBar({
   worksiteName,
 }: TopBarProps) {
   const [isSigningOut, setIsSigningOut] = React.useState(false)
+  const pathname = usePathname()
+
+  // Derive active section + label from the nav registry — no extra plumbing needed
+  let activeSection: string | null = null
+  let activeLabel:   string | null = null
+  outer: for (const section of NAV_ITEMS) {
+    for (const item of section.items) {
+      if (pathname === item.href || pathname.startsWith(item.href + "/")) {
+        activeSection = section.section
+        activeLabel   = item.label
+        break outer
+      }
+    }
+  }
 
   async function handleSignOut() {
     setIsSigningOut(true)
@@ -43,9 +60,9 @@ export function TopBar({
 
   return (
     <header className={cn(
-      "flex items-center h-[3.25rem] px-4 md:px-6 gap-3",
-      "bg-[var(--color-surface)]",
-      "shrink-0",
+      "flex items-center h-[3.25rem] px-4 md:px-5 gap-3",
+      "bg-[var(--color-surface)] rounded-full",
+      "border border-[var(--color-border)] shadow-[var(--shadow-md)]",
       className,
     )}>
       <div className="flex items-center gap-2 lg:hidden">
@@ -67,10 +84,18 @@ export function TopBar({
         <BrandMark variant="light" size={26} subtitle titleSize="sm" />
       </div>
 
-      {/* Desktop: chip de faena activa */}
-      <div className="flex-1 min-w-0 flex items-center">
+      {/* Desktop: contexto de página + chip de faena (si aplica) */}
+      <div className="flex-1 min-w-0 hidden lg:flex items-center gap-3">
+        {activeSection && activeLabel && (
+          <Breadcrumbs
+            items={[
+              { label: activeSection },
+              { label: activeLabel },
+            ]}
+          />
+        )}
         {worksiteName && (
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-surface-2 border border-(--color-border)">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-surface-2 border border-(--color-border)">
             <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" />
             <span className="text-xs font-mono text-(--color-text-muted) truncate max-w-[20rem]">
               {worksiteName}
@@ -78,6 +103,8 @@ export function TopBar({
           </div>
         )}
       </div>
+      {/* Mobile: spacer para empujar campana+avatar a la derecha */}
+      <div className="flex-1 lg:hidden" aria-hidden />
 
       <div className="flex items-center gap-1.5">
         <NotificationBell />

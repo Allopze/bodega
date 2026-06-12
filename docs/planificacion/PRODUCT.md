@@ -1,121 +1,200 @@
-# Chome Solicitudes y Bodega — Producto
+# Chome Solicitudes y Bodega
 
-## Propósito
+Sistema interno de abastecimiento para **Servicios Industriales Chome Limitada**, una
+empresa chilena de servicios industriales. Reemplaza el proceso manual basado en Excel
+con una plataforma web que garantiza que ningún ítem se pierda entre la solicitud y la
+entrega.
 
-Chome Solicitudes y Bodega es un sistema interno para gestionar el ciclo
-de abastecimiento operativo en faenas. Coordina pedidos, aprobaciones,
-compras, facturación, recepción, entregas y trazabilidad, reemplazando
-planillas dispersas con un único flujo trazable.
+---
+
+## Problema que resuelve
+
+Antes de este sistema, una faena pedía 10 cascos + 20 guantes + 5 botas. La secretaria
+generaba una orden de compra con cascos y botas, y nadie sabía que los guantes se
+cayeron. No había trazabilidad, ni inventario centralizado, ni forma de auditar qué pasó
+con cada ítem.
+
+**Chome Solicitudes y Bodega** resuelve esto con control por ítem individual a través de
+todo el pipeline: solicitud → aprobación → orden de compra → recepción → entrega.
+
+---
 
 ## Usuarios y roles
 
-| Rol                      | Faenas visibles    | Puede                                      |
-|--------------------------|--------------------|--------------------------------------------|
-| `administrador`          | Todas              | Configurar sistema, usuarios, auditoría    |
-| `jefa_chome`             | Todas              | Aprobar, comprar, recibir, despachar       |
-| `secretaria`             | Todas              | Aprobar, comprar, recibir, despachar       |
-| `prevencionista`         | Todas              | Aprobar ítems EPP                          |
-| `solicitante_faena`      | Solo asignadas     | Crear y enviar solicitudes de sus faenas   |
+| Rol | Alcance | Qué hace |
+|---|---|---|
+| **Administrador** | Todas las faenas | Control total del sistema, 23 permisos |
+| **Jefatura** | Todas las faenas | Aprueba, ve compras, ve reportes |
+| **Secretaría** | Todas las faenas | Aprueba, crea OCs, recibe, administra maestros |
+| **Prevencionista oficina** | Todas las faenas | Aprueba (especialmente EPP), recibe en oficina, administra maestros |
+| **Prevencionista faena** | Solo faenas asignadas | Crea solicitudes, registra recepción en faena, ve stock |
 
-Notas:
+El solicitante siempre está acotado a su faena (nunca es global). La faena misma actúa
+como bodega: el stock vive a nivel de faena, no en una bodega centralizada.
 
-- El rol `solicitante_faena` siempre está scoped a una o más faenas
-  explícitas. Nunca tiene visibilidad global.
-- Los roles de liderazgo operativa (`jefa_chome`, `secretaria`,
-  `prevencionista`) ven todas las faenas pero su alcance operativo se
-  controla por permisos (`approvals:approve`, `purchasing:create_order`,
-  etc.) y no por visibilidad de faena.
-- El sistema no incluye un rol `finanzas` ni módulo contable: las
-  facturas son archivos anexos al documento de compra, no transacciones
-  financieras.
+---
 
-## Flujo principal
+## Módulos
+
+### Dashboard
+Cola de trabajo con conteos pendientes (aprobaciones, OCs por emitir, recepciones
+pendientes) y tarjetas KPI del estado del pipeline.
+
+### Solicitudes
+- Crear solicitudes por faena con múltiples ítems
+- Seleccionar del catálogo o ingresar texto libre
+- Atributos por producto: talla, color, modelo
+- Asociar ítems EPP a trabajadores específicos
+- Urgencia (normal/alta/crítica) y fecha requerida
+- Guardar borrador, enviar a revisión
+- Duplicar solicitudes anteriores como plantilla
+
+### Aprobaciones
+- Aprobar, rechazar o devolver ítems individuales (no la solicitud completa)
+- Modificar cantidades durante la aprobación (auditado)
+- Registrar motivo de la decisión
+- Contexto de rol: se registra qué rol tomó la decisión
+- Bloquear ítems EPP que no hayan pasado por prevencionista
+
+### Órdenes de compra
+- Crear OC consolidando ítems aprobados de múltiples solicitudes
+- Seleccionar proveedor, precios unitarios, descuentos, impuestos, totales
+- Información de entrega, condiciones de pago, fecha estimada
+- Flujo: borrador → emitida → enviada → confirmada → parcialmente recibida → recibida → cerrada
+- PDF imprimible A4 con formato de orden de compra
+- Adjuntar cotizaciones
+
+### Recepción (dos etapas)
+- **Recepción en oficina**: checkpoint administrativo, no genera stock
+- **Recepción en faena**: genera stock en `worksite_stock` y movimientos de inventario
+- Registro parcial o total contra ítems de OC
+- Cantidades recibidas, rechazadas y dañadas
+- Número de guía de despacho, receptor, tipo de ubicación
+
+### Bodega
+- Stock por faena por producto
+- Alertas de stock mínimo
+- Kardex: historial completo de movimientos (recepción, entrega, ajuste, transferencia, devolución, rechazo, pérdida)
+- Ajustes de stock con motivo
+- Panel de devoluciones
+
+### Entregas
+- Registrar entregas a faenas o trabajadores individuales
+- Quién entregó, quién recibió, tipo de destino
+- Seguimiento por ítem referenciando el ítem original de la solicitud
+- Cierre del ciclo: ítems entregados alcanzan estado terminal
+
+### Trazabilidad
+- Matriz producto × faena con cantidades: solicitado, aprobado, en OC, recibido, entregado
+- Filtrable por fecha, faena, categoría, proveedor
+- Exportable a XLSX
+- La vista central que garantiza que "nada se pierde"
+
+### Reportes
+- Múltiples tipos de reportes con filtros
+- Exportación a XLSX vía ExcelJS (nunca CSV)
+
+### Administración (7 secciones)
+- **Usuarios**: CRUD, invitación por email con token, asignación de roles y faenas
+- **Faenas**: CRUD (nombre, código, dirección, región, activo)
+- **Trabajadores**: CRUD (RUT, nombre, cargo, faena)
+- **Productos**: CRUD de productos, categorías, atributos, precios por proveedor
+- **Proveedores**: CRUD (nombre, RUT, contacto, dirección, condiciones de pago)
+- **Configuración**: Perfil de empresa, límites de PDF
+- **Auditoría**: Visor de log de auditoría
+
+### Funcionalidades transversales
+- **Auditoría**: cada cambio de estado registrado (quién, qué, estado anterior/nuevo, motivo)
+- **Códigos secuenciales**: SOL-2026-0042, OC-2026-0017, REC-2026-0005
+- **Archivos adjuntos**: por tipo de entidad, almacenados en `/storage/`
+- **Notificaciones**: campana con polling para envíos, aprobaciones, rechazos, OCs, recepción
+- **Rate limiting**: basado en SQLite para login (IP + email)
+- **Exportación XLSX**: todos los reportes exportables
+
+---
+
+## Máquina de estados del ítem
+
+El **ítem** (no la solicitud ni la OC) es la unidad central de control:
 
 ```
-Prevencionista faena  →  Aprobación  →  Compras (OC)  →  Recepción  →  Entrega  →  Trazabilidad
-   (faena)       (jefatura/sec/   (secretaría/     (prevencionista (bodega →    (matriz +
-                 prevencionista) jefa_chome)      o bodega)      faena)       reportes)
+draft → requested → approved → in_purchase_order → purchased
+  ↓        ↓            ↓
+cancelled  rejected   postponed
+
+purchased → partially_received → received → partially_delivered → delivered
 ```
 
-1. **Maestros.** El administrador configura faenas, centros de costo,
-   proveedores, productos, bodegas, usuarios y roles.
-2. **Solicitud.** El prevencionista faena crea una solicitud con ítems
-   catalogados o libres. La solicitud queda en `draft` y se envía a
-   aprobación.
-3. **Aprobación.** Los roles autorizados aprueban, rechazan, devuelven
-   o modifican la cantidad de cada ítem. La transición es por ítem, no
-   por solicitud, y cada decisión queda registrada con `approvalDecisions`.
-4. **Compra.** El equipo de compras agrupa ítems aprobados en una OC por
-   proveedor. La OC pasa por `draft → issued → sent`.
-5. **Factura.** El personal autorizado anexa la factura del proveedor
-   como archivo (PDF/JPG/PNG/WebP) con número, fecha y monto. La
-   factura se concilia contra la OC.
-6. **Recepción.** La mercadería se registra primero como llegada a
-   oficina Chome y luego como recepción en bodega/faena, que dispara el
-   ingreso de stock.
-7. **Entrega.** Desde bodega se despachan productos a faena. La entrega
-   puede asociarse a un ítem de solicitud para mantener la trazabilidad.
-8. **Trazabilidad y reportes.** La matriz de trazabilidad muestra el
-   estado de cada ítem de extremo a extremo. Los reportes cubren gasto
-   por faena, ítems sin OC, OC por estado y facturas pendientes.
+Estados de solicitud: `draft → submitted → in_review → partially_approved → approved → in_purchasing → closed`
 
-## Estados clave
+Estados de OC: `draft → issued → sent → supplier_confirmed → partially_received → received → closed`
 
-### Solicitud (`purchase_requests.status`)
+---
 
-`draft | submitted | in_review | partially_approved | approved | rejected |
-returned | in_purchasing | closed | cancelled`
+## Stack tecnológico
 
-### Ítem (`purchase_request_items.status`)
+| Capa | Tecnología |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Lenguaje | TypeScript (strict) |
+| Base de datos | SQLite (WAL) + Drizzle ORM |
+| Autenticación | NextAuth v5 (Credentials, JWT) |
+| Estilos | Tailwind CSS v4 + OKLCH tokens |
+| UI Primitives | Radix UI (14 paquetes) |
+| Íconos | Phosphor Icons |
+| Fuentes | Geist Sans, Geist Mono, Source Serif 4 |
+| Datos | TanStack React Query v5 |
+| Validación | Zod v4 |
+| Exportación | ExcelJS |
+| Testing | Vitest + Playwright + Testing Library |
 
-Máquina de estados con transiciones explícitas en
-`lib/services/item-state.ts`. Estados terminales: `rejected`, `delivered`.
+---
 
-### OC (`purchase_orders.status`)
+## Decisiones arquitectónicas clave
 
-`draft | issued | sent | supplier_confirmed | partially_received |
-received | closed | cancelled`
+1. **Server Actions** para todas las mutaciones (no REST APIs). Solo auth, archivos,
+   notificaciones y exportación XLSX usan rutas API.
+2. **Estado por ítem**: el ítem, no la solicitud ni la OC, es la unidad de seguimiento.
+   Esto es lo que resuelve el problema de "ítems perdidos".
+3. **SQLite single-file**: cero dependencias de infraestructura, WAL para lecturas
+   concurrentes. Diseñado para migrar a PostgreSQL en el futuro.
+4. **RBAC con caché de 60s**: snapshot cacheado, invalidado al cambiar perfil. El
+   scoping de faena se aplica a nivel SQL.
+5. **Sin estado global**: React Query para caché del servidor, SessionProvider para
+   auth. Sin Redux/Zustand.
+6. **Single-tenant**: una instalación por organización.
+7. **Rutas de impresión**: grupo de layout separado `(print)` para vistas A4 sin
+   chrome de navegación.
 
-### Recepción (`receipts.status`)
+---
 
-`open | closed`
+## Flujos principales
 
-### Factura anexa (`invoice_attachments.status`)
+### Procure-to-pay completo
+1. Prevencionista faena crea solicitud con ítems del catálogo
+2. Jefatura/Secretaría/Prevencionista oficina aprueban ítems individualmente
+3. Secretaría crea OC consolidando ítems aprobados por proveedor
+4. OC se imprime (PDF A4) y se marca como enviada
+5. Secretaría registra recepción en oficina (checkpoint, sin stock)
+6. Secretaría/Prevencionista faena registra recepción en faena (genera stock)
+7. Se entregan ítems a trabajadores o faenas
+8. Trazabilidad completa visible en `/trazabilidad`
 
-`registered | observed | reconciled`
+### Onboarding de usuarios
+1. Primer usuario se auto-registra → rol administrador
+2. Admin crea faenas, proveedores, catálogo de productos
+3. Admin invita usuarios por email (o link copiable)
+4. Admin asigna roles + scoping de faena
 
-## Principios
+### Entrega de EPP a trabajador
+1. Ítem de solicitud se asocia a un trabajador específico
+2. Tras recepción, se crea entrega con `destinationType: "worker"`
+3. El ítem alcanza estado terminal `delivered`
+4. Historial completo: qué trabajador recibió qué EPP, cuándo, de qué solicitud
 
-- **Trazabilidad primero.** Cada cambio de estado, cada acción, cada
-  movimiento de stock deja un registro. La auditoría es transaccional.
-- **Scoping por faena.** Las consultas siempre filtran por las faenas
-  visibles del usuario (en SQL, no en memoria).
-- **Estados explícitos.** El estado de cualquier entidad es un campo
-  tipado y validado; las transiciones pasan por una máquina
-  verificada.
-- **Acciones chicas y reversibles.** No se borra; se anula o
-  devuelve. Las cantidades se reciben en pasos, no se sobreescriben.
-- **Cero código de stock negativo.** `applyMovement` rechaza
-  movimientos que llevarían el stock a menos de cero.
-
-## Decisiones de no-objetivo
-
-- **No es un ERP.** No maneja contabilidad, ni tributación, ni cuentas
-  corrientes de proveedores. La factura es un anexo, no un documento
-  financiero.
-- **No es un marketplace.** Los proveedores se cargan manualmente.
-- **No es mobile-first.** El uso principal es desktop en oficina. Hay
-  aprobaciones rápidas desde celular, pero las tablas densas no se
-  reescriben para táctil.
-- **No es multi-tenant.** La instalación es por organización. No hay
- 隔离 entre empresas dentro del mismo despliegue.
-
-## Glosario
-
-- **Faena** — Obra o proyecto físico donde se entregan los productos.
-- **Centro de costo** — Unidad contable dentro de una faena.
-- **EPP** — Elemento de protección personal. Requiere aprobación de
-  Prevención.
-- **Prevencionista oficina** — Persona que valida ítems de seguridad.
-- **Trazabilidad** — Capacidad de seguir un ítem desde la solicitud
-  hasta la entrega en faena.
+### Gestión de stock
+- Stock por faena (`worksite_stock` único en worksiteId + productId)
+- Todos los movimientos registrados en `inventory_movements` con cantidades antes/después
+- Alertas de stock mínimo
+- Ajustes, transferencias, devoluciones y rechazos soportados
+- Vista Kardex en `/bodega`

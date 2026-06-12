@@ -26,7 +26,7 @@
 - Sidebar and header must be visually and structurally separated — they are independent surfaces, not a single unified bar. Confidence: 0.80
 
 # Design Workflow
-- For UI/design tasks, use the impeccable and emil-design-eng skills. Confidence: 0.65
+- For UI/design tasks, use the impeccable, emil-design-eng, and design-taste-frontend skills. Confidence: 0.70
 
 # Scope Management
 - When asked to implement, first list what's missing or incomplete rather than making assumptions. Confidence: 0.80
