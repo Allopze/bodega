@@ -1,15 +1,14 @@
-import Database from "better-sqlite3"
-import { drizzle } from "drizzle-orm/better-sqlite3"
-import { migrate } from "drizzle-orm/better-sqlite3/migrator"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import path from "node:path"
 import { afterAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 
-const sqlite = new Database(":memory:")
-sqlite.pragma("foreign_keys = ON")
-const inMemoryDb = drizzle(sqlite, { schema })
+const pg = new PGlite()
+const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
-
+// @ts-expect-error — PGlite is structurally compatible at runtime; postgres-js type differs only in result-type HKT
 testGlobal.__db = inMemoryDb
 
 vi.mock("@/lib/auth/auth", () => ({ auth: vi.fn() }))
@@ -20,13 +19,13 @@ vi.mock("@/db", () => ({
   },
 }))
 
-migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+await migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
 
 import { buildTrazabilidadRows } from "@/lib/services/trazabilidad-export"
 
 describe("trazabilidad export scoping", () => {
-  afterAll(() => {
-    sqlite.close()
+  afterAll(async () => {
+    await pg.close()
   })
 
   it("returns only rows for worksites visible to a scoped session", async () => {
@@ -41,7 +40,7 @@ describe("trazabilidad export scoping", () => {
       isActive: true,
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     await inMemoryDb.insert(schema.worksites).values([
       {
@@ -60,7 +59,7 @@ describe("trazabilidad export scoping", () => {
         createdAt: now,
         updatedAt: now,
       },
-    ]).run()
+    ])
 
     await inMemoryDb.insert(schema.purchaseRequests).values([
       {
@@ -81,7 +80,7 @@ describe("trazabilidad export scoping", () => {
         createdAt: now,
         updatedAt: now,
       },
-    ]).run()
+    ])
 
     await inMemoryDb.insert(schema.purchaseRequestItems).values([
       {
@@ -104,7 +103,7 @@ describe("trazabilidad export scoping", () => {
         createdAt: now,
         updatedAt: now,
       },
-    ]).run()
+    ])
 
     const rows = await buildTrazabilidadRows(scopedSession(["ws-visible"]))
 

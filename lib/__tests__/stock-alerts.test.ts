@@ -1,7 +1,26 @@
-import { describe, it, expect, beforeAll } from "vitest"
-import { db } from "@/db"
-import { worksites, products, worksiteStock, productCategories } from "@/db/schema"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest"
+import path from "node:path"
+import * as schema from "@/db/schema"
 import { nanoid } from "@/lib/id"
+
+// ── In-memory PostgreSQL database & migrations ────────────────────────────────
+const pg = new PGlite()
+const inMemoryDb = drizzle(pg, { schema })
+const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
+// @ts-expect-error — PGlite is structurally compatible at runtime; postgres-js type differs only in result-type HKT
+testGlobal.__db = inMemoryDb
+
+vi.mock("@/db", () => ({
+  get db() {
+    return testGlobal.__db
+  },
+}))
+
+await migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+
 import { getStockAlerts, getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 
 describe("stock alerts", () => {
@@ -10,35 +29,34 @@ describe("stock alerts", () => {
   const safeProductId = nanoid()
   const alertProductId = nanoid()
 
-  beforeAll(() => {
-    db.insert(productCategories)
+  beforeAll(async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.productCategories)
       .values({ id: categoryId, name: "Test Category", slug: `test-cat-${nanoid()}` })
-      .run()
-    db.insert(worksites)
-      .values({ id: worksiteId, name: "Faena Test Alertas", code: `FA-ALERT-${nanoid().slice(0, 8)}` })
-      .run()
-    db.insert(products)
-      .values({ id: safeProductId, categoryId, name: "Safe Product", sku: `SAFE-${nanoid().slice(0, 8)}`, unitOfMeasure: "unidad" })
-      .run()
-    db.insert(products)
-      .values({ id: alertProductId, categoryId, name: "Alert Product", sku: `ALERT-${nanoid().slice(0, 8)}`, unitOfMeasure: "unidad" })
-      .run()
-    db.insert(worksiteStock)
-      .values({ id: nanoid(), worksiteId, productId: safeProductId, quantity: 100, minStock: 10 })
-      .run()
-    db.insert(worksiteStock)
-      .values({ id: nanoid(), worksiteId, productId: alertProductId, quantity: 3, minStock: 10 })
-      .run()
+    await inMemoryDb.insert(schema.worksites)
+      .values({ id: worksiteId, name: "Faena Test Alertas", code: `FA-${nanoid().slice(0, 8)}`, isActive: true, createdAt: now, updatedAt: now })
+    await inMemoryDb.insert(schema.products)
+      .values({ id: safeProductId, categoryId, name: "Safe Product", sku: `SAFE-${nanoid().slice(0, 8)}`, unitOfMeasure: "unidad", isActive: true, createdAt: now, updatedAt: now })
+    await inMemoryDb.insert(schema.products)
+      .values({ id: alertProductId, categoryId, name: "Alert Product", sku: `ALERT-${nanoid().slice(0, 8)}`, unitOfMeasure: "unidad", isActive: true, createdAt: now, updatedAt: now })
+    await inMemoryDb.insert(schema.worksiteStock)
+      .values({ id: nanoid(), worksiteId, productId: safeProductId, quantity: 100, minStock: 10, updatedAt: now })
+    await inMemoryDb.insert(schema.worksiteStock)
+      .values({ id: nanoid(), worksiteId, productId: alertProductId, quantity: 3, minStock: 10, updatedAt: now })
   })
 
-  it("returns empty for products well above minStock", () => {
-    const alerts = getStockAlerts()
+  afterAll(async () => {
+    await pg.close()
+  })
+
+  it("returns empty for products well above minStock", async () => {
+    const alerts = await getStockAlerts()
     const safeAlerts = alerts.filter((a) => a.productId === safeProductId)
     expect(safeAlerts).toHaveLength(0)
   })
 
-  it("returns critical alert when stock is below minStock", () => {
-    const alerts = getStockAlerts()
+  it("returns critical alert when stock is below minStock", async () => {
+    const alerts = await getStockAlerts()
     const criticalAlert = alerts.find((a) => a.productId === alertProductId)
     expect(criticalAlert).toBeDefined()
     expect(criticalAlert!.severity).toBe("critical")
@@ -47,8 +65,8 @@ describe("stock alerts", () => {
     expect(criticalAlert!.minStock).toBe(10)
   })
 
-  it("getCriticalStockAlertCount returns correct count", () => {
-    const count = getCriticalStockAlertCount()
+  it("getCriticalStockAlertCount returns correct count", async () => {
+    const count = await getCriticalStockAlertCount()
     expect(typeof count).toBe("number")
     expect(count).toBeGreaterThanOrEqual(1)
   })

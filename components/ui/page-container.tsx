@@ -20,7 +20,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "mx-auto w-full px-4 md:px-8 py-4 md:py-6",
+        "mx-auto w-full px-4 md:px-8 py-2 md:py-3",
         width === "wide" && "max-w-440",
         width === "form" && "max-w-4xl",
         className,

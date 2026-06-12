@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { List, MapPin, SignOut, ShieldCheck } from "@phosphor-icons/react"
+import { List, MagnifyingGlass, MapPin, SignOut, ShieldCheck } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
@@ -42,7 +42,12 @@ export function TopBar({
 }: TopBarProps) {
   const [isSigningOut, setIsSigningOut] = React.useState(false)
   const pathname = usePathname()
-  const { header } = useShellHeader()
+  const { header, searchQuery, setSearchQuery } = useShellHeader()
+
+  // Clear search on navigation
+  React.useEffect(() => {
+    setSearchQuery("")
+  }, [pathname, setSearchQuery])
 
   // Derive active section + label from the nav registry — no extra plumbing needed
   let activeSection: string | null = null
@@ -133,6 +138,17 @@ export function TopBar({
       <div className="flex-1 lg:hidden" aria-hidden />
 
       <div className="flex items-center gap-1.5">
+        <div className="relative hidden sm:flex items-center">
+          <MagnifyingGlass size={14} className="absolute left-2.5 text-[var(--color-text-subtle)] pointer-events-none shrink-0" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar..."
+            className="h-7 w-36 lg:w-52 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] pl-8 pr-3 text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-line)] transition-[border-color,box-shadow] duration-[var(--duration-fast)]"
+            aria-label="Buscar en la página"
+          />
+        </div>
         <NotificationBell />
 
         <DropdownMenu>

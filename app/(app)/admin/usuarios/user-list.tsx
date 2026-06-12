@@ -17,6 +17,13 @@ import { toggleUserActive } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
 interface Role    { id: string; name: string; label: string }
+interface Permission {
+  id: string
+  name: string
+  module: string
+  description: string | null
+  roleIds: string[]
+}
 interface Worksite { id: string; name: string; code: string }
 interface UserRow {
   id:          string
@@ -28,6 +35,7 @@ interface UserRow {
   avatarColor: string | null
   roleIds:     string[]
   roleLabels:  string[]
+  permissionIds: string[]
   worksiteAssignments: { worksiteId: string; isPrimary: boolean }[]
   worksiteCount: number
 }
@@ -35,6 +43,7 @@ interface UserRow {
 interface UserListProps {
   users:        UserRow[]
   allRoles:     Role[]
+  allPermissions: Permission[]
   allWorksites: Worksite[]
 }
 
@@ -47,7 +56,7 @@ const COLUMNS = [
   { key: "",          label: "",          sortable: false, width: "w-24" },
 ]
 
-export function UserList({ users, allRoles, allWorksites }: UserListProps) {
+export function UserList({ users, allRoles, allPermissions, allWorksites }: UserListProps) {
   const [sheetOpen, setSheetOpen]   = React.useState(false)
   const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)
@@ -220,6 +229,7 @@ export function UserList({ users, allRoles, allWorksites }: UserListProps) {
         onClose={() => setSheetOpen(false)}
         editUser={editUser}
         allRoles={allRoles}
+        allPermissions={allPermissions}
         allWorksites={allWorksites}
       />
       {inviteOpen && (

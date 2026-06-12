@@ -15,21 +15,21 @@
  * 11. Register EPP delivery to a worker and verify stock + traceability
  */
 
-import Database from "better-sqlite3"
-import { drizzle } from "drizzle-orm/better-sqlite3"
-import { migrate } from "drizzle-orm/better-sqlite3/migrator"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import { describe, it, expect, vi, afterAll } from "vitest"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
 
-// ── Setup in-memory database & schema migrations ─────────────────────────────
-const sqlite = new Database(":memory:")
-sqlite.pragma("foreign_keys = ON")
-const inMemoryDb = drizzle(sqlite, { schema })
+// ── Setup in-memory PostgreSQL database & schema migrations ──────────────────
+const pg = new PGlite()
+const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
 
 // Store in global singleton so that services can access it
+// @ts-expect-error — PGlite is structurally compatible at runtime; postgres-js type differs only in result-type HKT
 testGlobal.__db = inMemoryDb
 
 // Mock the db module using a getter to avoid Vitest hoisting ReferenceError
@@ -41,7 +41,7 @@ vi.mock("@/db", () => ({
 
 // Run migrations to construct the database schema
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
-migrate(inMemoryDb, { migrationsFolder })
+await migrate(inMemoryDb, { migrationsFolder })
 
 // Import the services to test (they now reference the mocked in-memory database)
 import { submitItem, approveItem, markItemPendingPurchase } from "@/lib/services/item-state"
@@ -50,8 +50,8 @@ import { registerReceipt } from "@/lib/services/receiving"
 import { registerWorkerEppDelivery } from "@/lib/services/deliveries"
 
 describe("Full procurement workflow integration", () => {
-  afterAll(() => {
-    sqlite.close()
+  afterAll(async () => {
+    await pg.close()
   })
 
   it("completes the full request-to-receiving-to-stock flow successfully", async () => {
@@ -67,7 +67,7 @@ describe("Full procurement workflow integration", () => {
       isActive: true,
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     const worksiteId = "ws-1"
     await inMemoryDb.insert(schema.worksites).values({
@@ -79,7 +79,7 @@ describe("Full procurement workflow integration", () => {
       isActive: true,
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     const supplierId = "sup-1"
     await inMemoryDb.insert(schema.suppliers).values({
@@ -90,7 +90,7 @@ describe("Full procurement workflow integration", () => {
       isActive: true,
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     const categoryId = "cat-1"
     await inMemoryDb.insert(schema.productCategories).values({
@@ -99,7 +99,7 @@ describe("Full procurement workflow integration", () => {
       slug: "seguridad-y-epp",
       isEpp: true,
       sortOrder: 1,
-    }).run()
+    })
 
     const productId = "prod-1"
     await inMemoryDb.insert(schema.products).values({
@@ -113,7 +113,7 @@ describe("Full procurement workflow integration", () => {
       isActive: true,
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     const workerId = "worker-1"
     await inMemoryDb.insert(schema.workers).values({
@@ -125,7 +125,7 @@ describe("Full procurement workflow integration", () => {
       worksiteId,
       isActive: true,
       createdAt: now,
-    }).run()
+    })
 
     // 2. Create Purchase Request (SOL) in draft state
     const requestId = "req-1"
@@ -138,7 +138,7 @@ describe("Full procurement workflow integration", () => {
       status: "draft",
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     const requestItemId = "item-1"
     await inMemoryDb.insert(schema.purchaseRequestItems).values({
@@ -150,7 +150,7 @@ describe("Full procurement workflow integration", () => {
       status: "draft",
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     // Verify draft setup
     const initialReq = await inMemoryDb.query.purchaseRequests.findFirst({
@@ -168,7 +168,7 @@ describe("Full procurement workflow integration", () => {
     await inMemoryDb.update(schema.purchaseRequests)
       .set({ status: "submitted", submittedAt: now, updatedAt: now })
       .where(eq(schema.purchaseRequests.id, requestId))
-      .run()
+      
 
     const submittedReq = await inMemoryDb.query.purchaseRequests.findFirst({
       where: eq(schema.purchaseRequests.id, requestId),
@@ -371,7 +371,7 @@ describe("Full procurement workflow integration", () => {
       isActive: true,
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     await inMemoryDb.insert(schema.worksites).values({
       id: worksiteId,
@@ -380,7 +380,7 @@ describe("Full procurement workflow integration", () => {
       isActive: true,
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     await inMemoryDb.insert(schema.suppliers).values([
       {
@@ -399,7 +399,7 @@ describe("Full procurement workflow integration", () => {
         createdAt: now,
         updatedAt: now,
       },
-    ]).run()
+    ])
 
     await inMemoryDb.insert(schema.productCategories).values({
       id: categoryId,
@@ -407,7 +407,7 @@ describe("Full procurement workflow integration", () => {
       slug: "multi-proveedor",
       isEpp: false,
       sortOrder: 2,
-    }).run()
+    })
 
     await inMemoryDb.insert(schema.products).values([
       {
@@ -430,7 +430,7 @@ describe("Full procurement workflow integration", () => {
         createdAt: now,
         updatedAt: now,
       },
-    ]).run()
+    ])
 
     await inMemoryDb.insert(schema.purchaseRequests).values({
       id: requestId,
@@ -442,7 +442,7 @@ describe("Full procurement workflow integration", () => {
       status: "approved",
       createdAt: now,
       updatedAt: now,
-    }).run()
+    })
 
     await inMemoryDb.insert(schema.purchaseRequestItems).values([
       {
@@ -467,7 +467,7 @@ describe("Full procurement workflow integration", () => {
         createdAt: now,
         updatedAt: now,
       },
-    ]).run()
+    ])
 
     const orderIds = await createOrdersBySupplier({
       worksiteId,

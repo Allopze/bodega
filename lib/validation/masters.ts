@@ -34,6 +34,7 @@ export const userCreateSchema = z.object({
   email:    z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
   isActive: z.coerce.boolean().default(true),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
+  permissionIds: z.array(z.string()).default([]),
   worksiteAssignments: z.array(
     z.object({
       worksiteId: z.string(),
@@ -49,6 +50,7 @@ export const userUpdateSchema = z.object({
   password: z.string().min(8, "Mínimo 8 caracteres").or(z.literal("")).optional(),
   isActive: z.coerce.boolean().default(true),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
+  permissionIds: z.array(z.string()).default([]),
   worksiteAssignments: z.array(
     z.object({
       worksiteId: z.string(),

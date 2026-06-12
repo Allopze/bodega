@@ -10,6 +10,7 @@ import { Pagination } from "@/components/ui/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SkeletonRow } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { useSafeShellHeader } from "@/components/layout/header-context"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,10 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   rows:         T[]
   /** Keys to include in full-text search */
   searchKeys:   (keyof T)[]
+  /** Explicit search query — when provided, the DataTable uses this value instead of the header context search */
+  search?:      string
+  /** Callback when internal search changes (only used when search prop is provided) */
+  onSearchChange?: (value: string) => void
   /** Render a <tr> for a given row. Receives the row + the columns list. */
   renderRow:    (row: T, index: number) => React.ReactNode
   /** Optional compact rendering for narrow screens. */
@@ -52,6 +57,8 @@ export function DataTable<T extends Record<string, unknown>>({
   columns,
   rows,
   searchKeys,
+  search,
+  onSearchChange,
   renderRow,
   renderMobileCard,
   emptyTitle = "Sin resultados",
@@ -63,22 +70,26 @@ export function DataTable<T extends Record<string, unknown>>({
   actions,
   loading = false,
 }: DataTableProps<T>) {
-  const [search,  setSearch]  = React.useState("")
+  const { searchQuery } = useSafeShellHeader()
+
+  // If explicit search prop is given, use it. Otherwise, fall back to header context search.
+  const currentSearch = search !== undefined ? search : searchQuery
+  const hasExplicitSearch = search !== undefined
   const [sortKey, setSortKey] = React.useState<string | null>(null)
   const [sortDir, setSortDir] = React.useState<SortDir>(null)
   const [page,    setPage]    = React.useState(1)
 
   // ── Filter ──────────────────────────────────────────────────────────────────
   const filtered = React.useMemo(() => {
-    if (!search.trim()) return rows
-    const q = search.toLowerCase()
+    if (!currentSearch.trim()) return rows
+    const q = currentSearch.toLowerCase()
     return rows.filter((row) =>
       searchKeys.some((k) => {
         const val = row[k]
         return val != null && String(val).toLowerCase().includes(q)
       })
     )
-  }, [rows, search, searchKeys])
+  }, [rows, currentSearch, searchKeys])
 
   // ── Sort ────────────────────────────────────────────────────────────────────
   const sorted = React.useMemo(() => {
@@ -119,21 +130,27 @@ export function DataTable<T extends Record<string, unknown>>({
 
   return (
     <div className={cn("flex flex-col", className)}>
-      {/* Toolbar */}
-      <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          type="search"
-          placeholder={searchPlaceholder}
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value)
-            setPage(1)
-          }}
-          className="h-8 text-xs sm:max-w-xs"
-          aria-label="Buscar en la tabla"
-        />
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-      </div>
+      {/* Toolbar — only shown when there's an explicit search input or actions */}
+      {(hasExplicitSearch || actions) && (
+        <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between">
+          {hasExplicitSearch ? (
+            <Input
+              type="search"
+              placeholder={searchPlaceholder}
+              value={search ?? ""}
+              onChange={(e) => {
+                onSearchChange?.(e.target.value)
+                setPage(1)
+              }}
+              className="h-8 text-xs sm:max-w-xs"
+              aria-label="Buscar en la tabla"
+            />
+          ) : (
+            <div />
+          )}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        </div>
+      )}
 
       {/* Table */}
       <TableRoot className={renderMobileCard ? "hidden md:block" : undefined}>

@@ -1,18 +1,18 @@
 import path from "node:path"
 import bcrypt from "bcryptjs"
-import Database from "better-sqlite3"
-import { drizzle } from "drizzle-orm/better-sqlite3"
-import { migrate } from "drizzle-orm/better-sqlite3/migrator"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import { hashInvitationToken } from "@/lib/auth/bootstrap"
 import { createPendingPasswordMarker, isPasswordSetupPending } from "@/lib/auth/password-setup"
 
-const sqlite = new Database(":memory:")
-sqlite.pragma("foreign_keys = ON")
-const inMemoryDb = drizzle(sqlite, { schema })
+const pg = new PGlite()
+const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
+// @ts-expect-error — PGlite is structurally compatible at runtime; postgres-js type differs only in result-type HKT
 testGlobal.__db = inMemoryDb
 
 vi.mock("@/db", () => ({
@@ -21,18 +21,18 @@ vi.mock("@/db", () => ({
   },
 }))
 
-migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+await migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
 
 import { setInitialPassword } from "@/app/(auth)/login/actions"
 
 describe("setInitialPassword", () => {
-  beforeEach(() => {
-    sqlite.prepare("delete from user_invitations").run()
-    sqlite.prepare("delete from users").run()
+  beforeEach(async () => {
+    await inMemoryDb.delete(schema.userInvitations)
+    await inMemoryDb.delete(schema.users)
   })
 
-  afterAll(() => {
-    sqlite.close()
+  afterAll(async () => {
+    await pg.close()
   })
 
   it("rejects password setup attempts without an invitation token", async () => {

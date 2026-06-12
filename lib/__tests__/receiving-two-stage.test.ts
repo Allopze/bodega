@@ -8,20 +8,20 @@
  *  - the OC status rollup is deterministic from item quantities and monotonic.
  */
 
-import Database from "better-sqlite3"
-import { drizzle } from "drizzle-orm/better-sqlite3"
-import { migrate } from "drizzle-orm/better-sqlite3/migrator"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import { nanoid } from "@/lib/id"
 
-// ── In-memory database & migrations ──────────────────────────────────────────
-const sqlite = new Database(":memory:")
-sqlite.pragma("foreign_keys = ON")
-const inMemoryDb = drizzle(sqlite, { schema })
+// ── In-memory PostgreSQL database & migrations ────────────────────────────────
+const pg = new PGlite()
+const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
+// @ts-expect-error — PGlite is structurally compatible at runtime; postgres-js type differs only in result-type HKT
 testGlobal.__db = inMemoryDb
 
 vi.mock("@/db", () => ({
@@ -30,7 +30,7 @@ vi.mock("@/db", () => ({
   },
 }))
 
-migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+await migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
 
 import { registerReceipt } from "@/lib/services/receiving"
 
@@ -52,7 +52,7 @@ beforeAll(async () => {
   })
 })
 
-afterAll(() => sqlite.close())
+afterAll(async () => pg.close())
 
 let ocCounter = 0
 /** Creates a fresh "sent" OC with the given item quantities; returns { orderId, itemIds }. */

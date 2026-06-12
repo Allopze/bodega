@@ -1,28 +1,41 @@
-import fs from "node:fs"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import path from "node:path"
-import Database from "better-sqlite3"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, afterAll } from "vitest"
+import { sql } from "drizzle-orm"
 
-function configuredDatabasePath() {
-  const databaseUrl = process.env.DATABASE_URL ?? "./db/chome.db"
-  return path.resolve(process.cwd(), databaseUrl)
-}
+const pg = new PGlite()
+const db = drizzle(pg)
+
+afterAll(async () => {
+  await pg.close()
+})
 
 describe("database schema consistency", () => {
-  it("has office receiving columns required by the runtime schema", () => {
-    const dbPath = configuredDatabasePath()
-    expect(fs.existsSync(dbPath), `${dbPath} should exist`).toBe(true)
+  it("has office receiving columns required by the runtime schema", async () => {
+    await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
 
-    const sqlite = new Database(dbPath, { readonly: true })
-    try {
-      const columns = sqlite
-        .prepare("pragma table_info(purchase_order_items)")
-        .all()
-        .map((column) => (column as { name: string }).name)
+    const result = await db.execute(sql`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'purchase_order_items'
+    `)
 
-      expect(columns).toContain("quantity_office_received")
-    } finally {
-      sqlite.close()
-    }
+    const columns = result.rows.map((row) => (row as { column_name: string }).column_name)
+    expect(columns).toContain("quantity_office_received")
+  })
+
+  it("has the user permissions join table required by direct RBAC grants", async () => {
+    await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+
+    const result = await db.execute(sql`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'user_permissions'
+    `)
+
+    const columns = result.rows.map((row) => (row as { column_name: string }).column_name)
+    expect(columns).toEqual(expect.arrayContaining(["user_id", "permission_id"]))
   })
 })

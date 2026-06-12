@@ -121,7 +121,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
                 worksiteName={worksiteName}
                 isMenuOpen={mobileOpen}
                 hidden={headerHidden}
-                className="sticky top-0 mx-3 md:mx-4 mb-4 z-10"
+                className="sticky top-0 mx-3 md:mx-4 mb-2 z-10"
               />
               {children}
             </main>

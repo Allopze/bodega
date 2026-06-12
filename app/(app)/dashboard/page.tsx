@@ -107,7 +107,7 @@ export default async function DashboardPage() {
   ])
   const tasks = buildWorkTasks(buildActor(session), snapshot)
   const visibleTasks = tasks.slice(0, 12)
-  const stockAlertCount = getCriticalStockAlertCount()
+  const stockAlertCount = await getCriticalStockAlertCount()
   const criticalTaskCount = tasks.filter((task) => task.priority === "critical").length
   const deliveryTaskCount = tasks.filter((task) => task.type === "warehouse_delivery").length
   const approvalTaskCount = tasks.filter((task) => task.type === "approval").length

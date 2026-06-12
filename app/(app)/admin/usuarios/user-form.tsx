@@ -15,6 +15,13 @@ import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { createUser, updateUser } from "./actions"
 
 interface Role    { id: string; name: string; label: string }
+interface Permission {
+  id: string
+  name: string
+  module: string
+  description: string | null
+  roleIds: string[]
+}
 interface Worksite { id: string; name: string; code: string }
 
 interface UserForEdit {
@@ -23,6 +30,7 @@ interface UserForEdit {
   email:      string
   isActive:   boolean
   roleIds:    string[]
+  permissionIds: string[]
   worksiteAssignments: { worksiteId: string; isPrimary: boolean }[]
 }
 
@@ -31,11 +39,13 @@ interface UserFormProps {
   onClose:    () => void
   editUser?:  UserForEdit | null
   allRoles:   Role[]
+  allPermissions: Permission[]
   allWorksites: Worksite[]
 }
 
 interface UserSelectionState {
   selectedRoles:     string[]
+  selectedPermissions: string[]
   selectedWsIds:     string[]
   primaryWorksiteId: string
 }
@@ -48,6 +58,7 @@ interface PendingInvite {
 type UserSelectionAction =
   | { type: "reset"; user?: UserForEdit | null }
   | { type: "toggle-role"; id: string }
+  | { type: "toggle-permission"; id: string }
   | { type: "toggle-worksite"; id: string }
   | { type: "set-primary"; id: string }
 
@@ -55,6 +66,7 @@ function getUserSelection(user?: UserForEdit | null): UserSelectionState {
   const selectedWsIds = user?.worksiteAssignments.map((a) => a.worksiteId) ?? []
   return {
     selectedRoles:     user?.roleIds ?? [],
+    selectedPermissions: user?.permissionIds ?? [],
     selectedWsIds,
     primaryWorksiteId: user?.worksiteAssignments.find((a) => a.isPrimary)?.worksiteId
       ?? selectedWsIds[0] ?? "",
@@ -71,6 +83,12 @@ function userSelectionReducer(state: UserSelectionState, action: UserSelectionAc
         : [...state.selectedRoles, action.id]
       return { ...state, selectedRoles }
     }
+    case "toggle-permission": {
+      const selectedPermissions = state.selectedPermissions.includes(action.id)
+        ? state.selectedPermissions.filter((permissionId) => permissionId !== action.id)
+        : [...state.selectedPermissions, action.id]
+      return { ...state, selectedPermissions }
+    }
     case "toggle-worksite": {
       const selectedWsIds = state.selectedWsIds.includes(action.id)
         ? state.selectedWsIds.filter((worksiteId) => worksiteId !== action.id)
@@ -85,7 +103,30 @@ function userSelectionReducer(state: UserSelectionState, action: UserSelectionAc
   }
 }
 
-export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: UserFormProps) {
+const MODULE_LABELS: Record<string, string> = {
+  admin: "Administración",
+  approvals: "Aprobaciones",
+  purchasing: "Compras",
+  receiving: "Recepción",
+  reports: "Reportes",
+  requests: "Solicitudes",
+  warehouse: "Bodega",
+}
+
+function getModuleLabel(module: string) {
+  return MODULE_LABELS[module] ?? module
+}
+
+function groupPermissions(permissions: Permission[]) {
+  return permissions.reduce<Array<{ module: string; permissions: Permission[] }>>((groups, permission) => {
+    const group = groups.find((item) => item.module === permission.module)
+    if (group) group.permissions.push(permission)
+    else groups.push({ module: permission.module, permissions: [permission] })
+    return groups
+  }, [])
+}
+
+export function UserForm({ open, onClose, editUser, allRoles, allPermissions, allWorksites }: UserFormProps) {
   const isEdit = !!editUser
 
   const action = isEdit ? updateUser : createUser
@@ -128,6 +169,10 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
     updateSelection({ type: "toggle-role", id })
   }
 
+  function togglePermission(id: string) {
+    updateSelection({ type: "toggle-permission", id })
+  }
+
   function toggleWorksite(id: string) {
     updateSelection({ type: "toggle-worksite", id })
   }
@@ -143,7 +188,8 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
     }
   }
 
-  const { selectedRoles, selectedWsIds, primaryWorksiteId } = selection
+  const { selectedRoles, selectedPermissions, selectedWsIds, primaryWorksiteId } = selection
+  const groupedPermissions = React.useMemo(() => groupPermissions(allPermissions), [allPermissions])
 
   return (
     <Sheet open={open} onOpenChange={(v) => {
@@ -224,6 +270,9 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
           {/* Hidden inputs for roles and worksite assignments */}
           {selectedRoles.map((rid) => (
             <input key={rid} type="hidden" name="roleIds" value={rid} />
+          ))}
+          {selectedPermissions.map((pid) => (
+            <input key={pid} type="hidden" name="permissionIds" value={pid} />
           ))}
           {selectedWsIds.map((wsId) => (
             <input key={wsId} type="hidden" name="worksiteId" value={wsId} />
@@ -306,6 +355,71 @@ export function UserForm({ open, onClose, editUser, allRoles, allWorksites }: Us
                     </button>
                   )
                 })}
+              </div>
+            </div>
+
+            {/* Permissions */}
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-eyebrow">
+                  Permisos
+                </p>
+                <span className="font-mono text-[10px] font-semibold uppercase text-[var(--color-text-subtle)]">
+                  {selectedPermissions.length} directos
+                </span>
+              </div>
+              {state.fieldErrors?.permissionIds?.[0] && (
+                <p className="text-xs text-[var(--color-danger)] mb-2">{state.fieldErrors.permissionIds[0]}</p>
+              )}
+              {groupedPermissions.length === 0 && (
+                <p className="text-xs text-[var(--color-text-subtle)]">No hay permisos registrados</p>
+              )}
+              <div className="space-y-3">
+                {groupedPermissions.map((group) => (
+                  <section key={group.module}>
+                    <div className="mb-1 flex items-center gap-2">
+                      <p className="text-xs font-medium text-[var(--color-text-muted)]">
+                        {getModuleLabel(group.module)}
+                      </p>
+                      <span className="h-px flex-1 bg-[var(--color-border)]" />
+                    </div>
+                    <div className="grid gap-1 sm:grid-cols-2">
+                      {group.permissions.map((permission) => {
+                        const inheritedByRole = permission.roleIds.some((roleId) => selectedRoles.includes(roleId))
+                        const directlyGranted = selectedPermissions.includes(permission.id)
+                        const checked = inheritedByRole || directlyGranted
+                        return (
+                          <label
+                            key={permission.id}
+                            className={[
+                              "flex min-h-12 items-start gap-2 rounded-[var(--radius)] border px-2.5 py-2",
+                              "transition-colors duration-[var(--duration-fast)]",
+                              inheritedByRole
+                                ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)]"
+                                : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
+                            ].join(" ")}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={inheritedByRole}
+                              onChange={() => togglePermission(permission.id)}
+                              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-primary)] disabled:opacity-70"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-mono text-[11px] font-medium text-[var(--color-text)]">
+                                {permission.name}
+                              </span>
+                              <span className="mt-0.5 block line-clamp-2 text-[11px] leading-snug text-[var(--color-text-subtle)]">
+                                {inheritedByRole ? "Incluido por rol" : permission.description ?? "Permiso directo"}
+                              </span>
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             </div>
 

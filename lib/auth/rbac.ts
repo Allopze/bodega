@@ -1,6 +1,6 @@
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { users, userRoles, roles, rolePermissions, permissions, worksiteUsers } from "@/db/schema"
+import { users, userRoles, roles, rolePermissions, permissions, userPermissions, worksiteUsers } from "@/db/schema"
 
 export interface UserRbacSnapshot {
   id: string
@@ -40,20 +40,37 @@ export async function getUserRbacById(
 
   const roleIds = userRoleRows.map((r) => r.roleId)
 
-  let permissionNames: string[] = []
-  if (roleIds.length > 0) {
-    const permsRows = await db
+  const rolePermissionRowsPromise = roleIds.length > 0
+    ? db
       .select({ permissionName: permissions.name })
       .from(rolePermissions)
       .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
       .where(inArray(rolePermissions.roleId, roleIds))
-    permissionNames = [...new Set(permsRows.map((p) => p.permissionName))]
-  }
+    : Promise.resolve([])
 
-  const wsRows = await db
+  const directPermissionRowsPromise = db
+    .select({ permissionName: permissions.name })
+    .from(userPermissions)
+    .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
+    .where(eq(userPermissions.userId, user.id))
+
+  const worksiteRowsPromise = db
     .select({ worksiteId: worksiteUsers.worksiteId, isPrimary: worksiteUsers.isPrimary })
     .from(worksiteUsers)
     .where(eq(worksiteUsers.userId, user.id))
+
+  const [rolePermissionRows, directPermissionRows, wsRows] = await Promise.all([
+    rolePermissionRowsPromise,
+    directPermissionRowsPromise,
+    worksiteRowsPromise,
+  ])
+
+  const permissionNames = [
+    ...new Set([
+      ...rolePermissionRows.map((p) => p.permissionName),
+      ...directPermissionRows.map((p) => p.permissionName),
+    ]),
+  ]
 
   const snapshot = {
     id: user.id,
@@ -95,4 +112,8 @@ export function applyRbacToToken(
   token.avatarColor = snapshot.avatarColor
   token.isActive = true
   return token
+}
+
+export function clearUserRbacCache(userId: string) {
+  rbacCache.delete(userId)
 }

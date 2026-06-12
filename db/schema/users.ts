@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
@@ -51,6 +51,14 @@ export const rolePermissions = pgTable("role_permissions", {
   uniqueIndex("role_permissions_role_permission_unique").on(table.roleId, table.permissionId),
 ])
 
+/* ── User ↔ Permission (direct grants) ───────────────────────────────────── */
+export const userPermissions = pgTable("user_permissions", {
+  userId:       text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  permissionId: text("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
+}, (table) => [
+  uniqueIndex("user_permissions_user_permission_unique").on(table.userId, table.permissionId),
+])
+
 /* ── User ↔ Role ─────────────────────────────────────────────────────────── */
 export const userRoles = pgTable("user_roles", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -70,9 +78,10 @@ export const worksiteUsers = pgTable("worksite_users", {
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const usersRelations = relations(users, ({ many }) => ({
-  userRoles:      many(userRoles),
-  worksiteUsers:  many(worksiteUsers),
-  invitations:    many(userInvitations),
+  userRoles:       many(userRoles),
+  userPermissions: many(userPermissions),
+  worksiteUsers:   many(worksiteUsers),
+  invitations:     many(userInvitations),
 }))
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -82,11 +91,17 @@ export const rolesRelations = relations(roles, ({ many }) => ({
 
 export const permissionsRelations = relations(permissions, ({ many }) => ({
   rolePermissions: many(rolePermissions),
+  userPermissions: many(userPermissions),
 }))
 
 export const userRolesRelations = relations(userRoles, ({ one }) => ({
   user: one(users, { fields: [userRoles.userId], references: [users.id] }),
   role: one(roles, { fields: [userRoles.roleId], references: [roles.id] }),
+}))
+
+export const userPermissionsRelations = relations(userPermissions, ({ one }) => ({
+  user: one(users, { fields: [userPermissions.userId], references: [users.id] }),
+  permission: one(permissions, { fields: [userPermissions.permissionId], references: [permissions.id] }),
 }))
 
 export const userInvitationsRelations = relations(userInvitations, ({ one }) => ({

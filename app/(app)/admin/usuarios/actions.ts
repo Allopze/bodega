@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache"
 import type { Session } from "next-auth"
-import { and, eq, ne } from "drizzle-orm"
+import { and, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { users, userRoles, worksiteUsers, roles, userInvitations } from "@/db/schema"
+import { users, userRoles, userPermissions, worksiteUsers, roles, permissions, userInvitations } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { generateInvitationToken, hashInvitationToken } from "@/lib/auth/bootstrap"
+import { clearUserRbacCache } from "@/lib/auth/rbac"
 import { createPendingPasswordMarker, displayNameFromEmail } from "@/lib/auth/password-setup"
 import { getAppBaseUrl, sendInvitationEmail } from "@/lib/email/smtp"
 import { userCreateSchema, userInvitationSchema, userUpdateSchema, type ActionState } from "@/lib/validation/masters"
@@ -119,6 +120,7 @@ export async function createUser(
     email:    formData.get("email"),
     isActive: formData.get("isActive") === "on",
     roleIds:  formData.getAll("roleIds"),
+    permissionIds: formData.getAll("permissionIds"),
     worksiteAssignments: buildWorksiteAssignments(formData),
   }
 
@@ -128,12 +130,15 @@ export async function createUser(
   }
 
   const d = parsed.data
+  const permissionIds = uniqueIds(d.permissionIds)
   const roleError = await validateRoleWorksiteRules(
     d.roleIds,
     d.worksiteAssignments,
     canManageAdministratorRole(session),
   )
   if (roleError) return roleError
+  const permissionError = await validatePermissionRules(permissionIds, canManageAdministratorRole(session))
+  if (permissionError) return permissionError
 
   // Check email uniqueness
   const existing = await db.query.users.findFirst({ where: eq(users.email, d.email) })
@@ -158,6 +163,9 @@ export async function createUser(
     })
     if (d.roleIds.length > 0) {
       await tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: id, roleId: rid })))
+    }
+    if (permissionIds.length > 0) {
+      await tx.insert(userPermissions).values(permissionIds.map((pid) => ({ userId: id, permissionId: pid })))
     }
     if (d.worksiteAssignments.length > 0) {
       await tx.insert(worksiteUsers).values(
@@ -199,9 +207,10 @@ export async function createUser(
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "create", entityType: "user", entityId: id,
-    newState: { name: displayName, email: d.email, roles: d.roleIds, passwordSetupPending: true, invitationId, smtpSent: !pendingInviteUrl },
+    newState: { name: displayName, email: d.email, roles: d.roleIds, permissions: permissionIds, passwordSetupPending: true, invitationId, smtpSent: !pendingInviteUrl },
   })
 
+  clearUserRbacCache(id)
   revalidatePath(REVALIDATE)
   return {
     ok: true,
@@ -225,6 +234,7 @@ export async function updateUser(
     email:    formData.get("email"),
     isActive: formData.get("isActive") === "on",
     roleIds:  formData.getAll("roleIds"),
+    permissionIds: formData.getAll("permissionIds"),
     worksiteAssignments: buildWorksiteAssignments(formData),
   }
 
@@ -234,6 +244,7 @@ export async function updateUser(
   }
 
   const d = parsed.data
+  const permissionIds = uniqueIds(d.permissionIds)
   // Load current state for audit diff
   const current = await db.query.users.findFirst({ where: eq(users.id, d.id) })
   if (!current) return { ok: false, message: "Usuario no encontrado" }
@@ -249,6 +260,8 @@ export async function updateUser(
     actorCanManageAdmins,
   )
   if (roleError) return roleError
+  const permissionError = await validatePermissionRules(permissionIds, actorCanManageAdmins)
+  if (permissionError) return permissionError
 
   // Check email uniqueness (excluding self)
   const emailConflict = await db.query.users.findFirst({ where: eq(users.email, d.email) })
@@ -270,6 +283,11 @@ export async function updateUser(
     if (d.roleIds.length > 0) {
       await tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: d.id, roleId: rid })))
     }
+    // Replace direct permission grants
+    await tx.delete(userPermissions).where(eq(userPermissions.userId, d.id))
+    if (permissionIds.length > 0) {
+      await tx.insert(userPermissions).values(permissionIds.map((pid) => ({ userId: d.id, permissionId: pid })))
+    }
     // Replace worksite assignments
     await tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, d.id))
     if (d.worksiteAssignments.length > 0) {
@@ -285,9 +303,10 @@ export async function updateUser(
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "update", entityType: "user", entityId: d.id,
     oldState: { name: current.name, email: current.email, isActive: current.isActive },
-    newState: { name: d.name, email: d.email, isActive: d.isActive, roles: d.roleIds },
+    newState: { name: d.name, email: d.email, isActive: d.isActive, roles: d.roleIds, permissions: permissionIds },
   })
 
+  clearUserRbacCache(d.id)
   revalidatePath(REVALIDATE)
   return { ok: true, message: `Usuario ${d.name} actualizado` }
 }
@@ -375,8 +394,44 @@ async function validateRoleWorksiteRules(
   return null
 }
 
+async function validatePermissionRules(
+  permissionIds: string[],
+  canManageAdminPermissions = false,
+): Promise<ActionState | null> {
+  const uniquePermissionIds = [...new Set(permissionIds)]
+  if (uniquePermissionIds.length === 0) return null
+
+  const selected = await db.query.permissions.findMany({
+    where: inArray(permissions.id, uniquePermissionIds),
+  })
+  if (selected.length !== uniquePermissionIds.length) {
+    return {
+      ok: false,
+      fieldErrors: {
+        permissionIds: ["Uno o más permisos seleccionados no existen"],
+      },
+    }
+  }
+
+  const includesAdminPermission = selected.some((permission) => permission.module === "admin")
+  if (includesAdminPermission && !canManageAdminPermissions) {
+    return {
+      ok: false,
+      fieldErrors: {
+        permissionIds: ["Solo un administrador puede asignar permisos de administración"],
+      },
+    }
+  }
+
+  return null
+}
+
 function canManageAdministratorRole(session: Session) {
   return session.user.roles.includes("administrador")
+}
+
+function uniqueIds(ids: string[]) {
+  return [...new Set(ids.filter((id) => id.length > 0))]
 }
 
 async function userHasAdministratorRole(userId: string) {

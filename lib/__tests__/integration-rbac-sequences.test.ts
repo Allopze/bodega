@@ -1,8 +1,8 @@
 /**
  * Integration tests for the most security-sensitive server-action paths
  * and the transactional code-sequence generator. These run against a
- * real in-memory SQLite database, so they exercise Drizzle SQL, the
- * uniqueness constraints, and the explicit `tx` plumbing that
+ * real in-memory PostgreSQL database (PGlite), so they exercise Drizzle SQL,
+ * the uniqueness constraints, and the explicit `tx` plumbing that
  * unit tests with mocks can't reach.
  *
  * What's covered:
@@ -12,93 +12,88 @@
  *  3. Reserved/unique pivot constraints added in 0002_integrity_indexes.sql
  */
 
-import Database from "better-sqlite3"
-import { drizzle } from "drizzle-orm/better-sqlite3"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
 import { afterEach, describe, expect, it } from "vitest"
 import { and, eq, sql } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import { nextCodeTx } from "@/lib/code-sequences"
+import type { Tx } from "@/db"
 
-let sqlite: Database.Database | null = null
+let pg: PGlite | null = null
 
-function makeDb() {
-  sqlite = new Database(":memory:")
-  sqlite.pragma("foreign_keys = ON")
-  sqlite.exec(`
+async function makeDb() {
+  pg = new PGlite()
+  await pg.exec(`
     CREATE TABLE roles (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      label TEXT NOT NULL,
-      description TEXT
+      id text PRIMARY KEY,
+      name text NOT NULL UNIQUE,
+      label text NOT NULL,
+      description text
     );
     CREATE TABLE users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      hashed_password TEXT NOT NULL,
-      avatar_color TEXT,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      id text PRIMARY KEY,
+      name text NOT NULL,
+      email text NOT NULL UNIQUE,
+      hashed_password text NOT NULL,
+      avatar_color text,
+      is_active boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE TABLE user_roles (
-      user_id TEXT NOT NULL,
-      role_id TEXT NOT NULL,
+      user_id text NOT NULL,
+      role_id text NOT NULL,
       PRIMARY KEY (user_id, role_id)
     );
     CREATE TABLE code_sequences (
-      prefix TEXT NOT NULL,
-      year INTEGER NOT NULL,
-      next_value INTEGER NOT NULL DEFAULT 1,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      prefix text NOT NULL,
+      year integer NOT NULL,
+      next_value integer NOT NULL DEFAULT 1,
+      updated_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (prefix, year)
     );
   `)
-  return drizzle(sqlite, { schema })
+  return drizzle(pg, { schema })
 }
 
-afterEach(() => {
-  sqlite?.close()
-  sqlite = null
+afterEach(async () => {
+  await pg?.close()
+  pg = null
 })
 
 // ── Code sequences under concurrent transactions ──────────────────────────
 
 describe("code sequences — concurrent transactions", () => {
-  it("issues unique, sequential codes even when many transactions race", () => {
-    const db = makeDb()
+  it("issues unique, sequential codes across sequential transactions", async () => {
+    const db = await makeDb()
     const N = 50
     const codes = new Set<string>()
 
-    // Each transaction increments both counters. The generator must
-    // never hand out the same value to two concurrent transactions —
-    // the PRIMARY KEY (prefix, year) and onConflictDoUpdate guarantee it.
-    // better-sqlite3 is synchronous, so we model concurrency by
-    // running N independent transactions back-to-back; the SQL-level
-    // uniqueness is what protects us under true concurrency.
+    // Each transaction increments both counters. The PRIMARY KEY (prefix, year)
+    // and onConflictDoUpdate guarantee uniqueness — tested with N sequential txns.
     for (let i = 0; i < N; i++) {
-      db.transaction((tx) => {
-        const sol = nextCodeTx(tx, "SOL", 2026)
-        const oc  = nextCodeTx(tx, "OC",  2026)
+      await db.transaction(async (tx) => {
+        const sol = await nextCodeTx(tx as unknown as Tx, "SOL", 2026)
+        const oc  = await nextCodeTx(tx as unknown as Tx, "OC",  2026)
         codes.add(sol)
         codes.add(oc)
       })
     }
 
     expect(codes.size).toBe(N * 2)
-    // No gaps at the start: first codes for 2026 are 0001, 0002, …
     expect(codes.has("SOL-2026-0001")).toBe(true)
     expect(codes.has("OC-2026-0001")).toBe(true)
     expect(codes.has("SOL-2026-0000")).toBe(false)
   })
 
-  it("isolates year buckets so a 2026 counter never feeds 2027", () => {
-    const db = makeDb()
-    const seen = db.transaction((tx) => [
-      nextCodeTx(tx, "SOL", 2026),
-      nextCodeTx(tx, "SOL", 2026),
-      nextCodeTx(tx, "SOL", 2027),
-      nextCodeTx(tx, "SOL", 2027),
+  it("isolates year buckets so a 2026 counter never feeds 2027", async () => {
+    const db = await makeDb()
+    const seen = await db.transaction(async (tx) => [
+      await nextCodeTx(tx as unknown as Tx, "SOL", 2026),
+      await nextCodeTx(tx as unknown as Tx, "SOL", 2026),
+      await nextCodeTx(tx as unknown as Tx, "SOL", 2027),
+      await nextCodeTx(tx as unknown as Tx, "SOL", 2027),
     ])
     expect(seen).toEqual([
       "SOL-2026-0001",
@@ -112,25 +107,23 @@ describe("code sequences — concurrent transactions", () => {
 // ── Last-active-administrator guard ──────────────────────────────────────
 
 describe("last-active-administrator guard (SQL filter)", () => {
-  function seedAdminAndMembers() {
-    const db = makeDb()
-    db.insert(schema.roles).values({ id: "rol-admin", name: "administrador", label: "Admin" }).run()
-    db.insert(schema.roles).values({ id: "rol-user",  name: "solicitante_faena", label: "Prevencionista faena" }).run()
-    db.insert(schema.users).values({ id: "u-1", name: "Admin 1", email: "a1@x.cl", hashedPassword: "x", isActive: true }).run()
-    db.insert(schema.users).values({ id: "u-2", name: "Admin 2", email: "a2@x.cl", hashedPassword: "x", isActive: true }).run()
-    db.insert(schema.users).values({ id: "u-3", name: "Admin 3 (inactive)", email: "a3@x.cl", hashedPassword: "x", isActive: false }).run()
-    db.insert(schema.userRoles).values({ userId: "u-1", roleId: "rol-admin" }).run()
-    db.insert(schema.userRoles).values({ userId: "u-2", roleId: "rol-admin" }).run()
-    db.insert(schema.userRoles).values({ userId: "u-3", roleId: "rol-admin" }).run()
+  async function seedAdminAndMembers() {
+    const db = await makeDb()
+    await db.insert(schema.roles).values({ id: "rol-admin", name: "administrador", label: "Admin" })
+    await db.insert(schema.roles).values({ id: "rol-user",  name: "solicitante_faena", label: "Prevencionista faena" })
+    await db.insert(schema.users).values({ id: "u-1", name: "Admin 1", email: "a1@x.cl", hashedPassword: "x", isActive: true })
+    await db.insert(schema.users).values({ id: "u-2", name: "Admin 2", email: "a2@x.cl", hashedPassword: "x", isActive: true })
+    await db.insert(schema.users).values({ id: "u-3", name: "Admin 3 (inactive)", email: "a3@x.cl", hashedPassword: "x", isActive: false })
+    await db.insert(schema.userRoles).values({ userId: "u-1", roleId: "rol-admin" })
+    await db.insert(schema.userRoles).values({ userId: "u-2", roleId: "rol-admin" })
+    await db.insert(schema.userRoles).values({ userId: "u-3", roleId: "rol-admin" })
     return db
   }
 
-  it("counts only ACTIVE administrators distinct from the target", () => {
-    const db = seedAdminAndMembers()
+  it("counts only ACTIVE administrators distinct from the target", async () => {
+    const db = await seedAdminAndMembers()
 
-    // Target u-1 is an active admin. With u-2 also active the guard
-    // should permit deactivation.
-    const otherActive = db
+    const otherActive = await db
       .select({ id: schema.users.id })
       .from(schema.users)
       .innerJoin(schema.userRoles, eq(schema.userRoles.userId, schema.users.id))
@@ -139,21 +132,18 @@ describe("last-active-administrator guard (SQL filter)", () => {
         and(
           eq(schema.roles.name, "administrador"),
           eq(schema.users.isActive, true),
-          // exclude target
           sql`${schema.users.id} != ${"u-1"}`,
         ),
       )
-      .all()
 
     expect(otherActive.map((r) => r.id).sort()).toEqual(["u-2"])
   })
 
-  it("returns zero other-active-admins when target is the only active admin", () => {
-    const db = seedAdminAndMembers()
-    // Deactivate u-2 to leave u-1 as the only active admin.
-    db.update(schema.users).set({ isActive: false }).where(eq(schema.users.id, "u-2")).run()
+  it("returns zero other-active-admins when target is the only active admin", async () => {
+    const db = await seedAdminAndMembers()
+    await db.update(schema.users).set({ isActive: false }).where(eq(schema.users.id, "u-2"))
 
-    const otherActive = db
+    const otherActive = await db
       .select({ id: schema.users.id })
       .from(schema.users)
       .innerJoin(schema.userRoles, eq(schema.userRoles.userId, schema.users.id))
@@ -165,17 +155,15 @@ describe("last-active-administrator guard (SQL filter)", () => {
           sql`${schema.users.id} != ${"u-1"}`,
         ),
       )
-      .all()
 
     expect(otherActive).toHaveLength(0)
   })
 
-  it("ignores inactive admins even when they have the role assigned", () => {
-    const db = seedAdminAndMembers()
-    // Deactivate all but u-1, then mark u-3 (inactive) as a real admin.
-    db.update(schema.users).set({ isActive: false }).where(eq(schema.users.id, "u-2")).run()
+  it("ignores inactive admins even when they have the role assigned", async () => {
+    const db = await seedAdminAndMembers()
+    await db.update(schema.users).set({ isActive: false }).where(eq(schema.users.id, "u-2"))
 
-    const otherActive = db
+    const otherActive = await db
       .select({ id: schema.users.id })
       .from(schema.users)
       .innerJoin(schema.userRoles, eq(schema.userRoles.userId, schema.users.id))
@@ -187,9 +175,7 @@ describe("last-active-administrator guard (SQL filter)", () => {
           sql`${schema.users.id} != ${"u-1"}`,
         ),
       )
-      .all()
 
-    // u-3 is an admin (role) but inactive. The query must not include it.
     expect(otherActive.find((r) => r.id === "u-3")).toBeUndefined()
   })
 })
@@ -197,33 +183,29 @@ describe("last-active-administrator guard (SQL filter)", () => {
 // ── Pivot uniqueness (the 0002 migration) ────────────────────────────────
 
 describe("integrity constraints (0002 migration parity)", () => {
-  it("rejects a duplicate user/role assignment", () => {
-    const db = makeDb()
-    db.insert(schema.roles).values({ id: "r1", name: "administrador", label: "Admin" }).run()
-    db.insert(schema.users).values({ id: "u1", name: "A", email: "a@x.cl", hashedPassword: "x" }).run()
-    db.insert(schema.userRoles).values({ userId: "u1", roleId: "r1" }).run()
-    expect(() =>
-      db.insert(schema.userRoles).values({ userId: "u1", roleId: "r1" }).run(),
-    ).toThrow(/UNIQUE/i)
+  it("rejects a duplicate user/role assignment", async () => {
+    await makeDb()
+    await pg!.exec(`INSERT INTO roles (id, name, label) VALUES ('r1', 'administrador', 'Admin')`)
+    await pg!.exec(`INSERT INTO users (id, name, email, hashed_password) VALUES ('u1', 'A', 'a@x.cl', 'x')`)
+    await pg!.exec(`INSERT INTO user_roles (user_id, role_id) VALUES ('u1', 'r1')`)
+    await expect(
+      pg!.exec(`INSERT INTO user_roles (user_id, role_id) VALUES ('u1', 'r1')`),
+    ).rejects.toThrow(/duplicate key/i)
   })
 
-  it("rejects a duplicate (userId, worksiteId) assignment", () => {
-    const db = makeDb()
-    db.insert(schema.users).values({ id: "u1", name: "A", email: "a@x.cl", hashedPassword: "x" }).run()
-    db.insert(schema.userRoles).values({ userId: "u1", roleId: "ignored" }).catch(() => undefined)
-    // The schema is minimal here; emulate the unique constraint via raw SQL
-    // because worksite_users isn't part of this lightweight harness.
-    sqlite!.exec(`
+  it("rejects a duplicate (userId, worksiteId) assignment", async () => {
+    await makeDb()
+    await pg!.exec(`
       CREATE TABLE worksite_users (
-        user_id TEXT NOT NULL,
-        worksite_id TEXT NOT NULL,
-        is_primary INTEGER NOT NULL DEFAULT 0,
+        user_id text NOT NULL,
+        worksite_id text NOT NULL,
+        is_primary boolean NOT NULL DEFAULT false,
         UNIQUE (user_id, worksite_id)
       );
     `)
-    sqlite!.prepare("INSERT INTO worksite_users (user_id, worksite_id) VALUES (?, ?)").run("u1", "w1")
-    expect(() =>
-      sqlite!.prepare("INSERT INTO worksite_users (user_id, worksite_id) VALUES (?, ?)").run("u1", "w1"),
-    ).toThrow(/UNIQUE/i)
+    await pg!.exec(`INSERT INTO worksite_users (user_id, worksite_id) VALUES ('u1', 'w1')`)
+    await expect(
+      pg!.exec(`INSERT INTO worksite_users (user_id, worksite_id) VALUES ('u1', 'w1')`),
+    ).rejects.toThrow(/duplicate key/i)
   })
 })
