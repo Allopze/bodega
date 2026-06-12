@@ -10,6 +10,7 @@ import bcrypt from "bcryptjs"
 import { loadEnvConfig } from "@next/env"
 import * as schema from "./schema"
 import { eq } from "drizzle-orm"
+import { loadSeedWorkerData } from "./seed/workers"
 
 loadEnvConfig(process.cwd())
 
@@ -317,6 +318,44 @@ async function main() {
   await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, adminId))
   await db.insert(schema.userRoles).values({ userId: adminId, roleId: "rol-admin" })
 
+  /* ── Faenas y trabajadores desde libros de remuneraciones ───────────── */
+  const seedWorkerData = loadSeedWorkerData()
+  for (const worksite of seedWorkerData.worksites) {
+    await db.insert(schema.worksites).values({
+      ...worksite,
+      isActive: true,
+    }).onConflictDoUpdate({
+      target: schema.worksites.id,
+      set: {
+        name: worksite.name,
+        code: worksite.code,
+        isActive: true,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+  }
+
+  for (const worker of seedWorkerData.workers) {
+    await db.insert(schema.workers).values({
+      id: worker.id,
+      rut: worker.rut,
+      firstName: worker.firstName,
+      lastName: worker.lastName,
+      position: null,
+      worksiteId: worker.worksiteId,
+      isActive: true,
+    }).onConflictDoUpdate({
+      target: schema.workers.rut,
+      set: {
+        firstName: worker.firstName,
+        lastName: worker.lastName,
+        position: null,
+        worksiteId: worker.worksiteId,
+        isActive: true,
+      },
+    })
+  }
+
   /* ── EPP catalog from supplier spreadsheet ───────────────────────────── */
   await db.insert(schema.productCategories).values(EPP_CATEGORY).onConflictDoUpdate({
     target: schema.productCategories.id,
@@ -419,8 +458,10 @@ async function main() {
   console.log(`    ${adminEmail}`)
   console.log("")
   console.log("  La contraseña viene de SEED_ADMIN_PASSWORD; si no se define, usa chome2026.")
+  console.log(`  Faenas cargadas: ${seedWorkerData.worksites.length}.`)
+  console.log(`  Trabajadores cargados: ${seedWorkerData.workers.length} (${seedWorkerData.skippedDuplicateRuts} RUT duplicado omitido).`)
   console.log(`  Catálogo EPP cargado: ${EPP_CATALOG_ITEMS.length} productos, ${EPP_SUPPLIERS.length} proveedores.`)
-  console.log("  No se cargaron faenas, stock ni solicitudes demo.")
+  console.log("  No se cargaron stock ni solicitudes demo.")
 }
 
 main()

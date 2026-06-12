@@ -49,7 +49,7 @@ test("admin: crear producto con categoría, verificarlo en catálogo", async ({ 
   await expect(page.getByText("Producto Secundario E2E")).toBeVisible()
 })
 
-test("admin: crear usuario con rol prevencionista faena, verificar login", async ({ page, browser }) => {
+test("admin: crear usuario con rol prevencionista faena, verificar login", async ({ page }) => {
   await login(page)
 
   await page.goto("/admin/usuarios")
@@ -60,7 +60,6 @@ test("admin: crear usuario con rol prevencionista faena, verificar login", async
   await page.getByLabel("Nombre").fill("Trabajador E2E")
   await page.getByLabel("Correo electrónico").fill("trabajador@e2e.chome.cl")
 
-  const authSecret = process.env.AUTH_SECRET ?? "test-secret-do-not-commit"
   await page.getByRole("button", { name: /enviar invitación/i }).click()
 
   await expect(page.getByText(/invitación/i)).toBeVisible({ timeout: 10_000 })

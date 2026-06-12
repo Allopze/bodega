@@ -1,5 +1,5 @@
 import type { InventoryMovementWithRelations } from "./types"
-import { formatQty, formatDate } from "@/lib/utils"
+import { formatDate } from "@/lib/utils"
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   ingreso_oc:         "Ingreso OC",

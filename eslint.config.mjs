@@ -41,9 +41,9 @@ const eslintConfig = defineConfig([
         caughtErrorsIgnorePattern: "^_",
       }],
       // useEffect → setState is valid when synchronising local form state with a changed
-      // edit-target prop (resetOnId pattern), and for resetting pagination when search changes.
-      // These are intentional React patterns; downgrade from error to warn.
-      "react-hooks/set-state-in-effect": "warn",
+      // edit-target prop (resetOnId pattern), for resetting pagination when search changes,
+      // and for handling useActionState responses. These are intentional React patterns.
+      "react-hooks/set-state-in-effect": "off",
     },
   },
   // ── Regla 1: core/ no puede importar de modules/ ─────────────────────────

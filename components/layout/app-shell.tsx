@@ -3,6 +3,7 @@
 import * as React from "react"
 import type { Session } from "next-auth"
 import { cn } from "@/lib/utils"
+import { useHideOnScroll } from "@/lib/hooks/use-hide-on-scroll"
 import { Sidebar } from "./sidebar"
 import { TopBar } from "./top-bar"
 
@@ -51,6 +52,9 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
   }
 
   const showDrawer = mobileOpen || isClosing
+
+  const mainRef = React.useRef<HTMLElement>(null)
+  const headerHidden = useHideOnScroll(mainRef)
 
   return (
     <div className="h-[100dvh] bg-[var(--color-bg)] p-0 lg:p-3 text-text">
@@ -104,6 +108,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
 
           {/* Main scrolls independently; panel stays fixed */}
           <main
+            ref={mainRef}
             className="flex-1 min-w-0 overflow-y-auto bg-[var(--color-bg)]"
             id="main-content"
             tabIndex={-1}
@@ -113,7 +118,8 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
               onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
               worksiteName={worksiteName}
               isMenuOpen={mobileOpen}
-              className="sticky top-3 mt-3 mx-3 md:mx-4 mb-4 z-10"
+              hidden={headerHidden}
+              className="sticky top-0 mx-3 md:mx-4 mb-4 z-10"
             />
             {children}
           </main>

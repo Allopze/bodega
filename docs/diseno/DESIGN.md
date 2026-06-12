@@ -513,7 +513,7 @@ Las órdenes de compra tienen layout de impresión dedicado:
 
 ## Hallazgos de auditoría
 
-La auditoría UI/UX completa está en `UI_UX_AUDIT.md`. Resumen de issues conocidos:
+La auditoría UI/UX completa está en `../auditoria/UI_UX_AUDIT.md`. Resumen de issues conocidos:
 
 ### Alta severidad (6)
 1. Colores hardcodeados `oklch()` en trazabilidad — bypassean tokens
@@ -532,7 +532,7 @@ La auditoría UI/UX completa está en `UI_UX_AUDIT.md`. Resumen de issues conoci
 - Target táctil pequeño en close button de diálogos
 - Sin validación de precios vacíos en OC form
 
-Para detalles completos de cada hallazgo y cambios sugeridos, ver `UI_UX_AUDIT.md`.
+Para detalles completos de cada hallazgo y cambios sugeridos, ver `../auditoria/UI_UX_AUDIT.md`.
 
 ---
 

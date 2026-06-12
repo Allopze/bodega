@@ -3,7 +3,6 @@ import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { DataTable } from "@/components/admin/data-table"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { EmptyState } from "@/components/ui/empty-state"
 
 const COLUMNS = [
   { key: "name", label: "Nombre", sortable: true },

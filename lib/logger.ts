@@ -21,25 +21,21 @@ function formatArgs(args: unknown[]): string[] {
 export const logger = {
   debug(...args: unknown[]) {
     if (!shouldLog("debug")) return
-    // eslint-disable-next-line no-console
     console.debug(PREFIX, ...formatArgs(args))
   },
 
   info(...args: unknown[]) {
     if (!shouldLog("info")) return
-    // eslint-disable-next-line no-console
     console.info(PREFIX, ...formatArgs(args))
   },
 
   warn(...args: unknown[]) {
     if (!shouldLog("warn")) return
-    // eslint-disable-next-line no-console
     console.warn(PREFIX, ...formatArgs(args))
   },
 
   error(...args: unknown[]) {
     if (!shouldLog("error")) return
-    // eslint-disable-next-line no-console
     console.error(PREFIX, ...formatArgs(args))
   },
 }

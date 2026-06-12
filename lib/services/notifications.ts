@@ -229,7 +229,6 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
 export async function cleanupOldNotifications(days = 90): Promise<number> {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
-  const cutoffStr = cutoff.toISOString()
 
   const result = db
     .delete(notifications)

@@ -27,6 +27,8 @@ interface TopBarProps {
   className?:    string
   isMenuOpen?:   boolean
   worksiteName?: string
+  /** When true, slides the pill out of view above the viewport clip. */
+  hidden?:       boolean
 }
 
 export function TopBar({
@@ -35,6 +37,7 @@ export function TopBar({
   className,
   isMenuOpen = false,
   worksiteName,
+  hidden = false,
 }: TopBarProps) {
   const [isSigningOut, setIsSigningOut] = React.useState(false)
   const pathname = usePathname()
@@ -63,6 +66,11 @@ export function TopBar({
       "flex items-center h-[3.25rem] px-4 md:px-5 gap-3",
       "bg-[var(--color-surface)] rounded-full",
       "border border-[var(--color-border)] shadow-[var(--shadow-md)]",
+      // Auto-hide: slide out above the container's overflow clip, fade to 0.
+      "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",
+      hidden
+        ? "-translate-y-[calc(100%+1rem)] opacity-0 pointer-events-none"
+        : "translate-y-0 opacity-100",
       className,
     )}>
       <div className="flex items-center gap-2 lg:hidden">
