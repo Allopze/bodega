@@ -28,6 +28,48 @@ Documento técnico completo de la arquitectura del sistema.
 
 ---
 
+## Arquitectura modular
+
+El sistema usa un **monolito modular** con registry central.
+Ver [ADR 0001](../adr/0001-monolito-modular.md) para la decisión completa.
+
+### Diagrama de dependencias
+
+```
+db/schema/ ←── core/ ←── modules/<nombre>/ ←── app/(app)/<ruta>/
+                    ↖────────────────────── components/
+```
+
+Las flechas apuntan en la dirección "puede importar de".
+`core/` nunca importa de `modules/`. Los módulos nunca importan internals de otros módulos.
+
+### Añadir un módulo nuevo
+
+1. Crear `modules/<nombre>/manifest.ts` con `{ id, permissions, nav, defaultGrants? }`
+2. Agregar **una línea** en `modules/registry.ts`: `import { miModulo } from "@/modules/<nombre>/manifest"`
+3. Añadirlo al array `registry`
+4. Crear `schema.ts`, `validation.ts`, `actions/`, `services/`, `index.ts`
+
+Los permisos, la navegación del sidebar y el seed RBAC se derivan automáticamente.
+
+### Módulos registrados
+
+| ID | Permisos | Descripción |
+|---|---|---|
+| `admin` | 7 | Usuarios, faenas, productos, configuración, auditoría |
+| `requests` | 4 | Solicitudes de compra |
+| `approvals` | 1 | Aprobaciones de ítems |
+| `purchasing` | 4 | Órdenes de compra |
+| `receiving` | 3 | Recepción de mercadería |
+| `warehouse` | 3 | Stock y movimientos |
+| `deliveries` | 0 | Entregas (usa warehouse:register_movement) |
+| `traceability` | 0 | Vista de trazabilidad (usa requests:view_all) |
+| `reports` | 1 | Reportes y exportaciones |
+
+**Total: 23 permisos** — derivados automáticamente del registry.
+
+---
+
 ## Estructura del proyecto
 
 ```
