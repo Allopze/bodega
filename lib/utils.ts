@@ -34,24 +34,34 @@ export function toCode(str: string): string {
 
 /** Format a date in es-CL locale */
 export function formatDate(date: Date | string | number): string {
-  const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date
-  return new Intl.DateTimeFormat("es-CL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(d)
+  const d = coerceDate(date)
+  return [
+    pad2(d.getDate()),
+    pad2(d.getMonth() + 1),
+    d.getFullYear(),
+  ].join("-")
 }
 
 /** Format datetime in es-CL locale */
 export function formatDateTime(date: Date | string | number): string {
-  const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date
-  return new Intl.DateTimeFormat("es-CL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d)
+  const d = coerceDate(date)
+  return `${formatDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+function coerceDate(date: Date | string | number): Date {
+  if (date instanceof Date) return date
+  if (typeof date === "string") {
+    const plainDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+    if (plainDate) {
+      const [, year, month, day] = plainDate
+      return new Date(Number(year), Number(month) - 1, Number(day))
+    }
+  }
+  return new Date(date)
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0")
 }
 
 /** Convert a string to title-case (each word capitalized). */

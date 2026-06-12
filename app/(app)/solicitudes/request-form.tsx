@@ -20,6 +20,7 @@ import { saveDraft, submitRequest, cancelRequest } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { ProductPicker } from "./product-picker"
 import type { ActionState } from "@/lib/validation/operations"
+import { formatDate } from "@/lib/utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -306,6 +307,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
   const urgencyLabel = URGENCY_OPTS.find((option) => option.value === urgency)?.label ?? urgency
   const worksiteLabel = worksites.find((worksite) => worksite.id === worksiteId)?.name ?? "Sin faena"
   const missingItems = buildRequestSummaryIssues({ worksiteId, requiredDate, items })
+  const statusLabel = editRequest ? requestStatusLabel(editRequest.status) : "Borrador"
 
   return (
     <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
@@ -507,7 +509,9 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text)]">Resumen</h2>
             <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
-              Revisa la solicitud antes de enviarla.
+              {isDraft
+                ? "Revisa la solicitud antes de enviarla."
+                : "Consulta el estado y los datos registrados."}
             </p>
           </div>
           <span className="rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2 py-1 text-xs font-medium text-[var(--color-text-muted)]">
@@ -519,14 +523,21 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
           <SummaryLine label="Faena" value={worksiteLabel} />
           <SummaryLine label="Tipo" value={requestTypeLabel} />
           <SummaryLine label="Urgencia" value={urgencyLabel} />
-          <SummaryLine label="Fecha requerida" value={requiredDate || "Pendiente"} muted={!requiredDate} />
+          <SummaryLine label="Fecha requerida" value={requiredDate ? formatDate(requiredDate) : "Pendiente"} muted={!requiredDate} />
+          {!isDraft && <SummaryLine label="Estado" value={statusLabel} />}
         </dl>
 
         <div className="mt-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
           <p className="text-xs font-medium text-[var(--color-text)]">
-            {missingItems.length === 0 ? "Listo para enviar" : "Pendientes"}
+            {isDraft
+              ? (missingItems.length === 0 ? "Listo para enviar" : "Pendientes")
+              : statusLabel}
           </p>
-          {missingItems.length === 0 ? (
+          {!isDraft ? (
+            <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+              Esta solicitud ya fue enviada y se muestra en modo consulta.
+            </p>
+          ) : missingItems.length === 0 ? (
             <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
               Los campos requeridos y los ítems tienen la información mínima.
             </p>
@@ -544,6 +555,21 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
       </aside>
     </div>
   )
+}
+
+function requestStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    draft: "Borrador",
+    submitted: "Enviada",
+    approved: "Aprobada",
+    partially_approved: "Aprobada parcial",
+    rejected: "Rechazada",
+    in_purchase: "En OC",
+    closed: "Cerrada",
+    cancelled: "Cancelada",
+    returned: "Devuelta",
+  }
+  return labels[status] ?? status
 }
 
 function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {

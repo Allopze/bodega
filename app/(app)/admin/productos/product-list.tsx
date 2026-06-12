@@ -222,17 +222,19 @@ export function ProductList({ products, categories, allSuppliers }: {
               <Plus size={12} />Nueva categoría
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {categories.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => openEditCat(c)}
-                className="group flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-[var(--radius-full)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                className="group flex items-center justify-between w-full text-left gap-2 px-4 py-3 text-sm rounded-[var(--radius-md)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
               >
-                <span className="text-[var(--color-text)]">{c.name}</span>
-                {c.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
-                <PencilSimple size={11} className="text-[var(--color-text-subtle)] group-hover:text-[var(--color-primary)] transition-colors" />
+                <span className="text-[var(--color-text)] truncate">{c.name}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {c.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
+                  <PencilSimple size={14} className="text-[var(--color-text-subtle)] group-hover:text-[var(--color-primary)] transition-colors" />
+                </div>
               </button>
             ))}
           </div>

@@ -52,3 +52,4 @@ next-env.d.ts
 .commandcode/taste/._taste.md
 .commandcode/design/review-report.html
 /audit
+/ui-audit
