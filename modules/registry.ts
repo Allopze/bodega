@@ -10,15 +10,15 @@
 
 import type { ModuleManifest } from "@/core/module-kit"
 
-import { adminModule } from "@/modules/admin/manifest"
-// import { requestsModule }    from "@/modules/requests/manifest"
-// import { approvalsModule }   from "@/modules/approvals/manifest"
-// import { purchasingModule }  from "@/modules/purchasing/manifest"
-// import { receivingModule }   from "@/modules/receiving/manifest"
-// import { warehouseModule }   from "@/modules/warehouse/manifest"
-// import { deliveriesModule }  from "@/modules/deliveries/manifest"
-// import { tracingModule }     from "@/modules/traceability/manifest"
-// import { reportsModule }     from "@/modules/reports/manifest"
+import { adminModule }        from "@/modules/admin/manifest"
+import { requestsModule }     from "@/modules/requests/manifest"
+import { approvalsModule }    from "@/modules/approvals/manifest"
+import { purchasingModule }   from "@/modules/purchasing/manifest"
+import { receivingModule }    from "@/modules/receiving/manifest"
+import { warehouseModule }    from "@/modules/warehouse/manifest"
+import { deliveriesModule }   from "@/modules/deliveries/manifest"
+import { traceabilityModule } from "@/modules/traceability/manifest"
+import { reportsModule }      from "@/modules/reports/manifest"
 
 /**
  * Registry central — array `as const` de todos los módulos registrados.
@@ -28,9 +28,19 @@ import { adminModule } from "@/modules/admin/manifest"
  */
 export const registry = [
   adminModule,
-  // requestsModule,
-  // approvalsModule,
-  // ...
+  requestsModule,
+  approvalsModule,
+  purchasingModule,
+  receivingModule,
+  warehouseModule,
+  deliveriesModule,
+  traceabilityModule,
+  reportsModule,
+  // ── Prevención de riesgos (próximas entregas) ──────────────────────────
+  // incidentesModule,
+  // inspeccionesModule,
+  // iperModule,
+  // capacitacionesModule,
 ] as const satisfies readonly ModuleManifest[]
 
 export type Registry = typeof registry
