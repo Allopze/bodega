@@ -1,29 +1,33 @@
-import fs from "node:fs"
 import path from "node:path"
-import Database from "better-sqlite3"
+import postgres from "postgres"
+import { drizzle } from "drizzle-orm/postgres-js"
+import { migrate } from "drizzle-orm/postgres-js/migrator"
 import bcrypt from "bcryptjs"
-import { drizzle } from "drizzle-orm/better-sqlite3"
-import { migrate } from "drizzle-orm/better-sqlite3/migrator"
+import { sql } from "drizzle-orm"
 import * as schema from "../db/schema"
 
-const dbPath = process.env.DATABASE_URL ?? "./.tmp/e2e.sqlite"
-const resolvedDbPath = path.resolve(process.cwd(), dbPath)
+const dbUrl = process.env.DATABASE_URL
+if (!dbUrl) throw new Error("DATABASE_URL is required for E2E setup")
 
-fs.mkdirSync(path.dirname(resolvedDbPath), { recursive: true })
-for (const suffix of ["", "-wal", "-shm"]) {
-  const file = `${resolvedDbPath}${suffix}`
-  if (fs.existsSync(file)) fs.rmSync(file)
-}
-
-const sqlite = new Database(resolvedDbPath)
-sqlite.pragma("journal_mode = WAL")
-sqlite.pragma("foreign_keys = ON")
-
-const db = drizzle(sqlite, { schema })
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
 async function main() {
-  migrate(db, { migrationsFolder })
+  // Drop and recreate the public schema to start from a clean slate
+  const setupClient = postgres(dbUrl!, { max: 1 })
+  const setupDb = drizzle(setupClient)
+  await setupDb.execute(sql`DROP SCHEMA public CASCADE`)
+  await setupDb.execute(sql`CREATE SCHEMA public`)
+  await setupDb.execute(sql`GRANT ALL ON SCHEMA public TO PUBLIC`)
+  await setupClient.end()
+
+  // Run migrations
+  const migrationClient = postgres(dbUrl!, { max: 1 })
+  await migrate(drizzle(migrationClient), { migrationsFolder })
+  await migrationClient.end()
+
+  // Insert test fixtures
+  const client = postgres(dbUrl!, { max: 1 })
+  const db = drizzle(client, { schema })
 
   const password = await bcrypt.hash("chome2026", 10)
   const now = new Date().toISOString()
@@ -126,11 +130,11 @@ async function main() {
     isPreferred: true,
     lastUpdated: now,
   })
-  sqlite.close()
+
+  await client.end()
 }
 
 main().catch((error) => {
   console.error(error)
-  sqlite.close()
   process.exit(1)
 })

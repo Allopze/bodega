@@ -1,17 +1,20 @@
 import fs from "node:fs"
 import path from "node:path"
 import { spawn, type ChildProcess } from "node:child_process"
-import Database from "better-sqlite3"
+import postgres from "postgres"
 import bcrypt from "bcryptjs"
 import { chromium, type BrowserContext, type Page } from "@playwright/test"
-import { drizzle } from "drizzle-orm/better-sqlite3"
-import { migrate } from "drizzle-orm/better-sqlite3/migrator"
+import { drizzle } from "drizzle-orm/postgres-js"
+import { migrate } from "drizzle-orm/postgres-js/migrator"
+import { sql } from "drizzle-orm"
 import * as schema from "../db/schema"
 
 const root = process.cwd()
 const port = Number(process.env.CAPTURE_PORT ?? 3127)
 const baseUrl = `http://127.0.0.1:${port}`
-const dbPath = path.join(root, ".tmp", "route-screenshots.sqlite")
+// Dedicated Postgres DB for capture; falls back to DATABASE_URL if not set.
+const captureDbUrl = process.env.CAPTURE_DATABASE_URL ?? process.env.DATABASE_URL
+if (!captureDbUrl) throw new Error("CAPTURE_DATABASE_URL or DATABASE_URL is required")
 const outputDir = path.join(root, "audit", "screenshots", "2026-06-09-playwright")
 const authSecret = "route-screenshot-audit-secret"
 
@@ -73,12 +76,7 @@ const routes: RouteTarget[] = [
 ]
 
 async function main() {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   fs.mkdirSync(outputDir, { recursive: true })
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const file = `${dbPath}${suffix}`
-    if (fs.existsSync(file)) fs.rmSync(file)
-  }
 
   await prepareDatabase()
   const server = await startServer()
@@ -113,7 +111,7 @@ async function main() {
   const manifest = {
     generatedAt: new Date().toISOString(),
     baseUrl,
-    database: dbPath,
+    database: captureDbUrl,
     outputDir,
     credentials: {
       email: "admin.audit@chome.cl",
@@ -128,11 +126,20 @@ async function main() {
 }
 
 async function prepareDatabase() {
-  const sqlite = new Database(dbPath)
-  sqlite.pragma("journal_mode = WAL")
-  sqlite.pragma("foreign_keys = ON")
-  const db = drizzle(sqlite, { schema })
-  migrate(db, { migrationsFolder: path.join(root, "db", "migrations") })
+  // Reset Postgres schema and re-run migrations for a clean state
+  const setupClient = postgres(captureDbUrl!, { max: 1 })
+  const setupDb = drizzle(setupClient)
+  await setupDb.execute(sql`DROP SCHEMA public CASCADE`)
+  await setupDb.execute(sql`CREATE SCHEMA public`)
+  await setupDb.execute(sql`GRANT ALL ON SCHEMA public TO PUBLIC`)
+  await setupClient.end()
+
+  const migrationClient = postgres(captureDbUrl!, { max: 1 })
+  await migrate(drizzle(migrationClient), { migrationsFolder: path.join(root, "db", "migrations") })
+  await migrationClient.end()
+
+  const pgClient = postgres(captureDbUrl!, { max: 1 })
+  const db = drizzle(pgClient, { schema })
 
   const now = new Date("2026-06-09T12:00:00.000Z").toISOString()
   const password = await bcrypt.hash("chome2026", 10)
@@ -522,13 +529,13 @@ async function prepareDatabase() {
     { key: "purchase_order_footer", value: "Documento generado para auditoría visual.", updatedAt: now },
   ])
 
-  sqlite.close()
+  await pgClient.end()
 }
 
 async function startServer() {
   const env = {
     ...process.env,
-    DATABASE_URL: dbPath,
+    DATABASE_URL: captureDbUrl!,
     AUTH_SECRET: authSecret,
     NEXTAUTH_SECRET: authSecret,
     PORT: String(port),

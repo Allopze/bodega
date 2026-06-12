@@ -4,17 +4,21 @@
  * Operational/test data should be entered through the app flows.
  * Run with: npx tsx db/seed.ts
  */
-import Database from "better-sqlite3"
-import { drizzle } from "drizzle-orm/better-sqlite3"
+import postgres from "postgres"
+import { drizzle } from "drizzle-orm/postgres-js"
 import bcrypt from "bcryptjs"
 import { loadEnvConfig } from "@next/env"
 import * as schema from "./schema"
-import { eq } from "drizzle-orm"
+import { eq, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
 
 loadEnvConfig(process.cwd())
 
-const DB_URL = process.env.DATABASE_URL ?? "./db/chome.db"
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL environment variable is required (postgres://...)")
+  process.exit(1)
+}
+
 const adminName = process.env.SEED_ADMIN_NAME ?? "Administrador"
 const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@chome.cl").toLowerCase()
 const NODE_ENV = process.env.NODE_ENV ?? "development"
@@ -34,10 +38,8 @@ function resolveSeedAdminPassword(): string {
   return "chome2026"
 }
 const adminPassword = resolveSeedAdminPassword()
-const sqlite = new Database(DB_URL)
-sqlite.pragma("journal_mode = WAL")
-sqlite.pragma("foreign_keys = ON")
-const db = drizzle(sqlite, { schema })
+const client = postgres(process.env.DATABASE_URL!, { max: 1 })
+const db = drizzle(client, { schema })
 
 type EppCatalogItem = {
   id: string
@@ -243,10 +245,10 @@ async function main() {
 
   const keepRoleIds = roleData.map((r) => r.id)
   const keepPermIds = perms.map((p) => p.id)
-  sqlite.prepare("delete from role_permissions").run()
-  sqlite.prepare(`delete from user_roles where role_id not in (${keepRoleIds.map(() => "?").join(",")})`).run(...keepRoleIds)
-  sqlite.prepare(`delete from roles where id not in (${keepRoleIds.map(() => "?").join(",")})`).run(...keepRoleIds)
-  sqlite.prepare(`delete from permissions where id not in (${keepPermIds.map(() => "?").join(",")})`).run(...keepPermIds)
+  await db.delete(schema.rolePermissions)
+  await db.delete(schema.userRoles).where(notInArray(schema.userRoles.roleId, keepRoleIds))
+  await db.delete(schema.roles).where(notInArray(schema.roles.id, keepRoleIds))
+  await db.delete(schema.permissions).where(notInArray(schema.permissions.id, keepPermIds))
 
   /* ── Role → Permission mapping ───────────────────────────────────────── */
   const rp = (roleId: string, permId: string) => ({ roleId, permissionId: permId })
@@ -466,4 +468,4 @@ async function main() {
 
 main()
   .catch((e) => { console.error(e); process.exit(1) })
-  .finally(() => sqlite.close())
+  .finally(() => client.end())

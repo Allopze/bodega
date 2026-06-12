@@ -67,38 +67,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           // Fallback if headers are not available
         }
 
-        const ipCheck = persistentCheckRateLimit(clientIp)
+        const ipCheck = await persistentCheckRateLimit(clientIp)
         if (!ipCheck.allowed) {
           throw new Error(`Demasiados intentos de inicio de sesión desde esta dirección IP. Intente de nuevo en ${Math.ceil(ipCheck.waitTimeRemainingMs / 60000)} minutos.`)
         }
 
-        const emailCheck = persistentCheckRateLimit(email)
+        const emailCheck = await persistentCheckRateLimit(email)
         if (!emailCheck.allowed) {
           throw new Error(`Esta cuenta ha sido bloqueada temporalmente por múltiples intentos fallidos. Intente de nuevo en ${Math.ceil(emailCheck.waitTimeRemainingMs / 60000)} minutos.`)
         }
 
         const userWithAuth = await getUserWithAuth(email)
         if (!userWithAuth) {
-          persistentRecordFailure(clientIp)
-          persistentRecordFailure(email)
+          await persistentRecordFailure(clientIp)
+          await persistentRecordFailure(email)
           return null
         }
 
         if (userWithAuth._passwordSetupPending) {
-          persistentRecordFailure(clientIp)
-          persistentRecordFailure(email)
+          await persistentRecordFailure(clientIp)
+          await persistentRecordFailure(email)
           return null
         }
 
         const valid = await bcrypt.compare(parsed.data.password, userWithAuth._hashedPassword)
         if (!valid) {
-          persistentRecordFailure(clientIp)
-          persistentRecordFailure(email)
+          await persistentRecordFailure(clientIp)
+          await persistentRecordFailure(email)
           return null
         }
 
-        persistentRecordSuccess(clientIp)
-        persistentRecordSuccess(email)
+        await persistentRecordSuccess(clientIp)
+        await persistentRecordSuccess(email)
 
         const { _hashedPassword: _, _passwordSetupPending: __, ...safeUser } = userWithAuth
         return safeUser
@@ -119,11 +119,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.id) {
         // Check if user profile was updated since the token was issued.
         // If so, bypass the RBAC cache to pick up role/permission changes immediately.
-        const userRow = db
+        const [userRow] = await db
           .select({ updatedAt: users.updatedAt })
           .from(users)
           .where(eq(users.id, token.id as string))
-          .get()
+          .limit(1)
 
         const tokenIat = token.iat ? token.iat * 1000 : 0
         const profileChanged = userRow && tokenIat > 0

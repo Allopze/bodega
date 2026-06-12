@@ -1,24 +1,24 @@
-import { sqliteTable, text, real, index, uniqueIndex } from "drizzle-orm/sqlite-core"
-import { relations, sql } from "drizzle-orm"
+import { pgTable, text, real, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { relations } from "drizzle-orm"
 import { users } from "./users"
 import { worksites } from "./worksites"
 import { products } from "./products"
 
 /* ── Worksite Stock (Stock por Faena) ──────────────────────────────────── */
-export const worksiteStock = sqliteTable("worksite_stock", {
+export const worksiteStock = pgTable("worksite_stock", {
   id:               text("id").primaryKey(),
   worksiteId:       text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
   productId:        text("product_id").notNull().references(() => products.id),
   quantity:         real("quantity").notNull().default(0),
   minStock:         real("min_stock").notNull().default(0),
   lastMovementAt:   text("last_movement_at"),
-  updatedAt:        text("updated_at").notNull().default(sql`(datetime('now'))`),
+  updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("worksite_stock_unique").on(table.worksiteId, table.productId),
 ])
 
 /* ── Inventory Movements ────────────────────────────────────────────────── */
-export const inventoryMovements = sqliteTable("inventory_movements", {
+export const inventoryMovements = pgTable("inventory_movements", {
   id:             text("id").primaryKey(),
   worksiteId:     text("worksite_id").notNull().references(() => worksites.id),
   productId:      text("product_id").notNull().references(() => products.id),
@@ -29,7 +29,7 @@ export const inventoryMovements = sqliteTable("inventory_movements", {
   stockBefore:    real("stock_before").notNull().default(0),
   stockAfter:     real("stock_after").notNull().default(0),
   performedBy:    text("performed_by").notNull().references(() => users.id),
-  performedAt:    text("performed_at").notNull().default(sql`(datetime('now'))`),
+  performedAt:    timestamp("performed_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   reason:         text("reason"),
   notes:          text("notes"),
 }, (table) => [

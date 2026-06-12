@@ -1,21 +1,21 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
-import { relations, sql } from "drizzle-orm"
+import { pgTable, text, boolean, timestamp } from "drizzle-orm/pg-core"
+import { relations } from "drizzle-orm"
 import { worksiteStock } from "./stock"
 
 /* ── Worksites (Faenas) ─────────────────────────────────────────────────── */
-export const worksites = sqliteTable("worksites", {
+export const worksites = pgTable("worksites", {
   id:        text("id").primaryKey(),
   name:      text("name").notNull(),
   code:      text("code").notNull().unique(),   // e.g. "FN-001"
   address:   text("address"),
   region:    text("region"),
-  isActive:  integer("is_active", { mode: "boolean" }).notNull().default(true),
-  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  isActive:  boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Suppliers (Proveedores) ─────────────────────────────────────────────── */
-export const suppliers = sqliteTable("suppliers", {
+export const suppliers = pgTable("suppliers", {
   id:          text("id").primaryKey(),
   name:        text("name").notNull(),
   rut:         text("rut").unique(),            // Chilean RUT
@@ -27,22 +27,22 @@ export const suppliers = sqliteTable("suppliers", {
   commune:     text("commune"),
   city:        text("city"),
   paymentTerms: text("payment_terms"),          // "30 días", "contado", etc.
-  isActive:    integer("is_active", { mode: "boolean" }).notNull().default(true),
+  isActive:    boolean("is_active").notNull().default(true),
   notes:       text("notes"),
-  createdAt:   text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt:   text("updated_at").notNull().default(sql`(datetime('now'))`),
+  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Workers (Trabajadores — for EPP/delivery tracking) ─────────────────── */
-export const workers = sqliteTable("workers", {
+export const workers = pgTable("workers", {
   id:          text("id").primaryKey(),
   rut:         text("rut").unique(),
   firstName:   text("first_name").notNull(),
   lastName:    text("last_name").notNull(),
   position:    text("position"),               // cargo
   worksiteId:  text("worksite_id").notNull().references(() => worksites.id),
-  isActive:    integer("is_active", { mode: "boolean" }).notNull().default(true),
-  createdAt:   text("created_at").notNull().default(sql`(datetime('now'))`),
+  isActive:    boolean("is_active").notNull().default(true),
+  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

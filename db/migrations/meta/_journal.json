@@ -1,95 +1,12 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1780806201137,
-      "tag": "0000_reflective_mimic",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1780806201138,
-      "tag": "0001_code_sequences",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1780806201139,
-      "tag": "0002_integrity_indexes",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1780924566291,
-      "tag": "0003_wooden_captain_flint",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1780925564010,
-      "tag": "0004_tiresome_warstar",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1780944713359,
-      "tag": "0005_pink_nocturne",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1780949171645,
-      "tag": "0006_remediation_nota_pedido",
-      "breakpoints": true    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1781955100000,
-      "tag": "0007_rate_limits",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1781960000000,
-      "tag": "0008_stock_por_faena",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1782046400000,
-      "tag": "0009_request_required_date",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1782060000000,
-      "tag": "0010_oc_real_supplier_fields",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "6",
-      "when": 1782070000000,
-      "tag": "0011_office_receiving",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "6",
-      "when": 1782080000000,
-      "tag": "0012_unify_receipt_location",
+      "version": "7",
+      "when": 1781299282151,
+      "tag": "0000_mushy_mister_sinister",
       "breakpoints": true
     }
   ]

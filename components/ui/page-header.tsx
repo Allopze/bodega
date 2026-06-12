@@ -1,5 +1,9 @@
+"use client"
+
 import * as React from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { useShellHeader } from "@/components/layout/header-context"
 import { cn } from "@/lib/utils"
 
 interface PageHeaderProps {
@@ -13,20 +17,28 @@ interface PageHeaderProps {
 }
 
 export function PageHeader({ title, description, actions, breadcrumb, className, eyebrow }: PageHeaderProps) {
+  const pathname = usePathname()
+  const { setHeader } = useShellHeader()
+
+  React.useEffect(() => {
+    setHeader({ title, description, breadcrumb })
+
+    return () => {
+      setHeader({})
+    }
+  }, [breadcrumb, description, pathname, setHeader, title])
+
   return (
-    <div className={cn("pb-4 mb-5", className)}>
-      {breadcrumb && (
-        <div className="mb-3">{breadcrumb}</div>
-      )}
+    <div className={cn(actions ? "pb-4 mb-5" : "sr-only", className)}>
       <div className="flex min-h-[2rem] flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="min-w-0">
           {eyebrow && (
             <p className="text-eyebrow mb-1.5">{eyebrow}</p>
           )}
-          <h1 className="text-h1 text-[var(--color-text)]">
+          <h1 className={cn("text-h1 text-[var(--color-text)]", actions && "sr-only")}>
             {title}
           </h1>
-          {description && (
+          {description && !actions && (
             <p className="mt-1.5 max-w-[68ch] text-sub">
               {description}
             </p>

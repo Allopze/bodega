@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { useHideOnScroll } from "@/lib/hooks/use-hide-on-scroll"
 import { Sidebar } from "./sidebar"
 import { TopBar } from "./top-bar"
+import { ShellHeaderProvider } from "./header-context"
 
 interface AppShellProps {
   session:        Session
@@ -80,51 +81,53 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
           />
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Mobile drawer — fixed/viewport-relative, unaffected by panel overflow-hidden */}
-          {showDrawer && (
-            <>
-              <div
-                className={cn(
-                  "fixed inset-0 z-40 lg:hidden",
-                  "bg-overlay",
+        <ShellHeaderProvider>
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            {/* Mobile drawer — fixed/viewport-relative, unaffected by panel overflow-hidden */}
+            {showDrawer && (
+              <>
+                <div
+                  className={cn(
+                    "fixed inset-0 z-40 lg:hidden",
+                    "bg-overlay",
+                    isClosing
+                      ? "animate-out fade-out-0 duration-(--duration-slow)"
+                      : "animate-in fade-in-0 duration-(--duration-slow)",
+                  )}
+                  onClick={closeDrawer}
+                  aria-hidden
+                />
+                <div className={cn(
+                  "fixed inset-y-0 left-0 z-50 w-64 lg:hidden bg-surface border-r border-[var(--color-border)]",
                   isClosing
-                    ? "animate-out fade-out-0 duration-(--duration-slow)"
-                    : "animate-in fade-in-0 duration-(--duration-slow)",
-                )}
-                onClick={closeDrawer}
-                aria-hidden
+                    ? "animate-out slide-out-to-left duration-(--duration-slow) ease-drawer"
+                    : "animate-in slide-in-from-left duration-(--duration-slow) ease-drawer",
+                )}>
+                  <Sidebar session={session} worksiteName={worksiteName} badgeCounts={badgeCounts} />
+                </div>
+              </>
+            )}
+
+            {/* Main scrolls independently; panel stays fixed */}
+            <main
+              ref={mainRef}
+              className="flex-1 min-w-0 overflow-y-auto bg-[var(--color-bg)]"
+              id="main-content"
+              tabIndex={-1}
+            >
+              <TopBar
+                session={session}
+                onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
+                worksiteName={worksiteName}
+                isMenuOpen={mobileOpen}
+                hidden={headerHidden}
+                className="sticky top-0 mx-3 md:mx-4 mb-4 z-10"
               />
-              <div className={cn(
-                "fixed inset-y-0 left-0 z-50 w-64 lg:hidden bg-surface border-r border-[var(--color-border)]",
-                isClosing
-                  ? "animate-out slide-out-to-left duration-(--duration-slow) ease-drawer"
-                  : "animate-in slide-in-from-left duration-(--duration-slow) ease-drawer",
-              )}>
-                <Sidebar session={session} worksiteName={worksiteName} badgeCounts={badgeCounts} />
-              </div>
-            </>
-          )}
+              {children}
+            </main>
 
-          {/* Main scrolls independently; panel stays fixed */}
-          <main
-            ref={mainRef}
-            className="flex-1 min-w-0 overflow-y-auto bg-[var(--color-bg)]"
-            id="main-content"
-            tabIndex={-1}
-          >
-            <TopBar
-              session={session}
-              onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
-              worksiteName={worksiteName}
-              isMenuOpen={mobileOpen}
-              hidden={headerHidden}
-              className="sticky top-0 mx-3 md:mx-4 mb-4 z-10"
-            />
-            {children}
-          </main>
-
-        </div>
+          </div>
+        </ShellHeaderProvider>
       </div>
     </div>
   )

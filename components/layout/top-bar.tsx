@@ -12,6 +12,7 @@ import { Breadcrumbs } from "@/components/ui/page-header"
 import { NotificationBell } from "./notification-bell"
 import { BrandMark } from "./brand-mark"
 import { NAV_ITEMS } from "./nav-items"
+import { useShellHeader } from "./header-context"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -41,6 +42,7 @@ export function TopBar({
 }: TopBarProps) {
   const [isSigningOut, setIsSigningOut] = React.useState(false)
   const pathname = usePathname()
+  const { header } = useShellHeader()
 
   // Derive active section + label from the nav registry — no extra plumbing needed
   let activeSection: string | null = null
@@ -94,14 +96,30 @@ export function TopBar({
 
       {/* Desktop: contexto de página + chip de faena (si aplica) */}
       <div className="flex-1 min-w-0 hidden lg:flex items-center gap-3">
-        {activeSection && activeLabel && (
-          <Breadcrumbs
-            items={[
-              { label: activeSection },
-              { label: activeLabel },
-            ]}
-          />
-        )}
+        <div className="min-w-0 flex-1">
+          {header.breadcrumb ? (
+            <div className="mb-0.5">{header.breadcrumb}</div>
+          ) : activeSection && activeLabel ? (
+            <Breadcrumbs
+              items={[
+                { label: activeSection },
+                { label: activeLabel },
+              ]}
+            />
+          ) : null}
+          {header.title && (
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h1 className="truncate text-sm font-semibold text-[var(--color-text)]">
+                {header.title}
+              </h1>
+              {header.description && (
+                <p className="hidden min-w-0 truncate text-xs text-[var(--color-text-muted)] xl:block">
+                  {header.description}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
         {worksiteName && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-surface-2 border border-(--color-border)">
             <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" />

@@ -1,54 +1,54 @@
-import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core"
-import { relations, sql } from "drizzle-orm"
+import { pgTable, text, integer, boolean, timestamp, numeric, uniqueIndex } from "drizzle-orm/pg-core"
+import { relations } from "drizzle-orm"
 import { suppliers } from "./worksites"
 
 /* ── Product Categories ──────────────────────────────────────────────────── */
-export const productCategories = sqliteTable("product_categories", {
+export const productCategories = pgTable("product_categories", {
   id:                  text("id").primaryKey(),
   name:                text("name").notNull(),
   slug:                text("slug").notNull().unique(),
-  isEpp:               integer("is_epp", { mode: "boolean" }).notNull().default(false),
-  requiresPrevencion:  integer("requires_prevencion", { mode: "boolean" }).notNull().default(false),
+  isEpp:               boolean("is_epp").notNull().default(false),
+  requiresPrevencion:  boolean("requires_prevencion").notNull().default(false),
   sortOrder:           integer("sort_order").notNull().default(0),
 })
 
 /* ── Products ────────────────────────────────────────────────────────────── */
-export const products = sqliteTable("products", {
+export const products = pgTable("products", {
   id:                  text("id").primaryKey(),
   sku:                 text("sku").notNull().unique(),
   name:                text("name").notNull(),
   description:         text("description"),
   categoryId:          text("category_id").notNull().references(() => productCategories.id),
   unitOfMeasure:       text("unit_of_measure").notNull().default("unidad"),
-  isEpp:               integer("is_epp", { mode: "boolean" }).notNull().default(false),
-  requiresPrevencion:  integer("requires_prevencion", { mode: "boolean" }).notNull().default(false),
-  referencePrice:      real("reference_price"),
-  isActive:            integer("is_active", { mode: "boolean" }).notNull().default(true),
+  isEpp:               boolean("is_epp").notNull().default(false),
+  requiresPrevencion:  boolean("requires_prevencion").notNull().default(false),
+  referencePrice:      numeric("reference_price", { precision: 12, scale: 2, mode: "number" }),
+  isActive:            boolean("is_active").notNull().default(true),
   notes:               text("notes"),
-  createdAt:           text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt:           text("updated_at").notNull().default(sql`(datetime('now'))`),
+  createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:           timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Product Attributes (talla, color, medida, modelo, etc.) ─────────────── */
-export const productAttributes = sqliteTable("product_attributes", {
+export const productAttributes = pgTable("product_attributes", {
   id:            text("id").primaryKey(),
   productId:     text("product_id").references(() => products.id, { onDelete: "cascade" }),
   categoryId:    text("category_id").references(() => productCategories.id, { onDelete: "cascade" }),
   name:          text("name").notNull(),          // "Talla", "Color", "Medida"
   type:          text("type").notNull(),           // "text" | "select" | "number"
-  isRequired:    integer("is_required", { mode: "boolean" }).notNull().default(false),
+  isRequired:    boolean("is_required").notNull().default(false),
   options:       text("options"),                  // JSON array for select type
   sortOrder:     integer("sort_order").notNull().default(0),
 })
 
 /* ── Product ↔ Supplier (preferred suppliers + price history) ────────────── */
-export const productSuppliers = sqliteTable("product_suppliers", {
+export const productSuppliers = pgTable("product_suppliers", {
   id:           text("id").primaryKey(),
   productId:    text("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
   supplierId:   text("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
-  unitPrice:    real("unit_price"),
-  isPreferred:  integer("is_preferred", { mode: "boolean" }).notNull().default(false),
-  lastUpdated:  text("last_updated").notNull().default(sql`(datetime('now'))`),
+  unitPrice:    numeric("unit_price", { precision: 12, scale: 2, mode: "number" }),
+  isPreferred:  boolean("is_preferred").notNull().default(false),
+  lastUpdated:  timestamp("last_updated", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   notes:        text("notes"),
 }, (table) => [
   uniqueIndex("product_suppliers_product_supplier_unique").on(table.productId, table.supplierId),

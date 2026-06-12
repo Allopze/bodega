@@ -71,19 +71,19 @@ async function persistDraft(
   let requestId = d.id
  
   try {
-    db.transaction((tx) => {
+    await db.transaction(async (tx) => {
     if (isEdit) {
       // Verify ownership — solicitantes can only edit their own drafts
-      const existing = tx.query.purchaseRequests.findFirst({
+      const existing = await tx.query.purchaseRequests.findFirst({
         where: eq(purchaseRequests.id, d.id!),
-      }).sync()
+      })
       if (!existing) throw new Error("Solicitud no encontrada")
       if (!["draft", "returned"].includes(existing.status)) throw new Error("Solo se pueden editar solicitudes en borrador o devueltas")
       if (existing.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
         throw new Error("Solo puedes editar tus propias solicitudes")
       }
- 
-      tx.update(purchaseRequests).set({
+
+      await tx.update(purchaseRequests).set({
         worksiteId:   d.worksiteId,
         requestType:  d.requestType,
         urgency:      d.urgency,
@@ -91,17 +91,17 @@ async function persistDraft(
         status:       "draft",
         notes:        d.notes || null,
         updatedAt:    new Date().toISOString(),
-      }).where(eq(purchaseRequests.id, d.id!)).run()
+      }).where(eq(purchaseRequests.id, d.id!))
       requestId = d.id
- 
+
       // Replace all items (delete + re-insert)
-      tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, d.id!)).run()
+      await tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, d.id!))
     } else {
-      const code = nextCodeTx(tx, "SOL")
+      const code = await nextCodeTx(tx, "SOL")
       const reqId = nanoid()
       requestId = reqId
- 
-      tx.insert(purchaseRequests).values({
+
+      await tx.insert(purchaseRequests).values({
         id:           reqId,
         code,
         worksiteId:   d.worksiteId,
@@ -111,9 +111,9 @@ async function persistDraft(
         requiredDate: d.requiredDate,
         status:       "draft",
         notes:        d.notes || null,
-      }).run()
+      })
 
-      recordAudit({
+      await recordAudit({
         userId:     session.user.id,
         userEmail:  session.user.email ?? undefined,
         action:     "create",
@@ -127,7 +127,7 @@ async function persistDraft(
     // Insert items
     for (const [i, item] of d.items.entries()) {
       const itemId = item.id ?? nanoid()
-      tx.insert(purchaseRequestItems).values({
+      await tx.insert(purchaseRequestItems).values({
         id:                  itemId,
         requestId:           requestId!,
         productId:           item.productId || null,
@@ -142,10 +142,10 @@ async function persistDraft(
         supplierHint:        item.supplierHint || null,
         sortOrder:           i,
         notes:               item.notes || null,
-      }).run()
+      })
 
       if (item.attributes.length > 0) {
-        tx.insert(requestItemAttributes).values(
+        await tx.insert(requestItemAttributes).values(
           item.attributes.map((a) => ({
             id:            nanoid(),
             requestItemId: itemId,
@@ -153,7 +153,7 @@ async function persistDraft(
             attributeName: a.attributeName,
             value:         a.value,
           })),
-        ).run()
+        )
       }
     }
     })
@@ -197,22 +197,22 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
   const now = new Date().toISOString()
 
   try {
-    db.transaction((tx) => {
+    await db.transaction(async (tx) => {
       // Transition the request to submitted
-      tx.update(purchaseRequests).set({
+      await tx.update(purchaseRequests).set({
         status:      "submitted",
         submittedAt: now,
         updatedAt:   now,
-      }).where(eq(purchaseRequests.id, requestId)).run()
+      }).where(eq(purchaseRequests.id, requestId))
 
-      recordStatusChange({
+      await recordStatusChange({
         entityType: "purchase_request",
         entityId:   requestId,
         fromStatus: "draft",
         toStatus:   "submitted",
         changedBy:  session.user.id,
       }, tx)
-      recordAudit({
+      await recordAudit({
         userId:     session.user.id,
         userEmail:  session.user.email ?? undefined,
         action:     "status_change",
@@ -224,7 +224,7 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
       }, tx)
 
       for (const item of request.items) {
-        submitItemTx(tx, item.id, session.user.id, { userEmail: session.user.email ?? undefined })
+        await submitItemTx(tx, item.id, session.user.id, { userEmail: session.user.email ?? undefined })
       }
     })
   } catch (e) {
@@ -274,11 +274,11 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
   }
 
   let newId!: string
-  db.transaction((tx) => {
-    const code = nextCodeTx(tx, "SOL")
+  await db.transaction(async (tx) => {
+    const code = await nextCodeTx(tx, "SOL")
     newId = nanoid()
 
-    tx.insert(purchaseRequests).values({
+    await tx.insert(purchaseRequests).values({
       id:           newId,
       code,
       worksiteId:   source.worksiteId,
@@ -288,9 +288,9 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
       requiredDate: source.requiredDate ?? source.items.find((item) => item.requiredDate)?.requiredDate ?? null,
       status:       "draft",
       notes:        source.notes ? `[Duplicada de ${source.code}] ${source.notes}` : `[Duplicada de ${source.code}]`,
-    }).run()
+    })
 
-    recordAudit({
+    await recordAudit({
       userId:     session.user.id,
       userEmail:  session.user.email ?? undefined,
       action:     "create",
@@ -302,7 +302,7 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
 
     for (const [i, item] of source.items.entries()) {
       const itemId = nanoid()
-      tx.insert(purchaseRequestItems).values({
+      await tx.insert(purchaseRequestItems).values({
         id:                  itemId,
         requestId:           newId,
         productId:           item.productId ?? null,
@@ -317,10 +317,10 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
         supplierHint:        item.supplierHint ?? null,
         sortOrder:           i,
         notes:               item.notes ?? null,
-      }).run()
+      })
 
       if (item.attributes.length > 0) {
-        tx.insert(requestItemAttributes).values(
+        await tx.insert(requestItemAttributes).values(
           item.attributes.map((a) => ({
             id:            nanoid(),
             requestItemId: itemId,
@@ -328,7 +328,7 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
             attributeName: a.attributeName,
             value:         a.value,
           })),
-        ).run()
+        )
       }
     }
   })
@@ -361,20 +361,20 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
   }
 
-  db.transaction((tx) => {
-    tx.update(purchaseRequests).set({
+  await db.transaction(async (tx) => {
+    await tx.update(purchaseRequests).set({
       status:    "cancelled",
       updatedAt: new Date().toISOString(),
-    }).where(eq(purchaseRequests.id, requestId)).run()
+    }).where(eq(purchaseRequests.id, requestId))
 
-    recordStatusChange({
+    await recordStatusChange({
       entityType: "purchase_request",
       entityId:   requestId,
       fromStatus: request.status,
       toStatus:   "cancelled",
       changedBy:  session.user.id,
     }, tx)
-    recordAudit({
+    await recordAudit({
       userId:     session.user.id,
       userEmail:  session.user.email ?? undefined,
       action:     "status_change",

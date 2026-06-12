@@ -22,8 +22,8 @@ export interface StockAlert {
 
 const WARNING_RATIO = 1.5
 
-export function getStockAlerts(): StockAlert[] {
-  const rows = db
+export async function getStockAlerts(): Promise<StockAlert[]> {
+  const rows = await db
     .select({
       worksiteId:   worksiteStock.worksiteId,
       worksiteName: worksites.name,
@@ -40,7 +40,6 @@ export function getStockAlerts(): StockAlert[] {
       sql`${worksiteStock.minStock} > 0
           AND ${worksiteStock.quantity} < ${worksiteStock.minStock} * ${WARNING_RATIO}`,
     )
-    .all()
 
   return rows.map((row) => {
     const deficit = row.minStock - row.currentQty
@@ -58,15 +57,14 @@ export function getStockAlerts(): StockAlert[] {
   })
 }
 
-export function getCriticalStockAlertCount(): number {
-  const row = db
+export async function getCriticalStockAlertCount(): Promise<number> {
+  const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(worksiteStock)
     .where(
       sql`${worksiteStock.minStock} > 0
           AND ${worksiteStock.quantity} < ${worksiteStock.minStock}`,
     )
-    .get()
 
   return row?.n ?? 0
 }

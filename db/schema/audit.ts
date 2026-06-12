@@ -1,9 +1,9 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
-import { relations, sql } from "drizzle-orm"
+import { pgTable, text, integer, boolean, timestamp } from "drizzle-orm/pg-core"
+import { relations } from "drizzle-orm"
 import { users } from "./users"
 
 /* ── Audit Log ────────────────────────────────────────────────────────────── */
-export const auditLog = sqliteTable("audit_log", {
+export const auditLog = pgTable("audit_log", {
   id:           text("id").primaryKey(),
   userId:       text("user_id").references(() => users.id),
   userEmail:    text("user_email"),       // denormalized in case user is deleted
@@ -15,11 +15,11 @@ export const auditLog = sqliteTable("audit_log", {
   newState:     text("new_state"),        // JSON of relevant new values
   reason:       text("reason"),           // mandatory for rejections/postponements/cancellations
   ipAddress:    text("ip_address"),
-  createdAt:    text("created_at").notNull().default(sql`(datetime('now'))`),
+  createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Status History ───────────────────────────────────────────────────────── */
-export const statusHistory = sqliteTable("status_history", {
+export const statusHistory = pgTable("status_history", {
   id:           text("id").primaryKey(),
   entityType:   text("entity_type").notNull(),
   entityId:     text("entity_id").notNull(),
@@ -27,11 +27,11 @@ export const statusHistory = sqliteTable("status_history", {
   toStatus:     text("to_status").notNull(),
   changedBy:    text("changed_by").references(() => users.id),
   reason:       text("reason"),
-  changedAt:    text("changed_at").notNull().default(sql`(datetime('now'))`),
+  changedAt:    timestamp("changed_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Attachments ─────────────────────────────────────────────────────────── */
-export const attachments = sqliteTable("attachments", {
+export const attachments = pgTable("attachments", {
   id:           text("id").primaryKey(),
   entityType:   text("entity_type").notNull(),
   entityId:     text("entity_id").notNull(),
@@ -40,7 +40,7 @@ export const attachments = sqliteTable("attachments", {
   fileSize:     integer("file_size"),
   mimeType:     text("mime_type"),
   uploadedBy:   text("uploaded_by").notNull().references(() => users.id),
-  uploadedAt:   text("uploaded_at").notNull().default(sql`(datetime('now'))`),
+  uploadedAt:   timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Notifications ───────────────────────────────────────────────────────── */
@@ -53,7 +53,7 @@ export type NotificationType =
   | "receipt_done"
   | "dispatch_done"
 
-export const notifications = sqliteTable("notifications", {
+export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),
   userId:       text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   type:         text("type").notNull(),  // NotificationType
@@ -62,8 +62,8 @@ export const notifications = sqliteTable("notifications", {
   entityType:   text("entity_type"),
   entityId:     text("entity_id"),
   entityHref:   text("entity_href"),     // direct navigation link (e.g. /solicitudes/{id})
-  isRead:       integer("is_read", { mode: "boolean" }).notNull().default(false),
-  createdAt:    text("created_at").notNull().default(sql`(datetime('now'))`),
+  isRead:       boolean("is_read").notNull().default(false),
+  createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

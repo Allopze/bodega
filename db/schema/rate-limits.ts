@@ -1,5 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
-import { sql } from "drizzle-orm"
+import { pgTable, text, integer, bigint, timestamp } from "drizzle-orm/pg-core"
 
 /**
  * Persistent rate-limit table.
@@ -9,12 +8,11 @@ import { sql } from "drizzle-orm"
  * `key` = client IP or user email.
  * `count` = consecutive failed attempts.
  * `lockUntil` = epoch ms until the key is locked (0 = not locked).
+ *   Note: epoch ms for 2026+ exceeds int4 range → bigint.
  */
-export const rateLimits = sqliteTable("rate_limits", {
+export const rateLimits = pgTable("rate_limits", {
   key: text("key").primaryKey(),
   count: integer("count").notNull().default(0),
-  lockUntil: integer("lock_until").notNull().default(0),
-  updatedAt: text("updated_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
+  lockUntil: bigint("lock_until", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })

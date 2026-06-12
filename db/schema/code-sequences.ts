@@ -1,11 +1,10 @@
-import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
-import { sql } from "drizzle-orm"
+import { integer, primaryKey, pgTable, text, timestamp } from "drizzle-orm/pg-core"
 
-export const codeSequences = sqliteTable("code_sequences", {
+export const codeSequences = pgTable("code_sequences", {
   prefix:    text("prefix").notNull(),
   year:      integer("year").notNull(),
   nextValue: integer("next_value").notNull().default(1),
-  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   primaryKey({ columns: [table.prefix, table.year] }),
 ])

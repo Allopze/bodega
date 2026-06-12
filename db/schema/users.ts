@@ -1,20 +1,20 @@
-import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core"
-import { relations, sql } from "drizzle-orm"
+import { pgTable, text, integer, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { relations } from "drizzle-orm"
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
-export const users = sqliteTable("users", {
+export const users = pgTable("users", {
   id:             text("id").primaryKey(),
   name:           text("name").notNull(),
   email:          text("email").notNull().unique(),
   hashedPassword: text("hashed_password").notNull(),
   avatarColor:    text("avatar_color"),   // OKLCH hue number as string
-  isActive:       integer("is_active", { mode: "boolean" }).notNull().default(true),
-  createdAt:      text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt:      text("updated_at").notNull().default(sql`(datetime('now'))`),
+  isActive:       boolean("is_active").notNull().default(true),
+  createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── User invitations ─────────────────────────────────────────────────────── */
-export const userInvitations = sqliteTable("user_invitations", {
+export const userInvitations = pgTable("user_invitations", {
   id:                  text("id").primaryKey(),
   email:               text("email").notNull(),
   name:                text("name"),
@@ -24,11 +24,11 @@ export const userInvitations = sqliteTable("user_invitations", {
   invitedByUserId:     text("invited_by_user_id").references(() => users.id, { onDelete: "set null" }),
   expiresAt:           text("expires_at").notNull(),
   acceptedAt:          text("accepted_at"),
-  createdAt:           text("created_at").notNull().default(sql`(datetime('now'))`),
+  createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Roles ───────────────────────────────────────────────────────────────── */
-export const roles = sqliteTable("roles", {
+export const roles = pgTable("roles", {
   id:          text("id").primaryKey(),
   name:        text("name").notNull().unique(), // slug: 'administrador', 'jefa_chome', etc.
   label:       text("label").notNull(),         // human-readable: 'Administrador'
@@ -36,7 +36,7 @@ export const roles = sqliteTable("roles", {
 })
 
 /* ── Permissions ─────────────────────────────────────────────────────────── */
-export const permissions = sqliteTable("permissions", {
+export const permissions = pgTable("permissions", {
   id:          text("id").primaryKey(),
   name:        text("name").notNull().unique(), // 'requests:create', 'orders:approve', etc.
   description: text("description"),
@@ -44,7 +44,7 @@ export const permissions = sqliteTable("permissions", {
 })
 
 /* ── Role ↔ Permission ───────────────────────────────────────────────────── */
-export const rolePermissions = sqliteTable("role_permissions", {
+export const rolePermissions = pgTable("role_permissions", {
   roleId:       text("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
   permissionId: text("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
 }, (table) => [
@@ -52,7 +52,7 @@ export const rolePermissions = sqliteTable("role_permissions", {
 ])
 
 /* ── User ↔ Role ─────────────────────────────────────────────────────────── */
-export const userRoles = sqliteTable("user_roles", {
+export const userRoles = pgTable("user_roles", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   roleId: text("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
 }, (table) => [
@@ -60,10 +60,10 @@ export const userRoles = sqliteTable("user_roles", {
 ])
 
 /* ── User ↔ Faena (worksite scoping) ────────────────────────────────────── */
-export const worksiteUsers = sqliteTable("worksite_users", {
+export const worksiteUsers = pgTable("worksite_users", {
   userId:     text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   worksiteId: text("worksite_id").notNull(),  // fk to worksites.id — resolved in index.ts
-  isPrimary:  integer("is_primary", { mode: "boolean" }).notNull().default(false),
+  isPrimary:  boolean("is_primary").notNull().default(false),
 }, (table) => [
   uniqueIndex("worksite_users_user_worksite_unique").on(table.userId, table.worksiteId),
 ])

@@ -1,8 +1,10 @@
-import Database from "better-sqlite3"
-import { drizzle } from "drizzle-orm/better-sqlite3"
+import postgres from "postgres"
+import { drizzle } from "drizzle-orm/postgres-js"
 import * as schema from "./schema"
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "./db/chome.db"
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL environment variable is required (postgres://...)")
+}
 
 // Singleton pattern for Next.js dev (avoids opening multiple connections)
 declare global {
@@ -10,10 +12,8 @@ declare global {
 }
 
 function createDb() {
-  const sqlite = new Database(DATABASE_URL)
-  sqlite.pragma("journal_mode = WAL")
-  sqlite.pragma("foreign_keys = ON")
-  return drizzle(sqlite, { schema })
+  const client = postgres(process.env.DATABASE_URL!, { max: 10 })
+  return drizzle(client, { schema })
 }
 
 export const db = global.__db ?? createDb()

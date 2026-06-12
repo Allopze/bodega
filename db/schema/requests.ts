@@ -1,5 +1,5 @@
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core"
-import { relations, sql } from "drizzle-orm"
+import { pgTable, text, integer, real, timestamp, index } from "drizzle-orm/pg-core"
+import { relations } from "drizzle-orm"
 import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
@@ -14,7 +14,7 @@ import { products, productAttributes } from "./products"
 // partially_received | received | partially_delivered | delivered
 
 /* ── Purchase Requests ───────────────────────────────────────────────────── */
-export const purchaseRequests = sqliteTable("purchase_requests", {
+export const purchaseRequests = pgTable("purchase_requests", {
   id:           text("id").primaryKey(),
   code:         text("code").notNull().unique(),    // e.g. "SOL-2026-0042"
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
@@ -27,15 +27,15 @@ export const purchaseRequests = sqliteTable("purchase_requests", {
   submittedAt:  text("submitted_at"),
   closedAt:     text("closed_at"),
   notes:        text("notes"),
-  createdAt:    text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt:    text("updated_at").notNull().default(sql`(datetime('now'))`),
+  createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("purchase_requests_worksite_id_status_idx").on(table.worksiteId, table.status),
   index("purchase_requests_requester_id_created_at_idx").on(table.requesterId, table.createdAt),
 ])
 
 /* ── Purchase Request Items ───────────────────────────────────────────────── */
-export const purchaseRequestItems = sqliteTable("purchase_request_items", {
+export const purchaseRequestItems = pgTable("purchase_request_items", {
   id:             text("id").primaryKey(),
   requestId:      text("request_id").notNull().references(() => purchaseRequests.id, { onDelete: "cascade" }),
   productId:      text("product_id").references(() => products.id),
@@ -52,14 +52,14 @@ export const purchaseRequestItems = sqliteTable("purchase_request_items", {
   supplierHint:    text("supplier_hint"),                           // free-text fallback
   sortOrder:       integer("sort_order").notNull().default(0),
   notes:           text("notes"),
-  createdAt:       text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt:       text("updated_at").notNull().default(sql`(datetime('now'))`),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("purchase_request_items_request_id_status_idx").on(table.requestId, table.status),
 ])
 
 /* ── Request Item Attributes (talla, color, medida, etc.) ────────────────── */
-export const requestItemAttributes = sqliteTable("request_item_attributes", {
+export const requestItemAttributes = pgTable("request_item_attributes", {
   id:              text("id").primaryKey(),
   requestItemId:   text("request_item_id").notNull().references(() => purchaseRequestItems.id, { onDelete: "cascade" }),
   attributeId:     text("attribute_id").references(() => productAttributes.id),
@@ -68,13 +68,13 @@ export const requestItemAttributes = sqliteTable("request_item_attributes", {
 })
 
 /* ── Approval Decisions ───────────────────────────────────────────────────── */
-export const approvalDecisions = sqliteTable("approval_decisions", {
+export const approvalDecisions = pgTable("approval_decisions", {
   id:             text("id").primaryKey(),
   requestItemId:  text("request_item_id").references(() => purchaseRequestItems.id),
   requestId:      text("request_id").references(() => purchaseRequests.id),
   type:           text("type").notNull(),            // approve | reject | return | modify
   decidedBy:      text("decided_by").notNull().references(() => users.id),
-  decidedAt:      text("decided_at").notNull().default(sql`(datetime('now'))`),
+  decidedAt:      timestamp("decided_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   reason:         text("reason"),
   modifiedQty:    real("modified_qty"),              // if quantity was modified during approval
   roleContext:    text("role_context"),               // 'jefa_chome' | 'secretaria' | 'prevencionista' | 'admin'

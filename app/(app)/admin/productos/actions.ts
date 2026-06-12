@@ -103,8 +103,8 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
 
   const id = nanoid()
 
-  db.transaction((tx) => {
-    tx.insert(products).values({
+  await db.transaction(async (tx) => {
+    await tx.insert(products).values({
       id, sku: d.sku, name: d.name,
       description: d.description || null,
       categoryId: d.categoryId,
@@ -114,20 +114,20 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
       referencePrice: d.referencePrice ?? null,
       notes: d.notes || null,
       isActive: d.isActive,
-    }).run()
+    })
 
     if (d.attributes.length > 0) {
-      tx.insert(productAttributes).values(
+      await tx.insert(productAttributes).values(
         d.attributes.map((a) => ({
           id: nanoid(), productId: id, categoryId: null,
           name: a.name, type: a.type, isRequired: a.isRequired,
           options: a.options ?? null, sortOrder: a.sortOrder,
         }))
-      ).run()
+      )
     }
 
     if (d.suppliers.length > 0) {
-      tx.insert(productSuppliers).values(
+      await tx.insert(productSuppliers).values(
         d.suppliers.map((s) => ({
           id: nanoid(), productId: id,
           supplierId: s.supplierId,
@@ -135,7 +135,7 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
           isPreferred: s.isPreferred,
           notes: s.notes ?? null,
         }))
-      ).run()
+      )
     }
   })
 
@@ -181,8 +181,8 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   const current = await db.query.products.findFirst({ where: eq(products.id, productId) })
   if (!current) return { ok: false, message: "Producto no encontrado" }
 
-  db.transaction((tx) => {
-    tx.update(products).set({
+  await db.transaction(async (tx) => {
+    await tx.update(products).set({
       sku: d.sku, name: d.name,
       description: d.description || null,
       categoryId: d.categoryId,
@@ -193,25 +193,25 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       notes: d.notes || null,
       isActive: d.isActive,
       updatedAt: new Date().toISOString(),
-    }).where(eq(products.id, productId)).run()
+    }).where(eq(products.id, productId))
 
     // Replace attributes
-    tx.delete(productAttributes).where(eq(productAttributes.productId, productId)).run()
+    await tx.delete(productAttributes).where(eq(productAttributes.productId, productId))
     if (d.attributes.length > 0) {
-      tx.insert(productAttributes).values(
+      await tx.insert(productAttributes).values(
         d.attributes.map((a, i) => ({
           id: nanoid(), productId: d.id!,
           categoryId: null, name: a.name, type: a.type,
           isRequired: a.isRequired, options: a.options ?? null,
           sortOrder: a.sortOrder ?? i,
         }))
-      ).run()
+      )
     }
 
     // Replace product suppliers
-    tx.delete(productSuppliers).where(eq(productSuppliers.productId, productId)).run()
+    await tx.delete(productSuppliers).where(eq(productSuppliers.productId, productId))
     if (d.suppliers.length > 0) {
-      tx.insert(productSuppliers).values(
+      await tx.insert(productSuppliers).values(
         d.suppliers.map((s) => ({
           id: nanoid(), productId: d.id!,
           supplierId: s.supplierId,
@@ -219,7 +219,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
           isPreferred: s.isPreferred,
           notes: s.notes ?? null,
         }))
-      ).run()
+      )
     }
   })
 

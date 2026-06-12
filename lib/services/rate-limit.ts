@@ -1,5 +1,5 @@
 /**
- * Persistent rate-limiter backed by SQLite.
+ * Persistent rate-limiter backed by PostgreSQL.
  * Replaces the previous in-memory Map so limits survive restarts.
  */
 import { db } from "@/db"
@@ -13,16 +13,16 @@ const LOCK_TIME = 15 * 60 * 1000 // 15 minutes
  * Check whether `key` (IP or email) is allowed to attempt login.
  * Returns `{ allowed, waitTimeRemainingMs }`.
  */
-export function checkRateLimit(key: string): {
+export async function checkRateLimit(key: string): Promise<{
   allowed: boolean
   waitTimeRemainingMs: number
-} {
-  cleanupExpired()
-  const row = db
+}> {
+  await cleanupExpired()
+  const [row] = await db
     .select()
     .from(rateLimits)
     .where(eq(rateLimits.key, key))
-    .get()
+    .limit(1)
 
   if (!row) return { allowed: true, waitTimeRemainingMs: 0 }
 
@@ -35,56 +35,49 @@ export function checkRateLimit(key: string): {
 }
 
 /** Record a failed attempt for `key`. */
-export function recordFailure(key: string): void {
-  cleanupExpired()
-  const row = db
+export async function recordFailure(key: string): Promise<void> {
+  await cleanupExpired()
+  const [row] = await db
     .select()
     .from(rateLimits)
     .where(eq(rateLimits.key, key))
-    .get()
+    .limit(1)
 
   if (row) {
     const newCount = row.count + 1
     const lockUntil = newCount >= LIMIT_ATTEMPTS
       ? Date.now() + LOCK_TIME
       : 0
-    db.update(rateLimits)
-      .set({ count: newCount, lockUntil, updatedAt: new Date().toISOString() })
+    await db.update(rateLimits)
+      .set({ count: newCount, lockUntil })
       .where(eq(rateLimits.key, key))
-      .run()
   } else {
-    db.insert(rateLimits)
+    await db.insert(rateLimits)
       .values({ key, count: 1, lockUntil: 0 })
-      .run()
   }
 }
 
 /** Clear rate-limit record on successful login. */
-export function recordSuccess(key: string): void {
-  db.delete(rateLimits)
+export async function recordSuccess(key: string): Promise<void> {
+  await db.delete(rateLimits)
     .where(eq(rateLimits.key, key))
-    .run()
 }
 
 /**
  * Remove expired entries to keep the table small.
  * Runs automatically on every check/failure.
  */
-function cleanupExpired(): void {
+async function cleanupExpired(): Promise<void> {
   const threshold = Date.now() - LOCK_TIME
-  db.delete(rateLimits)
+  await db.delete(rateLimits)
     .where(lt(rateLimits.lockUntil, threshold))
-    .run()
 }
 
 /**
  * Clean up all expired rate-limit entries. Safe to call from a cron/admin action.
- * Returns number of deleted rows.
  */
-export function cleanupRateLimits(): number {
+export async function cleanupRateLimits(): Promise<void> {
   const threshold = Date.now() - LOCK_TIME
-  const result = db.delete(rateLimits)
+  await db.delete(rateLimits)
     .where(lt(rateLimits.lockUntil, threshold))
-    .run()
-  return result.changes ?? 0
 }

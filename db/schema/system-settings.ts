@@ -1,10 +1,7 @@
-import { sqliteTable, text } from "drizzle-orm/sqlite-core"
-import { sql } from "drizzle-orm"
+import { pgTable, text, timestamp } from "drizzle-orm/pg-core"
 
-export const systemSettings = sqliteTable("system_settings", {
+export const systemSettings = pgTable("system_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
-  updatedAt: text("updated_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })

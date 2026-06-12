@@ -51,7 +51,6 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
   const receiptId = nanoid()
   const now       = new Date().toISOString()
   const year      = new Date().getFullYear()
-  let code!: string
 
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, input.purchaseOrderId),
@@ -68,12 +67,12 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
 
   const worksiteId = input.worksiteId ?? order.worksiteId
 
-  db.transaction((tx) => {
-    code = nextCodeTx(tx, "REC", year)
+  const code = await db.transaction(async (tx) => {
+    const txCode = await nextCodeTx(tx, "REC", year)
 
-    tx.insert(receipts).values({
+    await tx.insert(receipts).values({
       id:              receiptId,
-      code,
+      code:            txCode,
       purchaseOrderId: input.purchaseOrderId,
       receivedBy:      input.receivedBy,
       receivedAt:      now,
@@ -83,7 +82,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       status:          "closed",
       notes:           input.notes ?? null,
       createdAt:       now,
-    }).run()
+    })
 
     for (const ri of input.items) {
       const ocItem = order.items.find((i) => i.id === ri.purchaseOrderItemId)
@@ -112,7 +111,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       }
 
       const totalNowReceived = currentReceived + qtyRec
-      tx.insert(receiptItems).values({
+      await tx.insert(receiptItems).values({
         id:                  nanoid(),
         receiptId,
         purchaseOrderItemId: ri.purchaseOrderItemId,
@@ -121,24 +120,24 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
         quantityDamaged:     qtyDmg,
         status:              totalNowReceived >= ocItem.quantity ? "received" : "partially_received",
         notes:               ri.notes ?? null,
-      }).run()
+      })
 
-      tx
+      await tx
         .update(purchaseOrderItems)
         .set(input.stage === "office"
           ? { quantityOfficeReceived: totalNowReceived }
           : { quantityReceived: totalNowReceived })
-        .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId)).run()
+        .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
 
       if (input.stage === "faena" && ocItem.requestItemId) {
         const fullReceived = totalNowReceived >= ocItem.quantity
-        receiveItemTx(tx, ocItem.requestItemId, input.receivedBy, {
+        await receiveItemTx(tx, ocItem.requestItemId, input.receivedBy, {
           fullReceived,
           userEmail: input.userEmail,
         })
 
         if (worksiteId && ocItem.productId) {
-          applyMovementTx(tx, {
+          await applyMovementTx(tx, {
             worksiteId,
             productId:   ocItem.productId,
             type:        "ingreso_oc",
@@ -147,21 +146,21 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
             referenceId: input.purchaseOrderId,
             performedBy: input.receivedBy,
             userEmail:   input.userEmail,
-            notes:       `Recepción ${code} — guía ${input.dispatchGuideNo ?? "s/n"}`,
+            notes:       `Recepción ${txCode} — guía ${input.dispatchGuideNo ?? "s/n"}`,
           })
         }
       }
     }
 
-    rollupOrderReceiptStatus(input.purchaseOrderId, tx)
+    await rollupOrderReceiptStatus(input.purchaseOrderId, tx)
 
-    recordAudit({
+    await recordAudit({
       userId:     input.receivedBy,
       userEmail:  input.userEmail,
       action:     "create",
       entityType: "receipt",
       entityId:   receiptId,
-      entityCode: code,
+      entityCode: txCode,
       newState:   {
         purchaseOrderId: input.purchaseOrderId,
         stage:           input.stage,
@@ -169,18 +168,22 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
         itemCount:       input.items.length,
       },
     }, tx)
+
+    return txCode
   })
+
+  void code // used only for audit above; receiptId is returned
 
   return receiptId
 }
 
 /* ── Roll up OC status based on received quantities ────────────────────────────  */
 
-function rollupOrderReceiptStatus(
+async function rollupOrderReceiptStatus(
   orderId: string,
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-): void {
-  const ocItems = tx
+): Promise<void> {
+  const ocItems = await tx
     .select({
       quantity:               purchaseOrderItems.quantity,
       quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
@@ -188,7 +191,6 @@ function rollupOrderReceiptStatus(
     })
     .from(purchaseOrderItems)
     .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
-    .all()
 
   if (ocItems.length === 0) return
 
@@ -208,12 +210,12 @@ function rollupOrderReceiptStatus(
   else return
 
   const now = new Date().toISOString()
-  tx
+  await tx
     .update(purchaseOrders)
     .set({ status: newStatus, updatedAt: now })
     // Never pull a manually closed/cancelled order back into the receiving flow.
     .where(and(
       eq(purchaseOrders.id, orderId),
       notInArray(purchaseOrders.status, ["closed", "cancelled"]),
-    )).run()
+    ))
 }

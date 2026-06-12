@@ -42,19 +42,15 @@ export interface ApplyMovementInput {
  * Returns the new stock level after the movement.
  */
 export async function applyMovement(input: ApplyMovementInput): Promise<number> {
-  let stockAfter: number = 0
-
-  db.transaction((tx) => {
-    stockAfter = applyMovementTx(tx, input)
+  return await db.transaction(async (tx) => {
+    return await applyMovementTx(tx, input)
   })
-
-  return stockAfter
 }
 
-export function applyMovementTx(tx: Tx, input: ApplyMovementInput): number {
-  const ws = tx.query.worksites.findFirst({
+export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promise<number> {
+  const ws = await tx.query.worksites.findFirst({
     where: eq(worksites.id, input.worksiteId),
-  }).sync()
+  })
   if (!ws) {
     throw new Error(`Worksite ${input.worksiteId} not found`)
   }
@@ -62,12 +58,12 @@ export function applyMovementTx(tx: Tx, input: ApplyMovementInput): number {
     throw new Error(`Worksite '${ws.name}' is not active`)
   }
 
-  const existing = tx.query.worksiteStock.findFirst({
+  const existing = await tx.query.worksiteStock.findFirst({
     where: and(
       eq(worksiteStock.worksiteId, input.worksiteId),
       eq(worksiteStock.productId, input.productId),
     ),
-  }).sync()
+  })
 
   const currentQty = existing?.quantity ?? 0
   const newQty = currentQty + input.quantity
@@ -81,7 +77,7 @@ export function applyMovementTx(tx: Tx, input: ApplyMovementInput): number {
   const now = new Date().toISOString()
 
   if (existing) {
-    tx
+    await tx
       .update(worksiteStock)
       .set({
         quantity: newQty,
@@ -93,9 +89,9 @@ export function applyMovementTx(tx: Tx, input: ApplyMovementInput): number {
           eq(worksiteStock.worksiteId, input.worksiteId),
           eq(worksiteStock.productId, input.productId),
         ),
-      ).run()
+      )
   } else {
-    tx.insert(worksiteStock).values({
+    await tx.insert(worksiteStock).values({
       id: nanoid(),
       worksiteId: input.worksiteId,
       productId: input.productId,
@@ -103,10 +99,10 @@ export function applyMovementTx(tx: Tx, input: ApplyMovementInput): number {
       minStock: 0,
       lastMovementAt: now,
       updatedAt: now,
-    }).run()
+    })
   }
 
-  tx.insert(inventoryMovements).values({
+  await tx.insert(inventoryMovements).values({
     id: nanoid(),
     worksiteId: input.worksiteId,
     productId: input.productId,
@@ -119,9 +115,9 @@ export function applyMovementTx(tx: Tx, input: ApplyMovementInput): number {
     performedBy: input.performedBy,
     reason: input.reason ?? null,
     notes: input.notes ?? null,
-  }).run()
+  })
 
-  recordAudit({
+  await recordAudit({
     userId: input.performedBy,
     userEmail: input.userEmail,
     action: "create",

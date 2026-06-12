@@ -149,24 +149,24 @@ export async function createUser(
   const expiresAt    = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   const invitationId = nanoid()
 
-  db.transaction((tx) => {
-    tx.insert(users).values({
+  await db.transaction(async (tx) => {
+    await tx.insert(users).values({
       id, name: displayName, email: d.email,
       hashedPassword: createPendingPasswordMarker(),
       avatarColor,
       isActive: d.isActive,
-    }).run()
+    })
     if (d.roleIds.length > 0) {
-      tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: id, roleId: rid }))).run()
+      await tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: id, roleId: rid })))
     }
     if (d.worksiteAssignments.length > 0) {
-      tx.insert(worksiteUsers).values(
+      await tx.insert(worksiteUsers).values(
         d.worksiteAssignments.map((a) => ({
           userId: id, worksiteId: a.worksiteId, isPrimary: a.isPrimary,
         }))
-      ).run()
+      )
     }
-    tx.insert(userInvitations).values({
+    await tx.insert(userInvitations).values({
       id: invitationId,
       email: d.email,
       name: displayName,
@@ -175,7 +175,7 @@ export async function createUser(
       worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
       invitedByUserId: session.user.id,
       expiresAt,
-    }).run()
+    })
   })
 
   let deliveryMessage = `Usuario ${displayName} creado. Invitación enviada para definir contraseña.`
@@ -263,21 +263,21 @@ export async function updateUser(
     updatedAt: new Date().toISOString(),
   }
 
-  db.transaction((tx) => {
-    tx.update(users).set(updates).where(eq(users.id, d.id)).run()
+  await db.transaction(async (tx) => {
+    await tx.update(users).set(updates).where(eq(users.id, d.id))
     // Replace roles
-    tx.delete(userRoles).where(eq(userRoles.userId, d.id)).run()
+    await tx.delete(userRoles).where(eq(userRoles.userId, d.id))
     if (d.roleIds.length > 0) {
-      tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: d.id, roleId: rid }))).run()
+      await tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: d.id, roleId: rid })))
     }
     // Replace worksite assignments
-    tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, d.id)).run()
+    await tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, d.id))
     if (d.worksiteAssignments.length > 0) {
-      tx.insert(worksiteUsers).values(
+      await tx.insert(worksiteUsers).values(
         d.worksiteAssignments.map((a) => ({
           userId: d.id, worksiteId: a.worksiteId, isPrimary: a.isPrimary,
         }))
-      ).run()
+      )
     }
   })
 

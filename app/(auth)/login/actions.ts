@@ -56,7 +56,7 @@ export async function setInitialPassword(input: {
 
   const { email, password, token } = parsed.data
   const rateKey = `initial-password:${email}`
-  const limit = checkRateLimit(rateKey)
+  const limit = await checkRateLimit(rateKey)
   if (!limit.allowed) {
     return {
       ok: false,
@@ -66,7 +66,7 @@ export async function setInitialPassword(input: {
 
   const user = await db.query.users.findFirst({ where: eq(users.email, email) })
   if (!user || !user.isActive || !isPasswordSetupPending(user.hashedPassword)) {
-    recordFailure(rateKey)
+    await recordFailure(rateKey)
     return { ok: false, message: "Esta cuenta no está pendiente de contraseña" }
   }
 
@@ -77,25 +77,25 @@ export async function setInitialPassword(input: {
     ),
   })
   if (!invitation || invitation.email !== email) {
-    recordFailure(rateKey)
+    await recordFailure(rateKey)
     return { ok: false, fieldErrors: { token: ["Invitación inválida o ya utilizada"] } }
   }
   if (new Date(invitation.expiresAt).getTime() < Date.now()) {
-    recordFailure(rateKey)
+    await recordFailure(rateKey)
     return { ok: false, fieldErrors: { token: ["La invitación expiró"] } }
   }
 
   const hashedPassword = await bcrypt.hash(password, 12)
-  db.transaction((tx) => {
-    tx.update(users).set({
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({
       hashedPassword,
       updatedAt: new Date().toISOString(),
-    }).where(eq(users.id, user.id)).run()
-    tx.update(userInvitations).set({
+    }).where(eq(users.id, user.id))
+    await tx.update(userInvitations).set({
       acceptedAt: new Date().toISOString(),
-    }).where(eq(userInvitations.id, invitation.id)).run()
+    }).where(eq(userInvitations.id, invitation.id))
   })
 
-  recordSuccess(rateKey)
+  await recordSuccess(rateKey)
   return { ok: true, message: "Contraseña creada. Iniciando sesión..." }
 }

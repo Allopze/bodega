@@ -1,5 +1,5 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core"
-import { relations, sql } from "drizzle-orm"
+import { pgTable, text, integer, real, numeric, timestamp } from "drizzle-orm/pg-core"
+import { relations } from "drizzle-orm"
 import { users } from "./users"
 import { worksites, suppliers } from "./worksites"
 import { products } from "./products"
@@ -11,7 +11,7 @@ import { purchaseRequestItems } from "./requests"
 // partially_received | received | closed | cancelled
 
 /* ── Purchase Orders ─────────────────────────────────────────────────────── */
-export const purchaseOrders = sqliteTable("purchase_orders", {
+export const purchaseOrders = pgTable("purchase_orders", {
   id:                text("id").primaryKey(),
   code:              text("code").notNull().unique(),   // "OC-2026-0017"
   worksiteId:        text("worksite_id").notNull().references(() => worksites.id),
@@ -24,17 +24,17 @@ export const purchaseOrders = sqliteTable("purchase_orders", {
   estimatedDelivery: text("estimated_delivery"),
   deliveryAddress:   text("delivery_address"),
   paymentTerms:      text("payment_terms"),
-  netAmount:         real("net_amount").notNull().default(0),
-  taxAmount:         real("tax_amount").notNull().default(0),
-  totalAmount:       real("total_amount").notNull().default(0),
+  netAmount:         numeric("net_amount", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
+  taxAmount:         numeric("tax_amount", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
+  totalAmount:       numeric("total_amount", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
   notes:             text("notes"),
   supplierNotes:     text("supplier_notes"),
-  createdAt:         text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt:         text("updated_at").notNull().default(sql`(datetime('now'))`),
+  createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Purchase Order Items ─────────────────────────────────────────────────── */
-export const purchaseOrderItems = sqliteTable("purchase_order_items", {
+export const purchaseOrderItems = pgTable("purchase_order_items", {
   id:                   text("id").primaryKey(),
   purchaseOrderId:      text("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
   requestItemId:        text("request_item_id").references(() => purchaseRequestItems.id),
@@ -42,9 +42,9 @@ export const purchaseOrderItems = sqliteTable("purchase_order_items", {
   productNameFree:      text("product_name_free"),      // for uncatalogued
   quantity:             real("quantity").notNull(),
   unitOfMeasure:        text("unit_of_measure").notNull().default("unidad"),
-  unitPrice:            real("unit_price").notNull().default(0),
-  discount:             real("discount").notNull().default(0),
-  subtotal:             real("subtotal").notNull().default(0),
+  unitPrice:            numeric("unit_price", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
+  discount:             numeric("discount", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
+  subtotal:             numeric("subtotal", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
   quantityOfficeReceived: real("quantity_office_received").notNull().default(0),
   quantityReceived:     real("quantity_received").notNull().default(0),
   status:               text("status").notNull().default("issued"),
@@ -53,17 +53,17 @@ export const purchaseOrderItems = sqliteTable("purchase_order_items", {
 })
 
 /* ── Quotations ───────────────────────────────────────────────────────────── */
-export const quotations = sqliteTable("quotations", {
+export const quotations = pgTable("quotations", {
   id:              text("id").primaryKey(),
   purchaseOrderId: text("purchase_order_id").references(() => purchaseOrders.id),
   supplierId:      text("supplier_id").notNull().references(() => suppliers.id),
   fileName:        text("file_name"),
   filePath:        text("file_path"),
-  amount:          real("amount"),
+  amount:          numeric("amount", { precision: 12, scale: 2, mode: "number" }),
   validUntil:      text("valid_until"),
   notes:           text("notes"),
   uploadedBy:      text("uploaded_by").notNull().references(() => users.id),
-  uploadedAt:      text("uploaded_at").notNull().default(sql`(datetime('now'))`),
+  uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

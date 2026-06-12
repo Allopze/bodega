@@ -73,46 +73,45 @@ export async function registerUser(
   const hashedPassword = await bcrypt.hash(data.password, 12)
   const avatarColor = existing?.avatarColor ?? String(Math.abs(hashStr(data.name)) % 360)
 
-  db.transaction((tx) => {
+  await db.transaction(async (tx) => {
     if (existing) {
-      tx.update(users).set({
+      await tx.update(users).set({
         name: data.name,
         hashedPassword,
         avatarColor,
         isActive: true,
         updatedAt: new Date().toISOString(),
-      }).where(eq(users.id, existing.id)).run()
-      tx.delete(userRoles).where(eq(userRoles.userId, existing.id)).run()
-      tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, existing.id)).run()
+      }).where(eq(users.id, existing.id))
+      await tx.delete(userRoles).where(eq(userRoles.userId, existing.id))
+      await tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, existing.id))
     } else {
-      tx.insert(users).values({
+      await tx.insert(users).values({
         id,
         name: data.name,
         email: data.email,
         hashedPassword,
         avatarColor,
         isActive: true,
-      }).run()
+      })
     }
 
-    tx.insert(userRoles).values(roleIds.map((roleId) => ({ userId: id, roleId }))).run()
+    await tx.insert(userRoles).values(roleIds.map((roleId) => ({ userId: id, roleId })))
 
     if (worksiteAssignments.length > 0) {
-      tx.insert(worksiteUsers).values(
+      await tx.insert(worksiteUsers).values(
         worksiteAssignments.map((assignment) => ({
           userId: id,
           worksiteId: assignment.worksiteId,
           isPrimary: assignment.isPrimary,
         })),
-      ).run()
+      )
     }
 
     if (invitationId) {
-      tx
+      await tx
         .update(userInvitations)
         .set({ acceptedAt: new Date().toISOString() })
         .where(eq(userInvitations.id, invitationId))
-        .run()
     }
   })
 

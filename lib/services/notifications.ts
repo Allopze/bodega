@@ -226,13 +226,11 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
  * Delete read notifications older than `days` (default 90).
  * Call periodically from a cron job or admin action.
  */
-export async function cleanupOldNotifications(days = 90): Promise<number> {
+export async function cleanupOldNotifications(days = 90): Promise<void> {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
 
-  const result = db
+  await db
     .delete(notifications)
     .where(eq(notifications.isRead, true))
-    .run()
-  return result.changes ?? 0
 }
