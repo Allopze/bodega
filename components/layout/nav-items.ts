@@ -1,21 +1,28 @@
-import type { Permission } from "@/lib/auth/types"
+/**
+ * nav-items.ts — Navegación derivada del registry de módulos
+ *
+ * Las secciones de nav las declara cada módulo en su manifest.
+ * Este archivo agrega la entrada fija "Dashboard" y concatena el resto.
+ */
+
+import { registry } from "@/modules/registry"
 
 export interface NavItem {
-  label:       string
-  href:        string
-  iconName:    string          // Phosphor icon name
-  permissions?: Permission[]   // ANY of these grants access; empty = public-within-auth
-  roles?:      string[]        // OR check: ANY of these roles
-  badge?:      "count"         // shows a pending count if set
+  label:        string
+  href:         string
+  iconName:     string          // Phosphor icon name
+  permissions?: string[]        // ANY of these grants access; empty = public-within-auth
+  roles?:       string[]        // OR check: ANY of these roles
+  badge?:       "count"
 }
 
 export interface NavSection {
-  section:  string
-  items:    NavItem[]
+  section: string
+  items:   NavItem[]
 }
 
-/** Full navigation tree — filtered per-user in the sidebar component */
-export const NAV_ITEMS: NavSection[] = [
+/** Dashboard — entrada fija, visible para todos los usuarios autenticados */
+const FIXED_ITEMS: NavSection[] = [
   {
     section: "Principal",
     items: [
@@ -26,66 +33,36 @@ export const NAV_ITEMS: NavSection[] = [
       },
     ],
   },
-  {
-    section: "Operaciones",
-    items: [
-      {
-        label:       "Solicitudes",
-        href:        "/solicitudes",
-        iconName:    "ClipboardText",
-        permissions: ["requests:view_own", "requests:view_all"],
-        badge:       "count",
-      },
-      {
-        label:       "Aprobaciones",
-        href:        "/aprobaciones",
-        iconName:    "CheckSquare",
-        permissions: ["approvals:approve"],
-        badge:       "count",
-      },
-      {
-        label:       "Órdenes de compra",
-        href:        "/compras",
-        iconName:    "ShoppingCart",
-        permissions: ["purchasing:view"],
-        badge:       "count",
-      },
-      {
-        label:       "Recepción",
-        href:        "/recepcion",
-        iconName:    "Truck",
-        permissions: ["receiving:view"],
-        badge:       "count",
-      },
-      {
-        label:       "Bodega",
-        href:        "/bodega",
-        iconName:    "Warehouse",
-        permissions: ["warehouse:view_stock"],
-      },
-      {
-        label:       "Entregas",
-        href:        "/entregas",
-        iconName:    "Truck",
-        permissions: ["warehouse:register_movement"],
-      },
-    ],
-  },
-  {
-    section: "Reportes",
-    items: [
-      {
-        label:       "Trazabilidad",
-        href:        "/trazabilidad",
-        iconName:    "ChartLineUp",
-        permissions: ["reports:view"],
-      },
-      {
-        label:       "Reportes",
-        href:        "/reportes",
-        iconName:    "ChartBar",
-        permissions: ["reports:view"],
-      },
-    ],
-  },
+]
+
+/**
+ * Merge de las secciones nav de todos los módulos registrados.
+ * Si dos módulos declaran la misma sección (ej: "Operaciones"), sus items
+ * se unen en esa sección según el orden de registro.
+ */
+function buildNavFromRegistry(): NavSection[] {
+  const sectionMap = new Map<string, NavItem[]>()
+
+  for (const mod of registry) {
+    if (!mod.nav) continue
+    for (const section of mod.nav) {
+      const existing = sectionMap.get(section.section)
+      if (existing) {
+        existing.push(...(section.items as NavItem[]))
+      } else {
+        sectionMap.set(section.section, [...(section.items as NavItem[])])
+      }
+    }
+  }
+
+  return Array.from(sectionMap.entries()).map(([section, items]) => ({
+    section,
+    items,
+  }))
+}
+
+/** Full navigation tree — filtered per-user in the sidebar component */
+export const NAV_ITEMS: NavSection[] = [
+  ...FIXED_ITEMS,
+  ...buildNavFromRegistry(),
 ]

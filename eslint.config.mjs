@@ -11,14 +11,14 @@ import nextTs from "eslint-config-next/typescript";
 //   (las flechas apuntan en la dirección de "puede importar de")
 //
 // Fase 0-2: warn (visibilidad durante migración)
-// Fase 3  : cambiar "warn" → "error" para forzar fronteras definitivamente
+// Fase 3  : "error" — fronteras activas, el build falla si se viola una frontera
 //
-// Reglas actuales (se irán añadiendo a medida que la migración avanza):
+// Reglas activas:
 //   1. core/ no puede importar de modules/
-//   2. [Fase 3] modules/X no puede importar internos de modules/Y
+//   2. modules/X no puede importar internos de modules/Y
 //      (solo puede importar @/modules/Y ← el barrel público index.ts)
 
-const BOUNDARY_SEVERITY = "warn"; // → "error" en Fase 3
+const BOUNDARY_SEVERITY = "error"; // Fase 3: fronteras activas
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -64,25 +64,35 @@ const eslintConfig = defineConfig([
       }],
     },
   },
-  // ── Regla 2 (preparada para Fase 3): módulos solo hablan entre sí por barrel ─
-  // Se activará en Fase 3 con la lista de módulos concreta.
-  // Por ahora queda como bloque comentado para documentar la intención:
+  // ── Regla 2: módulos solo hablan entre sí por barrel público ────────────────
+  // Un módulo PUEDE importar otro módulo SOLO vía su barrel (index.ts).
+  // PROHIBIDO importar internals: modules/purchasing/services/foo.ts desde modules/requests/...
   //
-  // {
-  //   files: ["modules/**/*.{ts,tsx}"],
-  //   rules: {
-  //     "no-restricted-imports": [BOUNDARY_SEVERITY, {
-  //       patterns: [
-  //         // Importar internos de otro módulo está prohibido.
-  //         // Ejemplo: modules/requests/services/foo.ts NO PUEDE importar modules/purchasing/services/bar.ts
-  //         // Solo puede importar el barrel: @/modules/purchasing (que apunta a modules/purchasing/index.ts)
-  //         { group: ["@/modules/admin/*"],        message: "[boundary] import @/modules/admin instead" },
-  //         { group: ["@/modules/requests/*"],     message: "[boundary] import @/modules/requests instead" },
-  //         // ... un pattern por módulo
-  //       ],
-  //     }],
-  //   },
-  // },
+  // Estos patrones se aplican SOLO dentro de modules/**:
+  // (los index.ts de cada módulo están exentos — ellos DEBEN importar internos)
+  {
+    files: ["modules/**/*.{ts,tsx}"],
+    ignores: [
+      "modules/*/index.ts",           // barrels públicos
+      "modules/registry.ts",          // join-point
+      "modules/permissions.ts",       // derivación de permisos
+    ],
+    rules: {
+      "no-restricted-imports": [BOUNDARY_SEVERITY, {
+        patterns: [
+          { group: ["@/modules/admin/actions/*", "@/modules/admin/services/*", "@/modules/admin/components/*", "@/modules/admin/schema", "@/modules/admin/validation", "@/modules/admin/manifest"], message: "[boundary] import @/modules/admin instead of its internals" },
+          { group: ["@/modules/requests/actions/*", "@/modules/requests/services/*", "@/modules/requests/components/*", "@/modules/requests/schema", "@/modules/requests/validation", "@/modules/requests/manifest"], message: "[boundary] import @/modules/requests instead of its internals" },
+          { group: ["@/modules/approvals/actions/*", "@/modules/approvals/services/*", "@/modules/approvals/components/*", "@/modules/approvals/schema", "@/modules/approvals/validation", "@/modules/approvals/manifest"], message: "[boundary] import @/modules/approvals instead of its internals" },
+          { group: ["@/modules/purchasing/actions/*", "@/modules/purchasing/services/*", "@/modules/purchasing/components/*", "@/modules/purchasing/schema", "@/modules/purchasing/validation", "@/modules/purchasing/manifest"], message: "[boundary] import @/modules/purchasing instead of its internals" },
+          { group: ["@/modules/receiving/actions/*", "@/modules/receiving/services/*", "@/modules/receiving/components/*", "@/modules/receiving/schema", "@/modules/receiving/validation", "@/modules/receiving/manifest"], message: "[boundary] import @/modules/receiving instead of its internals" },
+          { group: ["@/modules/warehouse/actions/*", "@/modules/warehouse/services/*", "@/modules/warehouse/components/*", "@/modules/warehouse/schema", "@/modules/warehouse/validation", "@/modules/warehouse/manifest"], message: "[boundary] import @/modules/warehouse instead of its internals" },
+          { group: ["@/modules/deliveries/actions/*", "@/modules/deliveries/services/*", "@/modules/deliveries/components/*", "@/modules/deliveries/schema", "@/modules/deliveries/validation", "@/modules/deliveries/manifest"], message: "[boundary] import @/modules/deliveries instead of its internals" },
+          { group: ["@/modules/traceability/actions/*", "@/modules/traceability/services/*", "@/modules/traceability/components/*", "@/modules/traceability/schema", "@/modules/traceability/validation", "@/modules/traceability/manifest"], message: "[boundary] import @/modules/traceability instead of its internals" },
+          { group: ["@/modules/reports/actions/*", "@/modules/reports/services/*", "@/modules/reports/components/*", "@/modules/reports/schema", "@/modules/reports/validation", "@/modules/reports/manifest"], message: "[boundary] import @/modules/reports instead of its internals" },
+        ],
+      }],
+    },
+  },
 ]);
 
 export default eslintConfig;

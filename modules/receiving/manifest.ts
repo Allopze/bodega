@@ -14,7 +14,7 @@ export const receivingModule = {
         {
           label:       "Recepción",
           href:        "/recepcion",
-          iconName:    "PackageCheck",
+          iconName:    "Package",
           permissions: ["receiving:view", "receiving:register_office", "receiving:register_faena"],
         },
       ],

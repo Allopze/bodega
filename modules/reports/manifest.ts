@@ -12,7 +12,7 @@ export const reportsModule = {
         {
           label:       "Reportes",
           href:        "/reportes",
-          iconName:    "BarChart2",
+          iconName:    "ChartBar",
           permissions: ["reports:view"],
         },
       ],

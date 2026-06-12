@@ -12,7 +12,7 @@ export const traceabilityModule = {
         {
           label:       "Trazabilidad",
           href:        "/trazabilidad",
-          iconName:    "Route",
+          iconName:    "Path",
           permissions: ["requests:view_all"],
         },
       ],

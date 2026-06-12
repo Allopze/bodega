@@ -7,6 +7,7 @@ import {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck,
   ArrowSquareOut, ChartLineUp, ChartBar, CaretLeft, CaretRight,
+  Package, Path,
 } from "@phosphor-icons/react"
 import type { IconWeight } from "@phosphor-icons/react"
 import type { Session } from "next-auth"
@@ -19,6 +20,8 @@ const ICONS: Record<string, React.ComponentType<{ size?: number; weight?: IconWe
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
   ChartLineUp, ChartBar,
+  // Módulos nuevos
+  Package, Path,
 }
 
 function canSeeItem(item: NavItem, session: Session): boolean {
