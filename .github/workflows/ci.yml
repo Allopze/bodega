@@ -28,6 +28,9 @@ jobs:
       - name: Check env files
         run: npm run check:secrets
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Lint
         run: npm run lint
 
@@ -40,5 +43,5 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: E2E admin smoke
-        run: npm run test:e2e -- e2e/admin-flow.spec.ts
+      - name: E2E smoke (admin + purchase)
+        run: npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts

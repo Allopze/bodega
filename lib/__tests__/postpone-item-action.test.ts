@@ -29,10 +29,13 @@ const mockAuthFn = vi.hoisted(() => vi.fn())
 // Mock next-auth so the can.ts module uses a fake auth() we control.
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 
-// Mock the synchronous better-sqlite3 database.  The action chains
-//   db.select(...).from(...).innerJoin(...).where(...).then(fn)
-// and calls
-//   db.query.purchaseOrderItems.findFirst(...)
+// Mock the Drizzle/postgres-js database (@/db). This stub replicates the exact
+// query shape postponeItemAction uses today:
+//   await db.select(...).from(...).innerJoin(...).where(...)   // thenable
+//   await db.query.purchaseOrderItems.findFirst(...)
+// If the action's query shape changes, update this stub — a green test here
+// does NOT exercise real SQL. (A full pglite rewrite is the higher-fidelity
+// alternative; see lib/__tests__/registro-action.test.ts for that pattern.)
 vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => ({

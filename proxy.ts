@@ -6,6 +6,9 @@ function createCspHeader(nonce: string) {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    // 'unsafe-inline' en style-src es un riesgo conocido y aceptado: Tailwind v4
+    // y Radix inyectan estilos inline en runtime. No afecta script-src (que sí
+    // usa nonce + strict-dynamic). Revisar si se migra a estilos con nonce.
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",

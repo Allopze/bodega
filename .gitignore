@@ -33,6 +33,9 @@
 .DS_Store
 *.pem
 
+# datos de trabajadores con PII (RUT/nombres) — no debe versionarse
+/trabajadores_por_faena_actualizado.md
+
 # debug
 npm-debug.log*
 yarn-debug.log*

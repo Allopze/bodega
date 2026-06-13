@@ -93,6 +93,30 @@ const eslintConfig = defineConfig([
       }],
     },
   },
+  // ── Freeze (finding A1): el código vivo no debe importar las copias STALE ────
+  // `app/`, `lib/`, `components/` son la fuente de verdad junto con `lib/`. Las
+  // copias en `modules/*/{services,actions,schema,validation}` y casi todo
+  // `core/` divergieron y están congeladas (ver AGENTS.md / modules/README.md).
+  // Esta regla impide reintroducir lógica vieja por error. Se relajará al
+  // reanudar la migración, cuando `app/` pase a importar los barrels
+  // `@/modules/<área>`. (Hoy ningún archivo vivo importa estos paths.)
+  {
+    files: ["app/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [BOUNDARY_SEVERITY, {
+        patterns: [
+          {
+            group: ["@/modules/*/services/*", "@/modules/*/actions/*", "@/modules/*/schema", "@/modules/*/validation"],
+            message: "[freeze] No importes las copias stale de modules/*. Fuente de verdad: lib/ + app/ (ver modules/README.md).",
+          },
+          {
+            group: ["@/core/*", "@/core"],
+            message: "[freeze] core/ está congelado; usa las primitivas equivalentes en lib/.",
+          },
+        ],
+      }],
+    },
+  },
 ]);
 
 export default eslintConfig;
