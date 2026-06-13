@@ -60,7 +60,12 @@ export function Sidebar({
     .filter((section) => section.items.length > 0)
 
   return (
-    <aside className="flex flex-col h-full w-full bg-surface text-text">
+    <aside
+      className={cn(
+        "flex flex-col h-full w-full text-text",
+        collapsed ? "rounded-[999px] bg-transparent" : "bg-surface",
+      )}
+    >
       {/* Brand + collapse toggle */}
       <div className={cn(
         "px-3 pb-3 pt-3",

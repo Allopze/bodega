@@ -58,70 +58,71 @@ export function ReturnPanel({
     : []
 
   return (
-    <div className="bg-[var(--color-surface)] rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] p-5">
-      <h2 className="text-h2 mb-4 flex items-center gap-2">
-        <ArrowBendUpLeft size={16} className="text-[var(--color-text-muted)]" />
-        Devolver a stock
-      </h2>
+    <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="border-b border-[var(--color-border)] px-5 py-4">
+        <h2 className="text-h2 flex items-center gap-2 text-[var(--color-text)]">
+          <ArrowBendUpLeft size={16} className="text-[var(--color-text-muted)]" />
+          Devolver a stock
+        </h2>
+        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+          Registrar devolución de EPP
+        </p>
+      </div>
 
-      <form ref={formRef} action={action} className="flex flex-col gap-4">
+      <form ref={formRef} action={action} className="flex flex-col gap-4 p-5">
         <input type="hidden" name="worksiteId" value={worksiteId} />
         <input type="hidden" name="productId"  value={productId} />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Faena" htmlFor="returnWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
-            <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setProductId("") }}>
-              <SelectTrigger id="returnWorksiteId" error={!!state.fieldErrors?.worksiteId}>
-                <SelectValue placeholder="Selecciona faena" />
-              </SelectTrigger>
-              <SelectContent>
-                {worksites.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+        <Field label="Faena" htmlFor="returnWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
+          <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setProductId("") }}>
+            <SelectTrigger id="returnWorksiteId" error={!!state.fieldErrors?.worksiteId}>
+              <SelectValue placeholder="Selecciona faena" />
+            </SelectTrigger>
+            <SelectContent>
+              {worksites.map((w) => (
+                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
 
-          <Field label="Producto" htmlFor="returnProductId" required error={state.fieldErrors?.productId?.[0]}>
-            <Select value={productId} onValueChange={setProductId} disabled={!worksiteId}>
-              <SelectTrigger id="returnProductId" error={!!state.fieldErrors?.productId}>
-                <SelectValue placeholder={worksiteId ? "Selecciona producto" : "Elige faena primero"} />
-              </SelectTrigger>
-              <SelectContent>
-                {availableProducts.map((p) => (
-                  <SelectItem key={p.productId} value={p.productId}>
-                    {p.productName}
-                  </SelectItem>
-                ))}
-                {availableProducts.length === 0 && worksiteId && (
-                  <SelectItem value="__none__" disabled>Sin productos en esta faena</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
+        <Field label="Producto" htmlFor="returnProductId" required error={state.fieldErrors?.productId?.[0]}>
+          <Select value={productId} onValueChange={setProductId} disabled={!worksiteId}>
+            <SelectTrigger id="returnProductId" error={!!state.fieldErrors?.productId}>
+              <SelectValue placeholder={worksiteId ? "Selecciona producto" : "Elige faena primero"} />
+            </SelectTrigger>
+            <SelectContent>
+              {availableProducts.map((p) => (
+                <SelectItem key={p.productId} value={p.productId}>
+                  {p.productName}
+                </SelectItem>
+              ))}
+              {availableProducts.length === 0 && worksiteId && (
+                <SelectItem value="__none__" disabled>Sin productos en esta faena</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        </Field>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field
-            label="Cantidad a devolver"
-            htmlFor="returnQuantity"
+        <Field
+          label="Cantidad a devolver"
+          htmlFor="returnQuantity"
+          required
+          error={state.fieldErrors?.quantity?.[0]}
+        >
+          <Input
+            id="returnQuantity"
+            type="number"
+            name="quantity"
+            step="0.01"
+            min="0.01"
+            placeholder="0"
+            disabled={!productId}
             required
-            error={state.fieldErrors?.quantity?.[0]}
-          >
-            <Input
-              id="returnQuantity"
-              type="number"
-              name="quantity"
-              step="0.01"
-              min="0.01"
-              placeholder="0"
-              disabled={!productId}
-              required
-              error={!!state.fieldErrors?.quantity}
-              className="tabular-nums"
-            />
-          </Field>
-        </div>
+            error={!!state.fieldErrors?.quantity}
+            className="tabular-nums"
+          />
+        </Field>
 
         <Field label="Motivo" htmlFor="returnReason" required error={state.fieldErrors?.reason?.[0]}>
           <Input
@@ -151,15 +152,15 @@ export function ReturnPanel({
           </p>
         )}
 
-        <div className="pt-1">
+        <div className="pt-2">
           <SubmitButton
             label="Registrar devolución"
             loadingLabel="Guardando..."
-            variant="secondary"
+            variant="primary"
             disabled={!worksiteId || !productId}
           />
         </div>
       </form>
-    </div>
+    </section>
   )
 }

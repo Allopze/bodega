@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import type { Session } from "next-auth"
-import type { ComponentType } from "react"
+import type { ComponentType, ReactNode } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -122,7 +122,7 @@ export default async function DashboardPage() {
 
   return (
     <PageContainer>
-      <div className="space-y-6 animate-in fade-in duration-[var(--duration-default)]">
+      <div className="space-y-5 animate-in fade-in duration-[var(--duration-default)]">
 
       {/* ── Header de saludo ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -153,26 +153,31 @@ export default async function DashboardPage() {
       </div>
 
       {/* ── KPI tiles ── */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(18rem,0.95fr)]">
-        {/* Hero card — drenched green */}
-        <Card className="bg-[var(--color-primary-deep)]">
-          <CardContent className="flex h-full min-h-[17.5rem] flex-col justify-between p-5 md:p-6">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-white/60">
-                  Tareas pendientes
-                </p>
-                <div className="flex items-end gap-3">
-                  <p className="font-mono text-[3.25rem] font-semibold leading-none text-white tabular-nums">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
+        <Card className="border border-[var(--color-border)]">
+          <CardContent className="flex h-full min-h-[15rem] flex-col justify-between p-5 md:p-6">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
+                    <CheckCircle size={17} weight="bold" />
+                  </span>
+                  <p className="text-eyebrow">Tareas pendientes</p>
+                </div>
+                <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
+                  <p className={cn(
+                    "font-mono text-[3.5rem] font-semibold leading-none tabular-nums tracking-tight",
+                    tasks.length > 0 ? "text-[var(--color-primary)]" : "text-[var(--color-text)]",
+                  )}>
                     {tasks.length}
                   </p>
-                  <p className="pb-1.5 text-[12px] text-white/55">
+                  <p className="pb-2 text-sm font-medium text-[var(--color-text-muted)]">
                     {tasks.length === 0 ? "sin trabajo pendiente" : "requieren acción"}
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 sm:min-w-[18rem]">
+              <div className="grid w-full grid-cols-3 gap-2 sm:max-w-[18rem]">
                 <HeroStat label="Críticas" value={criticalTaskCount} tone={criticalTaskCount > 0 ? "signal" : "neutral"} />
                 <HeroStat label="Entregas" value={deliveryTaskCount} />
                 <HeroStat label="Revisiones" value={approvalTaskCount} />
@@ -183,27 +188,28 @@ export default async function DashboardPage() {
               <Link
                 href={nextTask.href}
                 className={cn(
-                  "mt-5 flex flex-col gap-3 rounded-[var(--radius-lg)] border border-white/15 bg-white/8 p-3.5 text-white",
-                  "transition-[background-color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-                  "hover:border-white/30 hover:bg-white/12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white",
+                  "mt-5 flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] p-3.5",
+                  "transition-[background-color,border-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+                  "hover:border-[var(--color-primary)] hover:bg-[var(--color-success-tint)] active:scale-[0.99]",
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
                   "sm:flex-row sm:items-center sm:justify-between",
                 )}
               >
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/55">Siguiente acción</p>
-                  <p className="mt-1 truncate text-sm font-semibold">{nextTask.title}</p>
-                  <p className="mt-0.5 truncate text-xs text-white/60">{nextTask.subtitle}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-primary-ink)]">Siguiente acción</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text)]">{nextTask.title}</p>
+                  <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">{nextTask.subtitle}</p>
                 </div>
-                <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-white">
+                <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[var(--color-primary-ink)]">
                   {nextTask.ctaLabel}
                   <ArrowRight size={13} />
                 </span>
               </Link>
             ) : (
-              <div className="mt-5 rounded-[var(--radius-lg)] border border-white/12 bg-white/8 p-3.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/55">Estado operativo</p>
-                <p className="mt-1 text-sm font-semibold text-white">Sin bloqueos abiertos</p>
-                <p className="mt-0.5 text-xs text-white/60">No hay aprobaciones, compras, recepciones o entregas pendientes.</p>
+              <div className="mt-5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-text-muted)]">Estado operativo</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--color-text)]">Sin bloqueos abiertos</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">No hay aprobaciones, compras, recepciones o entregas pendientes.</p>
               </div>
             )}
           </CardContent>
@@ -235,55 +241,27 @@ export default async function DashboardPage() {
       </div>
 
       {/* ── Fila secondary: inversión + alertas + tasa ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Coins size={14} className="text-[var(--color-text-muted)]" />
-              <p className="text-eyebrow">Inversión OC emitidas</p>
-            </div>
-            <p className="text-[1.75rem] font-bold leading-none text-[var(--color-text)] tabular-nums tracking-tight">
-              {formatCLP(data.summary.totalCosts)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Warning size={14} className={stockAlertCount > 0 ? "text-[var(--color-signal)]" : "text-[var(--color-text-muted)]"} />
-              <p className="text-eyebrow">Alertas de stock</p>
-            </div>
-            <Link href="/bodega" className="group block">
-              <p className={cn(
-                "text-[1.75rem] font-bold leading-none tabular-nums tracking-tight",
-                stockAlertCount > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
-              )}>
-                {stockAlertCount}
-              </p>
-            </Link>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle size={14} className="text-[var(--color-text-muted)]" />
-              <p className="text-eyebrow">Tasa de aprobación</p>
-            </div>
-            <div className="flex items-end gap-2">
-              <p className="text-[1.75rem] font-bold leading-none text-[var(--color-text)] tabular-nums tracking-tight">
-                {approvalRate}%
-              </p>
-              <div className="flex-1 mb-1">
-                <div className="h-1.5 rounded-full bg-[var(--color-surface-2)] overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-[var(--color-primary)] transition-all duration-500"
-                    style={{ width: `${approvalRate}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+        <div className="grid grid-cols-1 divide-y divide-[var(--color-border)] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <MetricStripItem
+            icon={<Coins size={14} />}
+            label="Inversión OC emitidas"
+            value={formatCLP(data.summary.totalCosts)}
+          />
+          <MetricStripItem
+            href="/bodega"
+            icon={<Warning size={14} />}
+            label="Alertas de stock"
+            value={stockAlertCount}
+            signal={stockAlertCount > 0}
+          />
+          <MetricStripItem
+            icon={<CheckCircle size={14} />}
+            label="Tasa de aprobación"
+            value={`${approvalRate}%`}
+            progress={approvalRate}
+          />
+        </div>
       </div>
 
       {/* ── Cola de trabajo ── */}
@@ -296,12 +274,13 @@ export default async function DashboardPage() {
         </div>
 
         {visibleTasks.length === 0 ? (
-          <Card>
-            <CardContent className="pt-5">
+          <Card className="border border-[var(--color-border)]">
+            <CardContent className="py-8">
               <EmptyState
                 icon={<CheckCircle size={22} />}
                 title="Sin tareas pendientes"
                 description="No hay aprobaciones, órdenes de compra, recepciones o entregas que requieran acción."
+                compact
               />
             </CardContent>
           </Card>
@@ -419,16 +398,86 @@ function HeroStat({
   tone?: "neutral" | "signal"
 }) {
   return (
-    <div className="rounded-[var(--radius)] border border-white/12 bg-white/8 px-3 py-2.5">
+    <div className={cn(
+      "rounded-[var(--radius)] border px-3 py-2.5",
+      tone === "signal"
+        ? "border-[var(--color-signal-line)] bg-[var(--color-signal-tint)]"
+        : "border-[var(--color-border)] bg-[var(--color-surface-2)]",
+    )}>
       <p className={cn(
         "font-mono text-lg font-semibold leading-none tabular-nums",
-        tone === "signal" ? "text-[var(--color-accent)]" : "text-white",
+        tone === "signal" ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
       )}>
         {value}
       </p>
-      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-white/50">{label}</p>
+      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--color-text-muted)]">{label}</p>
     </div>
   )
+}
+
+function MetricStripItem({
+  icon,
+  label,
+  value,
+  href,
+  signal = false,
+  progress,
+}: {
+  icon: ReactNode
+  label: string
+  value: ReactNode
+  href?: string
+  signal?: boolean
+  progress?: number
+}) {
+  const content = (
+    <div className={cn(
+      "group flex min-h-[5.75rem] flex-col justify-between gap-3 p-4 md:p-5",
+      href && "transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)] active:scale-[0.99]",
+    )}>
+      <div className="flex items-center gap-2">
+        <span className={cn(
+          "text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)]",
+          signal && "text-[var(--color-signal)]",
+          href && "group-hover:text-[var(--color-primary)]",
+        )}>
+          {icon}
+        </span>
+        <p className="text-eyebrow">{label}</p>
+      </div>
+      <div className="flex items-end gap-3">
+        <p className={cn(
+          "font-mono text-[1.55rem] font-semibold leading-none tabular-nums tracking-tight",
+          signal ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
+        )}>
+          {value}
+        </p>
+        {typeof progress === "number" && (
+          <div className="mb-1 flex-1">
+            <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+              <div
+                className="h-full rounded-full bg-[var(--color-primary)] transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-out)]"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
+      >
+        {content}
+      </Link>
+    )
+  }
+
+  return content
 }
 
 function TaskRow({ task, index }: { task: WorkTask; index: number }) {

@@ -102,18 +102,16 @@ export default async function BodegaPage({
     <PageContainer>
       <PageHeader title="Bodega" description="Stock por producto y kardex de movimientos."
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
-        headerActions={
-          <WarehouseHeaderMetrics
-            worksiteCount={worksiteOptions.length}
-            worksitesWithStock={worksitesWithStock.size}
-            productsWithStock={productsWithStock.size}
-            lowStockCount={lowStockRows.length}
-            movementCount={visibleMovements.length}
-          />
-        }
       />
-      <div className={showReturnPanel ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start" : "flex flex-col gap-6"}>
-        <div className="min-w-0 space-y-6">
+      <WarehouseHeaderMetrics
+        worksiteCount={worksiteOptions.length}
+        worksitesWithStock={worksitesWithStock.size}
+        productsWithStock={productsWithStock.size}
+        lowStockCount={lowStockRows.length}
+        movementCount={visibleMovements.length}
+      />
+      <div className={showReturnPanel ? "grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start" : "flex flex-col gap-8"}>
+        <div className="min-w-0 space-y-8">
           <Suspense fallback={<SkeletonPage rows={6} />}>
             <StockSection
               worksites={worksiteOptions}
@@ -155,31 +153,28 @@ function WarehouseHeaderMetrics({
     { label: "Faenas con stock", value: `${worksitesWithStock}/${worksiteCount}` },
     { label: "Productos activos", value: productsWithStock.toLocaleString("es-CL") },
     { label: "Bajo mínimo", value: lowStockCount.toLocaleString("es-CL"), tone: lowStockCount > 0 ? "signal" : undefined },
-    { label: "Movimientos recientes", value: movementCount.toLocaleString("es-CL") },
+    { label: "Movimientos", value: movementCount.toLocaleString("es-CL") },
   ]
 
   return (
-    <>
-      {stats.map((stat) => (
-        <div
-          key={stat.label}
-          className={[
-            "min-w-[6.75rem] rounded-full border px-3 py-1",
-            stat.tone === "signal"
-              ? "border-[var(--color-signal-line)] bg-[var(--color-signal-tint)]"
-              : "border-[var(--color-border)] bg-[var(--color-surface-2)]",
-          ].join(" ")}
-        >
-          <p className="text-[10px] font-medium leading-none text-[var(--color-text-subtle)]">{stat.label}</p>
-          <p className="mt-0.5 font-mono text-sm font-semibold leading-none text-[var(--color-text)]">
-            {stat.value}
-          </p>
-          {stat.tone === "signal" && (
-            <span className="sr-only">Revisar</span>
+    <div className="flex items-center gap-4 text-sm">
+      {stats.map((stat, i) => (
+        <div key={stat.label} className="flex items-center gap-2">
+          {i > 0 && (
+            <span className="text-[var(--color-border-strong)]" aria-hidden>·</span>
           )}
+          <span className="text-[var(--color-text-muted)]">{stat.label}</span>
+          <span
+            className={[
+              "font-mono font-semibold tabular-nums",
+              stat.tone === "signal" ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
+            ].join(" ")}
+          >
+            {stat.value}
+          </span>
         </div>
       ))}
-    </>
+    </div>
   )
 }
 
@@ -207,7 +202,7 @@ function StockSection({ worksites, stockByWorksite, initialWorksiteId, receiving
 
   if (worksites.length === 0) {
     return (
-      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
         <EmptyState
           icon={<Warehouse size={24} />}
           title="Sin faenas asignadas"
@@ -219,7 +214,7 @@ function StockSection({ worksites, stockByWorksite, initialWorksiteId, receiving
 
   if (worksitesWithStock.length === 0) {
     return (
-      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
         <EmptyState
           icon={<Package size={24} />}
           title="Sin stock registrado"
@@ -227,7 +222,7 @@ function StockSection({ worksites, stockByWorksite, initialWorksiteId, receiving
           action={receivingHref ? (
             <Link
               href={receivingHref}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius-full)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)] active:scale-[0.97]"
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius-full)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]"
             >
               Ver recepciones
               <ArrowRight size={14} aria-hidden />
@@ -239,33 +234,15 @@ function StockSection({ worksites, stockByWorksite, initialWorksiteId, receiving
   }
 
   return (
-    <div className="space-y-4">
-      {worksitesWithStock.map((ws) => (
-        <StockTable key={ws.id} worksiteName={ws.name}
-          items={ws.items} />
-      ))}
+    <div className="space-y-6">
+      <StockTable worksites={worksitesWithStock} />
 
       {worksitesWithoutStock.length > 0 && (
-        <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-card)]">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]">
-                <WarningCircle size={18} />
-              </span>
-              <div>
-                <h2 className="text-sm font-semibold text-[var(--color-text)]">Faenas sin stock</h2>
-                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                  Estas faenas no tienen productos disponibles en este momento.
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-1.5 md:justify-end">
-              {worksitesWithoutStock.map((ws) => (
-                <Badge key={ws.id} variant="outline" size="lg">
-                  {ws.name}
-                </Badge>
-              ))}
-            </div>
+        <section className="border-t border-[var(--color-border)] pt-4">
+          <div className="flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
+            <WarningCircle size={14} />
+            <span className="font-medium">Sin stock:</span>
+            <span>{worksitesWithoutStock.map((ws) => ws.name).join(", ")}</span>
           </div>
         </section>
       )}

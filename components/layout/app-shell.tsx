@@ -71,7 +71,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
           "hidden overflow-hidden bg-[var(--color-surface)] transition-[width,border-radius,box-shadow] duration-[var(--duration-slow)] ease-[var(--ease-drawer)]",
           "lg:flex lg:shrink-0 lg:flex-col lg:border lg:border-[var(--color-border)]",
           sidebarCollapsed
-            ? "lg:w-[3.25rem] lg:rounded-full lg:shadow-[var(--shadow-md)]"
+            ? "lg:w-[3.25rem] lg:rounded-[999px] lg:shadow-[var(--shadow-md)]"
             : "lg:w-60 lg:rounded-[var(--radius-2xl)] lg:shadow-[var(--shadow-card)]",
         )}>
           <Sidebar
