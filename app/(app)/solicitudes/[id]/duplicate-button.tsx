@@ -4,7 +4,7 @@ import { useActionState, useEffect } from "react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { duplicateRequest } from "../actions"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 export function DuplicateButton({ requestId }: { requestId: string }) {
   const [state, action] = useActionState(duplicateRequest, INITIAL_STATE)

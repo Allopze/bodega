@@ -2,10 +2,15 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
+/* Estados de severidad (primary/success/warning/signal/danger) mantienen el
+   tratamiento mono-uppercase; los neutros/informativos (default/info/outline)
+   usan sans en caja normal para que la información rutinaria no grite. */
+const severityType = "font-mono font-semibold uppercase tracking-wider"
+const proseType    = "font-sans font-medium normal-case tracking-normal"
+
 const badgeVariants = cva(
   [
     "inline-flex items-center gap-1.5",
-    "font-mono font-semibold uppercase tracking-wider",
     "rounded-[var(--radius-full)]",
     "px-2 py-0.5",
     "whitespace-nowrap",
@@ -13,14 +18,14 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default:  "text-[var(--color-text-muted)] bg-[var(--color-surface-2)]",
-        primary:  "text-[var(--color-primary-ink)] bg-[var(--color-primary-tint)]",
-        success:  "text-[var(--color-success-ink)] bg-[var(--color-success-tint)]",
-        warning:  "text-[var(--color-warning-ink)] bg-[var(--color-warning-tint)]",
-        signal:   "text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)]",
-        info:     "text-[var(--color-info-ink)] bg-[var(--color-info-tint)]",
-        danger:   "text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)]",
-        outline:  "text-[var(--color-text-muted)] border border-[var(--color-border)] bg-transparent",
+        default:  `${proseType} text-[var(--color-text-muted)] bg-[var(--color-surface-2)]`,
+        primary:  `${severityType} text-[var(--color-primary-ink)] bg-[var(--color-primary-tint)]`,
+        success:  `${severityType} text-[var(--color-success-ink)] bg-[var(--color-success-tint)]`,
+        warning:  `${severityType} text-[var(--color-warning-ink)] bg-[var(--color-warning-tint)]`,
+        signal:   `${severityType} text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)]`,
+        info:     `${proseType} text-[var(--color-info-ink)] bg-[var(--color-info-tint)]`,
+        danger:   `${severityType} text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)]`,
+        outline:  `${proseType} text-[var(--color-text-muted)] border border-[var(--color-border)] bg-transparent`,
       },
       size: {
         sm:      "text-[9px]",
@@ -28,6 +33,12 @@ const badgeVariants = cva(
         lg:      "text-[11px]",
       },
     },
+    // Sin uppercase la caja óptica se achica: las variantes prose suben 1px.
+    compoundVariants: [
+      { variant: ["default", "info", "outline"], size: "sm",      className: "text-[10px]" },
+      { variant: ["default", "info", "outline"], size: "default", className: "text-[11px]" },
+      { variant: ["default", "info", "outline"], size: "lg",      className: "text-xs" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",

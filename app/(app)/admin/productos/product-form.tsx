@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState, useEffect } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Plus, Trash } from "@phosphor-icons/react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/admin/submit-button"

@@ -21,7 +21,10 @@ const REVALIDATE = "/solicitudes"
 
 // ── Save as draft ─────────────────────────────────────────────────────────────
 
-export async function saveDraft(_prev: ActionState, formData: FormData): Promise<ActionState> {
+export async function saveDraft(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState & { requestId?: string }> {
   let session
   try { session = await requirePermission("requests:create") }
   catch { return { ok: false, message: "Sin permisos para crear solicitudes" } }
@@ -30,7 +33,9 @@ export async function saveDraft(_prev: ActionState, formData: FormData): Promise
   if (!result.ok) return result
 
   revalidatePath(REVALIDATE)
-  return { ok: true, message: "Borrador guardado" }
+  // El cliente adopta el id para que guardados posteriores (manuales o
+  // automáticos) actualicen este borrador en vez de crear duplicados.
+  return { ok: true, message: "Borrador guardado", requestId: result.requestId }
 }
 
 async function persistDraft(
@@ -173,10 +178,14 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
   catch { return { ok: false, message: "Sin permisos para enviar solicitudes" } }
 
   let requestId = formData.get("requestId") as string
-  if (!requestId) {
+  // Persistir siempre el contenido actual del formulario antes de enviar:
+  // usar solo requestId enviaría la última versión guardada y descartaría
+  // las ediciones hechas después del último guardado o autosave.
+  if (formData.get("itemsJson")) {
+    if (requestId) formData.set("id", requestId)
     const saved = await persistDraft(session, formData)
     if (!saved.ok) return saved
-    requestId = saved.requestId ?? ""
+    requestId = saved.requestId ?? requestId
   }
   if (!requestId) return { ok: false, message: "ID de solicitud requerido" }
 

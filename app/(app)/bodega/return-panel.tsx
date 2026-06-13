@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Warning, ArrowBendUpLeft } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"

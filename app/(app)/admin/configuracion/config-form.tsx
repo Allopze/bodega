@@ -1,7 +1,7 @@
 "use client"
 
 import { useActionState, useEffect } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"

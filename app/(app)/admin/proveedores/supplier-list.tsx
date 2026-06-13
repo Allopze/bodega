@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState, useEffect } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Plus, PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { SupplierForm } from "./supplier-form"

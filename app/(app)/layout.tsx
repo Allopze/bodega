@@ -73,9 +73,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         position="top-right"
         visibleToasts={4}
         expand
+        closeButton
         offset={16}
         gap={8}
         toastOptions={{
+          // Solo aplica a toasts informativos/éxito; los de error persisten
+          // hasta cierre manual (ver lib/toast.ts).
           duration: 4000,
           classNames: {
             toast:

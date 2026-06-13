@@ -64,11 +64,11 @@ export function Sidebar({
       {/* Brand + collapse toggle */}
       <div className={cn(
         "px-3 pb-3 pt-3",
-        collapsed ? "flex flex-col items-center gap-2" : "flex items-center justify-between gap-2",
+        collapsed ? "flex flex-col items-center gap-1.5 px-1.5 pt-2" : "flex items-center justify-between gap-2",
       )}>
         <BrandMark
           variant="light"
-          size={collapsed ? 32 : 38}
+          size={collapsed ? 28 : 38}
           subtitle
           titleSize="lg"
           hideText={collapsed}
@@ -79,7 +79,7 @@ export function Sidebar({
               type="button"
               onClick={() => onCollapsedChange(!collapsed)}
               className={cn(
-                "hidden lg:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                "hidden lg:flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
                 "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
                 "transition-[background-color,color] duration-(--duration-fast) ease-out",
               )}
@@ -94,7 +94,7 @@ export function Sidebar({
 
       {/* Faena activa */}
       {worksiteName && (
-        <div className={cn("px-4 pb-4", collapsed && "px-2 pb-3")}>
+        <div className={cn("px-4 pb-4", collapsed && "px-1.5 pb-3")}>
           <p className={cn("text-eyebrow mb-0.5", collapsed && "sr-only")}>Faena activa</p>
           <div
             className={cn("flex items-center gap-1.5", collapsed && "justify-center")}
@@ -120,7 +120,7 @@ export function Sidebar({
       <nav
         className={cn(
           "flex-1 overflow-y-auto flex flex-col py-2",
-          collapsed ? "px-2" : "px-0",
+          collapsed ? "px-1" : "px-0",
         )}
         aria-label="Navegación principal"
       >
@@ -154,7 +154,7 @@ export function Sidebar({
       </nav>
 
       {/* Footer wordmark */}
-      <div className={cn("px-3 pt-3 pb-4", collapsed && "px-2")}>
+      <div className={cn("px-3 pt-3 pb-4", collapsed && "px-1.5")}>
         <p className={cn(
           "text-[10px] font-mono uppercase tracking-wider text-text-faint",
           collapsed && "sr-only",
@@ -199,7 +199,7 @@ function NavLink({
         "transition-[color,background-color] duration-(--duration-fast) ease-out",
         // ── Collapsed mode: icon only, no left rule.
         collapsed && cn(
-          "justify-center px-0 rounded-lg",
+          "justify-center px-0 rounded-full",
           isActive
             ? "text-(--color-primary-ink) font-semibold"
             : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",

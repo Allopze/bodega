@@ -487,7 +487,13 @@ function PriorityTag({ priority }: { priority: WorkPriority }) {
       </Badge>
     )
   }
-  return <span className="hidden" aria-hidden>{PRIORITY_LABEL[priority]}</span>
+  // Normal/baja también se muestran: una celda vacía no distingue
+  // "sin prioridad" de "prioridad normal".
+  return (
+    <Badge variant="default" size="sm">
+      {PRIORITY_LABEL[priority]}
+    </Badge>
+  )
 }
 
 function buildActor(session: Session): WorkActor {

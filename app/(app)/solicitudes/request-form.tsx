@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect, useState, useCallback } from "react"
+import { useActionState, useEffect, useRef, useState, useCallback, startTransition } from "react"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import {
   Plus, Trash, CaretDown, CaretUp, Warning,
   Package, ArrowLeft,
@@ -16,6 +16,10 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
+import {
+  Dialog, DialogTrigger, DialogContent, DialogHeader,
+  DialogTitle, DialogDescription, DialogFooter, DialogClose,
+} from "@/components/ui/dialog"
 import { saveDraft, submitRequest, cancelRequest } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { ProductPicker } from "./product-picker"
@@ -143,6 +147,21 @@ const REQUEST_TYPE_OPTS = [
   { value: "otro",       label: "Otro"       },
 ]
 
+// ── Autosave ──────────────────────────────────────────────────────────────────
+
+const AUTOSAVE_INTERVAL_MS = 60_000
+
+interface AutosaveSnapshot {
+  savedId:      string | undefined
+  itemsJson:    string
+  worksiteId:   string
+  requestType:  string
+  urgency:      string
+  requiredDate: string
+  notes:        string
+  canSave:      boolean
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface RequestFormProps {
@@ -158,9 +177,15 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
   const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
 
   // ── Form action state
-  const [draftState,  draftAction]  = useActionState<ActionState, FormData>(saveDraft,    INITIAL_STATE)
+  const [draftState,  draftAction, draftPending] =
+    useActionState<ActionState & { requestId?: string }, FormData>(saveDraft, INITIAL_STATE)
   const [submitState, submitAction] = useActionState<ActionState, FormData>(submitRequest, INITIAL_STATE)
   const [cancelState, cancelAction] = useActionState<ActionState, FormData>(cancelRequest, INITIAL_STATE)
+
+  // Id del borrador persistido. Para solicitudes nuevas se adopta el id que
+  // devuelve saveDraft, de modo que cada guardado posterior actualice el mismo
+  // borrador en lugar de crear duplicados.
+  const [savedId, setSavedId] = useState(editRequest?.id)
 
   // ── Header fields
   const [worksiteId,  setWorksiteId]  = useState(editRequest?.worksiteId  ?? (worksites[0]?.id ?? ""))
@@ -205,11 +230,24 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
     return [blankItem()]
   })
 
-  // ── Toast on draft save
+  // ── Draft save feedback — el guardado manual muestra toast; el automático
+  //    solo actualiza el indicador del footer.
+  const autoSaveRef = useRef(false)
+  const [dirty, setDirty]             = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+
   useEffect(() => {
-    if (draftState.ok) toast.success(draftState.message ?? "Borrador guardado")
-    else if (draftState.message && !draftState.ok && draftState.message !== "Sin permisos para crear solicitudes") {
-      toast.error(draftState.message)
+    if (draftState.ok) {
+      setDirty(false)
+      setLastSavedAt(new Date())
+      if (draftState.requestId) setSavedId(draftState.requestId)
+      if (autoSaveRef.current) autoSaveRef.current = false
+      else toast.success(draftState.message ?? "Borrador guardado")
+    } else if (draftState.message && !draftState.ok && draftState.message !== "Sin permisos para crear solicitudes") {
+      // Un autosave fallido no interrumpe: el usuario sigue editando y el
+      // guardado manual reporta el error con detalle.
+      if (autoSaveRef.current) autoSaveRef.current = false
+      else toast.error(draftState.message)
     }
   }, [draftState])
 
@@ -301,6 +339,65 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
     })),
   })))
 
+  const hasRealContent = items.some((item) => item.productId || item.productNameFree.trim() !== "")
+
+  // ── Cambios sin guardar: cualquier edición posterior al snapshot inicial marca dirty
+  const prevSnapshotRef = useRef<string | null>(null)
+  useEffect(() => {
+    const snapshot = JSON.stringify([itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+    if (prevSnapshotRef.current === null) {
+      prevSnapshotRef.current = snapshot
+      return
+    }
+    if (prevSnapshotRef.current !== snapshot) {
+      prevSnapshotRef.current = snapshot
+      setDirty(true)
+    }
+  }, [itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+
+  // ── Advertir antes de abandonar la página con trabajo sin guardar (H5)
+  useEffect(() => {
+    if (!isDraft || !dirty || !hasRealContent) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [isDraft, dirty, hasRealContent])
+
+  // ── Auto-guardado: a lo sumo AUTOSAVE_INTERVAL_MS de trabajo sin persistir (H15).
+  //    Solo se dispara cuando el borrador pasa la validación mínima del schema.
+  const snapshotRef = useRef<AutosaveSnapshot>({
+    savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes, canSave: false,
+  })
+  // Sin deps: mantiene el snapshot al día tras cada render sin reiniciar el timer.
+  useEffect(() => {
+    snapshotRef.current = {
+      savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes,
+      canSave: Boolean(worksiteId && requiredDate && hasRealContent),
+    }
+  })
+
+  useEffect(() => {
+    if (!isDraft || !dirty || draftPending) return
+    const timer = window.setTimeout(() => {
+      const snap = snapshotRef.current
+      if (!snap.canSave) return
+      autoSaveRef.current = true
+      const fd = new FormData()
+      if (snap.savedId) fd.set("id", snap.savedId)
+      fd.set("itemsJson",    snap.itemsJson)
+      fd.set("worksiteId",   snap.worksiteId)
+      fd.set("requestType",  snap.requestType)
+      fd.set("urgency",      snap.urgency)
+      fd.set("requiredDate", snap.requiredDate)
+      fd.set("notes",        snap.notes)
+      startTransition(() => draftAction(fd))
+    }, AUTOSAVE_INTERVAL_MS)
+    return () => window.clearTimeout(timer)
+  }, [isDraft, dirty, draftPending, draftAction])
+
   const readOnly = !isDraft
   const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]
   const requestTypeLabel = REQUEST_TYPE_OPTS.find((option) => option.value === requestType)?.label ?? requestType
@@ -315,7 +412,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
       {/* ── Draft/Submit form ─────────────────────────────────────────────── */}
       <form action={draftAction} className="space-y-6">
         {/* Hidden fields */}
-        {isEdit && <input type="hidden" name="id" value={editRequest.id} />}
+        {savedId && <input type="hidden" name="id" value={savedId} />}
         <input type="hidden" name="itemsJson"    value={itemsJson} />
         <input type="hidden" name="worksiteId"   value={worksiteId} />
         <input type="hidden" name="requestType"  value={requestType} />
@@ -345,7 +442,11 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
               </Select>
             </Field>
 
-            <Field label="Tipo de solicitud" htmlFor="requestType">
+            <Field
+              label="Tipo de solicitud"
+              htmlFor="requestType"
+              helper="EPP: elementos de protección personal. El tipo clasifica la solicitud para su revisión y compra."
+            >
               <Select value={requestType} onValueChange={setRequestType} disabled={readOnly}>
                 <SelectTrigger id="requestType">
                   <SelectValue />
@@ -358,7 +459,11 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
               </Select>
             </Field>
 
-            <Field label="Urgencia" htmlFor="urgency">
+            <Field
+              label="Urgencia"
+              htmlFor="urgency"
+              helper="Alta y Crítica destacan los ítems en la cola de aprobación."
+            >
               <Select value={urgency} onValueChange={setUrgency} disabled={readOnly}>
                 <SelectTrigger id="urgency">
                   <SelectValue />
@@ -458,7 +563,18 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
               <ArrowLeft size={14} />
               Volver
             </Button>
-            <SubmitButton label="Guardar borrador" loadingLabel="Guardando..." variant="secondary" size="sm" />
+            <div className="flex items-center gap-3">
+              <span aria-live="polite" className="text-[11px] text-[var(--color-text-subtle)]">
+                {draftPending
+                  ? "Guardando..."
+                  : dirty
+                  ? "Cambios sin guardar"
+                  : lastSavedAt
+                  ? `Guardado ${lastSavedAt.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}`
+                  : null}
+              </span>
+              <SubmitButton label="Guardar borrador" loadingLabel="Guardando..." variant="secondary" size="sm" />
+            </div>
           </div>
         )}
       </form>
@@ -466,7 +582,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
       {/* ── Submit form (separate to distinguish the action) ─────────────── */}
       {isDraft && (
         <form action={submitAction} className="pt-0">
-          <input type="hidden" name="requestId"   value={editRequest?.id ?? ""} />
+          <input type="hidden" name="requestId"   value={savedId ?? ""} />
           <input type="hidden" name="itemsJson"   value={itemsJson} />
           <input type="hidden" name="worksiteId"  value={worksiteId} />
           <input type="hidden" name="requestType" value={requestType} />
@@ -481,15 +597,44 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
           )}
           <div className="flex items-center justify-end gap-3">
             {isEdit && (
-              <Button
-                type="submit"
-                formAction={cancelAction}
-                variant="ghost"
-                size="sm"
-                className="text-[var(--color-danger)] hover:text-[var(--color-danger)]"
-              >
-                Cancelar solicitud
-              </Button>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                  >
+                    Cancelar solicitud
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>¿Cancelar esta solicitud?</DialogTitle>
+                    <DialogDescription>
+                      La solicitud {editRequest.code} saldrá del flujo de aprobación y
+                      tendrás que crearla de nuevo si la necesitas. Esta acción no se
+                      puede deshacer.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button type="button" variant="ghost" size="sm">
+                        Volver
+                      </Button>
+                    </DialogClose>
+                    <form action={cancelAction}>
+                      <input type="hidden" name="requestId" value={editRequest.id} />
+                      <SubmitButton
+                        label="Cancelar solicitud"
+                        loadingLabel="Cancelando..."
+                        variant="destructive"
+                        size="sm"
+                      />
+                    </form>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             )}
             <SubmitButton label="Enviar a aprobación" loadingLabel="Enviando..." variant="primary" />
           </div>
@@ -499,7 +644,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
       {/* ── Read-only notice ──────────────────────────────────────────────── */}
       {readOnly && (
         <p className="text-xs text-[var(--color-text-subtle)] pt-2">
-          Esta solicitud está en estado <strong>{editRequest?.status}</strong> y no puede modificarse.
+          Esta solicitud está en estado <strong>{statusLabel}</strong> y no puede modificarse.
         </p>
       )}
       </div>
@@ -794,13 +939,16 @@ function ItemEditor({
 
       {/* Notes */}
       <div className="ml-8">
-        <Input
-          className="h-8 text-sm"
-          placeholder="Observación del ítem (opcional)..."
-          value={item.notes}
-          onChange={(e) => onUpdate({ notes: e.target.value })}
-          disabled={readOnly}
-        />
+        <Field label="Observación" htmlFor={`notes-${item._key}`}>
+          <Input
+            id={`notes-${item._key}`}
+            className="h-8 text-sm"
+            placeholder="Detalle opcional del ítem..."
+            value={item.notes}
+            onChange={(e) => onUpdate({ notes: e.target.value })}
+            disabled={readOnly}
+          />
+        </Field>
       </div>
 
       {/* Attributes */}

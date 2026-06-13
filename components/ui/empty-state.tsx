@@ -8,6 +8,9 @@ interface EmptyStateProps {
   action?:      React.ReactNode
   className?:   string
   compact?:     boolean   // for use inside panels/cells
+  /** Heading element for the title. Use "h1" when the EmptyState is the whole
+   *  page (error/404) so screen-reader heading navigation still works. */
+  as?:          "h1" | "h2" | "p"
 }
 
 /**
@@ -21,6 +24,7 @@ export function EmptyState({
   action,
   className,
   compact = false,
+  as: TitleTag = "h2",
 }: EmptyStateProps) {
   return (
     <div
@@ -40,12 +44,12 @@ export function EmptyState({
           {icon}
         </div>
       )}
-      <p className={cn(
+      <TitleTag className={cn(
         "font-sans font-semibold text-[var(--color-text)]",
         compact ? "text-sm" : "text-base",
       )}>
         {title}
-      </p>
+      </TitleTag>
       {description && (
         <p className={cn(
           "mt-1 text-[var(--color-text-subtle)] max-w-[40ch]",

@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 export default function NotFound() {
   return (
     <EmptyState
+      as="h1"
       icon={<MagnifyingGlass size={24} />}
       title="Recurso no encontrado"
       description="El registro que buscas no existe o fue eliminado."

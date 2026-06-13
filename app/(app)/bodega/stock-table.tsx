@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Check, PencilSimple } from "@phosphor-icons/react"
 import type { WorksiteStockWithProduct } from "./types"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -66,9 +66,24 @@ function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: nu
 }
 
 export function StockTable({ worksiteName, items }: StockTableProps) {
+  const lowStockCount = items.filter((item) => item.minStock > 0 && item.quantity <= item.minStock).length
+  const productCountLabel = `${items.length} ${items.length === 1 ? "producto" : "productos"}`
+
   return (
-    <div>
-      <h2 className="text-h2 mb-3">{worksiteName}</h2>
+    <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+      <div className="flex flex-col gap-2 border-b border-[var(--color-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-h2 text-[var(--color-text)]">{worksiteName}</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+            {productCountLabel} con stock disponible.
+          </p>
+        </div>
+        {lowStockCount > 0 && (
+          <span className="inline-flex w-fit items-center rounded-[var(--radius-full)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-signal-ink)]">
+            {lowStockCount} bajo mínimo
+          </span>
+        )}
+      </div>
 
       {items.length === 0 ? (
         <EmptyState
@@ -78,7 +93,7 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
         />
       ) : (
         <>
-          <div className="grid gap-2 md:hidden">
+          <div className="grid gap-2 p-4 md:hidden">
             {items.map((s) => {
               const unit = s.product?.unitOfMeasure ?? "u"
               const lowStock = s.minStock > 0 && s.quantity <= s.minStock
@@ -123,7 +138,7 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
             })}
           </div>
 
-          <div className="hidden overflow-hidden rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)] md:block">
+          <div className="hidden overflow-hidden md:block">
             <table className="w-full text-sm" aria-label={`Stock en ${worksiteName}`}>
               <caption className="sr-only">Productos y cantidades en faena {worksiteName}</caption>
               <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
@@ -175,6 +190,6 @@ export function StockTable({ worksiteName, items }: StockTableProps) {
           </div>
         </>
       )}
-    </div>
+    </section>
   )
 }

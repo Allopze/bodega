@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, ArrowRight,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -26,6 +26,7 @@ export default async function AdminPage() {
       href:        "/admin/usuarios",
       icon:        Users,
       permission:  "admin:users",
+      group:       "personas",
     },
     {
       title:       "Faenas",
@@ -33,6 +34,7 @@ export default async function AdminPage() {
       href:        "/admin/faenas",
       icon:        MapPin,
       permission:  "admin:worksites",
+      group:       "personas",
     },
     {
       title:       "Trabajadores",
@@ -40,6 +42,7 @@ export default async function AdminPage() {
       href:        "/admin/trabajadores",
       icon:        UserCircle,
       permission:  "admin:workers",
+      group:       "personas",
     },
     {
       title:       "Productos",
@@ -47,6 +50,7 @@ export default async function AdminPage() {
       href:        "/admin/productos",
       icon:        Cube,
       permission:  "admin:products",
+      group:       "catalogos",
     },
     {
       title:       "Proveedores",
@@ -54,6 +58,7 @@ export default async function AdminPage() {
       href:        "/admin/proveedores",
       icon:        Buildings,
       permission:  "admin:suppliers",
+      group:       "catalogos",
     },
     {
       title:       "Configuración",
@@ -61,6 +66,7 @@ export default async function AdminPage() {
       href:        "/admin/configuracion",
       icon:        Gear,
       permission:  "admin:config",
+      group:       "gobierno",
     },
     {
       title:       "Log de Auditoría",
@@ -68,10 +74,28 @@ export default async function AdminPage() {
       href:        "/admin/auditoria",
       icon:        ShieldCheck,
       permission:  "admin:audit_log",
+      group:       "gobierno",
     },
   ]
 
   const visibleModules = modules.filter((m) => can(session, m.permission as never))
+  const moduleGroups = [
+    {
+      key:         "personas",
+      title:       "Personas y acceso",
+      description: "Cuentas, permisos y dotación asociada a faenas.",
+    },
+    {
+      key:         "catalogos",
+      title:       "Catálogos operativos",
+      description: "Datos maestros que alimentan solicitudes y compras.",
+    },
+    {
+      key:         "gobierno",
+      title:       "Control del sistema",
+      description: "Parámetros globales, trazabilidad y auditoría.",
+    },
+  ]
 
   return (
     <PageContainer>
@@ -85,29 +109,63 @@ export default async function AdminPage() {
           ]} />
         }
       />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl">
-        {visibleModules.map((m) => {
-          const Icon = m.icon
-          return (
-            <Link
-              key={m.href}
-              href={m.href}
-              className="flex items-start gap-4 p-5 rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-md)] transition-all duration-[var(--duration-fast)] group cursor-pointer active:scale-[0.98]"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]">
-                <Icon size={20} />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]">
-                  {m.title}
-                </h3>
-                <p className="mt-1 text-xs text-[var(--color-text-muted)] leading-relaxed">
-                  {m.description}
-                </p>
-              </div>
-            </Link>
-          )
-        })}
+      <div className="w-full space-y-4">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          {moduleGroups.map((group) => {
+            const groupModules = visibleModules.filter((m) => m.group === group.key)
+            if (groupModules.length === 0) return null
+
+            return (
+              <section
+                key={group.key}
+                className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]"
+              >
+                <div className="border-b border-[var(--color-border)] px-4 py-3">
+                  <h2 className="text-sm font-semibold text-[var(--color-text)]">{group.title}</h2>
+                  <p className="mt-0.5 text-xs leading-relaxed text-[var(--color-text-subtle)]">{group.description}</p>
+                </div>
+                <div className="divide-y divide-[var(--color-border)]">
+                  {groupModules.map((m) => {
+                    const Icon = m.icon
+                    return (
+                      <Link
+                        key={m.href}
+                        href={m.href}
+                        className="group flex items-start gap-3 px-4 py-3 transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-surface-2)] active:scale-[0.99]"
+                      >
+                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] transition-[background-color,color] duration-[var(--duration-fast)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)]">
+                          <Icon size={18} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]">
+                            {m.title}
+                          </span>
+                          <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-text-muted)]">
+                            {m.description}
+                          </span>
+                        </span>
+                        <ArrowRight
+                          size={15}
+                          className="mt-2 shrink-0 text-[var(--color-text-faint)] transition-[color,transform] duration-[var(--duration-fast)] group-hover:translate-x-0.5 group-hover:text-[var(--color-primary)]"
+                          aria-hidden
+                        />
+                      </Link>
+                    )
+                  })}
+                </div>
+              </section>
+            )
+          })}
+        </div>
+
+        {visibleModules.length === 0 && (
+          <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-8 text-center shadow-[var(--shadow-card)]">
+            <h2 className="text-h3 text-[var(--color-text)]">Sin accesos administrativos</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Tu cuenta tiene acceso al panel, pero no hay secciones administrativas habilitadas.
+            </p>
+          </section>
+        )}
       </div>
     </PageContainer>
   )

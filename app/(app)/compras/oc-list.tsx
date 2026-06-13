@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useActionState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { ArrowRight, CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge } from "@/components/states/state-badge"

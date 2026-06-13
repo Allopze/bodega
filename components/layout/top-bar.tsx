@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { List, MagnifyingGlass, MapPin, SignOut, ShieldCheck } from "@phosphor-icons/react"
+import { List, MagnifyingGlass, MapPin, SignOut, ShieldCheck, X } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
@@ -114,9 +114,10 @@ export function TopBar({
           ) : null}
           {header.title && (
             <div className="flex min-w-0 items-baseline gap-2">
-              <h1 className="truncate text-sm font-semibold text-[var(--color-text)]">
+              {/* No es h1: el heading semántico vive en PageHeader dentro del contenido */}
+              <p className="truncate text-sm font-semibold text-[var(--color-text)]">
                 {header.title}
-              </h1>
+              </p>
               {header.description && (
                 <p className="hidden min-w-0 truncate text-xs text-[var(--color-text-muted)] xl:block">
                   {header.description}
@@ -144,10 +145,26 @@ export function TopBar({
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar..."
-            className="h-7 w-36 lg:w-52 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] pl-8 pr-3 text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-line)] transition-[border-color,box-shadow] duration-[var(--duration-fast)]"
-            aria-label="Buscar en la página"
+            placeholder="Filtrar en esta página..."
+            className={cn(
+              "h-7 w-36 lg:w-52 rounded-full border bg-[var(--color-surface-2)] pl-8 text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-line)] transition-[border-color,box-shadow] duration-[var(--duration-fast)]",
+              // Borde primario = filtro activo; deja espacio para el botón de limpiar
+              searchQuery
+                ? "border-[var(--color-primary-line)] pr-7"
+                : "border-[var(--color-border)] pr-3",
+            )}
+            aria-label="Filtrar en esta página"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)] transition-colors duration-[var(--duration-fast)]"
+              aria-label="Limpiar filtro"
+            >
+              <X size={11} weight="bold" />
+            </button>
+          )}
         </div>
         <NotificationBell />
 

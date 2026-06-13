@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Warning, Package } from "@phosphor-icons/react"
 import Link from "next/link"
 import { SubmitButton } from "@/components/admin/submit-button"
@@ -240,7 +240,7 @@ export function OcForm({
 
       {/* Header fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Faena" required>
+        <Field label="Faena" required htmlFor="ocWorksiteId">
           <Select value={worksiteId} onValueChange={setWorksiteId}>
             <SelectTrigger id="ocWorksiteId"><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
             <SelectContent>
@@ -251,7 +251,7 @@ export function OcForm({
           </Select>
         </Field>
 
-        <Field label="Proveedor por defecto" required>
+        <Field label="Proveedor por defecto" required htmlFor="supplierId">
           <Select value={supplierId} onValueChange={onSupplierValueChange}>
             <SelectTrigger id="supplierId"><SelectValue placeholder="Selecciona proveedor" /></SelectTrigger>
             <SelectContent>
@@ -262,8 +262,9 @@ export function OcForm({
           </Select>
         </Field>
 
-        <Field label="Condición de pago">
+        <Field label="Condición de pago" htmlFor="paymentTerms">
           <Input
+            id="paymentTerms"
             name="paymentTerms"
             value={paymentTerms}
             onChange={(e) => setPaymentTerms(e.target.value)}
@@ -271,8 +272,9 @@ export function OcForm({
           />
         </Field>
 
-        <Field label="Entrega estimada">
+        <Field label="Entrega estimada" htmlFor="estimatedDelivery">
           <Input
+            id="estimatedDelivery"
             type="date"
             name="estimatedDelivery"
             value={estDelivery}
@@ -280,8 +282,9 @@ export function OcForm({
           />
         </Field>
 
-        <Field label="Dirección de entrega" className="md:col-span-2">
+        <Field label="Dirección de entrega" className="md:col-span-2" htmlFor="deliveryAddress">
           <Input
+            id="deliveryAddress"
             name="deliveryAddress"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
@@ -289,8 +292,9 @@ export function OcForm({
           />
         </Field>
 
-        <Field label="Notas" className="md:col-span-2">
+        <Field label="Notas" className="md:col-span-2" htmlFor="ocNotes">
           <Textarea
+            id="ocNotes"
             name="notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -384,10 +388,14 @@ export function OcForm({
                   {isSelected && (
                     <div className="flex items-center gap-2 shrink-0">
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[var(--color-text-subtle)]">
+                        <label
+                          htmlFor={`price-${item.id}`}
+                          className="text-[10px] text-[var(--color-text-subtle)]"
+                        >
                           Precio unit.
                         </label>
                         <Input
+                          id={`price-${item.id}`}
                           type="number"
                           step="1"
                           min="0"
@@ -404,10 +412,14 @@ export function OcForm({
                         )}
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[var(--color-text-subtle)]">
+                        <label
+                          htmlFor={`disc-${item.id}`}
+                          className="text-[10px] text-[var(--color-text-subtle)]"
+                        >
                           Desc. %
                         </label>
                         <Input
+                          id={`disc-${item.id}`}
                           type="number"
                           step="0.1"
                           min="0"

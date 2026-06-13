@@ -68,9 +68,11 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
 
       <div className="flex h-full min-h-0 lg:gap-3">
         <div className={cn(
-          "hidden overflow-hidden bg-[var(--color-surface)] transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-drawer)]",
-          "lg:flex lg:shrink-0 lg:flex-col lg:rounded-[var(--radius-2xl)] lg:shadow-[var(--shadow-card)]",
-          sidebarCollapsed ? "lg:w-[4.75rem]" : "lg:w-60",
+          "hidden overflow-hidden bg-[var(--color-surface)] transition-[width,border-radius,box-shadow] duration-[var(--duration-slow)] ease-[var(--ease-drawer)]",
+          "lg:flex lg:shrink-0 lg:flex-col lg:border lg:border-[var(--color-border)]",
+          sidebarCollapsed
+            ? "lg:w-[3.25rem] lg:rounded-full lg:shadow-[var(--shadow-md)]"
+            : "lg:w-60 lg:rounded-[var(--radius-2xl)] lg:shadow-[var(--shadow-card)]",
         )}>
           <Sidebar
             session={session}

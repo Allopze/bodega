@@ -18,6 +18,7 @@ export default function Error({
 
   return (
     <EmptyState
+      as="h1"
       icon={<Warning size={24} />}
       title="Algo salió mal"
       description="Ocurrió un error inesperado. Intenta nuevamente o contacta soporte si el problema persiste."

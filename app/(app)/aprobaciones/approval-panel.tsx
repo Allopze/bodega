@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import {
   CheckCircle, XCircle, Warning, CaretDown,
 } from "@phosphor-icons/react"
@@ -231,10 +231,14 @@ function ItemRow({ item }: { item: ApprovalItem }) {
           <form action={approveAction} className="flex flex-col gap-2">
             <input type="hidden" name="itemId" value={item.id} />
             <div className="flex items-center gap-3">
-              <label className="text-xs text-[var(--color-text-muted)] shrink-0">
+              <label
+                htmlFor={`modifiedQty-${item.id}`}
+                className="text-xs text-[var(--color-text-muted)] shrink-0"
+              >
                 Qty aprobada
               </label>
               <Input
+                id={`modifiedQty-${item.id}`}
                 type="number"
                 name="modifiedQty"
                 step="0.01"
@@ -246,6 +250,9 @@ function ItemRow({ item }: { item: ApprovalItem }) {
                 {item.unitOfMeasure} (dejar vacío para aprobar {formatQty(item.quantity)})
               </span>
             </div>
+            <p className="text-[11px] text-[var(--color-text-subtle)]">
+              Una vez confirmada, la aprobación no se puede revertir desde aquí.
+            </p>
             {approveState.ok === false && approveState.message && approveState !== INITIAL_STATE && (
               <p className="text-xs text-[var(--color-danger)] flex items-center gap-1">
                 <Warning size={12} /> {approveState.message}
@@ -280,6 +287,7 @@ function ItemRow({ item }: { item: ApprovalItem }) {
           onCancel={() => setAction("idle")}
           label="Motivo del rechazo"
           placeholder="Explica por qué este ítem no puede ser aprobado..."
+          note="Una vez confirmado, el rechazo no se puede revertir desde aquí."
           submitLabel="Confirmar rechazo"
           submitLoadingLabel="Rechazando..."
           colorClass="text-[var(--color-danger)]"
@@ -294,7 +302,7 @@ function ItemRow({ item }: { item: ApprovalItem }) {
 
 function ReasonForm({
   itemId, actionFn, state, onCancel,
-  label, placeholder, submitLabel, submitLoadingLabel, colorClass,
+  label, placeholder, note, submitLabel, submitLoadingLabel, colorClass,
 }: {
   itemId:             string
   // biome-ignore lint/suspicious/noExplicitAny: react dispatch type
@@ -303,6 +311,7 @@ function ReasonForm({
   onCancel:           () => void
   label:              string
   placeholder:        string
+  note?:              string
   submitLabel:        string
   submitLoadingLabel: string
   colorClass:         string
@@ -319,6 +328,9 @@ function ReasonForm({
           className="text-sm"
           required
         />
+        {note && (
+          <p className="text-[11px] text-[var(--color-text-subtle)]">{note}</p>
+        )}
         {state.ok === false && state.message && state !== INITIAL_STATE && (
           <p className="text-xs text-[var(--color-danger)] flex items-center gap-1">
             <Warning size={12} /> {state.message}
