@@ -10,23 +10,24 @@ interface PageHeaderProps {
   title:       string
   description?: string
   actions?:    React.ReactNode
+  headerActions?: React.ReactNode
   breadcrumb?: React.ReactNode
   className?:  string
   /** Optional eyebrow text rendered above the title (e.g., section number). */
   eyebrow?:    string
 }
 
-export function PageHeader({ title, description, actions, breadcrumb, className, eyebrow }: PageHeaderProps) {
+export function PageHeader({ title, description, actions, headerActions, breadcrumb, className, eyebrow }: PageHeaderProps) {
   const pathname = usePathname()
   const { setHeader } = useShellHeader()
 
   React.useEffect(() => {
-    setHeader({ title, description, breadcrumb })
+    setHeader({ title, description, breadcrumb, actions: headerActions })
 
     return () => {
       setHeader({})
     }
-  }, [breadcrumb, description, pathname, setHeader, title])
+  }, [breadcrumb, description, headerActions, pathname, setHeader, title])
 
   return (
     <div className={cn(actions ? "pb-2 mb-3" : "sr-only", className)}>

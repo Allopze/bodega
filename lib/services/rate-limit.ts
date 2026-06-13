@@ -4,7 +4,7 @@
  */
 import { db } from "@/db"
 import { rateLimits } from "@/db/schema"
-import { eq, lt } from "drizzle-orm"
+import { and, eq, gt, lt } from "drizzle-orm"
 
 const LIMIT_ATTEMPTS = 5
 const LOCK_TIME = 15 * 60 * 1000 // 15 minutes
@@ -17,7 +17,7 @@ export async function checkRateLimit(key: string): Promise<{
   allowed: boolean
   waitTimeRemainingMs: number
 }> {
-  await cleanupExpired()
+  await pruneExpiredLocks()
   const [row] = await db
     .select()
     .from(rateLimits)
@@ -36,7 +36,7 @@ export async function checkRateLimit(key: string): Promise<{
 
 /** Record a failed attempt for `key`. */
 export async function recordFailure(key: string): Promise<void> {
-  await cleanupExpired()
+  const now = Date.now()
   const [row] = await db
     .select()
     .from(rateLimits)
@@ -46,10 +46,10 @@ export async function recordFailure(key: string): Promise<void> {
   if (row) {
     const newCount = row.count + 1
     const lockUntil = newCount >= LIMIT_ATTEMPTS
-      ? Date.now() + LOCK_TIME
+      ? now + LOCK_TIME
       : 0
     await db.update(rateLimits)
-      .set({ count: newCount, lockUntil })
+      .set({ count: newCount, lockUntil, updatedAt: new Date(now).toISOString() })
       .where(eq(rateLimits.key, key))
   } else {
     await db.insert(rateLimits)
@@ -64,20 +64,31 @@ export async function recordSuccess(key: string): Promise<void> {
 }
 
 /**
- * Remove expired entries to keep the table small.
- * Runs automatically on every check/failure.
+ * Remove only *expired locks* (lockUntil in the past, > 0). Runs on every check.
+ *
+ * IMPORTANT: it must NOT touch in-progress counters (lockUntil = 0). The previous
+ * predicate `lockUntil < now - LOCK_TIME` matched every lockUntil=0 row, so the
+ * counter was wiped on each call and the 5-strike lock never engaged.
  */
-async function cleanupExpired(): Promise<void> {
-  const threshold = Date.now() - LOCK_TIME
+async function pruneExpiredLocks(): Promise<void> {
+  const now = Date.now()
   await db.delete(rateLimits)
-    .where(lt(rateLimits.lockUntil, threshold))
+    .where(and(gt(rateLimits.lockUntil, 0), lt(rateLimits.lockUntil, now)))
 }
 
 /**
- * Clean up all expired rate-limit entries. Safe to call from a cron/admin action.
+ * Clean up expired locks AND stale unlocked counters (older than the window).
+ * Safe to call from a cron/admin action to keep the table small.
  */
 export async function cleanupRateLimits(): Promise<void> {
-  const threshold = Date.now() - LOCK_TIME
+  const now = Date.now()
+  // Expired locks.
   await db.delete(rateLimits)
-    .where(lt(rateLimits.lockUntil, threshold))
+    .where(and(gt(rateLimits.lockUntil, 0), lt(rateLimits.lockUntil, now)))
+  // Abandoned counters that never reached the lock and are older than the window.
+  await db.delete(rateLimits)
+    .where(and(
+      eq(rateLimits.lockUntil, 0),
+      lt(rateLimits.updatedAt, new Date(now - LOCK_TIME).toISOString()),
+    ))
 }

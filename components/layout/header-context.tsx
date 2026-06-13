@@ -6,6 +6,7 @@ export interface ShellHeaderState {
   title?:       string
   description?: string
   breadcrumb?: React.ReactNode
+  actions?:    React.ReactNode
 }
 
 interface ShellHeaderContextValue {

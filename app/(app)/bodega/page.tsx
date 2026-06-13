@@ -102,17 +102,18 @@ export default async function BodegaPage({
     <PageContainer>
       <PageHeader title="Bodega" description="Stock por producto y kardex de movimientos."
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
-      />
-      <div className={showReturnPanel ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start" : "flex flex-col gap-6"}>
-        <div className="min-w-0 space-y-6">
-          <WarehouseSummary
+        headerActions={
+          <WarehouseHeaderMetrics
             worksiteCount={worksiteOptions.length}
             worksitesWithStock={worksitesWithStock.size}
             productsWithStock={productsWithStock.size}
             lowStockCount={lowStockRows.length}
             movementCount={visibleMovements.length}
           />
-
+        }
+      />
+      <div className={showReturnPanel ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start" : "flex flex-col gap-6"}>
+        <div className="min-w-0 space-y-6">
           <Suspense fallback={<SkeletonPage rows={6} />}>
             <StockSection
               worksites={worksiteOptions}
@@ -137,7 +138,7 @@ export default async function BodegaPage({
   )
 }
 
-function WarehouseSummary({
+function WarehouseHeaderMetrics({
   worksiteCount,
   worksitesWithStock,
   productsWithStock,
@@ -158,29 +159,27 @@ function WarehouseSummary({
   ]
 
   return (
-    <section className="flex flex-col gap-3 px-1 lg:flex-row lg:items-end lg:justify-between">
-      <div>
-        <h2 className="text-h2 text-[var(--color-text)]">Inventario por faena</h2>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          Stock disponible, mínimos configurados y últimos movimientos de bodega.
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[34rem]">
-        {stats.map((stat) => (
-          <div key={stat.label} className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-            <p className="text-[11px] font-medium text-[var(--color-text-subtle)]">{stat.label}</p>
-            <p className="mt-0.5 font-mono text-lg font-semibold leading-none text-[var(--color-text)]">
-              {stat.value}
-            </p>
-            {stat.tone === "signal" && (
-              <Badge variant="signal" size="sm" className="mt-1.5">
-                Revisar
-              </Badge>
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
+    <>
+      {stats.map((stat) => (
+        <div
+          key={stat.label}
+          className={[
+            "min-w-[6.75rem] rounded-full border px-3 py-1",
+            stat.tone === "signal"
+              ? "border-[var(--color-signal-line)] bg-[var(--color-signal-tint)]"
+              : "border-[var(--color-border)] bg-[var(--color-surface-2)]",
+          ].join(" ")}
+        >
+          <p className="text-[10px] font-medium leading-none text-[var(--color-text-subtle)]">{stat.label}</p>
+          <p className="mt-0.5 font-mono text-sm font-semibold leading-none text-[var(--color-text)]">
+            {stat.value}
+          </p>
+          {stat.tone === "signal" && (
+            <span className="sr-only">Revisar</span>
+          )}
+        </div>
+      ))}
+    </>
   )
 }
 

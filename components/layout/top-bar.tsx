@@ -134,6 +134,11 @@ export function TopBar({
             </span>
           </div>
         )}
+        {header.actions && (
+          <div className="hidden shrink-0 items-center gap-1.5 xl:flex">
+            {header.actions}
+          </div>
+        )}
       </div>
       {/* Mobile: spacer para empujar campana+avatar a la derecha */}
       <div className="flex-1 lg:hidden" aria-hidden />

@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import type { Permission } from "./types"
 import { auth } from "./auth"
+import { logger } from "@/lib/logger"
 export {
   canAccessWorksite,
   GLOBAL_ROLES,
@@ -84,8 +85,9 @@ export async function guardPermission(permission: Permission): Promise<
     const session = await requirePermission(permission)
     return { session, error: null }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Acceso denegado"
-    return { session: null, error: { ok: false, message } }
+    // No exponer la taxonomía interna de permisos al cliente; loguear el detalle.
+    logger.warn("[guardPermission]", permission, err)
+    return { session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } }
   }
 }
 
@@ -100,7 +102,7 @@ export async function guardAuth(): Promise<
     const session = await requireAuth()
     return { session, error: null }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No autenticado"
-    return { session: null, error: { ok: false, message } }
+    logger.warn("[guardAuth]", err)
+    return { session: null, error: { ok: false, message: "Debes iniciar sesión para continuar" } }
   }
 }

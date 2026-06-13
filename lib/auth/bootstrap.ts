@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto"
 import { count, inArray } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import { permissions, rolePermissions, roles, users } from "@/db/schema"
 
 export const SYSTEM_ROLES = [
@@ -80,9 +80,15 @@ export const SYSTEM_ROLE_PERMISSIONS = [
   ...PREVENCIONISTA_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
 ] satisfies Array<typeof rolePermissions.$inferInsert>
 
-export async function ensureSystemRbac() {
+/**
+ * Idempotently seeds system roles/permissions. Accepts an optional transaction
+ * executor so callers (e.g. the bootstrap registration) can run it atomically
+ * within their own transaction — passing `tx` also avoids re-entering the
+ * connection on single-connection setups (pglite tests).
+ */
+export async function ensureSystemRbac(executor: typeof db | Tx = db) {
   for (const role of SYSTEM_ROLES) {
-    await db.insert(roles).values(role).onConflictDoUpdate({
+    await executor.insert(roles).values(role).onConflictDoUpdate({
       target: roles.id,
       set: {
         name: role.name,
@@ -93,7 +99,7 @@ export async function ensureSystemRbac() {
   }
 
   for (const permission of SYSTEM_PERMISSIONS) {
-    await db.insert(permissions).values(permission).onConflictDoUpdate({
+    await executor.insert(permissions).values(permission).onConflictDoUpdate({
       target: permissions.id,
       set: {
         name: permission.name,
@@ -103,8 +109,8 @@ export async function ensureSystemRbac() {
     })
   }
 
-  await db.delete(rolePermissions).where(inArray(rolePermissions.roleId, SYSTEM_ROLES.map((role) => role.id)))
-  await db.insert(rolePermissions).values(SYSTEM_ROLE_PERMISSIONS)
+  await executor.delete(rolePermissions).where(inArray(rolePermissions.roleId, SYSTEM_ROLES.map((role) => role.id)))
+  await executor.insert(rolePermissions).values(SYSTEM_ROLE_PERMISSIONS)
 }
 
 export async function getUserCount() {
