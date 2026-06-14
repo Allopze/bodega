@@ -11,7 +11,6 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SkeletonPage } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
 import { ArrowRight, Package, Warehouse, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { ReturnPanel } from "./return-panel"
 import { StockTable } from "./stock-table"
@@ -102,13 +101,15 @@ export default async function BodegaPage({
     <PageContainer>
       <PageHeader title="Bodega" description="Stock por producto y kardex de movimientos."
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
-      />
-      <WarehouseHeaderMetrics
-        worksiteCount={worksiteOptions.length}
-        worksitesWithStock={worksitesWithStock.size}
-        productsWithStock={productsWithStock.size}
-        lowStockCount={lowStockRows.length}
-        movementCount={visibleMovements.length}
+        headerActions={(
+          <WarehouseHeaderMetrics
+            worksiteCount={worksiteOptions.length}
+            worksitesWithStock={worksitesWithStock.size}
+            productsWithStock={productsWithStock.size}
+            lowStockCount={lowStockRows.length}
+            movementCount={visibleMovements.length}
+          />
+        )}
       />
       <div className={showReturnPanel ? "grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start" : "flex flex-col gap-8"}>
         <div className="min-w-0 space-y-8">
@@ -157,7 +158,7 @@ function WarehouseHeaderMetrics({
   ]
 
   return (
-    <div className="flex items-center gap-4 text-sm">
+    <div className="flex items-center gap-3 whitespace-nowrap text-xs">
       {stats.map((stat, i) => (
         <div key={stat.label} className="flex items-center gap-2">
           {i > 0 && (

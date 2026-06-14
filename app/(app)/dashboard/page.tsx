@@ -1,12 +1,13 @@
 import type { Metadata } from "next"
 import type { Session } from "next-auth"
-import type { ComponentType, ReactNode } from "react"
+import type { ComponentType } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
-import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
-import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { MetricBar } from "./metric-bar"
+import { QuickActions } from "./quick-actions"
+import { RecentActivity } from "./recent-activity"
 import { db } from "@/db"
 import {
   products,
@@ -19,19 +20,16 @@ import {
   worksites,
 } from "@/db/schema"
 import { and, count, eq, inArray, sql } from "drizzle-orm"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
-import { cn } from "@/lib/utils"
+import { can, isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import { cn, formatCLP } from "@/lib/utils"
 import {
   ArrowRight,
-  ArrowUpRight,
   CheckCircle,
   CheckSquare,
   ClipboardText,
-  Coins,
   ShoppingCart,
   Truck,
   Warehouse,
-  Warning,
 } from "@phosphor-icons/react/dist/ssr"
 import {
   buildWorkTasks,
@@ -82,14 +80,6 @@ const TASK_TYPE_LABEL: Record<WorkTaskType, string> = {
   warehouse_delivery: "Entrega",
 }
 
-function formatCLP(amount: number) {
-  return new Intl.NumberFormat("es-CL", {
-    style: "currency",
-    currency: "CLP",
-    minimumFractionDigits: 0,
-  }).format(amount)
-}
-
 function formatShortDate(value: string) {
   return new Intl.DateTimeFormat("es-CL", {
     day: "2-digit",
@@ -110,8 +100,6 @@ export default async function DashboardPage() {
   const stockAlertCount = await getCriticalStockAlertCount()
   const criticalTaskCount = tasks.filter((task) => task.priority === "critical").length
   const deliveryTaskCount = tasks.filter((task) => task.type === "warehouse_delivery").length
-  const approvalTaskCount = tasks.filter((task) => task.type === "approval").length
-  const nextTask = visibleTasks[0]
   const maxWorksiteCost = Math.max(...data.worksitesBreakdown.map((row) => row.totalCost), 1)
 
   const approvalRate = data.summary.totalRequests > 0
@@ -122,190 +110,101 @@ export default async function DashboardPage() {
 
   return (
     <PageContainer>
-      <div className="space-y-5 animate-in fade-in duration-[var(--duration-default)]">
+      <div className="animate-in fade-in duration-[var(--duration-default)]">
 
-      {/* ── Header de saludo ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <p className="text-eyebrow mb-1">Tablero</p>
-          <h1 className="text-h1 text-[var(--color-text)]">Hola, {firstName}</h1>
-          <p className="text-sub mt-1">
-            {tasks.length > 0
-              ? `Tienes ${tasks.length} tarea${tasks.length === 1 ? "" : "s"} pendiente${tasks.length === 1 ? "" : "s"} hoy.`
-              : "No hay tareas pendientes. Todo al día."}
-          </p>
-        </div>
-        {tasks.length > 0 && (
-          <Link
-            href="/aprobaciones"
-            className={cn(
-              "inline-flex items-center gap-2 self-start sm:self-center",
-              "px-4 h-9 rounded-[var(--radius-full)]",
-              "bg-[var(--color-primary)] text-white text-[13px] font-semibold",
-              "transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-              "hover:bg-[var(--color-primary-strong)] active:scale-[0.97]",
-            )}
-          >
-            Ver tareas
-            <ArrowRight size={14} />
-          </Link>
-        )}
-      </div>
-
-      {/* ── KPI tiles ── */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
-        <Card className="border border-[var(--color-border)]">
-          <CardContent className="flex h-full min-h-[15rem] flex-col justify-between p-5 md:p-6">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
-                    <CheckCircle size={17} weight="bold" />
-                  </span>
-                  <p className="text-eyebrow">Tareas pendientes</p>
-                </div>
-                <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
-                  <p className={cn(
-                    "font-mono text-[3.5rem] font-semibold leading-none tabular-nums tracking-tight",
-                    tasks.length > 0 ? "text-[var(--color-primary)]" : "text-[var(--color-text)]",
-                  )}>
-                    {tasks.length}
-                  </p>
-                  <p className="pb-2 text-sm font-medium text-[var(--color-text-muted)]">
-                    {tasks.length === 0 ? "sin trabajo pendiente" : "requieren acción"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid w-full grid-cols-3 gap-2 sm:max-w-[18rem]">
-                <HeroStat label="Críticas" value={criticalTaskCount} tone={criticalTaskCount > 0 ? "signal" : "neutral"} />
-                <HeroStat label="Entregas" value={deliveryTaskCount} />
-                <HeroStat label="Revisiones" value={approvalTaskCount} />
-              </div>
-            </div>
-
-            {nextTask ? (
-              <Link
-                href={nextTask.href}
-                className={cn(
-                  "mt-5 flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] p-3.5",
-                  "transition-[background-color,border-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-                  "hover:border-[var(--color-primary)] hover:bg-[var(--color-success-tint)] active:scale-[0.99]",
-                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-                  "sm:flex-row sm:items-center sm:justify-between",
-                )}
-              >
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-primary-ink)]">Siguiente acción</p>
-                  <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text)]">{nextTask.title}</p>
-                  <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">{nextTask.subtitle}</p>
-                </div>
-                <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[var(--color-primary-ink)]">
-                  {nextTask.ctaLabel}
-                  <ArrowRight size={13} />
-                </span>
-              </Link>
+      {/* ── Cabecera: saludo + estado ── */}
+      <header>
+        <p className="text-eyebrow">Tablero</p>
+        <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-h1 text-[var(--color-text)]">Hola, {firstName}</h1>
+            {tasks.length > 0 ? (
+              <p className="mt-2 text-h2 text-[var(--color-text)]">
+                Tienes{" "}
+                <span className="text-[var(--color-primary)]">{tasks.length}</span>{" "}
+                {tasks.length === 1 ? "tarea pendiente" : "tareas pendientes"} hoy.
+              </p>
             ) : (
-              <div className="mt-5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-text-muted)]">Estado operativo</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--color-text)]">Sin bloqueos abiertos</p>
-                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">No hay aprobaciones, compras, recepciones o entregas pendientes.</p>
+              <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
+                <span className="inline-flex items-center gap-2 text-display text-[var(--color-text)]">
+                  <CheckCircle size={20} weight="fill" className="text-[var(--color-primary)]" />
+                  Todo al día.
+                </span>
+                <span className="text-sub">Sin pendientes por ahora.</span>
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1">
-          <KpiCard
-            label="Pendientes aprobación"
-            value={data.metrics.pending_approvals}
-            href="/aprobaciones"
-            description="requieren revisión"
-            highlight={data.metrics.pending_approvals > 0}
-          />
-          <KpiCard
-            label="Aprobados sin OC"
-            value={data.metrics.approved_without_oc}
-            href="/compras/nueva"
-            description="listos para compra"
-            highlight={data.metrics.approved_without_oc > 0}
-          />
-          <KpiCard
-            label="OC por recibir"
-            value={data.metrics.orders_pending_receipt}
-            href="/recepcion"
-            description="esperan recepción"
-            highlight={data.metrics.orders_pending_receipt > 0}
-          />
+          </div>
+          {tasks.length > 0 && (
+            <Link
+              href="/aprobaciones"
+              data-pressable
+              className={cn(
+                "inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-[var(--radius-full)] px-4 sm:self-end",
+                "bg-[var(--color-primary)] text-[13px] font-semibold text-white",
+                "transition-[background-color] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]",
+              )}
+            >
+              Ver tareas
+              <ArrowRight size={14} />
+            </Link>
+          )}
         </div>
+      </header>
+
+      {/* ── Tira de métricas (editorial, sin cajas, por permiso) ── */}
+      <div className="mt-6">
+        <MetricBar
+          session={session}
+          pendingTasks={tasks.length}
+          criticalTasks={criticalTaskCount}
+          pendingApprovals={data.metrics.pending_approvals}
+          approvedWithoutOc={data.metrics.approved_without_oc}
+          ordersPendingReceipt={data.metrics.orders_pending_receipt}
+          deliveryTasks={deliveryTaskCount}
+          stockAlerts={stockAlertCount}
+          totalCosts={data.summary.totalCosts}
+          approvalRate={approvalRate}
+        />
       </div>
 
-      {/* ── Fila secondary: inversión + alertas + tasa ── */}
-      <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-        <div className="grid grid-cols-1 divide-y divide-[var(--color-border)] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          <MetricStripItem
-            icon={<Coins size={14} />}
-            label="Inversión OC emitidas"
-            value={formatCLP(data.summary.totalCosts)}
-          />
-          <MetricStripItem
-            href="/bodega"
-            icon={<Warning size={14} />}
-            label="Alertas de stock"
-            value={stockAlertCount}
-            signal={stockAlertCount > 0}
-          />
-          <MetricStripItem
-            icon={<CheckCircle size={14} />}
-            label="Tasa de aprobación"
-            value={`${approvalRate}%`}
-            progress={approvalRate}
-          />
-        </div>
+      {/* ── Accesos rápidos (toolbar de pills, por rol) ── */}
+      <div className="mt-4">
+        <QuickActions session={session} />
       </div>
 
-      {/* ── Cola de trabajo ── */}
-      <section>
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
-          <p className="text-xs text-[var(--color-text-muted)]">
-            {tasks.length} {tasks.length === 1 ? "tarea" : "tareas"}
-          </p>
+      {/* ── Trabajo: cola con tareas, o actividad reciente sin pendientes ── */}
+      {visibleTasks.length > 0 ? (
+        <section className="mt-8">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              {tasks.length} {tasks.length === 1 ? "tarea" : "tareas"}
+            </p>
+          </div>
+          <ul className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+            {visibleTasks.map((task, i) => (
+              <li key={task.id}>
+                <TaskRow task={task} index={i} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <div className="mt-8">
+          <RecentActivity
+            requests={snapshot.requests}
+            orders={snapshot.orders}
+            viewerId={session.user.id}
+            canViewAll={can(session, "requests:view_all")}
+          />
         </div>
-
-        {visibleTasks.length === 0 ? (
-          <Card className="border border-[var(--color-border)]">
-            <CardContent className="py-8">
-              <EmptyState
-                icon={<CheckCircle size={22} />}
-                title="Sin tareas pendientes"
-                description="No hay aprobaciones, órdenes de compra, recepciones o entregas que requieran acción."
-                compact
-              />
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <ul className="divide-y divide-[var(--color-border)]">
-              {visibleTasks.map((task, i) => (
-                <li key={task.id} className={cn(
-                  i === 0 && "rounded-t-[var(--radius-2xl)] overflow-hidden",
-                  i === visibleTasks.length - 1 && "rounded-b-[var(--radius-2xl)] overflow-hidden",
-                )}>
-                  <TaskRow task={task} index={i} />
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-      </section>
+      )}
 
       {/* ── Actividad por faena ── */}
       {data.worksitesBreakdown.length > 0 && (
-        <section>
+        <section className="mt-8">
           <h2 className="text-h2 text-[var(--color-text)] mb-3">Actividad por faena</h2>
-          <Card>
-            <div className="overflow-x-auto">
+          <div className="overflow-x-auto border-y border-[var(--color-border)]">
               <table className="w-full border-collapse text-left text-[13px]" aria-label="Actividad y costos por faena">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]">
@@ -345,139 +244,12 @@ export default async function DashboardPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </Card>
+          </div>
         </section>
       )}
       </div>
     </PageContainer>
   )
-}
-
-function KpiCard({
-  label, value, href, highlight,
-  description,
-}: {
-  label: string
-  value: number
-  href: string
-  description: string
-  highlight?: boolean
-}) {
-  return (
-    <Link href={href} className="block group">
-      <Card className="h-full transition-[background-color,box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)] hover:shadow-[var(--shadow-md)] active:scale-[0.98]">
-        <CardContent className="flex h-full items-center justify-between gap-4 p-4">
-          <div>
-            <p className="text-eyebrow mb-1 line-clamp-2">{label}</p>
-            <p className={cn(
-              "font-mono text-[1.85rem] font-semibold leading-none tabular-nums tracking-tight",
-              highlight ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
-            )}>
-              {value}
-            </p>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">{description}</p>
-          </div>
-          <ArrowUpRight
-            size={16}
-            className="shrink-0 text-[var(--color-text-faint)] group-hover:text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)]"
-          />
-        </CardContent>
-      </Card>
-    </Link>
-  )
-}
-
-function HeroStat({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string
-  value: number
-  tone?: "neutral" | "signal"
-}) {
-  return (
-    <div className={cn(
-      "rounded-[var(--radius)] border px-3 py-2.5",
-      tone === "signal"
-        ? "border-[var(--color-signal-line)] bg-[var(--color-signal-tint)]"
-        : "border-[var(--color-border)] bg-[var(--color-surface-2)]",
-    )}>
-      <p className={cn(
-        "font-mono text-lg font-semibold leading-none tabular-nums",
-        tone === "signal" ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
-      )}>
-        {value}
-      </p>
-      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--color-text-muted)]">{label}</p>
-    </div>
-  )
-}
-
-function MetricStripItem({
-  icon,
-  label,
-  value,
-  href,
-  signal = false,
-  progress,
-}: {
-  icon: ReactNode
-  label: string
-  value: ReactNode
-  href?: string
-  signal?: boolean
-  progress?: number
-}) {
-  const content = (
-    <div className={cn(
-      "group flex min-h-[5.75rem] flex-col justify-between gap-3 p-4 md:p-5",
-      href && "transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)] active:scale-[0.99]",
-    )}>
-      <div className="flex items-center gap-2">
-        <span className={cn(
-          "text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)]",
-          signal && "text-[var(--color-signal)]",
-          href && "group-hover:text-[var(--color-primary)]",
-        )}>
-          {icon}
-        </span>
-        <p className="text-eyebrow">{label}</p>
-      </div>
-      <div className="flex items-end gap-3">
-        <p className={cn(
-          "font-mono text-[1.55rem] font-semibold leading-none tabular-nums tracking-tight",
-          signal ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
-        )}>
-          {value}
-        </p>
-        {typeof progress === "number" && (
-          <div className="mb-1 flex-1">
-            <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
-              <div
-                className="h-full rounded-full bg-[var(--color-primary)] transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-out)]"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-
-  if (href) {
-    return (
-      <Link
-        href={href}
-        className="block focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
-      >
-        {content}
-      </Link>
-    )
-  }
-
-  return content
 }
 
 function TaskRow({ task, index }: { task: WorkTask; index: number }) {
