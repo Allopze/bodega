@@ -35,7 +35,7 @@ export type { Permission } from "@/lib/auth/types"
 
 // ── Constante útil para seed y audit ─────────────────────────────────────────
 import { registry as _registry } from "./registry"
-import type { ModuleManifest } from "@/core/module-kit"
+import type { ModuleManifest } from "@/modules/manifest-types"
 
 /**
  * Array plano de todos los permisos declarados por los módulos registrados.

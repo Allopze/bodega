@@ -1,4 +1,4 @@
-import type { ModuleManifest } from "@/core/module-kit"
+import type { ModuleManifest } from "@/modules/manifest-types"
 
 export const reportsModule = {
   id: "reports",

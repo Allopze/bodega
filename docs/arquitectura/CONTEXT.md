@@ -48,14 +48,14 @@ Exportable como XLSX. Módulo `traceability`.
 ## Conceptos de arquitectura
 
 **Módulo**
-Carpeta en `modules/<nombre>/` que encapsula un dominio completo:
-manifest, schema, validación, acciones, servicios, componentes.
-Regla: solo se puede importar desde su barrel público (`index.ts`).
+Entrada declarativa en `modules/<nombre>/manifest.ts` que registra permisos,
+navegación y grants por defecto. La lógica viva del dominio sigue en `lib/` y
+`app/(app)/**/actions.ts` hasta que la migración modular se retome formalmente.
 
 **Core** (`core/`)
-Kernel compartido: todo lo verdaderamente transversal (auth, audit, códigos,
-notifications, utils). Los módulos pueden importar de core; core nunca importa
-de un módulo.
+Árbol eliminado. La migración congelada conservaba facades en `core/`, pero
+fueron removidas para evitar que se confundan con fuente viva. Los primitivos
+transversales actuales viven en `lib/`.
 
 **Manifest** (`ModuleManifest`)
 Contrato que cada módulo exporta: `{ id, permissions, nav?, seed?, defaultGrants? }`.
@@ -66,17 +66,18 @@ Registrado en `modules/registry.ts`.
 (nav, permisos, seed) se deriva automáticamente.
 
 **Forward shim**
-Archivo en `modules/<nombre>/` o `core/` que re-exporta desde `lib/` (fuente actual).
-Permite la migración incremental. En Fase 3 la dirección se invierte: `lib/` pasa
-a importar desde el módulo.
+Patrón histórico de la migración congelada. Ya no se conservan shims en
+`modules/` ni `core/`; si la migración se retoma, deben regenerarse desde
+`lib/` y probarse contra los flujos actuales.
 
 **Permission**
 String con forma `<módulo>:<acción>` (ej: `requests:create`). Derivado del registry
 vía `typeof registry[number]["permissions"][number]`. No se mantiene manualmente.
 
 **Boundary**
-Frontera arquitectónica entre módulos, forzada por ESLint (`no-restricted-imports`
-en modo `error`). Violar una frontera falla el build.
+Frontera arquitectónica entre fuente viva y scaffolding modular. Hoy el build y
+las pruebas protegen que la app use `lib/` + `app/` como implementación, y que
+`modules/` se limite a registry/manifests/permisos/tipos.
 
 ---
 

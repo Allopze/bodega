@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
+import { worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { FaenasList } from "./faenas-list"
@@ -9,10 +11,15 @@ import { FaenasList } from "./faenas-list"
 export const metadata: Metadata = { title: "Faenas" }
 
 export default async function FaenasPage() {
-  try { await requirePermission("admin:worksites") }
+  let session
+  try { session = await requirePermission("admin:worksites") }
   catch { redirect("/dashboard") }
 
-  const worksites   = await db.query.worksites.findMany({ orderBy: (w, { asc }) => [asc(w.name)] })
+  const allWorksites = await db.query.worksites.findMany({
+    where: worksiteScopeSql(session, worksites.id),
+    orderBy: (w, { asc }) => [asc(w.name)],
+  })
+  const canCreateWorksites = resolveWorksiteScope(session).mode === "all"
 
   return (
     <PageContainer>
@@ -28,11 +35,12 @@ export default async function FaenasPage() {
         }
       />
       <FaenasList
-        worksites={worksites.map((w) => ({
+        worksites={allWorksites.map((w) => ({
           id: w.id, name: w.name, code: w.code,
           address: w.address, region: w.region,
           isActive: w.isActive, createdAt: w.createdAt, updatedAt: w.updatedAt,
         }))}
+        canCreateWorksites={canCreateWorksites}
       />
     </PageContainer>
   )

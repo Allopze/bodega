@@ -4,8 +4,9 @@ import { db } from "@/db"
 import {
   purchaseOrders, purchaseOrderItems, worksites, suppliers,
 } from "@/db/schema"
-import { inArray, desc } from "drizzle-orm"
-import { requirePermission, canAny, canAccessWorksite } from "@/lib/auth/can"
+import { and, inArray, desc } from "drizzle-orm"
+import { requirePermission, canAny } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { RecepcionTable } from "./recepcion-table"
@@ -18,7 +19,7 @@ export default async function RecepcionPage() {
   catch { redirect("/dashboard") }
 
   // OCs pending office reception or pending distribution to worksite/warehouse.
-  const allOrders = await db
+  const visible = await db
     .select({
       id:          purchaseOrders.id,
       code:        purchaseOrders.code,
@@ -29,10 +30,11 @@ export default async function RecepcionPage() {
       createdAt:   purchaseOrders.createdAt,
     })
     .from(purchaseOrders)
-    .where(inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]))
+    .where(and(
+      inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]),
+      worksiteScopeSql(session, purchaseOrders.worksiteId),
+    ))
     .orderBy(desc(purchaseOrders.sentAt))
-
-  const visible = allOrders.filter((o) => canAccessWorksite(session, o.worksiteId))
 
   const wsIds       = [...new Set(visible.map((o) => o.worksiteId))]
   const supplierIds = [...new Set(visible.map((o) => o.supplierId))]

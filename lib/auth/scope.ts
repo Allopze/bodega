@@ -1,4 +1,5 @@
 import type { Session } from "next-auth"
+import { inArray, sql, type AnyColumn, type SQL } from "drizzle-orm"
 
 /**
  * Roles with global worksite visibility (no faena scoping).
@@ -35,4 +36,22 @@ export function visibleWorksiteIds(session: Session | null): string[] {
   if (!session?.user) return []
   if (isGlobalRole(session)) return []
   return session.user.worksiteIds ?? []
+}
+
+export type WorksiteScope =
+  | { mode: "all"; ids: [] }
+  | { mode: "some"; ids: string[] }
+  | { mode: "none"; ids: [] }
+
+export function resolveWorksiteScope(session: Session | null): WorksiteScope {
+  if (isGlobalRole(session)) return { mode: "all", ids: [] }
+  const ids = visibleWorksiteIds(session)
+  return ids.length > 0 ? { mode: "some", ids } : { mode: "none", ids: [] }
+}
+
+export function worksiteScopeSql(session: Session | null, column: AnyColumn): SQL | undefined {
+  const scope = resolveWorksiteScope(session)
+  if (scope.mode === "all") return undefined
+  if (scope.mode === "none") return sql`1 = 0`
+  return inArray(column, scope.ids)
 }

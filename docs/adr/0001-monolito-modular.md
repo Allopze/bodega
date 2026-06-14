@@ -1,10 +1,15 @@
 # ADR 0001 — Monolito modular con registry central
 
-**Estado:** Aceptado  
+**Estado:** Aceptado, parcialmente supersedido por la poda 2026-06-14
 **Fecha:** 2026-06-11  
 **Autores:** Alejandro Lopez Zelaya  
 
 ---
+
+> Snapshot histórico: el registry/manifests se conserva vivo para navegación y
+> permisos, pero las implementaciones congeladas en `modules/*` y los shims
+> `core/*` fueron removidos el 2026-06-14. La fuente de verdad actual es
+> `lib/` + `app/`.
 
 ## Contexto
 
@@ -101,10 +106,10 @@ ESLint `no-restricted-imports` en modo `error` prohíbe:
 
 | Fase | Estado | Descripción |
 |---|---|---|
-| 0 — Scaffolding | ✅ Completo | `core/module-kit`, `modules/registry.ts`, ESLint warn |
-| 1 — Core kernel | ✅ Completo | Forward shims en `core/auth`, `core/audit`, `core/id`, etc. |
-| 2a — Módulo admin | ✅ Completo | manifest, schema, validation, actions, services, index |
-| 2b-2h — Módulos operacionales | ✅ Completo | requests, approvals, purchasing, receiving, warehouse, deliveries, traceability, reports |
-| 3 — Cierre | ✅ Completo | Nav desde registry, ESLint boundaries a `error`, iconos Phosphor |
-| 4 — Docs | ✅ Completo | CONTEXT.md, ADR, ARCHITECTURE.md actualizado |
+| 0 — Scaffolding | ✅ Parcial vigente | `modules/registry.ts` + manifests se conservan; `core/module-kit` fue reemplazado por `modules/manifest-types.ts` |
+| 1 — Core kernel | 🧹 Removido | Forward shims en `core/*` eliminados; fuente viva en `lib/` |
+| 2a — Módulo admin | 🧹 Reducido | solo manifest vivo; schema/actions/services/validation removidos |
+| 2b-2h — Módulos operacionales | 🧹 Reducidos | solo manifests vivos; implementaciones congeladas removidas |
+| 3 — Cierre | ✅ Vigente | Nav desde registry y permisos derivados para pruebas/seed |
+| 4 — Docs | ✅ Actualizado | CONTEXT.md, ADR, ARCHITECTURE.md reflejan la poda |
 | Prevención de riesgos | 🔜 Pendiente | incidentes, inspecciones, IPER, capacitaciones/EPP |

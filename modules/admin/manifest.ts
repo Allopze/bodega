@@ -9,7 +9,7 @@
  * usuario con al menos un permiso admin:*, no en la barra lateral principal.
  */
 
-import type { ModuleManifest } from "@/core/module-kit"
+import type { ModuleManifest } from "@/modules/manifest-types"
 
 export const adminModule = {
   id: "admin",

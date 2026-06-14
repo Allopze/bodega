@@ -126,7 +126,17 @@ async function main() {
     id: "cat-e2e",
     name: "Categoría E2E",
     slug: "categoria-e2e",
+    isEpp: false,
+    requiresPrevencion: false,
     sortOrder: 1,
+  })
+  await db.insert(schema.productCategories).values({
+    id: "cat-epp-e2e",
+    name: "EPP E2E",
+    slug: "epp-e2e",
+    isEpp: true,
+    requiresPrevencion: false,
+    sortOrder: 2,
   })
   await db.insert(schema.products).values({
     id: "prod-e2e",
@@ -135,6 +145,21 @@ async function main() {
     categoryId: "cat-e2e",
     unitOfMeasure: "unidad",
     referencePrice: 1000,
+    isEpp: false,
+    requiresPrevencion: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.products).values({
+    id: "prod-epp-e2e",
+    sku: "E2E-EPP-001",
+    name: "Casco EPP E2E",
+    categoryId: "cat-epp-e2e",
+    unitOfMeasure: "unidad",
+    referencePrice: 2500,
+    isEpp: true,
+    requiresPrevencion: false,
     isActive: true,
     createdAt: now,
     updatedAt: now,
@@ -146,6 +171,65 @@ async function main() {
     unitPrice: 1000,
     isPreferred: true,
     lastUpdated: now,
+  })
+  await db.insert(schema.productSuppliers).values({
+    id: "prod-sup-epp-e2e",
+    productId: "prod-epp-e2e",
+    supplierId: "sup-e2e",
+    unitPrice: 2500,
+    isPreferred: true,
+    lastUpdated: now,
+  })
+  await db.insert(schema.workers).values({
+    id: "worker-e2e",
+    rut: "11111111-1",
+    firstName: "Trabajador",
+    lastName: "E2E",
+    position: "Operario E2E",
+    worksiteId: "ws-e2e",
+    isActive: true,
+    createdAt: now,
+  })
+  await db.insert(schema.purchaseRequests).values({
+    id: "req-delivery-e2e",
+    code: "SOL-2026-EPP",
+    worksiteId: "ws-e2e",
+    requesterId: "user-admin-e2e",
+    requestType: "epp",
+    urgency: "normal",
+    requiredDate: "2026-07-15",
+    status: "closed",
+    submittedAt: now,
+    closedAt: now,
+    notes: "Fixture E2E para entrega de EPP a trabajador",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values({
+    id: "req-item-delivery-e2e",
+    requestId: "req-delivery-e2e",
+    productId: "prod-epp-e2e",
+    productNameFree: null,
+    quantity: 4,
+    unitOfMeasure: "unidad",
+    status: "received",
+    urgency: "normal",
+    requiredDate: "2026-07-15",
+    workerId: null,
+    suggestedSupplierId: "sup-e2e",
+    sortOrder: 1,
+    notes: null,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.worksiteStock).values({
+    id: "stock-epp-e2e",
+    worksiteId: "ws-e2e",
+    productId: "prod-epp-e2e",
+    quantity: 4,
+    minStock: 0,
+    lastMovementAt: now,
+    updatedAt: now,
   })
 
   await client.end()

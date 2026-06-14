@@ -28,27 +28,30 @@ Documento técnico completo de la arquitectura del sistema.
 
 ---
 
-## Arquitectura modular
+## Registry modular
 
-El sistema usa un **monolito modular** con registry central.
-Ver [ADR 0001](../adr/0001-monolito-modular.md) para la decisión completa.
+El sistema conserva un **registry modular** para navegación, permisos declarados
+y grants por defecto. La implementación viva del negocio está en `lib/` y
+`app/(app)/**/actions.ts`; la migración de implementaciones a módulos está
+pausada. Ver [ADR 0001](../adr/0001-monolito-modular.md) para la decisión
+histórica y `modules/README.md` para el estado actual.
 
 ### Diagrama de dependencias
 
 ```
-db/schema/ ←── core/ ←── modules/<nombre>/ ←── app/(app)/<ruta>/
-                    ↖────────────────────── components/
+lib/ + app/(app)/**/actions.ts  ←── app/(app)/<ruta>/
+modules/<nombre>/manifest.ts    ←── modules/registry.ts ←── components/layout/nav-items.ts
 ```
 
 Las flechas apuntan en la dirección "puede importar de".
-`core/` nunca importa de `modules/`. Los módulos nunca importan internals de otros módulos.
+Los manifests no contienen lógica de negocio; solo declaran permisos, nav y grants.
 
 ### Añadir un módulo nuevo
 
 1. Crear `modules/<nombre>/manifest.ts` con `{ id, permissions, nav, defaultGrants? }`
 2. Agregar **una línea** en `modules/registry.ts`: `import { miModulo } from "@/modules/<nombre>/manifest"`
 3. Añadirlo al array `registry`
-4. Crear `schema.ts`, `validation.ts`, `actions/`, `services/`, `index.ts`
+4. Implementar la lógica viva en `lib/` + `app/`, salvo que se retome formalmente la migración modular con tests de paridad.
 
 Los permisos, la navegación del sidebar y el seed RBAC se derivan automáticamente.
 

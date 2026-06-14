@@ -8,7 +8,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await page.goto("/aprobaciones")
   await page.getByRole("button", { name: "Aprobar", exact: true }).click()
   await page.getByRole("button", { name: "Confirmar aprobación" }).click()
-  await expect(page.getByText("Sin ítems pendientes")).toBeVisible()
+  await expect(page.getByText("Sin ítems pendientes")).toBeVisible({ timeout: 30_000 })
 
   await page.goto("/compras/nueva")
   await selectRadixById(page, "ocWorksiteId", "Faena E2E")
@@ -33,21 +33,24 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await sendButton.click()
   await expect(sendButton).toBeHidden({ timeout: 30_000 })
 
-  // Stage 1 — arrival at Chome office (mandatory first step, no stock).
-  await page.goto(`/recepcion/nueva?oc=${orderId}`)
+  // Stage 1 — arrival at Chome office from the receiving queue.
+  await page.goto("/recepcion")
+  const pendingReceptionRow = page.getByRole("row", { name: /Proveedor E2E/ }).first()
+  await expect(pendingReceptionRow).toContainText("Faena E2E")
+  await pendingReceptionRow.getByRole("link", { name: "Recibir" }).click()
   await expect(page.getByText("Recepción en oficina")).toBeVisible()
-  await page.getByRole("button", { name: "Marcar como recibido" }).click()
-  await expect(page).toHaveURL(/\/recepcion\/[^/]+$/)
+  await submitReceiptForm(page, "5")
 
-  // Stage 2 — receipt at the worksite (generates stock + traceability).
-  await page.goto(`/recepcion/nueva?oc=${orderId}&afterOffice=1`)
-  await page.reload()
+  // Stage 2 — receipt at the worksite from the transit queue (generates stock + traceability).
+  await page.goto("/recepcion")
+  const transitReceptionRow = page.getByRole("row", { name: /Proveedor E2E/ }).first()
+  await expect(transitReceptionRow.getByText(/pend\. faena/)).toBeVisible()
+  await transitReceptionRow.getByRole("link", { name: "Recibir" }).click()
   await expect(page.getByText(/En oficina: 5/)).toBeVisible()
   const worksiteReceiptButton = page.getByRole("button", { name: /Recepción en faena/ })
   await expect(worksiteReceiptButton).toBeEnabled()
   await worksiteReceiptButton.click()
-  await page.getByRole("button", { name: "Marcar como recibido" }).click()
-  await expect(page).toHaveURL(/\/recepcion\/[^/]+$/)
+  await submitReceiptForm(page, "5")
   await expect(page.getByText("Guante E2E")).toBeVisible()
 
   await page.goto("/trazabilidad?estado=received")
@@ -68,7 +71,7 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   await page.getByRole("button", { name: "Rechazar" }).click()
   await page.getByPlaceholder("Explica por qué este ítem no puede ser aprobado...").fill("No corresponde comprar este implemento")
   await page.getByRole("button", { name: "Confirmar rechazo" }).click()
-  await expect(page.getByText("Sin ítems pendientes")).toBeVisible()
+  await expect(page.getByText("Sin ítems pendientes")).toBeVisible({ timeout: 30_000 })
 
   await page.goto("/trazabilidad?estado=rejected")
   await expect(page.getByRole("row", { name: /Rechazo E2E.*Rechazado/ })).toBeVisible()
@@ -112,6 +115,12 @@ async function createCatalogRequest(
 async function selectRadixById(page: Page, id: string, option: string | RegExp) {
   await page.locator(`#${id}`).click()
   await page.getByRole("option", { name: option }).click()
+}
+
+async function submitReceiptForm(page: Page, expectedQuantity: string) {
+  await expect(page.locator('input[id^="receiptQty-"]').first()).toHaveValue(expectedQuantity)
+  await page.getByRole("button", { name: "Marcar como recibido" }).click()
+  await expect(page).toHaveURL(/\/recepcion\/(?!nueva(?:\?|$))[^/?]+$/)
 }
 
 // ── Browser download: Excel export ──────────────────────────────────────────

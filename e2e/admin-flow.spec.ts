@@ -90,6 +90,25 @@ test("admin: crear proveedor y verificar en listado", async ({ page }) => {
   await expect(page.getByRole("row", { name: /Distribuidora E2E.*96542490-3/ })).toBeVisible()
 })
 
+test("admin: crear trabajador y verificarlo en listado", async ({ page }) => {
+  await login(page)
+
+  await page.goto("/admin/trabajadores")
+  await expect(page.getByRole("heading", { name: "Trabajadores" })).toBeVisible()
+
+  await page.getByRole("button", { name: /nuevo trabajador/i }).click()
+  const dialog = page.getByRole("dialog", { name: "Nuevo trabajador" })
+
+  await dialog.getByLabel("Nombre").fill("Operario")
+  await dialog.getByLabel("Apellido").fill("Playwright")
+  await dialog.getByRole("textbox", { name: "RUT" }).fill("22222222-2")
+  await dialog.getByRole("textbox", { name: "Cargo" }).fill("Montajista E2E")
+  await dialog.locator("#wrk-ws").selectOption({ label: "Faena E2E" })
+  await dialog.getByRole("button", { name: "Crear trabajador" }).click()
+
+  await expect(page.getByRole("row", { name: /Operario Playwright.*22222222-2.*Montajista E2E.*Faena E2E/ })).toBeVisible()
+})
+
 test("admin: navegar a auditoría y verificar que hay registros", async ({ page }) => {
   await login(page)
 

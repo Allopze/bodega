@@ -6,7 +6,8 @@ import { db } from "@/db"
 import { worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { worksiteSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/faenas"
@@ -17,6 +18,9 @@ export async function createWorksite(_prev: ActionState, formData: FormData): Pr
   let session
   try { session = await requirePermission("admin:worksites") }
   catch { return { ok: false, message: "Sin permisos" } }
+  if (resolveWorksiteScope(session).mode !== "all") {
+    return { ok: false, message: "Solo usuarios con alcance global pueden crear faenas" }
+  }
 
   const parsed = worksiteSchema.safeParse({
     name:     formData.get("name"),
@@ -63,6 +67,9 @@ export async function updateWorksite(_prev: ActionState, formData: FormData): Pr
 
   const current = await db.query.worksites.findFirst({ where: eq(worksites.id, d.id) })
   if (!current) return { ok: false, message: "Faena no encontrada" }
+  if (!canAccessWorksite(session, current.id)) {
+    return { ok: false, message: "No tienes acceso a esta faena" }
+  }
 
   await db.update(worksites).set({ name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, isActive: d.isActive, updatedAt: new Date().toISOString() }).where(eq(worksites.id, d.id))
 
@@ -80,6 +87,12 @@ export async function toggleWorksiteActive(_prev: ActionState, formData: FormDat
   const id       = formData.get("id") as string
   const activate = formData.get("activate") === "true"
   if (!id) return { ok: false, message: "ID requerido" }
+
+  const current = await db.query.worksites.findFirst({ where: eq(worksites.id, id) })
+  if (!current) return { ok: false, message: "Faena no encontrada" }
+  if (!canAccessWorksite(session, current.id)) {
+    return { ok: false, message: "No tienes acceso a esta faena" }
+  }
 
   await db.update(worksites).set({ isActive: activate, updatedAt: new Date().toISOString() }).where(eq(worksites.id, id))
 

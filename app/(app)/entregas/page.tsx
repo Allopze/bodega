@@ -9,14 +9,16 @@ import {
   purchaseRequestItems,
   purchaseRequests,
   workers,
+  worksiteStock,
   worksites,
 } from "@/db/schema"
-import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
+import { requirePermission } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Package, User } from "@phosphor-icons/react/dist/ssr"
-import { and, asc, desc, eq, inArray } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
 
@@ -39,7 +41,7 @@ export default async function Page({
     db
       .select({ id: worksites.id, name: worksites.name })
       .from(worksites)
-      .where(eq(worksites.isActive, true))
+      .where(and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)))
       .orderBy(asc(worksites.name)),
     db
       .select({
@@ -51,15 +53,33 @@ export default async function Page({
         worksiteId: workers.worksiteId,
       })
       .from(workers)
-      .where(eq(workers.isActive, true))
+      .where(and(eq(workers.isActive, true), worksiteScopeSql(session, workers.worksiteId)))
       .orderBy(asc(workers.lastName), asc(workers.firstName)),
     db.query.worksiteStock.findMany({
       with: { product: true },
+      where: worksiteScopeSql(session, worksiteStock.worksiteId),
     }),
-    db.query.purchaseRequestItems.findMany({
-      where: inArray(purchaseRequestItems.status, ["received", "partially_delivered"]),
-      with: { product: true, request: true },
-    }),
+    db
+      .select({
+        id:              purchaseRequestItems.id,
+        productId:       purchaseRequestItems.productId,
+        productNameFree: purchaseRequestItems.productNameFree,
+        quantity:        purchaseRequestItems.quantity,
+        unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
+        requestCode:     purchaseRequests.code,
+        requestWorksiteId: purchaseRequests.worksiteId,
+        productName:     products.name,
+        productSku:      products.sku,
+      })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .innerJoin(products, eq(purchaseRequestItems.productId, products.id))
+      .where(and(
+        inArray(purchaseRequestItems.status, ["received", "partially_delivered"]),
+        isNotNull(purchaseRequestItems.productId),
+        eq(products.isEpp, true),
+        worksiteScopeSql(session, purchaseRequests.worksiteId),
+      )),
     db
       .select({
         id: deliveries.id,
@@ -70,17 +90,17 @@ export default async function Page({
         deliveredAt: deliveries.deliveredAt,
       })
       .from(deliveries)
-      .where(eq(deliveries.destinationType, "worker"))
+      .where(and(
+        eq(deliveries.destinationType, "worker"),
+        worksiteScopeSql(session, deliveries.worksiteId),
+      ))
       .orderBy(desc(deliveries.deliveredAt)),
   ])
 
-  const worksiteOptions = allWorksites
-    .filter((worksite) => canAccessWorksite(session, worksite.id))
-    .map((worksite) => ({ id: worksite.id, name: worksite.name }))
+  const worksiteOptions = allWorksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))
   const visibleWorksiteIds = new Set(worksiteOptions.map((worksite) => worksite.id))
 
   const workerOptions = allWorkers
-    .filter((worker) => visibleWorksiteIds.has(worker.worksiteId))
     .map((worker) => ({
       id: worker.id,
       worksiteId: worker.worksiteId,
@@ -109,21 +129,16 @@ export default async function Page({
   }
 
   const deliverableItems: DeliverableEppOption[] = receivedItems
-    .filter((item) =>
-      item.productId !== null &&
-      item.product?.isEpp &&
-      visibleWorksiteIds.has(item.request.worksiteId)
-    )
     .map((item) => {
       const deliveredQuantity = deliveredByItem.get(item.id) ?? 0
       const remainingQuantity = Math.max(0, item.quantity - deliveredQuantity)
-      const stockQuantity = stockByWorksiteProduct.get(`${item.request.worksiteId}:${item.productId}`) ?? 0
+      const stockQuantity = stockByWorksiteProduct.get(`${item.requestWorksiteId}:${item.productId}`) ?? 0
       return {
         requestItemId: item.id,
-        requestCode: item.request.code,
-        worksiteId: item.request.worksiteId,
-        productName: item.product?.name ?? item.productNameFree ?? "EPP recibido",
-        productSku: item.product?.sku ?? null,
+        requestCode: item.requestCode,
+        worksiteId: item.requestWorksiteId,
+        productName: item.productName ?? item.productNameFree ?? "EPP recibido",
+        productSku: item.productSku,
         quantity: item.quantity,
         deliveredQuantity,
         remainingQuantity,
@@ -141,9 +156,7 @@ export default async function Page({
     ?? deliverableItems[0]?.worksiteId
     ?? worksiteOptions[0]?.id
 
-  const visibleHistory = historyRows.filter((delivery) =>
-    delivery.worksiteId ? visibleWorksiteIds.has(delivery.worksiteId) : false
-  )
+  const visibleHistory = historyRows
   const historyDeliveryIds = visibleHistory.map((delivery) => delivery.id)
   const [historyItemRows, attachmentRows] = await Promise.all([
     historyDeliveryIds.length > 0

@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { permissions, rolePermissions, roles, userPermissions, userRoles, worksites } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { permissions, rolePermissions, roles, userPermissions, userRoles, users, worksites, worksiteUsers } from "@/db/schema"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
+import { visibleUserIdsForAdminScope } from "@/lib/auth/admin-user-scope"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -16,8 +18,31 @@ export default async function UsuariosPage() {
   try { session = await requirePermission("admin:users") }
   catch { redirect("/dashboard") }
 
+  const visibleUserIds = await visibleUserIdsForAdminScope(db, session)
+  const userScope = visibleUserIds === undefined
+    ? undefined
+    : visibleUserIds.length > 0
+      ? inArray(users.id, visibleUserIds)
+      : sql`1 = 0`
+  const userRolesScope = visibleUserIds === undefined
+    ? undefined
+    : visibleUserIds.length > 0
+      ? inArray(userRoles.userId, visibleUserIds)
+      : sql`1 = 0`
+  const userPermissionsScope = visibleUserIds === undefined
+    ? undefined
+    : visibleUserIds.length > 0
+      ? inArray(userPermissions.userId, visibleUserIds)
+      : sql`1 = 0`
+  const worksiteUsersScope = visibleUserIds === undefined
+    ? worksiteScopeSql(session, worksiteUsers.worksiteId)
+    : visibleUserIds.length > 0
+      ? and(inArray(worksiteUsers.userId, visibleUserIds), worksiteScopeSql(session, worksiteUsers.worksiteId))
+      : sql`1 = 0`
+
   // Load all users
   const allUsers = await db.query.users.findMany({
+    where: userScope,
     orderBy: (u, { asc }) => [asc(u.name)],
   })
 
@@ -31,6 +56,7 @@ export default async function UsuariosPage() {
     })
     .from(userRoles)
     .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(userRolesScope)
 
   const allUserPermissionRows = await db
     .select({
@@ -40,6 +66,7 @@ export default async function UsuariosPage() {
     })
     .from(userPermissions)
     .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
+    .where(userPermissionsScope)
 
   const allRolePermissionRows = await db
     .select({
@@ -49,7 +76,9 @@ export default async function UsuariosPage() {
     .from(rolePermissions)
 
   // Load worksite assignments
-  const allWsUsers = await db.query.worksiteUsers.findMany()
+  const allWsUsers = await db.query.worksiteUsers.findMany({
+    where: worksiteUsersScope,
+  })
 
   // Assemble user rows
   const canManageAdmins = session.user.roles.includes("administrador")
@@ -81,7 +110,7 @@ export default async function UsuariosPage() {
     orderBy: (p, { asc }) => [asc(p.module), asc(p.name)],
   })
   const allWorksitesData = await db.query.worksites.findMany({
-    where: eq(worksites.isActive, true),
+    where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)),
     orderBy: (w, { asc }) => [asc(w.name)],
   })
 

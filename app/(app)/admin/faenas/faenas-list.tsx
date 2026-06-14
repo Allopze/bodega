@@ -31,7 +31,13 @@ const WS_COLUMNS = [
   { key: "",       label: "",         sortable: false, width: "w-28" },
 ]
 
-export function FaenasList({ worksites }: { worksites: WorksiteRow[] }) {
+export function FaenasList({
+  worksites,
+  canCreateWorksites,
+}: {
+  worksites: WorksiteRow[]
+  canCreateWorksites: boolean
+}) {
   const [wsSheetOpen,  setWsSheetOpen]  = React.useState(false)
   const [editWs,       setEditWs]       = React.useState<WorksiteRow | null>(null)
 
@@ -58,12 +64,16 @@ export function FaenasList({ worksites }: { worksites: WorksiteRow[] }) {
         pageSize={20}
         searchPlaceholder="Buscar faena..."
         emptyTitle="Sin faenas"
-        emptyDescription="Crea la primera faena para comenzar."
-        emptyAction={<Button size="sm" onClick={openNewWs}><Plus size={14} />Nueva faena</Button>}
+        emptyDescription={canCreateWorksites ? "Crea la primera faena para comenzar." : "No hay faenas dentro de tu alcance."}
+        emptyAction={canCreateWorksites ? <Button size="sm" onClick={openNewWs}><Plus size={14} />Nueva faena</Button> : undefined}
         actions={
-          <Button size="sm" onClick={openNewWs}>
-            <Plus size={14} />Nueva faena
-          </Button>
+          canCreateWorksites
+            ? (
+                <Button size="sm" onClick={openNewWs}>
+                  <Plus size={14} />Nueva faena
+                </Button>
+              )
+            : undefined
         }
         renderMobileCard={(row) => {
           const ws = row as unknown as WorksiteRow

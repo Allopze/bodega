@@ -1,7 +1,10 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { workers, worksites } from "@/db/schema"
+import { and, eq } from "drizzle-orm"
+import { requirePermission } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { WorkerList } from "./worker-list"
@@ -16,10 +19,11 @@ export default async function TrabajadoresPage() {
   const [allWorkers, allWorksites] = await Promise.all([
     db.query.workers.findMany({
       with:    { worksite: true },
+      where:   worksiteScopeSql(session, workers.worksiteId),
       orderBy: (w, { asc }) => [asc(w.lastName), asc(w.firstName)],
     }),
     db.query.worksites.findMany({
-      where: (ws, { eq }) => eq(ws.isActive, true),
+      where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)),
       orderBy: (ws, { asc }) => [asc(ws.name)],
     }),
   ])
@@ -38,7 +42,7 @@ export default async function TrabajadoresPage() {
         }
       />
       <WorkerList
-        workers={allWorkers.filter((w) => canAccessWorksite(session, w.worksiteId)).map((w) => ({
+        workers={allWorkers.map((w) => ({
           id:           w.id,
           rut:          w.rut,
           firstName:    w.firstName,
@@ -49,7 +53,7 @@ export default async function TrabajadoresPage() {
           isActive:     w.isActive,
           createdAt:    w.createdAt,
         }))}
-        worksites={allWorksites.filter((ws) => canAccessWorksite(session, ws.id)).map((ws) => ({ id: ws.id, name: ws.name }))}
+        worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))}
       />
     </PageContainer>
   )

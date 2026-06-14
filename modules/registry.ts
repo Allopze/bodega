@@ -8,7 +8,7 @@
  * de soporte (reports). Los módulos de prevención de riesgos se agregan al final.
  */
 
-import type { ModuleManifest } from "@/core/module-kit"
+import type { ModuleManifest } from "@/modules/manifest-types"
 
 import { adminModule }        from "@/modules/admin/manifest"
 import { requestsModule }     from "@/modules/requests/manifest"

@@ -7,7 +7,8 @@ import { db } from "@/db"
 import { users, userRoles, userPermissions, worksiteUsers, roles, permissions, userInvitations } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { canManageUserInAdminScope } from "@/lib/auth/admin-user-scope"
 import { generateInvitationToken, hashInvitationToken } from "@/lib/auth/bootstrap"
 import { clearUserRbacCache } from "@/lib/auth/rbac"
 import { createPendingPasswordMarker, displayNameFromEmail } from "@/lib/auth/password-setup"
@@ -39,6 +40,8 @@ export async function inviteUser(
   }
 
   const d = parsed.data
+  const worksiteScopeError = validateWorksiteAssignmentScope(session, d.worksiteAssignments)
+  if (worksiteScopeError) return worksiteScopeError
   const roleError = await validateRoleWorksiteRules(
     d.roleIds,
     d.worksiteAssignments,
@@ -133,6 +136,8 @@ export async function createUser(
 
   const d = parsed.data
   const permissionIds = uniqueIds(d.permissionIds)
+  const worksiteScopeError = validateWorksiteAssignmentScope(session, d.worksiteAssignments)
+  if (worksiteScopeError) return worksiteScopeError
   const roleError = await validateRoleWorksiteRules(
     d.roleIds,
     d.worksiteAssignments,
@@ -250,6 +255,9 @@ export async function updateUser(
   // Load current state for audit diff
   const current = await db.query.users.findFirst({ where: eq(users.id, d.id) })
   if (!current) return { ok: false, message: "Usuario no encontrado" }
+  if (!await canManageUserInAdminScope(db, session, d.id)) {
+    return { ok: false, message: "No tienes acceso para modificar este usuario" }
+  }
 
   const actorCanManageAdmins = canManageAdministratorRole(session)
   if (!actorCanManageAdmins && await userHasAdministratorRole(d.id)) {
@@ -262,6 +270,8 @@ export async function updateUser(
     actorCanManageAdmins,
   )
   if (roleError) return roleError
+  const worksiteScopeError = validateWorksiteAssignmentScope(session, d.worksiteAssignments)
+  if (worksiteScopeError) return worksiteScopeError
   const permissionError = await validatePermissionRules(permissionIds, actorCanManageAdmins)
   if (permissionError) return permissionError
 
@@ -326,6 +336,9 @@ export async function toggleUserActive(
   const activate = formData.get("activate") === "true"
 
   if (!id) return { ok: false, message: "ID requerido" }
+  if (!await canManageUserInAdminScope(db, session, id)) {
+    return { ok: false, message: "No tienes acceso para modificar este usuario" }
+  }
 
   const targetIsAdmin = await userHasAdministratorRole(id)
   if (targetIsAdmin && !canManageAdministratorRole(session)) {
@@ -426,6 +439,20 @@ async function validatePermissionRules(
   }
 
   return null
+}
+
+function validateWorksiteAssignmentScope(
+  session: Session,
+  worksiteAssignments: { worksiteId: string; isPrimary: boolean }[],
+): ActionState | null {
+  const outOfScope = worksiteAssignments.some((assignment) => !canAccessWorksite(session, assignment.worksiteId))
+  if (!outOfScope) return null
+  return {
+    ok: false,
+    fieldErrors: {
+      worksiteAssignments: ["Solo puedes asignar faenas dentro de tu alcance"],
+    },
+  }
 }
 
 function canManageAdministratorRole(session: Session) {
