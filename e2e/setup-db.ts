@@ -205,6 +205,38 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  await db.insert(schema.purchaseRequests).values([
+    {
+      id: "req-delivery-invalid-file-e2e",
+      code: "SOL-2026-EPP-BAD",
+      worksiteId: "ws-e2e",
+      requesterId: "user-admin-e2e",
+      requestType: "epp",
+      urgency: "normal",
+      requiredDate: "2026-07-15",
+      status: "closed",
+      submittedAt: now,
+      closedAt: now,
+      notes: "Fixture E2E para entrega con comprobante inválido",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "req-delivery-attachment-e2e",
+      code: "SOL-2026-EPP-ADJ",
+      worksiteId: "ws-e2e",
+      requesterId: "user-admin-e2e",
+      requestType: "epp",
+      urgency: "normal",
+      requiredDate: "2026-07-15",
+      status: "closed",
+      submittedAt: now,
+      closedAt: now,
+      notes: "Fixture E2E para entrega con comprobante descargable",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
   await db.insert(schema.purchaseRequestItems).values({
     id: "req-item-delivery-e2e",
     requestId: "req-delivery-e2e",
@@ -222,15 +254,93 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  await db.insert(schema.purchaseRequestItems).values([
+    {
+      id: "req-item-delivery-invalid-file-e2e",
+      requestId: "req-delivery-invalid-file-e2e",
+      productId: "prod-epp-e2e",
+      productNameFree: null,
+      quantity: 1,
+      unitOfMeasure: "unidad",
+      status: "received",
+      urgency: "normal",
+      requiredDate: "2026-07-15",
+      workerId: null,
+      suggestedSupplierId: "sup-e2e",
+      sortOrder: 1,
+      notes: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "req-item-delivery-attachment-e2e",
+      requestId: "req-delivery-attachment-e2e",
+      productId: "prod-epp-e2e",
+      productNameFree: null,
+      quantity: 2,
+      unitOfMeasure: "unidad",
+      status: "received",
+      urgency: "normal",
+      requiredDate: "2026-07-15",
+      workerId: null,
+      suggestedSupplierId: "sup-e2e",
+      sortOrder: 1,
+      notes: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
   await db.insert(schema.worksiteStock).values({
     id: "stock-epp-e2e",
     worksiteId: "ws-e2e",
     productId: "prod-epp-e2e",
-    quantity: 4,
+    quantity: 10,
     minStock: 0,
     lastMovementAt: now,
     updatedAt: now,
   })
+
+  const bulkRequests = Array.from({ length: 120 }, (_, index) => {
+    const number = String(index + 1).padStart(3, "0")
+    return {
+      id: `req-bulk-e2e-${number}`,
+      code: `SOL-BULK-E2E-${number}`,
+      worksiteId: "ws-e2e",
+      requesterId: "user-admin-e2e",
+      requestType: "stock",
+      urgency: "normal",
+      requiredDate: "2026-08-15",
+      status: "approved",
+      submittedAt: now,
+      notes: "Fixture E2E para exportes masivos",
+      createdAt: now,
+      updatedAt: now,
+    } satisfies typeof schema.purchaseRequests.$inferInsert
+  })
+  await db.insert(schema.purchaseRequests).values(bulkRequests)
+
+  await db.insert(schema.purchaseRequestItems).values(
+    bulkRequests.map((request, index) => {
+      const number = String(index + 1).padStart(3, "0")
+      return {
+        id: `req-item-bulk-e2e-${number}`,
+        requestId: request.id,
+        productId: "prod-e2e",
+        productNameFree: null,
+        quantity: 1 + (index % 9),
+        unitOfMeasure: "unidad",
+        status: "approved",
+        urgency: "normal",
+        requiredDate: "2026-08-15",
+        workerId: null,
+        suggestedSupplierId: "sup-e2e",
+        sortOrder: 1,
+        notes: `Bulk E2E ${number}`,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies typeof schema.purchaseRequestItems.$inferInsert
+    }),
+  )
 
   await client.end()
 }

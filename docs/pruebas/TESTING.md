@@ -97,12 +97,14 @@ El servidor se inicia automáticamente gracias al bloque `webServer` en
 
 ### 3.3. ¿Qué hacen?
 
-El archivo `e2e/purchase-flow.spec.ts` contiene **2 tests**:
+La suite Playwright cubre los flujos principales y algunos bordes operativos:
 
 | Test | Descripción |
 |------|-------------|
-| `flujo solicitud, aprobación, OC, factura, recepción y trazabilidad` | Recorre el ciclo completo: login → crear solicitud → aprobar → crear OC → emitir → marcar enviada → adjuntar factura → marcar recibido → validar trazabilidad → validar export Excel |
-| `descarga real de Excel desde el navegador` | Va a Reportes, hace clic en un link Excel, intercepta la descarga y verifica que el archivo no esté vacío |
+| `e2e/admin-flow.spec.ts` | Usuarios/admin: invitaciones, sesión y pantallas administrativas críticas. |
+| `e2e/purchase-flow.spec.ts` | Solicitud → aprobación/rechazo → OC → emisión/envío → recepción en oficina/faena → trazabilidad → export Excel desde API y descarga real. |
+| `e2e/worker-delivery-flow.spec.ts` | Entregas de EPP: sobrecantidad bloqueada, comprobante inválido rechazado, comprobante PDF descargable y entrega nominal. |
+| `e2e/export-volume.spec.ts` | Export XLSX parseable con dataset operativo bulk de 120 ítems sin OC. |
 
 ### 3.4. Base de datos E2E
 
@@ -125,6 +127,8 @@ Contiene datos semilla fijos:
 | Centro de costo | Centro E2E |
 | Proveedor | Proveedor E2E |
 | Producto | Guante E2E (SKU: E2E-001) |
+| EPP | Casco EPP E2E |
+| Bulk export | 120 solicitudes/items aprobados `SOL-BULK-E2E-*` para validar XLSX con volumen |
 
 ### 3.5. Arquitectura
 
@@ -155,6 +159,10 @@ npx playwright show-report
 
 # Ejecutar un test específico por nombre
 npx playwright test -g "descarga real de Excel"
+
+# Ejecutar solo las coberturas agregadas de auditoría
+npm run test:e2e -- e2e/worker-delivery-flow.spec.ts
+npm run test:e2e -- e2e/export-volume.spec.ts
 ```
 
 Playwright captura trace y video automáticamente en caso de falla.
@@ -276,8 +284,8 @@ ni páginas.
 
 ### Estado actual
 
-- **85 tests** pasando
-- **6 suites** (archivos de test)
+- **206 tests** pasando y **1 skipped**
+- **37 suites** ejecutadas y **1 skipped**
 - Cobertura de declaraciones: ~4.35% (enfocado en lógica pura: transiciones de estado, permisos, totales)
 - La cobertura baja es esperada porque los server actions, páginas y componentes no están instrumentados
 

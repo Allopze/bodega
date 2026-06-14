@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/bootstrap"
 import { ALL_MODULE_DEFAULT_GRANTS, ALL_MODULE_PERMISSIONS } from "@/modules/permissions"
 
@@ -15,6 +17,16 @@ function rolePermissions(roleId: string) {
 }
 
 describe("system role permission matrix", () => {
+  it("derives the Permission type from the module registry instead of a legacy manual union", () => {
+    const repoRoot = process.cwd()
+    const authTypes = readFileSync(path.join(repoRoot, "lib/auth/types.ts"), "utf8")
+    const modulePermissions = readFileSync(path.join(repoRoot, "modules/permissions.ts"), "utf8")
+
+    expect(authTypes).not.toMatch(/export type Permission\s*=\s*\|/)
+    expect(modulePermissions).toContain("export type Permission = RegistryPermission")
+    expect(modulePermissions).not.toContain('export type { Permission } from "@/lib/auth/types"')
+  })
+
   it("keeps module registry permissions in parity with system bootstrap permissions", () => {
     const registryPermissionNames = [...ALL_MODULE_PERMISSIONS].sort()
     const bootstrapPermissionNames = SYSTEM_PERMISSIONS.map((permission) => permission.name).sort()

@@ -2,7 +2,7 @@ import type { ReactNode } from "react"
 import type { Session } from "next-auth"
 import Link from "next/link"
 import { canAny } from "@/lib/auth/can"
-import type { Permission } from "@/lib/auth/types"
+import type { Permission } from "@/modules/permissions"
 import { cn, formatCLP } from "@/lib/utils"
 import {
   ChartLineUp,

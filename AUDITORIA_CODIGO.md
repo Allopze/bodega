@@ -44,9 +44,9 @@ Limitaciones:
 | `npm audit --omit=dev` | Pasa | `found 0 vulnerabilities`. |
 | `npm run build` | Pasa | Build Next.js 16.2.7/Turbopack exitoso. |
 | `npm run check:secrets` | Pasa | Archivos env rastreados y `.env.example` aceptados. |
-| `npm test` | Pasa | 36 archivos + 1 skipped, 205 tests + 1 skipped. La prueba Postgres destructiva de concurrencia queda opt-in por seguridad. |
+| `npm test` | Pasa | 37 archivos + 1 skipped, 206 tests + 1 skipped. La prueba Postgres destructiva de concurrencia queda opt-in por seguridad. |
 | `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts` | Pasa | Prueba de carrera sobre Postgres real contra `postgres:///bodega_test`, con reset destructivo protegido por opt-in. |
-| `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` | Pasa | 5 tests; incluye paridad de permisos registry/bootstrap y grants manifests/bootstrap. |
+| `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` | Pasa | 6 tests; incluye paridad de permisos registry/bootstrap, grants manifests/bootstrap y guardia para que `Permission` se derive del registry. |
 | `npm test -- lib/__tests__/pagination.test.ts` | Pasa | 5 tests; normalización de página, rangos y hrefs de paginación servidor. |
 | `npm test -- lib/__tests__/storage-config.test.ts` | Pasa | 2 tests; `STORAGE_PATH` resuelve archivos de comprobantes sin acoplar la ruta persistida a un path físico y rechaza traversal/prefijos inválidos. |
 | `npm test -- lib/__tests__/worksite-scope.test.ts` | Pasa | 3 tests; roles globales, scope restringido y scope sin faenas para filtros SQL. |
@@ -54,6 +54,8 @@ Limitaciones:
 | `npm test -- lib/__tests__/frozen-modular-migration.test.ts` | Pasa | 2 tests; `modules/` queda limitado a registry/manifests/permisos/tipos y `core/` sin archivos fuente. |
 | `PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries` | Pasa | Dataset Postgres mediano en `bodega_perf_test`; compras 4.6-7.5 ms, aprobaciones 7.1-9.8 ms, bodega 29.9-35.9 ms, reportes 18.0 ms. |
 | `npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts e2e/worker-delivery-flow.spec.ts` | Pasa tras fixes | 11 tests Playwright pasan contra `postgres:///bodega_e2e`; cubre admin, compras, recepción, reportes, sesión y entrega nominal de EPP. |
+| `npm run test:e2e -- e2e/worker-delivery-flow.spec.ts` | Pasa | 4 tests; cubre sobrecantidad, comprobante inválido, comprobante PDF descargable y entrega nominal de EPP. |
+| `npm run test:e2e -- e2e/export-volume.spec.ts` | Pasa | XLSX de `items_sin_oc` parseable desde navegador/API con 120 fixtures operativos bulk en `bodega_e2e`. |
 | `git diff --check` | Pasa | Sin whitespace errors. |
 
 ## Hallazgos críticos
@@ -276,7 +278,7 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Categoría:** Arquitectura / Autorización / Mantenibilidad
 
-**Estado tras fixes 2026-06-14:** Mitigado en código. Se extrajo la matriz viva de roles, permisos y grants a `lib/auth/system-rbac.ts`; `lib/auth/bootstrap.ts` la reexporta para compatibilidad y `db/seed.ts` dejó de mantener su copia manual. Los manifests de módulos quedaron alineados con los grants reales de bootstrap, y `modules/permissions.ts` ahora expone `ALL_MODULE_DEFAULT_GRANTS` para pruebas de paridad junto con `ALL_MODULE_PERMISSIONS`.
+**Estado tras fixes 2026-06-14:** Mitigado en código. Se extrajo la matriz viva de roles, permisos y grants a `lib/auth/system-rbac.ts`; `lib/auth/bootstrap.ts` la reexporta para compatibilidad y `db/seed.ts` dejó de mantener su copia manual. Los manifests de módulos quedaron alineados con los grants reales de bootstrap, y `modules/permissions.ts` ahora expone `ALL_MODULE_DEFAULT_GRANTS` para pruebas de paridad junto con `ALL_MODULE_PERMISSIONS`. El tipo público `Permission` ya no mantiene un union manual legacy en `lib/auth/types.ts`: se deriva de `modules/registry.ts` vía `modules/permissions.ts`, y `lib/auth/types.ts` queda solo como reexport de compatibilidad.
 
 **Ubicación:**
 
@@ -293,8 +295,9 @@ Process from config.webServer was not able to start. Exit code: 1
 
 - `modules/registry.ts` declara que módulos, permisos, navegación y seed se derivan desde manifests.
 - Antes, el seed y el bootstrap mantenían tablas manuales de permisos y permisos por rol; ahora ambos consumen `SYSTEM_ROLES`, `SYSTEM_PERMISSIONS` y `SYSTEM_ROLE_PERMISSIONS` desde `lib/auth/system-rbac.ts`.
-- `modules/permissions.ts` todavía reexporta `Permission` desde `lib/auth/types` como compatibilidad legacy, pero las pruebas verifican que los permisos declarados por módulos y bootstrap sigan en paridad.
-- `lib/__tests__/auth-bootstrap-permissions.test.ts` falló inicialmente al comparar `defaultGrants` de manifests con bootstrap; después de alinear manifests, pasa con 5 tests.
+- `modules/permissions.ts` define `RegistryPermission` desde `typeof registry[number]["permissions"][number]` y exporta `Permission` desde esa fuente derivada.
+- `lib/auth/types.ts` ya no declara manualmente el union de permisos; solo reexporta `Permission` para compatibilidad con imports antiguos.
+- `lib/__tests__/auth-bootstrap-permissions.test.ts` falló inicialmente al comparar `defaultGrants` de manifests con bootstrap; después de alinear manifests, pasa con 6 tests e incluye una guardia contra reintroducir el union manual legacy.
 
 **Impacto:**
 
@@ -307,9 +310,9 @@ Process from config.webServer was not able to start. Exit code: 1
 - [x] Elegir una fuente canónica operativa para seed/bootstrap: `lib/auth/system-rbac.ts`.
 - [x] Agregar test de paridad entre registry/manifests y bootstrap.
 - [x] Evitar que nuevos permisos o grants de manifests entren sin prueba de consistencia.
-- Mantener como deuda menor la eliminación final del type legacy `Permission` cuando se retome la migración modular completa.
+- [x] Retirar el union manual legacy de `Permission` y derivarlo desde el registry vivo.
 
-**Verificación del fix:** `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` pasa con 5 tests. El test de grants falló antes de alinear manifests porque la matriz declarada en módulos difería del bootstrap real; pasa después del ajuste. `npm run typecheck` pasa después de mover seed/bootstrap a `lib/auth/system-rbac.ts`.
+**Verificación del fix:** `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` pasa con 6 tests. El test de grants falló antes de alinear manifests porque la matriz declarada en módulos difería del bootstrap real; pasa después del ajuste. La guardia de `Permission` falló mientras `modules/permissions.ts` reexportaba desde `lib/auth/types.ts` y pasa después de derivar el tipo desde el registry. `npm run typecheck` pasa después de mover seed/bootstrap a `lib/auth/system-rbac.ts` y de derivar `Permission`.
 
 **Confianza:** Media-Alta. La duplicación es directa; el impacto depende de la frecuencia de cambios de permisos.
 
@@ -353,6 +356,8 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Verificación del fix:** `npm test -- lib/__tests__/storage-config.test.ts` pasa con 2 tests; sección "Adjuntos y storage" actualizada en `docs/arquitectura/ARCHITECTURE.md`; `.env.example` documenta `STORAGE_PATH`.
 
+**Decisión operacional 2026-06-14:** el despliegue previsto no tendrá múltiples instancias ni redeploy frecuente. Con ese alcance, se acepta storage local persistente con `STORAGE_PATH`, volumen y backups como solución actual; object storage queda fuera de alcance hasta que cambie el modelo de despliegue.
+
 **Confianza:** Alta. La implementación actual de filesystem local es explícita.
 
 ### [Media] Existen secretos reales en `.env.local` del workspace
@@ -380,7 +385,7 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Recomendación:**
 
-- Confirmar si los valores son reales o solo locales.
+- [x] Confirmar si los valores son reales o solo locales: el usuario confirmó que producción usará secretos nuevos y distintos a los actuales de dev.
 - Rotar `AUTH_SECRET`, contraseña seed y credenciales SMTP si se han compartido por chat, tickets, capturas o backups inseguros.
 - Mantener producción en gestor de secretos, no en archivos locales.
 - Evitar incluir `.env.local` en paquetes de soporte o capturas.
@@ -489,13 +494,13 @@ Process from config.webServer was not able to start. Exit code: 1
 
 3. **Registry como fuente automática vs duplicación manual**
    - `modules/registry.ts` promete derivación.
-   - Corregido parcialmente: `db/seed.ts` y `lib/auth/bootstrap.ts` consumen `lib/auth/system-rbac.ts`, y hay prueba de paridad contra manifests/registry.
-   - Riesgo residual: `lib/auth/types.ts` aún conserva el tipo `Permission` legado; no controla grants efectivos, pero conviene retirarlo o derivarlo en una limpieza posterior.
+   - Corregido: `db/seed.ts` y `lib/auth/bootstrap.ts` consumen `lib/auth/system-rbac.ts`; hay prueba de paridad contra manifests/registry; `Permission` se deriva del registry en `modules/permissions.ts`.
 
 4. **E2E documentado vs E2E real**
    - Corregido: documentación viva y configuración E2E usan `postgres:///bodega_e2e`.
    - Corregido: el smoke E2E cubre admin, compras, recepción en dos etapas, reportes, sesión y entrega nominal de EPP a trabajador.
-   - Riesgo residual: no cubre todavía flujos negativos de entrega, adjuntos de comprobante ni exportes masivos con volumen alto.
+   - Corregido: `e2e/worker-delivery-flow.spec.ts` cubre sobrecantidad, comprobante inválido, comprobante PDF descargable y entrega nominal aislada por fixture.
+   - Corregido: `e2e/export-volume.spec.ts` valida XLSX parseable con 120 filas operativas bulk en `bodega_e2e`.
 
 5. **Auditorías históricas vs estado actual**
    - Algunos documentos históricos siguen describiendo riesgos o stack anterior.
@@ -503,11 +508,11 @@ Process from config.webServer was not able to start. Exit code: 1
 
 ## Riesgos de seguridad
 
-- Reset destructivo de schema en E2E/capturas sin guardas fuertes.
-- `.env.local` contiene secretos locales; correcto que esté ignorado, pero requiere cuidado operacional.
-- Capturas pueden escribir URL de base de datos en manifiestos.
+- Los resets destructivos de E2E/capturas/benchmarks quedan protegidos por DB desechable explícita y allow flags.
+- `.env.local` contiene secretos locales de desarrollo; producción usará secretos nuevos y distintos.
+- Los manifiestos de captura ya no deben escribir URLs completas de base de datos.
 - Las páginas operativas y admin con vínculo a faena ya aplican scoping SQL-first; catálogos globales sin `worksiteId` quedan deliberadamente globales.
-- El almacenamiento local de comprobantes requiere controles de backup, permisos de filesystem y persistencia operacional.
+- El almacenamiento local de comprobantes queda aceptado para despliegue single-instance sin redeploy frecuente; requiere volumen persistente, permisos de filesystem y backups.
 
 Aspectos positivos:
 
@@ -521,7 +526,7 @@ Aspectos positivos:
 - El smoke E2E admin/compras/entregas pasa, incluyendo recepción en dos etapas, trabajador admin y entrega nominal de EPP.
 - La cobertura de concurrencia de inventario existe en una prueba Postgres opt-in protegida por `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true`; la suite regular no debe resetear bases sin autorización explícita.
 - La cobertura de constraints de base para entradas inválidas ya existe en `db/schema-consistency.test.ts`.
-- Las pruebas actuales pasan, lo que indica buena base para lógica existente, pero no cubren algunas fallas operativas de mayor riesgo.
+- Las pruebas actuales pasan en las superficies verificadas; la cobertura E2E ya incluye negativos de entrega, adjuntos descargables y export XLSX con volumen alto.
 - El build pasa, por lo que no hay evidencia de rotura App Router/Turbopack en el estado actual.
 
 ## Riesgos de performance
@@ -529,7 +534,7 @@ Aspectos positivos:
 - Compras, aprobaciones y bodega ya empujan scoping por obra al SQL; reportes ya usa agregaciones SQL para métricas principales.
 - Compras y aprobaciones ya tienen paginación servidor con `limit/offset` y total scoped.
 - La línea base `npm run perf:queries` sobre dataset mediano quedó dentro de rangos bajos de milisegundos en las consultas medidas; bodega stock/movimientos son las superficies a vigilar primero si crece el historial.
-- Exportes XLSX son correctos por formato, pero deben vigilarse con volúmenes grandes porque ExcelJS puede consumir memoria si se generan libros completos en memoria.
+- Exportes XLSX son correctos por formato; el E2E de volumen cubre un dataset operativo bulk de 120 filas, y volúmenes mucho mayores deben seguir vigilándose porque ExcelJS genera libros completos en memoria.
 - Upload de comprobantes usa `arrayBuffer()`, lo que carga el archivo completo en memoria.
 
 ## Recomendaciones priorizadas
@@ -595,6 +600,8 @@ Aspectos positivos:
 - [x] Suite E2E verde después de correcciones.
 - [x] Pruebas de concurrencia de stock agregadas.
 - [x] Constraints de base agregadas y verificadas.
+- [x] Cobertura E2E adicional de entregas negativas, adjuntos y export XLSX con volumen alto.
+- [x] Tipo `Permission` derivado desde registry, sin union manual legacy.
 
 ## Apéndice técnico
 
@@ -619,6 +626,8 @@ npm test -- lib/__tests__/frozen-modular-migration.test.ts
 PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries
 npm run test:e2e -- e2e/purchase-flow.spec.ts -g "flujo solicitud"
 npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts e2e/worker-delivery-flow.spec.ts
+npm run test:e2e -- e2e/export-volume.spec.ts
+npm run test:e2e -- e2e/worker-delivery-flow.spec.ts
 git diff --check
 ```
 

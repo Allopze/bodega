@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import type { Permission } from "./types"
+import type { Permission } from "@/modules/permissions"
 import { auth } from "./auth"
 import { logger } from "@/lib/logger"
 export {
