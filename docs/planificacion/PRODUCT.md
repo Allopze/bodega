@@ -108,7 +108,7 @@ pendientes) y tarjetas KPI del estado del pipeline.
 - **Códigos secuenciales**: SOL-2026-0042, OC-2026-0017, REC-2026-0005
 - **Archivos adjuntos**: por tipo de entidad, almacenados en `/storage/`
 - **Notificaciones**: campana con polling para envíos, aprobaciones, rechazos, OCs, recepción
-- **Rate limiting**: basado en SQLite para login (IP + email)
+- **Rate limiting**: basado en Postgres para login (IP + email)
 - **Exportación XLSX**: todos los reportes exportables
 
 ---
@@ -137,7 +137,7 @@ Estados de OC: `draft → issued → sent → supplier_confirmed → partially_r
 |---|---|
 | Framework | Next.js 16 (App Router) |
 | Lenguaje | TypeScript (strict) |
-| Base de datos | SQLite (WAL) + Drizzle ORM |
+| Base de datos | PostgreSQL + Drizzle ORM |
 | Autenticación | NextAuth v5 (Credentials, JWT) |
 | Estilos | Tailwind CSS v4 + OKLCH tokens |
 | UI Primitives | Radix UI (14 paquetes) |
@@ -156,8 +156,8 @@ Estados de OC: `draft → issued → sent → supplier_confirmed → partially_r
    notificaciones y exportación XLSX usan rutas API.
 2. **Estado por ítem**: el ítem, no la solicitud ni la OC, es la unidad de seguimiento.
    Esto es lo que resuelve el problema de "ítems perdidos".
-3. **SQLite single-file**: cero dependencias de infraestructura, WAL para lecturas
-   concurrentes. Diseñado para migrar a PostgreSQL en el futuro.
+3. **PostgreSQL operativo**: persistencia centralizada con migraciones Drizzle,
+   constraints de integridad y mejor soporte para concurrencia real.
 4. **RBAC con caché de 60s**: snapshot cacheado, invalidado al cambiar perfil. El
    scoping de faena se aplica a nivel SQL.
 5. **Sin estado global**: React Query para caché del servidor, SessionProvider para

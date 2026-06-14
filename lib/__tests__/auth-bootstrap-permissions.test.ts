@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { SYSTEM_PERMISSIONS, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/bootstrap"
+import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/bootstrap"
+import { ALL_MODULE_DEFAULT_GRANTS, ALL_MODULE_PERMISSIONS } from "@/modules/permissions"
 
 const permissionNameById = new Map(SYSTEM_PERMISSIONS.map((permission) => [permission.id, permission.name]))
 
@@ -14,6 +15,29 @@ function rolePermissions(roleId: string) {
 }
 
 describe("system role permission matrix", () => {
+  it("keeps module registry permissions in parity with system bootstrap permissions", () => {
+    const registryPermissionNames = [...ALL_MODULE_PERMISSIONS].sort()
+    const bootstrapPermissionNames = SYSTEM_PERMISSIONS.map((permission) => permission.name).sort()
+
+    expect(bootstrapPermissionNames).toEqual(registryPermissionNames)
+  })
+
+  it("keeps module default grants in parity with system bootstrap role permissions", () => {
+    const roleSlugById = new Map(SYSTEM_ROLES.map((role) => [role.id, role.name]))
+    const permissionNameById = new Map(SYSTEM_PERMISSIONS.map((permission) => [permission.id, permission.name]))
+    const bootstrapGrants = SYSTEM_ROLE_PERMISSIONS.map((grant) => ({
+      roleSlug: roleSlugById.get(grant.roleId),
+      permission: permissionNameById.get(grant.permissionId),
+    }))
+      .map((grant) => `${grant.roleSlug}:${grant.permission}`)
+      .sort()
+    const moduleGrants = ALL_MODULE_DEFAULT_GRANTS
+      .map((grant) => `${grant.roleSlug}:${grant.permission}`)
+      .sort()
+
+    expect(bootstrapGrants).toEqual(moduleGrants)
+  })
+
   it("allows secretaria to manage operational masters without system config or audit access", () => {
     const perms = rolePermissions("rol-sec")
 

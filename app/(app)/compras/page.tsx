@@ -6,16 +6,21 @@ import {
   worksites, suppliers,
   purchaseRequests,
 } from "@/db/schema"
-import { inArray, count, desc, eq } from "drizzle-orm"
+import { and, inArray, count, desc, eq, sql } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
-import { can, canAccessWorksite } from "@/lib/auth/can"
+import { can } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
 import { purchaseRequestItems } from "@/db/schema"
 
 export const metadata: Metadata = { title: "Órdenes de compra" }
+
+const ORDERS_PAGE_SIZE = 25
 
 export default async function ComprasPage({
   searchParams,
@@ -28,21 +33,40 @@ export default async function ComprasPage({
   const sp = await searchParams
   const createdCountRaw = typeof sp.creadas === "string" ? Number(sp.creadas) : 0
   const createdCount = Number.isFinite(createdCountRaw) && createdCountRaw > 1 ? createdCountRaw : 0
+  const visibleWsIds = visibleWorksiteIds(session)
+  const worksiteScope = isGlobalRole(session)
+    ? undefined
+    : visibleWsIds.length > 0
+      ? inArray(purchaseOrders.worksiteId, visibleWsIds)
+      : sql`1 = 0`
+  const requestWorksiteScope = isGlobalRole(session)
+    ? undefined
+    : visibleWsIds.length > 0
+      ? inArray(purchaseRequests.worksiteId, visibleWsIds)
+      : sql`1 = 0`
 
   // ── Approved / pending_purchase items (never-miss alert) ────────────────────
-  const pendingApproved = await db
-    .select({
-      id: purchaseRequestItems.id,
-      worksiteId: purchaseRequests.worksiteId,
-    })
+  const [pendingRow] = await db
+    .select({ total: count() })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-    .where(inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]))
-
-  const pendingCount = pendingApproved.filter((item) => canAccessWorksite(session, item.worksiteId)).length
+    .where(and(
+      inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]),
+      requestWorksiteScope,
+    ))
+  const pendingCount = pendingRow?.total ?? 0
+  const [totalOrdersRow] = await db
+    .select({ total: count() })
+    .from(purchaseOrders)
+    .where(worksiteScope)
+  const pagination = resolvePagination({
+    pageParam: sp.page,
+    totalItems: totalOrdersRow?.total ?? 0,
+    pageSize: ORDERS_PAGE_SIZE,
+  })
 
   // ── Purchase orders ──────────────────────────────────────────────────────────
-  const allOrders = await db
+  const visibleOrders = await db
     .select({
       id:          purchaseOrders.id,
       code:        purchaseOrders.code,
@@ -55,10 +79,11 @@ export default async function ComprasPage({
       createdAt:   purchaseOrders.createdAt,
     })
     .from(purchaseOrders)
+    .where(worksiteScope)
     .orderBy(desc(purchaseOrders.createdAt))
-
-  // Scope to worksites this user can access
-  const visibleOrders = allOrders.filter((o) => canAccessWorksite(session, o.worksiteId))
+    .limit(pagination.limit)
+    .offset(pagination.offset)
+  const pageHref = (page: number) => buildPaginationHref("/compras", sp, page)
 
   if (visibleOrders.length === 0 && pendingCount === 0) {
     return (
@@ -74,6 +99,7 @@ export default async function ComprasPage({
           }
         />
         <OcList orders={[]} pendingCount={0} canCreate={can(session, "purchasing:create_order")} createdCount={createdCount} />
+        <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
   }
@@ -141,6 +167,7 @@ export default async function ComprasPage({
         canCreate={can(session, "purchasing:create_order")}
         createdCount={createdCount}
       />
+      <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )
 }

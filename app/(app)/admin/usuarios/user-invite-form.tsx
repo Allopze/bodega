@@ -45,12 +45,12 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
     lastSeenStateRef.current = state
     if (state.ok) {
       toast.success(state.message ?? "Invitación creada")
-      const data = state.data as { inviteUrl?: string } | undefined
+      const data = state.data as { email?: string; inviteUrl?: string } | undefined
       if (data?.inviteUrl) {
         // The action returned a non-empty inviteUrl only when SMTP is
         // not configured. Keep the form open and surface the link in a
         // deliberate, dismissable panel instead of a transient toast.
-        const matchedEmail = state.message?.match(/a\s+(\S+@\S+)/i)?.[1] ?? ""
+        const matchedEmail = data.email ?? state.message?.match(/a\s+(\S+@\S+)/i)?.[1] ?? ""
         setPending({ email: matchedEmail, inviteUrl: data.inviteUrl })
         // Reset role/worksite selections so the form is ready for a new invite.
         setSelectedRoles([])

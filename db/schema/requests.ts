@@ -1,5 +1,5 @@
-import { pgTable, text, integer, real, timestamp, index } from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
+import { pgTable, text, integer, real, timestamp, index, check } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
@@ -30,6 +30,14 @@ export const purchaseRequests = pgTable("purchase_requests", {
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  check("purchase_requests_type_urgency_status_valid", sql`
+    ${table.requestType} IN ('epp', 'stock', 'mantencion', 'otro')
+    AND ${table.urgency} IN ('normal', 'high', 'critical')
+    AND ${table.status} IN (
+      'draft', 'submitted', 'in_review', 'partially_approved', 'approved',
+      'rejected', 'returned', 'in_purchasing', 'closed', 'cancelled'
+    )
+  `),
   index("purchase_requests_worksite_id_status_idx").on(table.worksiteId, table.status),
   index("purchase_requests_requester_id_created_at_idx").on(table.requesterId, table.createdAt),
 ])
@@ -55,6 +63,15 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  check("purchase_request_items_quantity_positive", sql`${table.quantity} > 0`),
+  check("purchase_request_items_state_valid", sql`
+    ${table.status} IN (
+      'draft', 'requested', 'approved', 'rejected', 'returned', 'postponed',
+      'pending_purchase', 'in_purchase_order', 'purchased',
+      'partially_received', 'received', 'partially_delivered', 'delivered'
+    )
+    AND (${table.urgency} IS NULL OR ${table.urgency} IN ('normal', 'high', 'critical'))
+  `),
   index("purchase_request_items_request_id_status_idx").on(table.requestId, table.status),
 ])
 
@@ -78,7 +95,10 @@ export const approvalDecisions = pgTable("approval_decisions", {
   reason:         text("reason"),
   modifiedQty:    real("modified_qty"),              // if quantity was modified during approval
   roleContext:    text("role_context"),               // 'jefa_chome' | 'secretaria' | 'prevencionista' | 'admin'
-})
+}, (table) => [
+  check("approval_decisions_modified_qty_positive", sql`${table.modifiedQty} IS NULL OR ${table.modifiedQty} > 0`),
+  check("approval_decisions_type_valid", sql`${table.type} IN ('approve', 'reject', 'return', 'modify')`),
+])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const purchaseRequestsRelations = relations(purchaseRequests, ({ one, many }) => ({

@@ -22,6 +22,7 @@ export const approvalsModule = {
   defaultGrants: [
     { roleSlug: "administrador",  permission: "approvals:approve" },
     { roleSlug: "jefa_chome",     permission: "approvals:approve" },
+    { roleSlug: "secretaria",     permission: "approvals:approve" },
     { roleSlug: "prevencionista", permission: "approvals:approve" },
   ],
 } as const satisfies ModuleManifest

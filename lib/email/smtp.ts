@@ -36,6 +36,8 @@ export function getAppBaseUrl() {
 }
 
 function getSmtpConfig(): SmtpConfig | null {
+  if (process.env.SMTP_DISABLED === "true") return null
+
   const host = process.env.SMTP_HOST
   const port = Number(process.env.SMTP_PORT ?? 587)
   const user = process.env.SMTP_USER
@@ -54,6 +56,12 @@ function getSmtpConfig(): SmtpConfig | null {
     auth: { user, pass },
     from,
   }
+}
+
+function getSmtpTimeoutMs() {
+  const timeout = Number(process.env.SMTP_TIMEOUT_MS ?? 5000)
+  if (!Number.isFinite(timeout) || timeout <= 0) return 5000
+  return timeout
 }
 
 export async function sendInvitationEmail({ to, inviteUrl, invitedByName }: InvitationEmailInput) {
@@ -200,7 +208,7 @@ class SmtpClient {
 
   private attachSocket(socket: net.Socket | tls.TLSSocket) {
     socket.setEncoding("utf8")
-    socket.setTimeout(20_000)
+    socket.setTimeout(getSmtpTimeoutMs())
     socket.on("data", (chunk) => this.pushChunk(chunk))
     socket.on("error", (error) => this.fail(error))
     socket.on("timeout", () => {
@@ -322,7 +330,23 @@ async function createSocket(config: SmtpConfig) {
     ? tls.connect({ host: config.host, port: config.port, servername: config.host })
     : net.createConnection({ host: config.host, port: config.port })
 
-  await once(socket, config.secure ? "secureConnect" : "connect")
+  const event = config.secure ? "secureConnect" : "connect"
+  const timeoutMs = getSmtpTimeoutMs()
+  let timeout: NodeJS.Timeout | undefined
+  try {
+    await Promise.race([
+      once(socket, event),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          timeout = undefined
+          socket.destroy()
+          reject(new Error("Timeout conectando a SMTP"))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
   return socket
 }
 

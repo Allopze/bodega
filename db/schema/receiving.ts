@@ -1,5 +1,5 @@
-import { pgTable, text, real, timestamp } from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
+import { pgTable, text, real, timestamp, check } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers } from "./worksites"
 import { products } from "./products"
@@ -20,7 +20,12 @@ export const receipts = pgTable("receipts", {
   status:             text("status").notNull().default("open"),  // open | closed
   notes:              text("notes"),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  check("receipts_location_status_valid", sql`
+    ${table.locationType} IN ('office', 'faena')
+    AND ${table.status} IN ('open', 'closed')
+  `),
+])
 
 /* ── Receipt Items ───────────────────────────────────────────────────────── */
 export const receiptItems = pgTable("receipt_items", {
@@ -33,7 +38,16 @@ export const receiptItems = pgTable("receipt_items", {
   status:               text("status").notNull().default("received"),
   // received | partially_received | rejected | damaged | pending
   notes:                text("notes"),
-})
+}, (table) => [
+  check("receipt_items_status_valid", sql`
+    ${table.status} IN ('received', 'partially_received', 'rejected', 'damaged', 'pending')
+  `),
+  check("receipt_items_quantities_valid", sql`
+    ${table.quantityReceived} > 0
+    AND ${table.quantityRejected} >= 0
+    AND ${table.quantityDamaged} >= 0
+  `),
+])
 
 /* ── Deliveries (Entregas a Faena / Trabajador) ──────────────────────────── */
 export const deliveries = pgTable("deliveries", {
@@ -48,7 +62,9 @@ export const deliveries = pgTable("deliveries", {
   signaturePath:   text("signature_path"),               // optional signature image
   notes:           text("notes"),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  check("deliveries_destination_type_valid", sql`${table.destinationType} IN ('faena', 'worker')`),
+])
 
 /* ── Delivery Items ───────────────────────────────────────────────────────── */
 export const deliveryItems = pgTable("delivery_items", {
@@ -60,7 +76,9 @@ export const deliveryItems = pgTable("delivery_items", {
   quantity:         real("quantity").notNull(),
   unitOfMeasure:    text("unit_of_measure").notNull().default("unidad"),
   notes:            text("notes"),
-})
+}, (table) => [
+  check("delivery_items_quantity_positive", sql`${table.quantity} > 0`),
+])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const receiptsRelations = relations(receipts, ({ one, many }) => ({

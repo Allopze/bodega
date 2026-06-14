@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check:secrets": "tsx scripts/check-env-files.ts",
+    "perf:queries": "tsx scripts/measure-operational-queries.ts",
     "prepare": "husky",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

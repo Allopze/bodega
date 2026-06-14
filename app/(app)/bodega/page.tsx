@@ -4,9 +4,10 @@ import { redirect } from "next/navigation"
 import { Suspense } from "react"
 import { db } from "@/db"
 import { worksites } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { and, eq, asc, inArray, sql } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
-import { can, canAccessWorksite } from "@/lib/auth/can"
+import { can } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -38,15 +39,31 @@ export default async function BodegaPage({
 
   const canRegisterMovements = can(session, "warehouse:register_movement")
   const canViewReceiving = can(session, "receiving:view")
+  const visibleWsIds = visibleWorksiteIds(session)
+  const worksiteScope = isGlobalRole(session)
+    ? undefined
+    : visibleWsIds.length > 0
+      ? inArray(worksites.id, visibleWsIds)
+      : sql`1 = 0`
 
   const [allWorksites, stockRows, recentMovements] = await Promise.all([
-    db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
+    db
+      .select({ id: worksites.id, name: worksites.name })
+      .from(worksites)
+      .where(and(eq(worksites.isActive, true), worksiteScope))
+      .orderBy(asc(worksites.name)),
     db.query.worksiteStock.findMany({
       with: { product: true, worksite: true },
+      where: isGlobalRole(session)
+        ? undefined
+        : (s, { inArray }) => visibleWsIds.length > 0 ? inArray(s.worksiteId, visibleWsIds) : sql`1 = 0`,
       orderBy: (s, { asc }) => [asc(s.worksiteId)],
     }),
     db.query.inventoryMovements.findMany({
       with: { product: true, worksite: true },
+      where: isGlobalRole(session)
+        ? undefined
+        : (m, { inArray }) => visibleWsIds.length > 0 ? inArray(m.worksiteId, visibleWsIds) : sql`1 = 0`,
       orderBy: (m, { desc }) => [desc(m.performedAt)],
       limit: 50,
     }),
@@ -65,11 +82,9 @@ export default async function BodegaPage({
     )
   }
 
-  const worksiteOptions: WorksiteOption[] = allWorksites
-    .filter((w) => canAccessWorksite(session, w.id))
-    .map((w) => ({ id: w.id, name: w.name }))
-  const visibleStockRows = stockRows.filter((s) => canAccessWorksite(session, s.worksiteId))
-  const visibleMovements = recentMovements.filter((m) => canAccessWorksite(session, m.worksiteId))
+  const worksiteOptions: WorksiteOption[] = allWorksites.map((w) => ({ id: w.id, name: w.name }))
+  const visibleStockRows = stockRows
+  const visibleMovements = recentMovements
   const stockWithQuantity = visibleStockRows.filter((item) => item.quantity > 0)
   const worksitesWithStock = new Set(stockWithQuantity.map((item) => item.worksiteId))
   const productsWithStock = new Set(stockWithQuantity.map((item) => item.productId))

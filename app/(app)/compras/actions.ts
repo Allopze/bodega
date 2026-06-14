@@ -181,13 +181,11 @@ export async function issueOrderAction(
     await issueOrder(orderId, session.user.id, {
       userEmail: session.user.email ?? undefined,
     })
-    revalidatePath(REVALIDATE)
-    revalidatePath(`/compras/${orderId}`)
-    return { ok: true, message: "Orden emitida" }
   } catch (e) {
     logger.error("[issueOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al emitir orden" }
   }
+  redirect(`/compras/${orderId}?actualizada=emitida`)
 }
 
 // ── Mark as sent (issued → sent) ──────────────────────────────────────────────
@@ -238,16 +236,11 @@ export async function sendOrderAction(
       }),
     )
 
-    revalidatePath(REVALIDATE)
-    revalidatePath(`/compras/${orderId}`)
-    revalidatePath("/recepcion")
-    revalidatePath("/dashboard")
-    revalidatePath("/", "layout")
-    return { ok: true, message: "Orden enviada al proveedor. Siguiente paso: registrar recepción." }
   } catch (e) {
     logger.error("[sendOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al enviar orden" }
   }
+  redirect(`/compras/${orderId}?actualizada=enviada`)
 }
 
 async function assertOrderAccess(session: Awaited<ReturnType<typeof requirePermission>>, orderId: string): Promise<ActionState | null> {

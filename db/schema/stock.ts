@@ -1,4 +1,5 @@
-import { pgTable, text, real, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
+import { pgTable, text, real, timestamp, index, uniqueIndex, check } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
 import { users } from "./users"
 import { worksites } from "./worksites"
@@ -14,6 +15,8 @@ export const worksiteStock = pgTable("worksite_stock", {
   lastMovementAt:   text("last_movement_at"),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  check("worksite_stock_quantity_non_negative", sql`${table.quantity} >= 0`),
+  check("worksite_stock_min_stock_non_negative", sql`${table.minStock} >= 0`),
   uniqueIndex("worksite_stock_unique").on(table.worksiteId, table.productId),
 ])
 
@@ -33,6 +36,13 @@ export const inventoryMovements = pgTable("inventory_movements", {
   reason:         text("reason"),
   notes:          text("notes"),
 }, (table) => [
+  check("inventory_movements_type_valid", sql`
+    ${table.type} IN ('ingreso_oc', 'egreso_entrega', 'ingreso_devolucion')
+  `),
+  check("inventory_movements_stock_non_negative", sql`
+    ${table.stockBefore} >= 0
+    AND ${table.stockAfter} >= 0
+  `),
   index("inventory_movements_worksite_performed_at_idx").on(table.worksiteId, table.performedAt),
   index("inventory_movements_product_performed_at_idx").on(table.productId, table.performedAt),
 ])

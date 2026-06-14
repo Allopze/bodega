@@ -21,8 +21,8 @@ flujo completo para validar la aplicación.
 | Tipo | Herramienta | Alcance | Database |
 |------|-------------|---------|----------|
 | Unitarias | vitest | Lógica pura (transiciones de estado, permisos, totales, validaciones) | Ninguna (datos mock en memoria) |
-| E2E | Playwright | Flujo completo desde el navegador (login → solicitud → aprobación → OC → factura → recepción) | SQLite dedicada en `.tmp/e2e.sqlite` |
-| Manual | Navegador + dev server | Exploración visual, casos borde no automatizados | SQLite local en `db/stockflow.db` |
+| E2E | Playwright | Flujo completo desde el navegador (login → solicitud → aprobación → OC → factura → recepción) | Postgres desechable `bodega_e2e` |
+| Manual | Navegador + dev server | Exploración visual, casos borde no automatizados | Postgres local configurado en `.env.local` |
 
 ---
 
@@ -79,6 +79,7 @@ lib/__tests__/
 ### 3.1. Requisitos
 
 - Tener el proyecto construido (`npm run build` o que `start-server.sh` lo haga automáticamente).
+- Tener Postgres local accesible con la misma configuración de `.env.local` (`PGHOST`, usuario, etc.).
 - Puerto 3100 libre (configurable vía `E2E_PORT`).
 
 ### 3.2. Ejecución
@@ -105,13 +106,16 @@ El archivo `e2e/purchase-flow.spec.ts` contiene **2 tests**:
 
 ### 3.4. Base de datos E2E
 
-Playwright usa una base de datos SQLite **independiente y efímera**:
+Playwright usa una base de datos Postgres **independiente y efímera**:
 
 ```
-.tmp/e2e.sqlite
+postgres:///bodega_e2e
 ```
 
-Se crea desde cero con `e2e/setup-db.ts` cada vez que se ejecutan los tests.
+Se crea si falta y se resetea desde cero con `e2e/setup-db.ts` cada vez que se ejecutan los tests.
+El reset destructivo solo corre si la URL apunta a una base con marcador desechable
+(`_test`, `_e2e`, `_capture`, `_tmp` o `_temp`) y si la variable de autorización está activa.
+`playwright.config.ts` define `E2E_ALLOW_DESTRUCTIVE_RESET=true` para el flujo automatizado.
 Contiene datos semilla fijos:
 
 | Dato | Valor |
@@ -133,8 +137,8 @@ playwright.config.ts
 ```
 
 Cada ejecución E2E:
-1. Elimina la base de datos anterior (`.tmp/e2e.sqlite`, `.tmp/e2e.sqlite-wal`, `.tmp/e2e.sqlite-shm`)
-2. Crea una nueva con las migraciones y datos semilla
+1. Valida que la URL Postgres sea desechable y que el reset esté explícitamente autorizado
+2. Crea `bodega_e2e` si falta, resetea su schema `public` y aplica migraciones/fixtures
 3. Construye la app con `next build`
 4. Inicia el servidor en el puerto 3100
 5. Playwright ejecuta los tests contra `http://localhost:3100`
@@ -295,9 +299,8 @@ npm test
 # Verificar que el puerto 3100 está libre
 lsof -i :3100
 
-# Forzar recreación de la base de datos E2E
-rm -rf .tmp/e2e.sqlite*
-npm run e2e:setup
+# Forzar recreación de la base de datos E2E desechable
+DATABASE_URL=postgres:///bodega_e2e E2E_ALLOW_DESTRUCTIVE_RESET=true npm run e2e:setup
 
 # Ejecutar con más traza
 DEBUG=pw:api npx playwright test

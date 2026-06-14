@@ -1,5 +1,7 @@
 # Auditoria del repositorio
 
+> Snapshot histórico: este documento refleja el estado observado el 2026-06-12. Para el estado actual de fixes y pendientes, usar `AUDITORIA_CODIGO.md`.
+
 Fecha de auditoria: 2026-06-12
 
 ## Resumen ejecutivo

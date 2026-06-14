@@ -98,7 +98,9 @@ export async function inviteUser(
     newState: { email: d.email, roles: d.roleIds, expiresAt, smtpSent: !pendingInviteUrl },
   })
 
-  revalidatePath(REVALIDATE)
+  if (!pendingInviteUrl) {
+    revalidatePath(REVALIDATE)
+  }
   return {
     ok: true,
     message: deliveryMessage,

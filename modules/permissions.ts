@@ -45,3 +45,7 @@ import type { ModuleManifest } from "@/core/module-kit"
 export const ALL_MODULE_PERMISSIONS = (
   _registry as ReadonlyArray<ModuleManifest>
 ).flatMap((m) => m.permissions)
+
+export const ALL_MODULE_DEFAULT_GRANTS = (
+  _registry as ReadonlyArray<ModuleManifest>
+).flatMap((m) => m.defaultGrants ?? [])

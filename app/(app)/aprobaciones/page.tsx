@@ -5,15 +5,19 @@ import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
   worksites, users as usersTable, products, suppliers,
 } from "@/db/schema"
-import { eq, and, inArray, asc } from "drizzle-orm"
+import { eq, and, inArray, asc, sql, count } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
-import { canAccessWorksite }  from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { ApprovalPanel } from "./approval-panel"
 import type { ApprovalItem, ApprovalRequest } from "./approval-panel"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
+
+const APPROVAL_REQUESTS_PAGE_SIZE = 20
 
 export default async function AprobacionesPage({
   searchParams,
@@ -25,9 +29,37 @@ export default async function AprobacionesPage({
   catch { redirect("/dashboard") }
   const sp = await searchParams
   const selectedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
+  const visibleWsIds = visibleWorksiteIds(session)
+  const worksiteScope = isGlobalRole(session)
+    ? undefined
+    : visibleWsIds.length > 0
+      ? inArray(purchaseRequests.worksiteId, visibleWsIds)
+      : sql`1 = 0`
+  const requestFilter = and(
+    inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
+    worksiteScope,
+    selectedRequestId ? eq(purchaseRequests.id, selectedRequestId) : undefined,
+    sql`exists (
+      select 1
+      from purchase_request_items pending_items
+      where pending_items.request_id = ${purchaseRequests.id}
+        and pending_items.status = 'requested'
+    )`,
+  )
 
-  // Load all submitted/in-review requests
-  const allRequests = await db
+  const [totalRequestsRow] = await db
+    .select({ total: count() })
+    .from(purchaseRequests)
+    .where(requestFilter)
+  const pagination = resolvePagination({
+    pageParam: sp.page,
+    totalItems: totalRequestsRow?.total ?? 0,
+    pageSize: APPROVAL_REQUESTS_PAGE_SIZE,
+  })
+  const pageHref = (page: number) => buildPaginationHref("/aprobaciones", sp, page)
+
+  // Load only submitted/in-review requests in the approver's worksite scope.
+  const visible = await db
     .select({
       id:           purchaseRequests.id,
       code:         purchaseRequests.code,
@@ -39,11 +71,10 @@ export default async function AprobacionesPage({
       submittedAt:  purchaseRequests.submittedAt,
     })
     .from(purchaseRequests)
-    .where(inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]))
+    .where(requestFilter)
     .orderBy(asc(purchaseRequests.submittedAt))
-
-  // Scope to worksites this approver can access
-  const visible = allRequests.filter((r) => canAccessWorksite(session, r.worksiteId))
+    .limit(pagination.limit)
+    .offset(pagination.offset)
 
   if (visible.length === 0) {
     return (
@@ -59,6 +90,7 @@ export default async function AprobacionesPage({
           }
         />
         <ApprovalPanel requests={[]} />
+        <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
   }
@@ -94,6 +126,7 @@ export default async function AprobacionesPage({
     .orderBy(asc(purchaseRequestItems.sortOrder))
 
   const pendingItemIds = pendingItems.map((i) => i.id)
+  const productIds = [...new Set(pendingItems.map((i) => i.productId).filter(Boolean))] as string[]
   const supplierIds = [...new Set(pendingItems.map((i) => i.suggestedSupplierId).filter(Boolean))] as string[]
 
   // Batch load everything else in parallel
@@ -121,9 +154,12 @@ export default async function AprobacionesPage({
           .where(inArray(usersTable.id, requesterIds))
       : Promise.resolve([]),
 
-    db
-      .select({ id: products.id, sku: products.sku, name: products.name })
-      .from(products),
+    productIds.length > 0
+      ? db
+          .select({ id: products.id, sku: products.sku, name: products.name })
+          .from(products)
+          .where(inArray(products.id, productIds))
+      : Promise.resolve([]),
 
     supplierIds.length > 0
       ? db
@@ -186,9 +222,7 @@ export default async function AprobacionesPage({
       }
     })
 
-  const displayedRows = selectedRequestId
-    ? rows.filter((row) => row.id === selectedRequestId)
-    : rows
+  const displayedRows = rows
   const totalPending = displayedRows.reduce((n, r) => n + r.pendingCount, 0)
 
   return (
@@ -208,6 +242,7 @@ export default async function AprobacionesPage({
         }
       />
       <ApprovalPanel requests={displayedRows} />
+      <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )
 }

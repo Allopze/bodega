@@ -11,6 +11,7 @@ import { loadEnvConfig } from "@next/env"
 import * as schema from "./schema"
 import { eq, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
+import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../lib/auth/system-rbac"
 
 loadEnvConfig(process.cwd())
 
@@ -181,13 +182,7 @@ async function main() {
   }
 
   /* ── Roles ────────────────────────────────────────────────────────────── */
-  const roleData: schema.roles["$inferInsert"][] = [
-    { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total técnico del sistema" },
-    { id: "rol-jefa", name: "jefa_chome", label: "Jefatura", description: "Revisa, aprueba y administra la operación" },
-    { id: "rol-sec", name: "secretaria", label: "Secretaría", description: "Revisa, aprueba y gestiona operación diaria" },
-    { id: "rol-prev", name: "prevencionista", label: "Prevencionista oficina", description: "Revisa y aprueba solicitudes" },
-    { id: "rol-sol-faena", name: "solicitante_faena", label: "Prevencionista faena", description: "Solicita ítems para sus faenas asignadas" },
-  ]
+  const roleData = SYSTEM_ROLES
   for (const role of roleData) {
     await db.insert(schema.roles).values(role).onConflictDoUpdate({
       target: schema.roles.id,
@@ -200,38 +195,7 @@ async function main() {
   }
 
   /* ── Permissions ─────────────────────────────────────────────────────── */
-  const perms: schema.permissions["$inferInsert"][] = [
-    // Requests
-    { id: "p-req-create",     name: "requests:create",              module: "requests",   description: "Crear solicitudes" },
-    { id: "p-req-own",        name: "requests:view_own",            module: "requests",   description: "Ver solicitudes propias" },
-    { id: "p-req-all",        name: "requests:view_all",            module: "requests",   description: "Ver todas las solicitudes" },
-    { id: "p-req-submit",     name: "requests:submit",              module: "requests",   description: "Enviar solicitudes a aprobación" },
-    // Approvals
-    { id: "p-apr",            name: "approvals:approve",            module: "approvals",  description: "Revisar y aprobar solicitudes" },
-    // Purchasing
-    { id: "p-pur-view",       name: "purchasing:view",              module: "purchasing", description: "Ver módulo de órdenes de compra" },
-    { id: "p-pur-create",     name: "purchasing:create_order",      module: "purchasing", description: "Crear órdenes de compra" },
-    { id: "p-pur-send",       name: "purchasing:send_order",        module: "purchasing", description: "Enviar OC a proveedor" },
-    { id: "p-pur-sup",        name: "purchasing:manage_suppliers",  module: "purchasing", description: "Administrar proveedores" },
-    // Receiving
-    { id: "p-rec-reg-office", name: "receiving:register_office",    module: "receiving",  description: "Registrar llegada a oficina" },
-    { id: "p-rec-reg-faena",  name: "receiving:register_faena",     module: "receiving",  description: "Registrar recepción en faena" },
-    { id: "p-rec-view",       name: "receiving:view",               module: "receiving",  description: "Ver recepciones" },
-    // Warehouse
-    { id: "p-wh-stock",       name: "warehouse:view_stock",         module: "warehouse",  description: "Ver stock" },
-    { id: "p-wh-mov",         name: "warehouse:register_movement",  module: "warehouse",  description: "Registrar movimientos" },
-    { id: "p-wh-adj",         name: "warehouse:adjust_stock",       module: "warehouse",  description: "Ajustar stock" },
-    // Reports
-    { id: "p-rep-view",       name: "reports:view",                 module: "reports",    description: "Ver reportes y matriz de trazabilidad" },
-    // Admin
-    { id: "p-adm-usr",        name: "admin:users",                  module: "admin",      description: "Gestionar usuarios" },
-    { id: "p-adm-ws",         name: "admin:worksites",              module: "admin",      description: "Gestionar faenas" },
-    { id: "p-adm-wrk",        name: "admin:workers",                module: "admin",      description: "Gestionar trabajadores" },
-    { id: "p-adm-prod",       name: "admin:products",               module: "admin",      description: "Gestionar catálogo" },
-    { id: "p-adm-sup",        name: "admin:suppliers",              module: "admin",      description: "Gestionar proveedores" },
-    { id: "p-adm-cfg",        name: "admin:config",                 module: "admin",      description: "Configuración del sistema" },
-    { id: "p-adm-audit",      name: "admin:audit_log",              module: "admin",      description: "Ver log de auditoría" },
-  ]
+  const perms = SYSTEM_PERMISSIONS
   for (const permission of perms) {
     await db.insert(schema.permissions).values(permission).onConflictDoUpdate({
       target: schema.permissions.id,
@@ -251,45 +215,7 @@ async function main() {
   await db.delete(schema.permissions).where(notInArray(schema.permissions.id, keepPermIds))
 
   /* ── Role → Permission mapping ───────────────────────────────────────── */
-  const rp = (roleId: string, permId: string) => ({ roleId, permissionId: permId })
-  const jefatura = [
-    "p-req-all",
-    "p-apr",
-    "p-pur-view",
-    "p-rec-view",
-    "p-wh-stock",
-    "p-rep-view",
-  ]
-  const secretaria = [
-    "p-req-create", "p-req-own", "p-req-all", "p-req-submit",
-    "p-apr",
-    "p-pur-view", "p-pur-create", "p-pur-send", "p-pur-sup",
-    "p-rec-reg-office", "p-rec-reg-faena", "p-rec-view",
-    "p-wh-stock", "p-wh-mov",
-    "p-rep-view",
-    "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup",
-  ]
-  const prevencionistaOficina = [
-    "p-req-create", "p-req-own", "p-req-all", "p-req-submit",
-    "p-apr",
-    "p-rec-reg-office", "p-rec-view",
-    "p-wh-stock", "p-wh-mov",
-    "p-rep-view",
-    "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup",
-  ]
-  const prevencionistaFaena = [
-    "p-req-create", "p-req-own", "p-req-submit",
-    "p-rec-reg-faena", "p-rec-view",
-    "p-wh-stock", "p-wh-mov",
-    "p-adm-wrk",
-  ]
-  const rolePermData = [
-    ...perms.map((p) => rp("rol-admin", p.id)),
-    ...jefatura.map((permId) => rp("rol-jefa", permId)),
-    ...secretaria.map((permId) => rp("rol-sec", permId)),
-    ...prevencionistaOficina.map((permId) => rp("rol-prev", permId)),
-    ...prevencionistaFaena.map((permId) => rp("rol-sol-faena", permId)),
-  ]
+  const rolePermData = SYSTEM_ROLE_PERMISSIONS
   await db.insert(schema.rolePermissions).values(rolePermData)
 
   /* ── Initial administrator ───────────────────────────────────────────── */

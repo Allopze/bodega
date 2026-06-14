@@ -12,7 +12,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
 import { REQUEST_STATE_META, ITEM_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
 import { formatCLP } from "@/lib/utils"
-import { eq, inArray, sql } from "drizzle-orm"
+import { count, eq, inArray, sql, sum } from "drizzle-orm"
 import { ChartBar } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Reportes" }
@@ -37,27 +37,27 @@ export default async function Page() {
     : (wsIds.length > 0
         ? sql`(${receipts.worksiteId} IS NULL OR ${inArray(receipts.worksiteId, wsIds)})`
         : sql`${receipts.worksiteId} IS NULL AND 1 = 0`)
-
   const [
-    requestRows,
-    itemRows,
-    orderRows,
-    receiptRows,
+    requestSummary,
+    itemSummary,
+    orderSummary,
+    receiptSummary,
+    requestStatusRows,
+    itemStatusRows,
+    orderStatusRows,
   ] = await Promise.all([
     db
       .select({
-        id: purchaseRequests.id,
-        status: purchaseRequests.status,
-        worksiteId: purchaseRequests.worksiteId,
+        total: count(),
+        inReview: sql<number>`count(*) filter (where ${purchaseRequests.status} in ('submitted', 'in_review'))`,
       })
       .from(purchaseRequests)
       .where(requestWsFilter),
 
     db
       .select({
-        id: purchaseRequestItems.id,
-        status: purchaseRequestItems.status,
-        worksiteId: purchaseRequests.worksiteId,
+        total: count(),
+        pendingApproval: sql<number>`count(*) filter (where ${purchaseRequestItems.status} = 'requested')`,
       })
       .from(purchaseRequestItems)
       .innerJoin(purchaseRequests, eqRequestItemRequest())
@@ -65,52 +65,69 @@ export default async function Page() {
 
     db
       .select({
-        id: purchaseOrders.id,
-        status: purchaseOrders.status,
-        worksiteId: purchaseOrders.worksiteId,
-        totalAmount: purchaseOrders.totalAmount,
+        total: count(),
+        totalAmount: sql<number>`coalesce(${sum(purchaseOrders.totalAmount)}, 0)`,
+        pendingReceipt: sql<number>`count(*) filter (where ${purchaseOrders.status} in ('sent', 'partially_office_received', 'office_received', 'partially_received'))`,
       })
       .from(purchaseOrders)
       .where(orderWsFilter),
 
     db
       .select({
-        id: receipts.id,
-        status: receipts.status,
-        worksiteId: receipts.worksiteId,
+        total: count(),
       })
       .from(receipts)
       .where(receiptWsFilter),
+
+    db
+      .select({ status: purchaseRequests.status, total: count() })
+      .from(purchaseRequests)
+      .where(requestWsFilter)
+      .groupBy(purchaseRequests.status),
+
+    db
+      .select({ status: purchaseRequestItems.status, total: count() })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eqRequestItemRequest())
+      .where(requestWsFilter)
+      .groupBy(purchaseRequestItems.status),
+
+    db
+      .select({ status: purchaseOrders.status, total: count() })
+      .from(purchaseOrders)
+      .where(orderWsFilter)
+      .groupBy(purchaseOrders.status),
   ])
 
-  const requests = requestRows
-  const items = itemRows
-  const orders = orderRows
-  const receiptsVisible = receiptRows
+  const requestTotals = requestSummary[0]
+  const itemTotals = itemSummary[0]
+  const orderTotals = orderSummary[0]
+  const receiptTotals = receiptSummary[0]
+  const pendingReceiptCount = Number(orderTotals?.pendingReceipt ?? 0)
   const metrics: ReportMetric[] = [
     {
       label: "Solicitudes",
-      value: requests.length,
-      detail: `${countWhere(requests, "status", "submitted", "in_review")} en revisión`,
+      value: Number(requestTotals?.total ?? 0),
+      detail: `${Number(requestTotals?.inReview ?? 0)} en revisión`,
     },
     {
       label: "Ítems solicitados",
-      value: items.length,
-      detail: `${items.filter((i) => i.status === "requested").length} pendientes de aprobación`,
+      value: Number(itemTotals?.total ?? 0),
+      detail: `${Number(itemTotals?.pendingApproval ?? 0)} pendientes de aprobación`,
     },
     {
       label: "Órdenes de compra",
-      value: orders.length,
-      detail: `${formatCLP(orders.reduce((sum, order) => sum + order.totalAmount, 0))} acumulado`,
+      value: Number(orderTotals?.total ?? 0),
+      detail: `${formatCLP(Number(orderTotals?.totalAmount ?? 0))} acumulado`,
     },
     {
       label: "Recepciones",
-      value: receiptsVisible.length,
-      detail: `${orders.filter((o) => ["sent", "partially_office_received", "office_received", "partially_received"].includes(o.status)).length} OC pendientes de recepción`,
+      value: Number(receiptTotals?.total ?? 0),
+      detail: `${pendingReceiptCount} OC pendientes de recepción`,
     },
     {
       label: "OC pendientes",
-      value: orders.filter((o) => ["sent", "partially_office_received", "office_received", "partially_received"].includes(o.status)).length,
+      value: pendingReceiptCount,
       detail: "Órdenes enviadas pendientes de oficina o bodega/faena",
     },
   ]
@@ -153,9 +170,9 @@ export default async function Page() {
       <section className="mt-6 rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
         <h2 className="text-h2">Estados principales</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <StatusGroup title="Solicitudes" entity="request" rows={statusRows(requests)} />
-          <StatusGroup title="Ítems" entity="item" rows={statusRows(items)} />
-          <StatusGroup title="OC" entity="oc" rows={statusRows(orders)} />
+          <StatusGroup title="Solicitudes" entity="request" rows={statusRows(requestStatusRows)} />
+          <StatusGroup title="Ítems" entity="item" rows={statusRows(itemStatusRows)} />
+          <StatusGroup title="OC" entity="oc" rows={statusRows(orderStatusRows)} />
         </div>
       </section>
     </PageContainer>
@@ -190,14 +207,8 @@ function eqRequestItemRequest() {
   return eq(purchaseRequestItems.requestId, purchaseRequests.id)
 }
 
-function countWhere<T extends Record<K, string>, K extends keyof T>(rows: T[], key: K, ...values: string[]) {
-  return rows.filter((row) => values.includes(row[key])).length
-}
-
-function statusRows(rows: { status: string }[]) {
-  const counts = new Map<string, number>()
-  for (const row of rows) counts.set(row.status, (counts.get(row.status) ?? 0) + 1)
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])
+function statusRows(rows: { status: string; total: number }[]) {
+  return rows.map((row) => [row.status, Number(row.total)] as [string, number]).sort((a, b) => b[1] - a[1])
 }
 
 /** Map a raw DB status to its Spanish label, falling back to the raw value. */

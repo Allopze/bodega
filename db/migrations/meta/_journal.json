@@ -15,6 +15,27 @@
       "when": 1781302219439,
       "tag": "0001_chemical_night_nurse",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781408230949,
+      "tag": "0002_stock_quantity_non_negative",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781411363680,
+      "tag": "0003_operational_numeric_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781411513854,
+      "tag": "0004_operational_state_constraints",
+      "breakpoints": true
     }
   ]
 }

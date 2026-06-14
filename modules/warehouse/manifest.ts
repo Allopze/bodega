@@ -26,10 +26,11 @@ export const warehouseModule = {
     { roleSlug: "administrador",  permission: "warehouse:register_movement" },
     { roleSlug: "administrador",  permission: "warehouse:adjust_stock" },
     { roleSlug: "jefa_chome",     permission: "warehouse:view_stock" },
-    { roleSlug: "jefa_chome",     permission: "warehouse:register_movement" },
-    { roleSlug: "jefa_chome",     permission: "warehouse:adjust_stock" },
     { roleSlug: "secretaria",     permission: "warehouse:view_stock" },
     { roleSlug: "secretaria",     permission: "warehouse:register_movement" },
     { roleSlug: "prevencionista", permission: "warehouse:view_stock" },
+    { roleSlug: "prevencionista", permission: "warehouse:register_movement" },
+    { roleSlug: "solicitante_faena", permission: "warehouse:view_stock" },
+    { roleSlug: "solicitante_faena", permission: "warehouse:register_movement" },
   ],
 } as const satisfies ModuleManifest

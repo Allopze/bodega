@@ -3,7 +3,7 @@
  * Every ingress and egress goes through this function atomically.
  */
 
-import { eq, and } from "drizzle-orm"
+import { eq, and, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { worksites, worksiteStock, inventoryMovements } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -58,49 +58,8 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
     throw new Error(`Worksite '${ws.name}' is not active`)
   }
 
-  const existing = await tx.query.worksiteStock.findFirst({
-    where: and(
-      eq(worksiteStock.worksiteId, input.worksiteId),
-      eq(worksiteStock.productId, input.productId),
-    ),
-  })
-
-  const currentQty = existing?.quantity ?? 0
-  const newQty = currentQty + input.quantity
-
-  if (newQty < 0) {
-    throw new Error(
-      `Stock insuficiente: disponible ${currentQty}, solicitado ${Math.abs(input.quantity)}`
-    )
-  }
-
   const now = new Date().toISOString()
-
-  if (existing) {
-    await tx
-      .update(worksiteStock)
-      .set({
-        quantity: newQty,
-        lastMovementAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(worksiteStock.worksiteId, input.worksiteId),
-          eq(worksiteStock.productId, input.productId),
-        ),
-      )
-  } else {
-    await tx.insert(worksiteStock).values({
-      id: nanoid(),
-      worksiteId: input.worksiteId,
-      productId: input.productId,
-      quantity: newQty,
-      minStock: 0,
-      lastMovementAt: now,
-      updatedAt: now,
-    })
-  }
+  const { currentQty, newQty } = await applyStockDelta(tx, input, now)
 
   await tx.insert(inventoryMovements).values({
     id: nanoid(),
@@ -133,4 +92,74 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
   }, tx)
 
   return newQty
+}
+
+async function applyStockDelta(tx: Tx, input: ApplyMovementInput, now: string) {
+  if (input.quantity >= 0) {
+    const [row] = await tx
+      .insert(worksiteStock)
+      .values({
+        id: nanoid(),
+        worksiteId: input.worksiteId,
+        productId: input.productId,
+        quantity: input.quantity,
+        minStock: 0,
+        lastMovementAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [worksiteStock.worksiteId, worksiteStock.productId],
+        set: {
+          quantity: sql`${worksiteStock.quantity} + ${input.quantity}`,
+          lastMovementAt: now,
+          updatedAt: now,
+        },
+      })
+      .returning({
+        stockBefore: sql<number>`${worksiteStock.quantity} - ${input.quantity}`,
+        stockAfter: worksiteStock.quantity,
+      })
+
+    return {
+      currentQty: Number(row.stockBefore),
+      newQty: Number(row.stockAfter),
+    }
+  }
+
+  const [row] = await tx
+    .update(worksiteStock)
+    .set({
+      quantity: sql`${worksiteStock.quantity} + ${input.quantity}`,
+      lastMovementAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(worksiteStock.worksiteId, input.worksiteId),
+        eq(worksiteStock.productId, input.productId),
+        sql`${worksiteStock.quantity} + ${input.quantity} >= 0`,
+      ),
+    )
+    .returning({
+      stockBefore: sql<number>`${worksiteStock.quantity} - ${input.quantity}`,
+      stockAfter: worksiteStock.quantity,
+    })
+
+  if (row) {
+    return {
+      currentQty: Number(row.stockBefore),
+      newQty: Number(row.stockAfter),
+    }
+  }
+
+  const existing = await tx.query.worksiteStock.findFirst({
+    where: and(
+      eq(worksiteStock.worksiteId, input.worksiteId),
+      eq(worksiteStock.productId, input.productId),
+    ),
+  })
+  const currentQty = existing?.quantity ?? 0
+  throw new Error(
+    `Stock insuficiente: disponible ${currentQty}, solicitado ${Math.abs(input.quantity)}`,
+  )
 }

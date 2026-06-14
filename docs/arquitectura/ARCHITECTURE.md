@@ -10,7 +10,7 @@ Documento técnico completo de la arquitectura del sistema.
 |---|---|---|
 | Framework | Next.js (App Router) | 16.2.7 |
 | Lenguaje | TypeScript (strict) | 5.x |
-| Base de datos | SQLite (WAL mode) | vía `better-sqlite3` |
+| Base de datos | PostgreSQL | vía `postgres` + `drizzle-orm/postgres-js` |
 | ORM | Drizzle ORM | latest |
 | Autenticación | NextAuth v5 beta (Credentials, JWT) | 5.x |
 | Estilos | Tailwind CSS v4 + `tw-animate-css` | 4.x |
@@ -140,7 +140,7 @@ chome-solicitudes-bodega/
 │   │   ├── audit.ts                  # audit_log, status_history, attachments
 │   │   └── system.ts                 # system_settings, code_sequences, rate_limits, notifications
 │   ├── migrations/                   # 11 archivos de migración SQL versionados
-│   ├── index.ts                      # Singleton Drizzle + better-sqlite3
+│   ├── index.ts                      # Singleton Drizzle + postgres-js
 │   └── seed.ts                       # Seed inicial (roles, permisos, catálogo EPP)
 ├── lib/
 │   ├── auth/                         # NextAuth config, RBAC, permisos, visibilidad
@@ -192,7 +192,7 @@ chome-solicitudes-bodega/
 
 ### Motor
 
-SQLite vía `better-sqlite3` con WAL mode activado. Archivo único `db/chome.db` (no versionado). Singleton Drizzle previene múltiples conexiones en HMR de desarrollo.
+PostgreSQL vía `postgres` con Drizzle ORM. La conexión se define con `DATABASE_URL` y el singleton Drizzle previene múltiples clientes en HMR de desarrollo.
 
 ### Esquema completo
 
@@ -353,7 +353,7 @@ draft → issued → sent → supplier_confirmed → partially_received → rece
 
 - **Estrategia**: Credentials (email + contraseña) con JWT sessions.
 - **Hashing**: bcrypt con cost factor 12.
-- **Rate limiting**: Persistente en SQLite, doble llave (IP + email). Bloquea tras N intentos fallidos consecutivos.
+- **Rate limiting**: Persistente en Postgres, doble llave (IP + email). Bloquea tras N intentos fallidos consecutivos.
 - **Registro**: Primer usuario obtiene rol `administrador`. Registros subsecuentes requieren invitación.
 
 ### RBAC
@@ -441,11 +441,26 @@ Cada mutación de estado se registra en dos tablas:
 - `audit_log`: quién, qué, cuándo, estado anterior/nuevo (JSON), motivo.
 - `status_history`: transición fromStatus → toStatus.
 
+### Adjuntos y storage
+
+Los comprobantes de entrega se guardan en el filesystem local bajo
+`storage/deliveries/` y se referencian desde la tabla `attachments`.
+La API de descarga valida autenticación, permiso por faena y que la ruta quede
+dentro de ese prefijo antes de leer el archivo.
+
+Requisitos operativos si se despliega con storage local:
+
+- Montar `storage/` en un volumen persistente, no en el filesystem efímero del contenedor.
+- Incluir `storage/` en la política de backup junto con la base Postgres.
+- Restaurar base de datos y archivos como una unidad consistente, porque `attachments.file_path` referencia archivos físicos.
+- Evitar múltiples instancias escribiendo a discos locales distintos; para escalar horizontalmente, mover adjuntos a object storage.
+- Definir retención de comprobantes según política interna antes de purgas manuales o automáticas.
+
 ---
 
 ## Decisiones arquitectónicas
 
-1. **SQLite como BD única** — Cero infraestructura de BD externa. El archivo `chome.db` es auto-contenido. WAL mode para lecturas concurrentes. Preparado para migrar a PostgreSQL vía Drizzle si el volumen crece.
+1. **PostgreSQL como BD única** — Base relacional centralizada con migraciones Drizzle versionadas, adecuada para concurrencia operativa, pruebas E2E desechables y despliegues con múltiples procesos.
 
 2. **Per-item state tracking** — La arquitectura central es el ítem, no la solicitud ni la OC. Cada ítem tiene su propio estado independiente. Esto resuelve el problema de "ítems perdidos".
 
@@ -474,7 +489,7 @@ Configurados en `next.config.ts`:
 
 ### Rate limiting
 
-Persistente en SQLite (`rate_limits`). Doble llave IP + email. Bloquea tras intentos fallidos consecutivos en login.
+Persistente en Postgres (`rate_limits`). Doble llave IP + email. Bloquea tras intentos fallidos consecutivos en login.
 
 ### Validación
 
@@ -495,7 +510,7 @@ El filtrado por faena ocurre en SQL (`WHERE worksiteId IN (...)`), no en código
 | E2E | Playwright | `e2e/` |
 | Cobertura | v8 (vitest) | Target: `lib/**/*.ts` |
 
-85 tests unitarios en 6 suites. E2E con BD SQLite efímera en `.tmp/e2e.sqlite`, datos semilla fijos, puerto 3100.
+Suite Vitest y Playwright. E2E con BD Postgres desechable `postgres:///bodega_e2e`, datos semilla fijos, puerto 3100.
 
 ---
 

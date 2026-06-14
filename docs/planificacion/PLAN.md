@@ -1,13 +1,13 @@
 # Plan MVP Chome Solicitudes y Bodega
 
 ## Resumen
-Construir un MVP web interno en **Next.js + TypeScript + SQLite**, enfocado en resolver el problema central: ningún ítem aprobado puede perderse entre solicitud, compra, recepción, entrega y factura.
+Construir un MVP web interno en **Next.js + TypeScript + PostgreSQL**, enfocado en resolver el problema central: ningún ítem aprobado puede perderse entre solicitud, compra, recepción, entrega y factura.
 
-El MVP incluirá **bodega Nivel 1**: stock simple por bodega, ingresos desde OC, egresos/entregas y movimientos básicos. Se diseñará single-tenant para Chome, con modelo preparado para migrar a PostgreSQL si crece el volumen.
+El MVP incluirá **bodega Nivel 1**: stock simple por bodega, ingresos desde OC, egresos/entregas y movimientos básicos. Se diseñará single-tenant para Chome sobre PostgreSQL.
 
 ## Cambios Clave
 
-- Stack: Next.js App Router, TypeScript, SQLite, Drizzle ORM, Tailwind, Auth.js o sesión propia con credenciales.
+- Stack: Next.js App Router, TypeScript, PostgreSQL, Drizzle ORM, Tailwind, Auth.js o sesión propia con credenciales.
 - Roles MVP: administrador, solicitante, jefe de faena, compras, recepción/bodega, finanzas, gerencia consulta.
 - Núcleo operativo:
   - solicitudes por faena con ítems individuales;
@@ -49,15 +49,15 @@ El MVP incluirá **bodega Nivel 1**: stock simple por bodega, ingresos desde OC,
 
 ## Fases de Implementación
 
-1. Base técnica: proyecto Next.js, auth, layout, roles, Drizzle/SQLite, seed inicial, auditoría base.
+1. Base técnica: proyecto Next.js, auth, layout, roles, Drizzle/PostgreSQL, seed inicial, auditoría base.
 2. Datos maestros: usuarios, faenas, centros de costo, productos, categorías, proveedores, bodegas.
 3. Solicitudes: creación, borrador, envío, ítems con atributos, adjuntos básicos, historial.
 4. Aprobaciones: aprobación/rechazo/devolución por ítem, motivos obligatorios, reglas EPP simples.
 5. Compras: bandeja de ítems aprobados, creación de OC, PDF, estado enviado/confirmado, control de ítems no incluidos.
 6. Recepción y bodega Nivel 1: recepción parcial/completa, ingreso a stock, movimientos, egresos y entregas.
 7. Facturación: factura manual, asociación a OC, comparación cantidad/precio/recepción, observaciones y conciliación.
-8. Dashboards/reportes: pendientes por rol, matriz de trazabilidad, gastos básicos, exportación CSV.
-9. Endurecimiento: permisos granulares, validaciones, pruebas E2E, datos de demostración y respaldo SQLite.
+8. Dashboards/reportes: pendientes por rol, matriz de trazabilidad, gastos básicos, exportación XLSX.
+9. Endurecimiento: permisos granulares, validaciones, pruebas E2E, datos de demostración y respaldo Postgres.
 
 ## Test Plan
 
@@ -73,7 +73,7 @@ El MVP incluirá **bodega Nivel 1**: stock simple por bodega, ingresos desde OC,
 
 ## Supuestos
 
-- “Next.hs/SQLite” se interpreta como **Next.js + SQLite**.
+- “Next.hs/SQLite” fue el supuesto inicial; la app viva usa **Next.js + PostgreSQL**.
 - MVP será una aplicación interna de Chome, no portal proveedor.
 - Bodega MVP será **Nivel 1**, con stock simple por producto/bodega, sin ubicaciones internas, kardex avanzado, lotes ni seriales.
 - Facturas serán registradas manualmente; importación PDF/XML e integración contable quedan para segunda etapa.

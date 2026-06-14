@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test"
 
 const port = 3100
-const databaseUrl = "./.tmp/e2e.sqlite"
+const databaseUrl = "postgres:///bodega_e2e"
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,7 +16,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: `E2E_DATABASE_URL=${databaseUrl} E2E_PORT=${port} bash e2e/start-server.sh`,
+    command: `E2E_DATABASE_URL=${databaseUrl} E2E_ALLOW_DESTRUCTIVE_RESET=true E2E_PORT=${port} bash e2e/start-server.sh`,
     url: `http://localhost:${port}/login`,
     reuseExistingServer: false,
     timeout: 180_000,

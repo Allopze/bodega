@@ -44,12 +44,6 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:suppliers" },
     { roleSlug: "administrador", permission: "admin:config" },
     { roleSlug: "administrador", permission: "admin:audit_log" },
-    // Jefatura
-    { roleSlug: "jefa_chome", permission: "admin:users" },
-    { roleSlug: "jefa_chome", permission: "admin:worksites" },
-    { roleSlug: "jefa_chome", permission: "admin:workers" },
-    { roleSlug: "jefa_chome", permission: "admin:products" },
-    { roleSlug: "jefa_chome", permission: "admin:suppliers" },
     // Secretaría
     { roleSlug: "secretaria", permission: "admin:users" },
     { roleSlug: "secretaria", permission: "admin:worksites" },

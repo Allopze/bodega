@@ -4,17 +4,17 @@ Fecha: 2026-06-13
 
 Repositorio: `/home/allopze/dev/chome/bodega`
 
-Alcance: auditoría estática y verificaciones locales sobre la aplicación Next.js App Router, capa `app/`, `lib/`, `db/`, rutas API, scripts, pruebas, documentación y configuración. No se modificó código fuente de la aplicación.
+Alcance: auditoría estática, fixes priorizados y verificaciones locales sobre la aplicación Next.js App Router, capa `app/`, `lib/`, `db/`, rutas API, scripts, pruebas, documentación y configuración.
 
 ## Resumen ejecutivo
 
-El estado general del proyecto es sólido para una aplicación interna: lint, typecheck, build, auditoría de dependencias, revisión de secretos y pruebas unitarias/integración pasan correctamente. La autenticación, RBAC y autorización por obra están mucho más presentes que en una base típica de operaciones internas; los flujos sensibles revisados usan `requirePermission`, `requireAuth` o filtros de acceso de forma amplia.
+El estado general del proyecto es sólido para una aplicación interna: lint, typecheck, build, auditoría de dependencias, revisión de secretos, pruebas unitarias/integración y el smoke E2E admin/compras pasan correctamente tras esta ronda de fixes. La autenticación, RBAC y autorización por obra están mucho más presentes que en una base típica de operaciones internas; los flujos sensibles revisados usan `requirePermission`, `requireAuth` o filtros de acceso de forma amplia.
 
-El riesgo más serio encontrado no está en una pantalla específica, sino en la infraestructura de pruebas/capturas: los scripts destructivos de base de datos pueden ejecutar `DROP SCHEMA public CASCADE` sobre la base apuntada por variables de entorno, y el flujo E2E actual además está roto porque mezcla una ruta SQLite con un cliente Postgres. Esto deja al proyecto sin verificación E2E funcional y con una ruta peligrosa si alguien intenta "arreglarla" apuntando a una base Postgres compartida.
+El riesgo más serio encontrado no estaba en una pantalla específica, sino en la infraestructura de pruebas/capturas: los scripts destructivos de base de datos podían ejecutar `DROP SCHEMA public CASCADE` sobre la base apuntada por variables de entorno, y el flujo E2E mezclaba una ruta SQLite con un cliente Postgres. Ese punto quedó mitigado con una base Postgres desechable, autorización explícita para resets destructivos y guardas de URL.
 
-El segundo riesgo importante está en la actualización de inventario. `lib/services/stock.ts` calcula el stock nuevo con lectura previa y escritura absoluta dentro de una transacción, pero sin bloqueo de fila ni actualización atómica condicional. En concurrencia real, dos entregas o movimientos simultáneos pueden pisarse y dejar inventario y kardex inconsistentes.
+El segundo riesgo importante estaba en la actualización de inventario. `lib/services/stock.ts` calculaba el stock nuevo con lectura previa y escritura absoluta dentro de una transacción, sin bloqueo de fila ni actualización atómica condicional. Ese punto quedó mitigado en la capa de servicio con increments SQL/updates condicionales, con un `CHECK (quantity >= 0)` en `worksite_stock` y con una prueba de carrera real contra Postgres.
 
-También hay riesgos de escalabilidad y mantenimiento: varias páginas operativas cargan conjuntos completos y filtran en memoria, faltan restricciones `CHECK` en la base para invariantes de negocio críticos, la fuente de verdad de permisos sigue duplicada entre registry, seed y bootstrap, y parte de la documentación aún describe SQLite/CSV aunque la app viva ya está en Postgres/XLSX.
+También quedan riesgos puntuales de mantenimiento: la migración congelada en `modules/`/`core/` sigue siendo deuda arquitectónica y el almacenamiento local de adjuntos requiere una decisión operacional si el volumen crece. Los riesgos de integridad de base, deriva de permisos, documentación SQLite/CSV, filtros amplios en páginas operativas y falta de límites/medición en listas principales quedaron mitigados con constraints, matriz RBAC compartida, pruebas de paridad, documentación actualizada, scoping/agregaciones SQL, paginación servidor y un benchmark reproducible con dataset mediano.
 
 ## Contexto analizado
 
@@ -30,8 +30,8 @@ Se revisaron estas áreas:
 Limitaciones:
 
 - No se inspeccionó una base de datos productiva ni datos reales de producción.
-- No se ejecutó navegación completa en navegador porque el smoke E2E falla antes de levantar el servidor.
-- No se modificó código de la aplicación; el único archivo creado es este informe.
+- La navegación completa revisada en navegador cubrió el smoke E2E admin/compras; otros flujos no E2E quedan fuera de esta ronda.
+- Sí se modificó código de aplicación, pruebas, scripts y documentación para corregir los hallazgos priorizados.
 - El worktree ya tenía cambios no relacionados al iniciar la auditoría.
 
 ## Estado de verificaciones
@@ -44,8 +44,13 @@ Limitaciones:
 | `npm audit --omit=dev` | Pasa | `found 0 vulnerabilities`. |
 | `npm run build` | Pasa | Build Next.js 16.2.7/Turbopack exitoso. |
 | `npm run check:secrets` | Pasa | Archivos env rastreados y `.env.example` aceptados. |
-| `npm test` | Pasa | 29 archivos, 176 tests. |
-| `npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts` | Falla | `TypeError: Invalid URL` en `e2e/setup-db.ts` al recibir ruta SQLite en cliente Postgres. |
+| `npm test` | Pasa | 32 archivos + 1 skipped, 194 tests + 1 skipped. La prueba Postgres destructiva de concurrencia queda opt-in por seguridad. |
+| `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts` | Pasa | Prueba de carrera sobre Postgres real contra `postgres:///bodega_test`, con reset destructivo protegido por opt-in. |
+| `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` | Pasa | 5 tests; incluye paridad de permisos registry/bootstrap y grants manifests/bootstrap. |
+| `npm test -- lib/__tests__/pagination.test.ts` | Pasa | 5 tests; normalización de página, rangos y hrefs de paginación servidor. |
+| `PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries` | Pasa | Dataset Postgres mediano en `bodega_perf_test`; compras 4.6-7.5 ms, aprobaciones 7.1-9.8 ms, bodega 29.9-35.9 ms, reportes 18.0 ms. |
+| `npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts` | Pasa tras fixes | 9 tests Playwright pasan contra `postgres:///bodega_e2e`; antes fallaba con `TypeError: Invalid URL` por ruta SQLite en cliente Postgres y luego con acciones de UI pendientes. |
+| `git diff --check` | Pasa | Sin whitespace errors. |
 
 ## Hallazgos críticos
 
@@ -54,6 +59,10 @@ Limitaciones:
 **Severidad:** Crítica
 
 **Categoría:** Seguridad de datos / Testing / Configuración
+
+**Estado tras fixes 2026-06-13:** Mitigado en código. `playwright.config.ts` ahora usa `postgres:///bodega_e2e`; `e2e/setup-db.ts` y `scripts/capture-all-routes.ts` exigen `*_ALLOW_DESTRUCTIVE_RESET=true`, rechazan URLs no Postgres o bases sin marcador desechable (`_test`, `_e2e`, `_capture`, `_tmp`, `_temp`), cargan `.env.local` con `@next/env`, crean la base desechable si falta y solo entonces resetean los schemas `drizzle` y `public`. Capturas ya no caen a `DATABASE_URL` y el manifiesto guarda un identificador de DB redactado. Se agregó cobertura en `lib/__tests__/destructive-database-guard.test.ts`.
+
+**Estabilización E2E adicional:** el arranque E2E ahora fija `APP_URL`/`NEXTAUTH_URL`, usa secretos de auth propios de Playwright y desactiva SMTP con `SMTP_DISABLED=true`; `lib/email/smtp.ts` respeta ese flag y agrega timeouts. Las acciones de invitación y ciclo de OC se ajustaron para no dejar formularios pendientes después de mutaciones ya confirmadas, y el E2E de recepción fuerza una carga fresca antes de validar la transición oficina -> faena.
 
 **Ubicación:**
 
@@ -92,13 +101,15 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Recomendación:**
 
-- Eliminar cualquier fallback destructivo a `DATABASE_URL` en scripts de pruebas/capturas.
-- Exigir una variable explícita como `E2E_ALLOW_DESTRUCTIVE_RESET=true` o `CAPTURE_ALLOW_DESTRUCTIVE_RESET=true`.
-- Rechazar URLs cuyo nombre de base, schema o host no indiquen claramente entorno desechable (`_e2e`, `_test`, `_capture`, schema temporal, contenedor local).
-- Usar una base Postgres dedicada para E2E, no una ruta SQLite.
+- [x] Eliminar cualquier fallback destructivo a `DATABASE_URL` en scripts de pruebas/capturas.
+- [x] Exigir una variable explícita como `E2E_ALLOW_DESTRUCTIVE_RESET=true` o `CAPTURE_ALLOW_DESTRUCTIVE_RESET=true`.
+- [x] Rechazar URLs cuyo nombre de base, schema o host no indiquen claramente entorno desechable (`_e2e`, `_test`, `_capture`, schema temporal, contenedor local).
+- [x] Usar una base Postgres dedicada para E2E, no una ruta SQLite.
 - Preferir crear y borrar un schema temporal aislado en vez de destruir `public`.
-- No escribir `DATABASE_URL` completo en manifiestos de captura; si hace falta, registrar solo un identificador redacted.
-- Agregar un test de seguridad de script que falle si la URL parece productiva o no desechable.
+- [x] No escribir `DATABASE_URL` completo en manifiestos de captura; si hace falta, registrar solo un identificador redacted.
+- [x] Agregar un test de seguridad de script que falle si la URL parece productiva o no desechable.
+
+**Verificación del fix:** `npm test -- lib/__tests__/destructive-database-guard.test.ts` pasa con 7 tests; `DATABASE_URL=postgres:///bodega_e2e E2E_ALLOW_DESTRUCTIVE_RESET=true npm run e2e:setup` pasa y aplica migraciones/fixtures sobre la DB desechable; el smoke `npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts` pasa con 9/9.
 
 **Confianza:** Alta. El fallo fue reproducido con comando local y el código destructivo está presente en los scripts revisados.
 
@@ -110,12 +121,15 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Categoría:** Consistencia de datos / Concurrencia / Inventario
 
+**Estado tras fixes 2026-06-14:** Mitigado y cubierto. `applyMovementTx()` dejó de hacer read-modify-write absoluto: los ingresos usan upsert con incremento SQL (`quantity = quantity + delta`) y los egresos usan `UPDATE ... WHERE quantity + delta >= 0 RETURNING`, por lo que una salida concurrente no puede sobrescribir stock ni cruzar a negativo desde la capa de servicio. Se agregó la migración `db/migrations/0002_stock_quantity_non_negative.sql` y el schema Drizzle declara `CHECK (quantity >= 0)` en `worksite_stock`. Además, `lib/__tests__/stock-concurrency-postgres.test.ts` ejecuta una carrera real contra Postgres: dos egresos simultáneos de 4 unidades sobre stock 5 dejan exactamente un movimiento confirmado y stock final 1.
+
 **Ubicación:**
 
 - `lib/services/stock.ts:61-69`
 - `lib/services/stock.ts:71-75`
 - `lib/services/stock.ts:79-92`
 - `db/schema/stock.ts:8-17`
+- `db/migrations/0002_stock_quantity_non_negative.sql`
 
 **Evidencia:**
 
@@ -132,14 +146,16 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Recomendación:**
 
-- Cambiar el movimiento a actualización atómica condicional en SQL:
+- [x] Cambiar el movimiento a actualización atómica condicional en SQL:
   - `quantity = quantity + delta`
   - `WHERE quantity + delta >= 0`
   - `RETURNING quantity`
 - O bloquear la fila dentro de la transacción con `SELECT ... FOR UPDATE`.
-- Resolver explícitamente el caso de inserción concurrente para una fila de stock inexistente.
-- Agregar prueba de concurrencia contra Postgres real o un entorno que respete locking transaccional.
-- Agregar restricción `CHECK (quantity >= 0)` en la base como última línea de defensa.
+- [x] Resolver explícitamente el caso de inserción concurrente para una fila de stock inexistente.
+- [x] Agregar prueba de concurrencia contra Postgres real o un entorno que respete locking transaccional.
+- [x] Agregar restricción `CHECK (quantity >= 0)` en la base como última línea de defensa.
+
+**Verificación del fix:** `npm test -- lib/__tests__/full-flow-integration.test.ts lib/__tests__/receiving-two-stage.test.ts db/schema-consistency.test.ts` pasa con 13 tests; `npm run typecheck` pasa. La prueba de consistencia rechaza inserciones directas con stock negativo. `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts` pasa con una carrera real sobre Postgres y reset protegido.
 
 **Confianza:** Alta. El patrón read-modify-write está en la función central de stock y no se observó bloqueo ni prueba de carrera.
 
@@ -149,22 +165,24 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Categoría:** Performance / Escalabilidad / Minimización de datos
 
+**Estado tras fixes 2026-06-14:** Mitigado en las superficies señaladas. `compras/page.tsx`, `aprobaciones/page.tsx` y `bodega/page.tsx` ahora empujan el scoping por obra al SQL con `visibleWorksiteIds()`/`isGlobalRole()` y evitan filtros finales amplios en memoria. Compras y aprobaciones usan paginación servidor con total scoped, `limit/offset` y links de página; `lib/pagination.ts` cubre normalización de `page`, rangos y construcción de hrefs. En compras, el contador de ítems aprobados/pending se calcula con `COUNT` scoped en SQL; en aprobaciones, la carga de productos se limita a los productos presentes en los ítems pendientes; en bodega, faenas/stock/movimientos se consultan ya acotados a la visibilidad del usuario. `reportes/page.tsx` dejó de cargar filas completas para métricas principales y estados: ahora usa `COUNT`, `SUM` y `GROUP BY` scoped en SQL. Se agregó `scripts/measure-operational-queries.ts` y el comando `npm run perf:queries`, protegido por `PERF_ALLOW_DESTRUCTIVE_RESET=true`, para sembrar `postgres:///bodega_perf_test` y medir consultas operativas con dataset mediano.
+
 **Ubicación:**
 
-- `app/(app)/compras/page.tsx:33-42`
-- `app/(app)/compras/page.tsx:45-61`
-- `app/(app)/aprobaciones/page.tsx:29-46`
-- `app/(app)/aprobaciones/page.tsx:124-126`
-- `app/(app)/bodega/page.tsx:42-52`
-- `app/(app)/bodega/page.tsx:68-72`
-- `app/(app)/reportes/page.tsx:41-84`
+- `app/(app)/compras/page.tsx`
+- `app/(app)/aprobaciones/page.tsx`
+- `app/(app)/bodega/page.tsx`
+- `app/(app)/reportes/page.tsx`
+- `components/ui/server-pagination.tsx`
+- `lib/pagination.ts`
+- `scripts/measure-operational-queries.ts`
 
 **Evidencia:**
 
-- `compras/page.tsx` obtiene solicitudes y órdenes amplias, y luego filtra por `canAccessWorksite()`.
-- `aprobaciones/page.tsx` carga solicitudes candidatas y luego filtra por obra accesible.
-- `bodega/page.tsx` obtiene obras, stock y movimientos recientes antes de filtrar visibilidad en memoria.
-- `reportes/page.tsx` ya usa filtros de obra en la consulta, pero carga resultados completos para calcular métricas que podrían agregarse en SQL.
+- `compras/page.tsx` antes obtenía solicitudes y órdenes amplias, y luego filtraba por `canAccessWorksite()`; corregido para filtrar por obra en SQL y contar pendientes con `COUNT`.
+- `aprobaciones/page.tsx` antes cargaba solicitudes candidatas y luego filtraba por obra accesible; corregido para filtrar por obra en SQL y cargar solo productos referenciados por ítems pendientes.
+- `bodega/page.tsx` antes obtenía obras, stock y movimientos recientes antes de filtrar visibilidad en memoria; corregido para consultar esas tres superficies ya scoped.
+- `reportes/page.tsx` ya usaba filtros de obra, pero cargaba resultados completos para calcular métricas; corregido con agregaciones SQL.
 
 **Impacto:**
 
@@ -174,18 +192,23 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Recomendación:**
 
-- Empujar el scoping por obra al SQL usando una lista de `visibleWorksiteIds()` o joins/where equivalentes.
-- Agregar paginación y límites explícitos en vistas de listas.
-- Convertir contadores y sumas de reportes a agregaciones SQL (`COUNT`, `SUM`, `GROUP BY`) en vez de cargar filas completas.
+- [x] Empujar el scoping por obra al SQL usando una lista de `visibleWorksiteIds()` o joins/where equivalentes.
+- [x] Agregar paginación y límites explícitos en vistas de listas.
+- [x] Convertir contadores y sumas de reportes a agregaciones SQL (`COUNT`, `SUM`, `GROUP BY`) en vez de cargar filas completas.
+- [x] Medir queries con datasets medianos antes de optimizar microdetalles.
 - Crear pruebas que verifiquen que usuarios restringidos no fuerzan consultas globales en páginas clave.
+
+**Verificación del fix:** `npm test -- lib/__tests__/pagination.test.ts` pasa con 5 tests; `npm run typecheck` pasa después de modificar `app/(app)/compras/page.tsx`, `app/(app)/aprobaciones/page.tsx`, `app/(app)/bodega/page.tsx` y `app/(app)/reportes/page.tsx`. `PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries` pasa sobre `postgres:///bodega_perf_test` con 1200 solicitudes, 3600 ítems, 500 OC y 600 filas de stock; línea base medida: compras total 7.5 ms, compras página 4.6 ms, aprobaciones total 7.1 ms, aprobaciones página + ítems 9.8 ms, bodega stock 35.9 ms, bodega movimientos 29.9 ms, reportes agregados 18.0 ms.
 
 **Confianza:** Alta. El patrón se observa directamente en los Server Components revisados.
 
-### [Media-Alta] Faltan restricciones de base para invariantes críticos de negocio
+### [Media-Alta] Faltaban restricciones de base para invariantes críticos de negocio
 
 **Severidad:** Media-Alta
 
 **Categoría:** Integridad de datos / Base de datos
+
+**Estado tras fixes 2026-06-14:** Mitigado en código para las invariantes operativas principales. Se agregaron constraints numéricas en `db/migrations/0003_operational_numeric_constraints.sql` y constraints de estados/tipos en `db/migrations/0004_operational_state_constraints.sql`, además de sus equivalentes en schemas Drizzle. La base ahora rechaza cantidades no positivas, montos negativos, descuentos fuera de 0-100, contadores de recepción no monotónicos (`quantity_received <= quantity_office_received <= quantity`), cantidades de recepción/entrega inválidas, stock mínimo/saldos negativos y estados/tipos operativos fuera de las listas canónicas usadas por servicios y validaciones.
 
 **Ubicación:**
 
@@ -194,17 +217,19 @@ Process from config.webServer was not able to start. Exit code: 1
 - `db/schema/receiving.ts:16-33`
 - `db/schema/receiving.ts:60`
 - `db/schema/stock.ts:12-26`
+- `db/migrations/0003_operational_numeric_constraints.sql`
+- `db/migrations/0004_operational_state_constraints.sql`
 - `db/migrations/meta/0001_snapshot.json`
 
 **Evidencia:**
 
-- Los schemas Drizzle declaran cantidades, precios, descuentos, estados y stock como columnas tipadas, pero no se observaron `CHECK` constraints para:
-  - cantidades mayores que cero,
-  - stock no negativo,
-  - precios y montos no negativos,
-  - porcentajes de descuento en rango,
-  - cantidades recibidas/entregadas coherentes con cantidades ordenadas o aprobadas,
-  - estados restringidos a valores válidos.
+- Los schemas Drizzle declaraban cantidades, precios, descuentos, estados y stock como columnas tipadas, pero no se observaron `CHECK` constraints para:
+  - cantidades mayores que cero, corregido para solicitudes, OC, recepciones y entregas,
+  - stock no negativo, corregido para cantidad, mínimo y saldos before/after,
+  - precios y montos no negativos, corregido para OC y líneas de OC,
+  - porcentajes de descuento en rango, corregido para líneas de OC,
+  - cantidades recibidas/entregadas coherentes con cantidades ordenadas o aprobadas, corregido para contadores de OC y cantidades directas de recepción/entrega,
+  - estados restringidos a valores válidos, corregido para solicitudes, ítems, decisiones, OC, recepciones, entregas y movimientos.
 - El snapshot de migración contiene entradas con `checkConstraints: {}`.
 - La capa Zod en `lib/validation/operations.ts` sí valida parte de esto, pero scripts, seeds, migraciones manuales o SQL directo pueden saltarse la validación de aplicación.
 
@@ -216,33 +241,41 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Recomendación:**
 
-- Agregar restricciones Postgres `CHECK` para invariantes numéricas y de estado.
+- [x] Agregar restricciones Postgres `CHECK` para invariantes numéricas principales.
+- [x] Agregar restricciones Postgres `CHECK` para estados/enums operativos desde la lista canónica ya usada por servicios y validaciones.
 - Mantener Zod como validación de UX, pero tratar la base como guardia final.
-- Crear pruebas de migración/integridad que intenten insertar datos inválidos y esperen error.
+- [x] Crear pruebas de migración/integridad que intenten insertar datos inválidos y esperen error.
 - Documentar cada invariant en el schema, cerca de la columna o tabla correspondiente.
+
+**Verificación del fix:** `npm test -- db/schema-consistency.test.ts` pasa con 5 tests. Las pruebas nuevas fallan antes de las migraciones porque la base acepta `purchase_request_items.quantity = 0` y `purchase_requests.status = 'impossible'`; pasan después de aplicar `0003_operational_numeric_constraints` y `0004_operational_state_constraints`.
 
 **Confianza:** Media-Alta. La ausencia de constraints es visible en schema y snapshot; la lista exacta de invariantes debería validarse con producto antes de migrar.
 
-### [Media] La fuente de verdad de permisos sigue duplicada entre registry, seed, bootstrap y tipos
+### [Media] La fuente de verdad de permisos estaba duplicada entre registry, seed, bootstrap y tipos
 
 **Severidad:** Media
 
 **Categoría:** Arquitectura / Autorización / Mantenibilidad
 
+**Estado tras fixes 2026-06-14:** Mitigado en código. Se extrajo la matriz viva de roles, permisos y grants a `lib/auth/system-rbac.ts`; `lib/auth/bootstrap.ts` la reexporta para compatibilidad y `db/seed.ts` dejó de mantener su copia manual. Los manifests de módulos quedaron alineados con los grants reales de bootstrap, y `modules/permissions.ts` ahora expone `ALL_MODULE_DEFAULT_GRANTS` para pruebas de paridad junto con `ALL_MODULE_PERMISSIONS`.
+
 **Ubicación:**
 
 - `modules/registry.ts:1-6`
-- `modules/permissions.ts:31-34`
-- `db/seed.ts:202-293`
-- `lib/auth/bootstrap.ts:14-81`
+- `modules/permissions.ts:31-51`
+- `modules/*/manifest.ts`
+- `lib/auth/system-rbac.ts`
+- `db/seed.ts:202-247`
+- `lib/auth/bootstrap.ts:1-60`
 - `lib/auth/types.ts`
+- `lib/__tests__/auth-bootstrap-permissions.test.ts`
 
 **Evidencia:**
 
 - `modules/registry.ts` declara que módulos, permisos, navegación y seed se derivan desde manifests.
-- En la práctica, el seed y el bootstrap mantienen tablas manuales de permisos y permisos por rol.
-- `modules/permissions.ts` reexporta `Permission` desde `lib/auth/types`, lo que mantiene una unión legacy separada de la información de manifests.
-- El usuario puede tener permisos directos, pero la consistencia entre registry, seed, bootstrap, tipos y UI depende de sincronización manual.
+- Antes, el seed y el bootstrap mantenían tablas manuales de permisos y permisos por rol; ahora ambos consumen `SYSTEM_ROLES`, `SYSTEM_PERMISSIONS` y `SYSTEM_ROLE_PERMISSIONS` desde `lib/auth/system-rbac.ts`.
+- `modules/permissions.ts` todavía reexporta `Permission` desde `lib/auth/types` como compatibilidad legacy, pero las pruebas verifican que los permisos declarados por módulos y bootstrap sigan en paridad.
+- `lib/__tests__/auth-bootstrap-permissions.test.ts` falló inicialmente al comparar `defaultGrants` de manifests con bootstrap; después de alinear manifests, pasa con 5 tests.
 
 **Impacto:**
 
@@ -252,11 +285,12 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Recomendación:**
 
-- Elegir una fuente canónica:
-  - derivar seed/bootstrap/tipos desde `ALL_MODULE_PERMISSIONS` y `defaultGrants`, o
-  - declarar explícitamente que `lib/auth/types` y seed son la fuente viva y ajustar documentación.
-- Agregar test de paridad entre registry, tipos de permisos, seed y bootstrap.
-- Evitar que nuevos permisos entren sin prueba de consistencia.
+- [x] Elegir una fuente canónica operativa para seed/bootstrap: `lib/auth/system-rbac.ts`.
+- [x] Agregar test de paridad entre registry/manifests y bootstrap.
+- [x] Evitar que nuevos permisos o grants de manifests entren sin prueba de consistencia.
+- Mantener como deuda menor la eliminación final del type legacy `Permission` cuando se retome la migración modular completa.
+
+**Verificación del fix:** `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` pasa con 5 tests. El test de grants falló antes de alinear manifests porque la matriz declarada en módulos difería del bootstrap real; pasa después del ajuste. `npm run typecheck` pasa después de mover seed/bootstrap a `lib/auth/system-rbac.ts`.
 
 **Confianza:** Media-Alta. La duplicación es directa; el impacto depende de la frecuencia de cambios de permisos.
 
@@ -265,6 +299,8 @@ Process from config.webServer was not able to start. Exit code: 1
 **Severidad:** Media
 
 **Categoría:** Operación / Almacenamiento / Portabilidad
+
+**Estado tras fixes 2026-06-14:** Mitigado documentalmente para despliegue serverful. `docs/arquitectura/ARCHITECTURE.md` ahora declara que `storage/deliveries/` requiere volumen persistente, backup junto con Postgres, restauración consistente DB+archivos y migración a object storage si se escala horizontalmente. La implementación sigue usando filesystem local.
 
 **Ubicación:**
 
@@ -288,10 +324,12 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Recomendación:**
 
-- Si el despliegue es serverful con disco persistente, documentar volumen, backup y retención.
+- [x] Si el despliegue es serverful con disco persistente, documentar volumen, backup y retención.
 - Si se espera escalar o redeploy frecuente, mover comprobantes a object storage.
 - Considerar streaming de uploads y descargas.
 - Añadir variables de entorno claras para proveedor/ruta de almacenamiento.
+
+**Verificación del fix documental:** sección "Adjuntos y storage" agregada en `docs/arquitectura/ARCHITECTURE.md`.
 
 **Confianza:** Alta. La implementación actual de filesystem local es explícita.
 
@@ -335,36 +373,38 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Categoría:** Documentación / Onboarding / Confiabilidad
 
+**Estado tras fixes 2026-06-14:** Mitigado en documentación viva. `README.md`, `docs/arquitectura/ARCHITECTURE.md`, `docs/pruebas/TESTING.md`, `docs/planificacion/PLAN.md` y `docs/planificacion/PRODUCT.md` ahora describen Postgres/PostgreSQL y XLSX. Las auditorías históricas se rotularon como snapshots; los ADRs se mantienen como contexto de decisión previo.
+
 **Ubicación:**
 
-- `docs/arquitectura/ARCHITECTURE.md:13`
-- `docs/arquitectura/ARCHITECTURE.md:143`
-- `docs/arquitectura/ARCHITECTURE.md:195`
-- `docs/pruebas/TESTING.md:24-25`
-- `docs/pruebas/TESTING.md:99-114`
-- `docs/pruebas/TESTING.md:135-137`
-- `docs/planificacion/PLAN.md:59`
+- `README.md`
+- `docs/arquitectura/ARCHITECTURE.md`
+- `docs/pruebas/TESTING.md`
+- `docs/planificacion/PLAN.md`
+- `docs/planificacion/PRODUCT.md`
 - `docs/auditoria/AUDITORIA_REPOSITORIO.md:7`
 - `docs/auditoria/AUDITORIA_REPOSITORIO.md:23`
 
 **Evidencia:**
 
-- La arquitectura todavía menciona SQLite, `better-sqlite3`, WAL y `db/chome.db`.
-- La documentación de pruebas menciona `.tmp/e2e.sqlite`, `db/stockflow.db` y limpieza de archivos SQLite.
-- El plan menciona exportación CSV, pero `AGENTS.md` exige XLSX y las rutas de export revisadas generan Excel.
-- La auditoría anterior aún resume parte del stack como SQLite.
+- La arquitectura mencionaba SQLite, `better-sqlite3`, WAL y `db/chome.db`; corregido a PostgreSQL/postgres-js.
+- La documentación de pruebas mencionaba `.tmp/e2e.sqlite`, `db/stockflow.db` y limpieza de archivos SQLite; corregido a `postgres:///bodega_e2e` con reset destructivo protegido.
+- El plan mencionaba exportación CSV, pero `AGENTS.md` exige XLSX y las rutas de export revisadas generan Excel; corregido a XLSX.
+- La auditoría anterior aún resume parte del stack como SQLite, pero se conserva rotulada como snapshot histórico.
 
-**Impacto:**
+**Impacto original:**
 
 - Nuevos contribuidores pueden configurar o depurar contra el motor equivocado.
 - La documentación puede incentivar reintroducir CSV, contra la regla explícita del repo.
-- La falla E2E actual está alineada con esta deuda documental: scripts y docs aún conservan supuestos SQLite.
+- La falla E2E original estaba alineada con esta deuda documental: scripts y docs conservaban supuestos SQLite aunque la implementación viva usaba Postgres. Ese punto quedó corregido.
 
 **Recomendación:**
 
-- Actualizar documentos de arquitectura y testing a Postgres.
-- Reemplazar menciones CSV por XLSX donde aplique.
-- Marcar documentos históricos como "snapshot" si no deben guiar decisiones actuales.
+- [x] Actualizar documentos de arquitectura y testing a Postgres.
+- [x] Reemplazar menciones CSV por XLSX donde aplique.
+- [x] Marcar auditorías históricas como "snapshot" si no deben guiar decisiones actuales.
+
+**Verificación del fix:** `rg -n "SQLite|sqlite|better-sqlite3|db/chome\\.db|db/stockflow\\.db|\\.tmp/e2e\\.sqlite|exportaci[oó]n CSV|export CSV" README.md docs/arquitectura docs/pruebas docs/planificacion` solo conserva una nota explícita de supuesto inicial ya aclarada en `docs/planificacion/PLAN.md`. `docs/auditoria/AUDITORIA_REPOSITORIO.md` y `docs/auditoria/AUDITORIA_PROYECTO.md` declaran en cabecera que son snapshots históricos.
 
 **Confianza:** Alta. Las inconsistencias son textuales y el código vivo confirma Postgres/XLSX.
 
@@ -405,29 +445,30 @@ Process from config.webServer was not able to start. Exit code: 1
 ## Código muerto o posiblemente obsoleto
 
 - `modules/*/{services,actions,schema,validation}` y parte de `core/*` son una migración congelada. El repo ya advierte que no deben tratarse como fuente viva.
-- Documentos bajo `docs/arquitectura`, `docs/pruebas` y auditorías antiguas contienen decisiones o estados que ya no representan el runtime actual.
-- Las referencias a SQLite en E2E y testing parecen arrastre histórico de la etapa anterior a Postgres.
-- La mención de CSV en planificación está obsoleta frente a la regla XLSX y la implementación actual.
+- Auditorías antiguas y ADRs contienen decisiones o estados que ya no representan el runtime actual.
+- Las referencias a SQLite en E2E/testing fueron corregidas en la documentación viva.
+- La mención de CSV en planificación fue corregida frente a la regla XLSX y la implementación actual.
 
 ## Inconsistencias detectadas
 
 1. **Postgres vs SQLite**
    - Código vivo: `db/index.ts` y `drizzle.config.ts` usan Postgres.
-   - Docs y E2E: aún hablan o configuran SQLite.
-   - Riesgo: setup roto, onboarding confuso y scripts destructivos mal apuntados.
+   - Docs vivas: corregidas a Postgres/PostgreSQL.
+   - Riesgo residual: auditorías/ADR históricas pueden requerir rótulo de snapshot si se consultan como guía actual.
 
 2. **XLSX vs CSV**
    - Regla del repo: todo export debe ser XLSX.
    - Código revisado: exportaciones usan ExcelJS/XLSX.
-   - Docs: `docs/planificacion/PLAN.md` todavía menciona CSV.
+   - Docs vivas: corregidas a XLSX.
 
 3. **Registry como fuente automática vs duplicación manual**
    - `modules/registry.ts` promete derivación.
-   - `db/seed.ts`, `lib/auth/bootstrap.ts` y `lib/auth/types.ts` mantienen listas manuales.
+   - Corregido parcialmente: `db/seed.ts` y `lib/auth/bootstrap.ts` consumen `lib/auth/system-rbac.ts`, y hay prueba de paridad contra manifests/registry.
+   - Riesgo residual: `lib/auth/types.ts` aún conserva el tipo `Permission` legado; no controla grants efectivos, pero conviene retirarlo o derivarlo en una limpieza posterior.
 
 4. **E2E documentado vs E2E real**
-   - La documentación describe flujos E2E basados en SQLite.
-   - La implementación usa cliente Postgres y falla antes de iniciar servidor.
+   - Corregido: documentación viva y configuración E2E usan `postgres:///bodega_e2e`.
+   - Riesgo residual: solo hay smoke E2E admin/compras; no cubre todavía todos los flujos operativos.
 
 5. **Auditorías históricas vs estado actual**
    - Algunos documentos históricos siguen describiendo riesgos o stack anterior.
@@ -450,16 +491,17 @@ Aspectos positivos:
 
 ## Riesgos de testing y confiabilidad
 
-- La suite E2E falla antes de ejercer UI o flujos de negocio.
-- Falta cobertura de concurrencia para inventario.
-- Falta cobertura de constraints de base para entradas inválidas.
+- El smoke E2E admin/compras pasa, pero aún no hay cobertura E2E amplia para todos los flujos operativos.
+- La cobertura de concurrencia de inventario existe en una prueba Postgres opt-in protegida por `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true`; la suite regular no debe resetear bases sin autorización explícita.
+- La cobertura de constraints de base para entradas inválidas ya existe en `db/schema-consistency.test.ts`.
 - Las pruebas actuales pasan, lo que indica buena base para lógica existente, pero no cubren algunas fallas operativas de mayor riesgo.
 - El build pasa, por lo que no hay evidencia de rotura App Router/Turbopack en el estado actual.
 
 ## Riesgos de performance
 
-- Páginas como compras, aprobaciones y bodega cargan datos amplios y filtran en memoria.
-- Reportes calculan algunas métricas cargando filas completas en vez de agregaciones SQL.
+- Compras, aprobaciones y bodega ya empujan scoping por obra al SQL; reportes ya usa agregaciones SQL para métricas principales.
+- Compras y aprobaciones ya tienen paginación servidor con `limit/offset` y total scoped.
+- La línea base `npm run perf:queries` sobre dataset mediano quedó dentro de rangos bajos de milisegundos en las consultas medidas; bodega stock/movimientos son las superficies a vigilar primero si crece el historial.
 - Exportes XLSX son correctos por formato, pero deben vigilarse con volúmenes grandes porque ExcelJS puede consumir memoria si se generan libros completos en memoria.
 - Upload de comprobantes usa `arrayBuffer()`, lo que carga el archivo completo en memoria.
 
@@ -467,44 +509,44 @@ Aspectos positivos:
 
 ### P0 - Antes de confiar en E2E o capturas
 
-1. Corregir E2E para usar una base Postgres desechable y dedicada.
-2. Bloquear resets destructivos salvo con variable explícita de autorización.
-3. Rechazar URLs de base que no sean claramente de test/captura.
-4. Eliminar fallback destructivo a `DATABASE_URL`.
-5. Redactar URL de DB en manifiestos de auditoría/captura.
+1. [x] Corregir E2E para usar una base Postgres desechable y dedicada.
+2. [x] Bloquear resets destructivos salvo con variable explícita de autorización.
+3. [x] Rechazar URLs de base que no sean claramente de test/captura.
+4. [x] Eliminar fallback destructivo a `DATABASE_URL`.
+5. [x] Redactar URL de DB en manifiestos de auditoría/captura.
 
 ### P1 - Consistencia de inventario
 
-1. Reescribir `recordStockMovement()` con actualización atómica o bloqueo de fila.
-2. Agregar `CHECK (quantity >= 0)` en stock.
-3. Crear prueba de concurrencia para doble movimiento sobre misma fila.
-4. Revisar flujos de recepción/entrega para asegurar que todos pasen por el servicio central.
+1. [x] Reescribir `recordStockMovement()`/`applyMovementTx()` con actualización atómica o bloqueo de fila.
+2. [x] Agregar `CHECK (quantity >= 0)` en stock.
+3. [x] Crear prueba de concurrencia para doble movimiento sobre misma fila.
+4. [x] Revisar flujos de recepción/entrega para asegurar que todos pasen por el servicio central.
 
 ### P1 - Integridad de base
 
-1. Agregar constraints para cantidades, montos, descuentos y estados.
+1. [x] Agregar constraints para cantidades, montos, descuentos y estados.
 2. Mantener validación Zod, pero no depender solo de ella.
-3. Crear tests de migración/integridad para inserts inválidos.
+3. [x] Crear tests de migración/integridad para inserts inválidos numéricos y de estado.
 
 ### P2 - Escalabilidad y minimización
 
-1. Empujar filtros por obra a SQL.
-2. Agregar paginación/límites a páginas operativas.
-3. Mover métricas de reportes a agregaciones SQL.
-4. Medir queries con datasets medianos antes de optimizar microdetalles.
+1. [x] Empujar filtros por obra a SQL.
+2. [x] Agregar paginación/límites a páginas operativas.
+3. [x] Mover métricas de reportes a agregaciones SQL.
+4. [x] Medir queries con datasets medianos antes de optimizar microdetalles.
 
 ### P2 - Permisos y arquitectura
 
-1. Unificar fuente de permisos o documentar explícitamente la fuente real.
-2. Agregar test de paridad registry/tipos/seed/bootstrap.
+1. [x] Unificar fuente de permisos o documentar explícitamente la fuente real.
+2. [x] Agregar test de paridad registry/manifests/bootstrap y seed/bootstrap.
 3. Reducir o archivar código congelado en `modules/` y `core/`.
 
 ### P3 - Documentación y operación
 
-1. Actualizar docs de arquitectura/testing a Postgres.
-2. Eliminar menciones CSV en favor de XLSX.
-3. Documentar almacenamiento de adjuntos y estrategia de backup.
-4. Rotular auditorías antiguas como snapshots históricos.
+1. [x] Actualizar docs de arquitectura/testing a Postgres.
+2. [x] Eliminar menciones CSV en favor de XLSX.
+3. [x] Documentar almacenamiento de adjuntos y estrategia de backup.
+4. [x] Rotular auditorías antiguas como snapshots históricos.
 
 ## Checklist de revisión
 
@@ -515,15 +557,15 @@ Aspectos positivos:
 - [x] Persistencia y migraciones revisadas.
 - [x] Scripts destructivos revisados.
 - [x] Pruebas unitarias/integración ejecutadas.
-- [x] E2E ejecutado y fallo documentado.
+- [x] E2E ejecutado, fallo original documentado y suite verde después de correcciones.
 - [x] Riesgos de performance identificados.
 - [x] Código muerto u obsoleto identificado.
 - [x] Inconsistencias de documentación identificadas.
 - [x] Recomendaciones priorizadas incluidas.
-- [ ] Hallazgos críticos corregidos.
-- [ ] Suite E2E verde después de correcciones.
-- [ ] Pruebas de concurrencia de stock agregadas.
-- [ ] Constraints de base agregadas y verificadas.
+- [x] Hallazgos críticos corregidos.
+- [x] Suite E2E verde después de correcciones.
+- [x] Pruebas de concurrencia de stock agregadas.
+- [x] Constraints de base agregadas y verificadas.
 
 ## Apéndice técnico
 
@@ -538,12 +580,18 @@ npm audit --omit=dev
 npm run build
 npm run check:secrets
 npm test
+STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts
+npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts
+npm test -- lib/__tests__/pagination.test.ts
+PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries
+npm run test:e2e -- e2e/purchase-flow.spec.ts -g "flujo solicitud"
 npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts
+git diff --check
 ```
 
 También se usaron búsquedas y lecturas puntuales con `rg`, `sed` y `nl` sobre `app/`, `lib/`, `db/`, `e2e/`, `scripts/`, `docs/`, `modules/` y configuración raíz.
 
-### Evidencia resumida del fallo E2E
+### Evidencia resumida del fallo E2E original
 
 ```text
 TypeError: Invalid URL
@@ -551,7 +599,7 @@ input: '/home/allopze/dev/chome/bodega/./.tmp/e2e.sqlite'
 Process from config.webServer was not able to start. Exit code: 1
 ```
 
-La causa inmediata es la mezcla de una ruta SQLite configurada para E2E con un cliente Postgres en `e2e/setup-db.ts`. El riesgo asociado es mayor que el fallo: el script destructivo puede borrar `public` si se le entrega una URL Postgres no desechable.
+La causa inmediata era la mezcla de una ruta SQLite configurada para E2E con un cliente Postgres en `e2e/setup-db.ts`. El riesgo asociado era mayor que el fallo: el script destructivo podía borrar `public` si se le entregaba una URL Postgres no desechable.
 
 ### Señales positivas verificadas
 
@@ -562,4 +610,3 @@ La causa inmediata es la mezcla de una ruta SQLite configurada para E2E con un c
 - Exportaciones revisadas generan XLSX.
 - Middleware/configuración incluye headers de seguridad relevantes.
 - El proyecto ya documenta que `lib/` + `app/` son fuente viva y que `modules/`/`core/` están congelados.
-

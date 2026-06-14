@@ -4,17 +4,25 @@ import { spawn, type ChildProcess } from "node:child_process"
 import postgres from "postgres"
 import bcrypt from "bcryptjs"
 import { chromium, type BrowserContext, type Page } from "@playwright/test"
+import { loadEnvConfig } from "@next/env"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { sql } from "drizzle-orm"
 import * as schema from "../db/schema"
+import {
+  assertSafeDestructiveDatabase,
+  getDatabaseNameFromUrl,
+  getMaintenanceDatabaseUrl,
+  getRedactedDatabaseIdentifier,
+  quotePostgresIdentifier,
+} from "../lib/testing/destructive-database-guard"
+
+loadEnvConfig(process.cwd())
 
 const root = process.cwd()
 const port = Number(process.env.CAPTURE_PORT ?? 3127)
 const baseUrl = `http://127.0.0.1:${port}`
-// Dedicated Postgres DB for capture; falls back to DATABASE_URL if not set.
-const captureDbUrl = process.env.CAPTURE_DATABASE_URL ?? process.env.DATABASE_URL
-if (!captureDbUrl) throw new Error("CAPTURE_DATABASE_URL or DATABASE_URL is required")
+const captureDbUrl = requireCaptureDatabaseUrl()
 const outputDir = path.join(root, "audit", "screenshots", "2026-06-09-playwright")
 const authSecret = "route-screenshot-audit-secret"
 
@@ -36,6 +44,12 @@ type CaptureResult = {
   screenshot: string
   error?: string
   notes?: string
+}
+
+function requireCaptureDatabaseUrl() {
+  const databaseUrl = process.env.CAPTURE_DATABASE_URL
+  if (!databaseUrl) throw new Error("CAPTURE_DATABASE_URL is required")
+  return databaseUrl
 }
 
 const desktop = { name: "desktop", width: 1440, height: 1000 }
@@ -111,7 +125,7 @@ async function main() {
   const manifest = {
     generatedAt: new Date().toISOString(),
     baseUrl,
-    database: captureDbUrl,
+    database: getRedactedDatabaseIdentifier(captureDbUrl),
     outputDir,
     credentials: {
       email: "admin.audit@chome.cl",
@@ -126,10 +140,18 @@ async function main() {
 }
 
 async function prepareDatabase() {
+  assertSafeDestructiveDatabase({
+    databaseUrl: captureDbUrl!,
+    allowDestructiveReset: process.env.CAPTURE_ALLOW_DESTRUCTIVE_RESET === "true",
+    context: "CAPTURE",
+  })
+  await ensureDatabaseExists(captureDbUrl!)
+
   // Reset Postgres schema and re-run migrations for a clean state
   const setupClient = postgres(captureDbUrl!, { max: 1 })
   const setupDb = drizzle(setupClient)
-  await setupDb.execute(sql`DROP SCHEMA public CASCADE`)
+  await setupDb.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`)
+  await setupDb.execute(sql`DROP SCHEMA IF EXISTS public CASCADE`)
   await setupDb.execute(sql`CREATE SCHEMA public`)
   await setupDb.execute(sql`GRANT ALL ON SCHEMA public TO PUBLIC`)
   await setupClient.end()
@@ -532,13 +554,36 @@ async function prepareDatabase() {
   await pgClient.end()
 }
 
+async function ensureDatabaseExists(databaseUrl: string) {
+  const databaseName = getDatabaseNameFromUrl(databaseUrl)
+  const maintenanceClient = postgres(getMaintenanceDatabaseUrl(databaseUrl), { max: 1 })
+  try {
+    const rows = await maintenanceClient<{ exists: number }[]>`
+      SELECT 1 AS exists FROM pg_database WHERE datname = ${databaseName} LIMIT 1
+    `
+    if (rows.length === 0) {
+      await maintenanceClient.unsafe(`CREATE DATABASE ${quotePostgresIdentifier(databaseName)}`)
+    }
+  } finally {
+    await maintenanceClient.end()
+  }
+}
+
 async function startServer() {
   const env = {
     ...process.env,
     DATABASE_URL: captureDbUrl!,
     AUTH_SECRET: authSecret,
     NEXTAUTH_SECRET: authSecret,
+    APP_URL: baseUrl,
+    NEXTAUTH_URL: baseUrl,
     PORT: String(port),
+    SMTP_HOST: "",
+    SMTP_USER: "",
+    SMTP_PASS: "",
+    SMTP_FROM: "",
+    SMTP_DISABLED: "true",
+    SMTP_TIMEOUT_MS: "1000",
   }
   const server = spawn(path.join(root, "node_modules", ".bin", "next"), ["start", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: root,

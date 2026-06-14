@@ -1,5 +1,7 @@
 # Auditoría de Proyecto — Chome Solicitudes y Bodega
 
+> Snapshot histórico: este documento conserva hallazgos de una revisión anterior. Para el estado actual de fixes y pendientes, usar `AUDITORIA_CODIGO.md`.
+
 Análisis de seguridad, hallazgos, riesgos identificados y recomendaciones de mejora.
 
 ---

@@ -69,7 +69,7 @@ test("admin: crear usuario con rol prevencionista faena, verificar login", async
 
   await dialog.getByRole("button", { name: /enviar invitación/i }).click()
 
-  await expect(page.getByText(/invitación/i)).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole("heading", { name: "Invitación pendiente" })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText("trabajador@e2e.chome.cl")).toBeVisible()
 })
 

@@ -62,7 +62,7 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 - La aprobacion simple actual es suficiente: no hay cadena obligatoria.
 - Las facturas anexas son visibles para administrador, jefatura, secretaría y prevencionista oficina.
 - Los EPP con talla, color o modelo se mantienen como productos comprables separados, con atributos normalizados para busqueda y solicitud.
-- La base SQLite local no se versiona; schema, migraciones y seed son la fuente reproducible.
+- La base Postgres local no se versiona; schema, migraciones y seed son la fuente reproducible.
 
 ## Pendiente para integraciones reales
 

@@ -21,6 +21,7 @@ export const reportsModule = {
   defaultGrants: [
     { roleSlug: "administrador",  permission: "reports:view" },
     { roleSlug: "jefa_chome",     permission: "reports:view" },
+    { roleSlug: "secretaria",     permission: "reports:view" },
     { roleSlug: "prevencionista", permission: "reports:view" },
   ],
 } as const satisfies ModuleManifest

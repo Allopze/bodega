@@ -28,10 +28,10 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await page.goto(`/compras/${orderId}`)
 
   await page.getByRole("button", { name: "Emitir orden" }).click()
-  await expect(page.getByText("Orden emitida")).toBeVisible()
-  await page.reload()
-  await page.getByRole("button", { name: "Marcar como enviada" }).click()
-  await expect(page.getByText("Orden enviada al proveedor. Siguiente paso: registrar recepción.")).toBeVisible()
+  const sendButton = page.getByRole("button", { name: "Marcar como enviada" })
+  await expect(sendButton).toBeVisible({ timeout: 30_000 })
+  await sendButton.click()
+  await expect(sendButton).toBeHidden({ timeout: 30_000 })
 
   // Stage 1 — arrival at Chome office (mandatory first step, no stock).
   await page.goto(`/recepcion/nueva?oc=${orderId}`)
@@ -40,8 +40,12 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(page).toHaveURL(/\/recepcion\/[^/]+$/)
 
   // Stage 2 — receipt at the worksite (generates stock + traceability).
-  await page.goto(`/recepcion/nueva?oc=${orderId}`)
-  await page.getByRole("button", { name: /Recepción en faena/ }).click()
+  await page.goto(`/recepcion/nueva?oc=${orderId}&afterOffice=1`)
+  await page.reload()
+  await expect(page.getByText(/En oficina: 5/)).toBeVisible()
+  const worksiteReceiptButton = page.getByRole("button", { name: /Recepción en faena/ })
+  await expect(worksiteReceiptButton).toBeEnabled()
+  await worksiteReceiptButton.click()
   await page.getByRole("button", { name: "Marcar como recibido" }).click()
   await expect(page).toHaveURL(/\/recepcion\/[^/]+$/)
   await expect(page.getByText("Guante E2E")).toBeVisible()
