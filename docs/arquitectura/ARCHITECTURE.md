@@ -447,10 +447,14 @@ Los comprobantes de entrega se guardan en el filesystem local bajo
 `storage/deliveries/` y se referencian desde la tabla `attachments`.
 La API de descarga valida autenticación, permiso por faena y que la ruta quede
 dentro de ese prefijo antes de leer el archivo.
+Por defecto esa carpeta vive en `./storage`; para despliegues serverful se puede
+configurar `STORAGE_PATH` con la ruta absoluta de un volumen persistente. Las
+rutas persistidas en `attachments.file_path` se mantienen relativas
+(`storage/deliveries/...`) para no acoplar la base al path físico del servidor.
 
 Requisitos operativos si se despliega con storage local:
 
-- Montar `storage/` en un volumen persistente, no en el filesystem efímero del contenedor.
+- Montar `STORAGE_PATH` o `storage/` en un volumen persistente, no en el filesystem efímero del contenedor.
 - Incluir `storage/` en la política de backup junto con la base Postgres.
 - Restaurar base de datos y archivos como una unidad consistente, porque `attachments.file_path` referencia archivos físicos.
 - Evitar múltiples instancias escribiendo a discos locales distintos; para escalar horizontalmente, mover adjuntos a object storage.

@@ -10,8 +10,9 @@ import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { registerWorkerEppDelivery, type DeliveryAttachmentInput } from "@/lib/services/deliveries"
 import { workerDeliverySchema, type ActionState } from "@/lib/validation/operations"
 
+import { createDeliveryAttachmentPath, resolveDeliveriesDir } from "@/lib/storage/config"
+
 const ALLOWED_PROOF_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"])
-const STORAGE_DIR = path.join(process.cwd(), "storage", "deliveries")
 
 export async function registerWorkerDeliveryAction(
   _prev: ActionState,
@@ -97,10 +98,11 @@ async function persistProofFile(value: FormDataEntryValue | null): Promise<{
 
   const safeName = sanitizeFileName(value.name || "comprobante")
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
-  const relativePath = path.posix.join("storage", "deliveries", storageName)
-  const absolutePath = path.join(STORAGE_DIR, storageName)
+  const storageDir = resolveDeliveriesDir()
+  const relativePath = createDeliveryAttachmentPath(storageName)
+  const absolutePath = path.join(storageDir, storageName)
 
-  await fs.mkdir(STORAGE_DIR, { recursive: true })
+  await fs.mkdir(storageDir, { recursive: true })
   await fs.writeFile(absolutePath, Buffer.from(await value.arrayBuffer()))
 
   return {

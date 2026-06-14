@@ -15,6 +15,7 @@ export const worksiteStock = pgTable("worksite_stock", {
   lastMovementAt:   text("last_movement_at"),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  // Invariant: stock quantity and minStock must never be negative
   check("worksite_stock_quantity_non_negative", sql`${table.quantity} >= 0`),
   check("worksite_stock_min_stock_non_negative", sql`${table.minStock} >= 0`),
   uniqueIndex("worksite_stock_unique").on(table.worksiteId, table.productId),
@@ -36,6 +37,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
   reason:         text("reason"),
   notes:          text("notes"),
 }, (table) => [
+  // Invariant: movement type from canonical set; stock before/after must be non-negative
   check("inventory_movements_type_valid", sql`
     ${table.type} IN ('ingreso_oc', 'egreso_entrega', 'ingreso_devolucion')
   `),

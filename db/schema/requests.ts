@@ -30,6 +30,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  // Invariant: requestType, urgency and status must be from the canonical lists
   check("purchase_requests_type_urgency_status_valid", sql`
     ${table.requestType} IN ('epp', 'stock', 'mantencion', 'otro')
     AND ${table.urgency} IN ('normal', 'high', 'critical')
@@ -63,6 +64,8 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  // Invariant: quantity must be strictly positive; status from canonical item lifecycle
+  // urgency is nullable (inherits from request by default), but when set must be from the canonical list
   check("purchase_request_items_quantity_positive", sql`${table.quantity} > 0`),
   check("purchase_request_items_state_valid", sql`
     ${table.status} IN (
@@ -96,6 +99,7 @@ export const approvalDecisions = pgTable("approval_decisions", {
   modifiedQty:    real("modified_qty"),              // if quantity was modified during approval
   roleContext:    text("role_context"),               // 'jefa_chome' | 'secretaria' | 'prevencionista' | 'admin'
 }, (table) => [
+  // Invariant: modifiedQty is nullable but when set must be > 0; type from canonical decision types
   check("approval_decisions_modified_qty_positive", sql`${table.modifiedQty} IS NULL OR ${table.modifiedQty} > 0`),
   check("approval_decisions_type_valid", sql`${table.type} IN ('approve', 'reject', 'return', 'modify')`),
 ])

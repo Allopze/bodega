@@ -14,7 +14,7 @@ El riesgo más serio encontrado no estaba en una pantalla específica, sino en l
 
 El segundo riesgo importante estaba en la actualización de inventario. `lib/services/stock.ts` calculaba el stock nuevo con lectura previa y escritura absoluta dentro de una transacción, sin bloqueo de fila ni actualización atómica condicional. Ese punto quedó mitigado en la capa de servicio con increments SQL/updates condicionales, con un `CHECK (quantity >= 0)` en `worksite_stock` y con una prueba de carrera real contra Postgres.
 
-También quedan riesgos puntuales de mantenimiento: la migración congelada en `modules/`/`core/` sigue siendo deuda arquitectónica y el almacenamiento local de adjuntos requiere una decisión operacional si el volumen crece. Los riesgos de integridad de base, deriva de permisos, documentación SQLite/CSV, filtros amplios en páginas operativas y falta de límites/medición en listas principales quedaron mitigados con constraints, matriz RBAC compartida, pruebas de paridad, documentación actualizada, scoping/agregaciones SQL, paginación servidor y un benchmark reproducible con dataset mediano.
+También quedan riesgos puntuales de mantenimiento: la migración congelada en `modules/`/`core/` sigue siendo deuda arquitectónica y el almacenamiento local de adjuntos requiere una decisión operacional si se escala a múltiples instancias u object storage. El storage local quedó configurable mediante `STORAGE_PATH` y la descarga usa el mismo resolver que el upload. Los riesgos de integridad de base, deriva de permisos, documentación SQLite/CSV, filtros amplios en páginas operativas y falta de límites/medición en listas principales quedaron mitigados con constraints, matriz RBAC compartida, pruebas de paridad, documentación actualizada, scoping/agregaciones SQL, paginación servidor y un benchmark reproducible con dataset mediano.
 
 ## Contexto analizado
 
@@ -44,10 +44,11 @@ Limitaciones:
 | `npm audit --omit=dev` | Pasa | `found 0 vulnerabilities`. |
 | `npm run build` | Pasa | Build Next.js 16.2.7/Turbopack exitoso. |
 | `npm run check:secrets` | Pasa | Archivos env rastreados y `.env.example` aceptados. |
-| `npm test` | Pasa | 32 archivos + 1 skipped, 194 tests + 1 skipped. La prueba Postgres destructiva de concurrencia queda opt-in por seguridad. |
+| `npm test` | Pasa | 33 archivos + 1 skipped, 196 tests + 1 skipped. La prueba Postgres destructiva de concurrencia queda opt-in por seguridad. |
 | `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts` | Pasa | Prueba de carrera sobre Postgres real contra `postgres:///bodega_test`, con reset destructivo protegido por opt-in. |
 | `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` | Pasa | 5 tests; incluye paridad de permisos registry/bootstrap y grants manifests/bootstrap. |
 | `npm test -- lib/__tests__/pagination.test.ts` | Pasa | 5 tests; normalización de página, rangos y hrefs de paginación servidor. |
+| `npm test -- lib/__tests__/storage-config.test.ts` | Pasa | 2 tests; `STORAGE_PATH` resuelve archivos de comprobantes sin acoplar la ruta persistida a un path físico y rechaza traversal/prefijos inválidos. |
 | `PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries` | Pasa | Dataset Postgres mediano en `bodega_perf_test`; compras 4.6-7.5 ms, aprobaciones 7.1-9.8 ms, bodega 29.9-35.9 ms, reportes 18.0 ms. |
 | `npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts` | Pasa tras fixes | 9 tests Playwright pasan contra `postgres:///bodega_e2e`; antes fallaba con `TypeError: Invalid URL` por ruta SQLite en cliente Postgres y luego con acciones de UI pendientes. |
 | `git diff --check` | Pasa | Sin whitespace errors. |
@@ -200,6 +201,8 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Verificación del fix:** `npm test -- lib/__tests__/pagination.test.ts` pasa con 5 tests; `npm run typecheck` pasa después de modificar `app/(app)/compras/page.tsx`, `app/(app)/aprobaciones/page.tsx`, `app/(app)/bodega/page.tsx` y `app/(app)/reportes/page.tsx`. `PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries` pasa sobre `postgres:///bodega_perf_test` con 1200 solicitudes, 3600 ítems, 500 OC y 600 filas de stock; línea base medida: compras total 7.5 ms, compras página 4.6 ms, aprobaciones total 7.1 ms, aprobaciones página + ítems 9.8 ms, bodega stock 35.9 ms, bodega movimientos 29.9 ms, reportes agregados 18.0 ms.
 
+**Riesgo residual tras contraste 2026-06-14:** esta mitigación aplica a las superficies señaladas arriba. `app/(app)/entregas/page.tsx`, `app/(app)/recepcion/page.tsx` y algunas vistas administrativas todavía cargan conjuntos amplios y luego filtran por `canAccessWorksite()` en memoria. No se observó fuga al cliente en esa revisión puntual, pero conviene llevar esas páginas al mismo patrón SQL-first con `visibleWorksiteIds()` si el volumen crece o si usuarios restringidos usan esos módulos intensivamente.
+
 **Confianza:** Alta. El patrón se observa directamente en los Server Components revisados.
 
 ### [Media-Alta] Faltaban restricciones de base para invariantes críticos de negocio
@@ -300,18 +303,21 @@ Process from config.webServer was not able to start. Exit code: 1
 
 **Categoría:** Operación / Almacenamiento / Portabilidad
 
-**Estado tras fixes 2026-06-14:** Mitigado documentalmente para despliegue serverful. `docs/arquitectura/ARCHITECTURE.md` ahora declara que `storage/deliveries/` requiere volumen persistente, backup junto con Postgres, restauración consistente DB+archivos y migración a object storage si se escala horizontalmente. La implementación sigue usando filesystem local.
+**Estado tras fixes 2026-06-14:** Mitigado para despliegue serverful con storage local persistente. `docs/arquitectura/ARCHITECTURE.md` ahora declara que `storage/deliveries/` requiere volumen persistente, backup junto con Postgres, restauración consistente DB+archivos y migración a object storage si se escala horizontalmente. Además, `STORAGE_PATH` permite apuntar el storage local a un volumen absoluto; `lib/storage/config.ts` centraliza la resolución de rutas de entrega, `app/(app)/entregas/actions.ts` persiste comprobantes usando ese resolver y `app/api/attachments/[id]/route.ts` descarga desde el mismo backend configurado sin acoplarse a `process.cwd()/storage`.
 
 **Ubicación:**
 
 - `app/(app)/entregas/actions.ts:13-15`
 - `app/(app)/entregas/actions.ts:92-104`
 - `app/api/attachments/[id]/route.ts`
+- `lib/storage/config.ts`
+- `.env.example`
 - `.gitignore`
 
 **Evidencia:**
 
-- Los archivos se guardan bajo `storage/deliveries` en el directorio de trabajo.
+- Por defecto, los archivos se guardan bajo `storage/deliveries` en el directorio de trabajo.
+- Tras el fix, `attachments.file_path` conserva el prefijo portable `storage/deliveries/...`, pero el archivo físico se resuelve desde `STORAGE_PATH` cuando está configurado.
 - `storage` está ignorado por Git.
 - El upload lee el archivo completo a memoria con `arrayBuffer()` antes de escribirlo.
 - La ruta de descarga sí valida autenticación, permiso y ruta bajo el storage base, pero el backend de almacenamiento sigue siendo disco local.
@@ -327,9 +333,9 @@ Process from config.webServer was not able to start. Exit code: 1
 - [x] Si el despliegue es serverful con disco persistente, documentar volumen, backup y retención.
 - Si se espera escalar o redeploy frecuente, mover comprobantes a object storage.
 - Considerar streaming de uploads y descargas.
-- Añadir variables de entorno claras para proveedor/ruta de almacenamiento.
+- [x] Añadir variable de entorno clara para la ruta de almacenamiento local (`STORAGE_PATH`) y usarla en upload/descarga.
 
-**Verificación del fix documental:** sección "Adjuntos y storage" agregada en `docs/arquitectura/ARCHITECTURE.md`.
+**Verificación del fix:** `npm test -- lib/__tests__/storage-config.test.ts` pasa con 2 tests; sección "Adjuntos y storage" actualizada en `docs/arquitectura/ARCHITECTURE.md`; `.env.example` documenta `STORAGE_PATH`.
 
 **Confianza:** Alta. La implementación actual de filesystem local es explícita.
 
@@ -534,6 +540,7 @@ Aspectos positivos:
 2. [x] Agregar paginación/límites a páginas operativas.
 3. [x] Mover métricas de reportes a agregaciones SQL.
 4. [x] Medir queries con datasets medianos antes de optimizar microdetalles.
+5. [ ] Extender el patrón SQL-first a `entregas`, `recepcion` y vistas administrativas que todavía filtran por faena en memoria.
 
 ### P2 - Permisos y arquitectura
 
@@ -547,6 +554,7 @@ Aspectos positivos:
 2. [x] Eliminar menciones CSV en favor de XLSX.
 3. [x] Documentar almacenamiento de adjuntos y estrategia de backup.
 4. [x] Rotular auditorías antiguas como snapshots históricos.
+5. [x] Documentar `STORAGE_PATH` y usarlo de forma consistente para upload/descarga de comprobantes.
 
 ## Checklist de revisión
 
@@ -583,6 +591,7 @@ npm test
 STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts
 npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts
 npm test -- lib/__tests__/pagination.test.ts
+npm test -- lib/__tests__/storage-config.test.ts
 PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries
 npm run test:e2e -- e2e/purchase-flow.spec.ts -g "flujo solicitud"
 npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts

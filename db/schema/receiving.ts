@@ -21,6 +21,7 @@ export const receipts = pgTable("receipts", {
   notes:              text("notes"),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  // Invariant: locationType must be office or faena; status open or closed
   check("receipts_location_status_valid", sql`
     ${table.locationType} IN ('office', 'faena')
     AND ${table.status} IN ('open', 'closed')
@@ -39,9 +40,11 @@ export const receiptItems = pgTable("receipt_items", {
   // received | partially_received | rejected | damaged | pending
   notes:                text("notes"),
 }, (table) => [
+  // Invariant: status from canonical receipt item lifecycle
   check("receipt_items_status_valid", sql`
     ${table.status} IN ('received', 'partially_received', 'rejected', 'damaged', 'pending')
   `),
+  // Invariant: quantityReceived > 0; rejected/damaged counters non-negative
   check("receipt_items_quantities_valid", sql`
     ${table.quantityReceived} > 0
     AND ${table.quantityRejected} >= 0
@@ -63,6 +66,7 @@ export const deliveries = pgTable("deliveries", {
   notes:           text("notes"),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  // Invariant: destinationType must be faena (worksite-level delivery) or worker (individual delivery)
   check("deliveries_destination_type_valid", sql`${table.destinationType} IN ('faena', 'worker')`),
 ])
 
@@ -77,6 +81,7 @@ export const deliveryItems = pgTable("delivery_items", {
   unitOfMeasure:    text("unit_of_measure").notNull().default("unidad"),
   notes:            text("notes"),
 }, (table) => [
+  // Invariant: delivered quantity must be strictly positive
   check("delivery_items_quantity_positive", sql`${table.quantity} > 0`),
 ])
 

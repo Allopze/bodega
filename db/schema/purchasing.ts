@@ -32,6 +32,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  // Invariant: status from canonical PO lifecycle; all monetary amounts non-negative
   check("purchase_orders_status_valid", sql`
     ${table.status} IN (
       'draft', 'issued', 'sent', 'supplier_confirmed',
@@ -64,9 +65,12 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   sortOrder:            integer("sort_order").notNull().default(0),
   notes:                text("notes"),
 }, (table) => [
+  // Invariant: status from canonical PO item lifecycle
   check("purchase_order_items_status_valid", sql`
     ${table.status} IN ('issued', 'partially_received', 'received', 'cancelled')
   `),
+  // Invariant: quantity > 0, unitPrice/subtotal >= 0, discount in 0-100,
+  // and received counters are monotonic (0 <= qtyReceived <= qtyOfficeReceived <= qty)
   check("purchase_order_items_numeric_integrity", sql`
     ${table.quantity} > 0
     AND ${table.unitPrice} >= 0

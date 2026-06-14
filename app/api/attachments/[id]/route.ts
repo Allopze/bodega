@@ -1,11 +1,11 @@
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { attachments, deliveries } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
 import { canAccessWorksite } from "@/lib/auth/can"
+import { resolveDeliveryAttachmentFile } from "@/lib/storage/config"
 
 export async function GET(
   _request: Request,
@@ -31,15 +31,10 @@ export async function GET(
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 
-  const storagePrefix = "storage/deliveries/"
-  if (!attachment.filePath.startsWith(storagePrefix)) {
+  const absolutePath = resolveDeliveryAttachmentFile(attachment.filePath)
+  if (!absolutePath) {
     return NextResponse.json({ error: "Ruta inválida" }, { status: 400 })
   }
-  const storageName = attachment.filePath.slice(storagePrefix.length)
-  if (!storageName || storageName !== path.basename(storageName)) {
-    return NextResponse.json({ error: "Ruta inválida" }, { status: 400 })
-  }
-  const absolutePath = path.join(process.cwd(), "storage", "deliveries", storageName)
 
   try {
     const file = await fs.readFile(absolutePath)
