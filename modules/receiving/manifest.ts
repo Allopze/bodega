@@ -9,7 +9,7 @@ export const receivingModule = {
   ] as const,
   nav: [
     {
-      section: "Operaciones",
+      areaId: "operaciones",
       items: [
         {
           label:       "Recepción",

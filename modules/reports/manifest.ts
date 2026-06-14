@@ -7,7 +7,7 @@ export const reportsModule = {
   ] as const,
   nav: [
     {
-      section: "Reportes",
+      areaId: "reportes",
       items: [
         {
           label:       "Reportes",

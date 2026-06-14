@@ -7,7 +7,7 @@ export const approvalsModule = {
   ] as const,
   nav: [
     {
-      section: "Operaciones",
+      areaId: "operaciones",
       items: [
         {
           label:       "Aprobaciones",

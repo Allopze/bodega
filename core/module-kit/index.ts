@@ -24,6 +24,16 @@ import type { DB } from "@/db"
  * Structuralmente compatible con el NavItem de components/layout/nav-items.ts;
  * en Phase 3 ese archivo importará desde aquí.
  */
+/** Submenú de nivel 2 — se muestra como acordeón dentro del panel del área. */
+export interface NavChild {
+  label: string
+  href: string
+  /** ANY de estos permisos concede visibilidad */
+  permissions?: string[]
+  /** ANY de estos roles concede visibilidad */
+  roles?: string[]
+}
+
 export interface NavItem {
   label: string
   href: string
@@ -34,10 +44,17 @@ export interface NavItem {
   roles?: string[]
   /** Muestra un contador de pendientes si está definido */
   badge?: "count"
+  /** Submenú nivel 2 (acordeón en el panel del área) */
+  children?: NavChild[]
 }
 
+/**
+ * Entrada de nav de un módulo, adscrita a un ÁREA del catálogo central
+ * (components/layout/areas.ts). Varios módulos pueden aportar ítems a la misma área.
+ */
 export interface NavSection {
-  section: string
+  /** id del área en el catálogo central (ej: "operaciones", "bodega") */
+  areaId: string
   items: NavItem[]
 }
 
@@ -64,7 +81,7 @@ export interface RolePermissionGrant {
  * export const myModule = {
  *   id: "my-module",
  *   permissions: ["my-module:create", "my-module:view"] as const,
- *   nav: [{ section: "...", items: [...] }],
+ *   nav: [{ areaId: "...", items: [...] }],
  *   defaultGrants: [{ roleSlug: "administrador", permission: "my-module:create" }],
  * } satisfies ModuleManifest
  * ```

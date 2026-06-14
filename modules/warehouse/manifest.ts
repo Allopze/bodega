@@ -9,7 +9,7 @@ export const warehouseModule = {
   ] as const,
   nav: [
     {
-      section: "Bodega",
+      areaId: "bodega",
       items: [
         {
           label:       "Bodega",

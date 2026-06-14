@@ -4,7 +4,9 @@ import * as React from "react"
 import type { Session } from "next-auth"
 import { cn } from "@/lib/utils"
 import { useHideOnScroll } from "@/lib/hooks/use-hide-on-scroll"
-import { Sidebar } from "./sidebar"
+import { DesktopNav } from "./desktop-nav"
+import { MobileNav } from "./mobile-nav"
+import { CommandPalette } from "./command-palette"
 import { TopBar } from "./top-bar"
 import { ShellHeaderProvider } from "./header-context"
 
@@ -15,30 +17,29 @@ interface AppShellProps {
   children:       React.ReactNode
 }
 
-const SIDEBAR_COLLAPSED_KEY = "sidebar-collapsed"
-const SIDEBAR_COLLAPSED_EVENT = "sidebar-collapsed-change"
+const PANEL_COLLAPSED_KEY = "sidebar-collapsed"
+const PANEL_COLLAPSED_EVENT = "sidebar-collapsed-change"
 
-function getSidebarCollapsedSnapshot() {
+function getPanelCollapsedSnapshot() {
   if (typeof window === "undefined") return false
-  return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true"
+  return localStorage.getItem(PANEL_COLLAPSED_KEY) === "true"
 }
 
-function subscribeSidebarCollapsed(onStoreChange: () => void) {
+function subscribePanelCollapsed(onStoreChange: () => void) {
   window.addEventListener("storage", onStoreChange)
-  window.addEventListener(SIDEBAR_COLLAPSED_EVENT, onStoreChange)
-
+  window.addEventListener(PANEL_COLLAPSED_EVENT, onStoreChange)
   return () => {
     window.removeEventListener("storage", onStoreChange)
-    window.removeEventListener(SIDEBAR_COLLAPSED_EVENT, onStoreChange)
+    window.removeEventListener(PANEL_COLLAPSED_EVENT, onStoreChange)
   }
 }
 
 export function AppShell({ session, worksiteName, badgeCounts, children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [isClosing,  setIsClosing]  = React.useState(false)
-  const sidebarCollapsed = React.useSyncExternalStore(
-    subscribeSidebarCollapsed,
-    getSidebarCollapsedSnapshot,
+  const panelCollapsed = React.useSyncExternalStore(
+    subscribePanelCollapsed,
+    getPanelCollapsedSnapshot,
     () => false,
   )
 
@@ -47,13 +48,12 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
     setIsClosing(true)
     setTimeout(() => { setMobileOpen(false); setIsClosing(false) }, 290)
   }
-  function handleSidebarCollapsedChange(collapsed: boolean) {
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
-    window.dispatchEvent(new Event(SIDEBAR_COLLAPSED_EVENT))
+  function handlePanelCollapsedChange(collapsed: boolean) {
+    localStorage.setItem(PANEL_COLLAPSED_KEY, String(collapsed))
+    window.dispatchEvent(new Event(PANEL_COLLAPSED_EVENT))
   }
 
   const showDrawer = mobileOpen || isClosing
-
   const mainRef = React.useRef<HTMLElement>(null)
   const headerHidden = useHideOnScroll(mainRef)
 
@@ -67,31 +67,23 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
       </a>
 
       <div className="flex h-full min-h-0 lg:gap-3">
-        <div className={cn(
-          "hidden overflow-hidden bg-[var(--color-surface)] transition-[width,border-radius,box-shadow] duration-[var(--duration-slow)] ease-[var(--ease-drawer)]",
-          "lg:flex lg:shrink-0 lg:flex-col lg:border lg:border-[var(--color-border)]",
-          sidebarCollapsed
-            ? "lg:w-[3.25rem] lg:rounded-[999px] lg:shadow-[var(--shadow-md)]"
-            : "lg:w-60 lg:rounded-[var(--radius-2xl)] lg:shadow-[var(--shadow-card)]",
-        )}>
-          <Sidebar
-            session={session}
-            worksiteName={worksiteName}
-            badgeCounts={badgeCounts}
-            collapsed={sidebarCollapsed}
-            onCollapsedChange={handleSidebarCollapsedChange}
-          />
-        </div>
+        {/* Desktop: rail de áreas + panel contextual (cada uno con su propia tarjeta) */}
+        <DesktopNav
+          session={session}
+          worksiteName={worksiteName}
+          badgeCounts={badgeCounts}
+          collapsed={panelCollapsed}
+          onCollapsedChange={handlePanelCollapsedChange}
+        />
 
         <ShellHeaderProvider>
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            {/* Mobile drawer — fixed/viewport-relative, unaffected by panel overflow-hidden */}
+            {/* Mobile drawer — acordeón de columna única */}
             {showDrawer && (
               <>
                 <div
                   className={cn(
-                    "fixed inset-0 z-40 lg:hidden",
-                    "bg-overlay",
+                    "fixed inset-0 z-40 lg:hidden bg-overlay",
                     isClosing
                       ? "animate-out fade-out-0 duration-(--duration-slow)"
                       : "animate-in fade-in-0 duration-(--duration-slow)",
@@ -105,12 +97,16 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
                     ? "animate-out slide-out-to-left duration-(--duration-slow) ease-drawer"
                     : "animate-in slide-in-from-left duration-(--duration-slow) ease-drawer",
                 )}>
-                  <Sidebar session={session} worksiteName={worksiteName} badgeCounts={badgeCounts} />
+                  <MobileNav
+                    session={session}
+                    worksiteName={worksiteName}
+                    badgeCounts={badgeCounts}
+                    onNavigate={closeDrawer}
+                  />
                 </div>
               </>
             )}
 
-            {/* Main scrolls independently; panel stays fixed */}
             <main
               ref={mainRef}
               className="flex-1 min-w-0 overflow-y-auto bg-[var(--color-bg)]"
@@ -127,10 +123,12 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
               />
               {children}
             </main>
-
           </div>
         </ShellHeaderProvider>
       </div>
+
+      {/* Paleta de comandos global (⌘K / Ctrl+K) */}
+      <CommandPalette session={session} />
     </div>
   )
 }

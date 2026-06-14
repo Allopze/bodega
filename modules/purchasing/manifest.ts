@@ -10,7 +10,7 @@ export const purchasingModule = {
   ] as const,
   nav: [
     {
-      section: "Operaciones",
+      areaId: "operaciones",
       items: [
         {
           label:       "Compras",

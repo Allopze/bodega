@@ -6,7 +6,7 @@ export const deliveriesModule = {
   permissions: [] as const,
   nav: [
     {
-      section: "Bodega",
+      areaId: "bodega",
       items: [
         {
           label:       "Entregas",

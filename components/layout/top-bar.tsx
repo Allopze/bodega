@@ -11,7 +11,7 @@ import { Avatar } from "@/components/ui/avatar"
 import { Breadcrumbs } from "@/components/ui/page-header"
 import { NotificationBell } from "./notification-bell"
 import { BrandMark } from "./brand-mark"
-import { NAV_ITEMS } from "./nav-items"
+import { findActiveBreadcrumb } from "./nav-items"
 import { useShellHeader } from "./header-context"
 import {
   DropdownMenu,
@@ -49,18 +49,10 @@ export function TopBar({
     setSearchQuery("")
   }, [pathname, setSearchQuery])
 
-  // Derive active section + label from the nav registry — no extra plumbing needed
-  let activeSection: string | null = null
-  let activeLabel:   string | null = null
-  outer: for (const section of NAV_ITEMS) {
-    for (const item of section.items) {
-      if (pathname === item.href || pathname.startsWith(item.href + "/")) {
-        activeSection = section.section
-        activeLabel   = item.label
-        break outer
-      }
-    }
-  }
+  // Derive active area + label from the nav tree — no extra plumbing needed
+  const activeNav    = findActiveBreadcrumb(pathname)
+  const activeSection = activeNav?.areaLabel ?? null
+  const activeLabel   = activeNav?.itemLabel ?? null
 
   async function handleSignOut() {
     setIsSigningOut(true)

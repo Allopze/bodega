@@ -10,7 +10,7 @@ export const requestsModule = {
   ] as const,
   nav: [
     {
-      section: "Operaciones",
+      areaId: "operaciones",
       items: [
         {
           label:       "Solicitudes",
