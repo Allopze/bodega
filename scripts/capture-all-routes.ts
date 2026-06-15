@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { spawn, type ChildProcess } from "node:child_process"
 import postgres from "postgres"
 import bcrypt from "bcryptjs"
@@ -22,15 +23,20 @@ loadEnvConfig(process.cwd())
 const root = process.cwd()
 const port = Number(process.env.CAPTURE_PORT ?? 3127)
 const baseUrl = `http://127.0.0.1:${port}`
-const captureDbUrl = requireCaptureDatabaseUrl()
 const outputDir = path.join(root, "audit", "screenshots", "2026-06-09-playwright")
 const authSecret = "route-screenshot-audit-secret"
 
-type RouteTarget = {
+export type RouteTarget = {
   slug: string
   path: string
   auth: boolean
+  expectedStatus?: number
   notes?: string
+}
+
+export type CaptureSeedArea = {
+  section: string
+  fixtures: string[]
 }
 
 type CaptureResult = {
@@ -55,13 +61,13 @@ function requireCaptureDatabaseUrl() {
 const desktop = { name: "desktop", width: 1440, height: 1000 }
 const mobile = { name: "mobile", width: 390, height: 844 }
 
-const routes: RouteTarget[] = [
+const routeTargets: RouteTarget[] = [
   { slug: "root", path: "/", auth: false },
   { slug: "login", path: "/login", auth: false },
   { slug: "registro", path: "/registro", auth: false },
-  { slug: "not-found", path: "/ruta-inexistente-auditoria", auth: false },
+  { slug: "not-found", path: "/ruta-inexistente-auditoria", auth: true, expectedStatus: 404 },
   { slug: "dashboard", path: "/dashboard", auth: true },
-  { slug: "app-not-found", path: "/app-ruta-inexistente-auditoria", auth: true },
+  { slug: "app-not-found", path: "/app-ruta-inexistente-auditoria", auth: true, expectedStatus: 404 },
   { slug: "solicitudes", path: "/solicitudes", auth: true },
   { slug: "solicitudes-nueva", path: "/solicitudes/nueva", auth: true },
   { slug: "solicitudes-detalle", path: "/solicitudes/req-audit-1", auth: true },
@@ -77,6 +83,12 @@ const routes: RouteTarget[] = [
   { slug: "entregas", path: "/entregas", auth: true },
   { slug: "trazabilidad", path: "/trazabilidad", auth: true },
   { slug: "reportes", path: "/reportes", auth: true },
+  { slug: "repuestos", path: "/repuestos", auth: true },
+  { slug: "repuestos-nueva", path: "/repuestos/nueva", auth: true },
+  { slug: "repuestos-detalle", path: "/repuestos/rep-audit-1", auth: true },
+  { slug: "servicios", path: "/servicios", auth: true },
+  { slug: "servicios-nueva", path: "/servicios/nueva", auth: true },
+  { slug: "servicios-detalle", path: "/servicios/srv-audit-1", auth: true },
   { slug: "admin", path: "/admin", auth: true },
   { slug: "admin-auditoria", path: "/admin/auditoria", auth: true },
   { slug: "admin-configuracion", path: "/admin/configuracion", auth: true },
@@ -89,11 +101,43 @@ const routes: RouteTarget[] = [
   { slug: "admin-usuarios", path: "/admin/usuarios", auth: true },
 ]
 
+const seedCoverage: CaptureSeedArea[] = [
+  { section: "dashboard", fixtures: ["tareas pendientes", "métricas por faena", "actividad reciente"] },
+  { section: "solicitudes", fixtures: ["solicitud EPP enviada", "solicitud pendiente de aprobación", "solicitud recibida para entrega"] },
+  { section: "aprobaciones", fixtures: ["ítems requested en cola de aprobación"] },
+  { section: "compras", fixtures: ["OC enviada", "OC recibida parcialmente", "factura asociada", "ítems aprobados sin OC"] },
+  { section: "recepcion", fixtures: ["OC pendiente de recepción", "OC con brecha oficina-faena"] },
+  { section: "bodega", fixtures: ["stock con mínimo crítico", "kardex ingreso OC", "kardex entrega a trabajador"] },
+  { section: "entregas", fixtures: ["trabajadores activos", "EPP recibido pendiente de entrega", "historial de entregas"] },
+  { section: "trazabilidad", fixtures: ["ítems aprobados", "ítems en OC", "ítems recibidos", "alerta sin OC"] },
+  { section: "reportes", fixtures: ["solicitudes", "ítems", "OC", "recepciones", "estados variados"] },
+  { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
+  { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
+  { section: "admin-faenas", fixtures: ["faenas activas"] },
+  { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos"] },
+  { section: "admin-proveedores", fixtures: ["proveedores activos con contacto"] },
+  { section: "admin-trabajadores", fixtures: ["trabajadores por faena"] },
+  { section: "admin-usuarios", fixtures: ["usuarios con roles y faenas"] },
+  { section: "admin-auditoria", fixtures: ["eventos create", "status_change", "update"] },
+  { section: "admin-configuracion", fixtures: ["datos empresa", "pie OC", "límite PDF"] },
+  { section: "notificaciones", fixtures: ["notificación no leída", "notificación leída"] },
+]
+
+export function getCaptureRoutes() {
+  return routeTargets.map((route) => ({ ...route }))
+}
+
+export function getCaptureSeedCoverage() {
+  return seedCoverage.map((area) => ({ ...area, fixtures: [...area.fixtures] }))
+}
+
 async function main() {
+  const captureDbUrl = requireCaptureDatabaseUrl()
+  const routes = getCaptureRoutes()
   fs.mkdirSync(outputDir, { recursive: true })
 
-  await prepareDatabase()
-  const server = await startServer()
+  await prepareDatabase(captureDbUrl)
+  const server = await startServer(captureDbUrl)
   const browser = await chromium.launch()
   const results: CaptureResult[] = []
 
@@ -131,6 +175,7 @@ async function main() {
       email: "admin.audit@chome.cl",
       password: "chome2026",
     },
+    seedCoverage,
     routes,
     results,
   }
@@ -139,16 +184,16 @@ async function main() {
   console.log(`Manifest written to ${path.join(outputDir, "manifest.json")}`)
 }
 
-async function prepareDatabase() {
+async function prepareDatabase(captureDbUrl: string) {
   assertSafeDestructiveDatabase({
-    databaseUrl: captureDbUrl!,
+    databaseUrl: captureDbUrl,
     allowDestructiveReset: process.env.CAPTURE_ALLOW_DESTRUCTIVE_RESET === "true",
     context: "CAPTURE",
   })
-  await ensureDatabaseExists(captureDbUrl!)
+  await ensureDatabaseExists(captureDbUrl)
 
   // Reset Postgres schema and re-run migrations for a clean state
-  const setupClient = postgres(captureDbUrl!, { max: 1 })
+  const setupClient = postgres(captureDbUrl, { max: 1 })
   const setupDb = drizzle(setupClient)
   await setupDb.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`)
   await setupDb.execute(sql`DROP SCHEMA IF EXISTS public CASCADE`)
@@ -156,11 +201,11 @@ async function prepareDatabase() {
   await setupDb.execute(sql`GRANT ALL ON SCHEMA public TO PUBLIC`)
   await setupClient.end()
 
-  const migrationClient = postgres(captureDbUrl!, { max: 1 })
+  const migrationClient = postgres(captureDbUrl, { max: 1 })
   await migrate(drizzle(migrationClient), { migrationsFolder: path.join(root, "db", "migrations") })
   await migrationClient.end()
 
-  const pgClient = postgres(captureDbUrl!, { max: 1 })
+  const pgClient = postgres(captureDbUrl, { max: 1 })
   const db = drizzle(pgClient, { schema })
 
   const now = new Date("2026-06-09T12:00:00.000Z").toISOString()
@@ -169,12 +214,24 @@ async function prepareDatabase() {
   const worksiteId = "ws-audit-1"
   const supplierId = "sup-audit-1"
   const productId = "prod-audit-1"
+  const deliverableProductId = "prod-audit-3"
   const requestId = "req-audit-1"
   const requestItemId = "req-item-audit-1"
+  const pendingRequestId = "req-audit-approval"
+  const pendingRequestItemId = "req-item-audit-approval"
+  const deliveryRequestId = "req-audit-delivery"
+  const deliverableRequestItemId = "req-item-audit-deliverable"
   const orderId = "po-audit-1"
   const orderItemId = "po-item-audit-1"
+  const officeOrderId = "po-audit-2"
+  const officeOrderItemId = "po-item-audit-2"
   const receiptId = "rec-audit-1"
+  const officeReceiptId = "rec-audit-office"
   const deliveryId = "del-audit-1"
+  const repuestoRequestId = "rep-audit-1"
+  const repuestoItemId = "rep-item-audit-1"
+  const serviceRequestId = "srv-audit-1"
+  const serviceItemId = "srv-item-audit-1"
 
   const permissions: (typeof schema.permissions.$inferInsert)[] = [
     { id: "p-req-create", name: "requests:create", module: "requests", description: "Crear solicitudes" },
@@ -187,6 +244,8 @@ async function prepareDatabase() {
     { id: "p-pur-send", name: "purchasing:send_order", module: "purchasing", description: "Enviar OC" },
     { id: "p-pur-sup", name: "purchasing:manage_suppliers", module: "purchasing", description: "Gestionar proveedores" },
     { id: "p-rec-reg", name: "receiving:register", module: "receiving", description: "Registrar recepción" },
+    { id: "p-rec-office", name: "receiving:register_office", module: "receiving", description: "Registrar recepción en oficina" },
+    { id: "p-rec-faena", name: "receiving:register_faena", module: "receiving", description: "Registrar recepción en faena" },
     { id: "p-rec-view", name: "receiving:view", module: "receiving", description: "Ver recepción" },
     { id: "p-wh-stock", name: "warehouse:view_stock", module: "warehouse", description: "Ver stock" },
     { id: "p-wh-mov", name: "warehouse:register_movement", module: "warehouse", description: "Registrar movimientos" },
@@ -199,30 +258,102 @@ async function prepareDatabase() {
     { id: "p-adm-sup", name: "admin:suppliers", module: "admin", description: "Gestionar proveedores" },
     { id: "p-adm-cfg", name: "admin:config", module: "admin", description: "Configurar sistema" },
     { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Ver auditoría" },
+    { id: "p-rep-create", name: "repuestos:create", module: "repuestos", description: "Crear solicitudes de repuestos" },
+    { id: "p-rep-own", name: "repuestos:view_own", module: "repuestos", description: "Ver repuestos propios" },
+    { id: "p-rep-all", name: "repuestos:view_all", module: "repuestos", description: "Ver todos los repuestos" },
+    { id: "p-rep-submit", name: "repuestos:submit", module: "repuestos", description: "Enviar repuestos" },
+    { id: "p-rep-approve", name: "repuestos:approve", module: "repuestos", description: "Aprobar cotizaciones de repuestos" },
+    { id: "p-srv-create", name: "servicios:create", module: "servicios", description: "Crear solicitudes de servicios" },
+    { id: "p-srv-own", name: "servicios:view_own", module: "servicios", description: "Ver servicios propios" },
+    { id: "p-srv-all", name: "servicios:view_all", module: "servicios", description: "Ver todos los servicios" },
+    { id: "p-srv-submit", name: "servicios:submit", module: "servicios", description: "Enviar servicios" },
+    { id: "p-srv-approve", name: "servicios:approve", module: "servicios", description: "Aprobar cotizaciones de servicios" },
   ]
 
-  await db.insert(schema.roles).values({
-    id: "rol-admin",
-    name: "administrador",
-    label: "Administrador",
-    description: "Control total para auditoría visual",
-  })
+  const roles: (typeof schema.roles.$inferInsert)[] = [
+    { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total para auditoría visual" },
+    { id: "rol-jefa", name: "jefa_chome", label: "Jefatura Chome", description: "Aprueba solicitudes y coordina compras" },
+    { id: "rol-prevencion", name: "prevencionista_faena", label: "Prevencionista faena", description: "Solicita EPP y servicios desde faena" },
+    { id: "rol-bodega", name: "bodega", label: "Encargado bodega", description: "Gestiona recepción, stock y entregas" },
+    { id: "rol-secretaria", name: "secretaria", label: "Secretaría", description: "Apoya compras y documentación" },
+  ]
+
+  await db.insert(schema.roles).values(roles)
   await db.insert(schema.permissions).values(permissions)
-  await db.insert(schema.rolePermissions).values(permissions.map((permission) => ({
-    roleId: "rol-admin",
-    permissionId: permission.id,
-  })))
-  await db.insert(schema.users).values({
-    id: userId,
-    name: "Admin Auditoría",
-    email: "admin.audit@chome.cl",
-    hashedPassword: password,
-    avatarColor: "212",
-    isActive: true,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.userRoles).values({ userId, roleId: "rol-admin" })
+  const permissionIdByName = Object.fromEntries(permissions.map((permission) => [permission.name, permission.id]))
+  const rolePermissionNames: Record<string, string[]> = {
+    "rol-admin": permissions.map((permission) => permission.name),
+    "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "purchasing:create_order", "purchasing:send_order", "receiving:view", "reports:view", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
+    "rol-prevencion": ["requests:create", "requests:view_own", "requests:submit", "repuestos:create", "repuestos:view_own", "repuestos:submit", "servicios:create", "servicios:view_own", "servicios:submit"],
+    "rol-bodega": ["receiving:view", "receiving:register", "receiving:register_office", "receiving:register_faena", "warehouse:view_stock", "warehouse:register_movement", "warehouse:adjust_stock", "reports:view"],
+    "rol-secretaria": ["purchasing:view", "purchasing:create_order", "purchasing:send_order", "purchasing:manage_suppliers", "reports:view"],
+  }
+
+  await db.insert(schema.rolePermissions).values(Object.entries(rolePermissionNames).flatMap(([roleId, names]) =>
+    names.map((name) => ({
+      roleId,
+      permissionId: permissionIdByName[name],
+    })),
+  ))
+  await db.insert(schema.users).values([
+    {
+      id: userId,
+      name: "Admin Auditoría",
+      email: "admin.audit@chome.cl",
+      hashedPassword: password,
+      avatarColor: "212",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "user-audit-jefa",
+      name: "Jefa Operaciones",
+      email: "jefa.audit@chome.cl",
+      hashedPassword: password,
+      avatarColor: "142",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "user-audit-prevencion",
+      name: "Prevencionista Faena",
+      email: "prevencion.audit@chome.cl",
+      hashedPassword: password,
+      avatarColor: "36",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "user-audit-bodega",
+      name: "Encargado Bodega",
+      email: "bodega.audit@chome.cl",
+      hashedPassword: password,
+      avatarColor: "260",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "user-audit-inactive",
+      name: "Usuario Inactivo",
+      email: "inactivo.audit@chome.cl",
+      hashedPassword: password,
+      avatarColor: "18",
+      isActive: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.userRoles).values([
+    { userId, roleId: "rol-admin" },
+    { userId: "user-audit-jefa", roleId: "rol-jefa" },
+    { userId: "user-audit-prevencion", roleId: "rol-prevencion" },
+    { userId: "user-audit-bodega", roleId: "rol-bodega" },
+    { userId: "user-audit-inactive", roleId: "rol-secretaria" },
+  ])
 
   await db.insert(schema.worksites).values([
     {
@@ -249,6 +380,10 @@ async function prepareDatabase() {
   await db.insert(schema.worksiteUsers).values([
     { userId, worksiteId, isPrimary: true },
     { userId, worksiteId: "ws-audit-2", isPrimary: false },
+    { userId: "user-audit-jefa", worksiteId, isPrimary: true },
+    { userId: "user-audit-prevencion", worksiteId, isPrimary: true },
+    { userId: "user-audit-bodega", worksiteId, isPrimary: true },
+    { userId: "user-audit-inactive", worksiteId: "ws-audit-2", isPrimary: true },
   ])
 
   await db.insert(schema.suppliers).values([
@@ -256,10 +391,13 @@ async function prepareDatabase() {
       id: supplierId,
       name: "TRECK Seguridad Industrial",
       rut: "76.123.456-7",
+      businessActivity: "Venta de EPP e insumos industriales",
       contactName: "Camila Rojas",
       email: "ventas@treck.example",
       phone: "+56 9 8123 4567",
       address: "Av. Industrial 1400",
+      commune: "Los Ángeles",
+      city: "Los Ángeles",
       paymentTerms: "30 días",
       isActive: true,
       notes: "Proveedor preferente EPP.",
@@ -270,8 +408,33 @@ async function prepareDatabase() {
       id: "sup-audit-2",
       name: "APRO Suministros",
       rut: "77.222.333-4",
+      businessActivity: "Servicios y suministros operativos",
+      contactName: "Rodrigo Vera",
+      email: "contacto@apro.example",
+      phone: "+56 9 7444 1234",
+      address: "Camino a Cabrero 210",
+      commune: "Cabrero",
+      city: "Cabrero",
       paymentTerms: "Contado",
       isActive: true,
+      notes: "Proveedor para servicios y mantención.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "sup-audit-3",
+      name: "Sur Repuestos Maquinaria",
+      rut: "78.555.111-2",
+      businessActivity: "Repuestos para maquinaria pesada",
+      contactName: "Natalia Pérez",
+      email: "cotizaciones@sur-repuestos.example",
+      phone: "+56 9 6555 8888",
+      address: "Parque Industrial 88",
+      commune: "Concepción",
+      city: "Concepción",
+      paymentTerms: "45 días",
+      isActive: true,
+      notes: "Cotiza repuestos críticos.",
       createdAt: now,
       updatedAt: now,
     },
@@ -280,6 +443,7 @@ async function prepareDatabase() {
   await db.insert(schema.productCategories).values([
     { id: "cat-audit-epp", name: "Elementos de protección personal", slug: "epp-audit", isEpp: true, requiresPrevencion: true, sortOrder: 1 },
     { id: "cat-audit-insumos", name: "Insumos operativos", slug: "insumos-audit", isEpp: false, requiresPrevencion: false, sortOrder: 2 },
+    { id: "cat-audit-repuestos", name: "Repuestos maquinaria", slug: "repuestos-audit", isEpp: false, requiresPrevencion: false, sortOrder: 3 },
   ])
   await db.insert(schema.products).values([
     {
@@ -308,6 +472,36 @@ async function prepareDatabase() {
       createdAt: now,
       updatedAt: now,
     },
+    {
+      id: deliverableProductId,
+      sku: "EPP-AUD-003",
+      name: "Casco dieléctrico con barbiquejo",
+      description: "Casco EPP para entrega nominal a trabajador.",
+      categoryId: "cat-audit-epp",
+      unitOfMeasure: "unidad",
+      isEpp: true,
+      requiresPrevencion: true,
+      referencePrice: 22900,
+      isActive: true,
+      notes: "Usado para capturas de entregas.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "prod-audit-4",
+      sku: "REP-AUD-004",
+      name: "Filtro hidráulico FH-9001",
+      description: "Repuesto catalogado para maquinaria pesada.",
+      categoryId: "cat-audit-repuestos",
+      unitOfMeasure: "unidad",
+      isEpp: false,
+      requiresPrevencion: false,
+      referencePrice: 122500,
+      isActive: true,
+      notes: "Alternativa catalogada para repuestos.",
+      createdAt: now,
+      updatedAt: now,
+    },
   ])
   await db.insert(schema.productAttributes).values({
     id: "attr-audit-1",
@@ -321,27 +515,61 @@ async function prepareDatabase() {
   await db.insert(schema.productSuppliers).values([
     { id: "prod-sup-audit-1", productId, supplierId, unitPrice: 11900, isPreferred: true, lastUpdated: now },
     { id: "prod-sup-audit-2", productId: "prod-audit-2", supplierId: "sup-audit-2", unitPrice: 7900, isPreferred: true, lastUpdated: now },
+    { id: "prod-sup-audit-3", productId: deliverableProductId, supplierId, unitPrice: 20500, isPreferred: true, lastUpdated: now },
+    { id: "prod-sup-audit-4", productId: "prod-audit-4", supplierId: "sup-audit-3", unitPrice: 118000, isPreferred: true, lastUpdated: now },
   ])
 
   await db.insert(schema.workers).values([
     { id: "worker-audit-1", rut: "18.111.222-3", firstName: "Daniela", lastName: "Fuentes", position: "Operadora", worksiteId, isActive: true, createdAt: now },
     { id: "worker-audit-2", rut: "17.444.555-6", firstName: "Marco", lastName: "Silva", position: "Mecánico", worksiteId, isActive: true, createdAt: now },
+    { id: "worker-audit-3", rut: "16.777.888-9", firstName: "Paula", lastName: "Mella", position: "Supervisora", worksiteId: "ws-audit-2", isActive: true, createdAt: now },
   ])
 
-  await db.insert(schema.purchaseRequests).values({
-    id: requestId,
-    code: "SOL-2026-0001",
-    worksiteId,
-    requesterId: userId,
-    requestType: "epp",
-    urgency: "high",
-    requiredDate: "2026-06-20",
-    status: "submitted",
-    submittedAt: now,
-    notes: "Reposición para cuadrilla de mantención.",
-    createdAt: now,
-    updatedAt: now,
-  })
+  await db.insert(schema.purchaseRequests).values([
+    {
+      id: requestId,
+      code: "SOL-2026-0001",
+      worksiteId,
+      requesterId: "user-audit-prevencion",
+      requestType: "epp",
+      urgency: "high",
+      requiredDate: "2026-06-20",
+      status: "submitted",
+      submittedAt: now,
+      notes: "Reposición para cuadrilla de mantención.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: pendingRequestId,
+      code: "SOL-2026-0002",
+      worksiteId,
+      requesterId: "user-audit-prevencion",
+      requestType: "stock",
+      urgency: "critical",
+      requiredDate: "2026-06-19",
+      status: "submitted",
+      submittedAt: now,
+      notes: "Solicitud urgente para mostrar cola de aprobaciones.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: deliveryRequestId,
+      code: "SOL-2026-0003",
+      worksiteId,
+      requesterId: "user-audit-prevencion",
+      requestType: "epp",
+      urgency: "normal",
+      requiredDate: "2026-06-21",
+      status: "closed",
+      submittedAt: now,
+      closedAt: now,
+      notes: "Solicitud recibida para capturas de entrega nominal.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
   await db.insert(schema.purchaseRequestItems).values([
     {
       id: requestItemId,
@@ -374,107 +602,402 @@ async function prepareDatabase() {
       createdAt: now,
       updatedAt: now,
     },
+    {
+      id: pendingRequestItemId,
+      requestId: pendingRequestId,
+      productId: "prod-audit-2",
+      quantity: 8,
+      unitOfMeasure: "rollo",
+      status: "requested",
+      urgency: "critical",
+      requiredDate: "2026-06-19",
+      suggestedSupplierId: "sup-audit-2",
+      sortOrder: 0,
+      notes: "Pendiente para panel de aprobaciones.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: deliverableRequestItemId,
+      requestId: deliveryRequestId,
+      productId: deliverableProductId,
+      quantity: 5,
+      unitOfMeasure: "unidad",
+      status: "partially_delivered",
+      urgency: "normal",
+      requiredDate: "2026-06-21",
+      workerId: "worker-audit-2",
+      suggestedSupplierId: supplierId,
+      sortOrder: 0,
+      notes: "EPP disponible para entrega a trabajador.",
+      createdAt: now,
+      updatedAt: now,
+    },
   ])
-  await db.insert(schema.requestItemAttributes).values({
-    id: "req-attr-audit-1",
-    requestItemId,
-    attributeId: "attr-audit-1",
-    attributeName: "Talla",
-    value: "L",
-  })
-  await db.insert(schema.approvalDecisions).values({
-    id: "approval-audit-1",
-    requestItemId,
-    requestId,
-    type: "approve",
-    decidedBy: userId,
-    decidedAt: now,
-    reason: "Stock requerido para continuidad operacional.",
-    roleContext: "administrador",
-  })
+  await db.insert(schema.requestItemAttributes).values([
+    {
+      id: "req-attr-audit-1",
+      requestItemId,
+      attributeId: "attr-audit-1",
+      attributeName: "Talla",
+      value: "L",
+    },
+    {
+      id: "req-attr-audit-2",
+      requestItemId: deliverableRequestItemId,
+      attributeId: "attr-audit-1",
+      attributeName: "Talla",
+      value: "M",
+    },
+  ])
+  await db.insert(schema.approvalDecisions).values([
+    {
+      id: "approval-audit-1",
+      requestItemId,
+      requestId,
+      type: "approve",
+      decidedBy: "user-audit-jefa",
+      decidedAt: now,
+      reason: "Stock requerido para continuidad operacional.",
+      roleContext: "jefa_chome",
+    },
+    {
+      id: "approval-audit-2",
+      requestItemId: deliverableRequestItemId,
+      requestId: deliveryRequestId,
+      type: "approve",
+      decidedBy: "user-audit-jefa",
+      decidedAt: now,
+      reason: "EPP aprobado para entrega nominal.",
+      roleContext: "jefa_chome",
+    },
+  ])
 
-  await db.insert(schema.purchaseOrders).values({
-    id: orderId,
-    code: "OC-2026-0001",
-    worksiteId,
-    supplierId,
-    createdBy: userId,
-    status: "sent",
-    issuedAt: now,
-    sentAt: now,
-    estimatedDelivery: "2026-06-18",
-    deliveryAddress: "Bodega central Mininco",
-    paymentTerms: "30 días",
-    netAmount: 142800,
-    taxAmount: 27132,
-    totalAmount: 169932,
-    notes: "Compra auditada para capturas.",
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.purchaseOrderItems).values({
-    id: orderItemId,
-    purchaseOrderId: orderId,
-    requestItemId,
-    productId,
-    quantity: 12,
-    unitOfMeasure: "par",
-    unitPrice: 11900,
-    discount: 0,
-    subtotal: 142800,
-    quantityReceived: 6,
-    status: "partially_received",
-    sortOrder: 0,
-    notes: "Entrega parcial coordinada.",
-  })
+  await db.insert(schema.purchaseRequests).values([
+    {
+      id: repuestoRequestId,
+      code: "REP-2026-0001",
+      worksiteId,
+      requesterId: userId,
+      requestType: "repuestos",
+      urgency: "normal",
+      requiredDate: "2026-06-24",
+      status: "submitted",
+      submittedAt: now,
+      notes: "Proveedor único disponible para el repuesto crítico.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: serviceRequestId,
+      code: "SRV-2026-0001",
+      worksiteId,
+      requesterId: userId,
+      requestType: "servicios",
+      urgency: "high",
+      requiredDate: "2026-06-25",
+      status: "submitted",
+      submittedAt: now,
+      notes: "Servicio técnico programado con disponibilidad limitada.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
 
-  await db.insert(schema.receipts).values({
-    id: receiptId,
-    code: "REC-2026-0001",
-    purchaseOrderId: orderId,
-    receivedBy: userId,
-    receivedAt: now,
-    locationType: "faena",
-    worksiteId,
-    dispatchGuideNo: "GD-88231",
-    status: "open",
-    notes: "Recepción parcial sin rechazo.",
-    createdAt: now,
-  })
-  await db.insert(schema.receiptItems).values({
-    id: "rec-item-audit-1",
-    receiptId,
-    purchaseOrderItemId: orderItemId,
-    quantityReceived: 6,
-    quantityRejected: 0,
-    quantityDamaged: 0,
-    status: "partially_received",
-    notes: "Saldo pendiente proveedor.",
-  })
+  await db.insert(schema.purchaseRequestItems).values([
+    {
+      id: repuestoItemId,
+      requestId: repuestoRequestId,
+      productNameFree: "Filtro hidráulico principal",
+      quantity: 2,
+      unitOfMeasure: "unidad",
+      status: "requested",
+      urgency: "normal",
+      requiredDate: "2026-06-24",
+      supplierHint: "TRECK Seguridad Industrial",
+      sortOrder: 0,
+      notes: "Compatible con equipo de mantención.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: serviceItemId,
+      requestId: serviceRequestId,
+      productNameFree: "Mantención preventiva de generador",
+      quantity: 1,
+      unitOfMeasure: "servicio",
+      status: "requested",
+      urgency: "high",
+      requiredDate: "2026-06-25",
+      supplierHint: "APRO Suministros",
+      sortOrder: 0,
+      notes: "Coordinar acceso con jefe de faena.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
 
-  await db.insert(schema.worksiteStock).values({
-    id: "stock-audit-1",
-    worksiteId,
-    productId,
-    quantity: 6,
-    minStock: 10,
-    lastMovementAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.inventoryMovements).values({
-    id: "mov-audit-1",
-    worksiteId,
-    productId,
-    type: "receipt",
-    quantity: 6,
-    referenceType: "receipt",
-    referenceId: receiptId,
-    stockBefore: 0,
-    stockAfter: 6,
-    performedBy: userId,
-    performedAt: now,
-    reason: "Recepción parcial OC-2026-0001",
-  })
+  await db.insert(schema.requestItemAttributes).values([
+    { id: "rep-attr-part", requestItemId: repuestoItemId, attributeName: "N° de Parte", value: "FH-9001" },
+    { id: "rep-attr-equipment", requestItemId: repuestoItemId, attributeName: "Equipo", value: "Excavadora CAT 320" },
+    { id: "rep-attr-patent", requestItemId: repuestoItemId, attributeName: "Patente/Código", value: "EQ-17" },
+    { id: "rep-attr-brand", requestItemId: repuestoItemId, attributeName: "Marca", value: "Caterpillar" },
+    { id: "rep-attr-model", requestItemId: repuestoItemId, attributeName: "Modelo", value: "320D" },
+    { id: "srv-attr-location", requestItemId: serviceItemId, attributeName: "Ubicación", value: "Sala generador faena Mininco" },
+    { id: "srv-attr-equipment", requestItemId: serviceItemId, attributeName: "Equipo", value: "Generador industrial" },
+    { id: "srv-attr-patent", requestItemId: serviceItemId, attributeName: "Patente/Código", value: "GEN-04" },
+    { id: "srv-attr-brand", requestItemId: serviceItemId, attributeName: "Marca", value: "Cummins" },
+    { id: "srv-attr-model", requestItemId: serviceItemId, attributeName: "Modelo", value: "C220D5" },
+  ])
+
+  await db.insert(schema.repuestoQuotations).values([
+    {
+      id: "rep-quote-audit-1",
+      requestId: repuestoRequestId,
+      supplierId,
+      fileName: "cotizacion-repuesto-2026-0001.pdf",
+      filePath: "/storage/repuestos/cotizacion-repuesto-2026-0001.pdf",
+      fileSize: "192410",
+      totalAmount: 245000,
+      status: "pending",
+      notes: "Incluye despacho a faena.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+
+  await db.insert(schema.serviceQuotations).values([
+    {
+      id: "srv-quote-audit-1",
+      requestId: serviceRequestId,
+      supplierId: "sup-audit-2",
+      fileName: "cotizacion-servicio-2026-0001.pdf",
+      filePath: "/storage/servicios/cotizacion-servicio-2026-0001.pdf",
+      fileSize: "221600",
+      totalAmount: 680000,
+      status: "pending",
+      notes: "Incluye visita técnica y repuestos menores.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+
+  await db.insert(schema.purchaseOrders).values([
+    {
+      id: orderId,
+      code: "OC-2026-0001",
+      worksiteId,
+      supplierId,
+      createdBy: userId,
+      status: "sent",
+      issuedAt: now,
+      sentAt: now,
+      estimatedDelivery: "2026-06-18",
+      deliveryAddress: "Bodega central Mininco",
+      paymentTerms: "30 días",
+      netAmount: 142800,
+      taxAmount: 27132,
+      totalAmount: 169932,
+      notes: "Compra auditada para capturas.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: officeOrderId,
+      code: "OC-2026-0002",
+      worksiteId,
+      supplierId: "sup-audit-2",
+      createdBy: "user-audit-jefa",
+      status: "office_received",
+      issuedAt: now,
+      sentAt: now,
+      confirmedAt: now,
+      estimatedDelivery: "2026-06-22",
+      deliveryAddress: "Oficina Chome Los Ángeles",
+      paymentTerms: "Contado",
+      netAmount: 66400,
+      taxAmount: 12616,
+      totalAmount: 79016,
+      notes: "OC con recepción de oficina pendiente de despacho a faena.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.purchaseOrderItems).values([
+    {
+      id: orderItemId,
+      purchaseOrderId: orderId,
+      requestItemId,
+      productId,
+      quantity: 12,
+      unitOfMeasure: "par",
+      unitPrice: 11900,
+      discount: 0,
+      subtotal: 142800,
+      quantityOfficeReceived: 6,
+      quantityReceived: 6,
+      status: "partially_received",
+      sortOrder: 0,
+      notes: "Entrega parcial coordinada.",
+    },
+    {
+      id: officeOrderItemId,
+      purchaseOrderId: officeOrderId,
+      requestItemId: null,
+      productId: "prod-audit-2",
+      quantity: 8,
+      unitOfMeasure: "rollo",
+      unitPrice: 8300,
+      discount: 0,
+      subtotal: 66400,
+      quantityOfficeReceived: 8,
+      quantityReceived: 0,
+      status: "issued",
+      sortOrder: 0,
+      notes: "Recibido en oficina, pendiente para faena.",
+    },
+  ])
+
+  await db.insert(schema.purchaseOrderInvoices).values([
+    {
+      id: "invoice-audit-1",
+      purchaseOrderId: orderId,
+      invoiceNumber: "F-88231",
+      amount: 169932,
+      issueDate: "2026-06-18",
+      fileName: "factura-oc-2026-0001.pdf",
+      filePath: "storage/purchase-orders/factura-oc-2026-0001.pdf",
+      fileSize: 348120,
+      mimeType: "application/pdf",
+      uploadedBy: userId,
+      uploadedAt: now,
+    },
+  ])
+
+  await db.insert(schema.receipts).values([
+    {
+      id: receiptId,
+      code: "REC-2026-0001",
+      purchaseOrderId: orderId,
+      receivedBy: userId,
+      receivedAt: now,
+      locationType: "faena",
+      worksiteId,
+      dispatchGuideNo: "GD-88231",
+      status: "open",
+      notes: "Recepción parcial sin rechazo.",
+      createdAt: now,
+    },
+    {
+      id: officeReceiptId,
+      code: "REC-2026-0002",
+      purchaseOrderId: officeOrderId,
+      receivedBy: "user-audit-bodega",
+      receivedAt: now,
+      locationType: "office",
+      worksiteId: null,
+      dispatchGuideNo: "GD-88232",
+      status: "open",
+      notes: "Recepción en oficina pendiente de traslado.",
+      createdAt: now,
+    },
+  ])
+  await db.insert(schema.receiptItems).values([
+    {
+      id: "rec-item-audit-1",
+      receiptId,
+      purchaseOrderItemId: orderItemId,
+      quantityReceived: 6,
+      quantityRejected: 0,
+      quantityDamaged: 0,
+      status: "partially_received",
+      notes: "Saldo pendiente proveedor.",
+    },
+    {
+      id: "rec-item-audit-office",
+      receiptId: officeReceiptId,
+      purchaseOrderItemId: officeOrderItemId,
+      quantityReceived: 8,
+      quantityRejected: 0,
+      quantityDamaged: 0,
+      status: "received",
+      notes: "Ingreso a oficina sin observaciones.",
+    },
+  ])
+
+  await db.insert(schema.worksiteStock).values([
+    {
+      id: "stock-audit-1",
+      worksiteId,
+      productId,
+      quantity: 6,
+      minStock: 10,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "stock-audit-2",
+      worksiteId,
+      productId: deliverableProductId,
+      quantity: 3,
+      minStock: 2,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "stock-audit-3",
+      worksiteId: "ws-audit-2",
+      productId: "prod-audit-2",
+      quantity: 14,
+      minStock: 5,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.inventoryMovements).values([
+    {
+      id: "mov-audit-1",
+      worksiteId,
+      productId,
+      type: "ingreso_oc",
+      quantity: 6,
+      referenceType: "purchase_order",
+      referenceId: receiptId,
+      stockBefore: 0,
+      stockAfter: 6,
+      performedBy: userId,
+      performedAt: now,
+      reason: "Recepción parcial OC-2026-0001",
+    },
+    {
+      id: "mov-audit-2",
+      worksiteId,
+      productId: deliverableProductId,
+      type: "ingreso_oc",
+      quantity: 5,
+      referenceType: "purchase_order",
+      referenceId: deliveryRequestId,
+      stockBefore: 0,
+      stockAfter: 5,
+      performedBy: "user-audit-bodega",
+      performedAt: now,
+      reason: "Ingreso EPP para entrega nominal",
+    },
+    {
+      id: "mov-audit-3",
+      worksiteId,
+      productId: deliverableProductId,
+      type: "egreso_entrega",
+      quantity: 2,
+      referenceType: "delivery",
+      referenceId: deliveryId,
+      stockBefore: 5,
+      stockAfter: 3,
+      performedBy: "user-audit-bodega",
+      performedAt: now,
+      reason: "Entrega parcial a trabajador",
+    },
+  ])
 
   await db.insert(schema.deliveries).values({
     id: deliveryId,
@@ -491,24 +1014,37 @@ async function prepareDatabase() {
   await db.insert(schema.deliveryItems).values({
     id: "del-item-audit-1",
     deliveryId,
-    requestItemId,
-    productId,
+    requestItemId: deliverableRequestItemId,
+    productId: deliverableProductId,
     quantity: 2,
-    unitOfMeasure: "par",
+    unitOfMeasure: "unidad",
     notes: "Entrega inicial.",
   })
 
-  await db.insert(schema.attachments).values({
-    id: "att-audit-1",
-    entityType: "purchase_order",
-    entityId: orderId,
-    fileName: "factura-oc-2026-0001.pdf",
-    filePath: "/uploads/factura-oc-2026-0001.pdf",
-    fileSize: 348120,
-    mimeType: "application/pdf",
-    uploadedBy: userId,
-    uploadedAt: now,
-  })
+  await db.insert(schema.attachments).values([
+    {
+      id: "att-audit-1",
+      entityType: "purchase_order",
+      entityId: orderId,
+      fileName: "factura-oc-2026-0001.pdf",
+      filePath: "/uploads/factura-oc-2026-0001.pdf",
+      fileSize: 348120,
+      mimeType: "application/pdf",
+      uploadedBy: userId,
+      uploadedAt: now,
+    },
+    {
+      id: "att-audit-delivery-1",
+      entityType: "delivery",
+      entityId: deliveryId,
+      fileName: "comprobante-entrega-2026-0001.pdf",
+      filePath: "/uploads/comprobante-entrega-2026-0001.pdf",
+      fileSize: 128420,
+      mimeType: "application/pdf",
+      uploadedBy: "user-audit-bodega",
+      uploadedAt: now,
+    },
+  ])
   await db.insert(schema.auditLog).values([
     {
       id: "audit-audit-1",
@@ -533,21 +1069,117 @@ async function prepareDatabase() {
       newState: JSON.stringify({ status: "sent" }),
       createdAt: now,
     },
+    {
+      id: "audit-audit-3",
+      userId: "user-audit-bodega",
+      userEmail: "bodega.audit@chome.cl",
+      action: "create",
+      entityType: "delivery",
+      entityId: deliveryId,
+      entityCode: "ENT-2026-0001",
+      newState: JSON.stringify({ destinationType: "worker", quantity: 2 }),
+      createdAt: now,
+    },
+    {
+      id: "audit-audit-4",
+      userId: userId,
+      userEmail: "admin.audit@chome.cl",
+      action: "update",
+      entityType: "system_settings",
+      entityId: "company_name",
+      entityCode: "Configuración",
+      oldState: JSON.stringify({ value: "Chome" }),
+      newState: JSON.stringify({ value: "Chome Operaciones" }),
+      reason: "Actualización de datos para capturas",
+      createdAt: now,
+    },
   ])
-  await db.insert(schema.notifications).values({
-    id: "noti-audit-1",
-    userId,
-    type: "request_submitted",
-    title: "Nueva solicitud: SOL-2026-0001",
-    body: "Admin Auditoría envió una solicitud con 2 ítems",
-    entityType: "purchase_request",
-    entityId: requestId,
-    entityHref: `/solicitudes/${requestId}`,
-    isRead: false,
-    createdAt: now,
-  })
+  await db.insert(schema.statusHistory).values([
+    {
+      id: "status-audit-1",
+      entityType: "purchase_request",
+      entityId: requestId,
+      fromStatus: "draft",
+      toStatus: "submitted",
+      changedBy: "user-audit-prevencion",
+      reason: "Solicitud enviada a aprobación.",
+      changedAt: now,
+    },
+    {
+      id: "status-audit-2",
+      entityType: "purchase_request",
+      entityId: requestId,
+      fromStatus: "submitted",
+      toStatus: "partially_approved",
+      changedBy: "user-audit-jefa",
+      reason: "Aprobación parcial para compra.",
+      changedAt: now,
+    },
+    {
+      id: "status-audit-rep-1",
+      entityType: "purchase_request",
+      entityId: repuestoRequestId,
+      fromStatus: "draft",
+      toStatus: "submitted",
+      changedBy: "user-audit-prevencion",
+      reason: "Cotización adjunta para evaluación.",
+      changedAt: now,
+    },
+    {
+      id: "status-audit-srv-1",
+      entityType: "purchase_request",
+      entityId: serviceRequestId,
+      fromStatus: "draft",
+      toStatus: "submitted",
+      changedBy: "user-audit-prevencion",
+      reason: "Servicio externo enviado a evaluación.",
+      changedAt: now,
+    },
+  ])
+  await db.insert(schema.notifications).values([
+    {
+      id: "noti-audit-1",
+      userId,
+      type: "request_submitted",
+      title: "Nueva solicitud: SOL-2026-0001",
+      body: "Prevencionista Faena envió una solicitud con 2 ítems",
+      entityType: "purchase_request",
+      entityId: requestId,
+      entityHref: `/solicitudes/${requestId}`,
+      isRead: false,
+      createdAt: now,
+    },
+    {
+      id: "noti-audit-2",
+      userId,
+      type: "oc_sent",
+      title: "OC enviada: OC-2026-0001",
+      body: "La orden de compra fue enviada al proveedor TRECK.",
+      entityType: "purchase_order",
+      entityId: orderId,
+      entityHref: `/compras/${orderId}`,
+      isRead: true,
+      createdAt: now,
+    },
+    {
+      id: "noti-audit-3",
+      userId,
+      type: "dispatch_done",
+      title: "Entrega registrada: ENT-2026-0001",
+      body: "Se registró una entrega nominal de EPP.",
+      entityType: "delivery",
+      entityId: deliveryId,
+      entityHref: "/entregas",
+      isRead: false,
+      createdAt: now,
+    },
+  ])
   await db.insert(schema.systemSettings).values([
-    { key: "company_name", value: "Chome", updatedAt: now },
+    { key: "company_name", value: "Chome Operaciones", updatedAt: now },
+    { key: "company_rut", value: "76.000.000-0", updatedAt: now },
+    { key: "company_address", value: "Av. Industrial 1400, Los Ángeles", updatedAt: now },
+    { key: "company_business_activity", value: "Servicios forestales y operaciones industriales", updatedAt: now },
+    { key: "pdf_max_size_mb", value: "10", updatedAt: now },
     { key: "purchase_order_footer", value: "Documento generado para auditoría visual.", updatedAt: now },
   ])
 
@@ -569,10 +1201,10 @@ async function ensureDatabaseExists(databaseUrl: string) {
   }
 }
 
-async function startServer() {
+async function startServer(captureDbUrl: string) {
   const env = {
     ...process.env,
-    DATABASE_URL: captureDbUrl!,
+    DATABASE_URL: captureDbUrl,
     AUTH_SECRET: authSecret,
     NEXTAUTH_SECRET: authSecret,
     APP_URL: baseUrl,
@@ -662,7 +1294,7 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
       requestedUrl,
       finalUrl,
       status,
-      ok: !status || status < 400,
+      ok: isExpectedStatus(status, route),
       screenshot: relativeScreenshot,
       notes: route.notes,
     }
@@ -694,7 +1326,14 @@ async function settle(page: Page) {
   await page.waitForTimeout(500)
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+function isExpectedStatus(status: number | null, route: RouteTarget) {
+  if (route.expectedStatus !== undefined) return status === route.expectedStatus
+  return !status || status < 400
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
+}

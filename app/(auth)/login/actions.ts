@@ -9,10 +9,6 @@ import { hashInvitationToken } from "@/lib/auth/bootstrap"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { checkRateLimit, recordFailure, recordSuccess } from "@/lib/services/rate-limit"
 
-const emailSchema = z.object({
-  email: z.string().email().transform((value) => value.toLowerCase().trim()),
-})
-
 const passwordSetupSchema = z.object({
   email:           z.string().email().transform((value) => value.toLowerCase().trim()),
   password:        z.string().min(8, "Mínimo 8 caracteres"),
@@ -25,19 +21,6 @@ const passwordSetupSchema = z.object({
   message: "Las contraseñas no coinciden",
   path: ["confirmPassword"],
 })
-
-export async function getPasswordSetupState(emailInput: string): Promise<{
-  setupRequired: boolean
-  email?: string
-}> {
-  const parsed = emailSchema.safeParse({ email: emailInput })
-  if (!parsed.success) return { setupRequired: false }
-
-  return {
-    setupRequired: false,
-    email: parsed.data.email,
-  }
-}
 
 export async function setInitialPassword(input: {
   email: string

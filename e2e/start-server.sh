@@ -36,4 +36,4 @@ SMTP_PASS="" \
 SMTP_FROM="" \
 SMTP_DISABLED="true" \
 SMTP_TIMEOUT_MS="1000" \
-./node_modules/.bin/next start --port "$PORT"
+PORT="$PORT" HOSTNAME="0.0.0.0" node .next/standalone/server.js

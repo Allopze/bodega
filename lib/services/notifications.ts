@@ -10,7 +10,7 @@
 
 import { eq, and, desc, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { notifications, rolePermissions, permissions, users } from "@/db/schema"
+import { notifications, rolePermissions, userPermissions, permissions, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { NotificationType } from "@/db/schema/audit"
 import { sendEmail, getAppBaseUrl } from "@/lib/email/smtp"
@@ -152,28 +152,47 @@ export async function notifyManyUser(
 
 /**
  * Returns user IDs who have at least one of the given permissions.
+ * Considers both role-based grants and direct user-permission grants.
  * Used to notify approvers, warehouse staff, etc.
  */
 export async function getUserIdsWithPermission(permissionName: string): Promise<string[]> {
-  // Find permission id
   const perm = await db.query.permissions.findFirst({
     where: eq(permissions.name, permissionName),
   })
   if (!perm) return []
 
-  // Find roles with that permission
+  const userIds = new Set<string>()
+
+  // Users with the permission via roles
   const rolePerm = await db.query.rolePermissions.findMany({
     where: eq(rolePermissions.permissionId, perm.id),
   })
-  if (rolePerm.length === 0) return []
+  if (rolePerm.length > 0) {
+    const roleIds = rolePerm.map((rp) => rp.roleId)
+    const userRole = await db.query.userRoles.findMany({
+      where: (ur, { inArray }) => inArray(ur.roleId, roleIds),
+    })
+    for (const ur of userRole) userIds.add(ur.userId)
+  }
 
-  const roleIds = rolePerm.map((rp) => rp.roleId)
-
-  // Find users with those roles
-  const userRole = await db.query.userRoles.findMany({
-    where: (ur, { inArray }) => inArray(ur.roleId, roleIds),
+  // Users with direct permission grants (userPermissions table)
+  const directGrants = await db.query.userPermissions.findMany({
+    where: eq(userPermissions.permissionId, perm.id),
   })
-  return [...new Set(userRole.map((ur) => ur.userId))]
+  if (directGrants.length > 0) {
+    // Only include active users with direct grants
+    const directUserIds = [...new Set(directGrants.map((up) => up.userId))]
+    const activeDirect = await db.query.users.findMany({
+      where: (u, { and, inArray }) => and(
+        inArray(u.id, directUserIds),
+        eq(u.isActive, true),
+      ),
+      columns: { id: true },
+    })
+    for (const u of activeDirect) userIds.add(u.id)
+  }
+
+  return [...userIds]
 }
 
 /* ── Read/mark read ──────────────────────────────────────────────────────────── */

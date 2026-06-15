@@ -5,9 +5,10 @@ import {
   purchaseRequestItems, purchaseRequests,
   worksites, suppliers, products, productSuppliers,
 } from "@/db/schema"
-import { eq, inArray, asc } from "drizzle-orm"
+import { eq, inArray, asc, and } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { OcForm } from "../oc-form"
@@ -26,7 +27,10 @@ export default async function NuevaOcPage({
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
 
-  // Load approved/pending_purchase items
+  // Load approved/pending_purchase items, scoped by faena access
+  const scopeFilter = worksiteScopeSql(session, purchaseRequests.worksiteId)
+  const statusFilter = inArray(purchaseRequestItems.status, ["approved", "pending_purchase"])
+
   const rawItems = await db
     .select({
       id:              purchaseRequestItems.id,
@@ -42,8 +46,10 @@ export default async function NuevaOcPage({
       supplierHint:        purchaseRequestItems.supplierHint,
     })
     .from(purchaseRequestItems)
-    .where(inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]))
+    .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+    .where(and(statusFilter, scopeFilter ? scopeFilter : undefined))
     .orderBy(asc(purchaseRequestItems.requestId))
+    .limit(501)
 
   if (rawItems.length === 0) {
     redirect("/compras")

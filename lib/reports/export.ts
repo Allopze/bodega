@@ -59,19 +59,19 @@ export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> 
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 }
 
-export async function getReportData(tipo: string, session: Session | null, filters: ExportFilters = {}): Promise<ReportData> {
+export async function getReportData(tipo: string, session: Session | null, filters: ExportFilters = {}, maxRows = 10_000): Promise<ReportData> {
   switch (tipo) {
     case "items_sin_oc":
-      return itemsSinOc(session, filters)
+      return itemsSinOc(session, filters, maxRows)
     case "oc_por_estado":
-      return ocPorEstado(session, filters)
+      return ocPorEstado(session, filters, maxRows)
     case "gasto_faena":
     default:
-      return gastoPorFaena(session, filters)
+      return gastoPorFaena(session, filters, maxRows)
   }
 }
 
-async function gastoPorFaena(session: Session | null, filters: ExportFilters): Promise<ReportData> {
+async function gastoPorFaena(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
   const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
   const dateFilter = buildDateFilter(filters, purchaseOrders.createdAt)
   const statusFilter = filters.status ? eq(purchaseOrders.status, filters.status) : undefined
@@ -89,9 +89,13 @@ async function gastoPorFaena(session: Session | null, filters: ExportFilters): P
     })
     .from(purchaseOrders)
     .where(and(orderFilter, dateFilter, statusFilter, wsFilter))
+    .limit(limit + 1)
 
-  const wsIds  = [...new Set(orders.map((o) => o.worksiteId))]
-  const supIds = [...new Set(orders.map((o) => o.supplierId))]
+  const rowLimitApplied = orders.length > limit
+  const limited = rowLimitApplied ? orders.slice(0, limit) : orders
+
+  const wsIds  = [...new Set(limited.map((o) => o.worksiteId))]
+  const supIds = [...new Set(limited.map((o) => o.supplierId))]
 
   const [wsRows, supRows] = await Promise.all([
     wsIds.length  ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds))  : [],
@@ -105,7 +109,7 @@ async function gastoPorFaena(session: Session | null, filters: ExportFilters): P
     filenameBase: "gasto-por-faena",
     worksheetName: "Gasto por faena",
     headers: ["OC", "Faena", "Proveedor", "Estado", "Monto Total", "Fecha"],
-    rows: orders.map((o) => [
+    rows: limited.map((o) => [
       o.code,
       wsMap[o.worksiteId] ?? o.worksiteId,
       supMap[o.supplierId] ?? o.supplierId,
@@ -113,10 +117,11 @@ async function gastoPorFaena(session: Session | null, filters: ExportFilters): P
       o.totalAmount,
       formatDate(o.createdAt),
     ]),
+    rowLimitApplied,
   }
 }
 
-async function itemsSinOc(session: Session | null, filters: ExportFilters): Promise<ReportData> {
+async function itemsSinOc(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
   const alertStates = filters.status ? [filters.status] : ["approved", "pending_purchase"]
   const requestFilter = buildWorksiteFilter(session, purchaseRequests.worksiteId)
   const dateFilter = buildDateFilter(filters, purchaseRequests.createdAt)
@@ -136,19 +141,24 @@ async function itemsSinOc(session: Session | null, filters: ExportFilters): Prom
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
     .where(and(inArray(purchaseRequestItems.status, alertStates), requestFilter, dateFilter, wsFilter))
+    .limit(limit + 1)
+
+  const rowLimitApplied = items.length > limit
+  const limited = rowLimitApplied ? items.slice(0, limit) : items
 
   const headers = ["Producto", "SKU", "Faena", "Solicitud", "Cantidad", "U/M", "Estado", "Fecha creación"]
-  if (items.length === 0) {
+  if (limited.length === 0) {
     return {
       filenameBase: "items-sin-oc",
       worksheetName: "Items sin OC",
       headers,
       rows: [],
+      rowLimitApplied,
     }
   }
 
-  const reqIds = [...new Set(items.map((i) => i.requestId))]
-  const prodIds = [...new Set(items.map((i) => i.productId).filter(Boolean) as string[])]
+  const reqIds = [...new Set(limited.map((i) => i.requestId))]
+  const prodIds = [...new Set(limited.map((i) => i.productId).filter(Boolean) as string[])]
 
   const [reqRows, prodRows] = await Promise.all([
     db.select({ id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId })
@@ -169,7 +179,7 @@ async function itemsSinOc(session: Session | null, filters: ExportFilters): Prom
     filenameBase: "items-sin-oc",
     worksheetName: "Items sin OC",
     headers,
-    rows: items.map((i) => {
+    rows: limited.map((i) => {
       const req     = reqMap[i.requestId]
       const product = i.productId ? prodMap[i.productId] : null
       return [
@@ -183,10 +193,11 @@ async function itemsSinOc(session: Session | null, filters: ExportFilters): Prom
         formatDate(i.createdAt),
       ]
     }),
+    rowLimitApplied,
   }
 }
 
-async function ocPorEstado(session: Session | null, filters: ExportFilters): Promise<ReportData> {
+async function ocPorEstado(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
   const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
   const dateFilter = buildDateFilter(filters, purchaseOrders.createdAt)
   const statusFilter = filters.status ? eq(purchaseOrders.status, filters.status) : undefined
@@ -204,8 +215,12 @@ async function ocPorEstado(session: Session | null, filters: ExportFilters): Pro
     })
     .from(purchaseOrders)
     .where(and(orderFilter, dateFilter, statusFilter, wsFilter))
+    .limit(limit + 1)
 
-  const wsIds = [...new Set(orders.map((o) => o.worksiteId))]
+  const rowLimitApplied = orders.length > limit
+  const limited = rowLimitApplied ? orders.slice(0, limit) : orders
+
+  const wsIds = [...new Set(limited.map((o) => o.worksiteId))]
   const wsRows = wsIds.length
     ? await db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds))
     : []
@@ -215,7 +230,7 @@ async function ocPorEstado(session: Session | null, filters: ExportFilters): Pro
     filenameBase: "oc-por-estado",
     worksheetName: "OC por estado",
     headers: ["OC", "Estado", "Faena", "Total", "Emitida", "Enviada", "Confirmada"],
-    rows: orders.map((o) => [
+    rows: limited.map((o) => [
       o.code,
       o.status,
       wsMap[o.worksiteId] ?? o.worksiteId,
@@ -224,6 +239,7 @@ async function ocPorEstado(session: Session | null, filters: ExportFilters): Pro
       o.sentAt      ? formatDate(o.sentAt)      : "",
       o.confirmedAt ? formatDate(o.confirmedAt) : "",
     ]),
+    rowLimitApplied,
   }
 }
 

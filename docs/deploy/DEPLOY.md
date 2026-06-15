@@ -24,10 +24,10 @@ Requisitos y guía para desplegar la aplicación en producción.
 ```bash
 npm ci
 npm run build
-npm run start
+PORT=3000 HOSTNAME=0.0.0.0 node .next/standalone/server.js
 ```
 
-Next.js inicia en el puerto 3000 por defecto.
+La app usa `output: "standalone"` (ver `next.config.ts`). El comando `npm run start` equivale a `node .next/standalone/server.js`. Asegurarse de copiar los directorios `public/` y `.next/static/` junto con `.next/standalone/` si se despliega en un contenedor.
 
 ## Migraciones de base de datos
 
@@ -59,11 +59,12 @@ storage/
 No hay Dockerfile oficial. Para containerizar:
 
 1. Build stage: `npm ci && npm run build`
-2. Runtime stage: copiar `.next/standalone`, `public/`, `node_modules/`
-3. Agregar `output: "standalone"` en `next.config.ts` para optimizar el container
+2. Runtime stage: copiar `.next/standalone`, `public/`, `.next/static/` y `node_modules/` necesarios
+3. `output: "standalone"` ya está en `next.config.ts`
 4. Montar volumen en `STORAGE_PATH`
 5. Ejecutar migraciones antes del primer start
-6. Exponer puerto 3000
+6. Ejecutar: `PORT=3000 HOSTNAME=0.0.0.0 node .next/standalone/server.js`
+7. Exponer puerto 3000
 
 ## Healthcheck
 
@@ -71,7 +72,7 @@ No hay Dockerfile oficial. Para containerizar:
 curl -f http://localhost:3000/api/health || exit 1
 ```
 
-(Endpoint de healthcheck no implementado actualmente — considerar agregarlo.)
+`/api/health` es público (no requiere auth) y verifica conectividad con la base de datos. Responde `200 {"status":"ok","db":"connected"}` si todo está bien, `503 {"status":"error","db":"disconnected"}` si la DB no responde.
 
 ## Cron jobs
 
@@ -84,5 +85,7 @@ Ejecutar periódicamente (diario/semanal) vía cron del sistema o herramienta de
 
 - `AUTH_SECRET` y `SEED_ADMIN_PASSWORD` son sensibles — nunca commitear valores reales
 - `.env.example` no contiene valores reales
-- `npm audit --omit=dev` reporta 0 vulnerabilidades
+- `npm audit --omit=dev` reporta 0 vulnerabilidades (ejecutar en cada release)
 - CSP configurado en `proxy.ts`, headers de seguridad en `next.config.ts`
+- **Rate limiting:** el rate limit por IP usa `X-Forwarded-For`. El proxy frontal (NGINX, Traefik, Cloudflare, etc.) debe sobreescribir `X-Forwarded-For` con la IP real del cliente. Si el header no es confiable, un atacante podría rotarlo y evadir el rate limit por IP (el límite por email sigue mitigando fuerza bruta contra una cuenta concreta).
+- `/api/health` es público — considera agregar autenticación de orquestador (header secreto) en entornos con balancer externo.

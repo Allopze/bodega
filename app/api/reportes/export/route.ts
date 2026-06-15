@@ -43,20 +43,19 @@ export async function GET(req: NextRequest) {
   if (status) filters.status = status
 
   try {
-    const report = await getReportData(tipo, session, filters)
-
-    if (report.rows.length > MAX_EXPORT_ROWS) {
-      report.rows = report.rows.slice(0, MAX_EXPORT_ROWS)
-      report.rowLimitApplied = true
-    }
+    const report = await getReportData(tipo, session, filters, MAX_EXPORT_ROWS)
 
     const xlsx = await buildXlsxBuffer(report)
+    const headers: Record<string, string> = {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${report.filenameBase}.xlsx"`,
+    }
+    if (report.rowLimitApplied) {
+      headers["X-Row-Limit-Applied"] = "true"
+    }
     return new NextResponse(xlsx, {
       status: 200,
-      headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${report.filenameBase}.xlsx"`,
-      },
+      headers,
     })
   } catch (err) {
     logger.error("[reportes/export]", err)

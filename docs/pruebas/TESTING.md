@@ -10,9 +10,10 @@ flujo completo para validar la aplicación.
 1. [Tipos de prueba](#1-tipos-de-prueba)
 2. [Pruebas unitarias (vitest)](#2-pruebas-unitarias-vitest)
 3. [Pruebas E2E (Playwright)](#3-pruebas-e2e-playwright)
-4. [Prueba manual siguiendo el flujo completo](#4-prueba-manual-siguiendo-el-flujo-completo)
-5. [Cobertura](#5-cobertura)
-6. [Resolución de problemas](#6-resolución-de-problemas)
+4. [Capturas de pantallas de la app](#4-capturas-de-pantallas-de-la-app)
+5. [Prueba manual siguiendo el flujo completo](#5-prueba-manual-siguiendo-el-flujo-completo)
+6. [Cobertura](#6-cobertura)
+7. [Resolución de problemas](#7-resolución-de-problemas)
 
 ---
 
@@ -22,6 +23,7 @@ flujo completo para validar la aplicación.
 |------|-------------|---------|----------|
 | Unitarias | vitest | Lógica pura (transiciones de estado, permisos, totales, validaciones) | Ninguna (datos mock en memoria) |
 | E2E | Playwright | Flujo completo desde el navegador (login → solicitud → aprobación → OC → factura → recepción) | Postgres desechable `bodega_e2e` |
+| Capturas | Playwright + script local | PNG full-page de todas las pantallas navegables en desktop y mobile | Postgres desechable `bodega_capture` |
 | Manual | Navegador + dev server | Exploración visual, casos borde no automatizados | Postgres local configurado en `.env.local` |
 
 ---
@@ -169,11 +171,134 @@ Playwright captura trace y video automáticamente en caso de falla.
 
 ---
 
-## 4. Prueba manual siguiendo el flujo completo
+## 4. Capturas de pantallas de la app
+
+El script `scripts/capture-all-routes.ts` genera capturas PNG full-page de las
+pantallas navegables de la app en dos viewports:
+
+- Desktop: 1440 × 1000
+- Mobile: 390 × 844
+
+También escribe un `manifest.json` con rutas, URLs finales, estado HTTP y ruta
+de cada PNG generado.
+
+### 4.1. Requisitos
+
+- Tener dependencias instaladas (`npm install`).
+- Tener Postgres local accesible con la configuración de usuario/host del entorno.
+- Tener el build de producción generado.
+- Usar una base de datos **desechable** cuyo nombre contenga `_capture`,
+  `_test`, `_e2e`, `_tmp` o `_temp`.
+
+No uses `DATABASE_URL` de desarrollo/producción para capturas. El script resetea
+la base indicada por `CAPTURE_DATABASE_URL`.
+
+### 4.2. Ejecución
+
+```bash
+npm run build
+CAPTURE_DATABASE_URL=postgres:///bodega_capture CAPTURE_ALLOW_DESTRUCTIVE_RESET=true npx tsx scripts/capture-all-routes.ts
+```
+
+Si necesitas otro puerto:
+
+```bash
+CAPTURE_PORT=3130 CAPTURE_DATABASE_URL=postgres:///bodega_capture CAPTURE_ALLOW_DESTRUCTIVE_RESET=true npx tsx scripts/capture-all-routes.ts
+```
+
+### 4.3. Salida
+
+Los archivos se escriben en:
+
+```text
+audit/screenshots/2026-06-09-playwright/
+```
+
+Incluye:
+
+- `desktop-*.png`
+- `mobile-*.png`
+- `manifest.json`
+
+El script levanta la app en `http://127.0.0.1:3127`, crea datos de auditoría,
+inicia sesión con el usuario interno de capturas y recorre las rutas definidas
+en el inventario del propio script.
+
+### 4.4. Validación rápida
+
+```bash
+node - <<'NODE'
+const fs = require("fs")
+const path = require("path")
+const manifest = JSON.parse(fs.readFileSync("audit/screenshots/2026-06-09-playwright/manifest.json", "utf8"))
+const failures = manifest.results.filter((result) => !result.ok)
+const missing = manifest.results.filter((result) => !fs.existsSync(path.join(process.cwd(), result.screenshot)))
+const zero = manifest.results.filter((result) => fs.existsSync(path.join(process.cwd(), result.screenshot)) && fs.statSync(path.join(process.cwd(), result.screenshot)).size === 0)
+console.log({ routes: manifest.routes.length, results: manifest.results.length, failures: failures.length, missing: missing.length, zero: zero.length })
+NODE
+```
+
+Una ejecución sana debe dejar `failures: 0`, `missing: 0` y `zero: 0`.
+
+### 4.5. Cobertura del inventario de rutas
+
+El inventario de capturas está protegido por una prueba unitaria:
+
+```bash
+npx vitest run scripts/capture-all-routes.test.ts
+```
+
+Esta prueba compara las rutas capturadas contra los `app/**/page.tsx` concretos.
+Si se agrega una pantalla nueva, el test falla hasta que se incorpore al script
+con un fixture navegable.
+
+### 4.6. Resolución de problemas de capturas
+
+#### `CAPTURE_DATABASE_URL is required`
+
+Define explícitamente la base de capturas:
+
+```bash
+CAPTURE_DATABASE_URL=postgres:///bodega_capture CAPTURE_ALLOW_DESTRUCTIVE_RESET=true npx tsx scripts/capture-all-routes.ts
+```
+
+#### `CAPTURE_ALLOW_DESTRUCTIVE_RESET=true is required`
+
+El script bloquea resets accidentales. Confirma que la DB es desechable y agrega
+la variable:
+
+```bash
+CAPTURE_ALLOW_DESTRUCTIVE_RESET=true
+```
+
+#### `Database "bodega" is not disposable`
+
+La base no tiene marcador seguro. Usa un nombre como:
+
+```text
+bodega_capture
+bodega_e2e
+bodega_tmp
+```
+
+#### El servidor no inicia
+
+Ejecuta primero:
+
+```bash
+npm run build
+```
+
+El script usa `next start`, por lo que necesita un build previo. Si el puerto
+`3127` está ocupado, define `CAPTURE_PORT`.
+
+---
+
+## 5. Prueba manual siguiendo el flujo completo
 
 Para probar la aplicación manualmente como lo haría un usuario real.
 
-### 4.1. Setup inicial
+### 5.1. Setup inicial
 
 ```bash
 npm install
@@ -185,7 +310,7 @@ npm run db:seed             # crea roles, permisos y datos base
 npm run dev                 # http://localhost:3000
 ```
 
-### 4.2. Flujo paso a paso
+### 5.2. Flujo paso a paso
 
 #### Paso 1 — Registrar administrador
 
@@ -264,7 +389,7 @@ npm run dev                 # http://localhost:3000
 - Ve a `/reportes` para ver métricas
 - Exporta a Excel con los botones correspondientes
 
-### 4.3. Datos de prueba rápidos (seed)
+### 5.3. Datos de prueba rápidos (seed)
 
 Si necesitas datos de prueba pre-poblados, puedes editar `db/seed.ts` y volver a
 ejecutar `npm run db:seed`. El seed actual solo crea roles y permisos del sistema;
@@ -272,7 +397,7 @@ los datos operativos deben crearse desde la UI.
 
 ---
 
-## 5. Cobertura
+## 6. Cobertura
 
 ```bash
 npm run test:coverage
@@ -291,7 +416,7 @@ ni páginas.
 
 ---
 
-## 6. Resolución de problemas
+## 7. Resolución de problemas
 
 ### Los tests unitarios fallan
 

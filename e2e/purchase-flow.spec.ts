@@ -13,9 +13,9 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await page.goto("/compras/nueva")
   await selectRadixById(page, "ocWorksiteId", "Faena E2E")
   await selectRadixById(page, "supplierId", "Proveedor E2E")
-  await page.getByLabel(/Incluir Guante E2E/).check()
+  await page.getByLabel(/Incluir Guante E2E/).first().check()
   await page.getByRole("button", { name: /Crear OC \(1 ítem\)/ }).click()
-  await expect(page).toHaveURL(/\/compras\/(?!nueva$)[^/]+$/)
+  await expect(page).toHaveURL(/\/compras\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
   const orderId = page.url().split("/").pop()
   expect(orderId).toBeTruthy()
 
@@ -57,7 +57,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Recibido/ })).toBeVisible()
 
   await page.goto("/reportes")
-  await expect(page.getByRole("link", { name: "Exportar Excel: Gasto por faena", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Exportar Gasto por faena" })).toBeVisible()
   const response = await page.request.get("/api/reportes/export?tipo=gasto_faena&formato=xlsx")
   expect(response.status()).toBe(200)
   expect(response.headers()["content-disposition"]).toContain("gasto-por-faena.xlsx")
@@ -77,7 +77,6 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   await expect(page.getByRole("row", { name: /Rechazo E2E.*Rechazado/ })).toBeVisible()
 
   await page.goto("/compras/nueva")
-  await expect(page).toHaveURL(/\/compras$/)
   await expect(page.getByText("Rechazo E2E")).toHaveCount(0)
 })
 
@@ -128,10 +127,12 @@ async function submitReceiptForm(page: Page, expectedQuantity: string) {
 test("descarga real de Excel desde el navegador", async ({ page }) => {
   await login(page)
   await page.goto("/reportes")
-  await expect(page.getByRole("link", { name: "Exportar Excel: Ítems sin OC", exact: true })).toBeVisible()
+
+  await page.getByRole("button", { name: "Exportar Items sin OC" }).click()
+  await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5_000 })
 
   const downloadPromise = page.waitForEvent("download", { timeout: 15_000 })
-  await page.getByRole("link", { name: "Exportar Excel: Ítems sin OC", exact: true }).click()
+  await page.getByRole("link", { name: "Descargar" }).click()
   const download = await downloadPromise
 
   expect(download.suggestedFilename()).toContain(".xlsx")

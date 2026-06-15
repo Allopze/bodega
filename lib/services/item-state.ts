@@ -390,47 +390,41 @@ export async function addItemToPurchaseOrderTx(
   userId: string,
   opts?: { userEmail?: string },
 ): Promise<void> {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
-    if (!item) throw new Error(`Item ${itemId} not found`)
-
     const now = new Date().toISOString()
 
-    // Two-step if still in approved state
-    if (item.status === "approved") {
-      if (!canTransition("approved", "pending_purchase")) {
-        throw new Error(`Cannot move item from 'approved' to 'pending_purchase'`)
-      }
-      await tx
-        .update(purchaseRequestItems)
-        .set({ status: "pending_purchase", updatedAt: now })
-        .where(eq(purchaseRequestItems.id, itemId))
-
-      await recordStatusChange({
-        entityType: "request_item",
-        entityId:   itemId,
-        fromStatus: "approved",
-        toStatus:   "pending_purchase",
-        changedBy:  userId,
-      }, tx)
-    }
-
-    // Now transition to in_purchase_order
-    const currentStatus = item.status === "approved" ? "pending_purchase" : item.status as ItemStatus
-    if (!canTransition(currentStatus, "in_purchase_order")) {
-      throw new Error(`Cannot move item from '${currentStatus}' to 'in_purchase_order'`)
-    }
-
-    await tx
+    // ── Atomic conditional transition ──────────────────────────────────
+    // Only move the item if it's still in a state that allows OC inclusion.
+    // The unique partial index on purchase_order_items.request_item_id
+    // (WHERE status != 'cancelled') provides the second guard: the INSERT
+    // into purchase_order_items will fail if a concurrent transaction
+    // already inserted the same request_item_id.
+    const [updated] = await tx
       .update(purchaseRequestItems)
       .set({ status: "in_purchase_order", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(
+        and(
+          eq(purchaseRequestItems.id, itemId),
+          inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]),
+        ),
+      )
+      .returning({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+
+    if (!updated) {
+      const current = await tx.query.purchaseRequestItems.findFirst({
+        where: eq(purchaseRequestItems.id, itemId),
+        columns: { status: true },
+      })
+      throw new Error(
+        current
+          ? `El ítem ya no está disponible (estado: ${current.status}) — posible concurrencia`
+          : `Item ${itemId} not found`,
+      )
+    }
 
     await recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
-      fromStatus: currentStatus,
+      fromStatus: updated.status,
       toStatus:   "in_purchase_order",
       changedBy:  userId,
     }, tx)
@@ -443,7 +437,7 @@ export async function addItemToPurchaseOrderTx(
       newState:   { status: "in_purchase_order", orderId },
     }, tx)
 
-    await rollupRequestStatus(item.requestId, tx)
+    await rollupRequestStatus(updated.requestId, tx)
 }
 
 /**

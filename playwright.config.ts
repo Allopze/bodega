@@ -18,7 +18,7 @@ export default defineConfig({
   webServer: {
     command: `E2E_DATABASE_URL=${databaseUrl} E2E_ALLOW_DESTRUCTIVE_RESET=true E2E_PORT=${port} bash e2e/start-server.sh`,
     url: `http://localhost:${port}/login`,
-    reuseExistingServer: false,
+    reuseExistingServer: true,
     timeout: 180_000,
   },
   projects: [

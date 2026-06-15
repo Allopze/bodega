@@ -71,6 +71,13 @@
       "when": 1781600000000,
       "tag": "0009_add_performance_indices",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781790000000,
+      "tag": "0010_unique_oc_item_per_request",
+      "breakpoints": true
     }
   ]
 }
