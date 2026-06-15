@@ -326,7 +326,7 @@ export default async function TrazabilidadPage({
           Filtrar
         </Button>
         <Link
-          href="/api/trazabilidad/export"
+          href={`/api/trazabilidad/export${filterFaenaId ? `?faena=${filterFaenaId}` : ""}`}
           prefetch={false}
           className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-full)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.97]"
           aria-label="Exportar trazabilidad a Excel"

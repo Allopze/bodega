@@ -4,21 +4,45 @@ import { db } from "@/db"
 import {
   purchaseOrders, purchaseOrderItems, worksites, suppliers,
 } from "@/db/schema"
-import { and, inArray, desc } from "drizzle-orm"
+import { and, inArray, desc, count } from "drizzle-orm"
 import { requirePermission, canAny } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
 
-export default async function RecepcionPage() {
+const RECEPCION_PAGE_SIZE = 25
+
+export default async function RecepcionPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("receiving:view") }
   catch { redirect("/dashboard") }
 
-  // OCs pending office reception or pending distribution to worksite/warehouse.
+  const sp = await searchParams
+  const scopeFilter = and(
+    inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]),
+    worksiteScopeSql(session, purchaseOrders.worksiteId),
+  )
+
+  const [totalRow] = await db
+    .select({ total: count() })
+    .from(purchaseOrders)
+    .where(scopeFilter)
+
+  const pagination = resolvePagination({
+    pageParam: sp.page,
+    totalItems: totalRow?.total ?? 0,
+    pageSize: RECEPCION_PAGE_SIZE,
+  })
+
   const visible = await db
     .select({
       id:          purchaseOrders.id,
@@ -30,11 +54,12 @@ export default async function RecepcionPage() {
       createdAt:   purchaseOrders.createdAt,
     })
     .from(purchaseOrders)
-    .where(and(
-      inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]),
-      worksiteScopeSql(session, purchaseOrders.worksiteId),
-    ))
+    .where(scopeFilter)
     .orderBy(desc(purchaseOrders.sentAt))
+    .limit(pagination.limit)
+    .offset(pagination.offset)
+
+  const pageHref = (page: number) => buildPaginationHref("/recepcion", sp, page)
 
   const wsIds       = [...new Set(visible.map((o) => o.worksiteId))]
   const supplierIds = [...new Set(visible.map((o) => o.supplierId))]
@@ -89,6 +114,7 @@ export default async function RecepcionPage() {
         gapMap={gapMap}
         canRegister={canRegister}
       />
+      <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )
 }

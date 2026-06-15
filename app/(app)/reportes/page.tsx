@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, purchaseOrders,
-  receipts,
+  receipts, worksites,
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
@@ -11,8 +11,9 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
 import { REQUEST_STATE_META, ITEM_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
+import { ExportDialog } from "@/components/export-dialog"
 import { formatCLP } from "@/lib/utils"
-import { count, eq, inArray, sql, sum } from "drizzle-orm"
+import { count, eq, inArray, sql, sum, asc } from "drizzle-orm"
 import { ChartBar } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Reportes" }
@@ -37,6 +38,13 @@ export default async function Page() {
     : (wsIds.length > 0
         ? sql`(${receipts.worksiteId} IS NULL OR ${inArray(receipts.worksiteId, wsIds)})`
         : sql`${receipts.worksiteId} IS NULL AND 1 = 0`)
+
+  const activeWorksites = await db
+    .select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(eq(worksites.isActive, true))
+    .orderBy(asc(worksites.name))
+
   const [
     requestSummary,
     itemSummary,
@@ -145,9 +153,42 @@ export default async function Page() {
         }
         actions={
           <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
-            <ExportLinks tipo="items_sin_oc" label="Ítems sin OC" tone="signal" />
-            <ExportLinks tipo="gasto_faena" label="Gasto por faena" />
-            <ExportLinks tipo="oc_por_estado" label="OC por estado" />
+            <ExportDialog
+              tipo="items_sin_oc"
+              label="Ítems sin OC"
+              worksites={activeWorksites}
+              statuses={[
+                { value: "approved", label: "Aprobado" },
+                { value: "pending_purchase", label: "Pendiente compra" },
+              ]}
+              tone="signal"
+            />
+            <ExportDialog
+              tipo="gasto_faena"
+              label="Gasto por faena"
+              worksites={activeWorksites}
+              statuses={[
+                { value: "draft", label: "Borrador" },
+                { value: "issued", label: "Emitida" },
+                { value: "sent", label: "Enviada" },
+                { value: "received", label: "Recibida" },
+                { value: "cancelled", label: "Cancelada" },
+              ]}
+            />
+            <ExportDialog
+              tipo="oc_por_estado"
+              label="OC por estado"
+              worksites={activeWorksites}
+              statuses={[
+                { value: "draft", label: "Borrador" },
+                { value: "issued", label: "Emitida" },
+                { value: "sent", label: "Enviada" },
+                { value: "supplier_confirmed", label: "Confirmada proveedor" },
+                { value: "office_received", label: "Recibida oficina" },
+                { value: "received", label: "Recibida" },
+                { value: "cancelled", label: "Cancelada" },
+              ]}
+            />
           </div>
         }
       />
@@ -176,30 +217,6 @@ export default async function Page() {
         </div>
       </section>
     </PageContainer>
-  )
-}
-
-function ExportLinks({
-  tipo,
-  label,
-  tone = "neutral",
-}: {
-  tipo: string
-  label: string
-  tone?: "neutral" | "signal"
-}) {
-  const baseClass = tone === "signal"
-    ? "border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)] hover:opacity-80"
-    : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
-
-  return (
-    <a
-      href={`/api/reportes/export?tipo=${tipo}`}
-      aria-label={`Exportar Excel: ${label}`}
-      className={`inline-flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-full)] border px-3 text-xs font-medium transition-colors ${baseClass}`}
-    >
-      Exportar {label}
-    </a>
   )
 }
 

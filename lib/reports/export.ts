@@ -11,11 +11,19 @@ import { formatDate } from "@/lib/utils"
 
 export type ReportCell = string | number | null | undefined
 
+export interface ExportFilters {
+  fromDate?:  string
+  toDate?:    string
+  worksiteId?: string
+  status?:    string
+}
+
 export interface ReportData {
   filenameBase: string
   worksheetName: string
   headers: string[]
   rows: ReportCell[][]
+  rowLimitApplied?: boolean
 }
 
 
@@ -51,20 +59,23 @@ export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> 
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 }
 
-export async function getReportData(tipo: string, session: Session | null): Promise<ReportData> {
+export async function getReportData(tipo: string, session: Session | null, filters: ExportFilters = {}): Promise<ReportData> {
   switch (tipo) {
     case "items_sin_oc":
-      return itemsSinOc(session)
+      return itemsSinOc(session, filters)
     case "oc_por_estado":
-      return ocPorEstado(session)
+      return ocPorEstado(session, filters)
     case "gasto_faena":
     default:
-      return gastoPorFaena(session)
+      return gastoPorFaena(session, filters)
   }
 }
 
-async function gastoPorFaena(session: Session | null): Promise<ReportData> {
+async function gastoPorFaena(session: Session | null, filters: ExportFilters): Promise<ReportData> {
   const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
+  const dateFilter = buildDateFilter(filters, purchaseOrders.createdAt)
+  const statusFilter = filters.status ? eq(purchaseOrders.status, filters.status) : undefined
+  const wsFilter = filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined
 
   const orders = await db
     .select({
@@ -77,7 +88,7 @@ async function gastoPorFaena(session: Session | null): Promise<ReportData> {
       supplierId:  purchaseOrders.supplierId,
     })
     .from(purchaseOrders)
-    .where(orderFilter)
+    .where(and(orderFilter, dateFilter, statusFilter, wsFilter))
 
   const wsIds  = [...new Set(orders.map((o) => o.worksiteId))]
   const supIds = [...new Set(orders.map((o) => o.supplierId))]
@@ -105,9 +116,11 @@ async function gastoPorFaena(session: Session | null): Promise<ReportData> {
   }
 }
 
-async function itemsSinOc(session: Session | null): Promise<ReportData> {
-  const alertStates = ["approved", "pending_purchase"]
+async function itemsSinOc(session: Session | null, filters: ExportFilters): Promise<ReportData> {
+  const alertStates = filters.status ? [filters.status] : ["approved", "pending_purchase"]
   const requestFilter = buildWorksiteFilter(session, purchaseRequests.worksiteId)
+  const dateFilter = buildDateFilter(filters, purchaseRequests.createdAt)
+  const wsFilter = filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined
 
   const items = await db
     .select({
@@ -122,7 +135,7 @@ async function itemsSinOc(session: Session | null): Promise<ReportData> {
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-    .where(and(inArray(purchaseRequestItems.status, alertStates), requestFilter))
+    .where(and(inArray(purchaseRequestItems.status, alertStates), requestFilter, dateFilter, wsFilter))
 
   const headers = ["Producto", "SKU", "Faena", "Solicitud", "Cantidad", "U/M", "Estado", "Fecha creación"]
   if (items.length === 0) {
@@ -173,8 +186,11 @@ async function itemsSinOc(session: Session | null): Promise<ReportData> {
   }
 }
 
-async function ocPorEstado(session: Session | null): Promise<ReportData> {
+async function ocPorEstado(session: Session | null, filters: ExportFilters): Promise<ReportData> {
   const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
+  const dateFilter = buildDateFilter(filters, purchaseOrders.createdAt)
+  const statusFilter = filters.status ? eq(purchaseOrders.status, filters.status) : undefined
+  const wsFilter = filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined
 
   const orders = await db
     .select({
@@ -187,7 +203,7 @@ async function ocPorEstado(session: Session | null): Promise<ReportData> {
       confirmedAt: purchaseOrders.confirmedAt,
     })
     .from(purchaseOrders)
-    .where(orderFilter)
+    .where(and(orderFilter, dateFilter, statusFilter, wsFilter))
 
   const wsIds = [...new Set(orders.map((o) => o.worksiteId))]
   const wsRows = wsIds.length
@@ -225,4 +241,12 @@ function buildWorksiteFilter(
   const ids = visibleWorksiteIds(session)
   if (ids.length === 0) return sql`1 = 0`
   return inArray(column, ids as never[])
+}
+
+function buildDateFilter(filters: ExportFilters, column: SQLWrapper) {
+  if (!filters.fromDate && !filters.toDate) return undefined
+  const conditions = []
+  if (filters.fromDate) conditions.push(sql`${column} >= ${filters.fromDate}`)
+  if (filters.toDate) conditions.push(sql`${column} <= ${filters.toDate}T23:59:59`)
+  return and(...conditions)
 }

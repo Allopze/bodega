@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import {
-  purchaseRequests, _purchaseRequestItems, _requestItemAttributes,
+  purchaseRequests,
   serviceQuotations, statusHistory, users, worksites, suppliers,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"

@@ -17,14 +17,18 @@ import { requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import { Package, User } from "@phosphor-icons/react/dist/ssr"
-import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, count } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
 
 export const metadata: Metadata = { title: "Entregas" }
+
+const HISTORY_PAGE_SIZE = 25
 
 export default async function Page({
   searchParams,
@@ -38,6 +42,25 @@ export default async function Page({
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
   const requestedItemId = typeof sp.item === "string" ? sp.item : ""
+
+  const historyScope = and(
+    eq(deliveries.destinationType, "worker"),
+    worksiteScopeSql(session, deliveries.worksiteId),
+  )
+
+  // History pagination
+  const [historyTotalRow] = await db
+    .select({ total: count() })
+    .from(deliveries)
+    .where(historyScope)
+
+  const historyPagination = resolvePagination({
+    pageParam: sp.page,
+    totalItems: historyTotalRow?.total ?? 0,
+    pageSize: HISTORY_PAGE_SIZE,
+  })
+
+  const pageHref = (page: number) => buildPaginationHref("/entregas", sp, page)
 
   const [allWorksites, allWorkers, stockRows, receivedItems, historyRows, catalogProducts] = await Promise.all([
     db
@@ -91,11 +114,10 @@ export default async function Page({
         deliveredAt: deliveries.deliveredAt,
       })
       .from(deliveries)
-      .where(and(
-        eq(deliveries.destinationType, "worker"),
-        worksiteScopeSql(session, deliveries.worksiteId),
-      ))
-      .orderBy(desc(deliveries.deliveredAt)),
+      .where(historyScope)
+      .orderBy(desc(deliveries.deliveredAt))
+      .limit(historyPagination.limit)
+      .offset(historyPagination.offset),
     db
       .select({
         id: products.id,
@@ -314,6 +336,7 @@ export default async function Page({
           ) : (
             <DeliveriesTable deliveries={deliveriesForTable} />
           )}
+          <ServerPagination pagination={historyPagination} hrefForPage={pageHref} />
         </section>
       </div>
     </PageContainer>

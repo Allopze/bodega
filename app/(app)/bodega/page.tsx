@@ -3,13 +3,15 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { Suspense } from "react"
 import { db } from "@/db"
-import { worksites } from "@/db/schema"
-import { and, eq, asc, inArray, sql } from "drizzle-orm"
+import { inventoryMovements, worksites } from "@/db/schema"
+import { and, eq, asc, inArray, sql, count } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { resolvePagination } from "@/lib/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SkeletonPage } from "@/components/ui/skeleton"
 import { ArrowRight, Package, Warehouse, WarningCircle } from "@phosphor-icons/react/dist/ssr"
@@ -20,6 +22,8 @@ import type { ReturnPanelStockOption } from "./return-panel"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 
 export const metadata: Metadata = { title: "Bodega" }
+
+const KARDEX_PAGE_SIZE = 25
 
 interface WorksiteOption {
   id: string
@@ -46,6 +50,36 @@ export default async function BodegaPage({
       ? inArray(worksites.id, visibleWsIds)
       : sql`1 = 0`
 
+  const movementScope = isGlobalRole(session)
+    ? undefined
+    : visibleWsIds.length > 0
+      ? inArray(inventoryMovements.worksiteId, visibleWsIds)
+      : sql`1 = 0`
+
+  // Kardex pagination
+  const [movementTotalRow] = await db
+    .select({ total: count() })
+    .from(inventoryMovements)
+    .where(movementScope)
+
+  const kardexPagination = resolvePagination({
+    pageParam: sp.kardex_page,
+    totalItems: movementTotalRow?.total ?? 0,
+    pageSize: KARDEX_PAGE_SIZE,
+  })
+
+  const kardexHref = (page: number) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(sp)) {
+      if (key === "kardex_page" || value === undefined) continue
+      if (Array.isArray(value)) { for (const v of value) params.append(key, v) }
+      else params.set(key, value)
+    }
+    if (page > 1) params.set("kardex_page", String(page))
+    const q = params.toString()
+    return q ? `/bodega?${q}` : "/bodega"
+  }
+
   const [allWorksites, stockRows, recentMovements] = await Promise.all([
     db
       .select({ id: worksites.id, name: worksites.name })
@@ -65,7 +99,8 @@ export default async function BodegaPage({
         ? undefined
         : (m, { inArray }) => visibleWsIds.length > 0 ? inArray(m.worksiteId, visibleWsIds) : sql`1 = 0`,
       orderBy: (m, { desc }) => [desc(m.performedAt)],
-      limit: 50,
+      limit: kardexPagination.limit,
+      offset: kardexPagination.offset,
     }),
   ])
 
@@ -122,7 +157,7 @@ export default async function BodegaPage({
             worksitesWithStock={worksitesWithStock.size}
             productsWithStock={productsWithStock.size}
             lowStockCount={lowStockRows.length}
-            movementCount={visibleMovements.length}
+            movementCount={kardexPagination.totalItems}
           />
         )}
       />
@@ -138,7 +173,11 @@ export default async function BodegaPage({
           </Suspense>
 
           <Suspense fallback={<SkeletonPage rows={6} />}>
-            <KardexSection movements={visibleMovements as InventoryMovementWithRelations[]} />
+            <KardexSection
+              movements={visibleMovements as InventoryMovementWithRelations[]}
+              pagination={kardexPagination}
+              hrefForPage={kardexHref}
+            />
           </Suspense>
         </div>
 
@@ -266,6 +305,19 @@ function StockSection({ worksites, stockByWorksite, initialWorksiteId, receiving
   )
 }
 
-function KardexSection({ movements }: { movements: InventoryMovementWithRelations[] }) {
-  return <KardexTable movements={movements} />
+function KardexSection({
+  movements,
+  pagination,
+  hrefForPage,
+}: {
+  movements: InventoryMovementWithRelations[]
+  pagination: ReturnType<typeof resolvePagination>
+  hrefForPage: (page: number) => string
+}) {
+  return (
+    <>
+      <KardexTable movements={movements} />
+      <ServerPagination pagination={pagination} hrefForPage={hrefForPage} />
+    </>
+  )
 }

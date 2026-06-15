@@ -10,11 +10,17 @@ import {
   purchaseOrderItems, receipts, receiptItems,
   approvalDecisions, products, worksites,
 } from "@/db/schema"
-import { and, asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { canAccessWorksite, isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import { buildTrazabilidadReportData, type TrazabilidadExportRow } from "@/lib/services/trazabilidad-export-format"
+
+interface TrazabilidadFilters {
+  fromDate?:   string
+  toDate?:     string
+  worksiteId?: string
+}
 
 const APPROVED_STATES = new Set([
   "approved", "pending_purchase", "in_purchase_order", "purchased",
@@ -24,7 +30,7 @@ const APPROVED_STATES = new Set([
 /**
  * Builds the full trazabilidad matrix (same logic as the trazabilidad page).
  */
-export async function buildTrazabilidadRows(session: Session): Promise<TrazabilidadExportRow[]> {
+export async function buildTrazabilidadRows(session: Session, filters: TrazabilidadFilters = {}): Promise<TrazabilidadExportRow[]> {
   const userHasGlobalScope = isGlobalRole(session)
   const allowedWorksiteIds = visibleWorksiteIds(session)
 
@@ -32,15 +38,25 @@ export async function buildTrazabilidadRows(session: Session): Promise<Trazabili
     return []
   }
 
+  const dateConditions = []
+  if (filters.fromDate) dateConditions.push(sql`${purchaseRequests.createdAt} >= ${filters.fromDate}`)
+  if (filters.toDate) dateConditions.push(sql`${purchaseRequests.createdAt} <= ${filters.toDate}T23:59:59`)
+  const dateFilter = dateConditions.length > 0 ? and(...dateConditions) : undefined
+
+  const requestFilter = and(
+    userHasGlobalScope ? undefined : inArray(purchaseRequests.worksiteId, allowedWorksiteIds),
+    filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined,
+    dateFilter,
+  )
+
   const requestQuery = db.select({
       id:         purchaseRequests.id,
       code:       purchaseRequests.code,
       worksiteId: purchaseRequests.worksiteId,
     }).from(purchaseRequests)
+    .where(requestFilter)
 
-  const allRequests = userHasGlobalScope
-    ? await requestQuery
-    : await requestQuery.where(inArray(purchaseRequests.worksiteId, allowedWorksiteIds))
+  const allRequests = await requestQuery
 
   if (allRequests.length === 0) {
     return []
@@ -190,14 +206,22 @@ export async function buildTrazabilidadRows(session: Session): Promise<Trazabili
 /**
  * GET handler helper: returns XLSX bytes + filename for the trazabilidad export.
  */
-export async function getTrazabilidadXlsx(session: Session): Promise<{
+export async function getTrazabilidadXlsx(
+  session: Session,
+  filters: TrazabilidadFilters = {},
+  maxRows?: number,
+): Promise<{
   buffer: ArrayBuffer
   filename: string
+  truncated: boolean
 }> {
-  const rows = await buildTrazabilidadRows(session)
+  let rows = await buildTrazabilidadRows(session, filters)
+  const truncated = maxRows !== undefined && rows.length > maxRows
+  if (truncated) rows = rows.slice(0, maxRows)
   const report = buildTrazabilidadReportData(rows)
   return {
     buffer: await buildXlsxBuffer(report),
     filename: `${report.filenameBase}.xlsx`,
+    truncated,
   }
 }
