@@ -59,8 +59,8 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
           Inicio
         </Link>
 
-        <div className="space-y-1">
-          {areas.map((area) => (
+        <div>
+          {areas.map((area, i) => (
             <AreaAccordion
               key={area.id}
               area={area}
@@ -68,6 +68,7 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
               badgeCounts={badgeCounts}
               defaultOpen={routeArea === area.id}
               onNavigate={onNavigate}
+              first={i === 0}
             />
           ))}
         </div>
@@ -82,30 +83,30 @@ function AreaAccordion({
   badgeCounts,
   defaultOpen,
   onNavigate,
+  first,
 }: {
   area:         AreaNode
   pathname:     string
   badgeCounts?: Record<string, number>
   defaultOpen:  boolean
   onNavigate?:  () => void
+  first:        boolean
 }) {
   const [open, setOpen] = React.useState(defaultOpen)
   React.useEffect(() => {
     if (defaultOpen) setOpen(true)
   }, [defaultOpen])
-  const Icon = NAV_ICONS[area.iconName]
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
+    <Collapsible.Root open={open} onOpenChange={setOpen} className={cn(!first && "mt-4")}>
       <Collapsible.Trigger asChild>
         <button
           type="button"
           aria-expanded={open}
-          className="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-[12px] font-semibold uppercase tracking-[0.06em] text-(--color-text-muted) transition-colors duration-(--duration-fast) hover:bg-surface-2"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-eyebrow transition-colors duration-(--duration-fast) hover:text-(--color-text-muted)"
         >
-          {Icon && <Icon size={17} className="shrink-0 text-(--color-text-subtle)" />}
           <span className="flex-1 truncate">{area.label}</span>
-          <CaretDown size={13} className={cn("shrink-0 transition-transform duration-(--duration-fast)", open && "rotate-180")} />
+          <CaretDown size={12} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
         </button>
       </Collapsible.Trigger>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">

@@ -17,14 +17,15 @@ function CountBadge({ count }: { count: number }) {
 }
 
 const rowBase =
-  "group relative flex h-10 items-center gap-3 text-[14px] transition-[color,background-color] duration-(--duration-fast) ease-out"
+  "group relative flex h-9 items-center gap-2.5 text-[13px] font-medium transition-[color,background-color] duration-(--duration-fast) ease-out"
 
 function itemRowClass(active: boolean) {
   return cn(
     rowBase,
+    "rounded-md px-3",
     active
-      ? "border-l-2 border-(--color-text) pl-[10px] pr-3 font-semibold text-(--color-primary-ink)"
-      : "px-3 rounded-r-md text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+      ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
+      : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
   )
 }
 
@@ -52,7 +53,7 @@ function LeafRow({
     >
       {Icon && (
         <Icon
-          size={19}
+          size={18}
           weight={active ? "bold" : "regular"}
           className={cn("shrink-0", active ? "text-(--color-primary)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
         />
@@ -78,26 +79,28 @@ function BranchRow({
   const Icon = NAV_ICONS[item.iconName]
   const selfActive  = isHrefActive(item.href, pathname)
   const childActive = (item.children ?? []).some((c) => isHrefActive(c.href, pathname))
-  const active = selfActive || childActive
-  const [open, setOpen] = React.useState(active)
+  // El padre sólo toma el tint si él mismo es la ruta activa; si solo un hijo
+  // está activo, se mantiene en text para no eclipsar al hijo resaltado.
+  const active = selfActive
+  const [open, setOpen] = React.useState(selfActive || childActive)
   React.useEffect(() => {
-    if (active) setOpen(true)
-  }, [active])
+    if (selfActive || childActive) setOpen(true)
+  }, [selfActive, childActive])
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <Collapsible.Trigger asChild>
-        <button type="button" aria-expanded={open} className={cn(itemRowClass(active), "w-full text-left")}>
+        <button type="button" aria-expanded={open} className={cn(itemRowClass(active), "w-full text-left", !active && childActive && "text-(--color-text)")}>
           {Icon && (
             <Icon
-              size={19}
-              weight={active ? "bold" : "regular"}
-              className={cn("shrink-0", active ? "text-(--color-primary)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
+              size={18}
+              weight={active || childActive ? "bold" : "regular"}
+              className={cn("shrink-0", active ? "text-(--color-primary)" : childActive ? "text-(--color-text-muted)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
             />
           )}
           <span className="flex-1 truncate">{item.label}</span>
           {count > 0 && <CountBadge count={count} />}
-          <CaretDown size={13} className={cn("shrink-0 text-(--color-text-faint) transition-transform duration-(--duration-fast)", open && "rotate-180")} />
+          <CaretDown size={13} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
         </button>
       </Collapsible.Trigger>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">
@@ -112,10 +115,10 @@ function BranchRow({
                   aria-current={ca ? "page" : undefined}
                   data-pressable
                   className={cn(
-                    "flex h-9 items-center rounded-md px-2.5 text-[13.5px] transition-[color,background-color] duration-(--duration-fast) ease-out",
+                    "flex h-8 items-center rounded-md px-2.5 text-[12.5px] transition-[color,background-color] duration-(--duration-fast) ease-out",
                     ca
-                      ? "font-semibold text-(--color-primary-ink)"
-                      : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+                      ? "font-medium text-(--color-primary-ink)"
+                      : "text-text-subtle hover:bg-surface-2 hover:text-(--color-text)",
                   )}
                 >
                   <span className="truncate">{child.label}</span>

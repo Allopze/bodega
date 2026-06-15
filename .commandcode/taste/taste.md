@@ -22,7 +22,7 @@
 - Solicitante (requester) is always scoped per faena (worksite), never global. Confidence: 0.90
 
 # Layout / UI Patterns
-See [layout-/-ui-patterns/taste.md](layout-/-ui-patterns/taste.md)
+See [layout-/taste.md](layout-/taste.md)
 # Design Workflow
 - For UI/design tasks, use the impeccable, emil-design-eng, and design-taste-frontend skills. Confidence: 0.70
 

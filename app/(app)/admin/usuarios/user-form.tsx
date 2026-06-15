@@ -4,7 +4,8 @@ import * as React from "react"
 import { useActionState } from "react"
 import { useEffect } from "react"
 import { toast } from "@/lib/toast"
-import { Check, Copy, Envelope } from "@phosphor-icons/react"
+import { Check, Copy, Envelope, Lock } from "@phosphor-icons/react"
+import { cn } from "@/lib/utils"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
@@ -59,6 +60,7 @@ type UserSelectionAction =
   | { type: "reset"; user?: UserForEdit | null }
   | { type: "toggle-role"; id: string }
   | { type: "toggle-permission"; id: string }
+  | { type: "set-permissions"; ids: string[] }
   | { type: "toggle-worksite"; id: string }
   | { type: "set-primary"; id: string }
 
@@ -89,6 +91,8 @@ function userSelectionReducer(state: UserSelectionState, action: UserSelectionAc
         : [...state.selectedPermissions, action.id]
       return { ...state, selectedPermissions }
     }
+    case "set-permissions":
+      return { ...state, selectedPermissions: action.ids }
     case "toggle-worksite": {
       const selectedWsIds = state.selectedWsIds.includes(action.id)
         ? state.selectedWsIds.filter((worksiteId) => worksiteId !== action.id)
@@ -173,6 +177,17 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
     updateSelection({ type: "toggle-permission", id })
   }
 
+  function toggleAllInModule(group: { module: string; permissions: Permission[] }) {
+    const toggleableIds = group.permissions
+      .filter((p) => !p.roleIds.some((roleId) => selectedRoles.includes(roleId)))
+      .map((p) => p.id)
+    const allSelected = toggleableIds.every((id) => selectedPermissions.includes(id))
+    const next = allSelected
+      ? selectedPermissions.filter((id) => !toggleableIds.includes(id))
+      : [...new Set([...selectedPermissions, ...toggleableIds])]
+    updateSelection({ type: "set-permissions", ids: next })
+  }
+
   function toggleWorksite(id: string) {
     updateSelection({ type: "toggle-worksite", id })
   }
@@ -190,6 +205,18 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
 
   const { selectedRoles, selectedPermissions, selectedWsIds, primaryWorksiteId } = selection
   const groupedPermissions = React.useMemo(() => groupPermissions(allPermissions), [allPermissions])
+  const directPermissionLabel = `${selectedPermissions.length} ${
+    selectedPermissions.length === 1 ? "permiso directo" : "permisos directos"
+  }`
+  const activeModules = React.useMemo(() => {
+    const modules = new Set<string>()
+    for (const p of allPermissions) {
+      const inherited = p.roleIds.some((rid) => selectedRoles.includes(rid))
+      const direct = selectedPermissions.includes(p.id)
+      if (inherited || direct) modules.add(p.module)
+    }
+    return [...modules]
+  }, [allPermissions, selectedRoles, selectedPermissions])
 
   return (
     <Sheet open={open} onOpenChange={(v) => {
@@ -199,7 +226,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
         onClose()
       }
     }}>
-      <SheetContent>
+      <SheetContent className="sm:max-w-2xl">
         {pending ? (
           <>
             <SheetHeader>
@@ -265,7 +292,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
             </SheetFooter>
           </>
         ) : (
-        <form action={formAction}>
+        <form action={formAction} className="flex min-h-0 flex-1 flex-col">
           {isEdit && <input type="hidden" name="id" value={editUser.id} />}
           {/* Hidden inputs for roles and worksite assignments */}
           {selectedRoles.map((rid) => (
@@ -291,7 +318,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
             <SheetCloseButton />
           </SheetHeader>
 
-          <SheetBody>
+          <SheetBody className="min-h-0">
             {/* Top-level error */}
             {state.message && !state.ok && !state.fieldErrors && (
               <p className="mb-4 text-sm text-[var(--color-danger)]">{state.message}</p>
@@ -332,25 +359,33 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
               {state.fieldErrors?.roleIds?.[0] && (
                 <p className="text-xs text-[var(--color-danger)] mb-2">{state.fieldErrors.roleIds[0]}</p>
               )}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {allRoles.map((role) => {
                   const checked = selectedRoles.includes(role.id)
                   return (
                     <button
                       key={role.id}
                       type="button"
+                      aria-pressed={checked}
                       onClick={() => toggleRole(role.id)}
                       className={
                         [
-                          "px-3 py-1 text-xs rounded-[var(--radius)] border",
+                          "inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-[var(--radius)] border",
                           "transition-[background-color,border-color,color] duration-[var(--duration-fast)]",
                           "active:scale-[0.97]",
                           checked
-                            ? "bg-[var(--color-primary-tint)] border-[var(--color-primary-line)] text-[var(--color-primary-ink)] font-medium"
+                            ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] hover:bg-[var(--color-primary-strong)]"
                             : "bg-[var(--color-surface-2)] border-[var(--color-border)] text-[var(--color-text-muted)]",
                         ].join(" ")
                       }
                     >
+                      <span
+                        data-role-selection-slot="true"
+                        className="flex h-3 w-3 shrink-0 items-center justify-center"
+                        aria-hidden="true"
+                      >
+                        {checked && <Check size={11} weight="bold" />}
+                      </span>
                       {role.label}
                     </button>
                   )
@@ -361,65 +396,106 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
             {/* Permissions */}
             <div className="mt-5">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-eyebrow">
-                  Permisos
-                </p>
-                <span className="font-mono text-[10px] font-semibold uppercase text-[var(--color-text-subtle)]">
-                  {selectedPermissions.length} directos
+                <p className="text-eyebrow">Permisos</p>
+                <span className="rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase text-[var(--color-text-muted)]">
+                  {directPermissionLabel}
                 </span>
               </div>
+
+              {activeModules.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {activeModules.map((mod) => (
+                    <span
+                      key={mod}
+                      className="inline-flex items-center rounded-[var(--radius-full)] bg-[var(--color-primary-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-ink)]"
+                    >
+                      {getModuleLabel(mod)}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {state.fieldErrors?.permissionIds?.[0] && (
-                <p className="text-xs text-[var(--color-danger)] mb-2">{state.fieldErrors.permissionIds[0]}</p>
+                <p className="mb-2 text-xs text-[var(--color-danger)]">{state.fieldErrors.permissionIds[0]}</p>
               )}
               {groupedPermissions.length === 0 && (
                 <p className="text-xs text-[var(--color-text-subtle)]">No hay permisos registrados</p>
               )}
-              <div className="space-y-3">
-                {groupedPermissions.map((group) => (
-                  <section key={group.module}>
-                    <div className="mb-1 flex items-center gap-2">
-                      <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                        {getModuleLabel(group.module)}
-                      </p>
-                      <span className="h-px flex-1 bg-[var(--color-border)]" />
-                    </div>
-                    <div className="grid gap-1 sm:grid-cols-2">
-                      {group.permissions.map((permission) => {
-                        const inheritedByRole = permission.roleIds.some((roleId) => selectedRoles.includes(roleId))
-                        const directlyGranted = selectedPermissions.includes(permission.id)
-                        const checked = inheritedByRole || directlyGranted
-                        return (
-                          <label
-                            key={permission.id}
-                            className={[
-                              "flex min-h-12 items-start gap-2 rounded-[var(--radius)] border px-2.5 py-2",
-                              "transition-colors duration-[var(--duration-fast)]",
-                              inheritedByRole
-                                ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)]"
-                                : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
-                            ].join(" ")}
+
+              <div role="region" aria-label="Permisos de usuario" className="space-y-4">
+                {groupedPermissions.map((group) => {
+                  const toggleableIds = group.permissions
+                    .filter((p) => !p.roleIds.some((rid) => selectedRoles.includes(rid)))
+                    .map((p) => p.id)
+                  const allToggled =
+                    toggleableIds.length > 0 && toggleableIds.every((id) => selectedPermissions.includes(id))
+                  return (
+                    <section key={group.module}>
+                      <div className="mb-1 flex items-center justify-between">
+                        <p className="text-eyebrow">{getModuleLabel(group.module)}</p>
+                        {toggleableIds.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => toggleAllInModule(group)}
+                            className="text-[11px] font-medium text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-strong)]"
                           >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={inheritedByRole}
-                              onChange={() => togglePermission(permission.id)}
-                              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-primary)] disabled:opacity-70"
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate font-mono text-[11px] font-medium text-[var(--color-text)]">
+                            {allToggled ? "Quitar todos" : "Seleccionar todos"}
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-0.5">
+                        {group.permissions.map((permission) => {
+                          const inheritedByRole = permission.roleIds.some((rid) => selectedRoles.includes(rid))
+                          const directlyGranted = selectedPermissions.includes(permission.id)
+                          const active = inheritedByRole || directlyGranted
+                          if (inheritedByRole) {
+                            return (
+                              <div
+                                key={permission.id}
+                                className="flex h-9 items-center gap-3 rounded-md px-2 opacity-50"
+                              >
+                                <Lock size={14} weight="bold" className="shrink-0 text-[var(--color-text-faint)]" aria-hidden />
+                                <span className="flex-1 truncate text-sm text-[var(--color-text-muted)]">
+                                  {permission.description ?? permission.name}
+                                </span>
+                                <span className="shrink-0 text-[10px] text-[var(--color-text-subtle)]">vía rol</span>
+                              </div>
+                            )
+                          }
+                          return (
+                            <label
+                              key={permission.id}
+                              className={cn(
+                                "flex h-9 cursor-pointer items-center gap-3 rounded-md px-2",
+                                "transition-colors duration-[var(--duration-fast)] ease-out",
+                                "hover:bg-[var(--color-surface-2)]",
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={directlyGranted}
+                                onChange={() => togglePermission(permission.id)}
+                                aria-label={permission.description ?? permission.name}
+                                className="h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+                              />
+                              <span
+                                className={cn(
+                                  "flex-1 truncate text-sm transition-colors duration-[var(--duration-fast)]",
+                                  active ? "font-medium text-[var(--color-text)]" : "text-[var(--color-text-muted)]",
+                                )}
+                              >
+                                {permission.description ?? permission.name}
+                              </span>
+                              <span className="shrink-0 font-mono text-[11px] text-[var(--color-text-faint)]">
                                 {permission.name}
                               </span>
-                              <span className="mt-0.5 block line-clamp-2 text-[11px] leading-snug text-[var(--color-text-subtle)]">
-                                {inheritedByRole ? "Incluido por rol" : permission.description ?? "Permiso directo"}
-                              </span>
-                            </span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </section>
-                ))}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  )
+                })}
               </div>
             </div>
 
