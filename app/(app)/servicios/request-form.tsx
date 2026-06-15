@@ -69,7 +69,7 @@ export function ServiceForm({ worksites, editRequest }: ServiceFormProps) {
     editRequest?.items?.length ? editRequest.items : [EMPTY_ITEM()]
   )
 
-  const [draftState, draftAction, draftPending] = useActionState(
+  const [_draftState, draftAction, draftPending] = useActionState(
     async (prev: ActionState, formData: FormData): Promise<ActionState & { requestId?: string }> => {
       const res = await saveDraftAction(prev, formData)
       if (res.ok) {

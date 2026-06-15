@@ -76,7 +76,7 @@ export function QuotationPanel({
 
   // Delete quotation
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
-  const [deleteState, deleteAction, deletePending] = useActionState(
+  const [_deleteState, deleteAction, deletePending] = useActionState(
     async (prev: ActionState, formData: FormData): Promise<ActionState> => {
       const res = await deleteQuotationAction(prev, formData)
       if (res.ok) {
@@ -92,7 +92,7 @@ export function QuotationPanel({
 
   // Select (approve) quotation
   const [selectId, setSelectId] = React.useState<string | null>(null)
-  const [selectState, selectAction, selectPending] = useActionState(
+  const [_selectState, selectAction, selectPending] = useActionState(
     async (prev: ActionState, formData: FormData): Promise<ActionState> => {
       const res = await selectQuotationAction(prev, formData)
       if (res.ok) {

@@ -8,7 +8,7 @@
  * Callers wrap in try/catch or use the safe `notifySafe()` helper.
  */
 
-import { eq, and, desc, inArray, lt, sql } from "drizzle-orm"
+import { eq, and, desc, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { notifications, rolePermissions, permissions, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"

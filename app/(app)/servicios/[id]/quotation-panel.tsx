@@ -92,7 +92,7 @@ export function ServiceQuotationPanel({
 
   // Select (approve) quotation
   const [selectId, setSelectId] = React.useState<string | null>(null)
-  const [selectState, selectAction, selectPending] = useActionState(
+  const [_selectState, selectAction, selectPending] = useActionState(
     async (prev: ActionState, formData: FormData): Promise<ActionState> => {
       const res = await selectQuotationAction(prev, formData)
       if (res.ok) {

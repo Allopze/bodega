@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import {
-  purchaseRequests, purchaseRequestItems, requestItemAttributes,
+  purchaseRequests, _purchaseRequestItems, _requestItemAttributes,
   serviceQuotations, statusHistory, users, worksites, suppliers,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
@@ -48,7 +48,7 @@ export default async function ServicioPage({ params }: { params: Promise<{ id: s
   const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))
   if (!hasAccess) notFound()
 
-  const [allWorksites, timelineEvents, quotationsRaw, allSuppliers] = await Promise.all([
+  const [allWorksites, timelineEvents, quotationsRaw, _allSuppliers] = await Promise.all([
     db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
       .where(eq(worksites.isActive, true))

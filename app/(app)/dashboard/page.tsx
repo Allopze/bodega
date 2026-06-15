@@ -19,7 +19,7 @@ import {
   worksiteStock,
   worksites,
 } from "@/db/schema"
-import { and, count, eq, inArray, sql } from "drizzle-orm"
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm"
 import { can, isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { cn, formatCLP } from "@/lib/utils"
 import {
@@ -326,6 +326,20 @@ function buildActor(session: Session): WorkActor {
   }
 }
 
+const ACTIVE_REQUEST_STATUSES_SNAPSHOT = [
+  "draft", "submitted", "in_review", "partially_approved",
+  "approved", "returned", "in_purchasing",
+]
+const ACTIVE_ITEM_STATUSES_SNAPSHOT = [
+  "requested", "approved", "pending_purchase",
+  "received", "partially_delivered",
+]
+const ACTIVE_ORDER_STATUSES_SNAPSHOT = [
+  "draft", "issued", "sent", "supplier_confirmed",
+  "partially_office_received", "office_received", "partially_received",
+]
+const SNAPSHOT_LIMIT = 200
+
 async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot> {
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
@@ -337,7 +351,6 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
     requestRows,
     itemRows,
     orderRows,
-    orderItemCounts,
     stockRows,
   ] = await Promise.all([
     db
@@ -354,7 +367,12 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
       })
       .from(purchaseRequests)
       .innerJoin(worksites, eq(purchaseRequests.worksiteId, worksites.id))
-      .where(requestWorksiteFilter),
+      .where(and(
+        requestWorksiteFilter,
+        inArray(purchaseRequests.status, ACTIVE_REQUEST_STATUSES_SNAPSHOT),
+      ))
+      .orderBy(desc(purchaseRequests.createdAt))
+      .limit(SNAPSHOT_LIMIT),
 
     db
       .select({
@@ -377,7 +395,11 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
       .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
       .innerJoin(worksites, eq(purchaseRequests.worksiteId, worksites.id))
       .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
-      .where(itemWorksiteFilter),
+      .where(and(
+        itemWorksiteFilter,
+        inArray(purchaseRequestItems.status, ACTIVE_ITEM_STATUSES_SNAPSHOT),
+      ))
+      .limit(SNAPSHOT_LIMIT),
 
     db
       .select({
@@ -395,15 +417,12 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
       .from(purchaseOrders)
       .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
       .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
-      .where(orderWorksiteFilter),
-
-    db
-      .select({
-        purchaseOrderId: purchaseOrderItems.purchaseOrderId,
-        total:           count(),
-      })
-      .from(purchaseOrderItems)
-      .groupBy(purchaseOrderItems.purchaseOrderId),
+      .where(and(
+        orderWorksiteFilter,
+        inArray(purchaseOrders.status, ACTIVE_ORDER_STATUSES_SNAPSHOT),
+      ))
+      .orderBy(desc(purchaseOrders.createdAt))
+      .limit(SNAPSHOT_LIMIT),
 
     db
       .select({
@@ -427,7 +446,20 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
 
   const stockProductIds = new Set(stockRows.map((row) => row.productId))
 
-  const itemCountByOrder = new Map(orderItemCounts.map((row) => [row.purchaseOrderId, row.total]))
+  // Load order item counts only for visible orders
+  const orderIds = orderRows.map((o) => o.id)
+  const orderItemCounts = orderIds.length > 0
+    ? await db
+        .select({
+          purchaseOrderId: purchaseOrderItems.purchaseOrderId,
+          total:           count(),
+        })
+        .from(purchaseOrderItems)
+        .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
+        .groupBy(purchaseOrderItems.purchaseOrderId)
+    : []
+
+  const orderItemCountMap = new Map(orderItemCounts.map((row) => [row.purchaseOrderId, row.total]))
 
   const requests: WorkRequestRow[] = requestRows.map((request) => ({
     ...request,
@@ -453,7 +485,7 @@ async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot
 
   const orders: WorkOrderRow[] = orderRows.map((order) => ({
     ...order,
-    itemCount:       itemCountByOrder.get(order.id) ?? 0,
+    itemCount:       orderItemCountMap.get(order.id) ?? 0,
   }))
 
   return { requests, items, orders }
@@ -467,84 +499,171 @@ async function getDashboardData(session: Session) {
   const orderWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`)
   const worksiteRowsFilter = isGlobal ? eq(worksites.isActive, true) : (wsIds.length > 0 ? and(eq(worksites.isActive, true), inArray(worksites.id, wsIds)) : sql`1 = 0`)
 
-  const [requestRows, pendingItemRows, orderRows, worksiteRows] = await Promise.all([
+  // SQL-level aggregations for metrics
+  const [
+    [myRequestsRow],
+    [pendingApprovalsRow],
+    [approvedWithoutOcRow],
+    [ordersInProgressRow],
+    [ordersPendingReceiptRow],
+    [totalCostsRow],
+    [totalRequestsRow],
+    [approvedRequestsRow],
+    worksiteBreakdownRows,
+  ] = await Promise.all([
     db
-      .select({
-        id: purchaseRequests.id,
-        requesterId: purchaseRequests.requesterId,
-        worksiteId: purchaseRequests.worksiteId,
-        status: purchaseRequests.status,
-      })
+      .select({ n: count() })
+      .from(purchaseRequests)
+      .where(and(
+        requestWorksiteFilter,
+        eq(purchaseRequests.requesterId, session.user.id),
+        sql`${purchaseRequests.status} != 'cancelled'`,
+      )),
+
+    db
+      .select({ n: count() })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .where(and(
+        itemWorksiteFilter,
+        eq(purchaseRequestItems.status, "requested"),
+      )),
+
+    db
+      .select({ n: count() })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .where(and(
+        itemWorksiteFilter,
+        sql`${purchaseRequestItems.status} IN ('approved', 'pending_purchase')`,
+      )),
+
+    db
+      .select({ n: count() })
+      .from(purchaseOrders)
+      .where(and(
+        orderWorksiteFilter,
+        sql`${purchaseOrders.status} IN ('issued', 'sent', 'supplier_confirmed', 'partially_office_received', 'office_received', 'partially_received')`,
+      )),
+
+    db
+      .select({ n: count() })
+      .from(purchaseOrders)
+      .where(and(
+        orderWorksiteFilter,
+        sql`${purchaseOrders.status} IN ('sent', 'partially_office_received', 'office_received', 'partially_received')`,
+      )),
+
+    db
+      .select({ n: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` })
+      .from(purchaseOrders)
+      .where(and(
+        orderWorksiteFilter,
+        sql`${purchaseOrders.status} NOT IN ('cancelled', 'draft')`,
+      )),
+
+    db
+      .select({ n: count() })
       .from(purchaseRequests)
       .where(requestWorksiteFilter),
 
     db
-      .select({
-        id: purchaseRequestItems.id,
-        status: purchaseRequestItems.status,
-        worksiteId: purchaseRequests.worksiteId,
-      })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-      .where(and(inArray(purchaseRequestItems.status, ["requested", "approved", "pending_purchase"]), itemWorksiteFilter)),
+      .select({ n: count() })
+      .from(purchaseRequests)
+      .where(and(
+        requestWorksiteFilter,
+        sql`${purchaseRequests.status} IN ('approved', 'closed', 'in_purchasing')`,
+      )),
 
+    // Worksites breakdown — aggregated in SQL
     db
       .select({
-        id: purchaseOrders.id,
-        worksiteId: purchaseOrders.worksiteId,
-        status: purchaseOrders.status,
-        totalAmount: purchaseOrders.totalAmount,
-      })
-      .from(purchaseOrders)
-      .where(orderWorksiteFilter),
-
-    db
-      .select({
-        id: worksites.id,
-        name: worksites.name,
-        isActive: worksites.isActive,
+        id:             worksites.id,
+        name:           worksites.name,
+        requestsCount:  count(purchaseRequests.id),
       })
       .from(worksites)
-      .where(worksiteRowsFilter),
+      .leftJoin(purchaseRequests, eq(purchaseRequests.worksiteId, worksites.id))
+      .where(and(
+        worksiteRowsFilter,
+        requestWorksiteFilter,
+      ))
+      .groupBy(worksites.id, worksites.name)
+      .orderBy(desc(count(purchaseRequests.id))),
   ])
 
   const metrics: Record<MetricKey, number> = {
-    my_requests: requestRows.filter((r) => r.requesterId === session.user.id && r.status !== "cancelled").length,
-    pending_approvals: pendingItemRows.filter((i) => i.status === "requested").length,
-    approved_without_oc: pendingItemRows.filter((i) => i.status === "approved" || i.status === "pending_purchase").length,
-    orders_in_progress: orderRows.filter((o) => ["issued", "sent", "supplier_confirmed", "partially_office_received", "office_received", "partially_received"].includes(o.status)).length,
-    orders_pending_receipt: orderRows.filter((o) => ["sent", "partially_office_received", "office_received", "partially_received"].includes(o.status)).length,
+    my_requests:            myRequestsRow?.n ?? 0,
+    pending_approvals:      pendingApprovalsRow?.n ?? 0,
+    approved_without_oc:    approvedWithoutOcRow?.n ?? 0,
+    orders_in_progress:     ordersInProgressRow?.n ?? 0,
+    orders_pending_receipt: ordersPendingReceiptRow?.n ?? 0,
   }
 
-  const totalCosts = orderRows
-    .filter((o) => o.status !== "cancelled" && o.status !== "draft")
-    .reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+  const totalCosts = totalCostsRow?.n ?? 0
+  const totalRequests = totalRequestsRow?.n ?? 0
+  const approvedRequests = approvedRequestsRow?.n ?? 0
 
-  const totalRequests = requestRows.length
-  const approvedRequests = requestRows.filter((r) =>
-    ["approved", "closed", "in_purchasing"].includes(r.status)
-  ).length
+  // Enrich worksites breakdown with cost and status counts
+  const worksiteIds = worksiteBreakdownRows.map((w) => w.id)
+  const [orderCostRows, pendingItemRows, approvedRequestRows] = await Promise.all([
+    worksiteIds.length > 0
+      ? db
+          .select({
+            worksiteId: purchaseOrders.worksiteId,
+            totalCost:  sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)`,
+          })
+          .from(purchaseOrders)
+          .where(and(
+            inArray(purchaseOrders.worksiteId, worksiteIds),
+            sql`${purchaseOrders.status} NOT IN ('cancelled', 'draft')`,
+          ))
+          .groupBy(purchaseOrders.worksiteId)
+      : Promise.resolve([]),
 
-  const worksitesBreakdown = worksiteRows
-    .map((w) => {
-      const requests = requestRows.filter((r) => r.worksiteId === w.id)
-      const orders = orderRows.filter((o) => o.worksiteId === w.id && o.status !== "cancelled" && o.status !== "draft")
-      const items = pendingItemRows.filter((i) => i.worksiteId === w.id)
+    worksiteIds.length > 0
+      ? db
+          .select({
+            worksiteId: purchaseRequests.worksiteId,
+            n:          count(),
+          })
+          .from(purchaseRequestItems)
+          .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+          .where(and(
+            inArray(purchaseRequests.worksiteId, worksiteIds),
+            eq(purchaseRequestItems.status, "requested"),
+          ))
+          .groupBy(purchaseRequests.worksiteId)
+      : Promise.resolve([]),
 
-      const requestsCount = requests.length
-      const pendingCount = items.filter((i) => i.status === "requested").length
-      const approvedCount = requests.filter((r) => ["approved", "closed", "in_purchasing"].includes(r.status)).length
-      const totalCost = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+    worksiteIds.length > 0
+      ? db
+          .select({
+            worksiteId: purchaseRequests.worksiteId,
+            n:          count(),
+          })
+          .from(purchaseRequests)
+          .where(and(
+            inArray(purchaseRequests.worksiteId, worksiteIds),
+            sql`${purchaseRequests.status} IN ('approved', 'closed', 'in_purchasing')`,
+          ))
+          .groupBy(purchaseRequests.worksiteId)
+      : Promise.resolve([]),
+  ])
 
-      return {
-        id: w.id,
-        name: w.name,
-        requestsCount,
-        pendingCount,
-        approvedCount,
-        totalCost,
-      }
-    })
+  const costMap = new Map(orderCostRows.map((r) => [r.worksiteId, r.totalCost]))
+  const pendingMap = new Map(pendingItemRows.map((r) => [r.worksiteId, r.n]))
+  const approvedMap = new Map(approvedRequestRows.map((r) => [r.worksiteId, r.n]))
+
+  const worksitesBreakdown = worksiteBreakdownRows
+    .map((w) => ({
+      id:            w.id,
+      name:          w.name,
+      requestsCount: w.requestsCount,
+      pendingCount:  pendingMap.get(w.id) ?? 0,
+      approvedCount: approvedMap.get(w.id) ?? 0,
+      totalCost:     costMap.get(w.id) ?? 0,
+    }))
     .filter((w) => w.requestsCount > 0 || w.totalCost > 0)
     .sort((a, b) => b.totalCost - a.totalCost)
 

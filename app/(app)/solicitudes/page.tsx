@@ -6,15 +6,24 @@ import { desc, count, inArray, eq, and, sql } from "drizzle-orm"
 import { requirePermission, can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { RequestList } from "./request-list"
 
 export const metadata: Metadata = { title: "Solicitudes de compra" }
 
-export default async function SolicitudesPage() {
+const SOLICITUDES_PAGE_SIZE = 25
+
+export default async function SolicitudesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("requests:view_own") }
   catch { redirect("/dashboard") }
 
+  const sp = await searchParams
   const viewAll = can(session, "requests:view_all")
 
   // Build worksite filter — solicitantes see only their worksites
@@ -29,8 +38,20 @@ export default async function SolicitudesPage() {
           : sql`1 = 0`
       )
 
-  // Load requests and active worksites in parallel
-  const [allRequests, activeWorksites] = await Promise.all([
+  // Count total matching requests for pagination
+  const [totalRow] = await db
+    .select({ total: count() })
+    .from(purchaseRequests)
+    .where(filterConditions)
+
+  const pagination = resolvePagination({
+    pageParam: sp.page,
+    totalItems: totalRow?.total ?? 0,
+    pageSize: SOLICITUDES_PAGE_SIZE,
+  })
+
+  // Load paginated requests and active worksites in parallel
+  const [pageRequests, activeWorksites] = await Promise.all([
     db
       .select({
         id:           purchaseRequests.id,
@@ -45,7 +66,9 @@ export default async function SolicitudesPage() {
       })
       .from(purchaseRequests)
       .where(filterConditions)
-      .orderBy(desc(purchaseRequests.createdAt)),
+      .orderBy(desc(purchaseRequests.createdAt))
+      .limit(pagination.limit)
+      .offset(pagination.offset),
 
     db.select({ id: worksites.id })
       .from(worksites)
@@ -58,10 +81,9 @@ export default async function SolicitudesPage() {
   )
   const hasWorksites = scopedWorksites.length > 0
 
-  // Already filtered in database
-  const visible = allRequests
+  const pageHref = (page: number) => buildPaginationHref("/solicitudes", sp, page)
 
-  if (visible.length === 0) {
+  if (pageRequests.length === 0) {
     return (
       <PageContainer>
         <PageHeader
@@ -75,15 +97,15 @@ export default async function SolicitudesPage() {
           }
         />
         <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />
-
+        <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
   }
 
-  const requestIds = visible.map((r) => r.id)
-  const wsIds      = [...new Set(visible.map((r) => r.worksiteId))]
+  const requestIds = pageRequests.map((r) => r.id)
+  const wsIds      = [...new Set(pageRequests.map((r) => r.worksiteId))]
 
-  // Batch load related data
+  // Batch load related data — only for the current page
   const [wsRows, itemCounts] = await Promise.all([
     db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
@@ -98,7 +120,7 @@ export default async function SolicitudesPage() {
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
   const cntMap = Object.fromEntries(itemCounts.map((c) => [c.requestId, c.total]))
 
-  const rows = visible.map((r) => ({
+  const rows = pageRequests.map((r) => ({
     id:             r.id,
     code:           r.code,
     requestType:    r.requestType,
@@ -123,6 +145,7 @@ export default async function SolicitudesPage() {
         }
       />
       <RequestList requests={rows} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />
+      <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )
 }

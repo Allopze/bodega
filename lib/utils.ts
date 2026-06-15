@@ -87,11 +87,6 @@ export function stringToHue(str: string): number {
   return Math.abs(hash) % 360
 }
 
-/** Generate a CUID-like short ID (for client-side use; DB uses DB-generated IDs) */
-export function shortId(): string {
-  return Math.random().toString(36).slice(2, 10)
-}
-
 /** Escape special HTML characters to prevent XSS in email templates and notifications. */
 export function escapeHtml(value: string): string {
   return value

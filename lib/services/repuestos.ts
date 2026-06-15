@@ -9,10 +9,10 @@
  *   [shared] compras → OC → recepción (via existing purchasing/item-state services)
  */
 
-import { eq, and, inArray } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { db, type Tx } from "@/db"
+import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
   repuestoQuotations, approvalDecisions,
@@ -97,7 +97,7 @@ export async function persistRepuestoDraft(
   data: RepuestoRequestInput,
 ): Promise<string> {
   const isEdit = !!data.id
-  let requestId = data.id ?? nanoid()
+  const requestId = data.id ?? nanoid()
   const now = new Date().toISOString()
   const year = new Date().getFullYear()
 

@@ -64,6 +64,13 @@
       "when": 1781535191125,
       "tag": "0008_heavy_pyro",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781600000000,
+      "tag": "0009_add_performance_indices",
+      "breakpoints": true
     }
   ]
 }

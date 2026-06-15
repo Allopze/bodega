@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, integer, real, numeric, timestamp, check } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, real, numeric, timestamp, check, index } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, suppliers } from "./worksites"
 import { products } from "./products"
@@ -45,6 +45,8 @@ export const purchaseOrders = pgTable("purchase_orders", {
     AND ${table.taxAmount} >= 0
     AND ${table.totalAmount} >= 0
   `),
+  index("purchase_orders_worksite_status_idx").on(table.worksiteId, table.status, table.createdAt),
+  index("purchase_orders_status_sent_idx").on(table.status, table.sentAt),
 ])
 
 /* ── Purchase Order Items ─────────────────────────────────────────────────── */

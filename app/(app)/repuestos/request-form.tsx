@@ -71,7 +71,7 @@ export function RepuestoForm({ worksites, editRequest }: RepuestoFormProps) {
     editRequest?.items?.length ? editRequest.items : [EMPTY_ITEM()]
   )
 
-  const [draftState, draftAction, draftPending] = useActionState(
+  const [_draftState, draftAction, draftPending] = useActionState(
     async (prev: ActionState, formData: FormData): Promise<ActionState & { requestId?: string }> => {
       const res = await saveDraftAction(prev, formData)
       if (res.ok) {
@@ -116,7 +116,7 @@ export function RepuestoForm({ worksites, editRequest }: RepuestoFormProps) {
     }))
   )
 
-  const isEditable = !editRequest || ["draft", "returned"].includes(editRequest?.id ? "draft" : "draft")
+  const _isEditable = !editRequest || ["draft", "returned"].includes(editRequest?.id ? "draft" : "draft")
 
   return (
     <div className="space-y-8">

@@ -12,11 +12,6 @@ import { flattenNavTargets, type NavTarget } from "./nav-items"
 
 const OPEN_EVENT = "open-command-palette"
 
-/** Abre la paleta desde cualquier parte (ej: botón de búsqueda en móvil). */
-export function openCommandPalette() {
-  window.dispatchEvent(new Event(OPEN_EVENT))
-}
-
 function normalize(s: string) {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 }

@@ -75,20 +75,3 @@ async function pruneExpiredLocks(): Promise<void> {
   await db.delete(rateLimits)
     .where(and(gt(rateLimits.lockUntil, 0), lt(rateLimits.lockUntil, now)))
 }
-
-/**
- * Clean up expired locks AND stale unlocked counters (older than the window).
- * Safe to call from a cron/admin action to keep the table small.
- */
-export async function cleanupRateLimits(): Promise<void> {
-  const now = Date.now()
-  // Expired locks.
-  await db.delete(rateLimits)
-    .where(and(gt(rateLimits.lockUntil, 0), lt(rateLimits.lockUntil, now)))
-  // Abandoned counters that never reached the lock and are older than the window.
-  await db.delete(rateLimits)
-    .where(and(
-      eq(rateLimits.lockUntil, 0),
-      lt(rateLimits.updatedAt, new Date(now - LOCK_TIME).toISOString()),
-    ))
-}

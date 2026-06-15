@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, boolean, timestamp, index } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
 import { users } from "./users"
 
@@ -16,7 +16,10 @@ export const auditLog = pgTable("audit_log", {
   reason:       text("reason"),           // mandatory for rejections/postponements/cancellations
   ipAddress:    text("ip_address"),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  index("audit_log_created_at_idx").on(table.createdAt),
+  index("audit_log_entity_idx").on(table.entityType, table.entityId),
+])
 
 /* ── Status History ───────────────────────────────────────────────────────── */
 export const statusHistory = pgTable("status_history", {
@@ -28,7 +31,9 @@ export const statusHistory = pgTable("status_history", {
   changedBy:    text("changed_by").references(() => users.id),
   reason:       text("reason"),
   changedAt:    timestamp("changed_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  index("status_history_entity_idx").on(table.entityType, table.entityId, table.changedAt),
+])
 
 /* ── Attachments ─────────────────────────────────────────────────────────── */
 export const attachments = pgTable("attachments", {
@@ -64,7 +69,9 @@ export const notifications = pgTable("notifications", {
   entityHref:   text("entity_href"),     // direct navigation link (e.g. /solicitudes/{id})
   isRead:       boolean("is_read").notNull().default(false),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  index("notifications_user_read_idx").on(table.userId, table.isRead, table.createdAt),
+])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const auditLogRelations = relations(auditLog, ({ one }) => ({
