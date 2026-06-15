@@ -27,7 +27,6 @@ export default async function NuevaOcPage({
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
 
-  // Load approved/pending_purchase items, scoped by faena access
   const scopeFilter = worksiteScopeSql(session, purchaseRequests.worksiteId)
   const statusFilter = inArray(purchaseRequestItems.status, ["approved", "pending_purchase"])
 

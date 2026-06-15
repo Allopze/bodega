@@ -224,6 +224,13 @@ El script levanta la app en `http://127.0.0.1:3127`, crea datos de auditoría,
 inicia sesión con el usuario interno de capturas y recorre las rutas definidas
 en el inventario del propio script.
 
+La base `bodega_capture` se resetea y queda sembrada con datos mock
+representativos para todos los apartados navegables: dashboard, solicitudes,
+aprobaciones, compras, recepción, bodega, entregas, trazabilidad, reportes,
+repuestos, servicios, administración, auditoría, configuración y
+notificaciones. El `manifest.json` incluye `seedCoverage`, que declara qué
+fixtures alimentan cada sección.
+
 ### 4.4. Validación rápida
 
 ```bash
@@ -234,11 +241,60 @@ const manifest = JSON.parse(fs.readFileSync("audit/screenshots/2026-06-09-playwr
 const failures = manifest.results.filter((result) => !result.ok)
 const missing = manifest.results.filter((result) => !fs.existsSync(path.join(process.cwd(), result.screenshot)))
 const zero = manifest.results.filter((result) => fs.existsSync(path.join(process.cwd(), result.screenshot)) && fs.statSync(path.join(process.cwd(), result.screenshot)).size === 0)
-console.log({ routes: manifest.routes.length, results: manifest.results.length, failures: failures.length, missing: missing.length, zero: zero.length })
+console.log({
+  routes: manifest.routes.length,
+  results: manifest.results.length,
+  failures: failures.length,
+  missing: missing.length,
+  zero: zero.length,
+  seedSections: manifest.seedCoverage?.length ?? 0,
+})
 NODE
 ```
 
-Una ejecución sana debe dejar `failures: 0`, `missing: 0` y `zero: 0`.
+Una ejecución sana debe dejar `failures: 0`, `missing: 0`, `zero: 0` y
+`seedSections` mayor que cero.
+
+Para revisar conteos directos en la DB sembrada:
+
+```bash
+CAPTURE_DATABASE_URL=postgres:///bodega_capture PGHOST=/var/run/postgresql npx tsx - <<'TS'
+import postgres from "postgres"
+
+const databaseUrl = process.env.CAPTURE_DATABASE_URL
+if (!databaseUrl) throw new Error("CAPTURE_DATABASE_URL is required")
+
+const sql = postgres(databaseUrl, { max: 1 })
+const tables = [
+  "users",
+  "roles",
+  "worksites",
+  "suppliers",
+  "workers",
+  "products",
+  "purchase_requests",
+  "purchase_request_items",
+  "purchase_orders",
+  "purchase_order_invoices",
+  "receipts",
+  "worksite_stock",
+  "inventory_movements",
+  "deliveries",
+  "audit_log",
+  "notifications",
+  "system_settings",
+  "repuesto_quotations",
+  "service_quotations",
+]
+
+for (const table of tables) {
+  const rows = await sql.unsafe(`select count(*)::int as n from ${table}`)
+  console.log(`${table}: ${rows[0].n}`)
+}
+
+await sql.end()
+TS
+```
 
 ### 4.5. Cobertura del inventario de rutas
 
@@ -251,6 +307,8 @@ npx vitest run scripts/capture-all-routes.test.ts
 Esta prueba compara las rutas capturadas contra los `app/**/page.tsx` concretos.
 Si se agrega una pantalla nueva, el test falla hasta que se incorpore al script
 con un fixture navegable.
+También valida que el script declare fixtures mock para los apartados operativos
+y administrativos esperados.
 
 ### 4.6. Resolución de problemas de capturas
 

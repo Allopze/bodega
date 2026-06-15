@@ -10,8 +10,6 @@
  */
 
 import { eq, and } from "drizzle-orm"
-import { promises as fs } from "node:fs"
-import path from "node:path"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
@@ -26,6 +24,7 @@ import {
   resolveQuotationAttachmentFile,
   resolveRepuestosDir,
 } from "@/lib/storage/config"
+import { mkdirp, writeBuffer, removeFile, storagePath } from "@/lib/storage/helpers"
 import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
 import type { Session } from "next-auth"
 
@@ -220,12 +219,12 @@ export async function addQuotation(input: AddQuotationInput): Promise<string> {
 
   // Save file to disk
   const dir = resolveRepuestosDir()
-  await fs.mkdir(dir, { recursive: true })
+  await mkdirp(dir)
 
-  const ext = path.extname(input.fileName) || ".pdf"
+  const ext = storagePath.extname(input.fileName) || ".pdf"
   const storageName = `${nanoid()}${ext}`
-  const absolutePath = path.join(dir, storageName)
-  await fs.writeFile(absolutePath, input.fileBuffer)
+  const absolutePath = storagePath.join(dir, storageName)
+  await writeBuffer(absolutePath, input.fileBuffer)
 
   const filePath = createQuotationAttachmentPath(storageName)
   const quotationId = nanoid()
@@ -262,7 +261,7 @@ export async function addQuotation(input: AddQuotationInput): Promise<string> {
     })
   } catch (err) {
     // Clean up file if DB insert fails
-    await fs.unlink(absolutePath).catch(() => { /* ignore */ })
+    await removeFile(absolutePath).catch(() => { /* ignore */ })
     throw err
   }
 
@@ -294,7 +293,7 @@ export async function deleteQuotation(input: DeleteQuotationInput): Promise<void
   // Remove file from disk
   const absolutePath = resolveQuotationAttachmentFile(quotation.filePath)
   if (absolutePath) {
-    await fs.unlink(absolutePath).catch(() => { /* ignore — file may already be gone */ })
+    await removeFile(absolutePath).catch(() => { /* ignore — file may already be gone */ })
   }
 
   await recordAudit({

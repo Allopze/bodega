@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Warning, Package } from "@phosphor-icons/react"
+import { Warning, Package, MagnifyingGlass } from "@phosphor-icons/react"
 import Link from "next/link"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
@@ -82,6 +82,7 @@ export function OcForm({
   const [selectedItems, setSelectedItems] = React.useState<Set<string>>(new Set())
   const [unitPrices,   setUnitPrices]   = React.useState<Record<string, number>>({})
   const [discounts,    setDiscounts]    = React.useState<Record<string, number>>({})
+  const [search,       setSearch]       = React.useState("")
 
   const [state, action] = useActionState<ActionState, FormData>(createOrderAction, INITIAL_STATE)
 
@@ -154,9 +155,19 @@ export function OcForm({
   }
 
   // Filter items by selected worksite
-  const filteredItems = worksiteId
+  const filteredByWorksite = worksiteId
     ? pendingItems.filter((i) => i.worksiteId === worksiteId)
     : pendingItems
+
+  // Client-side text search across product name, SKU, and request code
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredItems = normalizedSearch
+    ? filteredByWorksite.filter((i) =>
+        i.productName.toLowerCase().includes(normalizedSearch) ||
+        (i.productSku ?? "").toLowerCase().includes(normalizedSearch) ||
+        i.requestCode.toLowerCase().includes(normalizedSearch)
+      )
+    : filteredByWorksite
 
   // Auto-select suggested supplier if all filtered items share the same suggestedSupplierId
   React.useEffect(() => {
@@ -316,6 +327,20 @@ export function OcForm({
             </Button>
           )}
         </div>
+
+        {filteredByWorksite.length > 10 && (
+          <div className="relative">
+            <MagnifyingGlass size={16} weight="bold" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por producto, SKU o código de solicitud..."
+              className="w-full h-9 pl-10 pr-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+              aria-label="Buscar ítems para incluir en la OC"
+            />
+          </div>
+        )}
 
         {filteredItems.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-10 text-center border border-dashed border-[var(--color-border)] rounded-[var(--radius)]">

@@ -10,8 +10,6 @@
  */
 
 import { eq, and } from "drizzle-orm"
-import { promises as fs } from "node:fs"
-import path from "node:path"
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
@@ -26,6 +24,7 @@ import {
   resolveServiceQuotationFile,
   resolveServiciosDir,
 } from "@/lib/storage/config"
+import { mkdirp, writeBuffer, removeFile, storagePath } from "@/lib/storage/helpers"
 import { SERVICE_ATTRIBUTE_NAMES } from "@/lib/validation/servicios"
 import type { Session } from "next-auth"
 
@@ -220,12 +219,12 @@ export async function addServiceQuotation(input: AddServiceQuotationInput): Prom
 
   // Save file to disk
   const dir = resolveServiciosDir()
-  await fs.mkdir(dir, { recursive: true })
+  await mkdirp(dir)
 
-  const ext = path.extname(input.fileName) || ".pdf"
+  const ext = storagePath.extname(input.fileName) || ".pdf"
   const storageName = `${nanoid()}${ext}`
-  const absolutePath = path.join(dir, storageName)
-  await fs.writeFile(absolutePath, input.fileBuffer)
+  const absolutePath = storagePath.join(dir, storageName)
+  await writeBuffer(absolutePath, input.fileBuffer)
 
   const filePath = createServiceQuotationPath(storageName)
   const quotationId = nanoid()
@@ -262,7 +261,7 @@ export async function addServiceQuotation(input: AddServiceQuotationInput): Prom
     })
   } catch (err) {
     // Clean up file if DB insert fails
-    await fs.unlink(absolutePath).catch(() => { /* ignore */ })
+    await removeFile(absolutePath).catch(() => { /* ignore */ })
     throw err
   }
 
@@ -294,7 +293,7 @@ export async function deleteServiceQuotation(input: DeleteServiceQuotationInput)
   // Remove file from disk
   const absolutePath = resolveServiceQuotationFile(quotation.filePath)
   if (absolutePath) {
-    await fs.unlink(absolutePath).catch(() => { /* ignore — file may already be gone */ })
+    await removeFile(absolutePath).catch(() => { /* ignore — file may already be gone */ })
   }
 
   await recordAudit({

@@ -34,5 +34,13 @@ See [layout-/taste.md](layout-/taste.md)
 - Finanzas role should not exist; invoices are attachments only, not a financial module. Confidence: 0.85
 - Role types: administrador, jefatura, secretaría, prevencionista oficina, prevencionista faena. Confidence: 0.90
 
+# Playwright E2E Testing
+- When getByRole('row') resolves to multiple elements (strict mode violation), use .first() to disambiguate. Common in tables with repeated fixture data across test runs. Confidence: 0.70
+- For Radix Dialogs with server actions (useActionState): submit via dialog.locator("form").evaluate(el => (el as HTMLFormElement).requestSubmit()) then await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 }). Avoids viewport issues with tall dialogs in headless 1280×720 where submit buttons are below the fold, and properly waits for the server action roundtrip + Radix exit animation + RSC revalidation. Confidence: 0.70
+- Use unique test data per run with Date.now() + incrementing counter to avoid uniqueness validation failures (SKU, RUT, email) from previous test runs. Confidence: 0.65
+
+# Filesystem / Node.js Imports
+- Isolate all node:fs and node:path imports into lib/storage/helpers.ts wrappers (mkdirp, writeBuffer, removeFile, storagePath). Never import fs/path directly in business-logic services — causes Turbopack NFT tracing to over-capture filesystem deps. Confidence: 0.70
+
 # Delivery Rules
 - Only the titular (assigned) worker can receive their EPP. The `receiverName` field should be removed — no other person should be able to receive on a worker's behalf. Confidence: 0.70

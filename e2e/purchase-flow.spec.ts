@@ -54,7 +54,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(page.getByText("Guante E2E")).toBeVisible()
 
   await page.goto("/trazabilidad?estado=received")
-  await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Recibido/ })).toBeVisible()
+  await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Recibido/ }).first()).toBeVisible()
 
   await page.goto("/reportes")
   await expect(page.getByRole("button", { name: "Exportar Gasto por faena" })).toBeVisible()
@@ -74,7 +74,7 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   await expect(page.getByText("Sin ítems pendientes")).toBeVisible({ timeout: 30_000 })
 
   await page.goto("/trazabilidad?estado=rejected")
-  await expect(page.getByRole("row", { name: /Rechazo E2E.*Rechazado/ })).toBeVisible()
+  await expect(page.getByRole("row", { name: /Rechazo E2E.*Rechazado/ }).first()).toBeVisible()
 
   await page.goto("/compras/nueva")
   await expect(page.getByText("Rechazo E2E")).toHaveCount(0)
@@ -113,7 +113,7 @@ async function createCatalogRequest(
 
 async function selectRadixById(page: Page, id: string, option: string | RegExp) {
   await page.locator(`#${id}`).click()
-  await page.getByRole("option", { name: option }).click()
+  await page.getByRole("option", { name: option }).first().click()
 }
 
 async function submitReceiptForm(page: Page, expectedQuantity: string) {
@@ -128,7 +128,7 @@ test("descarga real de Excel desde el navegador", async ({ page }) => {
   await login(page)
   await page.goto("/reportes")
 
-  await page.getByRole("button", { name: "Exportar Items sin OC" }).click()
+  await page.getByRole("button", { name: /Exportar .tems sin OC/ }).click()
   await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5_000 })
 
   const downloadPromise = page.waitForEvent("download", { timeout: 15_000 })
