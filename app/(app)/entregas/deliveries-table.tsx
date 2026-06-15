@@ -13,7 +13,6 @@ export interface DeliveryRow {
   workerName:   string
   itemSummary:  string
   requestCode:  string | null
-  receiverName: string | null
   deliveredAt:  string
   attachmentId: string | null
 }
@@ -23,7 +22,6 @@ const COLUMNS = [
   { key: "workerName", label: "Trabajador", sortable: true },
   { key: "worksiteName", label: "Faena", sortable: true },
   { key: "itemSummary", label: "EPP", sortable: true },
-  { key: "receiverName", label: "Receptor", sortable: true },
   { key: "deliveredAt", label: "Fecha", sortable: true, width: "w-36" },
   { key: "attachmentId", label: "Comprobante", sortable: false, width: "w-32" },
 ]
@@ -33,7 +31,7 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
     <DataTable
       columns={COLUMNS}
       rows={deliveries as unknown as Record<string, unknown>[]}
-      searchKeys={["code", "workerName", "worksiteName", "itemSummary", "receiverName"]}
+      searchKeys={["code", "workerName", "worksiteName", "itemSummary"]}
       pageSize={20}
       searchPlaceholder="Buscar entrega, trabajador, faena o EPP..."
       emptyTitle="Sin entregas"
@@ -77,10 +75,6 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
                 <dt className="text-[var(--color-text-subtle)]">Solicitud</dt>
                 <dd className="font-mono text-[var(--color-text)]">{delivery.requestCode ?? "—"}</dd>
               </div>
-              <div className="text-right">
-                <dt className="text-[var(--color-text-subtle)]">Receptor</dt>
-                <dd className="truncate text-[var(--color-text-muted)]">{delivery.receiverName ?? "—"}</dd>
-              </div>
             </dl>
           </article>
         )
@@ -105,9 +99,6 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
             </TableCell>
             <TableCell className="max-w-64 truncate text-sm text-[var(--color-text-muted)]">
               {delivery.itemSummary}
-            </TableCell>
-            <TableCell className="text-sm text-[var(--color-text-muted)]">
-              {delivery.receiverName ?? "—"}
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
               {formatDate(delivery.deliveredAt)}

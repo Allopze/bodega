@@ -14,6 +14,7 @@ export type MovementType =
   | "ingreso_oc"           // + : received from purchase order
   | "egreso_entrega"       // - : delivered to worker
   | "ingreso_devolucion"   // + : returned from worker/faena
+  | "egreso_desecho"       // 0 : discarded/retired EPP (record only, no stock change)
 
 /* ── Apply movement ─────────────────────────────────────────────────────────── */
 
@@ -59,6 +60,50 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
   }
 
   const now = new Date().toISOString()
+
+  // egreso_desecho is record-only — no stock delta, just trail the retirement
+  if (input.type === "egreso_desecho") {
+    const existing = await tx.query.worksiteStock.findFirst({
+      where: and(
+        eq(worksiteStock.worksiteId, input.worksiteId),
+        eq(worksiteStock.productId, input.productId),
+      ),
+    })
+    const currentQty = existing?.quantity ?? 0
+
+    await tx.insert(inventoryMovements).values({
+      id: nanoid(),
+      worksiteId: input.worksiteId,
+      productId: input.productId,
+      type: input.type,
+      quantity: input.quantity,
+      referenceType: input.referenceType ?? null,
+      referenceId: input.referenceId ?? null,
+      stockBefore: currentQty,
+      stockAfter: currentQty,
+      performedBy: input.performedBy,
+      reason: input.reason ?? null,
+      notes: input.notes ?? null,
+    })
+
+    await recordAudit({
+      userId: input.performedBy,
+      userEmail: input.userEmail,
+      action: "create",
+      entityType: "inventory_movement",
+      entityId: input.worksiteId,
+      newState: {
+        type: input.type,
+        productId: input.productId,
+        quantity: input.quantity,
+        stockBefore: currentQty,
+        stockAfter: currentQty,
+      },
+    }, tx)
+
+    return currentQty
+  }
+
   const { currentQty, newQty } = await applyStockDelta(tx, input, now)
 
   await tx.insert(inventoryMovements).values({

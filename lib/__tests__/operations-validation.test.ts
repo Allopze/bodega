@@ -163,7 +163,6 @@ describe("workerDeliverySchema", () => {
     workerId: "worker-1",
     requestItemId: "item-1",
     quantity: "2",
-    receiverName: "",
     notes: "",
   }
 
@@ -177,5 +176,38 @@ describe("workerDeliverySchema", () => {
     expect(workerDeliverySchema.safeParse({ ...validDelivery, workerId: "" }).success).toBe(false)
     expect(workerDeliverySchema.safeParse({ ...validDelivery, requestItemId: "" }).success).toBe(false)
     expect(workerDeliverySchema.safeParse({ ...validDelivery, quantity: "0" }).success).toBe(false)
+  })
+
+  it("accepts a delivery with old EPP return fields", () => {
+    const result = workerDeliverySchema.safeParse({
+      ...validDelivery,
+      returnProductId: "prod-return-1",
+      returnProductNameFree: "",
+      returnQuantity: "1",
+      returnReason: "desgastado",
+      returnNotes: "Casco con golpes y rayaduras",
+    })
+    expect(result.success).toBe(true)
+    expect(result.data?.returnQuantity).toBe(1)
+    expect(result.data?.returnReason).toBe("desgastado")
+  })
+
+  it("accepts a delivery with free-text return product and no catalog selection", () => {
+    const result = workerDeliverySchema.safeParse({
+      ...validDelivery,
+      returnProductId: "",
+      returnProductNameFree: "Casco marca ABC modelo X",
+      returnQuantity: "2",
+      returnReason: "dañado",
+      returnNotes: "",
+    })
+    expect(result.success).toBe(true)
+    expect(result.data?.returnProductNameFree).toBe("Casco marca ABC modelo X")
+  })
+
+  it("accepts a delivery without any return fields", () => {
+    const result = workerDeliverySchema.safeParse(validDelivery)
+    expect(result.success).toBe(true)
+    expect(result.data?.returnQuantity).toBeUndefined()
   })
 })

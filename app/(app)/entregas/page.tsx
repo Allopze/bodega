@@ -20,7 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Package, User } from "@phosphor-icons/react/dist/ssr"
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
-import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
+import { DeliveryForm, type DeliverableEppOption, type DeliveryReturnProductOption } from "./delivery-form"
 
 export const metadata: Metadata = { title: "Entregas" }
 
@@ -37,7 +37,7 @@ export default async function Page({
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
   const requestedItemId = typeof sp.item === "string" ? sp.item : ""
 
-  const [allWorksites, allWorkers, stockRows, receivedItems, historyRows] = await Promise.all([
+  const [allWorksites, allWorkers, stockRows, receivedItems, historyRows, catalogProducts] = await Promise.all([
     db
       .select({ id: worksites.id, name: worksites.name })
       .from(worksites)
@@ -86,7 +86,6 @@ export default async function Page({
         code: deliveries.code,
         worksiteId: deliveries.worksiteId,
         workerId: deliveries.workerId,
-        receiverName: deliveries.receiverName,
         deliveredAt: deliveries.deliveredAt,
       })
       .from(deliveries)
@@ -95,6 +94,16 @@ export default async function Page({
         worksiteScopeSql(session, deliveries.worksiteId),
       ))
       .orderBy(desc(deliveries.deliveredAt)),
+    db
+      .select({
+        id: products.id,
+        name: products.name,
+        sku: products.sku,
+        unitOfMeasure: products.unitOfMeasure,
+      })
+      .from(products)
+      .where(eq(products.isActive, true))
+      .orderBy(asc(products.name)),
   ])
 
   const worksiteOptions = allWorksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))
@@ -212,7 +221,6 @@ export default async function Page({
       workerName: delivery.workerId ? (workerNameById.get(delivery.workerId) ?? "Trabajador") : "Trabajador",
       itemSummary,
       requestCode: firstItem?.requestCode ?? null,
-      receiverName: delivery.receiverName,
       deliveredAt: delivery.deliveredAt,
       attachmentId: attachmentByDeliveryId.get(delivery.id) ?? null,
     }
@@ -260,6 +268,7 @@ export default async function Page({
             worksites={worksiteOptions}
             workers={workerOptions}
             deliverableItems={deliverableItems}
+            returnProducts={catalogProducts}
             initialWorksiteId={initialWorksiteId}
             initialRequestItemId={initialDeliverable?.requestItemId}
           />

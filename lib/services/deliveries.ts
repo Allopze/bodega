@@ -34,11 +34,16 @@ export interface RegisterWorkerEppDeliveryInput {
   workerId: string
   requestItemId: string
   quantity: number
-  receiverName?: string | null
   deliveredBy: string
   userEmail?: string
   notes?: string | null
   proofAttachment?: DeliveryAttachmentInput | null
+  // Return of old/discarded EPP (opcional)
+  returnProductId?: string | null
+  returnProductNameFree?: string | null
+  returnQuantity?: number | null
+  returnReason?: string | null
+  returnNotes?: string | null
 }
 
 export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryInput): Promise<string> {
@@ -218,7 +223,6 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
     }
 
     const workerName = `${worker.firstName} ${worker.lastName}`.trim()
-    const receiverName = input.receiverName?.trim() || workerName
     const notes = input.notes?.trim() || undefined
     const totalDelivered = alreadyDelivered + input.quantity
 
@@ -230,14 +234,15 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
       destinationType: "worker",
       worksiteId: input.worksiteId,
       workerId: input.workerId,
-      receiverName,
+      receiverName: workerName,
       signaturePath: null,
       notes,
       createdAt: now,
     })
 
+    const deliveryItemId = nanoid()
     await tx.insert(deliveryItems).values({
-      id: nanoid(),
+      id: deliveryItemId,
       deliveryId,
       requestItemId: input.requestItemId,
       productId: requestItem.productId,
@@ -245,7 +250,28 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
       quantity: input.quantity,
       unitOfMeasure: requestItem.unitOfMeasure,
       notes: null,
+      returnQuantity: input.returnQuantity ?? null,
+      returnProductId: input.returnProductId ?? null,
+      returnProductNameFree: input.returnProductNameFree ?? null,
+      returnReason: input.returnReason ?? null,
+      returnNotes: input.returnNotes ?? null,
     })
+
+    // Register the discarded EPP movement if a catalog product was returned
+    if (input.returnQuantity && input.returnProductId) {
+      await applyMovementTx(tx, {
+        worksiteId: input.worksiteId,
+        productId: input.returnProductId,
+        type: "egreso_desecho",
+        quantity: input.returnQuantity,
+        referenceType: "delivery",
+        referenceId: deliveryId,
+        performedBy: input.deliveredBy,
+        userEmail: input.userEmail,
+        reason: `Retiro EPP - ${input.returnReason ?? "sin motivo"} - Entrega ${code}`,
+        notes: input.returnNotes ?? undefined,
+      })
+    }
 
     if (input.proofAttachment) {
       await tx.insert(attachments).values({
@@ -293,8 +319,12 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
         productId: requestItem.productId,
         requestItemId: input.requestItemId,
         quantity: input.quantity,
-        receiverName,
+        receiverName: workerName,
         proofFileName: input.proofAttachment?.fileName ?? null,
+        returnQuantity: input.returnQuantity ?? null,
+        returnProductId: input.returnProductId ?? null,
+        returnProductNameFree: input.returnProductNameFree ?? null,
+        returnReason: input.returnReason ?? null,
       },
     }, tx)
   })

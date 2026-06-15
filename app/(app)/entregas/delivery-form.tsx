@@ -3,12 +3,13 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Warning } from "@phosphor-icons/react"
+import { Warning, CaretDown, CaretUp } from "@phosphor-icons/react"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
@@ -42,16 +43,25 @@ export interface DeliverableEppOption {
   unitOfMeasure: string
 }
 
+export interface DeliveryReturnProductOption {
+  id: string
+  name: string
+  sku: string | null
+  unitOfMeasure: string
+}
+
 export function DeliveryForm({
   worksites,
   workers,
   deliverableItems,
+  returnProducts,
   initialWorksiteId,
   initialRequestItemId,
 }: {
   worksites: DeliveryWorksiteOption[]
   workers: DeliveryWorkerOption[]
   deliverableItems: DeliverableEppOption[]
+  returnProducts?: DeliveryReturnProductOption[]
   initialWorksiteId?: string
   initialRequestItemId?: string
 }) {
@@ -60,6 +70,8 @@ export function DeliveryForm({
   const [worksiteId, setWorksiteId] = React.useState(defaultWorksiteId)
   const [workerId, setWorkerId] = React.useState("")
   const [requestItemId, setRequestItemId] = React.useState(initialRequestItemId ?? "")
+  const [showReturn, setShowReturn] = React.useState(false)
+  const [returnProductId, setReturnProductId] = React.useState("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
   React.useEffect(() => {
@@ -154,37 +166,25 @@ export function DeliveryForm({
           )}
         </Field>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Field
-            label={quantityMax ? `Cantidad (máx. ${formatQty(quantityMax, selectedItem?.unitOfMeasure ?? "unidad")})` : "Cantidad"}
-            htmlFor="deliveryQuantity"
+        <Field
+          label={quantityMax ? `Cantidad (máx. ${formatQty(quantityMax, selectedItem?.unitOfMeasure ?? "unidad")})` : "Cantidad"}
+          htmlFor="deliveryQuantity"
+          required
+          error={state.fieldErrors?.quantity?.[0]}
+        >
+          <Input
+            id="deliveryQuantity"
+            name="quantity"
+            type="number"
+            min="0.01"
+            step="0.01"
+            max={quantityMax}
+            disabled={!selectedItem}
             required
-            error={state.fieldErrors?.quantity?.[0]}
-          >
-            <Input
-              id="deliveryQuantity"
-              name="quantity"
-              type="number"
-              min="0.01"
-              step="0.01"
-              max={quantityMax}
-              disabled={!selectedItem}
-              required
-              className="tabular-nums"
-              error={!!state.fieldErrors?.quantity}
-            />
-          </Field>
-
-          <Field label="Recibido por" htmlFor="deliveryReceiverName" error={state.fieldErrors?.receiverName?.[0]}>
-            <Input
-              id="deliveryReceiverName"
-              name="receiverName"
-              placeholder="Opcional, si recibe otra persona"
-              disabled={!workerId}
-              error={!!state.fieldErrors?.receiverName}
-            />
-          </Field>
-        </div>
+            className="tabular-nums"
+            error={!!state.fieldErrors?.quantity}
+          />
+        </Field>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field label="Comprobante" htmlFor="deliveryProofFile" helper="PDF, JPG o PNG. Opcional.">
@@ -208,6 +208,92 @@ export function DeliveryForm({
             />
           </Field>
         </div>
+
+        {/* ── Devolución de EPP antiguo (opcional) ── */}
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="showReturn"
+            checked={showReturn}
+            onChange={(e) => {
+              setShowReturn(e.target.checked)
+              if (!e.target.checked) setReturnProductId("")
+            }}
+            label="Devolver EPP antiguo"
+          />
+          {showReturn ? <CaretUp size={14} className="text-[var(--color-text-subtle)]" /> : <CaretDown size={14} className="text-[var(--color-text-subtle)]" />}
+        </div>
+
+        {showReturn && (
+          <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 flex flex-col gap-4">
+            <p className="text-sm font-medium text-[var(--color-text)]">Datos del EPP devuelto</p>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="Producto (catálogo)" htmlFor="returnProductId">
+                <Select value={returnProductId} onValueChange={setReturnProductId}>
+                  <SelectTrigger id="returnProductId">
+                    <SelectValue placeholder="Selecciona producto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(returnProducts ?? []).map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}{p.sku ? ` (${p.sku})` : ""}
+                      </SelectItem>
+                    ))}
+                    {(!returnProducts || returnProducts.length === 0) && (
+                      <SelectItem value="__none__" disabled>Sin productos disponibles</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <input type="hidden" name="returnProductId" value={returnProductId} />
+              </Field>
+
+              <Field label="O descríbelo" htmlFor="returnProductNameFree" helper="Si no está en el catálogo">
+                <Input
+                  id="returnProductNameFree"
+                  name="returnProductNameFree"
+                  placeholder="Ej: Casco de seguridad marca X"
+                  disabled={!!returnProductId}
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="Cantidad" htmlFor="returnQuantity">
+                <Input
+                  id="returnQuantity"
+                  name="returnQuantity"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="tabular-nums"
+                />
+              </Field>
+
+              <Field label="Motivo" htmlFor="returnReason">
+                <Select name="returnReason">
+                  <SelectTrigger id="returnReason">
+                    <SelectValue placeholder="Selecciona motivo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="desgastado">Desgastado</SelectItem>
+                    <SelectItem value="dañado">Dañado</SelectItem>
+                    <SelectItem value="vencido">Vencido</SelectItem>
+                    <SelectItem value="otro">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            <Field label="Notas" htmlFor="returnNotes">
+              <Textarea
+                id="returnNotes"
+                name="returnNotes"
+                rows={2}
+                placeholder="Condición del EPP devuelto, observaciones..."
+              />
+            </Field>
+          </div>
+        )}
 
         {state.ok === false && state.message && state !== INITIAL_STATE && (
           <p className="flex items-center gap-1.5 text-sm text-[var(--color-danger)]">

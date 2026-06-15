@@ -80,6 +80,12 @@ export const deliveryItems = pgTable("delivery_items", {
   quantity:         real("quantity").notNull(),
   unitOfMeasure:    text("unit_of_measure").notNull().default("unidad"),
   notes:            text("notes"),
+  // Return of old/discarded EPP (opcional)
+  returnQuantity:        real("return_quantity"),
+  returnProductId:       text("return_product_id").references(() => products.id),
+  returnProductNameFree: text("return_product_name_free"),
+  returnReason:          text("return_reason"),   // desgastado | dañado | vencido | otro
+  returnNotes:           text("return_notes"),
 }, (table) => [
   // Invariant: delivered quantity must be strictly positive
   check("delivery_items_quantity_positive", sql`${table.quantity} > 0`),

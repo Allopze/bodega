@@ -216,6 +216,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
       if (inherited || direct) modules.add(p.module)
     }
     return [...modules]
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   }, [allPermissions, selectedRoles, selectedPermissions])
 
   return (

@@ -1,6 +1,7 @@
 import path from "node:path"
 
 const DELIVERY_ATTACHMENT_PREFIX = "storage/deliveries/"
+const INVOICE_ATTACHMENT_PREFIX = "storage/purchase-orders/"
 
 /**
  * Resolves the base storage directory.
@@ -38,6 +39,30 @@ export function resolveDeliveryAttachmentFile(filePath: string): string | null {
   }
 
   return path.join(resolveDeliveriesDir(), storageName)
+}
+
+export function resolvePurchaseOrdersDir(): string {
+  return path.join(resolveStorageDir(), "purchase-orders")
+}
+
+export function createInvoiceAttachmentPath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid invoice attachment file name")
+  }
+  return `${INVOICE_ATTACHMENT_PREFIX}${storageName}`
+}
+
+export function resolveInvoiceAttachmentFile(filePath: string): string | null {
+  if (!filePath.startsWith(INVOICE_ATTACHMENT_PREFIX)) {
+    return null
+  }
+
+  const storageName = filePath.slice(INVOICE_ATTACHMENT_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+
+  return path.join(resolvePurchaseOrdersDir(), storageName)
 }
 
 function isSafeStorageName(storageName: string): boolean {

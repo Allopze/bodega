@@ -120,8 +120,13 @@ export const workerDeliverySchema = z.object({
   workerId:      z.string().min(1, "Selecciona un trabajador"),
   requestItemId: z.string().min(1, "Selecciona un EPP recibido"),
   quantity:      positiveQuantitySchema,
-  receiverName:  z.string().trim().max(120).nullable().optional().or(z.literal("")),
   notes:         z.string().trim().max(500).nullable().optional().or(z.literal("")),
+  // Return of old/discarded EPP (opcional)
+  returnProductId:       z.string().nullable().optional().or(z.literal("")),
+  returnProductNameFree: z.string().trim().max(120).nullable().optional().or(z.literal("")),
+  returnQuantity:        positiveQuantitySchema.nullable().optional(),
+  returnReason:          z.string().trim().max(30).nullable().optional().or(z.literal("")),
+  returnNotes:           z.string().trim().max(300).nullable().optional().or(z.literal("")),
 })
 
 // ── Stock min threshold ─────────────────────────────────────────────────────
@@ -138,6 +143,16 @@ export const returnStockSchema = z.object({
   reason:       z.string().trim().min(1, "Indica el motivo de la devolución").max(300),
   notes:        z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
+
+// ── Purchase Order Invoice ───────────────────────────────────────────────────
+export const invoiceSchema = z.object({
+  purchaseOrderId: z.string().min(1, "ID de OC requerido"),
+  invoiceNumber:   z.string().trim().min(1, "N° de factura requerido").max(60, "N° de factura demasiado largo"),
+  amount:          finiteMoneySchema,
+  issueDate:       z.string().trim().min(1, "Fecha de emisión requerida"),
+})
+
+export type InvoiceFormData = z.infer<typeof invoiceSchema>
 
 export type ReceiptFormData = z.infer<typeof receiptSchema>
 export type DispatchFormData = z.infer<typeof dispatchSchema>

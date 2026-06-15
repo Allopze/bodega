@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db }       from "@/db"
 import {
-  purchaseOrders, purchaseOrderItems,
+  purchaseOrders, purchaseOrderItems, purchaseOrderInvoices,
   worksites, suppliers,
   purchaseRequests,
 } from "@/db/schema"
@@ -99,6 +99,7 @@ export default async function ComprasPage({
           }
         />
         <OcList orders={[]} pendingCount={0} canCreate={can(session, "purchasing:create_order")} createdCount={createdCount} />
+
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -108,7 +109,7 @@ export default async function ComprasPage({
   const wsIds       = [...new Set(visibleOrders.map((o) => o.worksiteId))]
   const supplierIds = [...new Set(visibleOrders.map((o) => o.supplierId))]
 
-  const [wsRows, supplierRows, itemCounts] = await Promise.all([
+  const [wsRows, supplierRows, itemCounts, invoiceCounts] = await Promise.all([
     wsIds.length > 0
       ? db
           .select({ id: worksites.id, name: worksites.name })
@@ -130,11 +131,20 @@ export default async function ComprasPage({
           .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
           .groupBy(purchaseOrderItems.purchaseOrderId)
       : Promise.resolve([]),
+
+    orderIds.length > 0
+      ? db
+          .select({ purchaseOrderId: purchaseOrderInvoices.purchaseOrderId, total: count() })
+          .from(purchaseOrderInvoices)
+          .where(inArray(purchaseOrderInvoices.purchaseOrderId, orderIds))
+          .groupBy(purchaseOrderInvoices.purchaseOrderId)
+      : Promise.resolve([]),
   ])
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
   const supMap = Object.fromEntries(supplierRows.map((s) => [s.id, s.name]))
   const cntMap = Object.fromEntries(itemCounts.map((c) => [c.purchaseOrderId, c.total]))
+  const invMap = Object.fromEntries(invoiceCounts.map((c) => [c.purchaseOrderId, c.total]))
 
   const rows: OcRow[] = visibleOrders.map((o) => ({
     id:           o.id,
@@ -144,6 +154,7 @@ export default async function ComprasPage({
     status:       o.status,
     itemCount:    cntMap[o.id] ?? 0,
     totalAmount:  o.totalAmount,
+    invoiceCount: invMap[o.id] ?? 0,
     issuedAt:     o.issuedAt,
     sentAt:       o.sentAt,
     createdAt:    o.createdAt,

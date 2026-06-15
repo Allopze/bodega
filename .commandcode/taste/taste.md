@@ -33,3 +33,6 @@ See [layout-/taste.md](layout-/taste.md)
 # Role Structure
 - Finanzas role should not exist; invoices are attachments only, not a financial module. Confidence: 0.85
 - Role types: administrador, jefatura, secretaría, prevencionista oficina, prevencionista faena. Confidence: 0.90
+
+# Delivery Rules
+- Only the titular (assigned) worker can receive their EPP. The `receiverName` field should be removed — no other person should be able to receive on a worker's behalf. Confidence: 0.70

@@ -5,12 +5,14 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   ingreso_oc:         "Ingreso OC",
   egreso_entrega:     "Entrega",
   ingreso_devolucion: "Devolución",
+  egreso_desecho:     "Retiro",
 }
 
 const MOVEMENT_QTY_CLASS: Record<string, string> = {
   ingreso_oc:         "text-[var(--color-success)] font-medium",
   egreso_entrega:     "text-[var(--color-danger)]",
   ingreso_devolucion: "text-[var(--color-success)]",
+  egreso_desecho:     "text-[var(--color-warning)]",
 }
 
 export interface KardexTableProps {

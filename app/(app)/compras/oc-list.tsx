@@ -25,6 +25,7 @@ export interface OcRow {
   status:          string
   itemCount:       number
   totalAmount:     number
+  invoiceCount:    number
   issuedAt:        string | null
   sentAt:          string | null
   createdAt:       string
@@ -51,6 +52,7 @@ const COLUMNS = [
   { key: "itemCount",     label: "Ítems",      sortable: true,  numeric: true, width: "w-20" },
   { key: "totalAmount",   label: "Total",      sortable: true,  numeric: true, width: "w-32" },
   { key: "status",        label: "Estado",     sortable: true,  width: "w-36" },
+  { key: "invoiceCount",  label: "Facturas",   sortable: false, numeric: true, width: "w-24" },
   { key: "createdAt",     label: "Fecha",      sortable: true,  width: "w-32" },
   { key: "",              label: "",           sortable: false, width: "w-12" },
 ]
@@ -95,6 +97,15 @@ function OcTableRow({ row }: { row: OcRow }) {
       </TableCell>
       <TableCell className="tabular-nums text-sm text-right pr-6 font-medium">
         {formatCLP(row.totalAmount)}
+      </TableCell>
+      <TableCell className="text-right pr-6">
+        {row.invoiceCount > 0 ? (
+          <span className="inline-flex items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-text-muted)] text-xs font-medium px-2 py-0.5 tabular-nums">
+            {row.invoiceCount}
+          </span>
+        ) : (
+          <span className="text-xs text-[var(--color-text-subtle)]">—</span>
+        )}
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">

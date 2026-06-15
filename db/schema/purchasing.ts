@@ -98,6 +98,25 @@ export const quotations = pgTable("quotations", {
   uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
+/* ── Purchase Order Invoices ──────────────────────────────────────────────── */
+// Facturas del proveedor adjuntadas a una OC (N-a-1).
+// Permite conciliación informativa: Σ amount vs purchase_orders.totalAmount.
+export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
+  id:              text("id").primaryKey(),
+  purchaseOrderId: text("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  invoiceNumber:   text("invoice_number").notNull(),
+  amount:          numeric("amount", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
+  issueDate:       text("issue_date"),                   // "YYYY-MM-DD" — consistent with other date fields
+  fileName:        text("file_name").notNull(),
+  filePath:        text("file_path").notNull(),           // relative: "storage/purchase-orders/<name>"
+  fileSize:        integer("file_size"),
+  mimeType:        text("mime_type"),
+  uploadedBy:      text("uploaded_by").notNull().references(() => users.id),
+  uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("purchase_order_invoices_amount_non_negative", sql`${table.amount} >= 0`),
+])
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
   worksite:   one(worksites, { fields: [purchaseOrders.worksiteId], references: [worksites.id] }),
@@ -105,10 +124,16 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many })
   createdBy:  one(users, { fields: [purchaseOrders.createdBy], references: [users.id] }),
   items:      many(purchaseOrderItems),
   quotations: many(quotations),
+  invoices:   many(purchaseOrderInvoices),
 }))
 
 export const purchaseOrderItemsRelations = relations(purchaseOrderItems, ({ one }) => ({
   purchaseOrder: one(purchaseOrders, { fields: [purchaseOrderItems.purchaseOrderId], references: [purchaseOrders.id] }),
   requestItem:   one(purchaseRequestItems, { fields: [purchaseOrderItems.requestItemId], references: [purchaseRequestItems.id] }),
   product:       one(products, { fields: [purchaseOrderItems.productId], references: [products.id] }),
+}))
+
+export const purchaseOrderInvoicesRelations = relations(purchaseOrderInvoices, ({ one }) => ({
+  purchaseOrder: one(purchaseOrders, { fields: [purchaseOrderInvoices.purchaseOrderId], references: [purchaseOrders.id] }),
+  uploadedBy:    one(users, { fields: [purchaseOrderInvoices.uploadedBy], references: [users.id] }),
 }))

@@ -324,7 +324,6 @@ describe("Full procurement workflow integration", () => {
       workerId,
       requestItemId,
       quantity: 10,
-      receiverName: "",
       deliveredBy: userId,
       userEmail: "juan@chome.cl",
     })
@@ -348,6 +347,104 @@ describe("Full procurement workflow integration", () => {
       with: { items: true },
     })
     expect(deliveredReq?.items[0].status).toBe("delivered")
+  })
+
+  it("registers a worker delivery with old EPP return and creates egreso_desecho movement", async () => {
+    const now = new Date().toISOString()
+
+    // Seed minimal data
+    const userId = "u-return-test"
+    await inMemoryDb.insert(schema.users).values({
+      id: userId, name: "Return Tester", email: "return@chome.cl",
+      hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now,
+    })
+
+    const worksiteId = "ws-return"
+    await inMemoryDb.insert(schema.worksites).values({
+      id: worksiteId, name: "Faena Return", code: "F-RETURN",
+      isActive: true, createdAt: now, updatedAt: now,
+    })
+
+    const categoryId = "cat-return"
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: categoryId, name: "EPP Return", slug: "epp-return", isEpp: true, sortOrder: 1,
+    })
+
+    const productId = "prod-new"
+    await inMemoryDb.insert(schema.products).values({
+      id: productId, sku: "NEW-001", name: "Casco Nuevo",
+      categoryId, unitOfMeasure: "unidad", isEpp: true, isActive: true,
+      createdAt: now, updatedAt: now,
+    })
+
+    const returnProductId = "prod-old"
+    await inMemoryDb.insert(schema.products).values({
+      id: returnProductId, sku: "OLD-001", name: "Casco Antiguo",
+      categoryId, unitOfMeasure: "unidad", isEpp: true, isActive: true,
+      createdAt: now, updatedAt: now,
+    })
+
+    const workerId = "worker-return"
+    await inMemoryDb.insert(schema.workers).values({
+      id: workerId, rut: "22.222.222-2", firstName: "Maria", lastName: "Lopez",
+      position: "Operadora", worksiteId, isActive: true, createdAt: now,
+    })
+
+    // Seed stock for the new product
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stock-return", worksiteId, productId, quantity: 10, minStock: 0,
+      lastMovementAt: now, updatedAt: now,
+    })
+
+    // Seed a request item in "received" status
+    const requestId = "req-return"
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: "SOL-RETURN-001", worksiteId, requesterId: userId,
+      urgency: "normal", status: "closed", createdAt: now, updatedAt: now,
+    })
+
+    const requestItemId = "item-return"
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: requestItemId, requestId, productId, quantity: 5,
+      unitOfMeasure: "unidad", status: "received", createdAt: now, updatedAt: now,
+    })
+
+    // Register delivery with return
+    const deliveryId = await registerWorkerEppDelivery({
+      worksiteId, workerId, requestItemId, quantity: 2,
+      deliveredBy: userId, userEmail: "return@chome.cl",
+      returnProductId, returnQuantity: 1, returnReason: "desgastado",
+      returnNotes: "Casco con golpes",
+    })
+
+    // Verify delivery item has return fields
+    const delivery = await inMemoryDb.query.deliveries.findFirst({
+      where: eq(schema.deliveries.id, deliveryId),
+      with: { items: true },
+    })
+    expect(delivery).toBeDefined()
+    const item = delivery!.items[0]
+    expect(item.returnQuantity).toBe(1)
+    expect(item.returnProductId).toBe(returnProductId)
+    expect(item.returnReason).toBe("desgastado")
+    expect(item.returnNotes).toBe("Casco con golpes")
+
+    // Verify egreso_desecho movement was created (no stock change)
+    const movements = await inMemoryDb
+      .select()
+      .from(schema.inventoryMovements)
+      .where(eq(schema.inventoryMovements.type, "egreso_desecho"))
+    expect(movements.length).toBeGreaterThanOrEqual(1)
+    const retireMovement = movements.find((m: typeof schema.inventoryMovements.$inferSelect) => m.referenceId === deliveryId)
+    expect(retireMovement).toBeDefined()
+    expect(retireMovement!.productId).toBe(returnProductId)
+    expect(retireMovement!.quantity).toBe(1)
+
+    // Verify stock was NOT affected by the return
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: eq(schema.worksiteStock.worksiteId, worksiteId),
+    })
+    expect(stock!.quantity).toBe(8) // 10 - 2 delivered, return didn't add stock
   })
 
   it("creates separate purchase orders for items assigned to different suppliers", async () => {

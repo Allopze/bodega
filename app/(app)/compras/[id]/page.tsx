@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
-import { purchaseOrders, statusHistory, users } from "@/db/schema"
+import { purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
 import { and, desc, eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
@@ -9,6 +9,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
 import { OcActions } from "./oc-actions"
+import { InvoicesSection } from "./invoices-section"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { Button } from "@/components/ui/button"
@@ -43,7 +44,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     .map((i) => i.productId)
     .filter((id): id is string => id !== null)
 
-  const [requestItemRows, productRows, timelineEvents] = await Promise.all([
+  const [requestItemRows, productRows, timelineEvents, orderInvoices] = await Promise.all([
     requestItemIds.length > 0
       ? db.query.purchaseRequestItems.findMany({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
@@ -78,14 +79,29 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
         ),
       )
       .orderBy(desc(statusHistory.changedAt)),
+
+    db
+      .select({
+        id:            purchaseOrderInvoices.id,
+        invoiceNumber: purchaseOrderInvoices.invoiceNumber,
+        amount:        purchaseOrderInvoices.amount,
+        issueDate:     purchaseOrderInvoices.issueDate,
+        fileName:      purchaseOrderInvoices.fileName,
+        mimeType:      purchaseOrderInvoices.mimeType,
+        uploadedAt:    purchaseOrderInvoices.uploadedAt,
+      })
+      .from(purchaseOrderInvoices)
+      .where(eq(purchaseOrderInvoices.purchaseOrderId, order.id))
+      .orderBy(desc(purchaseOrderInvoices.uploadedAt)),
   ])
 
   // Build maps
   const reqItemMap = Object.fromEntries(requestItemRows.map((ri) => [ri.id, ri]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
 
-  const canManage = session.user.permissions.includes("purchasing:create_order")
-  const canSend   = session.user.permissions.includes("purchasing:send_order")
+  const canManage    = session.user.permissions.includes("purchasing:create_order")
+  const canSend      = session.user.permissions.includes("purchasing:send_order")
+  const canInvoice   = canSend   // purchasing:send_order gate for invoice management
   const canShowOrderActions =
     (order.status === "draft" && canManage) ||
     (order.status === "issued" && (canManage || canSend)) ||
@@ -284,6 +300,15 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
                 canSend={canSend}
               />
             </section>
+          )}
+
+          {!["draft", "cancelled"].includes(order.status) && (
+            <InvoicesSection
+              purchaseOrderId={order.id}
+              invoices={orderInvoices}
+              totalAmount={order.totalAmount}
+              canManage={canInvoice}
+            />
           )}
 
           <EntityTimeline entityType="oc" events={timelineEvents} />

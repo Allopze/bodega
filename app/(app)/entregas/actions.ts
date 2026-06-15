@@ -23,12 +23,16 @@ export async function registerWorkerDeliveryAction(
   catch { return { ok: false, message: "Sin permisos para registrar entregas" } }
 
   const parsed = workerDeliverySchema.safeParse({
-    worksiteId:    formData.get("worksiteId"),
-    workerId:      formData.get("workerId"),
-    requestItemId: formData.get("requestItemId"),
-    quantity:      formData.get("quantity"),
-    receiverName:  formData.get("receiverName"),
-    notes:         formData.get("notes"),
+    worksiteId:           formData.get("worksiteId"),
+    workerId:             formData.get("workerId"),
+    requestItemId:        formData.get("requestItemId"),
+    quantity:             formData.get("quantity"),
+    notes:                formData.get("notes"),
+    returnProductId:      formData.get("returnProductId"),
+    returnProductNameFree: formData.get("returnProductNameFree"),
+    returnQuantity:       formData.get("returnQuantity") || null,
+    returnReason:         formData.get("returnReason"),
+    returnNotes:          formData.get("returnNotes"),
   })
 
   if (!parsed.success) {
@@ -39,7 +43,10 @@ export async function registerWorkerDeliveryAction(
     }
   }
 
-  const { worksiteId, workerId, requestItemId, quantity, receiverName, notes } = parsed.data
+  const {
+    worksiteId, workerId, requestItemId, quantity, notes,
+    returnProductId, returnProductNameFree, returnQuantity, returnReason, returnNotes,
+  } = parsed.data
   if (!canAccessWorksite(session, worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
@@ -53,11 +60,15 @@ export async function registerWorkerDeliveryAction(
       workerId,
       requestItemId,
       quantity,
-      receiverName: receiverName || null,
       deliveredBy: session.user.id,
       userEmail: session.user.email ?? undefined,
       notes: notes || null,
       proofAttachment: proofResult.attachment,
+      returnProductId: returnProductId || null,
+      returnProductNameFree: returnProductNameFree || null,
+      returnQuantity: returnQuantity || null,
+      returnReason: returnReason || null,
+      returnNotes: returnNotes || null,
     })
 
     revalidatePath("/entregas")
