@@ -37,6 +37,8 @@ export default async function AprobacionesPage({
       : sql`1 = 0`
   const requestFilter = and(
     inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
+    // Repuestos are approved via their own quotation flow, not this per-item queue
+    sql`${purchaseRequests.requestType} != 'repuestos'`,
     worksiteScope,
     selectedRequestId ? eq(purchaseRequests.id, selectedRequestId) : undefined,
     sql`exists (

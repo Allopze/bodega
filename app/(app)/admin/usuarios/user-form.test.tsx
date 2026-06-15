@@ -97,7 +97,9 @@ describe("UserForm permissions layout", () => {
     expect(screen.getByText("1 permiso directo")).toBeInTheDocument()
 
     const permissionsRegion = screen.getByRole("region", { name: "Permisos de usuario" })
-    expect(permissionsRegion).toHaveClass("overflow-y-auto")
-    expect(within(permissionsRegion).getByText("admin:users")).toBeInTheDocument()
+    // Inherited permission shows its description (not the technical name)
+    expect(within(permissionsRegion).getByText("Gestionar usuarios")).toBeInTheDocument()
+    // Directly granted permission shows the technical name in the font-mono label
+    expect(within(permissionsRegion).getByText("reports:view")).toBeInTheDocument()
   })
 })

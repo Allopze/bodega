@@ -91,3 +91,13 @@ export function stringToHue(str: string): number {
 export function shortId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
+
+/** Escape special HTML characters to prevent XSS in email templates and notifications. */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;")
+}

@@ -284,7 +284,7 @@ ni páginas.
 
 ### Estado actual
 
-- **206 tests** pasando y **1 skipped**
+- **213 tests** pasando y **1 skipped**
 - **37 suites** ejecutadas y **1 skipped**
 - Cobertura de declaraciones: ~4.35% (enfocado en lógica pura: transiciones de estado, permisos, totales)
 - La cobertura baja es esperada porque los server actions, páginas y componentes no están instrumentados

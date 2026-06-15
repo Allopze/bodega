@@ -32,6 +32,18 @@ export const SYSTEM_PERMISSIONS = [
   { id: "p-adm-sup", name: "admin:suppliers", module: "admin", description: "Gestionar proveedores" },
   { id: "p-adm-cfg", name: "admin:config", module: "admin", description: "Configuración del sistema" },
   { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Ver log de auditoría" },
+  // Repuestos module
+  { id: "p-rep-create", name: "repuestos:create", module: "repuestos", description: "Crear solicitudes de repuestos" },
+  { id: "p-rep-own", name: "repuestos:view_own", module: "repuestos", description: "Ver solicitudes de repuestos propias" },
+  { id: "p-rep-all", name: "repuestos:view_all", module: "repuestos", description: "Ver todas las solicitudes de repuestos" },
+  { id: "p-rep-submit", name: "repuestos:submit", module: "repuestos", description: "Enviar solicitudes de repuestos a aprobación" },
+  { id: "p-rep-approve", name: "repuestos:approve", module: "repuestos", description: "Aprobar cotizaciones de repuestos" },
+  // Servicios module
+  { id: "p-srv-create", name: "servicios:create", module: "servicios", description: "Crear solicitudes de servicios" },
+  { id: "p-srv-own", name: "servicios:view_own", module: "servicios", description: "Ver solicitudes de servicios propias" },
+  { id: "p-srv-all", name: "servicios:view_all", module: "servicios", description: "Ver todas las solicitudes de servicios" },
+  { id: "p-srv-submit", name: "servicios:submit", module: "servicios", description: "Enviar solicitudes de servicios a aprobación" },
+  { id: "p-srv-approve", name: "servicios:approve", module: "servicios", description: "Aprobar cotizaciones de servicios" },
 ] satisfies Array<typeof permissions.$inferInsert>
 
 const JEFATURA_PERMISSION_IDS = [
@@ -67,12 +79,48 @@ const PREVENCIONISTA_FAENA_PERMISSION_IDS = [
   "p-rec-reg-faena", "p-rec-view",
   "p-wh-stock", "p-wh-mov",
   "p-adm-wrk",
+  "p-rep-create", "p-rep-own", "p-rep-submit",
+]
+
+const REPUESTOS_JEFATURA_PERMISSION_IDS = [
+  "p-rep-all", "p-rep-approve",
+]
+
+const REPUESTOS_SECRETARIA_PERMISSION_IDS = [
+  "p-rep-create", "p-rep-own", "p-rep-all", "p-rep-submit",
+]
+
+const REPUESTOS_PREVENCIONISTA_PERMISSION_IDS = [
+  "p-rep-create", "p-rep-own", "p-rep-all", "p-rep-submit",
+]
+
+const SERVICIOS_JEFATURA_PERMISSION_IDS = [
+  "p-srv-all", "p-srv-approve",
+]
+
+const SERVICIOS_SECRETARIA_PERMISSION_IDS = [
+  "p-srv-create", "p-srv-own", "p-srv-all", "p-srv-submit",
+]
+
+const SERVICIOS_PREVENCIONISTA_PERMISSION_IDS = [
+  "p-srv-create", "p-srv-own", "p-srv-all", "p-srv-submit",
+]
+
+const SERVICIOS_FAENA_PERMISSION_IDS = [
+  "p-srv-create", "p-srv-own", "p-srv-submit",
 ]
 
 export const SYSTEM_ROLE_PERMISSIONS = [
   ...SYSTEM_PERMISSIONS.map((permission) => ({ roleId: "rol-admin", permissionId: permission.id })),
   ...JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
+  ...REPUESTOS_JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
+  ...SERVICIOS_JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
   ...SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
+  ...REPUESTOS_SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
+  ...SERVICIOS_SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
   ...PREVENCIONISTA_OFICINA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
+  ...REPUESTOS_PREVENCIONISTA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
+  ...SERVICIOS_PREVENCIONISTA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...PREVENCIONISTA_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
+  ...SERVICIOS_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
 ] satisfies Array<typeof rolePermissions.$inferInsert>

@@ -53,6 +53,8 @@ const REQUEST_TYPE_LABELS: Record<string, string> = {
   stock:      "Stock",
   mantencion: "Mantención",
   otro:       "Otro",
+  repuestos:  "Repuestos",
+  servicios:  "Servicios",
 }
 
 const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
@@ -60,6 +62,18 @@ const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "de
   stock:      "success",
   mantencion: "warning",
   otro:       "default",
+  repuestos:  "warning",
+  servicios:  "info",
+}
+
+/** Tipos con detalle en su propio vertical (no en /solicitudes/[id]) */
+const DETAIL_BASE: Record<string, string> = {
+  repuestos: "/repuestos",
+  servicios: "/servicios",
+}
+
+function detailHref(r: RequestRow): string {
+  return `${DETAIL_BASE[r.requestType] ?? "/solicitudes"}/${r.id}`
 }
 
 export function RequestList({
@@ -120,7 +134,7 @@ export function RequestList({
         renderMobileCard={(row) => {
           const r = row as unknown as RequestRow
           return (
-            <Link href={`/solicitudes/${r.id}`} className="block">
+            <Link href={detailHref(r)} className="block">
               <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 active:scale-[0.99] transition-transform">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -187,7 +201,7 @@ export function RequestList({
               </TableCell>
               <TableCell className="text-right pr-3">
                 <Link
-                  href={`/solicitudes/${r.id}`}
+                  href={detailHref(r)}
                   className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 h-9 w-9 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] opacity-100 transition-[background-color,color,opacity,transform] duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] active:scale-[0.97] sm:h-7 sm:w-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                   aria-label={`Ver solicitud ${r.code}`}
                 >

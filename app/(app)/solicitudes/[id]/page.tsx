@@ -41,6 +41,10 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
 
   if (!request) notFound()
 
+  // Repuestos and servicios have their own detail pages with quotation panels
+  if (request.requestType === "repuestos") redirect(`/repuestos/${id}`)
+  if (request.requestType === "servicios") redirect(`/servicios/${id}`)
+
   const isOwner    = request.requesterId === session.user.id
   const hasViewAll = session.user.permissions.includes("requests:view_all")
   const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))

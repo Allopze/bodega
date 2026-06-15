@@ -181,16 +181,18 @@ export async function createUser(
         }))
       )
     }
-    await tx.insert(userInvitations).values({
-      id: invitationId,
-      email: d.email,
-      name: displayName,
-      tokenHash: hashInvitationToken(token),
-      roleIdsJson: JSON.stringify(d.roleIds),
-      worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
-      invitedByUserId: session.user.id,
-      expiresAt,
-    })
+    if (d.isActive) {
+      await tx.insert(userInvitations).values({
+        id: invitationId,
+        email: d.email,
+        name: displayName,
+        tokenHash: hashInvitationToken(token),
+        roleIdsJson: JSON.stringify(d.roleIds),
+        worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
+        invitedByUserId: session.user.id,
+        expiresAt,
+      })
+    }
   })
 
   let deliveryMessage = `Usuario ${displayName} creado. Invitación enviada para definir contraseña.`

@@ -43,8 +43,7 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 1. Administra faenas y centros de costo en `/admin/faenas`.
 2. Crea proveedores en `/admin/proveedores`.
 3. Crea categorias, productos, atributos y proveedores asociados en `/admin/productos`.
-4. Crea bodegas en `/admin/bodegas`.
-5. Crea usuarios por rol y asignales faenas en `/admin/usuarios`.
+4. Crea usuarios por rol y asignales faenas en `/admin/usuarios`.
 6. Crea un usuario `Prevencionista faena` y asignale al menos una faena.
 7. Entra como prevencionista faena y crea una solicitud en `/solicitudes/nueva`.
 8. Entra como jefatura, secretaría, prevencionista oficina o administrador y aprueba en `/aprobaciones`.

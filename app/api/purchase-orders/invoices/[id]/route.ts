@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrderInvoices, purchaseOrders } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveInvoiceAttachmentFile } from "@/lib/storage/config"
 
 export async function GET(
@@ -14,6 +14,9 @@ export async function GET(
   const session = await auth()
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  }
+  if (!can(session, "purchasing:view")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
   const { id } = await params

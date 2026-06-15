@@ -8,12 +8,13 @@
  * Callers wrap in try/catch or use the safe `notifySafe()` helper.
  */
 
-import { eq, and, desc, inArray } from "drizzle-orm"
+import { eq, and, desc, inArray, lt, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { notifications, rolePermissions, permissions, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { NotificationType } from "@/db/schema/audit"
 import { sendEmail, getAppBaseUrl } from "@/lib/email/smtp"
+import { escapeHtml } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
@@ -54,12 +55,16 @@ export async function createNotification(input: CreateNotificationInput): Promis
   })
   if (user?.email) {
     const appUrl = getAppBaseUrl()
+    const safeName = escapeHtml(user.name ?? "Usuario")
+    const safeTitle = escapeHtml(input.title)
+    const safeBody = input.body ? escapeHtml(input.body) : ""
+    const safeHref = input.entityHref ? escapeHtml(`${appUrl}${input.entityHref}`) : ""
     const text = `${input.title}\n\n${input.body ?? ""}`
     const html = `
-      <p>Hola ${user.name ?? "Usuario"},</p>
-      <h3>${input.title}</h3>
-      ${input.body ? `<p>${input.body}</p>` : ""}
-      ${input.entityHref ? `<p><a href="${appUrl}${input.entityHref}">Ver detalle en Chome</a></p>` : ""}
+      <p>Hola ${safeName},</p>
+      <h3>${safeTitle}</h3>
+      ${safeBody ? `<p>${safeBody}</p>` : ""}
+      ${safeHref ? `<p><a href="${safeHref}">Ver detalle en Chome</a></p>` : ""}
     `
     sendEmail({
       to:      user.email,
@@ -103,12 +108,16 @@ export async function createNotifications(
   const appUrl = getAppBaseUrl()
   for (const u of targetUsers) {
     if (u.email) {
+      const safeName = escapeHtml(u.name ?? "Usuario")
+      const safeTitle = escapeHtml(input.title)
+      const safeBody = input.body ? escapeHtml(input.body) : ""
+      const safeHref = input.entityHref ? escapeHtml(`${appUrl}${input.entityHref}`) : ""
       const text = `${input.title}\n\n${input.body ?? ""}`
       const html = `
-        <p>Hola ${u.name ?? "Usuario"},</p>
-        <h3>${input.title}</h3>
-        ${input.body ? `<p>${input.body}</p>` : ""}
-        ${input.entityHref ? `<p><a href="${appUrl}${input.entityHref}">Ver detalle en Chome</a></p>` : ""}
+        <p>Hola ${safeName},</p>
+        <h3>${safeTitle}</h3>
+        ${safeBody ? `<p>${safeBody}</p>` : ""}
+        ${safeHref ? `<p><a href="${safeHref}">Ver detalle en Chome</a></p>` : ""}
       `
       sendEmail({
         to:      u.email,
@@ -232,5 +241,5 @@ export async function cleanupOldNotifications(days = 90): Promise<void> {
 
   await db
     .delete(notifications)
-    .where(eq(notifications.isRead, true))
+    .where(and(eq(notifications.isRead, true), sql`${notifications.createdAt} < ${cutoff.toISOString()}`))
 }

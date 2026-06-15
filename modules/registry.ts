@@ -19,6 +19,8 @@ import { warehouseModule }    from "@/modules/warehouse/manifest"
 import { deliveriesModule }   from "@/modules/deliveries/manifest"
 import { traceabilityModule } from "@/modules/traceability/manifest"
 import { reportsModule }      from "@/modules/reports/manifest"
+import { repuestosModule }   from "@/modules/repuestos/manifest"
+import { serviciosModule }   from "@/modules/servicios/manifest"
 
 /**
  * Registry central — array `as const` de todos los módulos registrados.
@@ -36,6 +38,8 @@ export const registry = [
   deliveriesModule,
   traceabilityModule,
   reportsModule,
+  repuestosModule,
+  serviciosModule,
   // ── Prevención de riesgos (próximas entregas) ──────────────────────────
   // incidentesModule,
   // inspeccionesModule,

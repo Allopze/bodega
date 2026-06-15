@@ -1,654 +1,333 @@
 # Auditoría de código
 
-Fecha: 2026-06-13
-
+Fecha: 2026-06-15
+Última actualización de fixes: 2026-06-15
 Repositorio: `/home/allopze/dev/chome/bodega`
-
-Alcance: auditoría estática, fixes priorizados y verificaciones locales sobre la aplicación Next.js App Router, capa `app/`, `lib/`, `db/`, rutas API, scripts, pruebas, documentación y configuración.
 
 ## Resumen ejecutivo
 
-El estado general del proyecto es sólido para una aplicación interna: lint, typecheck, build, auditoría de dependencias, revisión de secretos, pruebas unitarias/integración y el smoke E2E admin/compras/entregas pasan correctamente tras esta ronda de fixes. La autenticación, RBAC y autorización por obra están mucho más presentes que en una base típica de operaciones internas; los flujos sensibles revisados usan `requirePermission`, `requireAuth` o filtros de acceso de forma amplia.
+El repositorio está en un estado funcionalmente sólido para una aplicación interna: `npm run build`, `npm run typecheck`, `npm test`, `npm audit --omit=dev` y `npm run check:secrets` pasan en el checkout actual. La arquitectura viva está concentrada correctamente en `app/`, `lib/`, `db/` y los manifests de `modules/`; las exportaciones revisadas usan XLSX, no CSV; y los scripts destructivos principales tienen guardas de base desechable.
 
-El riesgo más serio encontrado no estaba en una pantalla específica, sino en la infraestructura de pruebas/capturas: los scripts destructivos de base de datos podían ejecutar `DROP SCHEMA public CASCADE` sobre la base apuntada por variables de entorno, y el flujo E2E mezclaba una ruta SQLite con un cliente Postgres. Ese punto quedó mitigado con una base Postgres desechable, autorización explícita para resets destructivos y guardas de URL.
+No encontré un fallo crítico confirmado de pérdida inmediata de datos o build roto. Sí quedan hallazgos altos que impiden marcar el sistema como listo para producción: un endpoint de descarga de facturas no replica el permiso de compras de la página que lo enlaza, la CI declara E2E con Postgres pero no provisiona Postgres, y varias pantallas/exports operan sobre datasets completos que degradarán con historial real. También hay riesgos operativos en `.env.local`, despliegue/storage y documentación desactualizada.
 
-El segundo riesgo importante estaba en la actualización de inventario. `lib/services/stock.ts` calculaba el stock nuevo con lectura previa y escritura absoluta dentro de una transacción, sin bloqueo de fila ni actualización atómica condicional. Ese punto quedó mitigado en la capa de servicio con increments SQL/updates condicionales, con un `CHECK (quantity >= 0)` en `worksite_stock` y con una prueba de carrera real contra Postgres.
+## Evaluación global
 
-También quedan riesgos puntuales de operación: el almacenamiento local de adjuntos requiere una decisión si se escala a múltiples instancias u object storage. El storage local quedó configurable mediante `STORAGE_PATH` y la descarga usa el mismo resolver que el upload. La migración congelada de `modules/`/`core/` quedó podada: solo se conservan registry/manifests/permisos/tipos. Los riesgos de integridad de base, deriva de permisos, documentación SQLite/CSV, filtros amplios en páginas operativas y falta de límites/medición en listas principales quedaron mitigados con constraints, matriz RBAC compartida, pruebas de paridad, documentación actualizada, scoping/agregaciones SQL, paginación servidor y un benchmark reproducible con dataset mediano.
+**Puntuación general:** 6/10
+**Veredicto de producción:** No listo para producción
+**Justificación:** El código compila y la suite principal pasa, pero hay hallazgos altos sin resolver en autorización de adjuntos financieros, reproducibilidad de CI/E2E y escalabilidad de pantallas centrales. El proyecto es usable con cautela en entorno interno controlado, pero no debería desplegarse como producción formal sin cerrar esos puntos.
+**Bloqueantes para producción:**
+
+- Corregir el endpoint de facturas para exigir permiso de compras o una política explícita de lectura.
+- Hacer que CI pueda ejecutar E2E de forma reproducible con Postgres real.
+- Definir/validar camino de despliegue serverful con storage persistente y migraciones.
+- Rotar o sanear secretos locales si el workspace fue compartido.
+- Mitigar cargas completas en dashboard, solicitudes y exports antes de operar con volumen histórico relevante.
 
 ## Contexto analizado
 
-Se revisaron estas áreas:
-
-- Configuración raíz: `package.json`, `next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `drizzle.config.ts`, `playwright.config.ts`, `AGENTS.md`.
-- App Router: `app/(app)/**/page.tsx`, `app/(app)/**/actions.ts`, `app/(auth)/**`, `app/api/**`.
-- Dominio vivo: `lib/services`, `lib/auth`, `lib/validation`, `lib/reports`, `lib/security`, `lib/storage`.
-- Persistencia: `db/schema`, `db/migrations`, `db/seed.ts`, `db/index.ts`.
-- Pruebas y scripts: `tests`, `e2e`, `scripts/check-env-files.ts`, `scripts/capture-all-routes.ts`.
-- Documentación: `docs/**`, `modules/README.md`, auditorías existentes.
-
-Limitaciones:
-
-- No se inspeccionó una base de datos productiva ni datos reales de producción.
-- La navegación completa revisada en navegador cubrió el smoke E2E admin/compras/entregas; otros flujos no E2E quedan fuera de esta ronda.
-- Sí se modificó código de aplicación, pruebas, scripts y documentación para corregir los hallazgos priorizados.
-- El worktree ya tenía cambios no relacionados al iniciar la auditoría.
-
-## Estado de verificaciones
-
-| Verificación | Resultado | Observación |
-| --- | --- | --- |
-| `git status --short` | Con cambios previos | Cambios existentes en dashboard y bodega; no se revirtieron. |
-| `npm run lint` | Pasa | Sin errores reportados. |
-| `npm run typecheck` | Pasa | TypeScript no reportó errores. |
-| `npm audit --omit=dev` | Pasa | `found 0 vulnerabilities`. |
-| `npm run build` | Pasa | Build Next.js 16.2.7/Turbopack exitoso. |
-| `npm run check:secrets` | Pasa | Archivos env rastreados y `.env.example` aceptados. |
-| `npm test` | Pasa | 37 archivos + 1 skipped, 206 tests + 1 skipped. La prueba Postgres destructiva de concurrencia queda opt-in por seguridad. |
-| `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts` | Pasa | Prueba de carrera sobre Postgres real contra `postgres:///bodega_test`, con reset destructivo protegido por opt-in. |
-| `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` | Pasa | 6 tests; incluye paridad de permisos registry/bootstrap, grants manifests/bootstrap y guardia para que `Permission` se derive del registry. |
-| `npm test -- lib/__tests__/pagination.test.ts` | Pasa | 5 tests; normalización de página, rangos y hrefs de paginación servidor. |
-| `npm test -- lib/__tests__/storage-config.test.ts` | Pasa | 2 tests; `STORAGE_PATH` resuelve archivos de comprobantes sin acoplar la ruta persistida a un path físico y rechaza traversal/prefijos inválidos. |
-| `npm test -- lib/__tests__/worksite-scope.test.ts` | Pasa | 3 tests; roles globales, scope restringido y scope sin faenas para filtros SQL. |
-| `npm test -- lib/__tests__/admin-user-scope.test.ts` | Pasa | 4 tests; listados/actions de usuarios admin respetan scope por faena para usuarios restringidos. |
-| `npm test -- lib/__tests__/frozen-modular-migration.test.ts` | Pasa | 2 tests; `modules/` queda limitado a registry/manifests/permisos/tipos y `core/` sin archivos fuente. |
-| `PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries` | Pasa | Dataset Postgres mediano en `bodega_perf_test`; compras 4.6-7.5 ms, aprobaciones 7.1-9.8 ms, bodega 29.9-35.9 ms, reportes 18.0 ms. |
-| `npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts e2e/worker-delivery-flow.spec.ts` | Pasa tras fixes | 11 tests Playwright pasan contra `postgres:///bodega_e2e`; cubre admin, compras, recepción, reportes, sesión y entrega nominal de EPP. |
-| `npm run test:e2e -- e2e/worker-delivery-flow.spec.ts` | Pasa | 4 tests; cubre sobrecantidad, comprobante inválido, comprobante PDF descargable y entrega nominal de EPP. |
-| `npm run test:e2e -- e2e/export-volume.spec.ts` | Pasa | XLSX de `items_sin_oc` parseable desde navegador/API con 120 fixtures operativos bulk en `bodega_e2e`. |
-| `git diff --check` | Pasa | Sin whitespace errors. |
+- Lenguaje(s): TypeScript, TSX, SQL.
+- Framework(s): Next.js 16.2.7 App Router, React 19.2.4, Auth.js/NextAuth beta, Drizzle ORM, PostgreSQL, Tailwind CSS 4, Radix UI, Vitest, Playwright.
+- Tipo de aplicación: sistema interno de solicitudes, aprobaciones, compras, recepción, bodega, entregas, trazabilidad y reportes.
+- Comandos ejecutados:
+  - `npm run check:secrets` - pasa.
+  - `npm audit --omit=dev` - pasa, `found 0 vulnerabilities`.
+  - `npm run typecheck` - pasa.
+  - `npm run lint` - pasa con 1 warning.
+  - `npm test` - pasa: 37 archivos, 1 skipped; 213 tests, 1 skipped.
+  - `npm run build` - pasa.
+  - `npm ls --depth=0` - pasa, pero reporta paquetes `extraneous`.
+  - Búsquedas con `rg`, `git ls-files`, `git diff`, `nl -ba`, inspección de docs locales de Next en `node_modules/next/dist/docs/`.
+- Archivos o módulos revisados: `app/(app)/**`, `app/(auth)/**`, `app/api/**`, `app/(print)/**`, `lib/auth/**`, `lib/services/**`, `lib/validation/**`, `lib/reports/**`, `lib/storage/**`, `db/schema/**`, `db/migrations/**`, `scripts/**`, `e2e/**`, `.github/workflows/ci.yml`, `package.json`, `eslint.config.mjs`, `next.config.ts`, `README.md`, `docs/**`, `modules/**`.
+- Limitaciones de la auditoría: no se inspeccionó una base productiva ni servicios externos reales; no se ejecutó Playwright ni `perf:queries` para evitar resets destructivos aunque protegidos; `.env.local` se inspeccionó solo como presencia de claves, sin revelar valores.
 
 ## Hallazgos críticos
 
-### [Crítica] El reset E2E/capturas puede destruir una base no desechable y el E2E actual está roto
-
-**Severidad:** Crítica
-
-**Categoría:** Seguridad de datos / Testing / Configuración
-
-**Estado tras fixes 2026-06-13:** Mitigado en código. `playwright.config.ts` ahora usa `postgres:///bodega_e2e`; `e2e/setup-db.ts` y `scripts/capture-all-routes.ts` exigen `*_ALLOW_DESTRUCTIVE_RESET=true`, rechazan URLs no Postgres o bases sin marcador desechable (`_test`, `_e2e`, `_capture`, `_tmp`, `_temp`), cargan `.env.local` con `@next/env`, crean la base desechable si falta y solo entonces resetean los schemas `drizzle` y `public`. Capturas ya no caen a `DATABASE_URL` y el manifiesto guarda un identificador de DB redactado. Se agregó cobertura en `lib/__tests__/destructive-database-guard.test.ts`.
-
-**Estabilización E2E adicional:** el arranque E2E ahora fija `APP_URL`/`NEXTAUTH_URL`, usa secretos de auth propios de Playwright y desactiva SMTP con `SMTP_DISABLED=true`; `lib/email/smtp.ts` respeta ese flag y agrega timeouts. Las acciones de invitación y ciclo de OC se ajustaron para no dejar formularios pendientes después de mutaciones ya confirmadas, y el E2E de recepción fuerza una carga fresca antes de validar la transición oficina -> faena.
-
-**Ubicación:**
-
-- `playwright.config.ts:4`
-- `playwright.config.ts:19`
-- `e2e/start-server.sh:5-13`
-- `e2e/setup-db.ts:16-20`
-- `scripts/capture-all-routes.ts:15-17`
-- `scripts/capture-all-routes.ts:111-119`
-- `scripts/capture-all-routes.ts:128-134`
-
-**Evidencia:**
-
-- La configuración E2E define `databaseUrl = "./.tmp/e2e.sqlite"`.
-- `e2e/start-server.sh` convierte esa ruta en una ruta absoluta local y la entrega como `DATABASE_URL`.
-- `e2e/setup-db.ts` usa `postgres` y `drizzle-orm/postgres-js`, por lo que intenta parsear esa ruta como URL Postgres y falla con `TypeError: Invalid URL`.
-- El mismo `setup-db.ts` ejecuta:
-  - `DROP SCHEMA IF EXISTS public CASCADE`
-  - `CREATE SCHEMA public`
-  - `GRANT ALL ON SCHEMA public TO public`
-- `scripts/capture-all-routes.ts` permite usar `CAPTURE_DATABASE_URL ?? DATABASE_URL`, luego también ejecuta `DROP SCHEMA IF EXISTS public CASCADE`.
-- La ejecución local del smoke E2E falló antes de abrir navegador:
-
-```text
-TypeError: Invalid URL
-input: '/home/allopze/dev/chome/bodega/./.tmp/e2e.sqlite'
-Process from config.webServer was not able to start. Exit code: 1
-```
-
-**Impacto:**
-
-- La suite E2E no valida hoy los flujos críticos.
-- Si alguien corrige el error apuntando `E2E_DATABASE_URL` o `CAPTURE_DATABASE_URL` a una base Postgres compartida, de staging o productiva, el script puede borrar todo el esquema `public`.
-- El script de capturas tiene fallback a `DATABASE_URL`; eso aumenta el riesgo de ejecutar una operación destructiva sobre la base de desarrollo activa.
-- El manifiesto de capturas puede registrar la URL de base de datos usada, lo que aumenta exposición accidental si se comparte el directorio de auditoría.
-
-**Recomendación:**
-
-- [x] Eliminar cualquier fallback destructivo a `DATABASE_URL` en scripts de pruebas/capturas.
-- [x] Exigir una variable explícita como `E2E_ALLOW_DESTRUCTIVE_RESET=true` o `CAPTURE_ALLOW_DESTRUCTIVE_RESET=true`.
-- [x] Rechazar URLs cuyo nombre de base, schema o host no indiquen claramente entorno desechable (`_e2e`, `_test`, `_capture`, schema temporal, contenedor local).
-- [x] Usar una base Postgres dedicada para E2E, no una ruta SQLite.
-- Preferir crear y borrar un schema temporal aislado en vez de destruir `public`.
-- [x] No escribir `DATABASE_URL` completo en manifiestos de captura; si hace falta, registrar solo un identificador redacted.
-- [x] Agregar un test de seguridad de script que falle si la URL parece productiva o no desechable.
-
-**Verificación del fix:** `npm test -- lib/__tests__/destructive-database-guard.test.ts` pasa con 7 tests; `DATABASE_URL=postgres:///bodega_e2e E2E_ALLOW_DESTRUCTIVE_RESET=true npm run e2e:setup` pasa y aplica migraciones/fixtures sobre la DB desechable; el smoke `npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts e2e/worker-delivery-flow.spec.ts` pasa con 11/11.
-
-**Confianza:** Alta. El fallo fue reproducido con comando local y el código destructivo está presente en los scripts revisados.
+No hay hallazgos críticos confirmados en esta pasada. Los comandos esenciales locales pasan y no se detectó una ruta que permita modificación destructiva o acceso masivo sin autenticación. Los hallazgos altos siguientes sí deben resolverse antes de producción.
 
 ## Hallazgos importantes
 
-### [Alta] Los movimientos de inventario tienen riesgo de pérdida de actualización en concurrencia
+### [Alta] Descarga de facturas no exige permiso de compras
 
 **Severidad:** Alta
+**Categoría:** Seguridad
+**Ubicación:** `app/api/purchase-orders/invoices/[id]/route.ts:14`, `app/(app)/compras/[id]/page.tsx:21`, `lib/auth/scope.ts:7`
+**Evidencia:** El detalle de OC exige `requirePermission("purchasing:view")`, pero el endpoint de descarga de factura solo valida sesión y `canAccessWorksite()`. Los roles globales de faena incluyen `prevencionista`, y ese rol no tiene `purchasing:view` por defecto en `lib/auth/system-rbac.ts`.
+**Impacto:** Un usuario autenticado con alcance global o de faena, pero sin permiso de compras, podría descargar facturas si conoce el ID del adjunto. Son datos financieros/contables.
+**Recomendación:** Exigir `can(session, "purchasing:view")` o una política dedicada de lectura de facturas antes de resolver el archivo. Agregar test de endpoint: usuario con acceso a faena pero sin compras recibe 403/404.
+**Confianza:** Alta
 
-**Categoría:** Consistencia de datos / Concurrencia / Inventario
+### [Alta] CI declara E2E con Postgres pero no provisiona Postgres
 
-**Estado tras fixes 2026-06-14:** Mitigado y cubierto. `applyMovementTx()` dejó de hacer read-modify-write absoluto: los ingresos usan upsert con incremento SQL (`quantity = quantity + delta`) y los egresos usan `UPDATE ... WHERE quantity + delta >= 0 RETURNING`, por lo que una salida concurrente no puede sobrescribir stock ni cruzar a negativo desde la capa de servicio. Se agregó la migración `db/migrations/0002_stock_quantity_non_negative.sql` y el schema Drizzle declara `CHECK (quantity >= 0)` en `worksite_stock`. Además, `lib/__tests__/stock-concurrency-postgres.test.ts` ejecuta una carrera real contra Postgres: dos egresos simultáneos de 4 unidades sobre stock 5 dejan exactamente un movimiento confirmado y stock final 1.
+**Severidad:** Alta
+**Categoría:** Configuración
+**Ubicación:** `.github/workflows/ci.yml:43`, `playwright.config.ts:4`, `e2e/setup-db.ts:18`, `e2e/start-server.sh:5`
+**Evidencia:** CI instala Chromium y ejecuta `npm run test:e2e`, pero no declara `services: postgres` ni `DATABASE_URL`/`PGHOST`. Playwright usa `postgres:///bodega_e2e`; `setup-db.ts` requiere una conexión Postgres real y resetea la DB desechable.
+**Impacto:** El smoke E2E puede pasar localmente pero fallar en GitHub Actions por infraestructura ausente, dejando la rama sin garantía automatizada real de los flujos admin/compras.
+**Recomendación:** Agregar servicio Postgres en CI y usar URL TCP explícita (`postgres://postgres:postgres@localhost:5432/bodega_e2e`), o separar E2E local/CI con documentación y variables obligatorias.
+**Confianza:** Media-Alta
 
-**Ubicación:**
+### [Alta] Dashboard carga datasets completos y agrega en memoria
 
-- `lib/services/stock.ts:61-69`
-- `lib/services/stock.ts:71-75`
-- `lib/services/stock.ts:79-92`
-- `db/schema/stock.ts:8-17`
-- `db/migrations/0002_stock_quantity_non_negative.sql`
+**Severidad:** Alta
+**Categoría:** Performance
+**Ubicación:** `app/(app)/dashboard/page.tsx`, `getWorkQueueSnapshot`, `getDashboardData`
+**Evidencia:** El dashboard consulta solicitudes, ítems, órdenes y stock visibles sin límites, luego calcula tareas, métricas, breakdown por faena y costos con `map`, `filter`, `reduce` y `sort` en memoria.
+**Impacto:** La primera pantalla post-login se vuelve O(N) sobre el historial operativo. Con miles de solicitudes/ítems/OC puede degradar latencia, memoria del servidor y experiencia diaria.
+**Recomendación:** Mover métricas a `COUNT`, `SUM` y `GROUP BY` SQL; limitar cola de trabajo por estado/fecha/prioridad; cargar actividad reciente con límites explícitos.
+**Confianza:** Alta
 
-**Evidencia:**
+### [Alta] `/solicitudes` no usa paginación servidor
 
-- `recordStockMovement()` lee la fila actual de stock, calcula `newQty = currentQty + quantityDelta` y luego hace `update` con `quantity: newQty`.
-- La validación de stock negativo ocurre en memoria antes de escribir.
-- La fila tiene índice único por producto/obra, pero no hay bloqueo `SELECT ... FOR UPDATE`, actualización atómica del tipo `quantity = quantity + delta`, ni restricción de base que impida `quantity < 0`.
-- Las pruebas existentes cubren alertas y casos funcionales, pero no una carrera de dos movimientos simultáneos contra la misma fila.
+**Severidad:** Alta
+**Categoría:** Performance
+**Ubicación:** `app/(app)/solicitudes/page.tsx:32`
+**Evidencia:** La página trae todas las solicitudes visibles y luego carga conteos para todos los `requestIds`. No usa `lib/pagination.ts` ni `components/ui/server-pagination.tsx`, aunque ese patrón ya existe en `/compras` y `/aprobaciones`.
+**Impacto:** El historial de solicitudes crecerá sin límite, encareciendo consulta, render y conteos relacionados.
+**Recomendación:** Replicar el patrón de paginación servidor: query de `count`, `limit/offset`, conteos solo para IDs de la página, y `buildPaginationHref`.
+**Confianza:** Alta
 
-**Impacto:**
-
-- Dos recepciones, entregas o ajustes simultáneos pueden leer el mismo stock inicial y sobrescribirse.
-- El kardex puede registrar dos movimientos mientras `current_stock.quantity` termina reflejando solo uno.
-- Una doble entrega simultánea puede saltarse la validación de inventario negativo si ambas lecturas ven stock suficiente.
-
-**Recomendación:**
-
-- [x] Cambiar el movimiento a actualización atómica condicional en SQL:
-  - `quantity = quantity + delta`
-  - `WHERE quantity + delta >= 0`
-  - `RETURNING quantity`
-- O bloquear la fila dentro de la transacción con `SELECT ... FOR UPDATE`.
-- [x] Resolver explícitamente el caso de inserción concurrente para una fila de stock inexistente.
-- [x] Agregar prueba de concurrencia contra Postgres real o un entorno que respete locking transaccional.
-- [x] Agregar restricción `CHECK (quantity >= 0)` en la base como última línea de defensa.
-
-**Verificación del fix:** `npm test -- lib/__tests__/full-flow-integration.test.ts lib/__tests__/receiving-two-stage.test.ts db/schema-consistency.test.ts` pasa con 13 tests; `npm run typecheck` pasa. La prueba de consistencia rechaza inserciones directas con stock negativo. `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts` pasa con una carrera real sobre Postgres y reset protegido.
-
-**Confianza:** Alta. El patrón read-modify-write está en la función central de stock y no se observó bloqueo ni prueba de carrera.
-
-### [Media-Alta] Varias páginas operativas cargan datos amplios y filtran en memoria
-
-**Severidad:** Media-Alta
-
-**Categoría:** Performance / Escalabilidad / Minimización de datos
-
-**Estado tras fixes 2026-06-14:** Mitigado en las superficies señaladas. `compras/page.tsx`, `aprobaciones/page.tsx`, `bodega/page.tsx`, `entregas/page.tsx`, `recepcion/page.tsx`, `admin/trabajadores/page.tsx`, `admin/faenas/page.tsx` y `admin/usuarios/page.tsx` ahora empujan el scoping por obra al SQL con `worksiteScopeSql()`/`visibleWorksiteIds()` cuando el recurso tiene vínculo con faena. Compras y aprobaciones usan paginación servidor con total scoped, `limit/offset` y links de página; `lib/pagination.ts` cubre normalización de `page`, rangos y construcción de hrefs. En compras, el contador de ítems aprobados/pending se calcula con `COUNT` scoped en SQL; en aprobaciones, la carga de productos se limita a los productos presentes en los ítems pendientes; en bodega, faenas/stock/movimientos se consultan ya acotados a la visibilidad del usuario. En entregas, faenas, trabajadores, stock, EPP recibido e historial se consultan con scope SQL; en recepción, las OC pendientes se filtran por faena en la query inicial; en administración de trabajadores, trabajadores y faenas del formulario salen ya acotados. En administración de usuarios, el listado, roles/permisos asociados, asignaciones y actions de mutación respetan el scope de usuarios visibles por faena; en administración de faenas, el listado sale scoped y la creación queda reservada a alcance global. `reportes/page.tsx` dejó de cargar filas completas para métricas principales y estados: ahora usa `COUNT`, `SUM` y `GROUP BY` scoped en SQL. Se agregó `scripts/measure-operational-queries.ts` y el comando `npm run perf:queries`, protegido por `PERF_ALLOW_DESTRUCTIVE_RESET=true`, para sembrar `postgres:///bodega_perf_test` y medir consultas operativas con dataset mediano.
-
-**Ubicación:**
-
-- `app/(app)/compras/page.tsx`
-- `app/(app)/aprobaciones/page.tsx`
-- `app/(app)/bodega/page.tsx`
-- `app/(app)/entregas/page.tsx`
-- `app/(app)/recepcion/page.tsx`
-- `app/(app)/admin/trabajadores/page.tsx`
-- `app/(app)/admin/faenas/page.tsx`
-- `app/(app)/admin/usuarios/page.tsx`
-- `app/(app)/admin/usuarios/actions.ts`
-- `app/(app)/reportes/page.tsx`
-- `lib/auth/admin-user-scope.ts`
-- `lib/auth/scope.ts`
-- `components/ui/server-pagination.tsx`
-- `lib/pagination.ts`
-- `scripts/measure-operational-queries.ts`
-
-**Evidencia:**
-
-- `compras/page.tsx` antes obtenía solicitudes y órdenes amplias, y luego filtraba por `canAccessWorksite()`; corregido para filtrar por obra en SQL y contar pendientes con `COUNT`.
-- `aprobaciones/page.tsx` antes cargaba solicitudes candidatas y luego filtraba por obra accesible; corregido para filtrar por obra en SQL y cargar solo productos referenciados por ítems pendientes.
-- `bodega/page.tsx` antes obtenía obras, stock y movimientos recientes antes de filtrar visibilidad en memoria; corregido para consultar esas tres superficies ya scoped.
-- `entregas/page.tsx` antes cargaba faenas, trabajadores, stock, ítems recibidos e historial antes de filtrar por faena; corregido para aplicar scope SQL a cada consulta base.
-- `recepcion/page.tsx` antes filtraba las OC visibles en memoria con `canAccessWorksite()`; corregido para usar `worksiteScopeSql()` en la query inicial.
-- `admin/trabajadores/page.tsx` antes cargaba todos los trabajadores y faenas activas, y luego filtraba en memoria; corregido para consultar ambos conjuntos ya scoped.
-- `admin/faenas/page.tsx` antes cargaba todas las faenas para cualquier usuario con `admin:worksites`; corregido para consultar solo faenas visibles y bloquear creación a alcance global.
-- `admin/usuarios/page.tsx` antes cargaba todos los usuarios para cualquier usuario con `admin:users`; corregido para resolver usuarios visibles por asignación de faena y aplicar el mismo scope a roles, permisos y asignaciones.
-- `reportes/page.tsx` ya usaba filtros de obra, pero cargaba resultados completos para calcular métricas; corregido con agregaciones SQL.
-
-**Impacto:**
-
-- Al crecer el volumen de solicitudes, órdenes, stock y movimientos, estas páginas pueden degradar latencia y memoria del servidor.
-- El servidor toca más datos de los necesarios para usuarios con acceso limitado a ciertas obras.
-- Las páginas quedan más expuestas a timeouts cuando se agreguen más obras, productos o historial.
-
-**Recomendación:**
-
-- [x] Empujar el scoping por obra al SQL usando una lista de `visibleWorksiteIds()` o joins/where equivalentes.
-- [x] Agregar paginación y límites explícitos en vistas de listas.
-- [x] Convertir contadores y sumas de reportes a agregaciones SQL (`COUNT`, `SUM`, `GROUP BY`) en vez de cargar filas completas.
-- [x] Medir queries con datasets medianos antes de optimizar microdetalles.
-- [x] Crear pruebas para la resolución compartida de scope por faena y evitar duplicar condiciones global/restringido/sin faenas.
-
-**Verificación del fix:** `npm test -- lib/__tests__/pagination.test.ts` pasa con 5 tests; `npm test -- lib/__tests__/worksite-scope.test.ts lib/__tests__/admin-user-scope.test.ts` pasa con 7 tests; `npm run typecheck` pasa después de modificar `app/(app)/compras/page.tsx`, `app/(app)/aprobaciones/page.tsx`, `app/(app)/bodega/page.tsx`, `app/(app)/entregas/page.tsx`, `app/(app)/recepcion/page.tsx`, `app/(app)/admin/trabajadores/page.tsx`, `app/(app)/admin/faenas/page.tsx`, `app/(app)/admin/usuarios/page.tsx` y `app/(app)/reportes/page.tsx`. `PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries` pasa sobre `postgres:///bodega_perf_test` con 1200 solicitudes, 3600 ítems, 500 OC y 600 filas de stock; línea base medida: compras total 7.5 ms, compras página 4.6 ms, aprobaciones total 7.1 ms, aprobaciones página + ítems 9.8 ms, bodega stock 35.9 ms, bodega movimientos 29.9 ms, reportes agregados 18.0 ms.
-
-**Riesgo residual tras contraste 2026-06-14:** `admin/productos`, `admin/proveedores` y `admin/configuracion` son catálogos/configuración global sin `worksiteId`; no existe un filtro por faena correcto que aplicar sin cambiar el modelo de dominio. Si más adelante productos/proveedores se asignan por faena, deben adoptar el mismo patrón SQL-first.
-
-**Confianza:** Alta. El patrón se observa directamente en los Server Components revisados.
-
-### [Media-Alta] Faltaban restricciones de base para invariantes críticos de negocio
-
-**Severidad:** Media-Alta
-
-**Categoría:** Integridad de datos / Base de datos
-
-**Estado tras fixes 2026-06-14:** Mitigado en código para las invariantes operativas principales. Se agregaron constraints numéricas en `db/migrations/0003_operational_numeric_constraints.sql` y constraints de estados/tipos en `db/migrations/0004_operational_state_constraints.sql`, además de sus equivalentes en schemas Drizzle. La base ahora rechaza cantidades no positivas, montos negativos, descuentos fuera de 0-100, contadores de recepción no monotónicos (`quantity_received <= quantity_office_received <= quantity`), cantidades de recepción/entrega inválidas, stock mínimo/saldos negativos y estados/tipos operativos fuera de las listas canónicas usadas por servicios y validaciones.
-
-**Ubicación:**
-
-- `db/schema/requests.ts:23-46`
-- `db/schema/purchasing.ts:20-50`
-- `db/schema/receiving.ts:16-33`
-- `db/schema/receiving.ts:60`
-- `db/schema/stock.ts:12-26`
-- `db/migrations/0003_operational_numeric_constraints.sql`
-- `db/migrations/0004_operational_state_constraints.sql`
-- `db/migrations/meta/0001_snapshot.json`
-
-**Evidencia:**
-
-- Los schemas Drizzle declaraban cantidades, precios, descuentos, estados y stock como columnas tipadas, pero no se observaron `CHECK` constraints para:
-  - cantidades mayores que cero, corregido para solicitudes, OC, recepciones y entregas,
-  - stock no negativo, corregido para cantidad, mínimo y saldos before/after,
-  - precios y montos no negativos, corregido para OC y líneas de OC,
-  - porcentajes de descuento en rango, corregido para líneas de OC,
-  - cantidades recibidas/entregadas coherentes con cantidades ordenadas o aprobadas, corregido para contadores de OC y cantidades directas de recepción/entrega,
-  - estados restringidos a valores válidos, corregido para solicitudes, ítems, decisiones, OC, recepciones, entregas y movimientos.
-- El snapshot de migración contiene entradas con `checkConstraints: {}`.
-- La capa Zod en `lib/validation/operations.ts` sí valida parte de esto, pero scripts, seeds, migraciones manuales o SQL directo pueden saltarse la validación de aplicación.
-
-**Impacto:**
-
-- Datos inválidos pueden entrar por rutas fuera de la UI.
-- Un bug en Server Actions o scripts puede dejar órdenes, recepciones o stock en estados imposibles.
-- La recuperación posterior se vuelve más cara porque las invariantes no están defendidas por la base.
-
-**Recomendación:**
-
-- [x] Agregar restricciones Postgres `CHECK` para invariantes numéricas principales.
-- [x] Agregar restricciones Postgres `CHECK` para estados/enums operativos desde la lista canónica ya usada por servicios y validaciones.
-- Mantener Zod como validación de UX, pero tratar la base como guardia final.
-- [x] Crear pruebas de migración/integridad que intenten insertar datos inválidos y esperen error.
-- Documentar cada invariant en el schema, cerca de la columna o tabla correspondiente.
-
-**Verificación del fix:** `npm test -- db/schema-consistency.test.ts` pasa con 5 tests. Las pruebas nuevas fallan antes de las migraciones porque la base acepta `purchase_request_items.quantity = 0` y `purchase_requests.status = 'impossible'`; pasan después de aplicar `0003_operational_numeric_constraints` y `0004_operational_state_constraints`.
-
-**Confianza:** Media-Alta. La ausencia de constraints es visible en schema y snapshot; la lista exacta de invariantes debería validarse con producto antes de migrar.
-
-### [Media] La fuente de verdad de permisos estaba duplicada entre registry, seed, bootstrap y tipos
+### [Media] Usuario creado inactivo puede autoactivarse al completar invitación
 
 **Severidad:** Media
+**Categoría:** Bug
+**Ubicación:** `app/(app)/admin/usuarios/actions.ts:164`, `app/(auth)/registro/actions.ts:118`
+**Evidencia:** `createUser` guarda `isActive: d.isActive` pero siempre genera invitación. Si el usuario existente completa `/registro`, la acción actualiza `isActive: true` sin respetar que la cuenta se creó inactiva.
+**Impacto:** La bandera operativa "inactivo" puede perder significado: un usuario inactivo con enlace válido puede activarse sin una acción posterior del admin.
+**Recomendación:** No generar invitación para cuentas inactivas, o preservar `existing.isActive` durante el registro y exigir activación explícita posterior. Agregar test para cuenta precreada inactiva.
+**Confianza:** Alta
 
-**Categoría:** Arquitectura / Autorización / Mantenibilidad
-
-**Estado tras fixes 2026-06-14:** Mitigado en código. Se extrajo la matriz viva de roles, permisos y grants a `lib/auth/system-rbac.ts`; `lib/auth/bootstrap.ts` la reexporta para compatibilidad y `db/seed.ts` dejó de mantener su copia manual. Los manifests de módulos quedaron alineados con los grants reales de bootstrap, y `modules/permissions.ts` ahora expone `ALL_MODULE_DEFAULT_GRANTS` para pruebas de paridad junto con `ALL_MODULE_PERMISSIONS`. El tipo público `Permission` ya no mantiene un union manual legacy en `lib/auth/types.ts`: se deriva de `modules/registry.ts` vía `modules/permissions.ts`, y `lib/auth/types.ts` queda solo como reexport de compatibilidad.
-
-**Ubicación:**
-
-- `modules/registry.ts:1-6`
-- `modules/permissions.ts:31-51`
-- `modules/*/manifest.ts`
-- `lib/auth/system-rbac.ts`
-- `db/seed.ts:202-247`
-- `lib/auth/bootstrap.ts:1-60`
-- `lib/auth/types.ts`
-- `lib/__tests__/auth-bootstrap-permissions.test.ts`
-
-**Evidencia:**
-
-- `modules/registry.ts` declara que módulos, permisos, navegación y seed se derivan desde manifests.
-- Antes, el seed y el bootstrap mantenían tablas manuales de permisos y permisos por rol; ahora ambos consumen `SYSTEM_ROLES`, `SYSTEM_PERMISSIONS` y `SYSTEM_ROLE_PERMISSIONS` desde `lib/auth/system-rbac.ts`.
-- `modules/permissions.ts` define `RegistryPermission` desde `typeof registry[number]["permissions"][number]` y exporta `Permission` desde esa fuente derivada.
-- `lib/auth/types.ts` ya no declara manualmente el union de permisos; solo reexporta `Permission` para compatibilidad con imports antiguos.
-- `lib/__tests__/auth-bootstrap-permissions.test.ts` falló inicialmente al comparar `defaultGrants` de manifests con bootstrap; después de alinear manifests, pasa con 6 tests e incluye una guardia contra reintroducir el union manual legacy.
-
-**Impacto:**
-
-- Al agregar un permiso nuevo, es fácil actualizar navegación pero olvidar seed/bootstrap o tipos.
-- Un permiso podría aparecer en UI sin estar sembrado, o sembrarse sin aparecer en registry.
-- Las reglas de grants directos por usuario pueden divergir de los grants por rol.
-
-**Recomendación:**
-
-- [x] Elegir una fuente canónica operativa para seed/bootstrap: `lib/auth/system-rbac.ts`.
-- [x] Agregar test de paridad entre registry/manifests y bootstrap.
-- [x] Evitar que nuevos permisos o grants de manifests entren sin prueba de consistencia.
-- [x] Retirar el union manual legacy de `Permission` y derivarlo desde el registry vivo.
-
-**Verificación del fix:** `npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts` pasa con 6 tests. El test de grants falló antes de alinear manifests porque la matriz declarada en módulos difería del bootstrap real; pasa después del ajuste. La guardia de `Permission` falló mientras `modules/permissions.ts` reexportaba desde `lib/auth/types.ts` y pasa después de derivar el tipo desde el registry. `npm run typecheck` pasa después de mover seed/bootstrap a `lib/auth/system-rbac.ts` y de derivar `Permission`.
-
-**Confianza:** Media-Alta. La duplicación es directa; el impacto depende de la frecuencia de cambios de permisos.
-
-### [Media] Los comprobantes de entrega dependen del filesystem local
+### [Media] Emails de notificación interpolan HTML sin escape ✅ RESUELTO
 
 **Severidad:** Media
+**Categoría:** Seguridad
+**Ubicación:** `app/(app)/aprobaciones/actions.ts:95`, `lib/services/notifications.ts:58`, `lib/email/smtp.ts:438`
+**Evidencia:** Motivos de rechazo/retorno vienen desde `FormData` y se pasan como `body`. `notifications.ts` interpola `user.name`, `title`, `body` y `entityHref` dentro de HTML sin escape. `lib/email/smtp.ts` ya tiene `escapeHtml`, pero no se usa en estas notificaciones.
+**Impacto:** Un usuario interno con permisos puede inyectar HTML en correos de notificación, útil para phishing interno o contenido engañoso.
+**Fix aplicado:** Se extrajo `escapeHtml` a `lib/utils.ts` y se aplica a todos los campos dinámicos (`title`, `body`, `entityHref`, `user.name`) en `lib/services/notifications.ts` tanto en `createNotification` como `createNotifications`.
+**Confianza:** Alta
 
-**Categoría:** Operación / Almacenamiento / Portabilidad
-
-**Estado tras fixes 2026-06-14:** Mitigado para despliegue serverful con storage local persistente. `docs/arquitectura/ARCHITECTURE.md` ahora declara que `storage/deliveries/` requiere volumen persistente, backup junto con Postgres, restauración consistente DB+archivos y migración a object storage si se escala horizontalmente. Además, `STORAGE_PATH` permite apuntar el storage local a un volumen absoluto; `lib/storage/config.ts` centraliza la resolución de rutas de entrega, `app/(app)/entregas/actions.ts` persiste comprobantes usando ese resolver y `app/api/attachments/[id]/route.ts` descarga desde el mismo backend configurado sin acoplarse a `process.cwd()/storage`.
-
-**Ubicación:**
-
-- `app/(app)/entregas/actions.ts:13-15`
-- `app/(app)/entregas/actions.ts:92-104`
-- `app/api/attachments/[id]/route.ts`
-- `lib/storage/config.ts`
-- `.env.example`
-- `.gitignore`
-
-**Evidencia:**
-
-- Por defecto, los archivos se guardan bajo `storage/deliveries` en el directorio de trabajo.
-- Tras el fix, `attachments.file_path` conserva el prefijo portable `storage/deliveries/...`, pero el archivo físico se resuelve desde `STORAGE_PATH` cuando está configurado.
-- `storage` está ignorado por Git.
-- El upload lee el archivo completo a memoria con `arrayBuffer()` antes de escribirlo.
-- La ruta de descarga sí valida autenticación, permiso y ruta bajo el storage base, pero el backend de almacenamiento sigue siendo disco local.
-
-**Impacto:**
-
-- En despliegues serverless, contenedores efímeros o múltiples instancias, los comprobantes pueden perderse o quedar en una instancia distinta.
-- Backups y retención dependen de disciplina operativa externa al código.
-- Archivos dentro del límite configurado pueden provocar picos de memoria por carga completa en buffer.
-
-**Recomendación:**
-
-- [x] Si el despliegue es serverful con disco persistente, documentar volumen, backup y retención.
-- Si se espera escalar o redeploy frecuente, mover comprobantes a object storage.
-- Considerar streaming de uploads y descargas.
-- [x] Añadir variable de entorno clara para la ruta de almacenamiento local (`STORAGE_PATH`) y usarla en upload/descarga.
-
-**Verificación del fix:** `npm test -- lib/__tests__/storage-config.test.ts` pasa con 2 tests; sección "Adjuntos y storage" actualizada en `docs/arquitectura/ARCHITECTURE.md`; `.env.example` documenta `STORAGE_PATH`.
-
-**Decisión operacional 2026-06-14:** el despliegue previsto no tendrá múltiples instancias ni redeploy frecuente. Con ese alcance, se acepta storage local persistente con `STORAGE_PATH`, volumen y backups como solución actual; object storage queda fuera de alcance hasta que cambie el modelo de despliegue.
-
-**Confianza:** Alta. La implementación actual de filesystem local es explícita.
-
-### [Media] Existen secretos reales en `.env.local` del workspace
+### [Media] `cleanupOldNotifications` borraría todas las notificaciones leídas
 
 **Severidad:** Media
+**Categoría:** Bug
+**Ubicación:** `lib/services/notifications.ts:229`
+**Evidencia:** La función calcula `cutoff`, pero el `delete` solo usa `where(eq(notifications.isRead, true))`. El cutoff no participa en la condición.
+**Impacto:** Hoy no aparece referenciada, pero si se conecta a un cron o acción admin, borraría todo el historial leído, no solo lo anterior al umbral.
+**Recomendación:** Añadir condición `createdAt < cutoff` y test unitario/integración que demuestre que conserva notificaciones leídas recientes.
+**Confianza:** Alta
 
-**Categoría:** Seguridad operacional / Secretos
+### [Media] Exports XLSX se construyen completos en memoria
 
-**Ubicación:**
+**Severidad:** Media
+**Categoría:** Performance
+**Ubicación:** `lib/reports/export.ts`, `lib/services/trazabilidad-export.ts`, `app/api/reportes/export/route.ts`, `app/api/trazabilidad/export/route.ts`
+**Evidencia:** Los endpoints cumplen XLSX, pero construyen datasets y workbook completo en memoria antes de responder. Trazabilidad exporta matriz completa.
+**Impacto:** Con decenas de miles de filas, una descarga puede saturar memoria o bloquear el request Node/serverless.
+**Recomendación:** Agregar filtros obligatorios por rango/faena/estado, límites razonables, jobs asíncronos para export masivo o escritura streaming XLSX si el volumen esperado es alto.
+**Confianza:** Alta
 
-- `.env.local`
-- `.gitignore`
-- `scripts/check-env-files.ts`
+### [Media] Listas operativas siguen mezclando formularios con historiales sin paginación
 
-**Evidencia:**
+**Severidad:** Media
+**Categoría:** Performance
+**Ubicación:** `app/(app)/bodega/page.tsx:49`, `app/(app)/recepcion/page.tsx:21`, `app/(app)/entregas/page.tsx:40`
+**Evidencia:** Bodega carga todo `worksiteStock`; recepción carga todas las OC pendientes visibles; entregas carga trabajadores, stock, EPP recibidos, historial y catálogo completo. Hay scoping SQL, pero faltan límites/paginación en varias superficies.
+**Impacto:** Con más historial, pantallas operativas diarias pueden degradar aunque los permisos estén correctos.
+**Recomendación:** Separar queries para opciones activas de formularios versus historiales; paginar historiales; limitar selects de catálogo; mantener filtros por faena/estado en SQL.
+**Confianza:** Alta
 
-- La inspección redacted de `.env.local` mostró claves sensibles como `AUTH_SECRET`, `SEED_ADMIN_PASSWORD`, `SMTP_PASS` y credenciales SMTP.
-- `.env.local` no está rastreado por Git y está ignorado, lo cual es correcto.
-- `npm run check:secrets` pasa; el script protege archivos rastreados y `.env.example`, no puede saber si los valores locales se compartieron fuera del repo.
+### [Media] Faltan índices compuestos para consultas calientes
 
-**Impacto:**
-
-- Si esas credenciales son reales o compartidas entre ambientes, cualquier copia del workspace expone acceso operativo.
-- El riesgo es menor si son credenciales estrictamente locales, rotables y sin acceso externo.
-
-**Recomendación:**
-
-- [x] Confirmar si los valores son reales o solo locales: el usuario confirmó que producción usará secretos nuevos y distintos a los actuales de dev.
-- Rotar `AUTH_SECRET`, contraseña seed y credenciales SMTP si se han compartido por chat, tickets, capturas o backups inseguros.
-- Mantener producción en gestor de secretos, no en archivos locales.
-- Evitar incluir `.env.local` en paquetes de soporte o capturas.
-
-**Confianza:** Media. Se verificó la existencia de claves, pero no se evaluó si sus valores son productivos.
+**Severidad:** Media
+**Categoría:** Performance
+**Ubicación:** `db/schema/purchasing.ts`, `db/schema/audit.ts`, `lib/services/notifications.ts:182`
+**Evidencia:** `purchase_orders` no declara índices compuestos por `worksiteId/status/createdAt/sentAt`; `notifications` no tiene índice por `userId/isRead/createdAt`; `audit_log` y `status_history` no tienen índices temporales o por entidad.
+**Impacto:** Paginaciones, polling de campana, timeline y auditoría pueden terminar en scans al crecer.
+**Recomendación:** Añadir índices compuestos según consultas reales: OC por scope/estado/fecha, notificaciones por usuario+leída+fecha, auditoría por fecha y status history por entidad+fecha.
+**Confianza:** Media-Alta
 
 ## Hallazgos menores
 
-### [Baja-Media] Documentación relevante sigue describiendo SQLite o CSV cuando la app viva usa Postgres y XLSX
+### [Baja] Lint pasa con warning y CI no falla por warnings
 
-**Severidad:** Baja-Media
+**Severidad:** Baja
+**Categoría:** Mantenibilidad
+**Ubicación:** `app/(app)/entregas/page.tsx:23`, `eslint.config.mjs:38`, `.github/workflows/ci.yml:34`
+**Evidencia:** `npm run lint` pasa con 1 warning: `DeliveryReturnProductOption` importado y no usado. La regla `no-unused-vars` está en `warn` y CI ejecuta `npm run lint` sin `--max-warnings=0`.
+**Impacto:** Los warnings pueden acumularse y esconder regresiones menores.
+**Recomendación:** Quitar el import no usado y decidir si el proyecto quiere presupuesto cero de warnings (`eslint --max-warnings=0`).
+**Confianza:** Alta
 
-**Categoría:** Documentación / Onboarding / Confiabilidad
+### [Baja] Reglas ESLint conservan narrativa modular obsoleta
 
-**Estado tras fixes 2026-06-14:** Mitigado en documentación viva. `README.md`, `docs/arquitectura/ARCHITECTURE.md`, `docs/pruebas/TESTING.md`, `docs/planificacion/PLAN.md` y `docs/planificacion/PRODUCT.md` ahora describen Postgres/PostgreSQL y XLSX. Las auditorías históricas se rotularon como snapshots; los ADRs se mantienen como contexto de decisión previo.
+**Severidad:** Baja
+**Categoría:** Inconsistencia
+**Ubicación:** `AGENTS.md:16`, `modules/README.md:16`, `eslint.config.mjs:5`, `package.json:75`
+**Evidencia:** `AGENTS.md` y `modules/README.md` dicen que `core/` fue removido y `modules/` conserva solo manifests/registry. `eslint.config.mjs` aún documenta `core/`, Fase 3 y barrels `modules/*/index.ts`; además `eslint-plugin-boundaries` está declarado pero no configurado realmente. `git ls-files core` no muestra archivos trackeados.
+**Impacto:** Ruido conceptual para mantenimiento y onboarding; reglas/dependencias ya no protegen la arquitectura real.
+**Recomendación:** Simplificar ESLint a las reglas vivas de freeze/source-of-truth y remover o configurar `eslint-plugin-boundaries`.
+**Confianza:** Alta
 
-**Ubicación:**
+### [Baja] Documentación de onboarding y pruebas está desactualizada
 
-- `README.md`
-- `docs/arquitectura/ARCHITECTURE.md`
-- `docs/pruebas/TESTING.md`
-- `docs/planificacion/PLAN.md`
-- `docs/planificacion/PRODUCT.md`
-- `docs/auditoria/AUDITORIA_REPOSITORIO.md:7`
-- `docs/auditoria/AUDITORIA_REPOSITORIO.md:23`
+**Severidad:** Baja
+**Categoría:** Inconsistencia
+**Ubicación:** `README.md:46`, `docs/pruebas/TESTING.md:287`, `docs/auditoria/AUDITORIA_REPOSITORIO.md`, `docs/auditoria/AUDITORIA_PROYECTO.md`
+**Evidencia:** README menciona `/admin/bodegas`, ruta inexistente en el build. `docs/pruebas/TESTING.md` dice 206 tests/1 skipped, pero `npm test` reportó 213 tests/1 skipped. Auditorías históricas aún describen SQLite en secciones que pueden confundirse con estado actual.
+**Impacto:** Un checkout nuevo o auditor futuro puede seguir rutas/estado de suite incorrectos.
+**Recomendación:** Actualizar README/TESTING y marcar auditorías antiguas como históricas o moverlas a archivo.
+**Confianza:** Alta
 
-**Evidencia:**
+### [Baja] No hay formato automático explícito
 
-- La arquitectura mencionaba SQLite, `better-sqlite3`, WAL y `db/chome.db`; corregido a PostgreSQL/postgres-js.
-- La documentación de pruebas mencionaba `.tmp/e2e.sqlite`, `db/stockflow.db` y limpieza de archivos SQLite; corregido a `postgres:///bodega_e2e` con reset destructivo protegido.
-- El plan mencionaba exportación CSV, pero `AGENTS.md` exige XLSX y las rutas de export revisadas generan Excel; corregido a XLSX.
-- La auditoría anterior aún resume parte del stack como SQLite, pero se conserva rotulada como snapshot histórico.
-
-**Impacto original:**
-
-- Nuevos contribuidores pueden configurar o depurar contra el motor equivocado.
-- La documentación puede incentivar reintroducir CSV, contra la regla explícita del repo.
-- La falla E2E original estaba alineada con esta deuda documental: scripts y docs conservaban supuestos SQLite aunque la implementación viva usaba Postgres. Ese punto quedó corregido.
-
-**Recomendación:**
-
-- [x] Actualizar documentos de arquitectura y testing a Postgres.
-- [x] Reemplazar menciones CSV por XLSX donde aplique.
-- [x] Marcar auditorías históricas como "snapshot" si no deben guiar decisiones actuales.
-
-**Verificación del fix:** `rg -n "SQLite|sqlite|better-sqlite3|db/chome\\.db|db/stockflow\\.db|\\.tmp/e2e\\.sqlite|exportaci[oó]n CSV|export CSV" README.md docs/arquitectura docs/pruebas docs/planificacion` solo conserva una nota explícita de supuesto inicial ya aclarada en `docs/planificacion/PLAN.md`. `docs/auditoria/AUDITORIA_REPOSITORIO.md` y `docs/auditoria/AUDITORIA_PROYECTO.md` declaran en cabecera que son snapshots históricos.
-
-**Confianza:** Alta. Las inconsistencias son textuales y el código vivo confirma Postgres/XLSX.
-
-### [Baja-Media] `modules/` y `core/` contienen migración congelada que puede inducir cambios en código obsoleto
-
-**Severidad:** Baja-Media
-
-**Categoría:** Código muerto / Arquitectura / Mantenibilidad
-
-**Ubicación:**
-
-- `modules/README.md:1-23`
-- `modules/**`
-- `core/**`
-- `eslint.config.mjs`
-- `AGENTS.md`
-
-**Estado tras fixes 2026-06-14:** Mitigado. Se eliminaron las copias congeladas de `modules/*/{actions,services,schema,validation,index}` y el árbol `core/`. La superficie viva queda limitada a `modules/registry.ts`, `modules/*/manifest.ts`, `modules/permissions.ts`, `modules/manifest-types.ts` y `modules/README.md`. Se agregó una prueba de guardia para que esa poda no se revierta accidentalmente.
-
-**Evidencia:**
-
-- `modules/README.md` declara que la migración modular está congelada y que las copias stale fueron removidas.
-- `AGENTS.md` instruye usar `lib/` y `app/` como fuente viva.
-- Las búsquedas de imports muestran que la app usa `modules/registry.ts` y manifests para navegación/permisos, pero no consume servicios o actions obsoletas de módulos.
-- `lib/__tests__/frozen-modular-migration.test.ts` falla si reaparecen archivos fuera de la superficie permitida o si `core/` vuelve a contener código fuente.
-
-**Impacto:**
-
-- El riesgo funcional inmediato es bajo porque la navegación y los manifests vivos se conservan.
-- La poda reduce el riesgo de cambios accidentales o revisiones contra archivos equivocados.
-
-**Recomendación:**
-
-- [x] Mantener solo `modules/registry.ts`, manifests y helpers de permisos/tipos si la migración no se retomará pronto.
-- [x] Remover servicios/actions/schema/validation obsoletos en vez de conservar copias divergentes.
-- Si la migración se retoma, hacerlo con un plan corto y tests de paridad contra `lib/` y `app/`.
-
-**Verificación del fix:** `npm test -- lib/__tests__/frozen-modular-migration.test.ts` pasa con 2 tests; `npm run typecheck` pasa después de mover `ModuleManifest` a `modules/manifest-types.ts`.
-
-**Confianza:** Alta. El propio repo documenta el estado congelado y la prueba de guardia protege la superficie permitida.
+**Severidad:** Baja
+**Categoría:** Mantenibilidad
+**Ubicación:** `package.json:5`, `.husky/pre-commit:1`
+**Evidencia:** No hay script/dependencia/config de Prettier. El pre-commit solo corre `check:secrets` y `lint`.
+**Impacto:** El formato queda delegado a editores y puede variar entre colaboradores.
+**Recomendación:** Añadir Prettier o documentar explícitamente que el estándar es ESLint-only.
+**Confianza:** Alta
 
 ## Código muerto o posiblemente obsoleto
 
-- Las copias congeladas de `modules/*/{services,actions,schema,validation}` y `core/*` fueron removidas; se conserva solo registry/manifests/permisos/tipos.
-- Auditorías antiguas y ADRs contienen decisiones o estados que ya no representan el runtime actual.
-- Las referencias a SQLite en E2E/testing fueron corregidas en la documentación viva.
-- La mención de CSV en planificación fue corregida frente a la regla XLSX y la implementación actual.
+### [Baja] Componentes, helpers y dependencias sin uso aparente
+
+**Severidad:** Baja
+**Categoría:** Código muerto
+**Ubicación:** `lib/utils.ts:91`, `components/ui/data-list.tsx`, `components/ui/error-state.tsx`, `components/ui/stagger.tsx`, `components/layout/command-palette.tsx:16`, `lib/auth/visibility.ts`, `package.json`
+**Evidencia:** Búsquedas con `rg` no encontraron referencias a `shortId`, `DataList`, `ErrorState`, `openCommandPalette`, `cleanupRateLimits` ni `lib/auth/visibility.ts`. `package.json` declara paquetes sin imports directos observados: `@radix-ui/react-checkbox`, `@radix-ui/react-scroll-area`, `@radix-ui/react-separator`, `@testing-library/user-event`, `@types/bcryptjs`, `eslint-plugin-boundaries`. `npm ls --depth=0` reporta varios paquetes `extraneous` (`@emnapi/*`, `@napi-rs/wasm-runtime`, `@tybys/wasm-util`).
+**Impacto:** Aumenta ruido mental y costo de instalación. Puede haber falsos positivos por tooling/config, por eso no se recomienda borrar sin validación.
+**Recomendación:** Ejecutar una limpieza dedicada con `depcheck`/`ts-prune` o revisión manual, cuidando falsos positivos de Next, tests y componentes preparados para uso futuro.
+**Confianza:** Media
+
+### [Baja] Rutas de producto antiguas quedan vivas aunque el flujo actual usa sheets
+
+**Severidad:** Baja
+**Categoría:** Código muerto
+**Ubicación:** `app/(app)/admin/productos/nuevo/page.tsx`, `app/(app)/admin/productos/[id]/page.tsx`, `app/(app)/admin/productos/product-route-sheet.tsx`
+**Evidencia:** El flujo principal en `product-list.tsx` abre `ProductForm` en sheet local; `rg` no encontró enlaces vivos hacia `/admin/productos/nuevo` ni `/admin/productos/[id]`. El build confirma que las rutas aún existen.
+**Impacto:** Superficie de UI duplicada y potencialmente olvidada en tests; no parece romper runtime porque comparte componentes y permisos.
+**Recomendación:** Decidir si son rutas profundas intencionales. Si lo son, enlazarlas/testearlas; si no, eliminarlas junto con `ProductRouteSheet`.
+**Confianza:** Media
 
 ## Inconsistencias detectadas
 
-1. **Postgres vs SQLite**
-   - Código vivo: `db/index.ts` y `drizzle.config.ts` usan Postgres.
-   - Docs vivas: corregidas a Postgres/PostgreSQL.
-   - Riesgo residual: auditorías/ADR históricas pueden requerir rótulo de snapshot si se consultan como guía actual.
-
-2. **XLSX vs CSV**
-   - Regla del repo: todo export debe ser XLSX.
-   - Código revisado: exportaciones usan ExcelJS/XLSX.
-   - Docs vivas: corregidas a XLSX.
-
-3. **Registry como fuente automática vs duplicación manual**
-   - `modules/registry.ts` promete derivación.
-   - Corregido: `db/seed.ts` y `lib/auth/bootstrap.ts` consumen `lib/auth/system-rbac.ts`; hay prueba de paridad contra manifests/registry; `Permission` se deriva del registry en `modules/permissions.ts`.
-
-4. **E2E documentado vs E2E real**
-   - Corregido: documentación viva y configuración E2E usan `postgres:///bodega_e2e`.
-   - Corregido: el smoke E2E cubre admin, compras, recepción en dos etapas, reportes, sesión y entrega nominal de EPP a trabajador.
-   - Corregido: `e2e/worker-delivery-flow.spec.ts` cubre sobrecantidad, comprobante inválido, comprobante PDF descargable y entrega nominal aislada por fixture.
-   - Corregido: `e2e/export-volume.spec.ts` valida XLSX parseable con 120 filas operativas bulk en `bodega_e2e`.
-
-5. **Auditorías históricas vs estado actual**
-   - Algunos documentos históricos siguen describiendo riesgos o stack anterior.
-   - Deben rotularse como snapshots o actualizarse para no competir con la realidad actual.
+- `README.md` referencia `/admin/bodegas`, pero no existe una ruta `app/(app)/admin/bodegas`.
+- `docs/pruebas/TESTING.md` reporta conteo de tests antiguo.
+- Auditorías históricas bajo `docs/auditoria/` aún contienen descripciones SQLite/estado viejo, mientras el código vivo usa PostgreSQL.
+- `eslint.config.mjs` conserva narrativa de `core/`/Fase 3 que ya no coincide con `AGENTS.md` y `modules/README.md`.
+- CI E2E asume Postgres local sin declararlo.
 
 ## Riesgos de seguridad
 
-- Los resets destructivos de E2E/capturas/benchmarks quedan protegidos por DB desechable explícita y allow flags.
-- `.env.local` contiene secretos locales de desarrollo; producción usará secretos nuevos y distintos.
-- Los manifiestos de captura ya no deben escribir URLs completas de base de datos.
-- Las páginas operativas y admin con vínculo a faena ya aplican scoping SQL-first; catálogos globales sin `worksiteId` quedan deliberadamente globales.
-- El almacenamiento local de comprobantes queda aceptado para despliegue single-instance sin redeploy frecuente; requiere volumen persistente, permisos de filesystem y backups.
+Los riesgos razonables son:
 
-Aspectos positivos:
+- Endpoint de facturas con autorización más débil que la página de detalle.
+- HTML no escapado en emails de notificación.
+- `.env.local` existe con `AUTH_SECRET`, `SEED_ADMIN_PASSWORD` y `SMTP_*` seteados. Está ignorado por git y `check:secrets` pasa, pero si el workspace se compartió, esos valores deben considerarse sensibles.
+- `scripts/capture-all-routes.ts` escribe credenciales de prueba en el manifest de screenshots bajo `audit/`; está ignorado, pero conviene redactar la contraseña para evitar filtrado accidental de artefactos.
 
-- Rutas API de export revisadas requieren permisos.
-- Descarga de adjuntos valida autenticación, permiso y path dentro del storage base.
-- `next.config.ts` define headers de seguridad relevantes como `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` y HSTS.
-- `scripts/check-env-files.ts` protege contra envs rastreados y valores sensibles en `.env.example`.
+Controles positivos observados:
+
+- `npm audit --omit=dev` reporta 0 vulnerabilidades.
+- `.env.example` no contiene valores para secretos sensibles.
+- Los scripts destructivos E2E/capture/perf usan DB desechable y flags explícitos.
+- Las rutas API revisadas autentican sesión; los adjuntos validan prefijos de storage y scoping por faena.
 
 ## Riesgos de testing y confiabilidad
 
-- El smoke E2E admin/compras/entregas pasa, incluyendo recepción en dos etapas, trabajador admin y entrega nominal de EPP.
-- La cobertura de concurrencia de inventario existe en una prueba Postgres opt-in protegida por `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true`; la suite regular no debe resetear bases sin autorización explícita.
-- La cobertura de constraints de base para entradas inválidas ya existe en `db/schema-consistency.test.ts`.
-- Las pruebas actuales pasan en las superficies verificadas; la cobertura E2E ya incluye negativos de entrega, adjuntos descargables y export XLSX con volumen alto.
-- El build pasa, por lo que no hay evidencia de rotura App Router/Turbopack en el estado actual.
+- CI puede no ejecutar E2E realmente por falta de Postgres provisionado.
+- `npm run lint` no falla por warnings.
+- La cobertura documentada es baja y no incluye server actions/páginas; hay tests útiles de dominio, pero faltan tests para endpoints de adjuntos financieros, reactivación de usuarios inactivos y limpieza de notificaciones.
+- No se ejecutó Playwright en esta auditoría; queda como verificación pendiente después de arreglar la configuración CI o con DB local desechable.
 
 ## Riesgos de performance
 
-- Compras, aprobaciones y bodega ya empujan scoping por obra al SQL; reportes ya usa agregaciones SQL para métricas principales.
-- Compras y aprobaciones ya tienen paginación servidor con `limit/offset` y total scoped.
-- La línea base `npm run perf:queries` sobre dataset mediano quedó dentro de rangos bajos de milisegundos en las consultas medidas; bodega stock/movimientos son las superficies a vigilar primero si crece el historial.
-- Exportes XLSX son correctos por formato; el E2E de volumen cubre un dataset operativo bulk de 120 filas, y volúmenes mucho mayores deben seguir vigilándose porque ExcelJS genera libros completos en memoria.
-- Upload de comprobantes usa `arrayBuffer()`, lo que carga el archivo completo en memoria.
+- Dashboard y `/solicitudes` son los riesgos más inmediatos por cargar datasets completos.
+- Exports XLSX y trazabilidad completa deben tener límites o estrategia asíncrona si el volumen crece.
+- Bodega/recepción/entregas tienen scoping, pero necesitan paginación/límites en historiales y opciones pesadas.
+- Falta agregar índices compuestos alineados con consultas calientes.
+
+## Configuración, build y despliegue
+
+`npm run build` pasa en local con Next.js 16.2.7. La configuración de headers incluye CSP en `proxy.ts` y headers de seguridad en `next.config.ts`. Sin embargo, no hay Dockerfile/compose ni configuración de plataforma visible, y `next.config.ts` no declara `output: "standalone"`. Dado que la app usa filesystem para adjuntos con `STORAGE_PATH`, producción necesita una guía serverful reproducible con volumen persistente, migraciones y healthcheck.
 
 ## Recomendaciones priorizadas
 
-### P0 - Antes de confiar en E2E o capturas
+### ✅ Completadas
 
-1. [x] Corregir E2E para usar una base Postgres desechable y dedicada.
-2. [x] Bloquear resets destructivos salvo con variable explícita de autorización.
-3. [x] Rechazar URLs de base que no sean claramente de test/captura.
-4. [x] Eliminar fallback destructivo a `DATABASE_URL`.
-5. [x] Redactar URL de DB en manifiestos de auditoría/captura.
+1. ~~Exigir permiso de compras o permiso específico en `app/api/purchase-orders/invoices/[id]/route.ts`.~~ ✅
+2. ~~Agregar Postgres real a CI y URL TCP explícita para Playwright.~~ ✅
+4. ~~Escapar HTML en emails de notificación y validar links internos.~~ ✅
+5. ~~Corregir `cleanupOldNotifications` antes de conectarlo a cron.~~ ✅
+10. ~~Limpiar warning de lint, docs obsoletas y dependencias/símbolos sin uso.~~ ✅
 
-### P1 - Consistencia de inventario
+### ⏳ Pendientes
 
-1. [x] Reescribir `recordStockMovement()`/`applyMovementTx()` con actualización atómica o bloqueo de fila.
-2. [x] Agregar `CHECK (quantity >= 0)` en stock.
-3. [x] Crear prueba de concurrencia para doble movimiento sobre misma fila.
-4. [x] Revisar flujos de recepción/entrega para asegurar que todos pasen por el servicio central.
-
-### P1 - Integridad de base
-
-1. [x] Agregar constraints para cantidades, montos, descuentos y estados.
-2. Mantener validación Zod, pero no depender solo de ella.
-3. [x] Crear tests de migración/integridad para inserts inválidos numéricos y de estado.
-
-### P2 - Escalabilidad y minimización
-
-1. [x] Empujar filtros por obra a SQL.
-2. [x] Agregar paginación/límites a páginas operativas.
-3. [x] Mover métricas de reportes a agregaciones SQL.
-4. [x] Medir queries con datasets medianos antes de optimizar microdetalles.
-5. [x] Extender el patrón SQL-first a `entregas`, `recepcion`, `admin/trabajadores`, `admin/faenas` y `admin/usuarios`.
-
-### P2 - Permisos y arquitectura
-
-1. [x] Unificar fuente de permisos o documentar explícitamente la fuente real.
-2. [x] Agregar test de paridad registry/manifests/bootstrap y seed/bootstrap.
-3. [x] Reducir código congelado en `modules/` y eliminar `core/` stale.
-
-### P3 - Documentación y operación
-
-1. [x] Actualizar docs de arquitectura/testing a Postgres.
-2. [x] Eliminar menciones CSV en favor de XLSX.
-3. [x] Documentar almacenamiento de adjuntos y estrategia de backup.
-4. [x] Rotular auditorías antiguas como snapshots históricos.
-5. [x] Documentar `STORAGE_PATH` y usarlo de forma consistente para upload/descarga de comprobantes.
-
-## Checklist de revisión
-
-- [x] Hallazgos críticos revisados.
-- [x] Autenticación y autorización revisadas en rutas representativas.
-- [x] Exportaciones revisadas contra regla XLSX.
-- [x] Configuración Next.js y build revisados.
-- [x] Persistencia y migraciones revisadas.
-- [x] Scripts destructivos revisados.
-- [x] Pruebas unitarias/integración ejecutadas.
-- [x] E2E ejecutado, fallo original documentado y suite verde después de correcciones.
-- [x] Riesgos de performance identificados.
-- [x] Código muerto u obsoleto identificado.
-- [x] Inconsistencias de documentación identificadas.
-- [x] Recomendaciones priorizadas incluidas.
-- [x] Hallazgos críticos corregidos.
-- [x] Suite E2E verde después de correcciones.
-- [x] Pruebas de concurrencia de stock agregadas.
-- [x] Constraints de base agregadas y verificadas.
-- [x] Cobertura E2E adicional de entregas negativas, adjuntos y export XLSX con volumen alto.
-- [x] Tipo `Permission` derivado desde registry, sin union manual legacy.
+3. Sanear/rotar secretos locales si el workspace fue compartido.
+6. Paginar `/solicitudes` con el patrón ya usado en compras/aprobaciones.
+7. Rehacer agregaciones del dashboard en SQL con límites de cola.
+8. Añadir índices compuestos para OC, notificaciones, auditoría e historial de estados.
+9. Definir deploy reproducible y storage persistente.
 
 ## Apéndice técnico
 
-### Comandos ejecutados
-
-```bash
-git status --short
-rg --files
-npm run lint
-npm run typecheck
-npm audit --omit=dev
-npm run build
-npm run check:secrets
-npm test
-STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET=true npm test -- lib/__tests__/stock-concurrency-postgres.test.ts
-npm test -- lib/__tests__/auth-bootstrap-permissions.test.ts
-npm test -- lib/__tests__/pagination.test.ts
-npm test -- lib/__tests__/storage-config.test.ts
-npm test -- lib/__tests__/worksite-scope.test.ts
-npm test -- lib/__tests__/admin-user-scope.test.ts
-npm test -- lib/__tests__/frozen-modular-migration.test.ts
-PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries
-npm run test:e2e -- e2e/purchase-flow.spec.ts -g "flujo solicitud"
-npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts e2e/worker-delivery-flow.spec.ts
-npm run test:e2e -- e2e/export-volume.spec.ts
-npm run test:e2e -- e2e/worker-delivery-flow.spec.ts
-git diff --check
-```
-
-También se usaron búsquedas y lecturas puntuales con `rg`, `sed` y `nl` sobre `app/`, `lib/`, `db/`, `e2e/`, `scripts/`, `docs/`, `modules/` y configuración raíz.
-
-### Evidencia resumida del fallo E2E original
+### Verificación local
 
 ```text
-TypeError: Invalid URL
-input: '/home/allopze/dev/chome/bodega/./.tmp/e2e.sqlite'
-Process from config.webServer was not able to start. Exit code: 1
+npm run check:secrets
+Resultado: pasa. Env files check passed.
+
+npm audit --omit=dev
+Resultado: pasa. found 0 vulnerabilities.
+
+npm run typecheck
+Resultado: pasa.
+
+npm run lint
+Resultado: pasa con 1 warning:
+app/(app)/entregas/page.tsx:23 DeliveryReturnProductOption is defined but never used.
+
+npm test
+Resultado: pasa. 37 test files passed, 1 skipped; 213 tests passed, 1 skipped.
+
+npm run build
+Resultado: pasa. Next.js 16.2.7 compila y genera rutas dinámicas correctamente.
+
+npm ls --depth=0
+Resultado: pasa, pero lista paquetes extraneous @emnapi/*, @napi-rs/wasm-runtime y @tybys/wasm-util.
 ```
 
-La causa inmediata era la mezcla de una ruta SQLite configurada para E2E con un cliente Postgres en `e2e/setup-db.ts`. El riesgo asociado era mayor que el fallo: el script destructivo podía borrar `public` si se le entregaba una URL Postgres no desechable.
+### Estado del worktree observado
 
-### Señales positivas verificadas
+Al cierre de la auditoría existen cambios locales no hechos por esta pasada:
 
-- Build productivo exitoso.
-- Lint y typecheck exitosos.
-- Pruebas automatizadas no E2E exitosas.
-- Dependencias sin vulnerabilidades reportadas por `npm audit --omit=dev`.
-- Exportaciones revisadas generan XLSX.
-- Middleware/configuración incluye headers de seguridad relevantes.
-- El proyecto ya documenta que `lib/` + `app/` son fuente viva y que `modules/` solo conserva registry/manifests/permisos/tipos.
+```text
+M app/(app)/admin/usuarios/user-form.test.tsx
+M db/schema/index.ts
+M db/schema/requests.ts
+M lib/storage/config.ts
+?? db/schema/repuestos.ts
+```
+
+No se modificaron esos archivos durante la auditoría. Esta pasada solo editó `AUDITORIA_CODIGO.md`.
+
+### Checklist de revisión
+
+- [x] Hallazgos críticos revisados
+- [x] Hallazgos altos priorizados
+- [ ] Código muerto validado antes de eliminar
+- [ ] Tests agregados o ajustados
+- [x] Configuración revisada
+- [x] Seguridad revisada
+- [x] Build y deploy verificados
+
+### Checklist de revisión
+
+- [ ] Hallazgos críticos revisados
+- [ ] Hallazgos altos priorizados
+- [ ] Código muerto validado antes de eliminar
+- [ ] Tests agregados o ajustados
+- [ ] Configuración revisada
+- [ ] Seguridad revisada
+- [ ] Build y deploy verificados

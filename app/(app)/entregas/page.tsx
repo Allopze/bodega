@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
+import Link from "next/link"
 import { db } from "@/db"
 import {
   attachments,
@@ -17,10 +18,11 @@ import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
 import { Package, User } from "@phosphor-icons/react/dist/ssr"
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
-import { DeliveryForm, type DeliverableEppOption, type DeliveryReturnProductOption } from "./delivery-form"
+import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
 
 export const metadata: Metadata = { title: "Entregas" }
 
@@ -257,37 +259,58 @@ export default async function Page({
       />
 
       <div className="flex flex-col gap-6">
-        {deliverableItems.length === 0 ? (
-          <EmptyState
-            icon={<Package size={24} />}
-            title="Sin EPP pendiente de entrega"
-            description="Los EPP recibidos con stock disponible aparecerán aquí para asignarlos a trabajadores."
-          />
-        ) : (
-          <DeliveryForm
-            worksites={worksiteOptions}
-            workers={workerOptions}
-            deliverableItems={deliverableItems}
-            returnProducts={catalogProducts}
-            initialWorksiteId={initialWorksiteId}
-            initialRequestItemId={initialDeliverable?.requestItemId}
-          />
-        )}
+        {/* ── Registrar entrega ── */}
+        <section className="flex flex-col gap-3 max-w-4xl">
+          <div>
+            <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>
+            <p className="mt-1 text-sm text-(--color-text-muted)">
+              Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
+            </p>
+          </div>
 
+          {deliverableItems.length === 0 ? (
+            <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+              <EmptyState
+                icon={<Package size={24} />}
+                title="Sin EPP pendiente de entrega"
+                description="Recepciona EPP en el módulo de Recepción para que aparezca aquí disponible para asignar."
+                action={
+                  <Button asChild variant="secondary">
+                    <Link href="/recepcion">Ir a Recepción</Link>
+                  </Button>
+                }
+              />
+            </div>
+          ) : (
+            <DeliveryForm
+              worksites={worksiteOptions}
+              workers={workerOptions}
+              deliverableItems={deliverableItems}
+              returnProducts={catalogProducts}
+              initialWorksiteId={initialWorksiteId}
+              initialRequestItemId={initialDeliverable?.requestItemId}
+            />
+          )}
+        </section>
+
+        {/* ── Historial de entregas ── */}
         <section className="flex flex-col gap-3">
           <div>
-            <h2 className="text-base font-semibold text-[var(--color-text)]">Historial de entregas</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            <h2 className="text-base font-semibold text-(--color-text)">Historial de entregas</h2>
+            <p className="mt-1 text-sm text-(--color-text-muted)">
               Registro nominal de EPP entregado a trabajadores.
             </p>
           </div>
 
           {deliveriesForTable.length === 0 ? (
-            <EmptyState
-              icon={<User size={22} />}
-              title="Sin entregas registradas"
-              description="Cuando registres una entrega de EPP, quedará disponible en este historial."
-            />
+            <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+              <EmptyState
+                icon={<User size={22} />}
+                title="Sin entregas registradas"
+                description="Cuando registres una entrega de EPP, quedará disponible en este historial."
+                compact
+              />
+            </div>
           ) : (
             <DeliveriesTable deliveries={deliveriesForTable} />
           )}

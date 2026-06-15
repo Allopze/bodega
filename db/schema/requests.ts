@@ -20,7 +20,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
   requesterId:  text("requester_id").notNull().references(() => users.id),
 
-  requestType:  text("request_type").notNull().default("epp"), // epp | stock | mantencion | otro
+  requestType:  text("request_type").notNull().default("epp"), // epp | stock | mantencion | otro | repuestos | servicios
   urgency:      text("urgency").notNull().default("normal"),   // normal | high | critical
   requiredDate: text("required_date"),
   status:       text("status").notNull().default("draft"),
@@ -32,7 +32,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
 }, (table) => [
   // Invariant: requestType, urgency and status must be from the canonical lists
   check("purchase_requests_type_urgency_status_valid", sql`
-    ${table.requestType} IN ('epp', 'stock', 'mantencion', 'otro')
+    ${table.requestType} IN ('epp', 'stock', 'mantencion', 'otro', 'repuestos', 'servicios')
     AND ${table.urgency} IN ('normal', 'high', 'critical')
     AND ${table.status} IN (
       'draft', 'submitted', 'in_review', 'partially_approved', 'approved',

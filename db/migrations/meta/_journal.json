@@ -50,6 +50,20 @@
       "when": 1781498657262,
       "tag": "0006_secret_captain_flint",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781500423107,
+      "tag": "0007_melodic_malcolm_colcord",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781535191125,
+      "tag": "0008_heavy_pyro",
+      "breakpoints": true
     }
   ]
 }

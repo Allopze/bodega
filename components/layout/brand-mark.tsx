@@ -41,7 +41,7 @@ export function BrandMark({
         width={size}
         height={size}
         unoptimized
-        className="shrink-0"
+        className="shrink-0 rounded-(--radius-sm)"
         style={{ width: size, height: size }}
       />
       {!hideText && (

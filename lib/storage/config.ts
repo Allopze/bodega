@@ -2,6 +2,8 @@ import path from "node:path"
 
 const DELIVERY_ATTACHMENT_PREFIX = "storage/deliveries/"
 const INVOICE_ATTACHMENT_PREFIX = "storage/purchase-orders/"
+const QUOTATION_ATTACHMENT_PREFIX = "storage/repuestos/"
+const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
 
 /**
  * Resolves the base storage directory.
@@ -63,6 +65,54 @@ export function resolveInvoiceAttachmentFile(filePath: string): string | null {
   }
 
   return path.join(resolvePurchaseOrdersDir(), storageName)
+}
+
+export function resolveRepuestosDir(): string {
+  return path.join(resolveStorageDir(), "repuestos")
+}
+
+export function resolveServiciosDir(): string {
+  return path.join(resolveStorageDir(), "servicios")
+}
+
+export function createQuotationAttachmentPath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid quotation attachment file name")
+  }
+  return `${QUOTATION_ATTACHMENT_PREFIX}${storageName}`
+}
+
+export function resolveQuotationAttachmentFile(filePath: string): string | null {
+  if (!filePath.startsWith(QUOTATION_ATTACHMENT_PREFIX)) {
+    return null
+  }
+
+  const storageName = filePath.slice(QUOTATION_ATTACHMENT_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+
+  return path.join(resolveRepuestosDir(), storageName)
+}
+
+export function createServiceQuotationPath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid service quotation file name")
+  }
+  return `${SERVICE_QUOTATION_PREFIX}${storageName}`
+}
+
+export function resolveServiceQuotationFile(filePath: string): string | null {
+  if (!filePath.startsWith(SERVICE_QUOTATION_PREFIX)) {
+    return null
+  }
+
+  const storageName = filePath.slice(SERVICE_QUOTATION_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+
+  return path.join(resolveServiciosDir(), storageName)
 }
 
 function isSafeStorageName(storageName: string): boolean {

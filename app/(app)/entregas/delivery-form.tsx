@@ -97,14 +97,7 @@ export function DeliveryForm({
   }
 
   return (
-    <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
-      <div className="mb-4 flex flex-col gap-1">
-        <h2 className="text-base font-semibold text-[var(--color-text)]">Registrar entrega de EPP</h2>
-        <p className="text-sm text-[var(--color-text-muted)]">
-          Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
-        </p>
-      </div>
-
+    <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
       <form ref={formRef} action={action} className="flex flex-col gap-4">
         <input type="hidden" name="worksiteId" value={worksiteId} />
         <input type="hidden" name="workerId" value={workerId} />
@@ -310,6 +303,6 @@ export function DeliveryForm({
           />
         </div>
       </form>
-    </section>
+    </div>
   )
 }

@@ -1,0 +1,51 @@
+import type { ModuleManifest } from "@/modules/manifest-types"
+
+export const repuestosModule = {
+  id: "repuestos",
+  permissions: [
+    "repuestos:create",
+    "repuestos:view_own",
+    "repuestos:view_all",
+    "repuestos:submit",
+    "repuestos:approve",
+  ] as const,
+  nav: [
+    {
+      areaId: "operaciones",
+      items: [
+        {
+          label:       "Repuestos",
+          href:        "/repuestos",
+          iconName:    "Wrench",
+          permissions: ["repuestos:view_own", "repuestos:view_all"],
+          badge:       "count" as const,
+        },
+      ],
+    },
+  ],
+  defaultGrants: [
+    // Administrador: acceso total
+    { roleSlug: "administrador", permission: "repuestos:create" },
+    { roleSlug: "administrador", permission: "repuestos:view_own" },
+    { roleSlug: "administrador", permission: "repuestos:view_all" },
+    { roleSlug: "administrador", permission: "repuestos:submit" },
+    { roleSlug: "administrador", permission: "repuestos:approve" },
+    // Jefatura: aprueba cotizaciones + ve todo
+    { roleSlug: "jefa_chome", permission: "repuestos:view_all" },
+    { roleSlug: "jefa_chome", permission: "repuestos:approve" },
+    // Secretaría: crea, envía y ve todo (genera OC via compras existente)
+    { roleSlug: "secretaria", permission: "repuestos:create" },
+    { roleSlug: "secretaria", permission: "repuestos:view_own" },
+    { roleSlug: "secretaria", permission: "repuestos:view_all" },
+    { roleSlug: "secretaria", permission: "repuestos:submit" },
+    // Prevencionista oficina: crea y envía para sus faenas
+    { roleSlug: "prevencionista", permission: "repuestos:create" },
+    { roleSlug: "prevencionista", permission: "repuestos:view_own" },
+    { roleSlug: "prevencionista", permission: "repuestos:view_all" },
+    { roleSlug: "prevencionista", permission: "repuestos:submit" },
+    // Faena: crea y ve sus propias solicitudes
+    { roleSlug: "solicitante_faena", permission: "repuestos:create" },
+    { roleSlug: "solicitante_faena", permission: "repuestos:view_own" },
+    { roleSlug: "solicitante_faena", permission: "repuestos:submit" },
+  ],
+} as const satisfies ModuleManifest

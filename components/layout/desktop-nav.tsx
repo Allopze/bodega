@@ -90,7 +90,7 @@ export function DesktopNav({ session, worksiteName, badgeCounts, collapsed, onCo
       className="hidden lg:flex lg:w-60 lg:shrink-0 lg:flex-col overflow-hidden rounded-(--radius-2xl) border border-(--color-border) bg-surface shadow-(--shadow-card)"
     >
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
-        <BrandMark variant="light" size={28} subtitle titleSize="sm" />
+        <BrandMark variant="light" size={36} subtitle titleSize="sm" />
         <Tooltip content="Ocultar panel" side="right" delayDuration={250}>
           <button
             type="button"
