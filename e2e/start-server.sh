@@ -25,6 +25,12 @@ SMTP_DISABLED="true" \
 SMTP_TIMEOUT_MS="1000" \
 npm run build
 
+# El output standalone de Next no incluye assets estáticos ni public/.
+# Sin esto los chunks de cliente dan 404, la página no hidrata y el form de
+# login cae a un submit GET nativo (queda en /login en vez de /dashboard).
+cp -r .next/static .next/standalone/.next/static
+[ -d public ] && cp -r public .next/standalone/public
+
 DATABASE_URL="$DB_URL" \
 AUTH_SECRET="$AUTH_SECRET_VALUE" \
 NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
