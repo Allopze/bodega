@@ -164,6 +164,23 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  // Producto dedicado para los fixtures masivos de export/paginación. Mantenerlo
+  // separado de "Guante E2E" (prod-e2e) evita que los 120 ítems bulk contaminen
+  // la pantalla de creación de OC, donde compartirían la etiqueta "Incluir Guante
+  // E2E" con el ítem del flujo funcional y volverían no determinista al .first().
+  await db.insert(schema.products).values({
+    id: "prod-bulk-e2e",
+    sku: "E2E-BULK-001",
+    name: "Bulk Export E2E",
+    categoryId: "cat-e2e",
+    unitOfMeasure: "unidad",
+    referencePrice: 500,
+    isEpp: false,
+    requiresPrevencion: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
   await db.insert(schema.productSuppliers).values({
     id: "prod-sup-e2e",
     productId: "prod-e2e",
@@ -325,7 +342,7 @@ async function main() {
       return {
         id: `req-item-bulk-e2e-${number}`,
         requestId: request.id,
-        productId: "prod-e2e",
+        productId: "prod-bulk-e2e",
         productNameFree: null,
         quantity: 1 + (index % 9),
         unitOfMeasure: "unidad",
