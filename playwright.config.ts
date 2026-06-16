@@ -1,7 +1,9 @@
 import { defineConfig, devices } from "@playwright/test"
 
 const port = 3100
-const databaseUrl = "postgres:///bodega_e2e"
+// En CI el workflow expone DATABASE_URL con credenciales del contenedor postgres.
+// En local caemos a la conexión por socket (peer auth) contra bodega_e2e.
+const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL ?? "postgres:///bodega_e2e"
 
 export default defineConfig({
   testDir: "./e2e",
