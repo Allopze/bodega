@@ -13,7 +13,7 @@ import { db } from "@/db"
 import { notifications, rolePermissions, userPermissions, permissions, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { NotificationType } from "@/db/schema/audit"
-import { sendEmail, getAppBaseUrl } from "@/lib/email/smtp"
+import { sendEmail, sendBatchEmails, getAppBaseUrl } from "@/lib/email/smtp"
 import { escapeHtml } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 
@@ -99,13 +99,15 @@ export async function createNotifications(
     })),
   )
 
-  // Send emails asynchronously to all users
+  // Send emails asynchronously — batch into a single SMTP connection
   const targetUsers = await db
     .select({ id: users.id, email: users.email, name: users.name })
     .from(users)
     .where(inArray(users.id, userIds))
 
   const appUrl = getAppBaseUrl()
+  const emailMessages: Array<{ to: string; subject: string; text: string; html: string }> = []
+
   for (const u of targetUsers) {
     if (u.email) {
       const safeName = escapeHtml(u.name ?? "Usuario")
@@ -119,15 +121,14 @@ export async function createNotifications(
         ${safeBody ? `<p>${safeBody}</p>` : ""}
         ${safeHref ? `<p><a href="${safeHref}">Ver detalle en Chome</a></p>` : ""}
       `
-      sendEmail({
-        to:      u.email,
-        subject: input.title,
-        text,
-        html,
-      }).catch((err) => {
-        logger.error(`[notifications] failed to send email to ${u.email}`, err)
-      })
+      emailMessages.push({ to: u.email, subject: input.title, text, html })
     }
+  }
+
+  if (emailMessages.length > 0) {
+    sendBatchEmails(emailMessages).catch((err) => {
+      logger.error("[notifications] failed to send batch emails", err)
+    })
   }
 }
 

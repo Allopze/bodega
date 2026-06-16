@@ -52,22 +52,20 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
   const now       = new Date().toISOString()
   const year      = new Date().getFullYear()
 
-  const order = await db.query.purchaseOrders.findFirst({
-    where: eq(purchaseOrders.id, input.purchaseOrderId),
-    with:  { items: true },
-  })
-  if (!order) throw new Error(`Purchase order ${input.purchaseOrderId} not found`)
-  if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
-    throw new Error(`Cannot receive against order in state '${order.status}'`)
-  }
-  // Office is the mandatory first stage: a worksite receipt cannot happen before anything arrived at office.
-  if (input.stage === "faena" && order.status === "sent") {
-    throw new Error("Debes registrar primero la llegada a oficina antes de recibir en faena")
-  }
-
-  const worksiteId = input.worksiteId ?? order.worksiteId
-
   const code = await db.transaction(async (tx) => {
+    // Read order INSIDE the transaction to avoid stale status checks.
+    const order = await tx.query.purchaseOrders.findFirst({
+      where: eq(purchaseOrders.id, input.purchaseOrderId),
+    })
+    if (!order) throw new Error(`Purchase order ${input.purchaseOrderId} not found`)
+    if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
+      throw new Error(`Cannot receive against order in state '${order.status}'`)
+    }
+    if (input.stage === "faena" && order.status === "sent") {
+      throw new Error("Debes registrar primero la llegada a oficina antes de recibir en faena")
+    }
+
+    const worksiteId = input.worksiteId ?? order.worksiteId
     const txCode = await nextCodeTx(tx, "REC", year)
 
     await tx.insert(receipts).values({
@@ -85,20 +83,29 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
     })
 
     for (const ri of input.items) {
-      const ocItem = order.items.find((i) => i.id === ri.purchaseOrderItemId)
-      if (!ocItem) throw new Error(`OC item ${ri.purchaseOrderItemId} not in this order`)
-
       const qtyRec = ri.quantityReceived
       const qtyRej = ri.quantityRejected ?? 0
       const qtyDmg = ri.quantityDamaged  ?? 0
+
+      // Lock the OC item row to serialize concurrent receipts on the same item.
+      const [lockedOcItem] = await tx
+        .select()
+        .from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
+        .for("update")
+
+      if (!lockedOcItem || lockedOcItem.purchaseOrderId !== input.purchaseOrderId) {
+        throw new Error(`OC item ${ri.purchaseOrderItemId} not in this order`)
+      }
+
       // Office stage caps at the ordered quantity; faena stage caps STRICTLY at what already
       // arrived at office (no fallback to the full quantity → the direct-to-faena path is closed).
       const currentReceived = input.stage === "office"
-        ? (ocItem.quantityOfficeReceived ?? 0)
-        : (ocItem.quantityReceived ?? 0)
+        ? (lockedOcItem.quantityOfficeReceived ?? 0)
+        : (lockedOcItem.quantityReceived ?? 0)
       const remaining = input.stage === "office"
-        ? ocItem.quantity - (ocItem.quantityOfficeReceived ?? 0)
-        : (ocItem.quantityOfficeReceived ?? 0) - (ocItem.quantityReceived ?? 0)
+        ? lockedOcItem.quantity - (lockedOcItem.quantityOfficeReceived ?? 0)
+        : (lockedOcItem.quantityOfficeReceived ?? 0) - (lockedOcItem.quantityReceived ?? 0)
 
       if (!Number.isFinite(qtyRec) || qtyRec <= 0) {
         throw new Error("Received quantity must be greater than 0")
@@ -118,7 +125,7 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
         quantityReceived:    qtyRec,
         quantityRejected:    qtyRej,
         quantityDamaged:     qtyDmg,
-        status:              totalNowReceived >= ocItem.quantity ? "received" : "partially_received",
+        status:              totalNowReceived >= lockedOcItem.quantity ? "received" : "partially_received",
         notes:               ri.notes ?? null,
       })
 
@@ -129,17 +136,17 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
           : { quantityReceived: totalNowReceived })
         .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
 
-      if (input.stage === "faena" && ocItem.requestItemId) {
-        const fullReceived = totalNowReceived >= ocItem.quantity
-        await receiveItemTx(tx, ocItem.requestItemId, input.receivedBy, {
+      if (input.stage === "faena" && lockedOcItem.requestItemId) {
+        const fullReceived = totalNowReceived >= lockedOcItem.quantity
+        await receiveItemTx(tx, lockedOcItem.requestItemId, input.receivedBy, {
           fullReceived,
           userEmail: input.userEmail,
         })
 
-        if (worksiteId && ocItem.productId) {
+        if (worksiteId && lockedOcItem.productId) {
           await applyMovementTx(tx, {
             worksiteId,
-            productId:   ocItem.productId,
+            productId:   lockedOcItem.productId,
             type:        "ingreso_oc",
             quantity:    qtyRec,
             referenceType: "purchase_order",

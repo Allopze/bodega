@@ -1,9 +1,15 @@
+import fs from "node:fs"
+import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { loadSeedWorkerData } from "@/db/seed/workers"
 
-describe("seed worker data", () => {
+const sourcePath = path.join(process.cwd(), "trabajadores_por_faena_actualizado.md")
+const hasSourceFile = fs.existsSync(sourcePath)
+const describeIf = hasSourceFile ? describe : describe.skip
+
+describeIf("seed worker data", () => {
   it("loads workers from trabajadores_por_faena_actualizado.md grouped by worksite", () => {
-    const data = loadSeedWorkerData()
+    const data = loadSeedWorkerData(sourcePath)
 
     expect(data.sourceRows).toBe(147)
     expect(data.skippedDuplicateRuts).toBe(1)

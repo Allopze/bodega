@@ -67,7 +67,7 @@ const EPP_CATEGORY = {
   sortOrder: 10,
 }
 
-const EPP_SUPPLIERS: schema.suppliers["$inferInsert"][] = [
+const EPP_SUPPLIERS: (typeof schema.suppliers.$inferInsert)[] = [
   {
     id: "sup-treck",
     name: "TRECK",
@@ -94,7 +94,7 @@ const EPP_SUPPLIERS: schema.suppliers["$inferInsert"][] = [
   },
 ]
 
-const COMPANY_PROFILE_SETTINGS: schema.systemSettings["$inferInsert"][] = [
+const COMPANY_PROFILE_SETTINGS: (typeof schema.systemSettings.$inferInsert)[] = [
   { key: "company_name", value: "Servicios Industriales Chome Limitada" },
   { key: "company_rut", value: "78.023.530-6" },
   { key: "company_business_activity", value: "Servicios Industrial" },

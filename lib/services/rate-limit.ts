@@ -64,14 +64,24 @@ export async function recordSuccess(key: string): Promise<void> {
 }
 
 /**
- * Remove only *expired locks* (lockUntil in the past, > 0). Runs on every check.
+ * Remove expired locks AND stale unlocked counters.
  *
- * IMPORTANT: it must NOT touch in-progress counters (lockUntil = 0). The previous
- * predicate `lockUntil < now - LOCK_TIME` matched every lockUntil=0 row, so the
- * counter was wiped on each call and the 5-strike lock never engaged.
+ * 1. Expired locks: lockUntil > 0 AND lockUntil < now.
+ * 2. Stale counters: lockUntil = 0 AND untouched for > LOCK_TIME (abandoned attempts).
+ *
+ * IMPORTANT: it must NOT touch active in-progress counters (lockUntil = 0, recent).
+ * The previous predicate accidentally matched every lockUntil=0 row, wiping the counter.
  */
 async function pruneExpiredLocks(): Promise<void> {
   const now = Date.now()
+  const cutoff = new Date(now - LOCK_TIME).toISOString()
+
   await db.delete(rateLimits)
     .where(and(gt(rateLimits.lockUntil, 0), lt(rateLimits.lockUntil, now)))
+
+  await db.delete(rateLimits)
+    .where(and(
+      eq(rateLimits.lockUntil, 0),
+      lt(rateLimits.updatedAt, cutoff),
+    ))
 }

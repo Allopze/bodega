@@ -53,8 +53,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 ._.DS_Store
-.commandcode/taste/._taste.md
-.commandcode/design/review-report.html
+
+# tool artifacts (local only)
+.VSCodeCounter/
+.commandcode/
+
 /audit
 /ui-audit
 .env.local

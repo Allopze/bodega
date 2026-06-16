@@ -1,5 +1,6 @@
 import { pgTable, text, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
+import { worksites } from "./worksites"
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
 export const users = pgTable("users", {
@@ -70,7 +71,7 @@ export const userRoles = pgTable("user_roles", {
 /* ── User ↔ Faena (worksite scoping) ────────────────────────────────────── */
 export const worksiteUsers = pgTable("worksite_users", {
   userId:     text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  worksiteId: text("worksite_id").notNull(),  // fk to worksites.id — resolved in index.ts
+  worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
   isPrimary:  boolean("is_primary").notNull().default(false),
 }, (table) => [
   uniqueIndex("worksite_users_user_worksite_unique").on(table.userId, table.worksiteId),

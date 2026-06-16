@@ -69,14 +69,18 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
 
     let totalDelivered: number | undefined
     if (input.requestItemId) {
-      const requestItem = await tx.query.purchaseRequestItems.findFirst({
-        where: eq(purchaseRequestItems.id, input.requestItemId),
-      })
-      if (!requestItem) throw new Error("Ítem de solicitud no encontrado")
-      if (!["received", "partially_delivered"].includes(requestItem.status)) {
+      // Lock the request item row to serialize concurrent deliveries on the same item.
+      const [lockedRequestItem] = await tx
+        .select()
+        .from(purchaseRequestItems)
+        .where(eq(purchaseRequestItems.id, input.requestItemId))
+        .for("update")
+
+      if (!lockedRequestItem) throw new Error("Ítem de solicitud no encontrado")
+      if (!["received", "partially_delivered"].includes(lockedRequestItem.status)) {
         throw new Error("Solo puedes asociar ítems recibidos pendientes de entrega")
       }
-      if (requestItem.productId !== input.productId) {
+      if (lockedRequestItem.productId !== input.productId) {
         throw new Error("El ítem trazable no coincide con el producto")
       }
 
@@ -85,7 +89,7 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
         .from(deliveryItems)
         .where(eq(deliveryItems.requestItemId, input.requestItemId))
       const alreadyDelivered = previousDeliveries.reduce((sum, item) => sum + item.quantity, 0)
-      const pending = requestItem.quantity - alreadyDelivered
+      const pending = lockedRequestItem.quantity - alreadyDelivered
       if (pending <= 0) throw new Error("El ítem ya fue entregado completamente")
       if (input.quantity > pending) {
         throw new Error(`La cantidad excede el saldo pendiente de entrega (${pending})`)
@@ -176,28 +180,33 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
 
     const worksite = await tx.query.worksites.findFirst({ where: eq(worksites.id, input.worksiteId) })
     const worker = await tx.query.workers.findFirst({ where: eq(workers.id, input.workerId) })
-    const requestItem = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, input.requestItemId),
-    })
 
     if (!worksite || !worksite.isActive) throw new Error("Faena no disponible")
     if (!worker || !worker.isActive) throw new Error("Trabajador no disponible")
     if (worker.worksiteId !== input.worksiteId) throw new Error("El trabajador no pertenece a la faena seleccionada")
-    if (!requestItem) throw new Error("Ítem de solicitud no encontrado")
-    if (!["received", "partially_delivered"].includes(requestItem.status)) {
+
+    // Lock the request item row to serialize concurrent deliveries on the same item.
+    const [lockedRequestItem] = await tx
+      .select()
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, input.requestItemId))
+      .for("update")
+
+    if (!lockedRequestItem) throw new Error("Ítem de solicitud no encontrado")
+    if (!["received", "partially_delivered"].includes(lockedRequestItem.status)) {
       throw new Error("Solo puedes entregar EPP recibidos pendientes de entrega")
     }
-    if (!requestItem.productId) throw new Error("El ítem recibido no tiene producto de catálogo")
+    if (!lockedRequestItem.productId) throw new Error("El ítem recibido no tiene producto de catálogo")
 
     const request = await tx.query.purchaseRequests.findFirst({
-      where: eq(purchaseRequests.id, requestItem.requestId),
+      where: eq(purchaseRequests.id, lockedRequestItem.requestId),
     })
     if (!request) throw new Error("Solicitud no encontrada")
     if (request.worksiteId !== input.worksiteId) {
       throw new Error("El ítem no pertenece a la faena seleccionada")
     }
 
-    const product = await tx.query.products.findFirst({ where: eq(products.id, requestItem.productId) })
+    const product = await tx.query.products.findFirst({ where: eq(products.id, lockedRequestItem.productId) })
     if (!product || !product.isActive) throw new Error("Producto no disponible")
     if (!product.isEpp) throw new Error("Solo se pueden entregar productos marcados como EPP")
 
@@ -206,7 +215,7 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
       .from(deliveryItems)
       .where(eq(deliveryItems.requestItemId, input.requestItemId))
     const alreadyDelivered = previousDeliveries.reduce((sum, item) => sum + item.quantity, 0)
-    const pending = requestItem.quantity - alreadyDelivered
+    const pending = lockedRequestItem.quantity - alreadyDelivered
     if (pending <= 0) throw new Error("El ítem ya fue entregado completamente")
     if (input.quantity > pending) {
       throw new Error(`La cantidad excede el saldo pendiente de entrega (${pending})`)
@@ -215,7 +224,7 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
     const stock = await tx.query.worksiteStock.findFirst({
       where: and(
         eq(worksiteStock.worksiteId, input.worksiteId),
-        eq(worksiteStock.productId, requestItem.productId),
+        eq(worksiteStock.productId, lockedRequestItem.productId),
       ),
     })
     if (!stock || stock.quantity < input.quantity) {
@@ -245,10 +254,10 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
       id: deliveryItemId,
       deliveryId,
       requestItemId: input.requestItemId,
-      productId: requestItem.productId,
+      productId: lockedRequestItem.productId,
       productNameFree: null,
       quantity: input.quantity,
-      unitOfMeasure: requestItem.unitOfMeasure,
+      unitOfMeasure: lockedRequestItem.unitOfMeasure,
       notes: null,
       returnQuantity: input.returnQuantity ?? null,
       returnProductId: input.returnProductId ?? null,
@@ -289,7 +298,7 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
 
     await applyMovementTx(tx, {
       worksiteId: input.worksiteId,
-      productId: requestItem.productId,
+      productId: lockedRequestItem.productId,
       type: "egreso_entrega",
       quantity: -input.quantity,
       referenceType: "delivery",
@@ -316,7 +325,7 @@ export async function registerWorkerEppDelivery(input: RegisterWorkerEppDelivery
       newState: {
         worksiteId: input.worksiteId,
         workerId: input.workerId,
-        productId: requestItem.productId,
+        productId: lockedRequestItem.productId,
         requestItemId: input.requestItemId,
         quantity: input.quantity,
         receiverName: workerName,

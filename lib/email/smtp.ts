@@ -131,6 +131,31 @@ export async function sendEmail({
   return { sent: true as const }
 }
 
+export async function sendBatchEmails(
+  messages: Array<{ to: string; subject: string; text: string; html: string }>,
+) {
+  const config = getSmtpConfig()
+  if (!config) return { sent: false as const, reason: "SMTP no configurado" }
+
+  const client = await SmtpClient.connect(config)
+  try {
+    for (const msg of messages) {
+      await client.sendMail({
+        fromHeader:  config.from,
+        fromAddress: extractEmailAddress(config.from),
+        toAddress:   extractEmailAddress(msg.to),
+        subject:     msg.subject,
+        text:        msg.text,
+        html:        msg.html,
+      })
+    }
+  } finally {
+    await client.close()
+  }
+
+  return { sent: true as const, count: messages.length }
+}
+
 class SmtpClient {
   private socket: net.Socket | tls.TLSSocket
   private buffer = ""

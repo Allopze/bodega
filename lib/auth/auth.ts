@@ -20,6 +20,9 @@ const loginSchema = z.object({
   password: z.string().min(1),
 })
 
+// Dummy hash for timing-safe comparison when user doesn't exist (prevents user enumeration).
+const DUMMY_HASH = "$2a$12$LJ3m4ys3Lz0YBNourRNBHOVFPlAGm9koCpx/RTz8uVzNoMKCeVBCO"
+
 const authUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? (
   process.env.NODE_ENV === "production" ? process.env.APP_URL : undefined
 )
@@ -78,20 +81,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         const userWithAuth = await getUserWithAuth(email)
-        if (!userWithAuth) {
-          await persistentRecordFailure(clientIp)
-          await persistentRecordFailure(email)
-          return null
-        }
 
-        if (userWithAuth._passwordSetupPending) {
-          await persistentRecordFailure(clientIp)
-          await persistentRecordFailure(email)
-          return null
-        }
+        // Always compare to prevent timing oracle (user enumeration via response time).
+        const hashToCompare = userWithAuth?._hashedPassword ?? DUMMY_HASH
+        const valid = await bcrypt.compare(parsed.data.password, hashToCompare)
 
-        const valid = await bcrypt.compare(parsed.data.password, userWithAuth._hashedPassword)
-        if (!valid) {
+        if (!userWithAuth || userWithAuth._passwordSetupPending || !valid) {
           await persistentRecordFailure(clientIp)
           await persistentRecordFailure(email)
           return null
@@ -117,20 +112,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token
       }
       if (token.id) {
-        // Check if user profile was updated since the token was issued.
-        // If so, bypass the RBAC cache to pick up role/permission changes immediately.
-        const [userRow] = await db
-          .select({ updatedAt: users.updatedAt })
-          .from(users)
-          .where(eq(users.id, token.id as string))
-          .limit(1)
-
-        const tokenIat = token.iat ? token.iat * 1000 : 0
-        const profileChanged = userRow && tokenIat > 0
-          ? new Date(userRow.updatedAt).getTime() > tokenIat
-          : false
-
-        const snapshot = await getUserRbacById(token.id as string, profileChanged)
+        // getUserRbacById has a 60s in-memory cache; clearUserRbacCache()
+        // is called immediately when admins change roles/permissions.
+        const snapshot = await getUserRbacById(token.id as string)
         applyRbacToToken(token, snapshot)
       }
       return token
