@@ -6,6 +6,9 @@ import { desc, count, inArray, eq, and, sql } from "drizzle-orm"
 import { can, requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
+import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
+import { ClipboardText, Clock, Warning } from "@phosphor-icons/react/dist/ssr"
 import { RepuestoList } from "./request-list"
 
 export const metadata: Metadata = { title: "Solicitudes de repuestos" }
@@ -85,6 +88,19 @@ export default async function RepuestosPage() {
     createdAt:    r.createdAt,
   }))
 
+  const pendingReview = rows.filter((r) => ["submitted", "in_review", "partially_approved"].includes(r.status)).length
+  const criticalCount = rows.filter((r) => r.urgency === "critical").length
+  const summaryStats: SummaryStat[] = [
+    { key: "total",    label: "Solicitudes",      value: rows.length,                                     icon: <ClipboardText size={13} /> },
+    { key: "review",   label: "Por revisar",      value: pendingReview,                                   icon: <Clock size={13} /> },
+    { key: "high",     label: "Urgencia alta",    value: rows.filter((r) => r.urgency === "high").length, icon: <Warning size={13} /> },
+    { key: "critical", label: "Urgencia crítica", value: criticalCount,                                   icon: <Warning size={13} weight="fill" />, tone: "signal" },
+  ]
+  const headerSignals: HeaderSignal[] = [
+    { key: "critical", label: "Críticas",    value: criticalCount, tone: "signal" },
+    { key: "review",   label: "Por revisar", value: pendingReview },
+  ]
+
   return (
     <PageContainer>
       <PageHeader
@@ -96,7 +112,9 @@ export default async function RepuestosPage() {
             { label: "Repuestos" },
           ]} />
         }
+        headerActions={<HeaderSignals signals={headerSignals} />}
       />
+      {rows.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <RepuestoList
         requests={rows}
         canCreate={can(session, "repuestos:create")}

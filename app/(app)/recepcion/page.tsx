@@ -9,6 +9,7 @@ import { requirePermission, canAny } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { RecepcionTable } from "./recepcion-table"
@@ -94,6 +95,10 @@ export default async function RecepcionPage({
 
   const canRegister = canAny(session, "receiving:register_office", "receiving:register_faena")
 
+  const headerSignals: HeaderSignal[] = [
+    { key: "to-receive", label: "Por recibir", value: totalRow?.total ?? 0 },
+  ]
+
   return (
     <PageContainer>
       <PageHeader
@@ -105,6 +110,7 @@ export default async function RecepcionPage({
             { label: "Recepción" },
           ]} />
         }
+        headerActions={<HeaderSignals signals={headerSignals} />}
       />
 
       <RecepcionTable

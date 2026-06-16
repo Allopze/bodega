@@ -7,6 +7,8 @@ import { requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
+import { UsersThree, CheckCircle, PauseCircle, Buildings } from "@phosphor-icons/react/dist/ssr"
 import { WorkerList } from "./worker-list"
 
 export const metadata: Metadata = { title: "Trabajadores" }
@@ -28,6 +30,15 @@ export default async function TrabajadoresPage() {
     }),
   ])
 
+  const activeCount = allWorkers.filter((w) => w.isActive).length
+  const faenaCount = new Set(allWorkers.map((w) => w.worksiteId)).size
+  const summaryStats: SummaryStat[] = [
+    { key: "total",    label: "Trabajadores", value: allWorkers.length,             icon: <UsersThree size={13} /> },
+    { key: "active",   label: "Activos",      value: activeCount,                   icon: <CheckCircle size={13} /> },
+    { key: "inactive", label: "Inactivos",    value: allWorkers.length - activeCount, icon: <PauseCircle size={13} /> },
+    { key: "faenas",   label: "Faenas",       value: faenaCount,                    icon: <Buildings size={13} /> },
+  ]
+
   return (
     <PageContainer>
       <PageHeader
@@ -41,6 +52,7 @@ export default async function TrabajadoresPage() {
           ]} />
         }
       />
+      {allWorkers.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <WorkerList
         workers={allWorkers.map((w) => ({
           id:           w.id,

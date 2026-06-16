@@ -4,7 +4,9 @@ import type { ComponentType } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
+import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { MetricBar } from "./metric-bar"
 import { QuickActions } from "./quick-actions"
 import { RecentActivity } from "./recent-activity"
@@ -21,6 +23,7 @@ import {
 } from "@/db/schema"
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm"
 import { can, isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import type { Permission } from "@/modules/permissions"
 import { cn, formatCLP } from "@/lib/utils"
 import {
   ArrowRight,
@@ -108,8 +111,20 @@ export default async function DashboardPage() {
 
   const firstName = session.user.name?.split(" ")[0] ?? "usuario"
 
+  const signalDefs: Array<HeaderSignal & { perm: Permission }> = [
+    { key: "approvals", label: "Por aprobar",   value: data.metrics.pending_approvals,      href: "/aprobaciones",  tone: "signal", perm: "approvals:approve" },
+    { key: "no-oc",     label: "Sin OC",        value: data.metrics.approved_without_oc,    href: "/compras/nueva", tone: "signal", perm: "purchasing:create_order" },
+    { key: "receive",   label: "Por recibir",   value: data.metrics.orders_pending_receipt, href: "/recepcion",                     perm: "receiving:view" },
+    { key: "stock",     label: "Alertas stock", value: stockAlertCount,                     href: "/bodega",        tone: "signal", perm: "warehouse:view_stock" },
+  ]
+  const headerSignals: HeaderSignal[] = signalDefs.filter((s) => can(session, s.perm))
+
   return (
     <PageContainer>
+      <PageHeader
+        title="Dashboard"
+        headerActions={<HeaderSignals signals={headerSignals} />}
+      />
       <div className="animate-in fade-in duration-[var(--duration-default)]">
 
       {/* ── Cabecera: saludo + estado ── */}

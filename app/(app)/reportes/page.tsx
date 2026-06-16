@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import {
@@ -13,8 +14,9 @@ import { Badge } from "@/components/ui/badge"
 import { REQUEST_STATE_META, ITEM_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
 import { ExportDialog } from "@/components/export-dialog"
 import { formatCLP } from "@/lib/utils"
-import { count, eq, inArray, sql, sum, asc } from "drizzle-orm"
-import { ChartBar } from "@phosphor-icons/react/dist/ssr"
+import { and, count, eq, inArray, sql, sum, asc } from "drizzle-orm"
+import { ChartBar, ShoppingCart, Truck, ArrowRight } from "@phosphor-icons/react/dist/ssr"
+import Link from "next/link"
 
 export const metadata: Metadata = { title: "Reportes" }
 
@@ -53,6 +55,8 @@ export default async function Page() {
     requestStatusRows,
     itemStatusRows,
     orderStatusRows,
+    itemsSinOcByWorksite,
+    ocPendingByWorksite,
   ] = await Promise.all([
     db
       .select({
@@ -105,6 +109,19 @@ export default async function Page() {
       .from(purchaseOrders)
       .where(orderWsFilter)
       .groupBy(purchaseOrders.status),
+
+    db
+      .select({ worksiteId: purchaseRequests.worksiteId, total: count() })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eqRequestItemRequest())
+      .where(and(requestWsFilter, inArray(purchaseRequestItems.status, ["approved", "pending_purchase"])))
+      .groupBy(purchaseRequests.worksiteId),
+
+    db
+      .select({ worksiteId: purchaseOrders.worksiteId, total: count() })
+      .from(purchaseOrders)
+      .where(and(orderWsFilter, inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"])))
+      .groupBy(purchaseOrders.worksiteId),
   ])
 
   const requestTotals = requestSummary[0]
@@ -139,6 +156,17 @@ export default async function Page() {
       detail: "Órdenes enviadas pendientes de oficina o bodega/faena",
     },
   ]
+
+  const wsNameMap = Object.fromEntries(activeWorksites.map((w) => [w.id, w.name]))
+  const toBreakdown = (rows: { worksiteId: string; total: number }[]) =>
+    rows
+      .map((row) => ({ label: wsNameMap[row.worksiteId] ?? row.worksiteId, value: Number(row.total) }))
+      .sort((a, b) => b.value - a.value)
+
+  const itemsSinOcRows = toBreakdown(itemsSinOcByWorksite)
+  const ocPendingRows = toBreakdown(ocPendingByWorksite)
+  const itemsSinOcTotal = itemsSinOcRows.reduce((sum, row) => sum + row.value, 0)
+  const ocPendingTotal = ocPendingRows.reduce((sum, row) => sum + row.value, 0)
 
   return (
     <PageContainer>
@@ -216,7 +244,81 @@ export default async function Page() {
           <StatusGroup title="OC" entity="oc" rows={statusRows(orderStatusRows)} />
         </div>
       </section>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <BreakdownPanel
+          title="Ítems sin OC por faena"
+          subtitle="Ítems aprobados o pendientes de compra que aún no tienen orden."
+          icon={<ShoppingCart size={16} />}
+          total={itemsSinOcTotal}
+          rows={itemsSinOcRows}
+          tone="signal"
+          cta={{ label: "Generar orden de compra", href: "/compras/nueva" }}
+          emptyLabel="No hay ítems pendientes de compra."
+        />
+        <BreakdownPanel
+          title="OC pendientes por faena"
+          subtitle="Órdenes enviadas pendientes de recepción en oficina o faena."
+          icon={<Truck size={16} />}
+          total={ocPendingTotal}
+          rows={ocPendingRows}
+          cta={{ label: "Ir a recepción", href: "/recepcion" }}
+          emptyLabel="No hay órdenes pendientes de recepción."
+        />
+      </div>
     </PageContainer>
+  )
+}
+
+function BreakdownPanel({
+  title, subtitle, icon, total, rows, cta, emptyLabel, tone,
+}: {
+  title: string
+  subtitle: string
+  icon: ReactNode
+  total: number
+  rows: { label: string; value: number }[]
+  cta: { label: string; href: string }
+  emptyLabel: string
+  tone?: "signal"
+}) {
+  const signalActive = tone === "signal" && total > 0
+  return (
+    <section className="flex flex-col rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className={signalActive ? "text-[var(--color-signal)]" : "text-[var(--color-text-subtle)]"}>{icon}</span>
+          <div>
+            <h2 className="text-sm font-medium text-[var(--color-text)]">{title}</h2>
+            <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{subtitle}</p>
+          </div>
+        </div>
+        <span className={`font-mono text-2xl font-semibold leading-none tabular-nums ${signalActive ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]"}`}>
+          {total}
+        </span>
+      </div>
+
+      <div className="mt-4 flex-1 divide-y divide-[var(--color-border)]">
+        {rows.length === 0 ? (
+          <p className="py-2 text-sm text-[var(--color-text-muted)]">{emptyLabel}</p>
+        ) : rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-3 py-2">
+            <span className="text-sm text-[var(--color-text-muted)] truncate">{row.label}</span>
+            <span className="font-mono text-sm tabular-nums text-[var(--color-text)]">{row.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {total > 0 && (
+        <Link
+          href={cta.href}
+          className="mt-4 inline-flex items-center gap-1.5 self-start text-xs font-medium text-[var(--color-primary)] transition-transform duration-[var(--duration-fast)] active:scale-[0.98]"
+        >
+          {cta.label}
+          <ArrowRight size={13} />
+        </Link>
+      )}
+    </section>
   )
 }
 

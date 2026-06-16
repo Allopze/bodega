@@ -6,7 +6,9 @@ import { Plus, Trash, FloppyDisk, PaperPlaneTilt } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Select } from "@/components/ui/select"
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from "@/components/ui/select"
 import { saveDraftAction, submitRequestAction } from "./actions"
 import type { ActionState } from "@/lib/validation/repuestos"
 import { toast } from "@/lib/toast"
@@ -125,23 +127,33 @@ export function RepuestoForm({ worksites, editRequest }: RepuestoFormProps) {
         <h2 className="text-sm font-semibold text-[var(--color-text)]">Datos generales</h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Faena" required>
+          <Field label="Faena" required htmlFor="worksiteId">
             <Select
               value={worksiteId}
               onValueChange={setWorksiteId}
               disabled={!!editRequest}
             >
-              {worksites.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
+              <SelectTrigger id="worksiteId">
+                <SelectValue placeholder="Selecciona una faena" />
+              </SelectTrigger>
+              <SelectContent>
+                {worksites.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </Field>
 
-          <Field label="Urgencia" required>
+          <Field label="Urgencia" required htmlFor="urgency">
             <Select value={urgency} onValueChange={setUrgency}>
-              <option value="normal">Normal</option>
-              <option value="high">Alta</option>
-              <option value="critical">Crítica</option>
+              <SelectTrigger id="urgency">
+                <SelectValue placeholder="Selecciona urgencia" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="high">Alta</SelectItem>
+                <SelectItem value="critical">Crítica</SelectItem>
+              </SelectContent>
             </Select>
           </Field>
 
@@ -232,14 +244,19 @@ export function RepuestoForm({ worksites, editRequest }: RepuestoFormProps) {
                   onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })}
                 />
               </Field>
-              <Field label="Unidad">
+              <Field label="Unidad" htmlFor={`unit-${idx}`}>
                 <Select
                   value={item.unitOfMeasure}
                   onValueChange={(v) => updateItem(idx, { unitOfMeasure: v })}
                 >
-                  {UNIT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
+                  <SelectTrigger id={`unit-${idx}`}>
+                    <SelectValue placeholder="Unidad" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UNIT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </Field>
             </div>

@@ -12,6 +12,7 @@ import { can } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { OcList } from "./oc-list"
@@ -85,6 +86,11 @@ export default async function ComprasPage({
     .offset(pagination.offset)
   const pageHref = (page: number) => buildPaginationHref("/compras", sp, page)
 
+  const canCreateOrder = can(session, "purchasing:create_order")
+  const headerSignals: HeaderSignal[] = [
+    { key: "no-oc", label: "Sin OC", value: pendingCount, href: canCreateOrder ? "/compras/nueva" : undefined, tone: "signal" },
+  ]
+
   if (visibleOrders.length === 0 && pendingCount === 0) {
     return (
       <PageContainer>
@@ -97,8 +103,9 @@ export default async function ComprasPage({
               { label: "Órdenes de compra" },
             ]} />
           }
+          headerActions={<HeaderSignals signals={headerSignals} />}
         />
-        <OcList orders={[]} pendingCount={0} canCreate={can(session, "purchasing:create_order")} createdCount={createdCount} />
+        <OcList orders={[]} pendingCount={0} canCreate={canCreateOrder} createdCount={createdCount} />
 
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
@@ -171,11 +178,12 @@ export default async function ComprasPage({
             { label: "Órdenes de compra" },
           ]} />
         }
+        headerActions={<HeaderSignals signals={headerSignals} />}
       />
       <OcList
         orders={rows}
         pendingCount={pendingCount}
-        canCreate={can(session, "purchasing:create_order")}
+        canCreate={canCreateOrder}
         createdCount={createdCount}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
