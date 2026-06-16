@@ -277,7 +277,7 @@ function StockSection({ worksites, stockByWorksite, initialWorksiteId, receiving
           action={receivingHref ? (
             <Link
               href={receivingHref}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius-full)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]"
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]"
             >
               Ver recepciones
               <ArrowRight size={14} aria-hidden />

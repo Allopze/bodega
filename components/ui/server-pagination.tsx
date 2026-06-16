@@ -73,7 +73,7 @@ function PageLink({
   ariaLabel: string
 }) {
   const className = cn(
-    "inline-flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-full)] px-2 text-xs font-medium",
+    "inline-flex h-7 min-w-7 items-center justify-center rounded-[var(--radius)] px-2 text-xs font-medium",
     "transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
     "active:scale-[0.95]",
     disabled && "pointer-events-none opacity-35",

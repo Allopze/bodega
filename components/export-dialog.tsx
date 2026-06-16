@@ -44,7 +44,7 @@ export function ExportDialog({ tipo, label, worksites, statuses, tone = "neutral
       <DialogTrigger asChild>
         <button
           type="button"
-          className={`inline-flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-full)] border px-3 text-xs font-medium transition-colors ${baseClass}`}
+          className={`inline-flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] border px-3 text-xs font-medium transition-colors ${baseClass}`}
         >
           <DownloadSimple size={13} />
           Exportar {label}
@@ -131,7 +131,7 @@ export function ExportDialog({ tipo, label, worksites, statuses, tone = "neutral
             <a
               href={buildUrl()}
               download
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius-full)] bg-[var(--color-primary)] px-4 text-xs font-semibold text-white transition-[background-color] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-xs font-semibold text-white transition-[background-color] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]"
             >
               <Funnel size={13} />
               Descargar

@@ -183,7 +183,7 @@ export default async function RecepcionDetallePage({
             </dl>
             <Link
               href={`/compras/${receipt.purchaseOrderId}`}
-              className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius-full)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text)] transition-transform duration-[var(--duration-fast)] active:scale-[0.98] hover:bg-[var(--color-border)]"
+              className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text)] transition-transform duration-[var(--duration-fast)] active:scale-[0.98] hover:bg-[var(--color-border)]"
             >
               Ver orden de compra
               <ArrowSquareOut size={13} />

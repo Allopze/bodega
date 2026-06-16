@@ -78,7 +78,7 @@ function PageButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "h-7 min-w-7 px-2 rounded-[var(--radius-full)] text-xs font-medium",
+        "h-7 min-w-7 px-2 rounded-[var(--radius)] text-xs font-medium",
         // Emil: specify exact properties, not 'all'
         "transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
         "disabled:pointer-events-none disabled:opacity-35",

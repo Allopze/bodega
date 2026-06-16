@@ -154,7 +154,7 @@ export default async function DashboardPage() {
               href="/aprobaciones"
               data-pressable
               className={cn(
-                "inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-[var(--radius-full)] px-4 sm:self-end",
+                "inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-[var(--radius)] px-4 sm:self-end",
                 "bg-[var(--color-primary)] text-[13px] font-semibold text-white",
                 "transition-[background-color] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]",
               )}

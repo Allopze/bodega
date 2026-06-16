@@ -37,7 +37,7 @@ const ACTIONS: ActionDef[] = [
 ]
 
 const pillBase =
-  "group inline-flex h-9 items-center gap-2 rounded-[var(--radius-full)] px-3.5 text-[13px] font-medium transition-[background-color,border-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+  "group inline-flex h-9 items-center gap-2 rounded-[var(--radius)] px-3.5 text-[13px] font-medium transition-[background-color,border-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
 
 /**
  * Toolbar de accesos rápidos, adaptada al rol. La acción principal va como pill

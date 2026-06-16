@@ -73,6 +73,7 @@ export function DeliveryForm({
   const [showReturn, setShowReturn] = React.useState(false)
   const [returnProductId, setReturnProductId] = React.useState("")
   const formRef = React.useRef<HTMLFormElement>(null)
+  const returnSectionRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -82,6 +83,12 @@ export function DeliveryForm({
       toast.error(state.message)
     }
   }, [state])
+
+  React.useEffect(() => {
+    if (showReturn) {
+      returnSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    }
+  }, [showReturn])
 
   const availableWorkers = workers.filter((worker) => worker.worksiteId === worksiteId)
   const availableItems = deliverableItems.filter((item) => item.worksiteId === worksiteId)
@@ -217,7 +224,7 @@ export function DeliveryForm({
         </div>
 
         {showReturn && (
-          <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 flex flex-col gap-4">
+          <div ref={returnSectionRef} className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 flex flex-col gap-4">
             <p className="text-sm font-medium text-[var(--color-text)]">Datos del EPP devuelto</p>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
