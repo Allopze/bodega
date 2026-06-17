@@ -35,11 +35,6 @@ import type { StatusValue } from '@/lib/sst/types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function scopeCondition(worksiteIds: string[] | 'all') {
-  if (worksiteIds === 'all') return undefined
-  return inArray(sstEvaluations.worksiteId, worksiteIds)
-}
-
 /**
  * assertEditable — throw if evaluation not found or is cerrado.
  * DS N°44/2024 immutability requirement.
