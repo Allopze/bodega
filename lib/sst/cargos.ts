@@ -1,9 +1,7 @@
 export const CARGO_KEYS = {
   conductor_ampliroll: 'Conductor Ampliroll',
   conductor_batea: 'Conductor Batea',
-  operador_maquinaria: 'Operador Maquinaria Pesada',
   conductor_general: 'Conductor General',
-  // Used in LC-SST-002 appliesWhen fields
   operador_maquinaria_pesada: 'Operador Maquinaria Pesada',
 } as const
 
