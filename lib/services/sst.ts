@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod'
-import { eq, and, inArray, desc, sql } from 'drizzle-orm'
+import { eq, and, inArray, desc, sql, count } from 'drizzle-orm'
 import { db, type Tx } from '@/db'
 import {
   sstEvaluations,
@@ -39,7 +39,7 @@ import type { StatusValue } from '@/lib/sst/types'
  * assertEditable — throw if evaluation not found or is cerrado.
  * DS N°44/2024 immutability requirement.
  */
-export async function assertEditable(evaluationId: string, tx?: Tx): Promise<void> {
+async function assertEditable(evaluationId: string, tx?: Tx): Promise<void> {
   const client = tx ?? db
   const rows = await client
     .select({ estado: sstEvaluations.estado })
@@ -74,7 +74,7 @@ export async function createEvaluation(
     workerId:               data.workerId,
     createdBy:              userId,
     definicionCode:         data.definicionCode,
-    definicionVersion:      '01',
+    definicionVersion:      '01', // TODO: derive from definition registry instead of hardcoding
     tipo:                   data.tipo,
     motivo:                 data.motivo ?? null,
     motivoOtro:             data.motivoOtro ?? null,
@@ -132,6 +132,8 @@ export async function getEvaluation(
   id: string,
   worksiteIds: string[] | 'all'
 ): Promise<SstEvaluation | null> {
+  if (worksiteIds !== 'all' && worksiteIds.length === 0) return null
+
   const [evaluation] = await db
     .select()
     .from(sstEvaluations)
@@ -156,6 +158,8 @@ export async function listEvaluations(
   limit = 50,
   offset = 0
 ): Promise<(SstEvaluation & { workerName: string; worksiteName: string })[]> {
+  if (filters.worksiteIds !== 'all' && filters.worksiteIds.length === 0) return []
+
   const conditions = []
 
   if (filters.worksiteIds !== 'all') {
@@ -244,7 +248,8 @@ export async function saveResponses(
   responses: z.infer<typeof sstResponsesBatchSchema>,
   worksiteIds: string[] | 'all'
 ): Promise<void> {
-  await assertEditable(evaluationId)
+  if (worksiteIds !== 'all' && worksiteIds.length === 0)
+    throw new Error('Evaluación no encontrada o sin acceso.')
 
   const evaluation = await getEvaluation(evaluationId, worksiteIds)
   if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
@@ -252,6 +257,8 @@ export async function saveResponses(
   const data = sstResponsesBatchSchema.parse(responses)
 
   await db.transaction(async (tx) => {
+    await assertEditable(evaluationId, tx)
+
     for (const resp of data) {
       // Check if a response already exists for this (evaluationId, seccionId, itemId)
       const existing = await tx
@@ -379,6 +386,8 @@ export async function closeEvaluation(
     .from(sstEvaluations)
     .where(eq(sstEvaluations.id, id))
     .limit(1)
+
+  if (!updated) throw new Error('Evaluation not found after update')
 
   return updated
 }
@@ -530,48 +539,45 @@ export async function getDashboardStats(
   noHabilitados: number
   pendingFollowups: number
 }> {
+  if (worksiteIds !== 'all' && worksiteIds.length === 0) {
+    return { total: 0, borrador: 0, cerrado: 0, habilitados: 0, noHabilitados: 0, pendingFollowups: 0 }
+  }
+
   const scopeCond = worksiteIds !== 'all'
     ? inArray(sstEvaluations.worksiteId, worksiteIds)
     : undefined
 
-  const rows = await db
+  const [statsRow] = await db
     .select({
-      estado:         sstEvaluations.estado,
-      resultadoFinal: sstEvaluations.resultadoFinal,
+      total:         count(),
+      borrador:      sql<number>`COUNT(*) FILTER (WHERE ${sstEvaluations.estado} = 'borrador')`,
+      cerrado:       sql<number>`COUNT(*) FILTER (WHERE ${sstEvaluations.estado} = 'cerrado')`,
+      habilitados:   sql<number>`COUNT(*) FILTER (WHERE ${sstEvaluations.resultadoFinal} IN ('habilitado_autonomo', 'habilitado_restricciones'))`,
+      noHabilitados: sql<number>`COUNT(*) FILTER (WHERE ${sstEvaluations.resultadoFinal} = 'no_habilitado')`,
     })
     .from(sstEvaluations)
     .where(scopeCond)
 
-  let total    = 0
-  let borrador = 0
-  let cerrado  = 0
-  let habilitados    = 0
-  let noHabilitados  = 0
-
-  for (const row of rows) {
-    total++
-    if (row.estado === 'borrador') borrador++
-    if (row.estado === 'cerrado')  cerrado++
-    if (row.resultadoFinal === 'habilitado_autonomo' || row.resultadoFinal === 'habilitado_restricciones') habilitados++
-    if (row.resultadoFinal === 'no_habilitado') noHabilitados++
-  }
-
-  // Pending followups: realizado = false
   const followupScopeCond = worksiteIds !== 'all'
     ? inArray(sstEvaluations.worksiteId, worksiteIds)
     : undefined
 
-  const pendingRows = await db
-    .select({ count: sql<number>`count(*)` })
+  const [followupsRow] = await db
+    .select({ pending: count() })
     .from(sstScheduledFollowups)
-    .leftJoin(sstEvaluations, eq(sstScheduledFollowups.evaluationId, sstEvaluations.id))
+    .innerJoin(sstEvaluations, eq(sstScheduledFollowups.evaluationId, sstEvaluations.id))
     .where(
       followupScopeCond
         ? and(eq(sstScheduledFollowups.realizado, false), followupScopeCond)
         : eq(sstScheduledFollowups.realizado, false)
     )
 
-  const pendingFollowups = Number(pendingRows[0]?.count ?? 0)
-
-  return { total, borrador, cerrado, habilitados, noHabilitados, pendingFollowups }
+  return {
+    total:            Number(statsRow?.total         ?? 0),
+    borrador:         Number(statsRow?.borrador       ?? 0),
+    cerrado:          Number(statsRow?.cerrado        ?? 0),
+    habilitados:      Number(statsRow?.habilitados    ?? 0),
+    noHabilitados:    Number(statsRow?.noHabilitados  ?? 0),
+    pendingFollowups: Number(followupsRow?.pending    ?? 0),
+  }
 }
