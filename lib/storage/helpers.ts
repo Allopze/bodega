@@ -6,7 +6,6 @@
  * instead of chasing `fs` through business-logic services.
  */
 import { promises as fs } from "node:fs"
-import path from "node:path"
 
 export async function mkdirp(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true })

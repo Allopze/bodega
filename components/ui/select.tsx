@@ -184,7 +184,7 @@ const SelectContent = React.forwardRef<
   // Otherwise, Content manages its own search bar.
   const [localQuery, setLocalQuery] = React.useState("")
   const query   = searchCtx ? searchCtx.query : localQuery
-  const setQuery = searchCtx ? searchCtx.setQuery : setLocalQuery
+  const _setQuery = searchCtx ? searchCtx.setQuery : setLocalQuery
 
   const searchInputRef     = React.useRef<HTMLInputElement>(null)
   const stoleInitialFocusRef = React.useRef(false)

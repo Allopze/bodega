@@ -4,10 +4,10 @@
  * Extracted from actions.ts to reduce file size and enable reuse.
  */
 
-import { and, eq, inArray, ne } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
-import { users, userRoles, roles, permissions } from "@/db/schema"
+import { userRoles, roles, permissions } from "@/db/schema"
 import { canAccessWorksite } from "@/lib/auth/can"
 import type { ActionState } from "@/lib/validation/masters"
 

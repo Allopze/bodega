@@ -9,6 +9,8 @@
  *   // ...
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Drizzle dynamic table types are too complex for proper typing here */
+
 import { eq, and } from "drizzle-orm"
 import { db } from "@/db"
 import {

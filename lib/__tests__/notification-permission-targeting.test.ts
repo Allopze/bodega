@@ -4,7 +4,6 @@ import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
-import { nanoid } from "@/lib/id"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })

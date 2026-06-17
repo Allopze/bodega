@@ -29,7 +29,6 @@ import {
 } from "@/lib/work-queue"
 import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getDashboardData, getWorkQueueSnapshot, buildActor } from "@/lib/services/dashboard"
-import type { MetricKey } from "@/lib/services/dashboard"
 
 export const metadata: Metadata = { title: "Dashboard" }
 

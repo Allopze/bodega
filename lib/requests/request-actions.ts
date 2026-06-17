@@ -9,6 +9,8 @@
  *   // ...
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Drizzle dynamic table types are too complex for proper typing here */
+
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { eq } from "drizzle-orm"

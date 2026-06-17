@@ -1,5 +1,7 @@
 "use server"
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Drizzle dynamic table types are too complex for proper typing here */
+
 import {
   persistRepuestoDraft,
   addQuotation,
@@ -15,7 +17,6 @@ import {
   cancelRepuestoSchema,
 } from "@/lib/validation/repuestos"
 import { createRequestActions } from "@/lib/requests/request-actions"
-import type { ActionState } from "@/lib/validation/masters"
 
 const actions = createRequestActions({
   moduleName: "repuestos",

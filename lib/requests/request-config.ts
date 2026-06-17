@@ -31,7 +31,7 @@ export interface RequestModuleConfig {
   /** Prefix for auto-generated codes (e.g. "REP", "SER") */
   codePrefix: string
   /** Drizzle table reference for the quotations table */
-  quotationsTable: any
+  quotationsTable: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Drizzle dynamic table type
   /** Key used in db.query[name] for the quotations table */
   quotationsQueryName: string
   /** Entity type value for audit logging */
