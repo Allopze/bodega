@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { db } from "@/db"
+import { workers } from "@/db/schema/worksites"
+import { eq } from "drizzle-orm"
 import {
   createEvaluation,
   getEvaluation,
@@ -45,6 +48,23 @@ export async function createEvaluationAction(
 ): Promise<ActionState & { data?: { id: string } }> {
   const { session, error } = await guardPermission("sst:create")
   if (error) return error
+
+  const scope = resolveWorksiteScope(session)
+  const worksiteIds = scopeToIds(scope)
+
+  // Scope guard: user must have access to the target worksite
+  if (worksiteIds !== 'all' && !worksiteIds.includes(input.worksiteId)) {
+    return { ok: false, message: 'No tienes acceso a la faena seleccionada.' }
+  }
+
+  // Validate that the worker belongs to the selected worksite
+  const worker = await db.select({ worksiteId: workers.worksiteId })
+    .from(workers)
+    .where(eq(workers.id, input.workerId))
+    .then(r => r[0])
+  if (!worker || worker.worksiteId !== input.worksiteId) {
+    return { ok: false, message: 'El trabajador no pertenece a la faena seleccionada.' }
+  }
 
   try {
     const evaluation = await createEvaluation(input, session.user.id)

@@ -491,7 +491,7 @@ export default async function SstPrintPage({ params }: { params: Promise<{ id: s
         }
       `}</style>
 
-      <PrintTrigger backHref={`/sst/${id}`} suggestedFilename={suggestedFilename} />
+      <PrintTrigger backHref={`/prevencion/${id}`} suggestedFilename={suggestedFilename} />
 
       <main className="sheet" aria-label={`Acta SST — ${worker.firstName} ${worker.lastName}`}>
 

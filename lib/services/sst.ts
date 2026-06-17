@@ -312,80 +312,97 @@ export async function closeEvaluation(
 
   const data = sstCloseEvaluationSchema.parse(input)
 
-  // Load responses
-  const allResponses = await db
-    .select()
-    .from(sstResponses)
-    .where(eq(sstResponses.evaluationId, id))
-
-  // Get definition and applicable items
+  // Get definition and applicable items (outside tx — read-only, no race risk)
   const definition = getDefinition(evaluation.definicionCode, evaluation.definicionVersion)
   const cargos = (evaluation.cargosJson as string[]) ?? []
   const applicableItems = getApplicableItems(definition, cargos)
-
-  // Build a set of applicable (seccionId, itemId) pairs
   const applicableSet = new Set(
     applicableItems.map((ai) => `${ai.seccionId}::${ai.item.id}`)
   )
 
-  // Filter responses to only applicable items
-  const applicableResponses = allResponses.filter((r) =>
-    applicableSet.has(`${r.seccionId}::${r.itemId}`)
-  )
+  const schemaJson = JSON.stringify(definition)
 
-  const complianceInput = applicableResponses.map((r) => ({
-    estado: r.estado as StatusValue,
-  }))
+  let updated: SstEvaluation | undefined
 
-  const { percentage } = calculateCompliance(complianceInput)
+  await db.transaction(async (tx) => {
+    // Re-check editability inside transaction (guards concurrent close attempts)
+    await assertEditable(id, tx)
 
-  const responsesForResultado = applicableResponses.map((r) => ({
-    seccionId: r.seccionId,
-    itemId:    r.itemId,
-    estado:    r.estado as StatusValue,
-  }))
+    // Load responses inside transaction for consistency
+    const allResponses = await tx
+      .select()
+      .from(sstResponses)
+      .where(eq(sstResponses.evaluationId, id))
 
-  const resultadoFinal = getAutomaticResultadoFinal(
-    evaluation.definicionCode,
-    percentage,
-    responsesForResultado,
-    data.hasCriticalDeviation ?? false,
-    data.hasReincidence ?? false
-  )
+    // Filter responses to only applicable items
+    const applicableResponses = allResponses.filter((r) =>
+      applicableSet.has(`${r.seccionId}::${r.itemId}`)
+    )
 
-  // resultadoEficacia only for LC-SST-002
-  let resultadoEficacia: string | null = null
-  if (evaluation.definicionCode === 'LC-SST-002') {
-    const efficacy = classifyEfficacy(
+    const complianceInput = applicableResponses.map((r) => ({
+      estado: r.estado as StatusValue,
+    }))
+
+    const { percentage } = calculateCompliance(complianceInput)
+
+    const responsesForResultado = applicableResponses.map((r) => ({
+      seccionId: r.seccionId,
+      itemId:    r.itemId,
+      estado:    r.estado as StatusValue,
+    }))
+
+    const resultadoFinal = getAutomaticResultadoFinal(
+      evaluation.definicionCode,
       percentage,
+      responsesForResultado,
       data.hasCriticalDeviation ?? false,
       data.hasReincidence ?? false
     )
-    resultadoEficacia = efficacy.classification
-  }
 
-  const schemaJson = JSON.stringify(definition)
-  const now = new Date().toISOString()
+    // resultadoEficacia only for LC-SST-002
+    let resultadoEficacia: string | null = null
+    if (evaluation.definicionCode === 'LC-SST-002') {
+      // Compute hasBlocker separately for classifyEfficacy consistency
+      // Inside this branch definicionCode === 'LC-SST-002', so blocker section is verificacion_documental
+      const NEGATIVE_STATUSES_LOCAL = ['no_cumple', 'no_entregado', 'no_apto', 'no']
+      const hasBlocker = applicableResponses.some((r) => {
+        if (r.itemId === 'protocolos_minsal') return false
+        return r.seccionId === 'verificacion_documental' && NEGATIVE_STATUSES_LOCAL.includes(r.estado ?? '')
+      })
 
-  await db
-    .update(sstEvaluations)
-    .set({
-      estado:                 'cerrado',
-      porcentajeCumplimiento: percentage,
-      resultadoFinal,
-      resultadoEficacia,
-      restricciones:          data.restricciones ?? null,
-      observacionesGenerales: data.observacionesGenerales ?? null,
-      schemaJson,
-      updatedAt:              now,
-    })
-    .where(eq(sstEvaluations.id, id))
+      const efficacy = classifyEfficacy(
+        percentage,
+        data.hasCriticalDeviation ?? false,
+        data.hasReincidence ?? false,
+        hasBlocker
+      )
+      resultadoEficacia = efficacy.classification
+    }
 
-  const [updated] = await db
-    .select()
-    .from(sstEvaluations)
-    .where(eq(sstEvaluations.id, id))
-    .limit(1)
+    const now = new Date().toISOString()
+
+    await tx
+      .update(sstEvaluations)
+      .set({
+        estado:                 'cerrado',
+        porcentajeCumplimiento: percentage,
+        resultadoFinal,
+        resultadoEficacia,
+        restricciones:          data.restricciones ?? null,
+        observacionesGenerales: data.observacionesGenerales ?? null,
+        schemaJson,
+        updatedAt:              now,
+      })
+      .where(eq(sstEvaluations.id, id))
+
+    const [row] = await tx
+      .select()
+      .from(sstEvaluations)
+      .where(eq(sstEvaluations.id, id))
+      .limit(1)
+
+    updated = row
+  })
 
   if (!updated) throw new Error('Evaluation not found after update')
 

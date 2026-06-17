@@ -277,7 +277,7 @@ export function EvaluationDetail({
           )}
           <div className="ml-auto flex items-center gap-2">
             <Button asChild size="sm" variant="secondary">
-              <Link href={`/print/sst/${evaluation.id}/print`} target="_blank">
+              <Link href={`/sst/${evaluation.id}/print`} target="_blank">
                 <Printer size={14} className="mr-1.5" />
                 Imprimir
               </Link>
