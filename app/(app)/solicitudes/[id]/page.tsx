@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import {
-  purchaseRequests,
+  purchaseRequests, repuestoQuotations, serviceQuotations,
   worksites, products, productAttributes,
   statusHistory, users, suppliers, productSuppliers,
 } from "@/db/schema"
@@ -17,6 +17,12 @@ import { DuplicateButton } from "./duplicate-button"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
 import { buildRequestProgress } from "@/lib/work-queue"
+import { QUOTATION_TYPES } from "@/lib/request-types"
+import { QuotationPanel } from "@/components/requests/quotation-panel"
+import {
+  uploadQuotationUnifiedAction,
+  deleteQuotationUnifiedAction,
+} from "../actions"
 
 export const metadata: Metadata = { title: "Solicitud de compra" }
 
@@ -41,14 +47,54 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
 
   if (!request) notFound()
 
-  // Repuestos and servicios have their own detail pages with quotation panels
-  if (request.requestType === "repuestos") redirect(`/repuestos/${id}`)
-  if (request.requestType === "servicios") redirect(`/servicios/${id}`)
-
   const isOwner    = request.requesterId === session.user.id
   const hasViewAll = session.user.permissions.includes("requests:view_all")
   const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))
   if (!hasAccess) notFound()
+
+  // Load quotations for repuestos/servicios
+  const isQuotationType = QUOTATION_TYPES.has(request.requestType)
+  let quotations: Array<{
+    id: string
+    supplierId: string | null
+    supplierNameFree: string | null
+    supplierName: string | null
+    fileName: string
+    totalAmount: number
+    status: "pending" | "selected" | "rejected"
+    notes: string | null
+    createdAt: string
+  }> = []
+
+  if (isQuotationType) {
+    const quotationTable = request.requestType === "repuestos" ? repuestoQuotations : serviceQuotations
+    const rawRows = await db
+      .select()
+      .from(quotationTable)
+      .where(eq(quotationTable.requestId, id))
+      .orderBy(asc(quotationTable.createdAt))
+    // Resolve supplier names for catalog suppliers
+    const supplierIds = rawRows.map((r) => r.supplierId).filter((s): s is string => s != null)
+    let supplierMap: Record<string, string> = {}
+    if (supplierIds.length > 0) {
+      const supplierRows = await db
+        .select({ id: suppliers.id, name: suppliers.name })
+        .from(suppliers)
+        .where(inArray(suppliers.id, supplierIds))
+      supplierMap = Object.fromEntries(supplierRows.map((s) => [s.id, s.name]))
+    }
+    quotations = rawRows.map((r) => ({
+      id: r.id,
+      supplierId: r.supplierId,
+      supplierNameFree: r.supplierNameFree,
+      supplierName: r.supplierId ? (supplierMap[r.supplierId] ?? null) : null,
+      fileName: r.fileName,
+      totalAmount: Number(r.totalAmount),
+      status: r.status as "pending" | "selected" | "rejected",
+      notes: r.notes,
+      createdAt: r.createdAt,
+    }))
+  }
 
   const [allWorksites, allProducts, allAttrs, timelineEvents, allSuppliers] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
@@ -184,6 +230,19 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       />
       <div className="space-y-6">
         <RequestProgressPanel progress={progress} />
+        {isQuotationType && (
+          <QuotationPanel
+            requestId={request.id}
+            requestStatus={request.status}
+            requestType={request.requestType}
+            quotations={quotations}
+            canUpload={isOwner && ["draft", "returned"].includes(request.status)}
+            canApprove={false}
+            downloadBase={request.requestType === "repuestos" ? "/api/repuestos/quotaciones" : "/api/servicios/cotizaciones"}
+            uploadAction={uploadQuotationUnifiedAction}
+            deleteAction={deleteQuotationUnifiedAction}
+          />
+        )}
         <RequestForm
           worksites={worksiteOptions}
           products={productOptions}

@@ -19,10 +19,15 @@ import { logger } from "@/lib/logger"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import {
   persistRepuestoDraft, submitRepuestoRequest,
+  addQuotation, deleteQuotation,
 } from "@/lib/services/repuestos"
 import {
   persistServiceDraft, submitServiceRequest,
+  addServiceQuotation, deleteServiceQuotation,
 } from "@/lib/services/servicios"
+import { quotationUploadSchema } from "@/lib/validation/repuestos"
+import { serviceQuotationUploadSchema } from "@/lib/validation/servicios"
+import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import type { RequestInput, RequestItemInput } from "@/lib/requests/request-service"
 
 const REVALIDATE = "/solicitudes"
@@ -491,4 +496,129 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
 
   revalidatePath(REVALIDATE)
   redirect(REVALIDATE)
+}
+
+// ── Unified quotation actions (for repuestos/servicios) ─────────────────────
+
+export async function uploadQuotationUnifiedAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try {
+    session = await requirePermission("requests:submit")
+  } catch {
+    return { ok: false, message: "Sin permisos para agregar cotizaciones" }
+  }
+
+  const requestId = formData.get("requestId") as string
+  const requestType = formData.get("requestType") as string
+  if (!requestId || !requestType) {
+    return { ok: false, message: "ID de solicitud y tipo requeridos" }
+  }
+  if (!QUOTATION_TYPES.has(requestType)) {
+    return { ok: false, message: "Tipo de solicitud no soporta cotizaciones" }
+  }
+
+  const request = await db.query.purchaseRequests.findFirst({
+    where: eq(purchaseRequests.id, requestId),
+  })
+  if (!request) return { ok: false, message: "Solicitud no encontrada" }
+  if (request.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
+    return { ok: false, message: "Solo puedes agregar cotizaciones a tus propias solicitudes" }
+  }
+  if (!canAccessWorksite(session, request.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a esta solicitud" }
+  }
+
+  const file = formData.get("file") as File | null
+  if (!file) return { ok: false, message: "Archivo requerido" }
+
+  const maxSizeMb = await getPdfMaxSizeMb()
+  if (file.size > maxSizeMb * 1024 * 1024) {
+    return { ok: false, message: `El archivo excede el tamaño máximo de ${maxSizeMb}MB` }
+  }
+
+  const schema = requestType === "repuestos" ? quotationUploadSchema : serviceQuotationUploadSchema
+  const parsed = schema.safeParse({
+    totalAmount: formData.get("totalAmount"),
+    supplierNameFree: formData.get("supplierNameFree"),
+    notes: formData.get("notes"),
+  })
+  if (!parsed.success) {
+    return { ok: false, message: "Datos de cotización inválidos" }
+  }
+
+  const data = parsed.data
+  const quotationInput = {
+    requestId,
+    totalAmount: data.totalAmount,
+    supplierId: null,
+    supplierNameFree: data.supplierNameFree ?? null,
+    notes: data.notes ?? null,
+    fileName: file.name,
+    fileSize: file.size,
+    mimeType: file.type,
+    fileBuffer: Buffer.from(await file.arrayBuffer()),
+    uploadedBy: session.user.id,
+  }
+
+  try {
+    if (requestType === "repuestos") {
+      await addQuotation(quotationInput)
+    } else {
+      await addServiceQuotation(quotationInput)
+    }
+    revalidatePath(`${REVALIDATE}/${requestId}`)
+    return { ok: true, message: "Cotización agregada" }
+  } catch (e) {
+    logger.error("[uploadQuotationUnified]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al subir cotización" }
+  }
+}
+
+export async function deleteQuotationUnifiedAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try {
+    session = await requirePermission("requests:submit")
+  } catch {
+    return { ok: false, message: "Sin permisos para eliminar cotizaciones" }
+  }
+
+  const quotationId = formData.get("quotationId") as string
+  const requestId = formData.get("requestId") as string
+  const requestType = formData.get("requestType") as string
+  if (!quotationId || !requestId || !requestType) {
+    return { ok: false, message: "Datos incompletos" }
+  }
+  if (!QUOTATION_TYPES.has(requestType)) {
+    return { ok: false, message: "Tipo de solicitud no soporta cotizaciones" }
+  }
+
+  const request = await db.query.purchaseRequests.findFirst({
+    where: eq(purchaseRequests.id, requestId),
+  })
+  if (!request) return { ok: false, message: "Solicitud no encontrada" }
+  if (request.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
+    return { ok: false, message: "Solo puedes eliminar cotizaciones de tus propias solicitudes" }
+  }
+  if (!canAccessWorksite(session, request.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a esta solicitud" }
+  }
+
+  try {
+    if (requestType === "repuestos") {
+      await deleteQuotation({ quotationId, userId: session.user.id })
+    } else {
+      await deleteServiceQuotation({ quotationId, userId: session.user.id })
+    }
+    revalidatePath(`${REVALIDATE}/${requestId}`)
+    return { ok: true, message: "Cotización eliminada" }
+  } catch (e) {
+    logger.error("[deleteQuotationUnified]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar cotización" }
+  }
 }

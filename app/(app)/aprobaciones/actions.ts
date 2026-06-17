@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache"
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseRequestItems } from "@/db/schema"
+import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { approveItem, rejectItem, returnItem } from "@/lib/services/item-state"
+import { selectRepuestoQuotation } from "@/lib/services/repuestos"
+import { selectServiceQuotation } from "@/lib/services/servicios"
 import { notifySafe } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
@@ -224,4 +226,66 @@ export async function bulkApproveRequestAction(
     }
   }
   return { ok: true, message: `${approved} ítem(s) aprobado(s)` }
+}
+
+// ── Select winning quotation (for repuestos/servicios) ────────────────────────
+
+export async function selectQuotationAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try {
+    session = await requirePermission("approvals:approve")
+  } catch {
+    return { ok: false, message: "Sin permisos para aprobar cotizaciones" }
+  }
+
+  const quotationId = formData.get("quotationId") as string | null
+  const requestId = formData.get("requestId") as string | null
+  const requestType = formData.get("requestType") as string | null
+
+  if (!quotationId || !requestId || !requestType) {
+    return { ok: false, message: "Datos incompletos" }
+  }
+
+  if (requestType !== "repuestos" && requestType !== "servicios") {
+    return { ok: false, message: "Tipo de solicitud inválido" }
+  }
+
+  // Verify type-specific permission
+  const typePermission = requestType === "repuestos" ? "repuestos:approve" : "servicios:approve"
+  if (!session.user.permissions.includes(typePermission)) {
+    return { ok: false, message: `Sin permisos para aprobar ${requestType}` }
+  }
+
+  try {
+    const roleContext = getRoleContext(session.user.roles)
+
+    if (requestType === "repuestos") {
+      await selectRepuestoQuotation({
+        quotationId,
+        requestId,
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        roleContext,
+      })
+    } else {
+      await selectServiceQuotation({
+        quotationId,
+        requestId,
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        roleContext,
+      })
+    }
+
+    revalidatePath(REVALIDATE)
+    revalidatePath(`/solicitudes/${requestId}`)
+
+    return { ok: true, message: "Cotización ganadora seleccionada" }
+  } catch (e) {
+    logger.error("[selectQuotationAction]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al seleccionar cotización" }
+  }
 }

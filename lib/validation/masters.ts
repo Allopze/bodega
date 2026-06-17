@@ -33,6 +33,7 @@ export const userCreateSchema = z.object({
   name:     z.string().max(80).optional().or(z.literal("")),
   email:    z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
   isActive: z.coerce.boolean().default(true),
+  workerId: z.string().optional().nullable(),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
   permissionIds: z.array(z.string()).default([]),
   worksiteAssignments: z.array(
@@ -49,6 +50,7 @@ export const userUpdateSchema = z.object({
   email:    z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
   password: z.string().min(8, "Mínimo 8 caracteres").or(z.literal("")).optional(),
   isActive: z.coerce.boolean().default(true),
+  workerId: z.string().optional().nullable(),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
   permissionIds: z.array(z.string()).default([]),
   worksiteAssignments: z.array(

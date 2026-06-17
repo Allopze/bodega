@@ -133,6 +133,7 @@ export async function createUser(
     name:     formData.get("name") || "",
     email:    formData.get("email"),
     isActive: formData.get("isActive") === "on",
+    workerId: formData.get("workerId") || null,
     roleIds:  formData.getAll("roleIds"),
     permissionIds: formData.getAll("permissionIds"),
     worksiteAssignments: buildWorksiteAssignments(formData),
@@ -175,6 +176,7 @@ export async function createUser(
       id, name: displayName, email: d.email,
       hashedPassword: createPendingPasswordMarker(),
       avatarColor,
+      workerId: d.workerId || null,
       isActive: d.isActive,
     })
     if (d.roleIds.length > 0) {
@@ -251,6 +253,7 @@ export async function updateUser(
     name:     formData.get("name"),
     email:    formData.get("email"),
     isActive: formData.get("isActive") === "on",
+    workerId: formData.get("workerId") || null,
     roleIds:  formData.getAll("roleIds"),
     permissionIds: formData.getAll("permissionIds"),
     worksiteAssignments: buildWorksiteAssignments(formData),
@@ -296,6 +299,7 @@ export async function updateUser(
     name:     d.name,
     email:    d.email,
     isActive: d.isActive,
+    workerId: d.workerId || null,
     updatedAt: new Date().toISOString(),
   }
 

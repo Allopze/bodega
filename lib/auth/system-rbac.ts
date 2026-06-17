@@ -87,7 +87,7 @@ const REPUESTOS_JEFATURA_PERMISSION_IDS = [
 ]
 
 const REPUESTOS_SECRETARIA_PERMISSION_IDS = [
-  "p-rep-create", "p-rep-own", "p-rep-all", "p-rep-submit",
+  "p-rep-create", "p-rep-own", "p-rep-all", "p-rep-submit", "p-rep-approve",
 ]
 
 const REPUESTOS_PREVENCIONISTA_PERMISSION_IDS = [

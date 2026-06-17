@@ -25,11 +25,13 @@ interface Permission {
   roleIds: string[]
 }
 interface Worksite { id: string; name: string; code: string }
+interface Worker { id: string; firstName: string; lastName: string; rut: string | null; worksiteId: string }
 interface UserRow {
   id:          string
   name:        string
   email:       string
   isActive:    boolean
+  workerId:    string | null
   passwordSetupPending: boolean
   createdAt:   string
   avatarColor: string | null
@@ -45,6 +47,7 @@ interface UserListProps {
   allRoles:     Role[]
   allPermissions: Permission[]
   allWorksites: Worksite[]
+  allWorkers:   Worker[]
 }
 
 const COLUMNS = [
@@ -56,7 +59,7 @@ const COLUMNS = [
   { key: "",          label: "",          sortable: false, width: "w-24" },
 ]
 
-export function UserList({ users, allRoles, allPermissions, allWorksites }: UserListProps) {
+export function UserList({ users, allRoles, allPermissions, allWorksites, allWorkers }: UserListProps) {
   const [sheetOpen, setSheetOpen]   = React.useState(false)
   const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)
@@ -231,6 +234,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
         allRoles={allRoles}
         allPermissions={allPermissions}
         allWorksites={allWorksites}
+        allWorkers={allWorkers}
       />
       {inviteOpen && (
         <UserInviteForm

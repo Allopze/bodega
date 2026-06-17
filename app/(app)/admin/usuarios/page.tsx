@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { permissions, rolePermissions, roles, userPermissions, userRoles, users, worksites, worksiteUsers } from "@/db/schema"
+import { permissions, rolePermissions, roles, userPermissions, userRoles, users, workers, worksites, worksiteUsers } from "@/db/schema"
 import { and, eq, inArray, sql } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { visibleUserIdsForAdminScope } from "@/lib/auth/admin-user-scope"
@@ -93,6 +93,7 @@ export default async function UsuariosPage() {
       name:        u.name,
       email:       u.email,
       isActive:    u.isActive,
+      workerId:    u.workerId,
       passwordSetupPending: isPasswordSetupPending(u.hashedPassword),
       createdAt:   u.createdAt,
       avatarColor: u.avatarColor,
@@ -112,6 +113,10 @@ export default async function UsuariosPage() {
   const allWorksitesData = await db.query.worksites.findMany({
     where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)),
     orderBy: (w, { asc }) => [asc(w.name)],
+  })
+  const allWorkersData = await db.query.workers.findMany({
+    where: eq(workers.isActive, true),
+    orderBy: (w, { asc }) => [asc(w.firstName), asc(w.lastName)],
   })
 
   return (
@@ -144,6 +149,7 @@ export default async function UsuariosPage() {
               .map((rp) => rp.roleId),
           }))}
         allWorksites={allWorksitesData.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
+        allWorkers={allWorkersData.map((w) => ({ id: w.id, firstName: w.firstName, lastName: w.lastName, rut: w.rut, worksiteId: w.worksiteId }))}
       />
     </PageContainer>
   )

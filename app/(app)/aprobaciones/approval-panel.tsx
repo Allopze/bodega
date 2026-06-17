@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { Badge } from "@/components/ui/badge"
 import {
-  approveItemAction, rejectItemAction, bulkApproveRequestAction,
+  approveItemAction, rejectItemAction, bulkApproveRequestAction, selectQuotationAction,
 } from "./actions"
 import { formatQty, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
@@ -52,6 +52,30 @@ export interface ApprovalRequest {
   submittedAt:     string | null
   pendingItems:    ApprovalItem[]
   pendingCount:    number
+}
+
+/* ── Quotation-based request data (repuestos/servicios) ─────────────────────── */
+
+export interface QuotationData {
+  id:               string
+  supplierId:       string | null
+  supplierNameFree: string | null
+  supplierName:     string | null
+  fileName:         string
+  totalAmount:      number
+  status:           "pending" | "selected" | "rejected"
+  notes:            string | null
+  createdAt:        string
+}
+
+export interface QuotationRequestData {
+  id:            string
+  code:          string
+  requestType:   string
+  worksiteName:  string
+  requesterName: string
+  submittedAt:   string | null
+  quotations:    QuotationData[]
 }
 
 /* ── Item action types ───────────────────────────────────────────────────────── */
@@ -427,10 +451,156 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
   )
 }
 
+/* ── Quotation request card ──────────────────────────────────────────────────── */
+
+function QuotationRequestCard({ request }: { request: QuotationRequestData }) {
+  const [collapsed, setCollapsed] = React.useState(false)
+  const [selectState, selectAction] = useActionState<ActionState, FormData>(
+    selectQuotationAction, INITIAL_STATE,
+  )
+
+  React.useEffect(() => {
+    if (selectState.ok && selectState.message) {
+      toast.success(selectState.message)
+    } else if (selectState.ok === false && selectState.message && selectState !== INITIAL_STATE) {
+      toast.error(selectState.message)
+    }
+  }, [selectState])
+
+  const pendingQuotations = request.quotations.filter(q => q.status === "pending")
+  const selectedQuotation = request.quotations.find(q => q.status === "selected")
+
+  return (
+    <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden">
+      {/* Request header */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="flex items-center gap-2 text-left flex-1 min-w-0"
+          aria-expanded={!collapsed}
+        >
+          <CaretDown
+            size={14}
+            className={`text-[var(--color-text-subtle)] transition-transform duration-[var(--duration-fast)] ${collapsed ? "-rotate-90" : ""}`}
+          />
+          <span className="font-mono text-sm font-semibold text-[var(--color-text)]">
+            {request.code}
+          </span>
+          <Badge variant={REQUEST_TYPE_VARIANTS[request.requestType] ?? "default"} size="sm" className="shrink-0">
+            {REQUEST_TYPE_LABELS[request.requestType] ?? request.requestType}
+          </Badge>
+          <span className="text-sm text-[var(--color-text-muted)]">·</span>
+          <span className="text-sm text-[var(--color-text-muted)] truncate">
+            {request.worksiteName}
+          </span>
+        </button>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-[var(--color-text-subtle)]">
+            {request.requesterName}
+          </span>
+          {request.submittedAt && (
+            <span className="text-xs text-[var(--color-text-subtle)]">
+              · {formatDate(request.submittedAt)}
+            </span>
+          )}
+          <span className="text-xs font-medium text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)] rounded-full px-2 py-0.5">
+            {pendingQuotations.length} cotización{pendingQuotations.length !== 1 ? "es" : ""} pendiente{pendingQuotations.length !== 1 ? "s" : ""}
+          </span>
+
+          {selectedQuotation && (
+            <span className="text-xs text-[var(--color-success)] font-medium">Cotización seleccionada</span>
+          )}
+        </div>
+      </div>
+
+      {/* Quotations list */}
+      {!collapsed && (
+        <div className="p-4 space-y-3">
+          {request.quotations.length === 0 ? (
+            <p className="text-sm text-[var(--color-text-muted)] italic">
+              No hay cotizaciones adjuntas para esta solicitud.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {request.quotations.map((q) => {
+                const supplierLabel = q.supplierName ?? q.supplierNameFree ?? "Proveedor sin nombre"
+                const isPending = q.status === "pending"
+                const isSelected = q.status === "selected"
+
+                return (
+                  <li
+                    key={q.id}
+                    className={`flex items-start gap-3 rounded-[var(--radius-xl)] border p-4 ${
+                      isSelected
+                        ? "border-[var(--color-success)] bg-[var(--color-success-tint)]"
+                        : q.status === "rejected"
+                        ? "border-[var(--color-border)] opacity-60"
+                        : "border-[var(--color-border)]"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-[var(--color-text)] truncate">
+                          {supplierLabel}
+                        </span>
+                        <Badge
+                          variant={isSelected ? "success" : q.status === "rejected" ? "default" : "warning"}
+                          size="sm"
+                        >
+                          {isSelected ? "Seleccionada" : q.status === "rejected" ? "No seleccionada" : "Pendiente"}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-[var(--color-text-muted)]">
+                        <span className="font-medium text-[var(--color-text)]">
+                          ${q.totalAmount.toLocaleString("es-CL")}
+                        </span>
+                        <span className="text-[var(--color-text-subtle)]">
+                          {formatDate(q.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {isPending && !selectedQuotation && (
+                      <form action={selectAction} className="shrink-0">
+                        <input type="hidden" name="requestId" value={request.id} />
+                        <input type="hidden" name="quotationId" value={q.id} />
+                        <SubmitButton
+                          label="Seleccionar"
+                          loadingLabel="Seleccionando..."
+                          variant="secondary"
+                          size="sm"
+                        />
+                      </form>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          {selectState.ok === false && selectState.message && selectState !== INITIAL_STATE && (
+            <p className="text-sm text-[var(--color-danger)] flex items-center gap-1">
+              <Warning size={14} /> {selectState.message}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── Main panel ──────────────────────────────────────────────────────────────── */
 
-export function ApprovalPanel({ requests }: { requests: ApprovalRequest[] }) {
-  if (requests.length === 0) {
+export function ApprovalPanel({
+  requests,
+  quotationRequests = [],
+}: {
+  requests: ApprovalRequest[]
+  quotationRequests?: QuotationRequestData[]
+}) {
+  if (requests.length === 0 && quotationRequests.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <CheckCircle size={36} weight="light" className="text-[var(--color-success)] mb-3" />
@@ -446,6 +616,9 @@ export function ApprovalPanel({ requests }: { requests: ApprovalRequest[] }) {
     <div className="flex flex-col gap-4">
       {requests.map((req) => (
         <RequestGroup key={req.id} request={req} />
+      ))}
+      {quotationRequests.map((req) => (
+        <QuotationRequestCard key={req.id} request={req} />
       ))}
     </div>
   )

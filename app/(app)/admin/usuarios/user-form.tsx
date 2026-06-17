@@ -24,12 +24,14 @@ interface Permission {
   roleIds: string[]
 }
 interface Worksite { id: string; name: string; code: string }
+interface Worker { id: string; firstName: string; lastName: string; rut: string | null; worksiteId: string }
 
 interface UserForEdit {
   id:         string
   name:       string
   email:      string
   isActive:   boolean
+  workerId:   string | null
   roleIds:    string[]
   permissionIds: string[]
   worksiteAssignments: { worksiteId: string; isPrimary: boolean }[]
@@ -42,6 +44,7 @@ interface UserFormProps {
   allRoles:   Role[]
   allPermissions: Permission[]
   allWorksites: Worksite[]
+  allWorkers: Worker[]
 }
 
 interface UserSelectionState {
@@ -130,7 +133,7 @@ function groupPermissions(permissions: Permission[]) {
   }, [])
 }
 
-export function UserForm({ open, onClose, editUser, allRoles, allPermissions, allWorksites }: UserFormProps) {
+export function UserForm({ open, onClose, editUser, allRoles, allPermissions, allWorksites, allWorkers }: UserFormProps) {
   const isEdit = !!editUser
 
   const action = isEdit ? updateUser : createUser
@@ -350,6 +353,26 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
 
               {/* Active toggle */}
               <Checkbox id="isActive" name="isActive" value="on" defaultChecked={editUser?.isActive ?? true} label="Usuario activo" />
+
+              {/* Worker selector */}
+              <Field label="Trabajador vinculado" htmlFor="workerId">
+                <select
+                  id="workerId"
+                  name="workerId"
+                  defaultValue={editUser?.workerId ?? ""}
+                  className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                >
+                  <option value="">Sin vincular</option>
+                  {allWorkers.map((worker) => (
+                    <option key={worker.id} value={worker.id}>
+                      {worker.firstName} {worker.lastName}{worker.rut ? ` (${worker.rut})` : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+                  Opcional: vincula este usuario a un trabajador existente
+                </p>
+              </Field>
             </FieldGroup>
 
             {/* Roles */}

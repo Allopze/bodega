@@ -50,13 +50,8 @@ const URGENCY_DOT: Record<string, string> = {
 }
 
 /** Tipos con detalle en su propio vertical (no en /solicitudes/[id]) */
-const DETAIL_BASE: Record<string, string> = {
-  repuestos: "/repuestos",
-  servicios: "/servicios",
-}
-
 function detailHref(r: RequestRow): string {
-  return `${DETAIL_BASE[r.requestType] ?? "/solicitudes"}/${r.id}`
+  return `/solicitudes/${r.id}`
 }
 
 export function RequestList({

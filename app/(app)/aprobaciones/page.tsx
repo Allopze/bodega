@@ -4,6 +4,7 @@ import { db }             from "@/db"
 import {
   purchaseRequests, purchaseRequestItems, requestItemAttributes,
   worksites, users as usersTable, products, suppliers,
+  repuestoQuotations, serviceQuotations,
 } from "@/db/schema"
 import { eq, and, inArray, asc, sql, count } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
@@ -13,7 +14,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { ApprovalPanel } from "./approval-panel"
-import type { ApprovalItem, ApprovalRequest } from "./approval-panel"
+import type { ApprovalItem, ApprovalRequest, QuotationRequestData } from "./approval-panel"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
 
@@ -91,7 +92,7 @@ export default async function AprobacionesPage({
             ]} />
           }
         />
-        <ApprovalPanel requests={[]} />
+        <ApprovalPanel requests={[]} quotationRequests={[]} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -224,6 +225,80 @@ export default async function AprobacionesPage({
       }
     })
 
+  // ── Load quotation-based requests (repuestos/servicios) ─────────────────────
+  const quotationFilter = and(
+    inArray(purchaseRequests.status, ["submitted", "in_review"]),
+    inArray(purchaseRequests.requestType, ["repuestos", "servicios"]),
+    worksiteScope,
+  )
+
+  const quotationRequestsRaw = await db
+    .select({
+      id: purchaseRequests.id,
+      code: purchaseRequests.code,
+      worksiteId: purchaseRequests.worksiteId,
+      requestType: purchaseRequests.requestType,
+      status: purchaseRequests.status,
+      requesterId: purchaseRequests.requesterId,
+      submittedAt: purchaseRequests.submittedAt,
+    })
+    .from(purchaseRequests)
+    .where(quotationFilter)
+    .orderBy(asc(purchaseRequests.submittedAt))
+
+  // Load quotations for each request
+  const quotationRequests: QuotationRequestData[] = []
+  for (const req of quotationRequestsRaw) {
+    const quotationTable = req.requestType === "repuestos" ? repuestoQuotations : serviceQuotations
+    const quotations = await db
+      .select({
+        id: quotationTable.id,
+        supplierId: quotationTable.supplierId,
+        supplierNameFree: quotationTable.supplierNameFree,
+        fileName: quotationTable.fileName,
+        totalAmount: quotationTable.totalAmount,
+        status: quotationTable.status,
+        createdAt: quotationTable.createdAt,
+      })
+      .from(quotationTable)
+      .where(eq(quotationTable.requestId, req.id))
+      .orderBy(asc(quotationTable.createdAt))
+
+    // Load supplier names for catalog suppliers
+    const supplierIds = quotations.map(q => q.supplierId).filter((s): s is string => s != null)
+    let supplierMap: Record<string, string> = {}
+    if (supplierIds.length > 0) {
+      const supplierRows = await db
+        .select({ id: suppliers.id, name: suppliers.name })
+        .from(suppliers)
+        .where(inArray(suppliers.id, supplierIds))
+      supplierMap = Object.fromEntries(supplierRows.map(s => [s.id, s.name]))
+    }
+
+    const wsRow = await db.select({ name: worksites.name }).from(worksites).where(eq(worksites.id, req.worksiteId)).limit(1)
+    const userRow = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, req.requesterId)).limit(1)
+
+    quotationRequests.push({
+      id: req.id,
+      code: req.code,
+      requestType: req.requestType,
+      worksiteName: wsRow[0]?.name ?? req.worksiteId,
+      requesterName: userRow[0]?.name ?? req.requesterId,
+      submittedAt: req.submittedAt,
+      quotations: quotations.map(q => ({
+        id: q.id,
+        supplierId: q.supplierId,
+        supplierNameFree: q.supplierNameFree,
+        supplierName: q.supplierId ? (supplierMap[q.supplierId] ?? null) : null,
+        fileName: q.fileName,
+        totalAmount: Number(q.totalAmount),
+        status: q.status as "pending" | "selected" | "rejected",
+        notes: null,
+        createdAt: q.createdAt,
+      })),
+    })
+  }
+
   const displayedRows = rows
   const totalPending = displayedRows.reduce((n, r) => n + r.pendingCount, 0)
 
@@ -243,7 +318,7 @@ export default async function AprobacionesPage({
           ]} />
         }
       />
-      <ApprovalPanel requests={displayedRows} />
+      <ApprovalPanel requests={displayedRows} quotationRequests={[]} />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )

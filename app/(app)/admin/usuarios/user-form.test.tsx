@@ -38,6 +38,7 @@ const editUser = {
   name: "Alejandro Lopez Zelaya",
   email: "allopze@gmail.com",
   isActive: true,
+  workerId: null,
   roleIds: ["rol-admin"],
   permissionIds: ["p-reports-view"],
   worksiteAssignments: [],
@@ -53,6 +54,7 @@ describe("UserForm permissions layout", () => {
         allRoles={roles}
         allPermissions={permissions}
         allWorksites={[]}
+        allWorkers={[]}
       />,
     )
 
@@ -70,6 +72,7 @@ describe("UserForm permissions layout", () => {
         allRoles={roles}
         allPermissions={permissions}
         allWorksites={[]}
+        allWorkers={[]}
       />,
     )
 
@@ -91,6 +94,7 @@ describe("UserForm permissions layout", () => {
         allRoles={roles}
         allPermissions={permissions}
         allWorksites={[]}
+        allWorkers={[]}
       />,
     )
 

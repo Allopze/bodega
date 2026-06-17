@@ -9,20 +9,7 @@ export const serviciosModule = {
     "servicios:submit",
     "servicios:approve",
   ] as const,
-  nav: [
-    {
-      areaId: "operaciones",
-      items: [
-        {
-          label:       "Servicios",
-          href:        "/servicios",
-          iconName:    "Toolbox",
-          permissions: ["servicios:view_own", "servicios:view_all"],
-          badge:       "count" as const,
-        },
-      ],
-    },
-  ],
+  nav: [],
   defaultGrants: [
     // Administrador: acceso total
     { roleSlug: "administrador", permission: "servicios:create" },
@@ -38,6 +25,7 @@ export const serviciosModule = {
     { roleSlug: "secretaria", permission: "servicios:view_own" },
     { roleSlug: "secretaria", permission: "servicios:view_all" },
     { roleSlug: "secretaria", permission: "servicios:submit" },
+    { roleSlug: "secretaria", permission: "servicios:approve" },
     // Prevencionista oficina: crea y envía para sus faenas
     { roleSlug: "prevencionista", permission: "servicios:create" },
     { roleSlug: "prevencionista", permission: "servicios:view_own" },

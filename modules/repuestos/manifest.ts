@@ -9,20 +9,7 @@ export const repuestosModule = {
     "repuestos:submit",
     "repuestos:approve",
   ] as const,
-  nav: [
-    {
-      areaId: "operaciones",
-      items: [
-        {
-          label:       "Repuestos",
-          href:        "/repuestos",
-          iconName:    "Wrench",
-          permissions: ["repuestos:view_own", "repuestos:view_all"],
-          badge:       "count" as const,
-        },
-      ],
-    },
-  ],
+  nav: [],
   defaultGrants: [
     // Administrador: acceso total
     { roleSlug: "administrador", permission: "repuestos:create" },
@@ -38,6 +25,7 @@ export const repuestosModule = {
     { roleSlug: "secretaria", permission: "repuestos:view_own" },
     { roleSlug: "secretaria", permission: "repuestos:view_all" },
     { roleSlug: "secretaria", permission: "repuestos:submit" },
+    { roleSlug: "secretaria", permission: "repuestos:approve" },
     // Prevencionista oficina: crea y envía para sus faenas
     { roleSlug: "prevencionista", permission: "repuestos:create" },
     { roleSlug: "prevencionista", permission: "repuestos:view_own" },

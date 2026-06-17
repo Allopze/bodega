@@ -1,6 +1,6 @@
 import { pgTable, text, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
-import { worksites } from "./worksites"
+import { worksites, workers } from "./worksites"
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
 export const users = pgTable("users", {
@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   email:          text("email").notNull().unique(),
   hashedPassword: text("hashed_password").notNull(),
   avatarColor:    text("avatar_color"),   // OKLCH hue number as string
+  workerId:       text("worker_id").references(() => workers.id, { onDelete: "set null" }),
   isActive:       boolean("is_active").notNull().default(true),
   createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -78,11 +79,12 @@ export const worksiteUsers = pgTable("worksite_users", {
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   userRoles:       many(userRoles),
   userPermissions: many(userPermissions),
   worksiteUsers:   many(worksiteUsers),
   invitations:     many(userInvitations),
+  worker:          one(workers, { fields: [users.workerId], references: [workers.id] }),
 }))
 
 export const rolesRelations = relations(roles, ({ many }) => ({
