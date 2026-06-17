@@ -17,7 +17,7 @@ import type { ApprovalItem, ApprovalRequest } from "./approval-panel"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
 
-const APPROVAL_REQUESTS_PAGE_SIZE = 20
+import { APPROVAL_REQUESTS_PAGE_SIZE } from "@/lib/constants"
 
 export default async function AprobacionesPage({
   searchParams,

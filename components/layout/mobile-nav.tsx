@@ -109,7 +109,7 @@ function AreaAccordion({
           <CaretDown size={12} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
         </button>
       </Collapsible.Trigger>
-      <Collapsible.Content className="overflow-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">
+      <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
         <div className="pb-1 pl-1">
           <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={onNavigate} />
         </div>

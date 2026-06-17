@@ -103,7 +103,7 @@ function BranchRow({
           <CaretDown size={13} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
         </button>
       </Collapsible.Trigger>
-      <Collapsible.Content className="overflow-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">
+      <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
         <ul className="mb-1 ml-[1.6rem] space-y-0.5 border-l border-(--color-border) pl-2 pt-0.5">
           {(item.children ?? []).map((child) => {
             const ca = isHrefActive(child.href, pathname)

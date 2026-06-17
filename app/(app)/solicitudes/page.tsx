@@ -12,7 +12,7 @@ import { RequestList } from "./request-list"
 
 export const metadata: Metadata = { title: "Solicitudes de compra" }
 
-const SOLICITUDES_PAGE_SIZE = 25
+import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
 
 export default async function SolicitudesPage({
   searchParams,

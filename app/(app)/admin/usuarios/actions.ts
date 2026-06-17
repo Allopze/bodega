@@ -1,19 +1,28 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import type { Session } from "next-auth"
-import { and, eq, inArray, ne } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { users, userRoles, userPermissions, worksiteUsers, roles, permissions, userInvitations } from "@/db/schema"
+import { users, userRoles, userPermissions, worksiteUsers, userInvitations, roles } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { requirePermission } from "@/lib/auth/can"
 import { canManageUserInAdminScope } from "@/lib/auth/admin-user-scope"
 import { generateInvitationToken, hashInvitationToken } from "@/lib/auth/bootstrap"
 import { clearUserRbacCache } from "@/lib/auth/rbac"
 import { createPendingPasswordMarker, displayNameFromEmail } from "@/lib/auth/password-setup"
 import { getAppBaseUrl, sendInvitationEmail } from "@/lib/email/smtp"
 import { userCreateSchema, userInvitationSchema, userUpdateSchema, type ActionState } from "@/lib/validation/masters"
+import {
+  buildWorksiteAssignments,
+  validateWorksiteAssignmentScope,
+  validateRoleWorksiteRules,
+  validatePermissionRules,
+  canManageAdministratorRole,
+  uniqueIds,
+  userHasAdministratorRole,
+  hashStr,
+} from "./actions.helpers"
 
 const REVALIDATE = "/admin/usuarios"
 
@@ -373,109 +382,4 @@ export async function toggleUserActive(
   return { ok: true, message: activate ? "Usuario activado" : "Usuario desactivado" }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function buildWorksiteAssignments(formData: FormData) {
-  const selectedIds      = formData.getAll("worksiteId") as string[]
-  const primaryWorksiteId = formData.get("primaryWorksiteId") as string | null
-  return selectedIds.map((wsId) => ({
-    worksiteId: wsId,
-    isPrimary:  wsId === primaryWorksiteId,
-  }))
-}
-
-async function validateRoleWorksiteRules(
-  roleIds: string[],
-  worksiteAssignments: { worksiteId: string; isPrimary: boolean }[],
-  canManageAdmins = false,
-): Promise<ActionState | null> {
-  const allRoles = await db.query.roles.findMany()
-  const selected = allRoles.filter((role) => roleIds.includes(role.id))
-  const includesAdmin = selected.some((role) => role.name === "administrador")
-  if (includesAdmin && !canManageAdmins) {
-    return {
-      ok: false,
-      fieldErrors: {
-        roleIds: ["Solo un administrador puede asignar el rol Administrador"],
-      },
-    }
-  }
-  const isFaenaRequester = selected.some((role) => role.name === "solicitante_faena")
-  if (isFaenaRequester && worksiteAssignments.length === 0) {
-    return {
-      ok: false,
-      fieldErrors: {
-        worksiteAssignments: ["El prevencionista faena debe tener al menos una faena asignada"],
-      },
-    }
-  }
-  return null
-}
-
-async function validatePermissionRules(
-  permissionIds: string[],
-  canManageAdminPermissions = false,
-): Promise<ActionState | null> {
-  const uniquePermissionIds = [...new Set(permissionIds)]
-  if (uniquePermissionIds.length === 0) return null
-
-  const selected = await db.query.permissions.findMany({
-    where: inArray(permissions.id, uniquePermissionIds),
-  })
-  if (selected.length !== uniquePermissionIds.length) {
-    return {
-      ok: false,
-      fieldErrors: {
-        permissionIds: ["Uno o más permisos seleccionados no existen"],
-      },
-    }
-  }
-
-  const includesAdminPermission = selected.some((permission) => permission.module === "admin")
-  if (includesAdminPermission && !canManageAdminPermissions) {
-    return {
-      ok: false,
-      fieldErrors: {
-        permissionIds: ["Solo un administrador puede asignar permisos de administración"],
-      },
-    }
-  }
-
-  return null
-}
-
-function validateWorksiteAssignmentScope(
-  session: Session,
-  worksiteAssignments: { worksiteId: string; isPrimary: boolean }[],
-): ActionState | null {
-  const outOfScope = worksiteAssignments.some((assignment) => !canAccessWorksite(session, assignment.worksiteId))
-  if (!outOfScope) return null
-  return {
-    ok: false,
-    fieldErrors: {
-      worksiteAssignments: ["Solo puedes asignar faenas dentro de tu alcance"],
-    },
-  }
-}
-
-function canManageAdministratorRole(session: Session) {
-  return session.user.roles.includes("administrador")
-}
-
-function uniqueIds(ids: string[]) {
-  return [...new Set(ids.filter((id) => id.length > 0))]
-}
-
-async function userHasAdministratorRole(userId: string) {
-  const rows = await db
-    .select({ userId: userRoles.userId })
-    .from(userRoles)
-    .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(and(eq(roles.name, "administrador"), eq(userRoles.userId, userId)))
-  return rows.length > 0
-}
-
-function hashStr(str: string): number {
-  let h = 0
-  for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h)
-  return h
-}
+// (helpers moved to actions.helpers.ts)

@@ -28,7 +28,7 @@ import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
 
 export const metadata: Metadata = { title: "Entregas" }
 
-const HISTORY_PAGE_SIZE = 25
+import { HISTORY_PAGE_SIZE } from "@/lib/constants"
 
 export default async function Page({
   searchParams,
@@ -282,27 +282,28 @@ export default async function Page({
 
       <div className="flex flex-col gap-6">
         {/* ── Registrar entrega ── */}
-        <section className="flex flex-col gap-3 max-w-4xl">
-          <div>
-            <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>
-            <p className="mt-1 text-sm text-(--color-text-muted)">
-              Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
-            </p>
-          </div>
-
+        <section className="flex flex-col gap-3">
           {deliverableItems.length === 0 ? (
-            <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-              <EmptyState
-                icon={<Package size={24} />}
-                title="Sin EPP pendiente de entrega"
-                description="Recepciona EPP en el módulo de Recepción para que aparezca aquí disponible para asignar."
-                action={
-                  <Button asChild variant="secondary">
-                    <Link href="/recepcion">Ir a Recepción</Link>
-                  </Button>
-                }
-              />
-            </div>
+            <>
+              <div>
+                <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>
+                <p className="mt-1 text-sm text-(--color-text-muted)">
+                  Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
+                </p>
+              </div>
+              <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+                <EmptyState
+                  icon={<Package size={24} />}
+                  title="Sin EPP pendiente de entrega"
+                  description="Recepciona EPP en el módulo de Recepción para que aparezca aquí disponible para asignar."
+                  action={
+                    <Button asChild variant="secondary">
+                      <Link href="/recepcion">Ir a Recepción</Link>
+                    </Button>
+                  }
+                />
+              </div>
+            </>
           ) : (
             <DeliveryForm
               worksites={worksiteOptions}

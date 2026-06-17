@@ -21,7 +21,7 @@ import { purchaseRequestItems } from "@/db/schema"
 
 export const metadata: Metadata = { title: "Órdenes de compra" }
 
-const ORDERS_PAGE_SIZE = 25
+import { ORDERS_PAGE_SIZE } from "@/lib/constants"
 
 export default async function ComprasPage({
   searchParams,

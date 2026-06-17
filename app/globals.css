@@ -206,6 +206,25 @@ body {
   scrollbar-color: var(--color-border-strong) transparent;
 }
 
+/* Radix's SelectViewport injects its own <style> tag that hides the native
+   scrollbar (scrollbar-width: none / ::-webkit-scrollbar { display: none }).
+   It mounts after this stylesheet, so only !important reliably wins. */
+[data-radix-select-viewport] {
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--color-border-strong) transparent !important;
+}
+[data-radix-select-viewport]::-webkit-scrollbar {
+  display: block !important;
+  width: 8px;
+}
+[data-radix-select-viewport]::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border-radius: 4px;
+}
+[data-radix-select-viewport]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* ─── Pressable — subtle scale feedback on press ── */
 @media (prefers-reduced-motion: no-preference) {
   [data-pressable] {

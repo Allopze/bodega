@@ -16,7 +16,7 @@ import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
 
-const RECEPCION_PAGE_SIZE = 25
+import { RECEPCION_PAGE_SIZE } from "@/lib/constants"
 
 export default async function RecepcionPage({
   searchParams,

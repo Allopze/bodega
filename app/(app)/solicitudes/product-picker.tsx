@@ -3,7 +3,7 @@
 import * as React from "react"
 import { MagnifyingGlass } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
-import type { ProductOption } from "./request-form"
+import type { ProductOption } from "./request-form.types"
 
 interface ProductPickerProps {
   products:          ProductOption[]

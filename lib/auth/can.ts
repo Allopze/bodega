@@ -27,30 +27,6 @@ export function canAny(session: Session | null, ...perms: Permission[]): boolean
 }
 
 /**
- * Check if a session user has all of the given permissions.
- */
-export function canAll(session: Session | null, ...perms: Permission[]): boolean {
-  if (!session?.user?.permissions) return false
-  return perms.every((p) => session.user.permissions.includes(p))
-}
-
-/**
- * Check if a user has a given role.
- */
-export function hasRole(session: Session | null, role: string): boolean {
-  if (!session?.user?.roles) return false
-  return session.user.roles.includes(role)
-}
-
-/**
- * Check if a user has any of the given roles.
- */
-export function hasAnyRole(session: Session | null, ...roles: string[]): boolean {
-  if (!session?.user?.roles) return false
-  return roles.some((r) => session.user.roles.includes(r))
-}
-
-/**
  * Server-side: require permission. Returns session on success.
  * For Server Components (redirects), use `ensurePermission()`.
  * For Server Actions, catch the error and return `{ ok: false }`.

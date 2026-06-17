@@ -87,7 +87,7 @@ export function ReturnPanel({
         </Field>
 
         <Field label="Producto" htmlFor="returnProductId" required error={state.fieldErrors?.productId?.[0]}>
-          <Select value={productId} onValueChange={setProductId} disabled={!worksiteId}>
+          <Select searchable value={productId} onValueChange={setProductId} disabled={!worksiteId}>
             <SelectTrigger id="returnProductId" error={!!state.fieldErrors?.productId}>
               <SelectValue placeholder={worksiteId ? "Selecciona producto" : "Elige faena primero"} />
             </SelectTrigger>

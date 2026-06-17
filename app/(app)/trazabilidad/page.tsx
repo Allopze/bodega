@@ -30,8 +30,7 @@ const APPROVED_STATES = [
 ] as const
 const APPROVED_STATE_SET = new Set<string>(APPROVED_STATES)
 
-const PAGE_SIZE = 50
-const ALERT_SCAN_LIMIT = 1_000
+import { TRACEABILITY_PAGE_SIZE as PAGE_SIZE, TRACEABILITY_ALERT_SCAN_LIMIT as ALERT_SCAN_LIMIT } from "@/lib/constants"
 
 export default async function TrazabilidadPage({
   searchParams,

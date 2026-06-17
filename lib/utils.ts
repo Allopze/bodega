@@ -78,15 +78,6 @@ export function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-/** Deterministic hue from a string (for avatar color assignment) */
-export function stringToHue(str: string): number {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return Math.abs(hash) % 360
-}
-
 /** Escape special HTML characters to prevent XSS in email templates and notifications. */
 export function escapeHtml(value: string): string {
   return value

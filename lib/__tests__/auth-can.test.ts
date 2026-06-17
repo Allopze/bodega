@@ -9,7 +9,7 @@ import type { Session } from "next-auth"
 // Mock the auth module so next-auth is not loaded in the Node/Vitest environment.
 vi.mock("@/lib/auth/auth", () => ({ auth: vi.fn() }))
 
-import { can, canAny, canAll, hasRole, hasAnyRole, canAccessWorksite } from "@/lib/auth/can"
+import { can, canAny, canAccessWorksite } from "@/lib/auth/can"
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -64,60 +64,6 @@ describe("canAny()", () => {
   it("returns false when none of the permissions match", () => {
     const session = makeSession({ permissions: ["requests:create"] })
     expect(canAny(session, "admin:users", "reports:view")).toBe(false)
-  })
-})
-
-/* ── canAll() ────────────────────────────────────────────────────────────── */
-
-describe("canAll()", () => {
-  it("returns false for null session", () => {
-    expect(canAll(null, "reports:view", "admin:users")).toBe(false)
-  })
-
-  it("returns true when all permissions are present", () => {
-    const session = makeSession({ permissions: ["reports:view", "admin:users"] })
-    expect(canAll(session, "reports:view", "admin:users")).toBe(true)
-  })
-
-  it("returns false when only some permissions are present", () => {
-    const session = makeSession({ permissions: ["reports:view"] })
-    expect(canAll(session, "reports:view", "admin:users")).toBe(false)
-  })
-})
-
-/* ── hasRole() ───────────────────────────────────────────────────────────── */
-
-describe("hasRole()", () => {
-  it("returns false for null session", () => {
-    expect(hasRole(null, "administrador")).toBe(false)
-  })
-
-  it("returns true when role is present", () => {
-    const session = makeSession({ roles: ["administrador"] })
-    expect(hasRole(session, "administrador")).toBe(true)
-  })
-
-  it("returns false when role is absent", () => {
-    const session = makeSession({ roles: ["solicitante_faena"] })
-    expect(hasRole(session, "administrador")).toBe(false)
-  })
-})
-
-/* ── hasAnyRole() ────────────────────────────────────────────────────────── */
-
-describe("hasAnyRole()", () => {
-  it("returns true when any of the roles matches", () => {
-    const session = makeSession({ roles: ["secretaria"] })
-    expect(hasAnyRole(session, "jefa_chome", "secretaria")).toBe(true)
-  })
-
-  it("returns false when none of the roles match", () => {
-    const session = makeSession({ roles: ["solicitante_faena"] })
-    expect(hasAnyRole(session, "jefa_chome", "secretaria")).toBe(false)
-  })
-
-  it("returns false for null session", () => {
-    expect(hasAnyRole(null, "administrador")).toBe(false)
   })
 })
 

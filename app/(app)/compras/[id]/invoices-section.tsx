@@ -10,7 +10,7 @@ import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
-import { addInvoiceAction, deleteInvoiceAction } from "../actions"
+import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
 
 export interface InvoiceRow {
   id: string
@@ -37,13 +37,13 @@ export function InvoicesSection({
   const exceeds = totalInvoiced > totalAmount
 
   return (
-    <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+    <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-3">
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">
+        <h2 className="text-sm font-semibold text-(--color-text)">
           Facturas
           {invoices.length > 0 && (
-            <span className="ml-2 inline-flex items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-text-muted)] text-xs font-medium px-2 py-0.5">
+            <span className="ml-2 inline-flex items-center justify-center rounded-full bg-surface-2 text-(--color-text-muted) text-xs font-medium px-2 py-0.5">
               {invoices.length}
             </span>
           )}
@@ -52,10 +52,10 @@ export function InvoicesSection({
 
       {/* Reconciliation summary */}
       {invoices.length > 0 && (
-        <div className={`mb-3 rounded-[var(--radius-lg)] px-3 py-2 text-xs ${
+        <div className={`mb-3 rounded-(--radius-lg) px-3 py-2 text-xs ${
           exceeds
             ? "bg-red-50 border border-red-200 text-red-700"
-            : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]"
+            : "bg-surface-2 text-(--color-text-muted)"
         }`}>
           <div className="flex items-center justify-between gap-2">
             <span>Total facturado</span>
@@ -76,9 +76,9 @@ export function InvoicesSection({
 
       {/* Invoice list */}
       {invoices.length === 0 ? (
-        <p className="text-xs text-[var(--color-text-subtle)] py-2">Sin facturas adjuntadas.</p>
+        <p className="text-xs text-text-subtle py-2">Sin facturas adjuntadas.</p>
       ) : (
-        <ul className="divide-y divide-[var(--color-border)] mb-3">
+        <ul className="divide-y divide-(--color-border) mb-3">
           {invoices.map((inv) => (
             <InvoiceItem
               key={inv.id}
@@ -132,17 +132,17 @@ function InvoiceItem({
   return (
     <li className="flex items-start justify-between gap-3 py-2.5">
       <div className="flex items-start gap-2 min-w-0">
-        <FilePdf size={16} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" />
+        <FilePdf size={16} className="mt-0.5 shrink-0 text-text-subtle" />
         <div className="min-w-0">
           <a
             href={`/api/purchase-orders/invoices/${invoice.id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-medium text-[var(--color-text)] hover:underline truncate block"
+            className="text-xs font-medium text-(--color-text) hover:underline truncate block"
           >
             {invoice.invoiceNumber}
           </a>
-          <p className="text-[11px] text-[var(--color-text-subtle)] mt-0.5">
+          <p className="text-[11px] text-text-subtle mt-0.5">
             {invoice.amount != null ? formatCLP(invoice.amount) : "—"}
             {invoice.issueDate ? ` · ${formatDate(invoice.issueDate)}` : ""}
           </p>
@@ -156,7 +156,7 @@ function InvoiceItem({
             type="submit"
             disabled={pending}
             aria-label={`Eliminar factura ${invoice.invoiceNumber}`}
-            className="shrink-0 p-1 rounded text-[var(--color-text-subtle)] hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
+            className="shrink-0 p-1 rounded text-text-subtle hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
           >
             <Trash size={14} />
           </button>
@@ -182,8 +182,8 @@ function AddInvoiceForm({ purchaseOrderId }: { purchaseOrderId: string }) {
   }, [state])
 
   return (
-    <form ref={formRef} action={action} className="mt-1 border-t border-[var(--color-border)] pt-3 space-y-2">
-      <p className="text-xs font-medium text-[var(--color-text-muted)] mb-2">Agregar factura</p>
+    <form ref={formRef} action={action} className="mt-1 border-t border-(--color-border) pt-3 space-y-2">
+      <p className="text-xs font-medium text-(--color-text-muted) mb-2">Agregar factura</p>
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
 
       {!state.ok && state.message && !("fieldErrors" in state) && (

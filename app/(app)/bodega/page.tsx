@@ -23,7 +23,7 @@ import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from ".
 
 export const metadata: Metadata = { title: "Bodega" }
 
-const KARDEX_PAGE_SIZE = 25
+import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 
 interface WorksiteOption {
   id: string
