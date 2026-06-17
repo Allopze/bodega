@@ -15,7 +15,7 @@ export const REQUEST_TYPE_LABELS: Record<string, string> = {
   epp:        "EPP",
   repuestos:  "Repuestos",
   servicios:  "Servicios",
-  otro:       "Otro",
+  otro:       "Otros",
   stock:      "Stock",       // legacy
   mantencion: "Mantención",  // legacy
 }
