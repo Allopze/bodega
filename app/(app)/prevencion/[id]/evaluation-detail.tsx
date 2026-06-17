@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useRef, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -94,6 +95,7 @@ export function EvaluationDetail({
   canEdit,
   canManage,
 }: Props) {
+  const router = useRouter()
   const isCerrado = evaluation.estado === "cerrado"
   const readOnly  = isCerrado || !canEdit
 
@@ -197,8 +199,7 @@ export function EvaluationDetail({
       }
       toast.success("Evaluación cerrada exitosamente")
       setCloseOpen(false)
-      // Reload page to reflect cerrado state
-      window.location.reload()
+      router.refresh()
     })
   }
 

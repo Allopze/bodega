@@ -47,7 +47,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
     if (!draft.responsable.trim()) return toast.error("Ingresa el responsable")
     if (!draft.plazo.trim())    return toast.error("Ingresa el plazo")
 
-    const n = items.length + 1
+    const n = items.length > 0 ? Math.max(...items.map(i => i.n)) + 1 : 1
 
     startTransition(async () => {
       const result = await saveActionPlanItemAction({

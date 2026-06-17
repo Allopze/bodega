@@ -11,6 +11,7 @@ export const LC_SST_002: ChecklistDefinition = {
   code: 'LC-SST-002',
   version: '01',
   revisionDate: '2026-06-05',
+  tipo: 'seguimiento',
   title: 'Lista de Chequeo — Control de Seguimiento',
   subtitle: 'Conductores Camión Sistema Ampliroll, Batea y Operadores de Maquinaria Pesada',
   legalFramework: [

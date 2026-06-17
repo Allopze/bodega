@@ -64,6 +64,7 @@ export interface ChecklistDefinition {
   version: string
   revisionDate: string
   title: string
+  tipo: TipoEvaluacion
   subtitle?: string
   legalFramework: string[]
   applicableTo: string

@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { workers, worksites } from "@/db/schema/worksites"
-import { asc, inArray, eq } from "drizzle-orm"
+import { asc, inArray, eq, and } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { NuevaEvaluacionForm } from "./nueva-evaluacion-form"
@@ -36,15 +36,15 @@ export default async function NuevaEvaluacionPage() {
     )
     .orderBy(asc(worksites.name))
 
-  // Fetch workers visible to this user (scoped by worksite)
+  // Fetch workers visible to this user (scoped by worksite, active only)
   const allWorkers = await db
     .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut, worksiteId: workers.worksiteId })
     .from(workers)
     .where(
       worksiteIds === "all"
-        ? undefined
+        ? eq(workers.isActive, true)
         : worksiteIds.length > 0
-          ? inArray(workers.worksiteId, worksiteIds)
+          ? and(eq(workers.isActive, true), inArray(workers.worksiteId, worksiteIds))
           : undefined
     )
     .orderBy(asc(workers.firstName), asc(workers.lastName))
@@ -61,7 +61,7 @@ export default async function NuevaEvaluacionPage() {
   const definicionOptions = Object.values(CHECKLIST_DEFINITIONS).map((d) => ({
     code: d.code,
     title: d.title,
-    tipo: d.code === "LC-SST-001" ? "nuevo" as const : "seguimiento" as const,
+    tipo: d.tipo,
   }))
 
   return (

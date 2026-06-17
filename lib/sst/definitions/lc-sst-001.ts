@@ -11,6 +11,7 @@ export const LC_SST_001: ChecklistDefinition = {
   code: 'LC-SST-001',
   version: '01',
   revisionDate: '2026-02-25',
+  tipo: 'nuevo',
   title: 'Lista de Chequeo — Trabajador Nuevo',
   subtitle: 'Conductores Camión Ampliroll, Batea y Operadores de Maquinaria Pesada',
   legalFramework: ['DS N°44', 'DS N°594', 'ISO 45001'],

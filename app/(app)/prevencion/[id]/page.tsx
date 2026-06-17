@@ -60,6 +60,8 @@ export default async function EvaluacionDetailPage({ params }: Props) {
   const cargoLabels = cargos.map((c) => (CARGO_KEYS as Record<string, string>)[c] ?? c)
 
   const canClose  = can(session, "sst:close")
+  // sst:create covers both creating new evaluations and filling out existing drafts
+  // (no separate sst:edit permission in this module)
   const canEdit   = can(session, "sst:create")
   const canManage = can(session, "sst:manage")
 

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect, useRef, useState, useCallback, startTransition } from "react"
+import { useActionState, useEffect, useRef, useState, useCallback, startTransition, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { ArrowLeft, Plus, Warning } from "@phosphor-icons/react"
@@ -23,15 +23,9 @@ import { ItemEditor, URGENCY_OPTS } from "./item-editor"
 import type { ActionState } from "@/lib/validation/operations"
 import { formatDate } from "@/lib/utils"
 import type { ItemRow, AttrRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"
+import { REQUEST_TYPE_OPTS, QUOTATION_TYPES } from "@/lib/request-types"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const REQUEST_TYPE_OPTS = [
-  { value: "epp",        label: "EPP"        },
-  { value: "stock",      label: "Stock"      },
-  { value: "mantencion", label: "Mantención" },
-  { value: "otro",       label: "Otro"       },
-]
 
 const AUTOSAVE_INTERVAL_MS = 60_000
 
@@ -63,7 +57,15 @@ function blankItem(key = "new-0"): ItemRow {
     isEpp:               false,
     productName:         "",
     showAttrs:           false,
+    cotizaciones:        [],
   }
+}
+
+function blankItemForType(key: string, requestType: string): ItemRow {
+  if (requestType === "servicios") {
+    return { ...blankItem(key), unitOfMeasure: "servicio" }
+  }
+  return blankItem(key)
 }
 
 function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
@@ -152,6 +154,8 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
     useActionState<ActionState & { requestId?: string }, FormData>(saveDraft, INITIAL_STATE)
   const [submitState, submitAction] = useActionState<ActionState, FormData>(submitRequest, INITIAL_STATE)
   const [cancelState, cancelAction] = useActionState<ActionState, FormData>(cancelRequest, INITIAL_STATE)
+  const [isSaving, startSaveTransition] = useTransition()
+  const [isSubmitting, startSubmitTransition] = useTransition()
 
   // Id del borrador persistido. Para solicitudes nuevas se adopta el id que
   // devuelve saveDraft, de modo que cada guardado posterior actualice el mismo
@@ -184,6 +188,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
           isEpp:               prod?.isEpp ?? false,
           productName:         prod?.name ?? item.productNameFree ?? "",
           showAttrs:           item.attributes.length > 0,
+          cotizaciones:        [],
           attributes:          item.attributes.map((a) => {
             const prodAttr = prod?.attributes.find((pa) => pa.id === a.attributeId)
             return {
@@ -214,6 +219,14 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
       if (draftState.requestId) setSavedId(draftState.requestId)
       if (autoSaveRef.current) autoSaveRef.current = false
       else toast.success(draftState.message ?? "Borrador guardado")
+      // Clear cotizaciones from items after successful save — files are
+      // already persisted on the server; keeping them would cause duplicates
+      // on the next save.
+      if (QUOTATION_TYPES.has(requestType)) {
+        setItems((prev) => prev.map((item) =>
+          item.cotizaciones.length > 0 ? { ...item, cotizaciones: [] } : item,
+        ))
+      }
     } else if (draftState.message && !draftState.ok && draftState.message !== "Sin permisos para crear solicitudes") {
       // Un autosave fallido no interrumpe: el usuario sigue editando y el
       // guardado manual reporta el error con detalle.
@@ -230,8 +243,21 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
     if (cancelState.message && !cancelState.ok) toast.error(cancelState.message)
   }, [cancelState])
 
+  // ── Reset items when requestType changes to/from a quotation type
+  //    (only when creating a new request, not when editing an existing one)
+  const prevRequestTypeRef = useRef(requestType)
+  useEffect(() => {
+    const prev = prevRequestTypeRef.current
+    prevRequestTypeRef.current = requestType
+    if (prev === requestType) return
+    if (isEdit) return
+    if (QUOTATION_TYPES.has(requestType) || QUOTATION_TYPES.has(prev)) {
+      setItems([blankItemForType(crypto.randomUUID(), requestType)])
+    }
+  }, [requestType, isEdit])
+
   // ── Item mutations
-  const addItem = useCallback(() => setItems((prev) => [...prev, blankItem(crypto.randomUUID())]), [])
+  const addItem = useCallback(() => setItems((prev) => [...prev, blankItemForType(crypto.randomUUID(), requestType)]), [requestType])
 
   const removeItem = useCallback((key: string) => {
     setItems((prev) => prev.length > 1 ? prev.filter((i) => i._key !== key) : prev)
@@ -312,6 +338,37 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
 
   const hasRealContent = items.some((item) => item.productId || item.productNameFree.trim() !== "")
 
+  // Ref that always holds the latest items for buildDraftFormData.
+  // Avoids making buildDraftFormData depend on `items` (reference changes
+  // on every edit, which would reset the autosave timer constantly).
+  const itemsDataRef = useRef(items)
+  useEffect(() => { itemsDataRef.current = items })
+
+  // ── Helper: build draft FormData including pending cotizaciones files
+  const buildDraftFormData = useCallback((overrides?: { id?: string }) => {
+    const fd = new FormData()
+    const id = overrides?.id ?? savedId
+    if (id) fd.set("id", id)
+    fd.set("itemsJson",    itemsJson)
+    fd.set("worksiteId",   worksiteId)
+    fd.set("requestType",  requestType)
+    fd.set("urgency",      urgency)
+    fd.set("requiredDate", requiredDate)
+    fd.set("notes",        notes)
+    // Append pending cotizaciones files from item state
+    if (QUOTATION_TYPES.has(requestType)) {
+      for (const item of itemsDataRef.current) {
+        const cots = item.cotizaciones
+        if (cots?.length) {
+          for (const cot of cots) {
+            fd.append(`cotizacion_${item._key}`, cot.file)
+          }
+        }
+      }
+    }
+    return fd
+  }, [savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+
   // ── Cambios sin guardar: cualquier edición posterior al snapshot inicial marca dirty
   const prevSnapshotRef = useRef<string | null>(null)
   useEffect(() => {
@@ -356,18 +413,10 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
       const snap = snapshotRef.current
       if (!snap.canSave) return
       autoSaveRef.current = true
-      const fd = new FormData()
-      if (snap.savedId) fd.set("id", snap.savedId)
-      fd.set("itemsJson",    snap.itemsJson)
-      fd.set("worksiteId",   snap.worksiteId)
-      fd.set("requestType",  snap.requestType)
-      fd.set("urgency",      snap.urgency)
-      fd.set("requiredDate", snap.requiredDate)
-      fd.set("notes",        snap.notes)
-      startTransition(() => draftAction(fd))
+      startTransition(() => draftAction(buildDraftFormData()))
     }, AUTOSAVE_INTERVAL_MS)
     return () => window.clearTimeout(timer)
-  }, [isDraft, dirty, draftPending, draftAction])
+  }, [isDraft, dirty, draftPending, draftAction, buildDraftFormData])
 
   const readOnly = !isDraft
   const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]
@@ -381,13 +430,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
     <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
       <div className="min-w-0 space-y-8">
       {/* ── Draft/Submit form ─────────────────────────────────────────────── */}
-      <form action={draftAction} className="space-y-6">
-        {/* Hidden fields */}
-        {savedId && <input type="hidden" name="id" value={savedId} />}
-        <input type="hidden" name="itemsJson"    value={itemsJson} />
-        <input type="hidden" name="worksiteId"   value={worksiteId} />
-        <input type="hidden" name="requestType"  value={requestType} />
-        <input type="hidden" name="urgency"      value={urgency} />
+      <form onSubmit={(e) => { e.preventDefault(); startSaveTransition(() => draftAction(buildDraftFormData())); }} className="space-y-6">
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5 space-y-4">
@@ -501,6 +544,13 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
             </p>
           )}
 
+          {QUOTATION_TYPES.has(requestType) && !savedId && (
+            <p className="flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+              <Warning size={13} className="shrink-0" />
+              Guarda el borrador primero para poder adjuntar cotizaciones.
+            </p>
+          )}
+
           <div className="space-y-2">
             {items.map((item, idx) => (
               <ItemEditor
@@ -510,6 +560,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
                 products={products}
                 suppliers={suppliers}
                 readOnly={readOnly}
+                requestType={requestType}
                 onUpdate={(patch) => updateItem(item._key, patch)}
                 onSelectProduct={(pid) => selectProduct(item._key, pid)}
                 onSelectFreeProduct={(name) => selectFreeProduct(item._key, name)}
@@ -536,7 +587,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
             </Button>
             <div className="flex items-center gap-3">
               <span aria-live="polite" className="text-[11px] text-[var(--color-text-subtle)]">
-                {draftPending
+                {(isSaving || isSubmitting || draftPending)
                   ? "Guardando..."
                   : dirty
                   ? "Cambios sin guardar"
@@ -552,14 +603,12 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
 
       {/* ── Submit form (separate to distinguish the action) ─────────────── */}
       {isDraft && (
-        <form action={submitAction} className="pt-0">
-          <input type="hidden" name="requestId"   value={savedId ?? ""} />
-          <input type="hidden" name="itemsJson"   value={itemsJson} />
-          <input type="hidden" name="worksiteId"  value={worksiteId} />
-          <input type="hidden" name="requestType" value={requestType} />
-          <input type="hidden" name="urgency"     value={urgency} />
-          <input type="hidden" name="requiredDate" value={requiredDate} />
-          <input type="hidden" name="notes"       value={notes} />
+        <form onSubmit={(e) => {
+          e.preventDefault()
+          const fd = buildDraftFormData()
+          fd.set("requestId", savedId ?? "")
+          startSubmitTransition(() => submitAction(fd))
+        }} className="pt-0">
           {submitState.message && !submitState.ok && (
             <p className="mb-3 text-xs text-[var(--color-danger)] flex items-center gap-1.5">
               <Warning size={14} />
