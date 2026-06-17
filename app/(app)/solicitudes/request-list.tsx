@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/utils"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
+import { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "@/lib/request-types"
 
 export interface RequestRow {
   id:            string
@@ -46,24 +47,6 @@ const URGENCY_DOT: Record<string, string> = {
   normal:   "text-[var(--color-text-subtle)]",
   high:     "text-[var(--color-warning)]",
   critical: "text-[var(--color-danger)]",
-}
-
-const REQUEST_TYPE_LABELS: Record<string, string> = {
-  epp:        "EPP",
-  stock:      "Stock",
-  mantencion: "Mantención",
-  otro:       "Otro",
-  repuestos:  "Repuestos",
-  servicios:  "Servicios",
-}
-
-const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
-  epp:        "info",
-  stock:      "success",
-  mantencion: "warning",
-  otro:       "default",
-  repuestos:  "warning",
-  servicios:  "info",
 }
 
 /** Tipos con detalle en su propio vertical (no en /solicitudes/[id]) */

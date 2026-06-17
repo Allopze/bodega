@@ -23,15 +23,9 @@ import { ItemEditor, URGENCY_OPTS } from "./item-editor"
 import type { ActionState } from "@/lib/validation/operations"
 import { formatDate } from "@/lib/utils"
 import type { ItemRow, AttrRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"
+import { REQUEST_TYPE_OPTS } from "@/lib/request-types"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const REQUEST_TYPE_OPTS = [
-  { value: "epp",        label: "EPP"        },
-  { value: "stock",      label: "Stock"      },
-  { value: "mantencion", label: "Mantención" },
-  { value: "otro",       label: "Otro"       },
-]
 
 const AUTOSAVE_INTERVAL_MS = 60_000
 

@@ -18,20 +18,7 @@ import {
 } from "./actions"
 import { formatQty, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
-
-const REQUEST_TYPE_LABELS: Record<string, string> = {
-  epp:        "EPP",
-  stock:      "Stock",
-  mantencion: "Mantención",
-  otro:       "Otro",
-}
-
-const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
-  epp:        "info",
-  stock:      "success",
-  mantencion: "warning",
-  otro:       "default",
-}
+import { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "@/lib/request-types"
 
 /* ── Data types (received from Server Component) ────────────────────────────── */
 
