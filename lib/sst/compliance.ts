@@ -10,10 +10,7 @@ const POSITIVE_STATUSES: StatusValue[] = ['cumple', 'entregado', 'apto', 'si']
  */
 const NEGATIVE_STATUSES: StatusValue[] = ['no_cumple', 'no_entregado', 'no_apto', 'no']
 
-/**
- * Statuses that are excluded from compliance calculation
- */
-const _EXCLUDED_STATUSES: StatusValue[] = ['na', null]
+// Statuses 'na' and null are excluded from compliance (not counted in denominator)
 
 /**
  * Calculate compliance percentage from a set of responses.
