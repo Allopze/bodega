@@ -21,6 +21,7 @@ import { traceabilityModule } from "@/modules/traceability/manifest"
 import { reportsModule }      from "@/modules/reports/manifest"
 import { repuestosModule }   from "@/modules/repuestos/manifest"
 import { serviciosModule }   from "@/modules/servicios/manifest"
+import { sstModule }         from "@/modules/sst/manifest"
 
 /**
  * Registry central — array `as const` de todos los módulos registrados.
@@ -41,6 +42,7 @@ export const registry = [
   repuestosModule,
   serviciosModule,
   // ── Prevención de riesgos (próximas entregas) ──────────────────────────
+  sstModule,
   // incidentesModule,
   // inspeccionesModule,
   // iperModule,
