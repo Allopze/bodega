@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { worksites, products, productAttributes, suppliers, productSuppliers } from "@/db/schema"
+import { eq, asc, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -34,6 +34,15 @@ export default async function NuevaSolicitudPage() {
       .orderBy(asc(suppliers.name)),
   ])
 
+  const allSupplierRows = allProducts.length > 0
+    ? await db.select({
+        productId:   productSuppliers.productId,
+        supplierId:  productSuppliers.supplierId,
+        isPreferred: productSuppliers.isPreferred,
+      }).from(productSuppliers)
+        .where(inArray(productSuppliers.productId, allProducts.map((p) => p.id)))
+    : []
+
   // Scope worksites to the user's assignments
   const scopedWorksites = allWorksites.filter(
     (w) => canAccessWorksite(session, w.id),
@@ -44,24 +53,35 @@ export default async function NuevaSolicitudPage() {
     name:        w.name,
   }))
 
-  const productOptions = allProducts.map((p) => ({
-    id:             p.id,
-    sku:            p.sku,
-    name:           p.name,
-    isEpp:          p.isEpp,
-    unitOfMeasure:  p.unitOfMeasure,
-    categoryName:   p.categoryId,
-    referencePrice: p.referencePrice,
-    attributes:     allAttrs
-      .filter((a) => a.productId === p.id)
-      .map((a) => ({
-        id:         a.id,
-        name:       a.name,
-        type:       a.type,
-        isRequired: a.isRequired,
-        options:    a.options,
-      })),
-  }))
+  const productOptions = allProducts.map((p) => {
+    const suppRows = allSupplierRows.filter((r) => r.productId === p.id)
+    let preferredSupplierId: string | null = null
+    const preferred = suppRows.find((r) => r.isPreferred)
+    if (preferred) {
+      preferredSupplierId = preferred.supplierId
+    } else if (suppRows.length === 1) {
+      preferredSupplierId = suppRows[0].supplierId
+    }
+    return {
+      id:                  p.id,
+      sku:                 p.sku,
+      name:                p.name,
+      isEpp:               p.isEpp,
+      unitOfMeasure:       p.unitOfMeasure,
+      categoryName:        p.categoryId,
+      referencePrice:      p.referencePrice,
+      preferredSupplierId,
+      attributes:          allAttrs
+        .filter((a) => a.productId === p.id)
+        .map((a) => ({
+          id:         a.id,
+          name:       a.name,
+          type:       a.type,
+          isRequired: a.isRequired,
+          options:    a.options,
+        })),
+    }
+  })
 
   const supplierOptions = allSuppliers.map((s) => ({
     id:   s.id,

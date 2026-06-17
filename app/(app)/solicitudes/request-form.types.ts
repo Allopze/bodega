@@ -5,14 +5,15 @@
 // ── External option types (passed as props from the server page) ──────────────
 
 export interface ProductOption {
-  id:              string
-  sku:             string
-  name:            string
-  isEpp:           boolean
-  unitOfMeasure:   string
-  categoryName:    string
-  referencePrice:  number | null
-  attributes:      { id: string; name: string; type: string; isRequired: boolean; options: string | null }[]
+  id:                  string
+  sku:                 string
+  name:                string
+  isEpp:               boolean
+  unitOfMeasure:       string
+  categoryName:        string
+  referencePrice:      number | null
+  preferredSupplierId: string | null
+  attributes:          { id: string; name: string; type: string; isRequired: boolean; options: string | null }[]
 }
 
 export interface WorksiteOption {

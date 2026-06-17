@@ -250,6 +250,10 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
         isEpp:           prod.isEpp,
         attributes:      attrs,
         showAttrs:       attrs.length > 0,
+        // NUEVO: autocompletar proveedor para EPP
+        ...(prod.isEpp && prod.preferredSupplierId
+          ? { suggestedSupplierId: prod.preferredSupplierId, supplierHint: "" }
+          : {}),
       }
     }))
   }, [products])
