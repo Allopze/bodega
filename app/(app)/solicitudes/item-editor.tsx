@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/select"
 import { ProductPicker } from "./product-picker"
 import type { ItemRow, ProductOption, SupplierOption } from "./request-form.types"
+import { QUOTATION_TYPES } from "@/lib/request-types"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ interface ItemEditorProps {
   products:        ProductOption[]
   suppliers:       SupplierOption[]
   readOnly:        boolean
+  requestType?:    string
   onUpdate:        (patch: Partial<ItemRow>) => void
   onSelectProduct: (pid: string) => void
   onSelectFreeProduct: (name: string) => void
@@ -37,9 +39,10 @@ interface ItemEditorProps {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ItemEditor({
-  item, idx, products, suppliers, readOnly,
+  item, idx, products, suppliers, readOnly, requestType,
   onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
 }: ItemEditorProps) {
+  const isQuotationType    = QUOTATION_TYPES.has(requestType ?? "")
   const hasSuppliers       = suppliers.length > 0
   const showSupplierSelect = !item.supplierHint || !!item.suggestedSupplierId
 
@@ -51,9 +54,20 @@ export function ItemEditor({
           {idx + 1}
         </span>
 
-        {/* Product picker */}
+        {/* Product picker / Description */}
         <div className="flex-1 space-y-2">
-          {item.productId ? (
+          {isQuotationType ? (
+            <Field label="Descripción" required htmlFor={`desc-${item._key}`}>
+              <Input
+                id={`desc-${item._key}`}
+                className="h-8 text-sm"
+                placeholder="Describe el ítem requerido..."
+                value={item.productNameFree}
+                onChange={(e) => onUpdate({ productNameFree: e.target.value, productId: null })}
+                disabled={readOnly}
+              />
+            </Field>
+          ) : item.productId ? (
             <div className="flex items-center gap-2">
               <Package size={14} className="text-[var(--color-text-subtle)] shrink-0" />
               <span className="flex-1 text-sm font-medium text-[var(--color-text)]">{item.productName}</span>
@@ -151,48 +165,50 @@ export function ItemEditor({
         </Field>
       </div>
 
-      {/* Supplier hint */}
-      <div className="ml-8 grid grid-cols-1 gap-3">
-        <Field label="Proveedor sugerido" htmlFor={`sup-${item._key}`}>
-          {readOnly ? (
-            <p className="text-sm text-[var(--color-text)]">
-              {item.suggestedSupplierId
-                ? (suppliers.find((s) => s.id === item.suggestedSupplierId)?.name ?? "—")
-                : (item.supplierHint || "—")}
-            </p>
-          ) : hasSuppliers && showSupplierSelect ? (
-            <Select
-              value={item.suggestedSupplierId || "__free__"}
-              onValueChange={(v) => {
-                if (v === "__free__") {
-                  onUpdate({ suggestedSupplierId: "", supplierHint: "" })
-                } else {
-                  onUpdate({ suggestedSupplierId: v, supplierHint: "" })
-                }
-              }}
-            >
-              <SelectTrigger id={`sup-${item._key}`} className="h-8 text-sm">
-                <SelectValue placeholder="Seleccionar proveedor..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__free__">Escribir nombre...</SelectItem>
-                {suppliers.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              id={`sup-${item._key}`}
-              className="h-8 text-sm"
-              placeholder="ej: treck, apro..."
-              value={item.supplierHint}
-              onChange={(e) => onUpdate({ supplierHint: e.target.value, suggestedSupplierId: "" })}
-              disabled={readOnly}
-            />
-          )}
-        </Field>
-      </div>
+      {/* Supplier hint — hidden for quotation types (supplier selected at quotation approval) */}
+      {!isQuotationType && (
+        <div className="ml-8 grid grid-cols-1 gap-3">
+          <Field label="Proveedor sugerido" htmlFor={`sup-${item._key}`}>
+            {readOnly ? (
+              <p className="text-sm text-[var(--color-text)]">
+                {item.suggestedSupplierId
+                  ? (suppliers.find((s) => s.id === item.suggestedSupplierId)?.name ?? "—")
+                  : (item.supplierHint || "—")}
+              </p>
+            ) : hasSuppliers && showSupplierSelect ? (
+              <Select
+                value={item.suggestedSupplierId || "__free__"}
+                onValueChange={(v) => {
+                  if (v === "__free__") {
+                    onUpdate({ suggestedSupplierId: "", supplierHint: "" })
+                  } else {
+                    onUpdate({ suggestedSupplierId: v, supplierHint: "" })
+                  }
+                }}
+              >
+                <SelectTrigger id={`sup-${item._key}`} className="h-8 text-sm">
+                  <SelectValue placeholder="Seleccionar proveedor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__free__">Escribir nombre...</SelectItem>
+                  {suppliers.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                id={`sup-${item._key}`}
+                className="h-8 text-sm"
+                placeholder="ej: treck, apro..."
+                value={item.supplierHint}
+                onChange={(e) => onUpdate({ supplierHint: e.target.value, suggestedSupplierId: "" })}
+                disabled={readOnly}
+              />
+            )}
+          </Field>
+        </div>
+      )}
 
       {/* Notes */}
       <div className="ml-8">
@@ -211,19 +227,22 @@ export function ItemEditor({
       {/* Attributes */}
       {item.attributes.length > 0 && (
         <div className="ml-8 space-y-3">
-          <button
-            type="button"
-            className="flex items-center gap-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors duration-[var(--duration-fast)]"
-            onClick={() => onUpdate({ showAttrs: !item.showAttrs })}
-          >
-            {item.showAttrs ? <CaretUp size={12} /> : <CaretDown size={12} />}
-            {item.showAttrs ? "Ocultar" : "Mostrar"} atributos
-            <span className="ml-1 text-[var(--color-danger)]">
-              {item.attributes.filter((a) => a.isRequired).length > 0 && "(requeridos)"}
-            </span>
-          </button>
+          {/* For quotation types, attrs are always shown without a toggle button */}
+          {!isQuotationType && (
+            <button
+              type="button"
+              className="flex items-center gap-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors duration-[var(--duration-fast)]"
+              onClick={() => onUpdate({ showAttrs: !item.showAttrs })}
+            >
+              {item.showAttrs ? <CaretUp size={12} /> : <CaretDown size={12} />}
+              {item.showAttrs ? "Ocultar" : "Mostrar"} atributos
+              <span className="ml-1 text-[var(--color-danger)]">
+                {item.attributes.filter((a) => a.isRequired).length > 0 && "(requeridos)"}
+              </span>
+            </button>
+          )}
 
-          {item.showAttrs && (
+          {(isQuotationType || item.showAttrs) && (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {item.attributes.map((attr, i) => (
                 <Field

@@ -23,7 +23,7 @@ import { ItemEditor, URGENCY_OPTS } from "./item-editor"
 import type { ActionState } from "@/lib/validation/operations"
 import { formatDate } from "@/lib/utils"
 import type { ItemRow, AttrRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"
-import { REQUEST_TYPE_OPTS } from "@/lib/request-types"
+import { REQUEST_TYPE_OPTS, QUOTATION_TYPES } from "@/lib/request-types"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,47 @@ function blankItem(key = "new-0"): ItemRow {
     productName:         "",
     showAttrs:           false,
   }
+}
+
+const BLANK_ATTR = (name: string, isRequired = false): AttrRow => ({
+  attributeId:   null,
+  attributeName: name,
+  value:         "",
+  isRequired,
+  type:          "text",
+  options:       [],
+})
+
+function blankItemForType(key: string, requestType: string): ItemRow {
+  if (requestType === "repuestos") {
+    return {
+      ...blankItem(key),
+      unitOfMeasure: "unidad",
+      showAttrs:     true,
+      attributes:    [
+        BLANK_ATTR("N° de Parte"),
+        BLANK_ATTR("Equipo"),
+        BLANK_ATTR("Patente/Código"),
+        BLANK_ATTR("Marca"),
+        BLANK_ATTR("Modelo"),
+      ],
+    }
+  }
+  if (requestType === "servicios") {
+    return {
+      ...blankItem(key),
+      unitOfMeasure: "servicio",
+      showAttrs:     true,
+      attributes:    [
+        BLANK_ATTR("Ubicación", true),
+        BLANK_ATTR("Equipo"),
+        BLANK_ATTR("Patente/Código"),
+        BLANK_ATTR("Marca"),
+        BLANK_ATTR("Modelo"),
+      ],
+    }
+  }
+  return blankItem(key)
 }
 
 function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
@@ -224,8 +265,24 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
     if (cancelState.message && !cancelState.ok) toast.error(cancelState.message)
   }, [cancelState])
 
+  // ── Reset items when requestType changes to/from a quotation type
+  //    (only when creating a new request, not when editing an existing one)
+  const prevRequestTypeRef = useRef(requestType)
+  useEffect(() => {
+    const prev = prevRequestTypeRef.current
+    prevRequestTypeRef.current = requestType
+    // Skip on mount (no change yet)
+    if (prev === requestType) return
+    // Skip for saved/edit requests — don't discard existing data
+    if (isEdit) return
+    // If crossing the quotation-type boundary, reset to a blank item for the new type
+    if (QUOTATION_TYPES.has(requestType) || QUOTATION_TYPES.has(prev)) {
+      setItems([blankItemForType(crypto.randomUUID(), requestType)])
+    }
+  }, [requestType, isEdit])
+
   // ── Item mutations
-  const addItem = useCallback(() => setItems((prev) => [...prev, blankItem(crypto.randomUUID())]), [])
+  const addItem = useCallback(() => setItems((prev) => [...prev, blankItemForType(crypto.randomUUID(), requestType)]), [requestType])
 
   const removeItem = useCallback((key: string) => {
     setItems((prev) => prev.length > 1 ? prev.filter((i) => i._key !== key) : prev)
@@ -499,6 +556,13 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
             </p>
           )}
 
+          {QUOTATION_TYPES.has(requestType) && !savedId && (
+            <p className="flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+              <Warning size={13} className="shrink-0" />
+              Guarda el borrador primero para poder adjuntar cotizaciones.
+            </p>
+          )}
+
           <div className="space-y-2">
             {items.map((item, idx) => (
               <ItemEditor
@@ -508,6 +572,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
                 products={products}
                 suppliers={suppliers}
                 readOnly={readOnly}
+                requestType={requestType}
                 onUpdate={(patch) => updateItem(item._key, patch)}
                 onSelectProduct={(pid) => selectProduct(item._key, pid)}
                 onSelectFreeProduct={(name) => selectFreeProduct(item._key, name)}

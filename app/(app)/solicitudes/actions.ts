@@ -16,8 +16,50 @@ import { submitItemTx } from "@/lib/services/item-state"
 import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+import { QUOTATION_TYPES } from "@/lib/request-types"
+import {
+  persistRepuestoDraft, submitRepuestoRequest,
+} from "@/lib/services/repuestos"
+import {
+  persistServiceDraft, submitServiceRequest,
+} from "@/lib/services/servicios"
+import type { RequestInput, RequestItemInput } from "@/lib/requests/request-service"
 
 const REVALIDATE = "/solicitudes"
+
+// ── Quotation-type helpers ────────────────────────────────────────────────────
+
+type FormItemParsed = {
+  id?: string
+  productId?: string | null
+  productNameFree?: string | null
+  quantity: number
+  unitOfMeasure: string
+  notes?: string | null
+  attributes: { attributeId?: string | null; attributeName: string; value: string }[]
+}
+
+function itemsToRequestInput(items: FormItemParsed[], requestType: string): RequestItemInput[] {
+  const isService = requestType === "servicios"
+  return items.map((item, i) => {
+    const findAttr = (name: string) =>
+      item.attributes.find((a) => a.attributeName === name)?.value?.trim() || null
+    return {
+      id:            item.id,
+      description:   item.productNameFree?.trim() || item.productId || "",
+      quantity:      item.quantity,
+      unitOfMeasure: item.unitOfMeasure,
+      sortOrder:     i,
+      notes:         item.notes || null,
+      partNumber:    isService ? null : findAttr("N° de Parte"),
+      location:      isService ? findAttr("Ubicación") : null,
+      equipmentName: findAttr("Equipo"),
+      patent:        findAttr("Patente/Código"),
+      brand:         findAttr("Marca"),
+      model:         findAttr("Modelo"),
+    }
+  })
+}
 
 // ── Save as draft ─────────────────────────────────────────────────────────────
 
@@ -67,12 +109,33 @@ async function persistDraft(
     }
   }
   const d = parsed.data
- 
-  const isEdit = !!d.id
+
   if (!canAccessWorksite(session, d.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
- 
+
+  // ── Quotation branch: delegate to factory (repuestos / servicios) ──────────
+  if (QUOTATION_TYPES.has(d.requestType)) {
+    const requestInput: RequestInput = {
+      id:            d.id,
+      worksiteId:    d.worksiteId,
+      urgency:       d.urgency,
+      requiredDate:  d.requiredDate,
+      justification: d.notes || null,
+      items:         itemsToRequestInput(d.items, d.requestType),
+    }
+    const factory = d.requestType === "repuestos" ? persistRepuestoDraft : persistServiceDraft
+    try {
+      const requestId = await factory(session, requestInput)
+      return { ok: true, message: "Borrador guardado", requestId }
+    } catch (e) {
+      logger.error("[persistDraft:quotation]", e)
+      return { ok: false, message: e instanceof Error ? e.message : "Error al guardar la solicitud" }
+    }
+  }
+
+  // ── Original branch: epp / otro (SOL prefix) ──────────────────────────────
+  const isEdit = !!d.id
   let requestId = d.id
  
   try {
@@ -203,6 +266,37 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
   }
 
+  // ── Quotation branch: delegate submit to factory ───────────────────────────
+  if (QUOTATION_TYPES.has(request.requestType)) {
+    try {
+      const submitFn = request.requestType === "repuestos" ? submitRepuestoRequest : submitServiceRequest
+      await submitFn({
+        requestId,
+        userId:    session.user.id,
+        userEmail: session.user.email ?? undefined,
+      })
+    } catch (e) {
+      logger.error("[submitRequest:quotation]", e)
+      return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
+    }
+
+    // Notify approvers (fire-and-forget)
+    void getUserIdsWithPermission("approvals:approve").then((approverIds) =>
+      notifyManyUser(approverIds, {
+        type:       "request_submitted",
+        title:      `Nueva solicitud: ${request.code}`,
+        body:       `${session.user.name ?? session.user.email} envió una solicitud con ${request.items.length} ítem${request.items.length !== 1 ? "s" : ""}`,
+        entityType: "purchase_request",
+        entityId:   requestId,
+        entityHref: `/solicitudes/${requestId}`,
+      }),
+    )
+
+    revalidatePath(REVALIDATE)
+    redirect(`${REVALIDATE}/${requestId}`)
+  }
+
+  // ── Original branch: epp / otro ────────────────────────────────────────────
   const now = new Date().toISOString()
 
   try {
