@@ -16,6 +16,10 @@ import { submitItemTx } from "@/lib/services/item-state"
 import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+import { QUOTATION_TYPES } from "@/lib/request-types"
+import { addQuotation, persistRepuestoDraft, submitRepuestoRequest } from "@/lib/services/repuestos"
+import { addServiceQuotation, persistServiceDraft, submitServiceRequest } from "@/lib/services/servicios"
+import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 
 const REVALIDATE = "/solicitudes"
 
@@ -72,7 +76,71 @@ async function persistDraft(
   if (!canAccessWorksite(session, d.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
- 
+
+  // ── Quotation branch: delegate to factory (repuestos / servicios) ──────────
+  if (QUOTATION_TYPES.has(d.requestType)) {
+    const items = d.items.map((item, i) => ({
+      id:            item.id,
+      description:   item.productNameFree?.trim() || item.productId || "",
+      quantity:      item.quantity,
+      unitOfMeasure: item.unitOfMeasure,
+      sortOrder:     i,
+      notes:         item.notes || null,
+      partNumber:    null,
+      location:      null,
+      equipmentName: null,
+      patent:        null,
+      brand:         null,
+      model:         null,
+    }))
+    const requestInput = {
+      id:            d.id,
+      worksiteId:    d.worksiteId,
+      urgency:       d.urgency,
+      requiredDate:  d.requiredDate,
+      justification: d.notes || null,
+      items,
+    }
+    const factory = d.requestType === "repuestos" ? persistRepuestoDraft : persistServiceDraft
+    try {
+      const reqId = await factory(session, requestInput)
+
+      // Upload pending cotizaciones files
+      const maxSizeMb = await getPdfMaxSizeMb()
+      const addFn = d.requestType === "repuestos" ? addQuotation : addServiceQuotation
+      for (const [key, value] of formData.entries()) {
+        if (!key.startsWith("cotizacion_") || !(value instanceof File)) continue
+        if (value.size === 0) continue
+        if (value.size > maxSizeMb * 1024 * 1024) {
+          logger.warn(`[persistDraft] cotización ${value.name} excede tamaño máximo (${maxSizeMb}MB)`)
+          continue
+        }
+        try {
+          await addFn({
+            requestId: reqId,
+            totalAmount: 0,
+            supplierId: null,
+            supplierNameFree: null,
+            notes: null,
+            fileName: value.name,
+            fileSize: value.size,
+            mimeType: value.type,
+            fileBuffer: Buffer.from(await value.arrayBuffer()),
+            uploadedBy: session.user.id,
+          })
+        } catch (e) {
+          logger.error(`[persistDraft] Error subiendo cotización ${value.name}`, e)
+        }
+      }
+
+      return { ok: true, message: "Borrador guardado", requestId: reqId }
+    } catch (e) {
+      logger.error("[persistDraft:quotation]", e)
+      return { ok: false, message: e instanceof Error ? e.message : "Error al guardar la solicitud" }
+    }
+  }
+
+  // ── Original branch: epp / otro ────────────────────────────────────────────
   let requestId = d.id
  
   try {
@@ -201,6 +269,35 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
   }
   if (!canAccessWorksite(session, request.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
+  }
+
+  // ── Quotation branch: delegate submit to factory ───────────────────────────
+  if (QUOTATION_TYPES.has(request.requestType)) {
+    try {
+      const submitFn = request.requestType === "repuestos" ? submitRepuestoRequest : submitServiceRequest
+      await submitFn({
+        requestId,
+        userId:    session.user.id,
+        userEmail: session.user.email ?? undefined,
+      })
+    } catch (e) {
+      logger.error("[submitRequest:quotation]", e)
+      return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
+    }
+
+    void getUserIdsWithPermission("approvals:approve").then((approverIds) =>
+      notifyManyUser(approverIds, {
+        type:       "request_submitted",
+        title:      `Nueva solicitud: ${request.code}`,
+        body:       `${session.user.name ?? session.user.email} envió una solicitud con ${request.items.length} ítem${request.items.length !== 1 ? "s" : ""}`,
+        entityType: "purchase_request",
+        entityId:   requestId,
+        entityHref: `/solicitudes/${requestId}`,
+      }),
+    )
+
+    revalidatePath(REVALIDATE)
+    redirect(`${REVALIDATE}/${requestId}`)
   }
 
   const now = new Date().toISOString()

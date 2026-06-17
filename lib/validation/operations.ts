@@ -35,7 +35,7 @@ export const requestItemSchema = z.object({
 export const requestSchema = z.object({
   id:           z.string().optional(),
   worksiteId:   z.string().min(1, "Selecciona una faena"),
-  requestType:  z.enum(["epp", "stock", "mantencion", "otro"]).default("epp"),
+  requestType:  z.enum(["epp", "stock", "mantencion", "otro", "repuestos", "servicios"]).default("epp"),
   urgency:      z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate: z.string().min(1, "Indica la fecha requerida"),
   notes:        z.string().max(500).optional().or(z.literal("")),

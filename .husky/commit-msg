@@ -1,0 +1,22 @@
+#!/bin/sh
+# Reject commits that don't follow conventional commits format.
+# Skip merge commits (they start with "Merge ").
+commit_msg=$(cat "$1")
+
+# Skip merge commits
+if echo "$commit_msg" | grep -qE "^Merge "; then
+  exit 0
+fi
+
+# Conventional commit: type(scope): description or type: description
+# Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, audit
+if ! echo "$commit_msg" | head -1 | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|audit)(\([^)]+\))?: "; then
+  echo "❌ Commit message does not follow conventional commits format."
+  echo "   Format: type(scope): description"
+  echo "   Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, audit"
+  echo "   Examples:"
+  echo "     feat(auth): add password reset flow"
+  echo "     fix(ui): correct button alignment in table"
+  echo "     audit: update coverage findings"
+  exit 1
+fi

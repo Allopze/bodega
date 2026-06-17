@@ -67,6 +67,14 @@ export interface ItemRow {
   isEpp:               boolean
   productName:         string
   showAttrs:           boolean
+  cotizaciones:        PendingCotizacion[]
+}
+
+export interface PendingCotizacion {
+  _id:       string
+  file:      File
+  fileName:  string
+  fileSize:  number
 }
 
 export interface AttrRow {
