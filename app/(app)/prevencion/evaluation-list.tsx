@@ -9,10 +9,11 @@ import { ClipboardText } from "@phosphor-icons/react/dist/ssr"
 import type { SstEvaluation } from "@/db/schema/sst"
 import {
   RESULTADO_LABELS,
-  resultadoBadgeClass,
-  estadoBadgeClass,
   estadoLabel,
+  estadoBadgeVariant,
+  resultadoBadgeVariant,
 } from "@/lib/sst/badges"
+import { formatDateDisplay } from "@/lib/sst/date"
 
 const TIPO_LABELS: Record<string, string> = {
   nuevo:       "Nuevo",
@@ -63,33 +64,33 @@ export function EvaluationList({ evaluations, canCreate }: Props) {
               <TableCell>
                 <Link
                   href={`/prevencion/${ev.id}`}
-                  className="font-medium text-foreground hover:underline"
+                  className="font-medium text-(--color-text) hover:underline"
                 >
-                  {ev.workerName || <span className="text-muted-foreground italic">Sin nombre</span>}
+                  {ev.workerName || <span className="text-text-subtle italic">Sin nombre</span>}
                 </Link>
               </TableCell>
-              <TableCell className="text-muted-foreground">
+              <TableCell className="text-(--color-text-muted)">
                 {TIPO_LABELS[ev.tipo] ?? ev.tipo}
               </TableCell>
-              <TableCell className="text-muted-foreground tabular-nums">
-                {ev.fechaEvaluacion}
+              <TableCell className="text-(--color-text-muted) tabular-nums">
+                {formatDateDisplay(ev.fechaEvaluacion)}
               </TableCell>
-              <TableCell className="text-muted-foreground">
+              <TableCell className="text-(--color-text-muted)">
                 {ev.worksiteName || <span className="italic">—</span>}
               </TableCell>
               <TableCell>
-                <Badge className={estadoBadgeClass(ev.estado)}>
+                <Badge variant={estadoBadgeVariant(ev.estado)}>
                   {estadoLabel(ev.estado)}
                 </Badge>
               </TableCell>
               <TableCell>
                 {ev.resultadoFinal
                   ? (
-                    <Badge className={resultadoBadgeClass(ev.resultadoFinal)}>
+                    <Badge variant={resultadoBadgeVariant(ev.resultadoFinal)}>
                       {RESULTADO_LABELS[ev.resultadoFinal] ?? ev.resultadoFinal}
                     </Badge>
                   )
-                  : <span className="text-muted-foreground text-sm">—</span>
+                  : <span className="text-(--color-text-muted) text-sm">—</span>
                 }
               </TableCell>
             </TableRow>

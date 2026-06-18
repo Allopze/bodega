@@ -4,6 +4,20 @@
  * Used by both the list and the detail screens to ensure visual consistency.
  */
 
+import type { BadgeProps } from "@/components/ui/badge"
+
+// ── Motivo ───────────────────────────────────────────────────────────────────
+
+export const MOTIVO_LABELS: Record<string, string> = {
+  ingreso_nuevo:           "Ingreso nuevo",
+  reincorporacion:         "Reincorporación",
+  cambio_cargo:            "Cambio de cargo",
+  post_incidente_persona:  "Post incidente — persona",
+  post_incidente_ambiente: "Post incidente — ambiente",
+  evaluacion_periodica:    "Evaluación periódica",
+  solicitud_trabajador:    "Solicitud del trabajador",
+}
+
 // ── Resultado ────────────────────────────────────────────────────────────────
 
 export const RESULTADO_LABELS: Record<string, string> = {
@@ -60,5 +74,33 @@ export function estadoPlanBadgeClass(estado: string): string {
     case "cerrado":    return "bg-emerald-100 text-emerald-800 border-emerald-200"
     case "en_proceso": return "bg-amber-100 text-amber-800 border-amber-200"
     default:           return "bg-slate-100 text-slate-700 border-slate-200"
+  }
+}
+
+// ── Variant-returning helpers (Badge component API) ───────────────────────────
+
+export function resultadoBadgeVariant(resultado: string): BadgeProps["variant"] {
+  switch (resultado) {
+    case "habilitado_autonomo":      return "success"
+    case "habilitado_restricciones": return "warning"
+    case "no_habilitado":            return "danger"
+    case "requiere_reforzamiento":   return "info"
+    default:                         return "default"
+  }
+}
+
+export function estadoBadgeVariant(estado: string): BadgeProps["variant"] {
+  return estado === "cerrado" ? "default" : "signal"
+}
+
+export function tipoBadgeVariant(tipo: string): BadgeProps["variant"] {
+  return tipo === "seguimiento" ? "info" : "default"
+}
+
+export function estadoPlanBadgeVariant(estado: string): BadgeProps["variant"] {
+  switch (estado) {
+    case "cerrado":    return "success"
+    case "en_proceso": return "warning"
+    default:           return "default"
   }
 }
