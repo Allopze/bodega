@@ -65,7 +65,7 @@ export function parseWorkerMarkdown(markdown: string): ParsedWorkerRow[] {
   for (const line of markdown.split(/\r?\n/)) {
     const heading = line.match(/^## (.+)$/)
     if (heading && heading[1] !== "Resumen") {
-      currentWorksite = heading[1]
+      currentWorksite = heading[1]!
       continue
     }
 
@@ -75,7 +75,8 @@ export function parseWorkerMarkdown(markdown: string): ParsedWorkerRow[] {
     const cells = line.split("|").slice(1, -1).map((cell) => cell.trim())
     if (cells.length !== 5) continue
 
-    const [firstName, middleName, paternalLastName, maternalLastName, rut] = cells
+    const [firstName, middleName, paternalLastName, maternalLastName, rut] =
+      cells as [string, string, string, string, string]
     rows.push({
       rut,
       firstName: [firstName, middleName].filter(Boolean).join(" "),

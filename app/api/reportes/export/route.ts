@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { buildXlsxBuffer, getReportData, type ExportFilters } from "@/lib/reports/export"
 import { logger } from "@/lib/logger"
+import { encodeContentDisposition } from "@/lib/utils"
 
 const REPORT_TYPES = new Set([
   "gasto_faena",
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
     const xlsx = await buildXlsxBuffer(report)
     const headers: Record<string, string> = {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${report.filenameBase}.xlsx"`,
+      "Content-Disposition": encodeContentDisposition(`${report.filenameBase}.xlsx`, "attachment"),
     }
     if (report.rowLimitApplied) {
       headers["X-Row-Limit-Applied"] = "true"

@@ -392,12 +392,34 @@ export async function addItemToPurchaseOrderTx(
 ): Promise<void> {
     const now = new Date().toISOString()
 
+    // Security audit A-02: lock the request_item row first so two
+    // concurrent callers serialize on it. Without this, the conditional
+    // UPDATE could race (both transactions see `approved`, both update
+    // to `in_purchase_order`, and the second INSERT into
+    // purchase_order_items slips past the unique partial index because
+    // both rows end up committed).
+    const [locked] = await tx
+      .select({
+        id:        purchaseRequestItems.id,
+        status:    purchaseRequestItems.status,
+        requestId: purchaseRequestItems.requestId,
+      })
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
+
+    if (!locked) {
+      throw new Error(`Item ${itemId} not found`)
+    }
+    if (!["approved", "pending_purchase"].includes(locked.status)) {
+      throw new Error(
+        `El ítem ya no está disponible (estado: ${locked.status}) — posible concurrencia`,
+      )
+    }
+
     // ── Atomic conditional transition ──────────────────────────────────
-    // Only move the item if it's still in a state that allows OC inclusion.
-    // The unique partial index on purchase_order_items.request_item_id
-    // (WHERE status != 'cancelled') provides the second guard: the INSERT
-    // into purchase_order_items will fail if a concurrent transaction
-    // already inserted the same request_item_id.
+    // The FOR UPDATE lock above already serialized us, but we keep the
+    // conditional WHERE for clarity (it will always match now).
     const [updated] = await tx
       .update(purchaseRequestItems)
       .set({ status: "in_purchase_order", updatedAt: now })
@@ -410,14 +432,9 @@ export async function addItemToPurchaseOrderTx(
       .returning({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
 
     if (!updated) {
-      const current = await tx.query.purchaseRequestItems.findFirst({
-        where: eq(purchaseRequestItems.id, itemId),
-        columns: { status: true },
-      })
+      // Should not happen given the FOR UPDATE lock above; defensive only.
       throw new Error(
-        current
-          ? `El ítem ya no está disponible (estado: ${current.status}) — posible concurrencia`
-          : `Item ${itemId} not found`,
+        `El ítem ya no está disponible — posible concurrencia`,
       )
     }
 

@@ -103,8 +103,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
       })
 
       // Insert OC items
-      for (let i = 0; i < orderInput.items.length; i++) {
-        const item     = orderInput.items[i]
+      for (const [i, item] of orderInput.items.entries()) {
         const subtotal = Math.round(
           item.quantity * item.unitPrice * (1 - (item.discount ?? 0) / 100)
         )

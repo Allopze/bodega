@@ -35,7 +35,7 @@ const leakedKeys = example
   .flatMap((line) => {
     const [key, ...rest] = line.split("=")
     const value = rest.join("=").trim()
-    return sensitiveKeys.has(key) && value ? [key] : []
+    return key && sensitiveKeys.has(key) && value ? [key] : []
   })
 
 if (leakedKeys.length > 0) {

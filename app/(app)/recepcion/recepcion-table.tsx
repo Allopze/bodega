@@ -71,7 +71,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister }: R
               </div>
             </TableCell>
             <TableCell>
-              {gapMap[o.id] > 0
+              {(gapMap[o.id] ?? 0) > 0
                 ? <Badge variant="warning" size="sm">{gapMap[o.id]} pend. faena</Badge>
                 : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
             </TableCell>

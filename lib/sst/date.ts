@@ -35,7 +35,7 @@ export function localDateToISO(date: Date): string {
  * evitando que Date('YYYY-MM-DD') la interprete como UTC y cause desfase.
  */
 export function parseLocalDate(isoDate: string): Date {
-  const [y, m, d] = isoDate.split('-').map(Number)
+  const [y, m, d] = isoDate.split('-').map(Number) as [number, number, number]
   return new Date(y, m - 1, d)
 }
 

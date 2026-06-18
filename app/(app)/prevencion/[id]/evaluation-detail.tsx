@@ -32,8 +32,7 @@ function buildInitialResponseMap(
 ): ResponseMap {
   const map: ResponseMap = {}
   for (const r of responses) {
-    if (!map[r.seccionId]) map[r.seccionId] = {}
-    map[r.seccionId][r.itemId] = {
+    ;(map[r.seccionId] ??= {})[r.itemId] = {
       estado: r.estado as StatusValue ?? null,
       observacion: r.observacion ?? "",
       accionCorrectiva: r.accionCorrectiva ?? "",

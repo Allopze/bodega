@@ -165,8 +165,7 @@ export function createRequestService(config: RequestModuleConfig) {
       }
 
       // Insert items + attributes
-      for (let i = 0; i < data.items.length; i++) {
-        const item = data.items[i]
+      for (const [i, item] of data.items.entries()) {
         const itemId = item.id ?? nanoid()
 
         await tx.insert(purchaseRequestItems).values({

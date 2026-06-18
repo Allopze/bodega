@@ -38,11 +38,15 @@ describe("getUserRbacById direct permissions", () => {
       avatarColor: null,
       isActive: true,
     })
+    // Audit A-05: getUserRbacById now runs userRoles/direct/worksites in
+    // parallel and chains rolePermissions off userRoles. The FIFO queue
+    // below mirrors the actual call order: 1) userRoles, 2) direct,
+    // 3) worksites, then 4) rolePermissions once userRoles resolves.
     mocks.selectResults.push(
       [{ roleId: "rol-jefa", roleName: "jefa_chome" }],
-      [{ permissionName: "reports:view" }],
       [{ permissionName: "warehouse:adjust_stock" }],
       [{ worksiteId: "ws-1", isPrimary: true }],
+      [{ permissionName: "reports:view" }],
     )
 
     const snapshot = await getUserRbacById("u-direct", true)

@@ -135,8 +135,7 @@ export default async function SstPrintPage({ params }: { params: Promise<{ id: s
   // Group responses by section
   const bySection: Record<string, typeof responses> = {}
   for (const r of responses) {
-    if (!bySection[r.seccionId]) bySection[r.seccionId] = []
-    bySection[r.seccionId].push(r)
+    ;(bySection[r.seccionId] ??= []).push(r)
   }
 
   // Sections filtered by cargo applicability

@@ -20,6 +20,9 @@ CMD ["npm", "run", "dev", "--", "-p", "3000"]
 # ── Production stage: standalone build, minimal runtime ──
 FROM node:20-alpine AS prod
 
+# DO-02 (security audit): tools needed for HEALTHCHECK wget probe.
+RUN apk add --no-cache wget
+
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -44,6 +47,10 @@ RUN mkdir -p /app/storage && chown -R nextjs:nodejs /app/storage
 USER nextjs
 
 EXPOSE 3000
+
+# Audit DO-02: healthcheck against /api/health (also pings the DB).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1
 
 CMD ["node", "server.js"]
 

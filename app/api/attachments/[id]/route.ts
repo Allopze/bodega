@@ -6,6 +6,7 @@ import { attachments, deliveries } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { resolveDeliveryAttachmentFile } from "@/lib/storage/config"
+import { encodeContentDisposition } from "@/lib/utils"
 
 export async function GET(
   _request: Request,
@@ -41,15 +42,11 @@ export async function GET(
     return new Response(file, {
       headers: {
         "Content-Type": attachment.mimeType ?? "application/octet-stream",
-        "Content-Disposition": `inline; filename="${sanitizeHeaderValue(attachment.fileName)}"`,
+        "Content-Disposition": encodeContentDisposition(attachment.fileName, "inline"),
         "Cache-Control": "private, max-age=60",
       },
     })
   } catch {
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
-}
-
-function sanitizeHeaderValue(value: string) {
-  return value.replace(/["\r\n]/g, "_")
 }

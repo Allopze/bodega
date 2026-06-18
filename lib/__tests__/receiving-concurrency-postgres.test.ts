@@ -101,7 +101,7 @@ describeIf("receiving concurrency on real Postgres", () => {
       .from(schema.purchaseOrderItems)
       .where(eq(schema.purchaseOrderItems.id, "poi-rc-test"))
 
-    expect(poi.quantityOfficeReceived).toBe(8)
+    expect(poi!.quantityOfficeReceived).toBe(8)
 
     // Only 1 receipt should exist
     const receiptRows = await db

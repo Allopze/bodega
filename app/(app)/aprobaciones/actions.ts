@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { purchaseRequestItems } from "@/db/schema"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { approveItem, rejectItem, returnItem } from "@/lib/services/item-state"
-import { notifySafe } from "@/lib/services/notifications"
+import { notifySafe, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
 
@@ -61,19 +61,23 @@ export async function approveItemAction(
     })
     revalidatePath(REVALIDATE)
 
-    // Notify requester (fire-and-forget)
+    // S-05: notify only after the approveItem transaction has committed.
     if (itemBefore?.request?.requesterId) {
-      void notifySafe({
-        userId:     itemBefore.request.requesterId,
+      const requesterId = itemBefore.request.requesterId
+      const requestId   = itemBefore.request.id
+      const requestCode = itemBefore.request.code
+      const approver    = session.user.name ?? session.user.email ?? ""
+      notifyAfterCommit(() => notifySafe({
+        userId:     requesterId,
         type:       "request_approved",
-        title:      `Ítem aprobado en ${itemBefore.request.code}`,
+        title:      `Ítem aprobado en ${requestCode}`,
         body:       modifiedQty
           ? `Aprobado con cantidad modificada a ${modifiedQty}`
-          : `Aprobado por ${session.user.name ?? session.user.email}`,
+          : `Aprobado por ${approver}`,
         entityType: "purchase_request",
-        entityId:   itemBefore.request.id,
-        entityHref: `/solicitudes/${itemBefore.request.id}`,
-      })
+        entityId:   requestId,
+        entityHref: `/solicitudes/${requestId}`,
+      }))
     }
 
     return { ok: true, message: "Ítem aprobado" }
@@ -115,17 +119,20 @@ export async function rejectItemAction(
     })
     revalidatePath(REVALIDATE)
 
-    // Notify requester (fire-and-forget)
+    // S-05: notify only after the rejectItem transaction has committed.
     if (itemBefore?.request?.requesterId) {
-      void notifySafe({
-        userId:     itemBefore.request.requesterId,
+      const requesterId = itemBefore.request.requesterId
+      const requestId   = itemBefore.request.id
+      const requestCode = itemBefore.request.code
+      notifyAfterCommit(() => notifySafe({
+        userId:     requesterId,
         type:       "request_rejected",
-        title:      `Ítem rechazado en ${itemBefore.request.code}`,
+        title:      `Ítem rechazado en ${requestCode}`,
         body:       reason,
         entityType: "purchase_request",
-        entityId:   itemBefore.request.id,
-        entityHref: `/solicitudes/${itemBefore.request.id}`,
-      })
+        entityId:   requestId,
+        entityHref: `/solicitudes/${requestId}`,
+      }))
     }
 
     return { ok: true, message: "Ítem rechazado" }

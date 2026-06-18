@@ -73,9 +73,12 @@ export function toTitleCase(str: string): string {
 
 /** Generate initials from a full name (for Avatar) */
 export function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return ""
+  const first = parts[0]!
+  if (parts.length === 1) return first.slice(0, 2).toUpperCase()
+  const last = parts[parts.length - 1]!
+  return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase()
 }
 
 /** Escape special HTML characters to prevent XSS in email templates and notifications. */
@@ -86,4 +89,20 @@ export function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;")
+}
+
+/**
+ * Build a Content-Disposition header value (RFC 6266 + RFC 5987) that is
+ * safe across HTTP and renders Unicode filenames correctly in modern
+ * browsers. Replaces any control chars and quotes in the ASCII fallback,
+ * and percent-encodes the original string for the UTF-8 variant.
+ */
+export function encodeContentDisposition(filename: string, disposition: "inline" | "attachment" = "inline"): string {
+  const ascii = filename
+    // strip control characters
+    .replace(/[\u0000-\u001F\u007F]/g, "_")
+    // collapse to a safe ASCII subset
+    .replace(/["\\]/g, "_")
+  const utf8 = encodeURIComponent(filename)
+  return `${disposition}; filename="${ascii}"; filename*=UTF-8''${utf8}`
 }

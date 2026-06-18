@@ -45,9 +45,8 @@ const pillBase =
  */
 export function QuickActions({ session }: { session: Session }) {
   const actions = ACTIONS.filter((action) => can(session, action.permission))
-  if (actions.length === 0) return null
-
   const [primary, ...rest] = actions
+  if (!primary) return null
 
   return (
     <div className="flex flex-wrap items-center gap-2">

@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { and, eq, isNull, lt, ne } from "drizzle-orm"
+import { and, eq, isNull, lt, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { users, userRoles, userPermissions, worksiteUsers, userInvitations, roles } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -386,21 +386,37 @@ export async function toggleUserActive(
     return { ok: false, message: "Solo un administrador puede activar o desactivar administradores" }
   }
 
-  // Guard: don't deactivate the last admin
-  if (!activate && targetIsAdmin) {
-    const otherActiveAdmins = await db
-      .select({ userId: users.id })
-      .from(users)
-      .innerJoin(userRoles, eq(userRoles.userId, users.id))
-      .innerJoin(roles, eq(userRoles.roleId, roles.id))
-      .where(and(eq(roles.name, "administrador"), eq(users.isActive, true), ne(users.id, id)))
+  // Security audit S-04: serialize the "last admin" check with an
+  // advisory lock so two concurrent attempts to deactivate the last two
+  // active admins cannot both succeed. The lock is scoped to this action
+  // (arbitrary constant key) and released automatically on commit/rollback.
+  const LAST_ADMIN_LOCK_KEY = 521_113_337
 
-    if (otherActiveAdmins.length === 0) {
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${LAST_ADMIN_LOCK_KEY})`)
+
+      if (!activate && targetIsAdmin) {
+        const otherActiveAdmins = await tx
+          .select({ userId: users.id })
+          .from(users)
+          .innerJoin(userRoles, eq(userRoles.userId, users.id))
+          .innerJoin(roles, eq(userRoles.roleId, roles.id))
+          .where(and(eq(roles.name, "administrador"), eq(users.isActive, true), ne(users.id, id)))
+
+        if (otherActiveAdmins.length === 0) {
+          throw new LastAdminGuardError()
+        }
+      }
+
+      await tx.update(users).set({ isActive: activate, updatedAt: new Date().toISOString() }).where(eq(users.id, id))
+    })
+  } catch (err) {
+    if (err instanceof LastAdminGuardError) {
       return { ok: false, message: "No puedes desactivar al único administrador" }
     }
+    throw err
   }
-
-  await db.update(users).set({ isActive: activate, updatedAt: new Date().toISOString() }).where(eq(users.id, id))
 
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
@@ -408,8 +424,11 @@ export async function toggleUserActive(
     oldState: { isActive: !activate }, newState: { isActive: activate },
   })
 
+  clearUserRbacCache(id)
   revalidatePath(REVALIDATE)
   return { ok: true, message: activate ? "Usuario activado" : "Usuario desactivado" }
 }
+
+class LastAdminGuardError extends Error {}
 
 // (helpers moved to actions.helpers.ts)

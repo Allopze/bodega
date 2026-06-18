@@ -143,8 +143,7 @@ export default async function BodegaPage({
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const s of visibleStockRows) {
-    if (!stockByWorksite[s.worksiteId]) stockByWorksite[s.worksiteId] = []
-    stockByWorksite[s.worksiteId].push(s)
+    ;(stockByWorksite[s.worksiteId] ??= []).push(s)
   }
 
   return (

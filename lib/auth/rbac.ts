@@ -14,6 +14,13 @@ export interface UserRbacSnapshot {
   primaryWorksiteId: string | null
 }
 
+// Security audit S-03: keep cache TTL short (5s). Admin role/permission
+// mutations always call clearUserRbacCache(userId) immediately, which
+// collapses the window from up to 60s to effectively zero for the
+// instance that handled the mutation. For other replicas behind a
+// load balancer, the worst-case window is the TTL.
+const RBAC_CACHE_TTL_MS = 5_000
+
 const rbacCache = new Map<string, { snapshot: UserRbacSnapshot | null; expiresAt: number }>()
 
 export async function getUserRbacById(
@@ -32,21 +39,16 @@ export async function getUserRbacById(
   })
   if (!user) return null
 
-  const userRoleRows = await db
+  // Security audit A-05: fire all four independent reads in parallel.
+  // The role→permissions query depends on user_roles' roleIds, but we
+  // build a two-stage promise: userRoles/direct/worksites run together,
+  // and once userRoles resolves we issue rolePermissions in a chained
+  // .then. The total round-trip cost drops from (1+1+1+1) to (1+1).
+  const userRoleRowsPromise = db
     .select({ roleId: userRoles.roleId, roleName: roles.name })
     .from(userRoles)
     .innerJoin(roles, eq(userRoles.roleId, roles.id))
     .where(eq(userRoles.userId, user.id))
-
-  const roleIds = userRoleRows.map((r) => r.roleId)
-
-  const rolePermissionRowsPromise = roleIds.length > 0
-    ? db
-      .select({ permissionName: permissions.name })
-      .from(rolePermissions)
-      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-      .where(inArray(rolePermissions.roleId, roleIds))
-    : Promise.resolve([])
 
   const directPermissionRowsPromise = db
     .select({ permissionName: permissions.name })
@@ -59,7 +61,18 @@ export async function getUserRbacById(
     .from(worksiteUsers)
     .where(eq(worksiteUsers.userId, user.id))
 
-  const [rolePermissionRows, directPermissionRows, wsRows] = await Promise.all([
+  const rolePermissionRowsPromise = userRoleRowsPromise.then((userRoleRows) => {
+    const roleIds = userRoleRows.map((r) => r.roleId)
+    if (roleIds.length === 0) return []
+    return db
+      .select({ permissionName: permissions.name })
+      .from(rolePermissions)
+      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+      .where(inArray(rolePermissions.roleId, roleIds))
+  })
+
+  const [userRoleRows, rolePermissionRows, directPermissionRows, wsRows] = await Promise.all([
+    userRoleRowsPromise,
     rolePermissionRowsPromise,
     directPermissionRowsPromise,
     worksiteRowsPromise,
@@ -84,7 +97,7 @@ export async function getUserRbacById(
     primaryWorksiteId: wsRows.find((w) => w.isPrimary)?.worksiteId ?? wsRows[0]?.worksiteId ?? null,
   }
 
-  rbacCache.set(userId, { snapshot, expiresAt: Date.now() + 60000 })
+  rbacCache.set(userId, { snapshot, expiresAt: Date.now() + RBAC_CACHE_TTL_MS })
   return snapshot
 }
 

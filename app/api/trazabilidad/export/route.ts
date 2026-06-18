@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { getTrazabilidadXlsx } from "@/lib/services/trazabilidad-export"
 import { logger } from "@/lib/logger"
+import { encodeContentDisposition } from "@/lib/utils"
 
 const MAX_EXPORT_ROWS = 10_000
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": encodeContentDisposition(filename, "attachment"),
         ...(truncated ? { "X-Row-Limit-Applied": "true" } : {}),
       },
     })

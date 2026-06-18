@@ -1,24 +1,6 @@
 import { auth } from "@/lib/auth/auth"
 import { NextResponse } from "next/server"
-
-function createCspHeader(nonce: string) {
-  const isDev = process.env.NODE_ENV === "development"
-  return [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
-    // 'unsafe-inline' en style-src es un riesgo conocido y aceptado: Tailwind v4
-    // y Radix inyectan estilos inline en runtime. No afecta script-src (que sí
-    // usa nonce + strict-dynamic). Revisar si se migra a estilos con nonce.
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
-    "font-src 'self' data:",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ].join("; ")
-}
+import { createCspHeader } from "@/lib/security/csp"
 
 function withSecurityHeaders(response: NextResponse, csp: string) {
   response.headers.set("Content-Security-Policy", csp)

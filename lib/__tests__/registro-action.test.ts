@@ -68,7 +68,7 @@ describe("registerUser — hardening (M1)", () => {
     expect(res.ok).toBe(true)
     const [user] = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "admin@chome.cl"))
     expect(user).toBeTruthy()
-    const assigned = await inMemoryDb.select().from(schema.userRoles).where(eq(schema.userRoles.userId, user.id))
+    const assigned = await inMemoryDb.select().from(schema.userRoles).where(eq(schema.userRoles.userId, user!.id))
     expect(assigned.map((r) => r.roleId)).toContain("rol-admin")
   })
 
@@ -112,9 +112,9 @@ describe("registerUser — hardening (M1)", () => {
 
     expect(res.ok).toBe(true)
     const [inv] = await inMemoryDb.select().from(schema.userInvitations).where(eq(schema.userInvitations.id, "inv-1"))
-    expect(inv.acceptedAt).toBeTruthy()
+    expect(inv!.acceptedAt).toBeTruthy()
     const [user] = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "invitado@chome.cl"))
-    const assigned = await inMemoryDb.select().from(schema.userRoles).where(eq(schema.userRoles.userId, user.id))
+    const assigned = await inMemoryDb.select().from(schema.userRoles).where(eq(schema.userRoles.userId, user!.id))
     expect(assigned.map((r) => r.roleId)).toEqual(["rol-sec"])
   })
 

@@ -13,13 +13,14 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { submitItemTx } from "@/lib/services/item-state"
-import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
+import { notifyManyUser, getUserIdsWithPermission, notifyAfterCommit } from "@/lib/services/notifications"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import { addQuotation, persistRepuestoDraft, submitRepuestoRequest } from "@/lib/services/repuestos"
 import { addServiceQuotation, persistServiceDraft, submitServiceRequest } from "@/lib/services/servicios"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
+import { persistRequestWithDiff } from "@/lib/services/requests-draft"
 
 const REVALIDATE = "/solicitudes"
 
@@ -146,95 +147,19 @@ async function persistDraft(
   }
 
   // ── Original branch: epp / otro ────────────────────────────────────────────
+  // A-01/A-08: delegate to a diff-based persist so editing a draft
+  // doesn't wipe approved items' audit trail.
   let requestId = d.id
- 
+
   try {
-    await db.transaction(async (tx) => {
-    if (isEdit) {
-      // Verify ownership — solicitantes can only edit their own drafts
-      const existing = await tx.query.purchaseRequests.findFirst({
-        where: eq(purchaseRequests.id, d.id!),
-      })
-      if (!existing) throw new Error("Solicitud no encontrada")
-      if (!["draft", "returned"].includes(existing.status)) throw new Error("Solo se pueden editar solicitudes en borrador o devueltas")
-      if (existing.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
-        throw new Error("Solo puedes editar tus propias solicitudes")
-      }
-
-      await tx.update(purchaseRequests).set({
-        worksiteId:   d.worksiteId,
-        requestType:  d.requestType,
-        urgency:      d.urgency,
-        requiredDate: d.requiredDate,
-        status:       "draft",
-        notes:        d.notes || null,
-        updatedAt:    new Date().toISOString(),
-      }).where(eq(purchaseRequests.id, d.id!))
-      requestId = d.id
-
-      // Replace all items (delete + re-insert)
-      await tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, d.id!))
-    } else {
-      const code = await nextCodeTx(tx, "SOL")
-      const reqId = nanoid()
-      requestId = reqId
-
-      await tx.insert(purchaseRequests).values({
-        id:           reqId,
-        code,
-        worksiteId:   d.worksiteId,
-        requesterId:  session.user.id,
-        requestType:  d.requestType,
-        urgency:      d.urgency,
-        requiredDate: d.requiredDate,
-        status:       "draft",
-        notes:        d.notes || null,
-      })
-
-      await recordAudit({
-        userId:     session.user.id,
-        userEmail:  session.user.email ?? undefined,
-        action:     "create",
-        entityType: "purchase_request",
-        entityId:   reqId,
-        entityCode: code,
-        newState:   { status: "draft", worksiteId: d.worksiteId },
-      }, tx)
-    }
-
-    // Insert items
-    for (const [i, item] of d.items.entries()) {
-      const itemId = item.id ?? nanoid()
-      await tx.insert(purchaseRequestItems).values({
-        id:                  itemId,
-        requestId:           requestId!,
-        productId:           item.productId || null,
-        productNameFree:     item.productNameFree?.trim() || null,
-        quantity:            item.quantity,
-        unitOfMeasure:       item.unitOfMeasure,
-        status:              "draft",
-        urgency:             item.urgency,
-        requiredDate:        d.requiredDate,
-        workerId:            null,
-        suggestedSupplierId: item.suggestedSupplierId || null,
-        supplierHint:        item.supplierHint || null,
-        sortOrder:           i,
-        notes:               item.notes || null,
-      })
-
-      if (item.attributes.length > 0) {
-        await tx.insert(requestItemAttributes).values(
-          item.attributes.map((a) => ({
-            id:            nanoid(),
-            requestItemId: itemId,
-            attributeId:   a.attributeId || null,
-            attributeName: a.attributeName,
-            value:         a.value,
-          })),
-        )
-      }
-    }
-    })
+    const result = await persistRequestWithDiff(
+      session.user.id,
+      session.user.email ?? undefined,
+      d,
+      isEdit,
+      session.user.permissions.includes("requests:view_all"),
+    )
+    requestId = result.requestId
   } catch (e) {
     logger.error("[persistDraft]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al guardar la solicitud" }
@@ -290,7 +215,10 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
       return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
     }
 
-    void getUserIdsWithPermission("approvals:approve").then((approverIds) =>
+    // S-05: notify AFTER the submit factory succeeded (no in-flight rollback
+    // can invalidate the email). notifyManyUser is fire-and-forget so it
+    // never blocks the user-facing redirect.
+    notifyAfterCommit(() => getUserIdsWithPermission("approvals:approve").then((approverIds) =>
       notifyManyUser(approverIds, {
         type:       "request_submitted",
         title:      `Nueva solicitud: ${request.code}`,
@@ -299,7 +227,7 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
         entityId:   requestId,
         entityHref: `/solicitudes/${requestId}`,
       }),
-    )
+    ))
 
     revalidatePath(REVALIDATE)
     redirect(`${REVALIDATE}/${requestId}`)
@@ -343,8 +271,9 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
   }
 
-  // Notify approvers (fire-and-forget — never blocks the main flow)
-  void getUserIdsWithPermission("approvals:approve").then((approverIds) =>
+  // S-05: notify only after the transaction has committed. notifyManyUser
+  // is fire-and-forget so it never blocks the user-facing redirect.
+  notifyAfterCommit(() => getUserIdsWithPermission("approvals:approve").then((approverIds) =>
     notifyManyUser(approverIds, {
       type:       "request_submitted",
       title:      `Nueva solicitud: ${request.code}`,
@@ -353,7 +282,7 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
       entityId:   requestId,
       entityHref: `/solicitudes/${requestId}`,
     }),
-  )
+  ))
 
   revalidatePath(REVALIDATE)
   redirect(`${REVALIDATE}/${requestId}`)

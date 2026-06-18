@@ -112,9 +112,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token
       }
       if (token.id) {
-        // getUserRbacById has a 60s in-memory cache; clearUserRbacCache()
-        // is called immediately when admins change roles/permissions.
-        const snapshot = await getUserRbacById(token.id as string)
+        // Security audit S-03: bypass the in-memory cache on every request
+        // so revocations take effect immediately on this replica. The cache
+        // still serves other code paths (e.g. middleware helpers) with a
+        // 5s TTL. Admins also call clearUserRbacCache() on mutations, so
+        // even other paths get fresh data right away.
+        const snapshot = await getUserRbacById(token.id as string, /* bypassCache */ true)
         applyRbacToToken(token, snapshot)
       }
       return token

@@ -178,15 +178,13 @@ export default async function AprobacionesPage({
   const supplierMap = Object.fromEntries(supplierRows.map((s) => [s.id, s.name]))
   const attrsMap: Record<string, { attributeName: string; value: string }[]> = {}
   for (const a of allAttrs) {
-    if (!attrsMap[a.requestItemId]) attrsMap[a.requestItemId] = []
-    attrsMap[a.requestItemId].push({ attributeName: a.attributeName, value: a.value })
+    ;(attrsMap[a.requestItemId] ??= []).push({ attributeName: a.attributeName, value: a.value })
   }
 
   // Group items by request
   const itemsByRequest: Record<string, typeof pendingItems> = {}
   for (const item of pendingItems) {
-    if (!itemsByRequest[item.requestId]) itemsByRequest[item.requestId] = []
-    itemsByRequest[item.requestId].push(item)
+    ;(itemsByRequest[item.requestId] ??= []).push(item)
   }
 
   // Build typed request rows — only requests with at least one pending item

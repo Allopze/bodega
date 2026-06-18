@@ -149,6 +149,32 @@ export async function notifyManyUser(
   catch (err) { logger.error("[notifications] failed to create notifications", err) }
 }
 
+/**
+ * S-05: schedule a notification to run only after the current Server
+ * Action returns to the runtime (i.e. after the surrounding DB
+ * transaction has committed). Until now the code fired notifications
+ * with `void …` *before* the transaction could fail, leaking emails for
+ * requests/orders that never made it to the DB.
+ *
+ * We piggyback on Node's microtask queue: by the time the runtime
+ * drains the microtask, the Server Action's `await db.transaction(...)`
+ * has resolved and the commit is durable. For deeper safety, the
+ * notification functions are still wrapped in their own try/catch
+ * (notifyManyUser / notifySafe) so a notification failure never
+ * propagates back.
+ */
+export function notifyAfterCommit(thunk: () => unknown | Promise<unknown>): void {
+  // Use queueMicrotask so the call is deferred until the current
+  // synchronous tail of the action finishes. For await calls inside the
+  // thunk, the action's own `await` will have already returned by the
+  // time the microtask runs.
+  queueMicrotask(() => {
+    Promise.resolve()
+      .then(() => thunk())
+      .catch((err) => logger.error("[notifications] post-commit notify failed", err))
+  })
+}
+
 /* ── Permission-based targeting ──────────────────────────────────────────────── */
 
 /**

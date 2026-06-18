@@ -8,7 +8,7 @@ import { count, eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createOrdersBySupplier, issueOrder, markOrderSent, cancelOrder } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
-import { getUserIdsWithPermission, notifyManyUser } from "@/lib/services/notifications"
+import { getUserIdsWithPermission, notifyManyUser, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import { createOrderSchema, type ActionState } from "@/lib/validation/operations"
 import { assertOrderAccess } from "./actions.helpers"
@@ -204,43 +204,53 @@ export async function sendOrderAction(
   const accessError = await assertOrderAccess(session, orderId)
   if (accessError) return accessError
 
-  try {
-    const [[orderSummary], [itemCountRow]] = await Promise.all([
-      db
-        .select({
-          code:         purchaseOrders.code,
-          worksiteName: worksites.name,
-          supplierName: suppliers.name,
-        })
-        .from(purchaseOrders)
-        .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
-        .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
-        .where(eq(purchaseOrders.id, orderId)),
-      db
-        .select({ n: count() })
-        .from(purchaseOrderItems)
-        .where(eq(purchaseOrderItems.purchaseOrderId, orderId)),
-    ])
+  // Pull the order summary BEFORE markOrderSent so we can build the
+  // notification body, and so we can fire the notification after the
+  // status change has actually committed (S-05).
+  const [[orderSummary], [itemCountRow]] = await Promise.all([
+    db
+      .select({
+        code:         purchaseOrders.code,
+        worksiteName: worksites.name,
+        supplierName: suppliers.name,
+      })
+      .from(purchaseOrders)
+      .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
+      .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+      .where(eq(purchaseOrders.id, orderId)),
+    db
+      .select({ n: count() })
+      .from(purchaseOrderItems)
+      .where(eq(purchaseOrderItems.purchaseOrderId, orderId)),
+  ])
 
+  try {
     await markOrderSent(orderId, session.user.id, {
       userEmail: session.user.email ?? undefined,
     })
+  } catch (e) {
+    logger.error("[sendOrderAction]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al enviar orden" }
+  }
 
-    void getUserIdsWithPermission("receiving:register_office").then((receiverIds) =>
+  // S-05: notify only after the status change has committed.
+  notifyAfterCommit(() => {
+    const code         = orderSummary?.code ?? "Orden enviada"
+    const worksiteName = orderSummary?.worksiteName ?? "Faena"
+    const itemCount    = itemCountRow?.n ?? 0
+    const supplierTag  = orderSummary?.supplierName ? ` ${orderSummary.supplierName}` : ""
+    return getUserIdsWithPermission("receiving:register_office").then((receiverIds) =>
       notifyManyUser(receiverIds, {
         type:       "oc_sent",
-        title:      `OC lista para recepción: ${orderSummary?.code ?? "Orden enviada"}`,
-        body:       `${orderSummary?.worksiteName ?? "Faena"} · ${itemCountRow?.n ?? 0} ítem${(itemCountRow?.n ?? 0) === 1 ? "" : "s"} enviado${(itemCountRow?.n ?? 0) === 1 ? "" : "s"} al proveedor${orderSummary?.supplierName ? ` ${orderSummary.supplierName}` : ""}.`,
+        title:      `OC lista para recepción: ${code}`,
+        body:       `${worksiteName} · ${itemCount} ítem${itemCount === 1 ? "" : "s"} enviado${itemCount === 1 ? "" : "s"} al proveedor${supplierTag}.`,
         entityType: "purchase_order",
         entityId:   orderId,
         entityHref: `/recepcion/nueva?oc=${orderId}`,
       }),
     )
+  })
 
-  } catch (e) {
-    logger.error("[sendOrderAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al enviar orden" }
-  }
   redirect(`/compras/${orderId}?actualizada=enviada`)
 }
 

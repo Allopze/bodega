@@ -172,8 +172,7 @@ export function OcForm({
   // Auto-select suggested supplier if all filtered items share the same suggestedSupplierId
   React.useEffect(() => {
     if (supplierId) return
-    if (filteredItems.length === 0) return
-    const firstSuggested = filteredItems[0].suggestedSupplierId
+    const firstSuggested = filteredItems[0]?.suggestedSupplierId
     if (!firstSuggested) return
     const allSame = filteredItems.every((i) => i.suggestedSupplierId === firstSuggested)
     if (allSame) {

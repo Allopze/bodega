@@ -6,6 +6,7 @@ import { purchaseOrderInvoices, purchaseOrders } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveInvoiceAttachmentFile } from "@/lib/storage/config"
+import { encodeContentDisposition } from "@/lib/utils"
 
 export async function GET(
   _request: Request,
@@ -45,15 +46,11 @@ export async function GET(
     return new Response(file, {
       headers: {
         "Content-Type": invoice.mimeType ?? "application/octet-stream",
-        "Content-Disposition": `inline; filename="${sanitizeHeaderValue(invoice.fileName)}"`,
+        "Content-Disposition": encodeContentDisposition(invoice.fileName, "inline"),
         "Cache-Control": "private, max-age=60",
       },
     })
   } catch {
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
-}
-
-function sanitizeHeaderValue(value: string) {
-  return value.replace(/["\r\n]/g, "_")
 }

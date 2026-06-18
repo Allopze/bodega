@@ -111,7 +111,7 @@ describeIf("delivery concurrency on real Postgres", () => {
         eq(schema.worksiteStock.worksiteId, "ws-dc-test"),
         eq(schema.worksiteStock.productId, "prod-dc-test"),
       ))
-    expect(stock.quantity).toBe(2) // 10 - 8 = 2
+    expect(stock!.quantity).toBe(2) // 10 - 8 = 2
   })
 })
 

@@ -24,6 +24,16 @@ export default defineConfig({
     coverage: {
       reporter: ["text", "lcov"],
       include:  ["lib/**/*.ts"],
+      // T-03: regression floor, set just below the current measured
+      // coverage (~45% lines / 44% stmts on lib/). CI fails if coverage
+      // drops meaningfully. Ratchet these up as test coverage grows;
+      // the long-term target tracked in AUDITORIA_COMPLETA.md is 70%.
+      thresholds: {
+        statements: 40,
+        branches:   33,
+        functions:  45,
+        lines:      40,
+      },
     },
   },
 })

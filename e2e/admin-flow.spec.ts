@@ -15,7 +15,7 @@ function validChileanRut(): string {
   let sum = 0
   let multiplier = 2
   for (let i = body.length - 1; i >= 0; i--) {
-    sum += parseInt(body[i]) * multiplier
+    sum += parseInt(body[i]!) * multiplier
     multiplier = multiplier === 7 ? 2 : multiplier + 1
   }
   const remainder = 11 - (sum % 11)

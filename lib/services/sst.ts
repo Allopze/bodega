@@ -47,7 +47,7 @@ async function assertEditable(evaluationId: string, tx?: Tx): Promise<void> {
     .where(eq(sstEvaluations.id, evaluationId))
     .limit(1)
 
-  if (rows.length === 0) {
+  if (rows.length === 0 || !rows[0]) {
     throw new Error('Evaluación no encontrada.')
   }
   if (rows[0].estado === 'cerrado') {
@@ -123,6 +123,7 @@ export async function createEvaluation(
     .where(eq(sstEvaluations.id, id))
     .limit(1)
 
+  if (!evaluation) throw new Error('No se pudo crear la evaluación.')
   return evaluation
 }
 
@@ -273,7 +274,7 @@ export async function saveResponses(
         )
         .limit(1)
 
-      if (existing.length > 0) {
+      if (existing[0]) {
         await tx
           .update(sstResponses)
           .set({
@@ -481,7 +482,8 @@ export async function saveActionPlanItem(
     )
     .limit(1)
 
-  if (existing.length > 0) {
+  if (existing[0]) {
+    const existingId = existing[0].id
     await db
       .update(sstActionPlan)
       .set({
@@ -491,13 +493,14 @@ export async function saveActionPlanItem(
         plazo:       data.plazo,
         estado:      data.estado,
       })
-      .where(eq(sstActionPlan.id, existing[0].id))
+      .where(eq(sstActionPlan.id, existingId))
 
     const [updated] = await db
       .select()
       .from(sstActionPlan)
-      .where(eq(sstActionPlan.id, existing[0].id))
+      .where(eq(sstActionPlan.id, existingId))
       .limit(1)
+    if (!updated) throw new Error('No se pudo actualizar el plan de acción.')
     return updated
   } else {
     const newId = nanoid()
@@ -517,6 +520,7 @@ export async function saveActionPlanItem(
       .from(sstActionPlan)
       .where(eq(sstActionPlan.id, newId))
       .limit(1)
+    if (!inserted) throw new Error('No se pudo crear el plan de acción.')
     return inserted
   }
 }

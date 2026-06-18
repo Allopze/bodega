@@ -69,7 +69,7 @@ async function makeOrder(quantities: number[]): Promise<{ orderId: string; itemI
     itemIds.push(id)
     // productId/requestItemId left null → faena reception only updates quantities (no stock/request side effects).
     await inMemoryDb.insert(schema.purchaseOrderItems).values({
-      id, purchaseOrderId: orderId, quantity: quantities[i], unitOfMeasure: "unidad", sortOrder: i,
+      id, purchaseOrderId: orderId, quantity: quantities[i]!, unitOfMeasure: "unidad", sortOrder: i,
     })
   }
   return { orderId, itemIds }
@@ -85,7 +85,7 @@ describe("two-stage receiving rollup", () => {
     const { orderId, itemIds } = await makeOrder([10])
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 4 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 4 }],
     })
     expect(await status(orderId)).toBe("partially_office_received")
   })
@@ -94,7 +94,7 @@ describe("two-stage receiving rollup", () => {
     const { orderId, itemIds } = await makeOrder([10])
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 10 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
     })
     expect(await status(orderId)).toBe("office_received")
     const stock = await inMemoryDb.query.worksiteStock.findFirst({ where: eq(schema.worksiteStock.worksiteId, WS_ID) })
@@ -105,7 +105,7 @@ describe("two-stage receiving rollup", () => {
     const { orderId, itemIds } = await makeOrder([10])
     await expect(registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 5 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 }],
     })).rejects.toThrow(/oficina/i)
   })
 
@@ -113,11 +113,11 @@ describe("two-stage receiving rollup", () => {
     const { orderId, itemIds } = await makeOrder([10])
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 10 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
     })
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 6 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 6 }],
     })
     expect(await status(orderId)).toBe("partially_received")
   })
@@ -126,11 +126,11 @@ describe("two-stage receiving rollup", () => {
     const { orderId, itemIds } = await makeOrder([10])
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 10 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
     })
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 10 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
     })
     expect(await status(orderId)).toBe("received")
   })
@@ -141,14 +141,14 @@ describe("two-stage receiving rollup", () => {
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
       items: [
-        { purchaseOrderItemId: itemIds[0], quantityReceived: 10 },
-        { purchaseOrderItemId: itemIds[1], quantityReceived: 10 },
+        { purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 },
+        { purchaseOrderItemId: itemIds[1]!, quantityReceived: 10 },
       ],
     })
     // Only the first item reaches faena.
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 10 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
     })
     expect(await status(orderId)).toBe("partially_received")
   })
@@ -160,12 +160,12 @@ describe("two-stage receiving gating", () => {
     // Only 5 arrived at office.
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 5 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 }],
     })
     // Trying to dispatch 6 to faena exceeds the 5 available at office.
     await expect(registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 6 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 6 }],
     })).rejects.toThrow(/exceeds pending/i)
   })
 
@@ -173,7 +173,7 @@ describe("two-stage receiving gating", () => {
     const { orderId, itemIds } = await makeOrder([10])
     await expect(registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
-      items: [{ purchaseOrderItemId: itemIds[0], quantityReceived: 11 }],
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 11 }],
     })).rejects.toThrow(/exceeds pending/i)
   })
 })

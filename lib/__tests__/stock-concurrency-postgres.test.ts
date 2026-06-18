@@ -85,8 +85,8 @@ describeIf("stock movement concurrency on real Postgres", () => {
       .from(schema.inventoryMovements)
       .where(eq(schema.inventoryMovements.worksiteId, "ws-stock-concurrency"))
     expect(movementRows).toHaveLength(1)
-    expect(movementRows[0].stockBefore).toBe(5)
-    expect(movementRows[0].stockAfter).toBe(1)
+    expect(movementRows[0]!.stockBefore).toBe(5)
+    expect(movementRows[0]!.stockAfter).toBe(1)
   })
 })
 

@@ -301,7 +301,7 @@ async function prepareDatabase(captureDbUrl: string) {
   await db.insert(schema.rolePermissions).values(Object.entries(rolePermissionNames).flatMap(([roleId, names]) =>
     names.map((name) => ({
       roleId,
-      permissionId: permissionIdByName[name],
+      permissionId: permissionIdByName[name]!,
     })),
   ))
   await db.insert(schema.users).values([

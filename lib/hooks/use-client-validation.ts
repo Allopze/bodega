@@ -39,7 +39,7 @@ export function useClientValidation<T extends Record<string, unknown>>(schema: Z
           (i) => i.path[0] === name
         )
         const next = { ...prev }
-        if (issues.length === 0) {
+        if (!issues[0]) {
           delete next[name]
         } else {
           next[name] = issues[0].message

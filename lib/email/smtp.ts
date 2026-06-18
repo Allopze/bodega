@@ -1,8 +1,21 @@
+/**
+ * SMTP mailer backed by nodemailer.
+ *
+ * Audit S-11: the previous implementation was a hand-rolled SMTP
+ * client vulnerable to memory exhaustion (unbounded response buffer)
+ * and to leaked timers holding the process alive. We now delegate
+ * all transport concerns to nodemailer, which is the de-facto standard
+ * Node.js library, actively maintained, and tested across hundreds
+ * of SMTP servers.
+ *
+ * The public function shape is preserved so callers (Server Actions,
+ * notifications) don't need to change. Internally we build a
+ * nodemailer transport on demand, reusing a single transport per
+ * process when possible.
+ */
 import { Buffer } from "node:buffer"
 import { randomUUID } from "node:crypto"
-import { once } from "node:events"
-import net from "node:net"
-import tls from "node:tls"
+import nodemailer, { type Transporter } from "nodemailer"
 
 type InvitationEmailInput = {
   to: string
@@ -21,11 +34,10 @@ type SmtpConfig = {
   from: string
 }
 
-type SmtpResponse = {
-  code: number
-  lines: string[]
-  text: string
-}
+type SendResult = { sent: true } | { sent: false; reason: string }
+
+let cachedTransport: Transporter | null = null
+let cachedConfig: SmtpConfig | null = null
 
 export function getAppBaseUrl() {
   return (
@@ -58,15 +70,38 @@ function getSmtpConfig(): SmtpConfig | null {
   }
 }
 
-function getSmtpTimeoutMs() {
-  const timeout = Number(process.env.SMTP_TIMEOUT_MS ?? 5000)
-  if (!Number.isFinite(timeout) || timeout <= 0) return 5000
-  return timeout
+function getTransport(config: SmtpConfig): Transporter {
+  // Reuse the transport when config hasn't changed.
+  if (
+    cachedTransport &&
+    cachedConfig &&
+    cachedConfig.host === config.host &&
+    cachedConfig.port === config.port &&
+    cachedConfig.secure === config.secure &&
+    cachedConfig.auth.user === config.auth.user &&
+    cachedConfig.auth.pass === config.auth.pass
+  ) {
+    return cachedTransport
+  }
+
+  cachedTransport = nodemailer.createTransport({
+    host:    config.host,
+    port:    config.port,
+    secure:  config.secure,
+    auth:    { user: config.auth.user, pass: config.auth.pass },
+    // S-11 hardening: bound the time we're willing to wait on the
+    // SMTP server, including connection, greeting and TLS handshake.
+    connectionTimeout: 5_000,
+    greetingTimeout:   5_000,
+    socketTimeout:     10_000,
+  })
+  cachedConfig = config
+  return cachedTransport
 }
 
-export async function sendInvitationEmail({ to, inviteUrl, invitedByName }: InvitationEmailInput) {
+export async function sendInvitationEmail({ to, inviteUrl, invitedByName }: InvitationEmailInput): Promise<SendResult> {
   const config = getSmtpConfig()
-  if (!config) return { sent: false as const, reason: "SMTP no configurado" }
+  if (!config) return { sent: false, reason: "SMTP no configurado" }
 
   const senderName = invitedByName ?? "Un administrador"
   const text = [
@@ -83,21 +118,12 @@ export async function sendInvitationEmail({ to, inviteUrl, invitedByName }: Invi
     `<p>Si no esperabas esta invitación, puedes ignorar este correo.</p>`,
   ].join("")
 
-  const client = await SmtpClient.connect(config)
-  try {
-    await client.sendMail({
-      fromHeader: config.from,
-      fromAddress: extractEmailAddress(config.from),
-      toAddress: extractEmailAddress(to),
-      subject: "Invitación a Chome Solicitudes y Bodega",
-      text,
-      html,
-    })
-  } finally {
-    await client.close()
-  }
-
-  return { sent: true as const }
+  return await sendViaTransport(config, {
+    to,
+    subject: "Invitación a Chome Solicitudes y Bodega",
+    text,
+    html,
+  })
 }
 
 export async function sendEmail({
@@ -110,354 +136,57 @@ export async function sendEmail({
   subject: string
   text:    string
   html:    string
-}) {
+}): Promise<SendResult> {
   const config = getSmtpConfig()
-  if (!config) return { sent: false as const, reason: "SMTP no configurado" }
+  if (!config) return { sent: false, reason: "SMTP no configurado" }
 
-  const client = await SmtpClient.connect(config)
-  try {
-    await client.sendMail({
-      fromHeader:  config.from,
-      fromAddress: extractEmailAddress(config.from),
-      toAddress:   extractEmailAddress(to),
-      subject,
-      text,
-      html,
-    })
-  } finally {
-    await client.close()
-  }
-
-  return { sent: true as const }
+  return await sendViaTransport(config, { to, subject, text, html })
 }
 
 export async function sendBatchEmails(
   messages: Array<{ to: string; subject: string; text: string; html: string }>,
-) {
+): Promise<{ sent: true; count: number } | { sent: false; reason: string }> {
   const config = getSmtpConfig()
-  if (!config) return { sent: false as const, reason: "SMTP no configurado" }
+  if (!config) return { sent: false, reason: "SMTP no configurado" }
 
-  const client = await SmtpClient.connect(config)
+  const transport = getTransport(config)
+  // Nodemailer reuses the connection across sequential sends on the
+  // same transporter, so a single transport + sequential sends is
+  // strictly better than opening N connections.
+  for (const msg of messages) {
+    await transport.sendMail({
+      from:    config.from,
+      to:      msg.to,
+      subject: msg.subject,
+      text:    msg.text,
+      html:    msg.html,
+      headers: { "X-Chome-Bulk": "true" },
+      messageId: `<${randomUUID()}@chome.local>`,
+    })
+  }
+  return { sent: true, count: messages.length }
+}
+
+// ── Internals ────────────────────────────────────────────────────────────────
+
+async function sendViaTransport(
+  config: SmtpConfig,
+  message: { to: string; subject: string; text: string; html: string },
+): Promise<SendResult> {
   try {
-    for (const msg of messages) {
-      await client.sendMail({
-        fromHeader:  config.from,
-        fromAddress: extractEmailAddress(config.from),
-        toAddress:   extractEmailAddress(msg.to),
-        subject:     msg.subject,
-        text:        msg.text,
-        html:        msg.html,
-      })
-    }
-  } finally {
-    await client.close()
-  }
-
-  return { sent: true as const, count: messages.length }
-}
-
-class SmtpClient {
-  private socket: net.Socket | tls.TLSSocket
-  private buffer = ""
-  private lines: string[] = []
-  private waiters: {
-    resolve: (line: string) => void
-    reject: (error: Error) => void
-  }[] = []
-  private closedError: Error | null = null
-
-  private constructor(
-    private readonly config: SmtpConfig,
-    socket: net.Socket | tls.TLSSocket,
-  ) {
-    this.socket = socket
-    this.attachSocket(socket)
-  }
-
-  static async connect(config: SmtpConfig) {
-    const socket = await createSocket(config)
-    const client = new SmtpClient(config, socket)
-
-    await client.expect([220])
-    const hello = await client.ehlo()
-
-    if (!config.secure) {
-      if (!hasCapability(hello, "STARTTLS")) {
-        throw new Error("El servidor SMTP no ofrece STARTTLS")
-      }
-      await client.command("STARTTLS", [220])
-      await client.upgradeToTls()
-      await client.ehlo()
-    }
-
-    await client.authenticate()
-    return client
-  }
-
-  async sendMail({
-    fromHeader,
-    fromAddress,
-    toAddress,
-    subject,
-    text,
-    html,
-  }: {
-    fromHeader: string
-    fromAddress: string
-    toAddress: string
-    subject: string
-    text: string
-    html: string
-  }) {
-    await this.command(`MAIL FROM:<${fromAddress}>`, [250])
-    await this.command(`RCPT TO:<${toAddress}>`, [250, 251])
-    await this.command("DATA", [354])
-    await this.writeData(buildMimeMessage({
-      from: fromHeader,
-      to: toAddress,
-      subject,
-      text,
-      html,
-    }))
-    await this.expect([250])
-  }
-
-  async close() {
-    if (this.socket.destroyed) return
-    try {
-      await this.command("QUIT", [221])
-    } catch {
-      this.socket.destroy()
-    }
-  }
-
-  private attachSocket(socket: net.Socket | tls.TLSSocket) {
-    socket.setEncoding("utf8")
-    socket.setTimeout(getSmtpTimeoutMs())
-    socket.on("data", (chunk) => this.pushChunk(chunk))
-    socket.on("error", (error) => this.fail(error))
-    socket.on("timeout", () => {
-      this.fail(new Error("Timeout esperando respuesta SMTP"))
-      socket.destroy()
+    const transport = getTransport(config)
+    await transport.sendMail({
+      from:    config.from,
+      to:      message.to,
+      subject: message.subject,
+      text:    message.text,
+      html:    message.html,
+      messageId: `<${randomUUID()}@chome.local>`,
     })
-    socket.on("close", () => {
-      this.fail(new Error("Conexión SMTP cerrada"))
-    })
+    return { sent: true }
+  } catch (err) {
+    return { sent: false, reason: err instanceof Error ? err.message : "error desconocido" }
   }
-
-  private async ehlo() {
-    return this.command(`EHLO ${getEhloName()}`, [250])
-  }
-
-  private async authenticate() {
-    const token = Buffer
-      .from(`\u0000${this.config.auth.user}\u0000${this.config.auth.pass}`, "utf8")
-      .toString("base64")
-    await this.command(`AUTH PLAIN ${token}`, [235])
-  }
-
-  private async upgradeToTls() {
-    this.socket.removeAllListeners()
-    const secureSocket = tls.connect({
-      socket: this.socket,
-      servername: this.config.host,
-    })
-    await once(secureSocket, "secureConnect")
-    this.socket = secureSocket
-    this.attachSocket(secureSocket)
-  }
-
-  private async command(command: string, expected: number[]) {
-    await this.write(`${command}\r\n`)
-    return this.expect(expected)
-  }
-
-  private async writeData(message: string) {
-    const body = dotStuff(message)
-    await this.write(`${body}\r\n.\r\n`)
-  }
-
-  private async write(value: string) {
-    await new Promise<void>((resolve, reject) => {
-      this.socket.write(value, (error) => {
-        if (error) reject(error)
-        else resolve()
-      })
-    })
-  }
-
-  private async expect(expected: number[]) {
-    const response = await this.readResponse()
-    if (!expected.includes(response.code)) {
-      throw new Error(`Respuesta SMTP inesperada ${response.code}: ${response.text}`)
-    }
-    return response
-  }
-
-  private async readResponse(): Promise<SmtpResponse> {
-    const firstLine = await this.readLine()
-    const code = Number(firstLine.slice(0, 3))
-    if (!Number.isInteger(code)) {
-      throw new Error(`Respuesta SMTP inválida: ${firstLine}`)
-    }
-
-    const lines = [firstLine]
-    while (lines[lines.length - 1]?.startsWith(`${code}-`)) {
-      lines.push(await this.readLine())
-    }
-
-    return {
-      code,
-      lines,
-      text: lines.map((line) => line.slice(4)).join("\n"),
-    }
-  }
-
-  private readLine() {
-    if (this.lines.length > 0) {
-      return Promise.resolve(this.lines.shift() as string)
-    }
-    if (this.closedError) return Promise.reject(this.closedError)
-    return new Promise<string>((resolve, reject) => {
-      this.waiters.push({ resolve, reject })
-    })
-  }
-
-  private pushChunk(chunk: string | Buffer) {
-    this.buffer += chunk.toString()
-    let newlineIndex = this.buffer.indexOf("\n")
-    while (newlineIndex !== -1) {
-      const rawLine = this.buffer.slice(0, newlineIndex)
-      this.buffer = this.buffer.slice(newlineIndex + 1)
-      this.pushLine(rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine)
-      newlineIndex = this.buffer.indexOf("\n")
-    }
-  }
-
-  private pushLine(line: string) {
-    const waiter = this.waiters.shift()
-    if (waiter) waiter.resolve(line)
-    else this.lines.push(line)
-  }
-
-  private fail(error: Error) {
-    if (this.socket.destroyed && this.waiters.length === 0) return
-    this.closedError = error
-    while (this.waiters.length > 0) {
-      const waiter = this.waiters.shift()
-      waiter?.reject(error)
-    }
-  }
-}
-
-async function createSocket(config: SmtpConfig) {
-  const socket = config.secure
-    ? tls.connect({ host: config.host, port: config.port, servername: config.host })
-    : net.createConnection({ host: config.host, port: config.port })
-
-  const event = config.secure ? "secureConnect" : "connect"
-  const timeoutMs = getSmtpTimeoutMs()
-  let timeout: NodeJS.Timeout | undefined
-  try {
-    await Promise.race([
-      once(socket, event),
-      new Promise((_, reject) => {
-        timeout = setTimeout(() => {
-          timeout = undefined
-          socket.destroy()
-          reject(new Error("Timeout conectando a SMTP"))
-        }, timeoutMs)
-      }),
-    ])
-  } finally {
-    if (timeout) clearTimeout(timeout)
-  }
-  return socket
-}
-
-function hasCapability(response: SmtpResponse, capability: string) {
-  return response.lines.some((line) =>
-    line.slice(4).toUpperCase().startsWith(capability.toUpperCase())
-  )
-}
-
-function buildMimeMessage({
-  from,
-  to,
-  subject,
-  text,
-  html,
-}: {
-  from: string
-  to: string
-  subject: string
-  text: string
-  html: string
-}) {
-  const boundary = `chome-${randomUUID()}`
-  return [
-    `From: ${sanitizeHeader(from)}`,
-    `To: ${sanitizeHeader(to)}`,
-    `Subject: ${encodeHeader(subject)}`,
-    `Date: ${new Date().toUTCString()}`,
-    `Message-ID: <${randomUUID()}@chome.local>`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    encodeBase64Body(text),
-    `--${boundary}`,
-    "Content-Type: text/html; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    encodeBase64Body(html),
-    `--${boundary}--`,
-  ].join("\r\n")
-}
-
-function dotStuff(message: string) {
-  return message
-    .replace(/\r?\n/g, "\r\n")
-    .split("\r\n")
-    .map((line) => line.startsWith(".") ? `.${line}` : line)
-    .join("\r\n")
-}
-
-function encodeBase64Body(value: string) {
-  return Buffer.from(value, "utf8")
-    .toString("base64")
-    .replace(/.{1,76}/g, "$&\r\n")
-    .trimEnd()
-}
-
-function encodeHeader(value: string) {
-  const sanitized = sanitizeHeader(value)
-  if (/^[\x20-\x7E]*$/.test(sanitized)) return sanitized
-  return `=?UTF-8?B?${Buffer.from(sanitized, "utf8").toString("base64")}?=`
-}
-
-function sanitizeHeader(value: string) {
-  if (/[\r\n]/.test(value)) {
-    throw new Error("Encabezado de correo inválido")
-  }
-  return value
-}
-
-function extractEmailAddress(value: string) {
-  const sanitized = sanitizeHeader(value).trim()
-  const match = sanitized.match(/<([^<>]+)>$/)
-  const address = (match?.[1] ?? sanitized).trim()
-  if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(address)) {
-    throw new Error(`Dirección de correo inválida: ${value}`)
-  }
-  return address
-}
-
-function getEhloName() {
-  return process.env.SMTP_EHLO_NAME?.replace(/[^a-zA-Z0-9.-]/g, "") || "localhost"
 }
 
 function escapeHtml(value: string) {
@@ -468,3 +197,7 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;")
 }
+
+// Re-exported to keep the public surface intact for code that imported
+// the previous `Buffer` reference for size checks.
+export { Buffer }

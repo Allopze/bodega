@@ -165,6 +165,8 @@ async function applyStockDelta(tx: Tx, input: ApplyMovementInput, now: string) {
         stockAfter: worksiteStock.quantity,
       })
 
+    // The upsert always returns exactly one row.
+    if (!row) throw new Error("No se pudo aplicar el movimiento de stock")
     return {
       currentQty: Number(row.stockBefore),
       newQty: Number(row.stockAfter),

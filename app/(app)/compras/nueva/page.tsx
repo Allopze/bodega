@@ -99,8 +99,7 @@ export default async function NuevaOcPage({
   const wsMap      = Object.fromEntries(allWorksites.map((w) => [w.id, w.name]))
   const supplierPriceMap = supplierPriceRows.reduce<Record<string, Record<string, number>>>((acc, row) => {
     if (row.unitPrice === null) return acc
-    acc[row.productId] ??= {}
-    acc[row.productId][row.supplierId] = row.unitPrice
+    ;(acc[row.productId] ??= {})[row.supplierId] = row.unitPrice
     return acc
   }, {})
 

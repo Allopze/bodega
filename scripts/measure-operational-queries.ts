@@ -264,7 +264,7 @@ async function seedMediumDataset(db: ReturnType<typeof drizzle<typeof schema>>) 
     return {
       id: `perf-order-item-${index + 1}`,
       purchaseOrderId: `perf-order-${Math.floor(index / 2) + 1}`,
-      requestItemId: requestItems[index % requestItems.length].id,
+      requestItemId: requestItems[index % requestItems.length]!.id,
       productId: productIds[index % productIds.length],
       quantity: 5,
       unitOfMeasure: "unidad",

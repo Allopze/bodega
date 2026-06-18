@@ -12,6 +12,33 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Security audit DO-01: apply migrations against the production DB
+  # before the new image is rolled out. This prevents the container
+  # from booting with a stale schema and serving 500s for every query.
+  # The job uses `drizzle-kit migrate` which is idempotent — re-running
+  # it on a fresh deploy is a no-op.
+  migrate:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply Drizzle migrations
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: npm run db:migrate
+
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
@@ -51,3 +78,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Optional rollout job: deploys to a remote host. Kept commented
+  # because the target platform is environment-specific (Vercel, Fly,
+  # self-hosted, ECS, K8s, etc.). When you wire it up, gate it behind
+  # `needs: [migrate, build-and-push]` so migrations always run first.
+  #
+  # deploy:
+  #   runs-on: ubuntu-latest
+  #   needs: [migrate, build-and-push]
+  #   environment: production
+  #   steps:
+  #     - name: Pull and roll out new image
+  #       run: |
+  #         # Example for SSH + docker compose:
+  #         # ssh ${{ secrets.DEPLOY_HOST }} "cd /srv/bodega && \
+  #         #   docker compose pull && docker compose up -d"

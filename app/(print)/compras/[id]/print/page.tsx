@@ -638,7 +638,7 @@ function numberToSpanishWords(value: number): string {
       "dieciocho", "diecinueve", "veinte", "veintiuno", "veintidos", "veintitres",
       "veinticuatro", "veinticinco", "veintiseis", "veintisiete", "veintiocho", "veintinueve",
     ]
-    return units[value]
+    return units[value]!
   }
   if (value < 100) {
     const tens: Record<number, string> = {
@@ -652,7 +652,7 @@ function numberToSpanishWords(value: number): string {
     }
     const ten = Math.floor(value / 10) * 10
     const rest = value % 10
-    return rest === 0 ? tens[ten] : `${tens[ten]} y ${numberToSpanishWords(rest)}`
+    return rest === 0 ? tens[ten]! : `${tens[ten]} y ${numberToSpanishWords(rest)}`
   }
   if (value < 1000) {
     if (value === 100) return "cien"
@@ -669,7 +669,7 @@ function numberToSpanishWords(value: number): string {
     }
     const hundred = Math.floor(value / 100)
     const rest = value % 100
-    return rest === 0 ? hundreds[hundred] : `${hundreds[hundred]} ${numberToSpanishWords(rest)}`
+    return rest === 0 ? hundreds[hundred]! : `${hundreds[hundred]} ${numberToSpanishWords(rest)}`
   }
   if (value < 1_000_000) {
     const thousands = Math.floor(value / 1000)

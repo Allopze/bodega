@@ -159,7 +159,7 @@ describe("Full procurement workflow integration", () => {
     })
     expect(initialReq).toBeDefined()
     expect(initialReq?.status).toBe("draft")
-    expect(initialReq?.items[0].status).toBe("draft")
+    expect(initialReq?.items[0]?.status).toBe("draft")
 
     // 3. Submit request item (transitions item to requested)
     await submitItem(requestItemId, userId, { userEmail: "juan@chome.cl" })
@@ -175,7 +175,7 @@ describe("Full procurement workflow integration", () => {
       with: { items: true },
     })
     expect(submittedReq?.status).toBe("submitted")
-    expect(submittedReq?.items[0].status).toBe("requested")
+    expect(submittedReq?.items[0]?.status).toBe("requested")
 
     // 4. Approve request item (transitions item to approved, rolls up request to approved)
     await approveItem(requestItemId, userId, { userEmail: "juan@chome.cl" })
@@ -184,7 +184,7 @@ describe("Full procurement workflow integration", () => {
       where: eq(schema.purchaseRequests.id, requestId),
       with: { items: true },
     })
-    expect(approvedReq?.items[0].status).toBe("approved")
+    expect(approvedReq?.items[0]?.status).toBe("approved")
     expect(approvedReq?.status).toBe("approved")
 
     // 5. Stage item for purchasing (transitions item to pending_purchase)
@@ -194,7 +194,7 @@ describe("Full procurement workflow integration", () => {
       where: eq(schema.purchaseRequests.id, requestId),
       with: { items: true },
     })
-    expect(stagedReq?.items[0].status).toBe("pending_purchase")
+    expect(stagedReq?.items[0]?.status).toBe("pending_purchase")
 
     // 6. Create Purchase Order (OC)
     const orderId = await createOrder({
@@ -220,15 +220,15 @@ describe("Full procurement workflow integration", () => {
     })
     expect(order).toBeDefined()
     expect(order?.status).toBe("draft")
-    expect(order?.items[0].quantity).toBe(10)
-    expect(order?.items[0].requestItemId).toBe(requestItemId)
+    expect(order?.items[0]?.quantity).toBe(10)
+    expect(order?.items[0]?.requestItemId).toBe(requestItemId)
 
     // Request item should transition to in_purchase_order
     const inOcReq = await inMemoryDb.query.purchaseRequests.findFirst({
       where: eq(schema.purchaseRequests.id, requestId),
       with: { items: true },
     })
-    expect(inOcReq?.items[0].status).toBe("in_purchase_order")
+    expect(inOcReq?.items[0]?.status).toBe("in_purchase_order")
 
     // 7. Issue OC
     await issueOrder(orderId, userId, { userEmail: "juan@chome.cl" })
@@ -249,10 +249,10 @@ describe("Full procurement workflow integration", () => {
       where: eq(schema.purchaseRequests.id, requestId),
       with: { items: true },
     })
-    expect(purchasedReq?.items[0].status).toBe("purchased")
+    expect(purchasedReq?.items[0]?.status).toBe("purchased")
 
     // 9a. Stage 1 — arrival at Chome office (mandatory first step, no stock).
-    const ocItemId = order?.items[0].id ?? ""
+    const ocItemId = order?.items[0]?.id ?? ""
     await registerReceipt({
       purchaseOrderId: orderId,
       receivedBy: userId,
@@ -294,7 +294,7 @@ describe("Full procurement workflow integration", () => {
     })
     expect(receipt).toBeDefined()
     expect(receipt?.status).toBe("closed")
-    expect(receipt?.items[0].quantityReceived).toBe(10)
+    expect(receipt?.items[0]?.quantityReceived).toBe(10)
 
     // Verify Purchase Order rolled up to "received"
     const finalOrder = await inMemoryDb.query.purchaseOrders.findFirst({
@@ -307,7 +307,7 @@ describe("Full procurement workflow integration", () => {
       where: eq(schema.purchaseRequests.id, requestId),
       with: { items: true },
     })
-    expect(finalReq?.items[0].status).toBe("received")
+    expect(finalReq?.items[0]?.status).toBe("received")
     expect(finalReq?.status).toBe("closed")
 
     // 10. Verify worksite stock is correctly incremented
@@ -335,7 +335,7 @@ describe("Full procurement workflow integration", () => {
     expect(delivery).toBeDefined()
     expect(delivery?.destinationType).toBe("worker")
     expect(delivery?.workerId).toBe(workerId)
-    expect(delivery?.items[0].requestItemId).toBe(requestItemId)
+    expect(delivery?.items[0]?.requestItemId).toBe(requestItemId)
 
     const stockAfterDelivery = await inMemoryDb.query.worksiteStock.findFirst({
       where: eq(schema.worksiteStock.worksiteId, worksiteId),
@@ -346,7 +346,7 @@ describe("Full procurement workflow integration", () => {
       where: eq(schema.purchaseRequests.id, requestId),
       with: { items: true },
     })
-    expect(deliveredReq?.items[0].status).toBe("delivered")
+    expect(deliveredReq?.items[0]?.status).toBe("delivered")
   })
 
   it("registers a worker delivery with old EPP return and creates egreso_desecho movement", async () => {
@@ -423,7 +423,7 @@ describe("Full procurement workflow integration", () => {
       with: { items: true },
     })
     expect(delivery).toBeDefined()
-    const item = delivery!.items[0]
+    const item = delivery!.items[0]!
     expect(item.returnQuantity).toBe(1)
     expect(item.returnProductId).toBe(returnProductId)
     expect(item.returnReason).toBe("desgastado")
