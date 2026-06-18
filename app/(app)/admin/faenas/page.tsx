@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Faenas" }
 export default async function FaenasPage() {
   let session
   try { session = await requirePermission("admin:worksites") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const allWorksites = await db.query.worksites.findMany({
     where: worksiteScopeSql(session, worksites.id),

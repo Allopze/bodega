@@ -5,11 +5,11 @@
  * and make the data layer testable.
  */
 
+import { unstable_cache } from "next/cache"
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   products,
-  purchaseOrderItems,
   purchaseOrders,
   purchaseRequestItems,
   purchaseRequests,
@@ -76,9 +76,9 @@ const SNAPSHOT_LIMIT = 200
 export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot> {
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
-  const requestWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
-  const itemWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
-  const orderWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`)
+  const requestWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`)
+  const itemWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`)
+  const orderWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`)
 
   const [
     requestRows,
@@ -134,6 +134,8 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
       ))
       .limit(SNAPSHOT_LIMIT),
 
+    // P-02: item count folded into orders query via scalar subquery to
+    // eliminate the separate orderItemCounts query (N+1 pattern).
     db
       .select({
         id:           purchaseOrders.id,
@@ -146,6 +148,7 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         issuedAt:     purchaseOrders.issuedAt,
         sentAt:       purchaseOrders.sentAt,
         totalAmount:  purchaseOrders.totalAmount,
+        itemCount:    sql<number>`(SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = ${purchaseOrders.id})`,
       })
       .from(purchaseOrders)
       .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
@@ -179,20 +182,6 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
 
   const stockProductIds = new Set(stockRows.map((row) => row.productId))
 
-  const orderIds = orderRows.map((o) => o.id)
-  const orderItemCounts = orderIds.length > 0
-    ? await db
-        .select({
-          purchaseOrderId: purchaseOrderItems.purchaseOrderId,
-          total:           count(),
-        })
-        .from(purchaseOrderItems)
-        .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
-        .groupBy(purchaseOrderItems.purchaseOrderId)
-    : []
-
-  const orderItemCountMap = new Map(orderItemCounts.map((row) => [row.purchaseOrderId, row.total]))
-
   const requests: WorkRequestRow[] = requestRows.map((request) => ({
     ...request,
     itemCount:    itemCountByRequest.get(request.id) ?? 0,
@@ -217,7 +206,7 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
 
   const orders: WorkOrderRow[] = orderRows.map((order) => ({
     ...order,
-    itemCount:       orderItemCountMap.get(order.id) ?? 0,
+    itemCount: order.itemCount,
   }))
 
   return { requests, items, orders }
@@ -228,10 +217,10 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
 export async function getDashboardData(session: Session): Promise<DashboardData> {
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
-  const requestWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
-  const itemWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
-  const orderWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`)
-  const worksiteRowsFilter = isGlobal ? eq(worksites.isActive, true) : (wsIds.length > 0 ? and(eq(worksites.isActive, true), inArray(worksites.id, wsIds)) : sql`1 = 0`)
+  const requestWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`)
+  const itemWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`)
+  const orderWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`)
+  const worksiteRowsFilter = isGlobal ? eq(worksites.isActive, true) : (wsIds.length > 0 ? and(eq(worksites.isActive, true), inArray(worksites.id, wsIds)) : sql`false`)
 
   const [
     [myRequestsRow],
@@ -408,6 +397,22 @@ export async function getDashboardData(session: Session): Promise<DashboardData>
     worksitesBreakdown,
   }
 }
+
+// ── Cached variants (A-06) ────────────────────────────────────────────────────
+// Cache key = userId + role context. TTL 30s.
+// Invalidate via revalidateTag('dashboard') in any mutating server action.
+
+export const getCachedWorkQueueSnapshot = unstable_cache(
+  getWorkQueueSnapshot,
+  ["work-queue-snapshot"],
+  { revalidate: 30, tags: ["dashboard"] },
+)
+
+export const getCachedDashboardData = unstable_cache(
+  getDashboardData,
+  ["dashboard-data"],
+  { revalidate: 30, tags: ["dashboard"] },
+)
 
 // ── Actor builder ─────────────────────────────────────────────────────────────
 

@@ -82,6 +82,12 @@ export function LoginForm({ showBootstrap = false }: { showBootstrap?: boolean }
         {login.isPending ? "Ingresando..." : "Ingresar"}
       </Button>
 
+      <div className="mt-4 text-right">
+        <Link href="/recuperar" className="text-xs text-text-subtle hover:underline">
+          ¿Olvidaste tu contraseña?
+        </Link>
+      </div>
+
       <div className="mt-6 pt-5 border-t border-border text-center text-xs text-text-subtle space-y-2">
         <p>Sistema de uso interno. Contacta al administrador si no tienes acceso.</p>
         {showBootstrap && (

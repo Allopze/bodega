@@ -68,13 +68,18 @@ export async function createEvaluation(
   const id = nanoid()
   const now = new Date().toISOString()
 
+  // A-09: snapshot the definition version from the registry (not hardcoded),
+  // so a closed evaluation can always be reconstructed with the exact checklist
+  // version it was filled against. getDefinition throws on an unknown code.
+  const definition = getDefinition(data.definicionCode)
+
   const newRow: typeof sstEvaluations.$inferInsert = {
     id,
     worksiteId:             data.worksiteId,
     workerId:               data.workerId,
     createdBy:              userId,
     definicionCode:         data.definicionCode,
-    definicionVersion:      '01', // TODO: derive from definition registry instead of hardcoding
+    definicionVersion:      definition.version,
     tipo:                   data.tipo,
     motivo:                 data.motivo ?? null,
     motivoOtro:             data.motivoOtro ?? null,

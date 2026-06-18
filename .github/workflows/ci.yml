@@ -63,3 +63,6 @@ jobs:
 
       - name: E2E smoke (admin + purchase)
         run: npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts
+
+      - name: E2E accessibility audit
+        run: npm run test:e2e -- e2e/accessibility.spec.ts

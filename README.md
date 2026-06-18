@@ -87,6 +87,6 @@ La documentación completa está en [`docs/`](docs/) — comienza por el [índic
 | | [docs/planificacion/PRODUCT.md](docs/planificacion/PRODUCT.md) | Requisitos y especificaciones del producto |
 | | [docs/planificacion/chome_feature_list.md](docs/planificacion/chome_feature_list.md) | Catálogo detallado de funcionalidades |
 | **Arquitectura** | [docs/arquitectura/ARCHITECTURE.md](docs/arquitectura/ARCHITECTURE.md) | Stack técnico, BD, ciclo de vida, RBAC, patrones |
-| **Auditoría** | [docs/auditoria/AUDITORIA_PROYECTO.md](docs/auditoria/AUDITORIA_PROYECTO.md) | Análisis de seguridad, hallazgos y recomendaciones |
+| **Auditoría** | [AUDITORIA_COMPLETA.md](AUDITORIA_COMPLETA.md) | Análisis de seguridad, hallazgos, estado de remediación y recomendaciones |
 | | [docs/auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md](docs/auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md) | Catálogo de proveedores y productos EPP |
 | **Pruebas** | [docs/pruebas/TESTING.md](docs/pruebas/TESTING.md) | Unitarias, E2E, manuales y cobertura |

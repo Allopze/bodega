@@ -21,7 +21,7 @@ export default async function SolicitudesPage({
 }) {
   let session
   try { session = await requirePermission("requests:view_own") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const sp = await searchParams
   const viewAll = can(session, "requests:view_all")
@@ -35,7 +35,7 @@ export default async function SolicitudesPage({
         eq(purchaseRequests.requesterId, session.user.id),
         userWorksiteIds.length > 0
           ? inArray(purchaseRequests.worksiteId, userWorksiteIds)
-          : sql`1 = 0`
+          : sql`false`
       )
 
   // Count total matching requests for pagination

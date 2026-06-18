@@ -103,6 +103,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-proveedores", path: "/admin/proveedores", auth: true },
   { slug: "admin-trabajadores", path: "/admin/trabajadores", auth: true },
   { slug: "admin-usuarios", path: "/admin/usuarios", auth: true },
+  { slug: "forbidden", path: "/forbidden", auth: true },
 ]
 
 const seedCoverage: CaptureSeedArea[] = [

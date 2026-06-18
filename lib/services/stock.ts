@@ -63,6 +63,12 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
 
   // egreso_desecho is record-only — no stock delta, just trail the retirement
   if (input.type === "egreso_desecho") {
+    // S-17: record-only movements must carry a positive count. The DB CHECK
+    // only guards stock_before/after >= 0, not the movement quantity itself,
+    // so a negative quantity would silently land in the kardex.
+    if (!(input.quantity > 0)) {
+      throw new Error("La cantidad de un movimiento de desecho debe ser mayor que cero")
+    }
     const existing = await tx.query.worksiteStock.findFirst({
       where: and(
         eq(worksiteStock.worksiteId, input.worksiteId),

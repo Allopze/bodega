@@ -24,7 +24,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
 
   let session
   try { session = await requirePermission("sst:view") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =

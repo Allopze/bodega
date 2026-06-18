@@ -21,7 +21,32 @@ export interface UserRbacSnapshot {
 // load balancer, the worst-case window is the TTL.
 const RBAC_CACHE_TTL_MS = 5_000
 
+// Security audit S-13: cap the cache so it can't grow without bound on an
+// instance that sees many distinct users. Map preserves insertion order, so
+// eviction drops expired entries first and then the oldest survivors.
+const RBAC_CACHE_MAX_ENTRIES = 1_000
+
 const rbacCache = new Map<string, { snapshot: UserRbacSnapshot | null; expiresAt: number }>()
+
+function setRbacCache(userId: string, entry: { snapshot: UserRbacSnapshot | null; expiresAt: number }) {
+  // Re-insert so this key becomes the most-recently-added (LRU-ish order).
+  rbacCache.delete(userId)
+  rbacCache.set(userId, entry)
+  if (rbacCache.size <= RBAC_CACHE_MAX_ENTRIES) return
+
+  const now = Date.now()
+  for (const [key, value] of rbacCache) {
+    if (rbacCache.size <= RBAC_CACHE_MAX_ENTRIES) break
+    if (key === userId) continue // never evict the entry we just set
+    if (value.expiresAt <= now) rbacCache.delete(key)
+  }
+  // Still over budget after dropping expired entries → drop oldest survivors.
+  for (const key of rbacCache.keys()) {
+    if (rbacCache.size <= RBAC_CACHE_MAX_ENTRIES) break
+    if (key === userId) continue
+    rbacCache.delete(key)
+  }
+}
 
 export async function getUserRbacById(
   userId: string,
@@ -97,7 +122,7 @@ export async function getUserRbacById(
     primaryWorksiteId: wsRows.find((w) => w.isPrimary)?.worksiteId ?? wsRows[0]?.worksiteId ?? null,
   }
 
-  rbacCache.set(userId, { snapshot, expiresAt: Date.now() + RBAC_CACHE_TTL_MS })
+  setRbacCache(userId, { snapshot, expiresAt: Date.now() + RBAC_CACHE_TTL_MS })
   return snapshot
 }
 

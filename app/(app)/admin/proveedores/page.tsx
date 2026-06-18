@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Proveedores" }
 
 export default async function ProveedoresPage() {
   try { await requirePermission("admin:suppliers") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const allSuppliers = await db.query.suppliers.findMany({ orderBy: (s, { asc }) => [asc(s.name)] })
 

@@ -29,12 +29,12 @@ type ReportMetric = {
 export default async function Page() {
   let session
   try { session = await requirePermission("reports:view") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
-  const requestWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`)
-  const orderWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`)
+  const requestWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`)
+  const orderWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`)
   const receiptWsFilter = isGlobal
     ? undefined
     : (wsIds.length > 0

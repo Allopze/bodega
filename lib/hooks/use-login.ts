@@ -16,6 +16,13 @@ interface LoginResult {
 }
 
 function authErrorMessage(error: string) {
+  // U-02: surface rate-limit reasons (custom codes from lib/auth/auth.ts)
+  if (error === "ip_rate_limited") {
+    return "Demasiados intentos desde tu dirección. Espera 15 minutos antes de intentarlo de nuevo."
+  }
+  if (error === "email_rate_limited") {
+    return "Esta cuenta ha sido bloqueada temporalmente. Espera 15 minutos antes de intentarlo de nuevo."
+  }
   if (error === "CredentialsSignin") {
     return "Correo o contraseña incorrectos."
   }

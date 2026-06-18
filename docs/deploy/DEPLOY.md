@@ -19,6 +19,24 @@ Requisitos y guía para desplegar la aplicación en producción.
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Configuración de correo para notificaciones |
 | `SEED_ADMIN_PASSWORD` | Password del admin seed (solo para bootstrap inicial) |
 
+> **Fail-fast (DO-03):** la app lanza un error al arrancar si `DATABASE_URL` no
+> está definida (`db/index.ts`) y el pool usa `connect_timeout=10s` para fallar
+> rápido ante una BD que no responde. El `HEALTHCHECK` del contenedor sondea
+> `/api/health`, que hace `SELECT 1`; un contenedor sin BD válida queda
+> *unhealthy* en vez de servir tráfico roto.
+
+## Variables de entorno opcionales
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `APP_URL` / `AUTH_URL` | — | Alternativas a `NEXTAUTH_URL` para construir enlaces absolutos (correos). |
+| `SMTP_FROM` | = `SMTP_USER` | Remitente de los correos. |
+| `SMTP_SECURE` | `port === 465` | Forzar TLS implícito. |
+| `SMTP_DISABLED` | `false` | Si `true`, desactiva el envío de correo (las invitaciones muestran el enlace en la UI). |
+| `SEED_ADMIN_NAME` / `SEED_ADMIN_EMAIL` | `Administrador` / `admin@chome.cl` | Identidad del admin seed. |
+| `SEED_ALLOW_DEFAULT_PASSWORD` | `false` | Permite el password por defecto (`chome2026`) en `NODE_ENV=production`. **No usar en prod real.** |
+| `SEED_DRY_RUN` | `false` | Si `true`, `db/seed.ts` valida entradas y reporta sin escribir en la BD (A-16). |
+
 ## Build y start
 
 ```bash

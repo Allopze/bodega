@@ -25,7 +25,7 @@ export default async function RecepcionDetallePage({
 }) {
   let session
   try { session = await requirePermission("receiving:view") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const { id } = await params
   const receipt = await db.query.receipts.findFirst({

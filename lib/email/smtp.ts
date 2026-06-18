@@ -12,10 +12,14 @@
  * notifications) don't need to change. Internally we build a
  * nodemailer transport on demand, reusing a single transport per
  * process when possible.
+ *
+ * SMTP config now reads from the database first (admin-configurable),
+ * falling back to environment variables for backward compatibility.
  */
-import { Buffer } from "node:buffer"
 import { randomUUID } from "node:crypto"
 import nodemailer, { type Transporter } from "nodemailer"
+import { getRawSmtpConfig } from "@/lib/services/smtp-settings"
+import { renderTemplate } from "@/lib/services/email-templates"
 
 type InvitationEmailInput = {
   to: string
@@ -47,7 +51,24 @@ export function getAppBaseUrl() {
   ).replace(/\/$/, "")
 }
 
-function getSmtpConfig(): SmtpConfig | null {
+/**
+ * Load SMTP config from DB first, fall back to env vars.
+ * Returns null if neither source has a complete configuration.
+ */
+async function getSmtpConfig(): Promise<SmtpConfig | null> {
+  // 1. Try DB config (admin-configurable)
+  const dbConfig = await getRawSmtpConfig()
+  if (dbConfig) {
+    return {
+      host: dbConfig.host,
+      port: dbConfig.port,
+      secure: dbConfig.secure,
+      auth: { user: dbConfig.user, pass: dbConfig.pass },
+      from: dbConfig.from,
+    }
+  }
+
+  // 2. Fall back to environment variables
   if (process.env.SMTP_DISABLED === "true") return null
 
   const host = process.env.SMTP_HOST
@@ -100,29 +121,36 @@ function getTransport(config: SmtpConfig): Transporter {
 }
 
 export async function sendInvitationEmail({ to, inviteUrl, invitedByName }: InvitationEmailInput): Promise<SendResult> {
-  const config = getSmtpConfig()
+  const config = await getSmtpConfig()
   if (!config) return { sent: false, reason: "SMTP no configurado" }
 
   const senderName = invitedByName ?? "Un administrador"
-  const text = [
-    `${senderName} te invitó a Chome Solicitudes y Bodega.`,
-    "",
-    "Completa tu registro usando este enlace:",
-    inviteUrl,
-    "",
-    "Si no esperabas esta invitación, puedes ignorar este correo.",
-  ].join("\n")
-  const html = [
+  const text = `${senderName} te invitó a Chome Solicitudes y Bodega.\n\nCompleta tu registro usando este enlace:\n${inviteUrl}\n\nSi no esperabas esta invitación, puedes ignorar este correo.`
+
+  let renderedSubject = "Invitación a Chome Solicitudes y Bodega"
+  let renderedHtml = [
     `<p>${escapeHtml(senderName)} te invitó a <strong>Chome Solicitudes y Bodega</strong>.</p>`,
     `<p><a href="${escapeHtml(inviteUrl)}">Completar registro</a></p>`,
     `<p>Si no esperabas esta invitación, puedes ignorar este correo.</p>`,
   ].join("")
 
+  try {
+    const rendered = await renderTemplate("invitation", {
+      sender_name: senderName,
+      app_name:    "Chome Solicitudes y Bodega",
+      invite_url:  inviteUrl,
+    })
+    renderedSubject = rendered.subject
+    renderedHtml = rendered.html
+  } catch {
+    // Fallback to inline defaults
+  }
+
   return await sendViaTransport(config, {
     to,
-    subject: "Invitación a Chome Solicitudes y Bodega",
+    subject: renderedSubject,
     text,
-    html,
+    html: renderedHtml,
   })
 }
 
@@ -137,7 +165,7 @@ export async function sendEmail({
   text:    string
   html:    string
 }): Promise<SendResult> {
-  const config = getSmtpConfig()
+  const config = await getSmtpConfig()
   if (!config) return { sent: false, reason: "SMTP no configurado" }
 
   return await sendViaTransport(config, { to, subject, text, html })
@@ -146,7 +174,7 @@ export async function sendEmail({
 export async function sendBatchEmails(
   messages: Array<{ to: string; subject: string; text: string; html: string }>,
 ): Promise<{ sent: true; count: number } | { sent: false; reason: string }> {
-  const config = getSmtpConfig()
+  const config = await getSmtpConfig()
   if (!config) return { sent: false, reason: "SMTP no configurado" }
 
   const transport = getTransport(config)

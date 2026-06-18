@@ -209,6 +209,16 @@ export async function markOrderSent(
       throw new Error(`Cannot mark order as sent from state '${order.status}'`)
     }
 
+    // A-03: an empty OC must never reach 'sent'. The receipt rollup keys off
+    // OC items, so a 0-item order would otherwise sit in 'sent' forever.
+    const ocItems = await tx
+      .select({ requestItemId: purchaseOrderItems.requestItemId })
+      .from(purchaseOrderItems)
+      .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
+    if (ocItems.length === 0) {
+      throw new Error("No se puede enviar una orden de compra sin ítems")
+    }
+
     const now = new Date().toISOString()
     await tx
       .update(purchaseOrders)
@@ -216,10 +226,6 @@ export async function markOrderSent(
       .where(eq(purchaseOrders.id, orderId))
 
     // Move request items to "purchased" status
-    const ocItems = await tx
-      .select({ requestItemId: purchaseOrderItems.requestItemId })
-      .from(purchaseOrderItems)
-      .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
 
     const requestItemIds = ocItems
       .map((i) => i.requestItemId)

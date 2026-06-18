@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 
 import { redirect } from "next/navigation"
+import { unstable_cache } from "next/cache"
 import { auth } from "@/lib/auth/auth"
 import { db } from "@/db"
 import { worksites, purchaseRequests, purchaseOrders } from "@/db/schema"
@@ -13,6 +14,51 @@ import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { Toaster } from "sonner"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 
+// P-01: Cache badge counts per user for 30s. Prevents 3 DB queries on every
+// navigation event. Invalidated via revalidateTag('badge-counts-{userId}')
+// from server actions that mutate relevant state (submit request, issue OC, …).
+const getCachedBadgeCounts = unstable_cache(
+  async (userId: string, isGlobal: boolean, wsIds: string[]) => {
+    const approvalFilter = isGlobal
+      ? inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"])
+      : and(
+          inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
+          wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`
+        )
+
+    const purchaseFilter = isGlobal
+      ? inArray(purchaseOrders.status, ["issued"])
+      : and(
+          inArray(purchaseOrders.status, ["issued"]),
+          wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`
+        )
+
+    const receivingFilter = isGlobal
+      ? inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"])
+      : and(
+          inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]),
+          wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`
+        )
+
+    const [[approvalRow], [purchaseRow], [receivingRow]] = await Promise.all([
+      db.select({ n: count() }).from(purchaseRequests).where(approvalFilter),
+      db.select({ n: count() }).from(purchaseOrders).where(purchaseFilter),
+      db.select({ n: count() }).from(purchaseOrders).where(receivingFilter),
+    ])
+
+    return {
+      "/aprobaciones": approvalRow?.n ?? 0,
+      "/compras":      purchaseRow?.n ?? 0,
+      "/recepcion":    receivingRow?.n ?? 0,
+    }
+  },
+  ["badge-counts"],
+  {
+    revalidate: 30,
+    tags: ["badge-counts"],
+  }
+)
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session) redirect("/login")
@@ -20,45 +66,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
 
-  const approvalFilter = isGlobal
-    ? inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"])
-    : and(
-        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
-        wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`1 = 0`
-      )
-
-  const purchaseFilter = isGlobal
-    ? inArray(purchaseOrders.status, ["issued"])
-    : and(
-        inArray(purchaseOrders.status, ["issued"]),
-        wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`
-      )
-
-  const receivingFilter = isGlobal
-    ? inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"])
-    : and(
-        inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]),
-        wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`1 = 0`
-      )
-
-  // Load worksite name + pending badge counts in parallel
-  const [ws, [approvalRow], [purchaseRow], [receivingRow]] = await Promise.all([
+  const [ws, badgeCounts] = await Promise.all([
     session.user.primaryWorksiteId
       ? db.query.worksites.findFirst({ where: eq(worksites.id, session.user.primaryWorksiteId) })
       : Promise.resolve(undefined),
-    db.select({ n: count() }).from(purchaseRequests)
-      .where(approvalFilter),
-    db.select({ n: count() }).from(purchaseOrders)
-      .where(purchaseFilter),
-    db.select({ n: count() }).from(purchaseOrders)
-      .where(receivingFilter),
+    getCachedBadgeCounts(session.user.id, isGlobal, wsIds),
   ])
-
-  const badgeCounts: Record<string, number> = {
-    "/aprobaciones": approvalRow?.n ?? 0,
-    "/compras":      purchaseRow?.n ?? 0,
-    "/recepcion":    receivingRow?.n ?? 0,
-  }
 
   return (
     <QueryProvider>
@@ -77,8 +90,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         offset={16}
         gap={8}
         toastOptions={{
-          // Solo aplica a toasts informativos/éxito; los de error persisten
-          // hasta cierre manual (ver lib/toast.ts).
           duration: 4000,
           classNames: {
             toast:

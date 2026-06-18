@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Nueva solicitud de compra" }
 export default async function NuevaSolicitudPage() {
   let session
   try { session = await requirePermission("requests:create") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const [allWorksites, allProducts, allAttrs, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites)

@@ -1,37 +1,32 @@
 import { sql } from "drizzle-orm"
 import type { DB } from "@/db"
-import { codeSequences } from "@/db/schema"
 import { generateCode } from "@/lib/id"
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0]
 
 /**
- * Atomically reserves the next code value for (prefix, year) and returns
- * the human-readable code.
+ * DB-01: Atomically reserves the next code value via the native Postgres
+ * SEQUENCE created by migration 0014 (`next_document_code` function).
  *
- * Implementation note (security audit S-01):
- * Postgres guarantees that INSERT … ON CONFLICT … DO UPDATE … RETURNING is
- * atomic with respect to other writers — the row is locked for the duration
- * of the statement, and the returned value reflects the value that was
- * actually written by *this* transaction. Two concurrent calls cannot
- * observe the same `next_value`.
+ * Trade-off vs. the previous INSERT…ON CONFLICT approach (S-01):
+ * - PRO: removes row-level contention — native sequences use an internal
+ *   lock-free mechanism that scales to thousands of calls per second.
+ * - CON: nextval() is non-transactional — if the surrounding DB transaction
+ *   rolls back, the sequence value is consumed and creates a gap in the
+ *   document series (e.g. OC-2026-005 → OC-2026-007). This is acceptable
+ *   for internal OC/solicitud codes; Chilean tax documents (DTE) are issued
+ *   by the SII and are not affected.
  *
- * The previous implementation did an INSERT/ON CONFLICT followed by a
- * separate SELECT, which opened a window where two transactions could
- * race and pick the same code.
+ * The `code_sequences` table is kept as a migration reference/fallback but
+ * is no longer written by the application hot path.
  */
 export async function nextCodeTx(tx: Tx, prefix: string, year = new Date().getFullYear()) {
-  const [row] = await tx
-    .insert(codeSequences)
-    .values({ prefix, year, nextValue: 1 })
-    .onConflictDoUpdate({
-      target: [codeSequences.prefix, codeSequences.year],
-      set: { nextValue: sql`${codeSequences.nextValue} + 1` },
-    })
-    .returning({ nextValue: codeSequences.nextValue })
+  const [row] = await tx.execute<{ next_document_code: number }>(
+    sql`SELECT next_document_code(${prefix}, ${year})`
+  )
 
   if (!row) {
     throw new Error(`Failed to reserve next code for ${prefix}-${year}`)
   }
-  return generateCode(prefix, row.nextValue, year)
+  return generateCode(prefix, row.next_document_code, year)
 }

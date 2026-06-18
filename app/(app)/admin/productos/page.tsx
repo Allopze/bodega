@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Catálogo de productos" }
 
 export default async function ProductosPage() {
   try { await requirePermission("admin:products") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const [allProducts, allCategories, allSuppliers] = await Promise.all([
     db.query.products.findMany({

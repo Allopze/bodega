@@ -24,7 +24,7 @@ export const metadata: Metadata = { title: "Solicitud de compra" }
 export default async function SolicitudPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requirePermission("requests:view_own") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const { id } = await params
 

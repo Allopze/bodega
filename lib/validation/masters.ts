@@ -1,26 +1,8 @@
 import { z } from "zod"
+import { cleanRut, validateRut } from "@/lib/rut"
 
 // ── Chilean RUT helper ────────────────────────────────────────────────────────
-// Accepts formats: 12345678-9, 12.345.678-9, 12345678-K, etc.
-// We store the cleaned form (no dots, with dash).
-function cleanRut(rut: string): string {
-  return rut.replace(/\./g, "").trim().toUpperCase()
-}
-
-function validateRut(rut: string): boolean {
-  const cleaned = cleanRut(rut)
-  if (!/^\d{7,8}-[\dKk]$/.test(cleaned)) return false
-  const [num, dv] = cleaned.split("-") as [string, string]
-  let sum = 0
-  let mul = 2
-  for (let i = num.length - 1; i >= 0; i--) {
-    sum += parseInt(num[i]!) * mul
-    mul = mul === 7 ? 2 : mul + 1
-  }
-  const expected = 11 - (sum % 11)
-  const computed = expected === 11 ? "0" : expected === 10 ? "K" : String(expected)
-  return computed === dv.toUpperCase()
-}
+// Canonical cleaning/validation lives in @/lib/rut (audit A-15).
 
 export const rutSchema = z
   .string()

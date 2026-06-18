@@ -14,6 +14,7 @@ import { notifications, rolePermissions, userPermissions, permissions, users } f
 import { nanoid } from "@/lib/id"
 import type { NotificationType } from "@/db/schema/audit"
 import { sendEmail, sendBatchEmails, getAppBaseUrl } from "@/lib/email/smtp"
+import { renderTemplate } from "@/lib/services/email-templates"
 import { escapeHtml } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 
@@ -48,32 +49,54 @@ export async function createNotification(input: CreateNotificationInput): Promis
     isRead:     false,
   })
 
-  // Send email asynchronously
+  // S-15: Send email only if the user has email_notifications enabled (default true).
   const user = await db.query.users.findFirst({
     where: eq(users.id, input.userId),
-    columns: { email: true, name: true },
+    columns: { email: true, name: true, emailNotifications: true },
   })
-  if (user?.email) {
-    const appUrl = getAppBaseUrl()
-    const safeName = escapeHtml(user.name ?? "Usuario")
-    const safeTitle = escapeHtml(input.title)
-    const safeBody = input.body ? escapeHtml(input.body) : ""
-    const safeHref = input.entityHref ? escapeHtml(`${appUrl}${input.entityHref}`) : ""
-    const text = `${input.title}\n\n${input.body ?? ""}`
-    const html = `
-      <p>Hola ${safeName},</p>
-      <h3>${safeTitle}</h3>
-      ${safeBody ? `<p>${safeBody}</p>` : ""}
-      ${safeHref ? `<p><a href="${safeHref}">Ver detalle en Chome</a></p>` : ""}
-    `
-    sendEmail({
-      to:      user.email,
-      subject: input.title,
-      text,
-      html,
-    }).catch((err) => {
-      logger.error(`[notifications] failed to send email to ${user.email}`, err)
-    })
+  if (user?.email && user.emailNotifications !== false) {
+    // Use template system, fall back to inline if render fails
+    try {
+      const rendered = await renderTemplate("notification", {
+        user_name: user.name ?? "Usuario",
+        title:     input.title,
+        body:      input.body ?? "",
+        href:      input.entityHref ? `${getAppBaseUrl()}${input.entityHref}` : "",
+        app_name:  "Chome Solicitudes y Bodega",
+      })
+
+      const text = `${input.title}\n\n${input.body ?? ""}`
+      sendEmail({
+        to:      user.email,
+        subject: rendered.subject,
+        text,
+        html:    rendered.html,
+      }).catch((err) => {
+        logger.error(`[notifications] failed to send email to ${user.email}`, err)
+      })
+    } catch {
+      // Fallback: inline HTML
+      const appUrl = getAppBaseUrl()
+      const safeName = escapeHtml(user.name ?? "Usuario")
+      const safeTitle = escapeHtml(input.title)
+      const safeBody = input.body ? escapeHtml(input.body) : ""
+      const safeHref = input.entityHref ? escapeHtml(`${appUrl}${input.entityHref}`) : ""
+      const text = `${input.title}\n\n${input.body ?? ""}`
+      const html = `
+        <p>Hola ${safeName},</p>
+        <h3>${safeTitle}</h3>
+        ${safeBody ? `<p>${safeBody}</p>` : ""}
+        ${safeHref ? `<p><a href="${safeHref}">Ver detalle en Chome</a></p>` : ""}
+      `
+      sendEmail({
+        to:      user.email,
+        subject: input.title,
+        text,
+        html,
+      }).catch((err) => {
+        logger.error(`[notifications] failed to send email to ${user.email}`, err)
+      })
+    }
   }
 }
 
@@ -101,7 +124,7 @@ export async function createNotifications(
 
   // Send emails asynchronously — batch into a single SMTP connection
   const targetUsers = await db
-    .select({ id: users.id, email: users.email, name: users.name })
+    .select({ id: users.id, email: users.email, name: users.name, emailNotifications: users.emailNotifications })
     .from(users)
     .where(inArray(users.id, userIds))
 
@@ -109,19 +132,34 @@ export async function createNotifications(
   const emailMessages: Array<{ to: string; subject: string; text: string; html: string }> = []
 
   for (const u of targetUsers) {
-    if (u.email) {
-      const safeName = escapeHtml(u.name ?? "Usuario")
-      const safeTitle = escapeHtml(input.title)
-      const safeBody = input.body ? escapeHtml(input.body) : ""
-      const safeHref = input.entityHref ? escapeHtml(`${appUrl}${input.entityHref}`) : ""
-      const text = `${input.title}\n\n${input.body ?? ""}`
-      const html = `
-        <p>Hola ${safeName},</p>
-        <h3>${safeTitle}</h3>
-        ${safeBody ? `<p>${safeBody}</p>` : ""}
-        ${safeHref ? `<p><a href="${safeHref}">Ver detalle en Chome</a></p>` : ""}
-      `
-      emailMessages.push({ to: u.email, subject: input.title, text, html })
+    // S-15: skip users who opted out of email notifications
+    if (u.email && u.emailNotifications !== false) {
+      // Use template system, fall back to inline
+      try {
+        const rendered = await renderTemplate("notification", {
+          user_name: u.name ?? "Usuario",
+          title:     input.title,
+          body:      input.body ?? "",
+          href:      input.entityHref ? `${appUrl}${input.entityHref}` : "",
+          app_name:  "Chome Solicitudes y Bodega",
+        })
+
+        const text = `${input.title}\n\n${input.body ?? ""}`
+        emailMessages.push({ to: u.email, subject: rendered.subject, text, html: rendered.html })
+      } catch {
+        const safeName = escapeHtml(u.name ?? "Usuario")
+        const safeTitle = escapeHtml(input.title)
+        const safeBody = input.body ? escapeHtml(input.body) : ""
+        const safeHref = input.entityHref ? escapeHtml(`${appUrl}${input.entityHref}`) : ""
+        const text = `${input.title}\n\n${input.body ?? ""}`
+        const html = `
+          <p>Hola ${safeName},</p>
+          <h3>${safeTitle}</h3>
+          ${safeBody ? `<p>${safeBody}</p>` : ""}
+          ${safeHref ? `<p><a href="${safeHref}">Ver detalle en Chome</a></p>` : ""}
+        `
+        emailMessages.push({ to: u.email, subject: input.title, text, html })
+      }
     }
   }
 

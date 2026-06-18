@@ -29,7 +29,7 @@ const REVALIDATE = "/solicitudes"
 export async function saveDraft(
   _prev: ActionState,
   formData: FormData,
-): Promise<ActionState & { requestId?: string }> {
+): Promise<ActionState & { requestId?: string; lastSavedAt?: string }> {
   let session
   try { session = await requirePermission("requests:create") }
   catch { return { ok: false, message: "Sin permisos para crear solicitudes" } }
@@ -38,9 +38,8 @@ export async function saveDraft(
   if (!result.ok) return result
 
   revalidatePath(REVALIDATE)
-  // El cliente adopta el id para que guardados posteriores (manuales o
-  // automáticos) actualicen este borrador en vez de crear duplicados.
-  return { ok: true, message: "Borrador guardado", requestId: result.requestId }
+  // U-01: return lastSavedAt so the UI can display "guardado a las HH:MM:SS".
+  return { ok: true, message: "Borrador guardado", requestId: result.requestId, lastSavedAt: new Date().toISOString() }
 }
 
 async function persistDraft(

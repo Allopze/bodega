@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Evaluaciones SST" }
 export default async function PrevencionPage() {
   let session
   try { session = await requirePermission("sst:view") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | 'all' =

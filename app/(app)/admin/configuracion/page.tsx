@@ -4,7 +4,9 @@ import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { getCompanyProfile, getPdfMaxSizeMb } from "@/lib/services/system-settings"
+import { getSmtpConfig } from "@/lib/services/smtp-settings"
 import { ConfigForm } from "./config-form"
+import { SmtpConfigSection } from "./smtp-config-form"
 
 export const metadata: Metadata = { title: "Configuración del Sistema" }
 
@@ -12,12 +14,13 @@ export default async function ConfiguracionPage() {
   try {
     await requirePermission("admin:config")
   } catch {
-    redirect("/dashboard")
+    redirect("/forbidden")
   }
 
-  const [pdfMaxSizeMb, companyProfile] = await Promise.all([
+  const [pdfMaxSizeMb, companyProfile, smtpConfig] = await Promise.all([
     getPdfMaxSizeMb(),
     getCompanyProfile(),
+    getSmtpConfig(),
   ])
 
   return (
@@ -35,7 +38,8 @@ export default async function ConfiguracionPage() {
           />
         }
       />
-      <ConfigForm initialPdfMaxSizeMb={pdfMaxSizeMb} initialCompanyProfile={companyProfile} />
+      <ConfigForm initialPdfMaxSizeMb={pdfMaxSizeMb} initialCompanyProfile={companyProfile} initialSmtpConfig={smtpConfig} />
+      <SmtpConfigSection initialSmtpConfig={smtpConfig} />
     </PageContainer>
   )
 }

@@ -255,7 +255,7 @@ function buildWorksiteFilter(
 ) {
   if (isGlobalRole(session)) return undefined
   const ids = visibleWorksiteIds(session)
-  if (ids.length === 0) return sql`1 = 0`
+  if (ids.length === 0) return sql`false`
   return inArray(column, ids as never[])
 }
 

@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Trabajadores" }
 export default async function TrabajadoresPage() {
   let session
   try { session = await requirePermission("admin:workers") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const [allWorkers, allWorksites] = await Promise.all([
     db.query.workers.findMany({

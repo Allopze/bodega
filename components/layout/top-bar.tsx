@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { List, MagnifyingGlass, MapPin, SignOut, ShieldCheck, X } from "@phosphor-icons/react"
+import { List, MagnifyingGlass, MapPin, SignOut, ShieldCheck, UserCircle, X } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
@@ -182,6 +182,15 @@ export function TopBar({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link
+                href="/perfil"
+                className="flex items-center gap-2 text-sm text-[var(--color-text)] w-full cursor-pointer"
+              >
+                <UserCircle size={16} className="text-[var(--color-text-subtle)]" />
+                <span>Mi perfil</span>
+              </Link>
+            </DropdownMenuItem>
             {session.user.permissions?.some((p) => p.startsWith("admin:")) && (
               <>
                 <DropdownMenuItem asChild>

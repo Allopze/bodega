@@ -39,7 +39,7 @@ export default async function TrazabilidadPage({
 }) {
   let session
   try { session = await requirePermission("reports:view") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const sp = await searchParams
   const filterFaenaId = typeof sp.faena === "string" ? sp.faena : ""
@@ -53,7 +53,7 @@ export default async function TrazabilidadPage({
     !isGlobal
       ? scopedWorksiteIds.length > 0
         ? inArray(purchaseRequests.worksiteId, scopedWorksiteIds)
-        : sql`1 = 0`
+        : sql`false`
       : undefined,
     filterFaenaId ? eq(purchaseRequests.worksiteId, filterFaenaId) : undefined,
     filterEstado === "pending"

@@ -37,7 +37,7 @@ export default async function Page({
 }) {
   let session
   try { session = await requirePermission("warehouse:register_movement") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""

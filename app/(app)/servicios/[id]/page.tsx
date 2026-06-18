@@ -22,7 +22,7 @@ export const metadata: Metadata = { title: "Solicitud de servicios" }
 export default async function ServicioPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requirePermission("servicios:view_own") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const { id } = await params
 

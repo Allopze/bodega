@@ -16,29 +16,29 @@ export const metadata: Metadata = { title: "Usuarios" }
 export default async function UsuariosPage() {
   let session
   try { session = await requirePermission("admin:users") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const visibleUserIds = await visibleUserIdsForAdminScope(db, session)
   const userScope = visibleUserIds === undefined
     ? undefined
     : visibleUserIds.length > 0
       ? inArray(users.id, visibleUserIds)
-      : sql`1 = 0`
+      : sql`false`
   const userRolesScope = visibleUserIds === undefined
     ? undefined
     : visibleUserIds.length > 0
       ? inArray(userRoles.userId, visibleUserIds)
-      : sql`1 = 0`
+      : sql`false`
   const userPermissionsScope = visibleUserIds === undefined
     ? undefined
     : visibleUserIds.length > 0
       ? inArray(userPermissions.userId, visibleUserIds)
-      : sql`1 = 0`
+      : sql`false`
   const worksiteUsersScope = visibleUserIds === undefined
     ? worksiteScopeSql(session, worksiteUsers.worksiteId)
     : visibleUserIds.length > 0
       ? and(inArray(worksiteUsers.userId, visibleUserIds), worksiteScopeSql(session, worksiteUsers.worksiteId))
-      : sql`1 = 0`
+      : sql`false`
 
   // Load all users
   const allUsers = await db.query.users.findMany({

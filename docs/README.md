@@ -18,8 +18,10 @@ docs/
 ├── arquitectura/
 │   └── ARCHITECTURE.md                 ← Arquitectura técnica completa
 ├── auditoria/
-│   ├── AUDITORIA_PROYECTO.md           ← Reporte de auditoría y seguridad
 │   └── EPP_PROVEEDORES_ESTRUCTURADO.md ← Datos maestros de proveedores y catálogo
+│   (el reporte de auditoría vive en la raíz: ../AUDITORIA_COMPLETA.md)
+├── security/
+│   └── CSRF.md                         ← Modelo de protección CSRF (Server Actions)
 └── pruebas/
     └── TESTING.md                      ← Guía de testing (unitario, E2E, manual)
 ```
@@ -58,7 +60,7 @@ docs/
 
 ## Auditoría
 
-**[AUDITORIA_PROYECTO.md](auditoria/AUDITORIA_PROYECTO.md)** — Análisis de seguridad, hallazgos, riesgos identificados y recomendaciones de mejora.
+**[AUDITORIA_COMPLETA.md](../AUDITORIA_COMPLETA.md)** — Análisis de seguridad, hallazgos, riesgos identificados, estado de remediación y recomendaciones de mejora.
 
 **[EPP_PROVEEDORES_ESTRUCTURADO.md](auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md)** — Datos estructurados de proveedores (TRECK y APRO) con catálogo de productos, referencias y precios extraídos de documentos reales de Chome.
 
@@ -84,7 +86,7 @@ docs/
 | Conocer los roles y permisos | [PRODUCT.md](planificacion/PRODUCT.md) |
 | Ver todas las funcionalidades | [chome_feature_list.md](planificacion/chome_feature_list.md) |
 | Ejecutar pruebas | [TESTING.md](pruebas/TESTING.md) |
-| Revisar seguridad | [AUDITORIA_PROYECTO.md](auditoria/AUDITORIA_PROYECTO.md) |
+| Revisar seguridad | [AUDITORIA_COMPLETA.md](../AUDITORIA_COMPLETA.md) · [security/CSRF.md](security/CSRF.md) |
 | Ver catálogo de proveedores | [EPP_PROVEEDORES_ESTRUCTURADO.md](auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md) |
 
 ---

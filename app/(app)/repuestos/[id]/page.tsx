@@ -22,7 +22,7 @@ export const metadata: Metadata = { title: "Solicitud de repuestos" }
 export default async function RepuestoPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requirePermission("repuestos:view_own") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const { id } = await params
 

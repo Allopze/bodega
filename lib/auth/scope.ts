@@ -53,6 +53,6 @@ export function resolveWorksiteScope(session: Session | null): WorksiteScope {
 export function worksiteScopeSql(session: Session | null, column: AnyColumn): SQL | undefined {
   const scope = resolveWorksiteScope(session)
   if (scope.mode === "all") return undefined
-  if (scope.mode === "none") return sql`1 = 0`
+  if (scope.mode === "none") return sql`false`
   return inArray(column, scope.ids)
 }

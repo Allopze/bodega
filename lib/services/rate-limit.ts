@@ -49,7 +49,7 @@ export async function recordFailure(key: string): Promise<void> {
       ? now + LOCK_TIME
       : 0
     await db.update(rateLimits)
-      .set({ count: newCount, lockUntil, updatedAt: new Date(now).toISOString() })
+      .set({ count: newCount, lockUntil })
       .where(eq(rateLimits.key, key))
   } else {
     await db.insert(rateLimits)
@@ -76,9 +76,11 @@ async function pruneExpiredLocks(): Promise<void> {
   const now = Date.now()
   const cutoff = new Date(now - LOCK_TIME).toISOString()
 
+  // Expired locks (lockUntil passed)
   await db.delete(rateLimits)
     .where(and(gt(rateLimits.lockUntil, 0), lt(rateLimits.lockUntil, now)))
 
+  // Stale counters (no lock, not touched recently) — DB-08: updatedAt is now timestamptz
   await db.delete(rateLimits)
     .where(and(
       eq(rateLimits.lockUntil, 0),

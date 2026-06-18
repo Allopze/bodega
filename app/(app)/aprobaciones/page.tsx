@@ -26,7 +26,7 @@ export default async function AprobacionesPage({
 }) {
   let session
   try { session = await requirePermission("approvals:approve") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
   const sp = await searchParams
   const selectedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
   const visibleWsIds = visibleWorksiteIds(session)
@@ -34,7 +34,7 @@ export default async function AprobacionesPage({
     ? undefined
     : visibleWsIds.length > 0
       ? inArray(purchaseRequests.worksiteId, visibleWsIds)
-      : sql`1 = 0`
+      : sql`false`
   const requestFilter = and(
     inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
     // Repuestos are approved via their own quotation flow, not this per-item queue

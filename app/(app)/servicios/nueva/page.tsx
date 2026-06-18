@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Nueva solicitud de servicios" }
 export default async function NuevoServicioPage() {
   let session
   try { session = await requirePermission("servicios:create") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const allWorksites = await db
     .select()

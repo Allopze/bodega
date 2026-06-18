@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Solicitudes de servicios" }
 export default async function ServiciosPage() {
   let session
   try { session = await requirePermission("servicios:view_own") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const viewAll = can(session, "servicios:view_all")
   const userWorksiteIds = session.user.worksiteIds ?? []
@@ -29,7 +29,7 @@ export default async function ServiciosPage() {
           eq(purchaseRequests.requesterId, session.user.id),
           userWorksiteIds.length > 0
             ? inArray(purchaseRequests.worksiteId, userWorksiteIds)
-            : sql`1 = 0`
+            : sql`false`
         ),
   )
 

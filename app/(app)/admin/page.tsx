@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, ArrowRight,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -17,7 +17,7 @@ export default async function AdminPage() {
 
   const userPerms = session.user.permissions ?? []
   const hasAdminAccess = userPerms.some((p) => p.startsWith("admin:"))
-  if (!hasAdminAccess) redirect("/dashboard")
+  if (!hasAdminAccess) redirect("/forbidden")
 
   const modules = [
     {
@@ -74,6 +74,14 @@ export default async function AdminPage() {
       href:        "/admin/auditoria",
       icon:        ShieldCheck,
       permission:  "admin:audit_log",
+      group:       "gobierno",
+    },
+    {
+      title:       "Plantillas de correo",
+      description: "Personalizar asunto y cuerpo HTML de los correos del sistema.",
+      href:        "/admin/configuracion/plantillas",
+      icon:        FileText,
+      permission:  "admin:config",
       group:       "gobierno",
     },
   ]

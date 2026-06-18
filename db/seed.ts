@@ -12,6 +12,7 @@ import * as schema from "./schema"
 import { eq, inArray, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../lib/auth/system-rbac"
+import { seedDefaultTemplates } from "@/lib/services/email-templates"
 
 loadEnvConfig(process.cwd())
 
@@ -175,6 +176,21 @@ function sourceNote(item: EppCatalogItem) {
 
 async function main() {
   console.log("Inicializando datos base de Chome Solicitudes y Bodega...")
+
+  // A-16: SEED_DRY_RUN valida todas las entradas del seed (config, parsing del
+  // markdown de trabajadores, catálogo EPP, política de contraseña) y reporta
+  // lo que se insertaría, SIN tocar la base de datos. Útil en CI/pre-deploy.
+  if (process.env.SEED_DRY_RUN === "true") {
+    const workerData = loadSeedWorkerData()
+    console.log("\n[DRY RUN] No se escribirá nada en la base de datos.")
+    console.log(`  Config de empresa: ${COMPANY_PROFILE_SETTINGS.length} ajustes`)
+    console.log(`  Roles: ${SYSTEM_ROLES.length} · Permisos: ${SYSTEM_PERMISSIONS.length} · Role-permissions: ${SYSTEM_ROLE_PERMISSIONS.length}`)
+    console.log(`  Admin: ${adminEmail} (password ${process.env.SEED_ADMIN_PASSWORD ? "definido" : "default chome2026"})`)
+    console.log(`  Faenas: ${workerData.worksites.length} · Trabajadores: ${workerData.workers.length} (${workerData.skippedDuplicateRuts} RUT duplicado omitido)`)
+    console.log(`  Catálogo EPP: ${EPP_CATALOG_ITEMS.length} productos · ${EPP_SUPPLIERS.length} proveedores`)
+    console.log("\n[DRY RUN] Validación completada sin errores.")
+    return
+  }
 
   /* ── Configuración de empresa para OC ─────────────────────────────────── */
   for (const setting of COMPANY_PROFILE_SETTINGS) {
@@ -390,6 +406,13 @@ async function main() {
     })
   }
 
+  /* ── Email templates ──────────────────────────────────────────────── */
+  console.log("")
+  console.log("  Sembrando plantillas de correo por defecto...")
+  await seedDefaultTemplates()
+  console.log("  Plantillas de correo cargadas.")
+
+  console.log("")
   console.log("Seed base completado.")
   console.log("")
   console.log("  Usuario administrador:")

@@ -1,4 +1,4 @@
-import NextAuth from "next-auth"
+import NextAuth, { CredentialsSignin } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import { db } from "@/db"
@@ -22,6 +22,15 @@ const loginSchema = z.object({
 
 // Dummy hash for timing-safe comparison when user doesn't exist (prevents user enumeration).
 const DUMMY_HASH = "$2a$12$LJ3m4ys3Lz0YBNourRNBHOVFPlAGm9koCpx/RTz8uVzNoMKCeVBCO"
+
+// U-02: Custom error classes with machine-readable codes so use-login.ts can
+// show a specific message instead of the generic "Correo o contraseña incorrectos."
+class IpRateLimited extends CredentialsSignin {
+  code = "ip_rate_limited"
+}
+class EmailRateLimited extends CredentialsSignin {
+  code = "email_rate_limited"
+}
 
 const authUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? (
   process.env.NODE_ENV === "production" ? process.env.APP_URL : undefined
@@ -72,12 +81,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const ipCheck = await persistentCheckRateLimit(clientIp)
         if (!ipCheck.allowed) {
-          throw new Error(`Demasiados intentos de inicio de sesión desde esta dirección IP. Intente de nuevo en ${Math.ceil(ipCheck.waitTimeRemainingMs / 60000)} minutos.`)
+          // U-02: use CredentialsSignin subclass so next-auth surfaces the
+          // `code` property as result.error in the client (not a generic "AccessDenied").
+          throw new IpRateLimited(`Blocked for ${Math.ceil(ipCheck.waitTimeRemainingMs / 60000)} min`)
         }
 
         const emailCheck = await persistentCheckRateLimit(email)
         if (!emailCheck.allowed) {
-          throw new Error(`Esta cuenta ha sido bloqueada temporalmente por múltiples intentos fallidos. Intente de nuevo en ${Math.ceil(emailCheck.waitTimeRemainingMs / 60000)} minutos.`)
+          throw new EmailRateLimited(`Blocked for ${Math.ceil(emailCheck.waitTimeRemainingMs / 60000)} min`)
         }
 
         const userWithAuth = await getUserWithAuth(email)

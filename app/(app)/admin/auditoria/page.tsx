@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Log de auditoría" }
 
 export default async function AuditoriaPage() {
   try { await requirePermission("admin:audit_log") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const entries = await db
     .select()

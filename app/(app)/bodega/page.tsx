@@ -37,7 +37,7 @@ export default async function BodegaPage({
 }) {
   let session
   try { session = await requirePermission("warehouse:view_stock") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
 
@@ -48,13 +48,13 @@ export default async function BodegaPage({
     ? undefined
     : visibleWsIds.length > 0
       ? inArray(worksites.id, visibleWsIds)
-      : sql`1 = 0`
+      : sql`false`
 
   const movementScope = isGlobalRole(session)
     ? undefined
     : visibleWsIds.length > 0
       ? inArray(inventoryMovements.worksiteId, visibleWsIds)
-      : sql`1 = 0`
+      : sql`false`
 
   // Kardex pagination
   const [movementTotalRow] = await db
@@ -90,14 +90,14 @@ export default async function BodegaPage({
       with: { product: true, worksite: true },
       where: isGlobalRole(session)
         ? undefined
-        : (s, { inArray }) => visibleWsIds.length > 0 ? inArray(s.worksiteId, visibleWsIds) : sql`1 = 0`,
+        : (s, { inArray }) => visibleWsIds.length > 0 ? inArray(s.worksiteId, visibleWsIds) : sql`false`,
       orderBy: (s, { asc }) => [asc(s.worksiteId)],
     }),
     db.query.inventoryMovements.findMany({
       with: { product: true, worksite: true },
       where: isGlobalRole(session)
         ? undefined
-        : (m, { inArray }) => visibleWsIds.length > 0 ? inArray(m.worksiteId, visibleWsIds) : sql`1 = 0`,
+        : (m, { inArray }) => visibleWsIds.length > 0 ? inArray(m.worksiteId, visibleWsIds) : sql`false`,
       orderBy: (m, { desc }) => [desc(m.performedAt)],
       limit: kardexPagination.limit,
       offset: kardexPagination.offset,

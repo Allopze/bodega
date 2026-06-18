@@ -99,6 +99,41 @@
       "when": 1784500000000,
       "tag": "0013_purchase_order_items_product_id_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784600000000,
+      "tag": "0014_native_code_sequences",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784700000000,
+      "tag": "0015_updated_at_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784800000000,
+      "tag": "0016_schema_additions",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781800841781,
+      "tag": "0017_email_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784900000000,
+      "tag": "0018_audit_log_archival",
+      "breakpoints": true
     }
   ]
 }

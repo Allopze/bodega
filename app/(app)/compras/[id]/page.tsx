@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Orden de compra" }
 export default async function OcDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requirePermission("purchasing:view") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const { id } = await params
 

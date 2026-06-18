@@ -8,6 +8,16 @@ import { canAccessWorksite } from "@/lib/auth/can"
 import { resolveDeliveryAttachmentFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
 
+/**
+ * S-08: this endpoint serves ONLY delivery proof attachments. Every other
+ * attachment entityType (`purchase_order_invoice`, `repuesto_quotation`,
+ * `servicio_quotation`) is served by its own route with its own worksite/
+ * permission scoping. Anything that is not a delivery is denied by default.
+ * If a new servable entityType is ever added here, give it an explicit
+ * branch with its own access check — never widen this guard blindly.
+ */
+const SERVED_ENTITY_TYPE = "delivery" as const
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -21,7 +31,7 @@ export async function GET(
   const attachment = await db.query.attachments.findFirst({
     where: eq(attachments.id, id),
   })
-  if (!attachment || attachment.entityType !== "delivery") {
+  if (!attachment || attachment.entityType !== SERVED_ENTITY_TYPE) {
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 

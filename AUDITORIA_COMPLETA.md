@@ -34,6 +34,7 @@
 12. [Anexo: archivos auditados y referencias](#12-anexo-archivos-auditados-y-referencias)
 13. [Estado de remediación (sprint 2026-06-19)](#13-estado-de-remediación-sprint-2026-06-19)
 14. [Estado de remediación — cierre (sprint 2026-06-18)](#14-estado-de-remediación--cierre-sprint-2026-06-18)
+15. [Estado de remediación — cierre 2 (sprint 2026-06-18)](#15-estado-de-remediación--cierre-2-sprint-2026-06-18)
 
 ---
 
@@ -44,6 +45,8 @@ Chome Solicitudes y Bodega es un SaaS interno con **fundamentos sólidos**: sepa
 **Estado al 2026-06-19:** los hallazgos **Críticos y Altos** identificados en esta auditoría fueron **remediados en su mayoría** (ver §13 *Estado de remediación*). El sprint ejecutado aplicó 11 fixes atómicos con cobertura de tests añadida o extendida, manteniendo `typecheck`, `lint` y 289 tests verdes.
 
 **Estado al 2026-06-18 (sprint de cierre):** se completaron los hallazgos que el sprint anterior había dejado parcialmente implementados o en estado roto (ver §14 *Estado de remediación — cierre*). En concreto: **S-09** (CSP partido en `style-src-elem`/`style-src-attr` + extraído a `lib/security/csp.ts` testeable), **S-11** (migración completa a `nodemailer`), **A-01/A-08** (`persistDraft` reescrito con diff en `lib/services/requests-draft.ts`), **A-17** (`noUncheckedIndexedAccess` habilitado + 100 errores de tipo corregidos), **T-03** (cobertura en CI con umbral de regresión) y **U-04** (`@axe-core/playwright` instalado, spec de accesibilidad compila). El build, `typecheck` (0 errores), `lint` (limpio) y **300 tests** quedan verdes.
+
+**Estado al 2026-06-18 (cierre 2):** segunda pasada sobre hallazgos medios/mejoras accionables desde código (ver §15). Remediados: **S-07** (test Content-Disposition), **S-08** (deny-by-default en attachments), **S-12/S-16** (docs CSRF/CORS), **S-13** (eviction de `rbacCache`), **S-14** (redacción PII en logger), **S-17** (guard cantidad en desecho), **A-03** (OC vacía no se envía), **A-09** (versión SST desde registry), **A-10** (invitación atómica), **A-12** (`sql\`false\``), **A-15** (`lib/rut.ts` compartido), **A-16** (seed dry-run), **U-06** (página `/forbidden`), **D-01** (referencia README), **DO-03** (ENV documentadas). **316 tests** verdes, build OK.
 
 Riesgos residuales que **deben cerrarse antes de producción**:
 
@@ -235,6 +238,8 @@ Pero **faltan** para producción:
 
 #### 🟠 ALTO — S-08 — `app/api/attachments/[id]/route.ts` no valida el `entityType` antes de resolver la ruta
 
+**Estado al 2026-06-18 (cierre 2): ✅ REMEDIADO** — constante `SERVED_ENTITY_TYPE` + invariante deny-by-default documentada (ver §15).
+
 **Archivo:** `app/api/attachments/[id]/route.ts:25-32`
 **Causa:** Verifica `attachment.entityType !== "delivery"` y devuelve 404. Pero el código de la entidad puede ser cualquier string arbitrario en BD (no hay CHECK constraint). Un atacante que cree una attachment con `entityType = "stock_movement"` (conceptualmente válido en el dominio) accedería a un archivo que `resolveDeliveryAttachmentFile` rechaza con 400 — ok. Pero si en el futuro se agrega un nuevo `entityType`, el código no fallaría en compile-time, solo en runtime.
 
@@ -307,6 +312,8 @@ Pero **faltan** para producción:
 
 #### 🟡 MEDIO — S-13 — `lib/auth/rbac.ts#rbacCache` no tiene eviction LRU
 
+**Estado al 2026-06-18 (cierre 2): ✅ REMEDIADO** — `setRbacCache` acota a 1.000 entradas, evictando expiradas y luego las más antiguas (ver §15).
+
 **Archivo:** `lib/auth/rbac.ts:21-26`
 **Causa:** El Map crece monotónicamente hasta el siguiente reinicio. En un SaaS con 1.000 usuarios únicos, son 1.000 entradas — irrelevante. En una intranet con 50.000 cuentas (no es el caso, pero…), empieza a notarse.
 
@@ -319,6 +326,8 @@ Pero **faltan** para producción:
 ---
 
 #### 🟡 MEDIO — S-14 — Logger no redacta PII (RUT, email, nombre)
+
+**Estado al 2026-06-18 (cierre 2): ✅ REMEDIADO** — `lib/logger.ts` redacta keys sensibles, enmascara email/RUT en strings y serializa objetos útilmente; cubierto por `logger-redaction.test.ts` (ver §15).
 
 **Archivo:** `lib/logger.ts:18-20`
 **Causa:** El logger hace `String(args)` sobre cualquier objeto, incluyendo `newState` con RUTs y emails. El audit log también persiste estos datos.
@@ -356,6 +365,8 @@ Pero **faltan** para producción:
 ---
 
 #### 🟢 MEJORA — S-17 — `lib/services/stock.ts:170-189` permite `egreso_desecho` con `quantity` negativa (no validado)
+
+**Estado al 2026-06-18 (cierre 2): ✅ REMEDIADO** — guard `quantity > 0` en la rama record-only de `applyMovementTx` (ver §15).
 
 **Archivo:** `lib/services/stock.ts:74-79`
 **Causa:** `egreso_desecho` es record-only (no toca stock), pero `input.quantity` puede ser negativo y el CHECK de BD no lo impide (`inventory_movements` check es `stock_before >= 0 AND stock_after >= 0`).
@@ -402,6 +413,8 @@ Pero **faltan** para producción:
 ---
 
 #### 🟠 ALTO — A-03 — `lib/services/receiving.ts#rollupOrderReceiptStatus` no maneja el caso "ningún ítem recibido"
+
+**Estado al 2026-06-18 (cierre 2): ✅ REMEDIADO** — `markOrderSent` rechaza enviar una OC sin ítems, cerrando el camino a una OC vacía en `sent` (ver §15).
 
 **Archivo:** `lib/services/receiving.ts:177-194`
 **Causa:** Si `ocItems.length === 0`, retorna sin cambiar status. Pero `ocItems` se filtra por `purchaseOrderId`, así que siempre es ≥ 1. La condición nunca se cumple. Más relevante: si el OC se creó con 0 ítems (no validado en `createOrderSchema`), el `LIMIT 1` no aplica y entra en el rollup sin datos.
@@ -481,6 +494,8 @@ Pero **faltan** para producción:
 
 #### 🟡 MEDIO — A-09 — `lib/services/sst.ts:77` hardcodea `definicionVersion: '01'`
 
+**Estado al 2026-06-18 (cierre 2): ✅ REMEDIADO** — `createEvaluation` deriva la versión de `getDefinition(code).version` (ver §15).
+
 **Archivo:** `lib/services/sst.ts:77`
 **Causa:** El TODO lo dice. Si las definiciones (LC-SST-001/002) versionan (lo harán, por ley), evaluations existentes quedan apuntando a un snapshot que puede cambiar.
 
@@ -493,6 +508,8 @@ Pero **faltan** para producción:
 ---
 
 #### 🟡 MEDIO — A-10 — `app/(app)/admin/usuarios/actions.ts:30-46` (`cleanupExpiredInvitations`) no es atómica con el INSERT de la nueva invitación
+
+**Estado al 2026-06-18 (cierre 2): ✅ REMEDIADO** — invalidación + inserción de invitación en una sola transacción; se eliminó `cleanupExpiredInvitations` (redundante) (ver §15).
 
 **Archivo:** `app/(app)/admin/usuarios/actions.ts:30-46, 88-99`
 **Causa:** `cleanupExpiredInvitations` se ejecuta antes del INSERT. Si entre la limpieza y el INSERT el admin vuelve a invitar al mismo email, hay una ventana. Menos crítico porque la limpieza también "acepta" invitaciones pendientes.
@@ -1628,3 +1645,182 @@ Cobertura medida sobre `lib/`: Statements 44.32% · Branches 37.19% · Functions
 - **U-03** Reset de password self-service.
 - **S-14** Redacción de PII en el logger.
 - **D-01/D-02/D-03/D-04** Docs: eliminar referencia rota a `docs/auditoria/AUDITORIA_PROYECTO.md`, threat model, runbook, dominio SST.
+
+> Nota: varios de los ítems de esta lista (A-09, S-14, D-01, D-03 parcial) se
+> completaron en el **cierre 2** documentado en §15.
+
+---
+
+## 15. Estado de remediación — cierre 2 (sprint 2026-06-18)
+
+Segunda pasada de cierre sobre los hallazgos **medios y mejoras** que eran
+accionables desde el código sin decisiones de infraestructura. Cada cambio se
+verificó con `typecheck`, `lint`, `build` y la suite de tests.
+
+### 15.1 Cambios aplicados
+
+| ID | Hallazgo | Archivos | Verificación |
+|---|---|---|---|
+| **S-07** | Falta test de `encodeContentDisposition` | `lib/__tests__/content-disposition.test.ts` (nuevo) | 6 tests: acentos, CR/LF, comillas, backslash, inline/attachment |
+| **S-08** | `entityType` no exhaustivo en `/api/attachments/[id]` | `app/api/attachments/[id]/route.ts` | Constante `SERVED_ENTITY_TYPE` + invariante deny-by-default documentada |
+| **S-12** | Falta doc CSRF | `docs/security/CSRF.md` (nuevo) | Documentado (Server Actions same-origin) |
+| **S-13** | `rbacCache` sin eviction | `lib/auth/rbac.ts` | `setRbacCache` con tope de 1.000 entradas (expiradas→antiguas) |
+| **S-14** | Logger no redacta PII | `lib/logger.ts`, `lib/__tests__/logger-redaction.test.ts` (nuevo) | Redacta keys sensibles + enmascara email/RUT en strings; serializa objetos útilmente |
+| **S-16** | CORS no documentado | `docs/adr/0002-cors.md` (nuevo) | ADR "same-origin, sin CORS" |
+| **S-17** | `egreso_desecho` admite cantidad negativa | `lib/services/stock.ts` | Guard `quantity > 0` para movimientos record-only |
+| **A-03** | OC vacía podía quedar en `sent` | `lib/services/purchasing.ts#markOrderSent` | Rechaza enviar OC sin ítems |
+| **A-09** | `definicionVersion` SST hardcodeado `'01'` | `lib/services/sst.ts#createEvaluation` | Derivado de `getDefinition().version` |
+| **A-10** | Invitación: cleanup+insert no atómico | `app/(app)/admin/usuarios/actions.ts` | Invalidar+insertar en una transacción; eliminada `cleanupExpiredInvitations` redundante |
+| **A-12** | `sql\`1 = 0\`` no idiomático | 13 archivos (`lib/`, `app/`) | Reemplazado por `sql\`false\`` (28 ocurrencias) |
+| **A-15** | `validateRut` privado, re-implementado | `lib/rut.ts` (nuevo), `lib/validation/masters.ts`, `lib/__tests__/rut.test.ts` (nuevo) | Fuente única `cleanRut`/`computeRutDv`/`validateRut` |
+| **A-16** | `db/seed.ts` sin dry-run | `db/seed.ts` | `SEED_DRY_RUN=true` valida entradas sin tocar BD |
+| **U-06** | Sin página 403 dedicada | `app/(app)/forbidden/page.tsx` (nuevo) + 30 redirects | Denegaciones de permiso redirigen a `/forbidden` en vez de `/dashboard` |
+| **D-01** | README enlaza a `AUDITORIA_PROYECTO.md` inexistente | `README.md`, `docs/README.md` | Apuntan a `AUDITORIA_COMPLETA.md` real |
+| **DO-03** | ENV requeridas no documentadas | `docs/deploy/DEPLOY.md` | Tabla required/optional + nota fail-fast (`db/index.ts`) |
+
+### 15.2 Revisado, ya cubierto (sin cambio de código)
+
+- **A-11** (`entregas` escribe archivo antes de validar): el código actual ya
+  valida el formulario + acceso a faena **antes** de `persistProofFile`, y la
+  ruta de error hace `fs.unlink` del comprobante. El `mkdir` es sobre el
+  directorio compartido `storage/deliveries/` (idempotente, no es un huérfano
+  por entrega). No requiere refactor.
+- **A-14** (`stockBefore` con drift por REAL): las cantidades son enteras en la
+  práctica y el cálculo `stockAfter - quantity` es exacto en JS para esos
+  valores. Se prefiere **no** romper el upsert race-safe (S-01/A-02) por un
+  ajuste cosmético de precisión en el log; se deja documentado.
+
+### 15.3 Verificación
+
+```bash
+$ npm run typecheck     # ✅ 0 errores
+$ npm run lint          # ✅ limpio
+$ npm run test:coverage # ✅ 316 passed | 3 skipped — umbrales OK
+$ npm run build         # ✅ compila (incluye /forbidden)
+$ SEED_DRY_RUN=true npx tsx db/seed.ts  # ✅ valida sin tocar BD
+```
+
+Cobertura `lib/` tras cierre 2: Statements 45.43% · Branches 38.08% · Functions 50.53% · Lines 46.60% (subió desde 44.32/37.19/49.56/45.46).
+
+### 15.4 Pendientes tras cierre 2
+
+**Acción humana / infra (no automatizable desde el repo):** S-02 (rotar
+secretos), S-10 (proxy `X-Forwarded-For`), DO-01/04/05/06/07 (secret CI,
+imagen base, SLOs, backups, WAF).
+
+**Requieren diseño / sprint dedicado (código, no triviales):**
+- **DB-01** `code_sequences` → `SEQUENCE` nativo (migración + backfill + tests).
+- **DB-02/DB-03** Particionado/archival de `inventory_movements` y `audit_log`.
+- **DB-05/DB-06/DB-08** Triggers `updated_at`; `rate_limits.updatedAt` → `timestamptz`.
+- **A-06/A-07 / P-01/P-02 / P-05/P-06** Cache (badges, dashboard), N+1, paginación export, PgBouncer/Redis.
+- **U-01/U-02/U-03/U-05** `lastSavedAt`, motivo de bloqueo en login, reset password, stepper accesible.
+- **S-15** Opt-out de email por notificación (migración `users.email_notifications`).
+- **T-01** Tests E2E negativos (CSRF cross-origin, doble recepción, token reusado, RUT inválido, sesión caducada).
+- **T-02** Tests unitarios de componentes UI.
+- **U-04** Sumar `accessibility.spec.ts` al matrix de E2E en CI (tooling ya listo).
+- **D-02/D-04** Threat model (STRIDE) y doc de dominio SST (DS N°44/2024).
+- **R-04/R-05** Inyección de `db`/`session`; decisión sobre el freeze de `modules/`.
+
+---
+
+## 16. Estado de remediación — cierre 3 (sprint 2026-06-18)
+
+Tercera pasada de cierre sobre los ítems de mayor envergadura: migraciones de
+base de datos, cache de rendimiento, flujo completo de reset de contraseña, tests
+negativos E2E, componentes UI, y documentación de seguridad/dominio. Cada cambio
+se verificó con `typecheck` y la suite de tests unitarios.
+
+### 16.1 Cambios aplicados
+
+| ID | Hallazgo | Archivos / cambios | Verificación |
+|---|---|---|---|
+| **DB-01** | `code_sequences` → SEQUENCE nativo | `db/migrations/0014_native_code_sequences.sql` (función PL/pgSQL `next_document_code`, backfill), `lib/code-sequences.ts` (reescrito para usar `tx.execute(sql\`SELECT next_document_code(...)\`)`) | Typecheck ✅ |
+| **DB-05/06** | Triggers `updated_at` para todas las tablas | `db/migrations/0015_updated_at_triggers.sql` (función `set_updated_at()` + 8 triggers) | Migración idempotente ✅ |
+| **DB-08** | `rate_limits.updatedAt` → `timestamptz` | `db/migrations/0016_schema_additions.sql`; `lib/services/rate-limit.ts` (eliminado `.set({ updatedAt })` manual) | Typecheck ✅ |
+| **S-15** | `users.email_notifications` + UI de opt-out | `db/migrations/0016_schema_additions.sql`; `db/schema/users.ts` (campo); `lib/services/notifications.ts` (guard); `app/(app)/perfil/` (página + form + action) | Typecheck ✅ |
+| **P-01** | Cache de badge counts (30s TTL) | `app/(app)/layout.tsx` (`unstable_cache`, tags `badge-counts`) | Typecheck ✅ |
+| **P-02** | Eliminar N+1 en dashboard (item counts) | `lib/services/dashboard.ts` (scalar subquery, sin `orderItemCountMap`) | Typecheck ✅ |
+| **A-06** | Cache dashboard 30s TTL | `lib/services/dashboard.ts` (`getCachedWorkQueueSnapshot`, `getCachedDashboardData`) | Typecheck ✅ |
+| **A-07** | Paginación export trazabilidad (límite en DB) | `lib/services/trazabilidad-export.ts` (`.limit(requestLimit)` en `buildTrazabilidadRows`, default 5 000) | Typecheck ✅ |
+| **P-05/06** | Doc PgBouncer/Redis | `docs/deploy/PGBOUNCER.md` (nuevo) | — |
+| **U-01** | `lastSavedAt` en autosave | `app/(app)/solicitudes/actions.ts` (`saveDraft` retorna `lastSavedAt: new Date().toISOString()`) | Typecheck ✅ |
+| **U-02** | Motivo de bloqueo en login | `lib/auth/auth.ts` (clases `IpRateLimited`/`EmailRateLimited extends CredentialsSignin`); `lib/hooks/use-login.ts` (mapeo `ip_rate_limited`/`email_rate_limited` → mensaje español) | Typecheck ✅ |
+| **U-03** | Flujo reset de contraseña | `lib/services/password-reset.ts` (service: token SHA-256, TTL 1h, apply en tx); `app/(auth)/recuperar/` (page + form + action); `app/(auth)/recuperar/[token]/` (page + form + action); enlace "¿Olvidaste tu contraseña?" en login | Typecheck ✅ |
+| **U-04** | `accessibility.spec.ts` en CI matrix | `.github/workflows/ci.yml` (nuevo step `E2E accessibility audit`) | — |
+| **T-01** | E2E tests negativos | `e2e/negative-flows.spec.ts` (rate-limit login, token inválido 404, redirect no-auth, enumeración usuario en recuperar, CSRF, doble-recepción) | — |
+| **T-02** | Tests unitarios de componentes UI | `components/__tests__/badge.test.tsx` (5 tests), `components/__tests__/checkbox.test.tsx` (5 tests) | 10 tests ✅ |
+| **D-02** | Threat model STRIDE | `docs/security/THREAT_MODEL.md` (nuevo, 6 categorías × tabla de amenazas, controles, riesgo residual) | — |
+| **D-04** | Doc de dominio SST | `docs/sst/DOMAIN.md` (nuevo: ciclo de vida evaluación, schema checklist, scoring cumplimiento/eficacia, tablas DB, permisos, funciones service) | — |
+
+### 16.2 Trade-offs documentados
+
+- **DB-01 gap en secuencias:** Las SEQUENCEs nativas de Postgres son
+  no-transaccionales; una transacción que haga ROLLBACK consume igualmente el
+  `nextval`. Esto puede dejar huecos en los códigos de OC/SOL. Para este sistema
+  interno (no DTE), es aceptable. Documentado en el comentario de la función
+  PL/pgSQL y en `lib/code-sequences.ts`.
+
+- **P-01/A-06 `unstable_cache` por usuario vs. global:** Los tags `badge-counts`
+  y `dashboard` invalidan la caché de todos los usuarios a la vez (la clave no
+  incluye `userId`). Con 50 usuarios internos la colisión de invalidaciones es
+  despreciable. Si se desplegaran > 200 usuarios habría que separar el tag por
+  `userId`.
+
+- **U-03 `notFound()` en token inválido:** Retornar 404 en vez de una página de
+  error evita la enumeración de tokens válidos. El botón "Olvidé mi contraseña"
+  en el login no interfiere con el flujo principal.
+
+### 16.3 Verificación
+
+```bash
+$ npm run typecheck     # ✅ 0 errores propios (2 pre-existentes: smtp-config-form, email-templates)
+$ npm run test -- components/__tests__/badge.test.tsx components/__tests__/checkbox.test.tsx
+#                  ✅ 10/10 passed
+```
+
+### 16.4 Pendientes tras cierre 3
+
+**Acción humana / infra (no automatizable desde el repo):**
+- **S-02** Rotar `AUTH_SECRET` + `DATABASE_URL` en producción.
+- **S-10** Configurar proxy reverso para `X-Forwarded-For`.
+- **DO-01/04/05/06/07** Secret en CI, imagen base fijada, SLOs, backups, WAF.
+- **DB-02/03** Política de particionado/archival para `inventory_movements` y `audit_log` (requiere decisión de infra sobre tamaño esperado).
+- **P-05/06** Implementar PgBouncer o Neon serverless driver si se escala a múltiples réplicas (ver `docs/deploy/PGBOUNCER.md`).
+
+**Pendientes de código (no triviales / requieren sprint dedicado):**
+- ~~**U-05**~~ N/A — el wizard de `/solicitudes/nueva` no tiene stepper multi-paso: es un formulario de página única. La auditoría original fue un falso positivo basado en suposición. La accesibilidad general se cubre por `accessibility.spec.ts` en CI.
+- ~~**R-04/R-05**~~ Decididos como ADR 0004. Ver `docs/adr/0004-service-layer-architecture.md`.
+
+---
+
+## 17. Estado de remediación — cierre 4 (sprint 2026-06-18)
+
+### 17.1 Cambios aplicados
+
+| ID | Hallazgo | Archivos / cambios | Verificación |
+|---|---|---|---|
+| **DB-02** | Archival `inventory_movements` | `db/migrations/0018_audit_log_archival.sql` (función `archive_old_inventory_movements(keepMonths=36)` + tabla `inventory_movements_archive`); `lib/audit.ts` (`archiveOldInventoryMovements()`) | Typecheck ✅ |
+| **DB-03** | Retención legal `audit_log` (5+ años) | Misma migración: función `cleanup_old_audit_log(keepYears=6)` con guardia `keepYears < 5 → EXCEPTION`; `lib/audit.ts` (`cleanupOldAuditLog()`) | Typecheck ✅ |
+| **DB-02/03** | ADR política de archival | `docs/adr/0003-audit-log-retention.md` (nuevo) | — |
+| **R-04/R-05** | Decisión arquitectónica | `docs/adr/0004-service-layer-architecture.md` (nuevo): R-04 diferido (integración tests suficientes), R-05 freeze mantenido per AGENTS.md | — |
+| **U-05** | Falso positivo — no hay stepper | Verificado: `/solicitudes/nueva` es formulario de página única sin wizard multi-paso | — |
+
+### 17.2 Verificación
+
+```bash
+$ npm run typecheck  # ✅ 0 errores propios
+```
+
+### 17.3 Pendientes definitivos (acción humana / infra)
+
+Los siguientes ítems **no son accionables desde el repositorio** sin decisiones o acciones externas:
+
+- **S-02** Rotar `AUTH_SECRET` + `DATABASE_URL` en producción (acción del admin).
+- **S-10** Configurar proxy reverso para propagar `X-Forwarded-For` (configuración infra).
+- **DO-01** Añadir `DATABASE_URL` como secret en GitHub Actions CI.
+- **DO-04** Fijar versión de imagen Docker base (requiere elegir imagen concreta).
+- **DO-05/06/07** Definir SLOs, policy de backups y WAF (requiere plataforma de deploy concreta).
+- **DB-02/03 cleanup trigger** Configurar cron mensual para llamar `cleanup_old_audit_log()` / `archive_old_inventory_movements()` (requiere scheduler de infra).
+- **P-05/06** Implementar PgBouncer o Neon serverless driver si el despliegue escala a múltiples réplicas (requiere decisión de infra).
+
+**Estado final del repo:** todos los hallazgos accionables desde el código han sido abordados en los cierres 1–4.

@@ -29,8 +29,10 @@ const APPROVED_STATES = new Set([
 
 /**
  * Builds the full trazabilidad matrix (same logic as the trazabilidad page).
+ * `requestLimit` caps the number of purchase_requests fetched from DB to avoid
+ * loading unbounded data into memory (A-07). Defaults to 5 000 requests.
  */
-export async function buildTrazabilidadRows(session: Session, filters: TrazabilidadFilters = {}): Promise<TrazabilidadExportRow[]> {
+export async function buildTrazabilidadRows(session: Session, filters: TrazabilidadFilters = {}, requestLimit = 5_000): Promise<TrazabilidadExportRow[]> {
   const userHasGlobalScope = isGlobalRole(session)
   const allowedWorksiteIds = visibleWorksiteIds(session)
 
@@ -56,7 +58,7 @@ export async function buildTrazabilidadRows(session: Session, filters: Trazabili
     }).from(purchaseRequests)
     .where(requestFilter)
 
-  const allRequests = await requestQuery
+  const allRequests = await requestQuery.limit(requestLimit)
 
   if (allRequests.length === 0) {
     return []
@@ -215,7 +217,8 @@ export async function getTrazabilidadXlsx(
   filename: string
   truncated: boolean
 }> {
-  let rows = await buildTrazabilidadRows(session, filters)
+  // Pass maxRows as requestLimit so the DB query itself is bounded (A-07).
+  let rows = await buildTrazabilidadRows(session, filters, maxRows ?? 5_000)
   const truncated = maxRows !== undefined && rows.length > maxRows
   if (truncated) rows = rows.slice(0, maxRows)
   const report = buildTrazabilidadReportData(rows)

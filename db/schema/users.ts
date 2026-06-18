@@ -4,14 +4,25 @@ import { worksites } from "./worksites"
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
 export const users = pgTable("users", {
-  id:             text("id").primaryKey(),
-  name:           text("name").notNull(),
-  email:          text("email").notNull().unique(),
-  hashedPassword: text("hashed_password").notNull(),
-  avatarColor:    text("avatar_color"),   // OKLCH hue number as string
-  isActive:       boolean("is_active").notNull().default(true),
-  createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-  updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  id:                 text("id").primaryKey(),
+  name:               text("name").notNull(),
+  email:              text("email").notNull().unique(),
+  hashedPassword:     text("hashed_password").notNull(),
+  avatarColor:        text("avatar_color"),
+  isActive:           boolean("is_active").notNull().default(true),
+  emailNotifications: boolean("email_notifications").notNull().default(true),
+  createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+})
+
+/* ── Password reset tokens ────────────────────────────────────────────────── */
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id:        text("id").primaryKey(),
+  userId:    text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+  usedAt:    timestamp("used_at", { withTimezone: true, mode: "string" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── User invitations ─────────────────────────────────────────────────────── */
@@ -107,4 +118,8 @@ export const userPermissionsRelations = relations(userPermissions, ({ one }) => 
 
 export const userInvitationsRelations = relations(userInvitations, ({ one }) => ({
   invitedBy: one(users, { fields: [userInvitations.invitedByUserId], references: [users.id] }),
+}))
+
+export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
+  user: one(users, { fields: [passwordResetTokens.userId], references: [users.id] }),
 }))

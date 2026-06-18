@@ -30,7 +30,7 @@ export default async function ComprasPage({
 }) {
   let session
   try { session = await requirePermission("purchasing:view") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
   const sp = await searchParams
   const createdCountRaw = typeof sp.creadas === "string" ? Number(sp.creadas) : 0
   const createdCount = Number.isFinite(createdCountRaw) && createdCountRaw > 1 ? createdCountRaw : 0
@@ -39,12 +39,12 @@ export default async function ComprasPage({
     ? undefined
     : visibleWsIds.length > 0
       ? inArray(purchaseOrders.worksiteId, visibleWsIds)
-      : sql`1 = 0`
+      : sql`false`
   const requestWorksiteScope = isGlobalRole(session)
     ? undefined
     : visibleWsIds.length > 0
       ? inArray(purchaseRequests.worksiteId, visibleWsIds)
-      : sql`1 = 0`
+      : sql`false`
 
   // ── Approved / pending_purchase items (never-miss alert) ────────────────────
   const [pendingRow] = await db

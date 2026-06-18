@@ -25,7 +25,7 @@ export default async function RecepcionPage({
 }) {
   let session
   try { session = await requirePermission("receiving:view") }
-  catch { redirect("/dashboard") }
+  catch { redirect("/forbidden") }
 
   const sp = await searchParams
   const scopeFilter = and(
