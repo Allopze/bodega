@@ -13,13 +13,16 @@ import {
 import { toast } from "@/lib/toast"
 import { saveResponsesAction, closeEvaluationAction } from "@/app/(app)/prevencion/actions"
 import { calculateCompliance } from "@/lib/sst/compliance"
-import { RESULTADO_LABELS, resultadoBadgeClass } from "@/lib/sst/badges"
+import { RESULTADO_LABELS, MOTIVO_LABELS, resultadoBadgeVariant, estadoBadgeVariant, tipoBadgeVariant } from "@/lib/sst/badges"
+import { Badge } from "@/components/ui/badge"
+import { Field } from "@/components/ui/field"
+import { formatDateDisplay } from "@/lib/sst/date"
 import type { ChecklistDefinition, StatusValue, ChecklistSection } from "@/lib/sst/types"
 import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan } from "@/db/schema/sst"
 import { ChecklistSectionPanel, type ItemResponse } from "./checklist-section"
 import { ActionPlanPanel } from "./action-plan-panel"
 import { FollowupsPanel } from "./followups-panel"
-import { Printer, LockSimple, Warning } from "@phosphor-icons/react"
+import { Printer, LockSimple, Warning, Check } from "@phosphor-icons/react"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -203,7 +206,7 @@ export function EvaluationDetail({
   return (
     <div className="space-y-6">
       {/* Header card */}
-      <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 space-y-4">
+      <div className="border border-(--color-border) bg-(--color-surface) p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -215,24 +218,19 @@ export function EvaluationDetail({
               Cargos: {cargoLabels.join(", ")}
             </p>
             <p className="text-sm text-text-subtle">
-              Fecha: {evaluation.fechaEvaluacion}
+              Fecha: {formatDateDisplay(evaluation.fechaEvaluacion)}
             </p>
           </div>
 
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-2">
-              <span className={[
-                "text-xs font-medium px-2 py-0.5 rounded-full border",
-                isCerrado
-                  ? "bg-slate-100 text-slate-700 border-slate-300"
-                  : "bg-blue-100 text-blue-700 border-blue-300",
-              ].join(" ")}>
+              <Badge variant={estadoBadgeVariant(evaluation.estado)}>
                 {isCerrado ? "Cerrado" : "Borrador"}
-              </span>
+              </Badge>
               {evaluation.tipo === "seguimiento" && (
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-300">
+                <Badge variant={tipoBadgeVariant(evaluation.tipo)}>
                   Seguimiento
-                </span>
+                </Badge>
               )}
             </div>
 
@@ -242,7 +240,7 @@ export function EvaluationDetail({
                 <p className="text-sm text-text-subtle">Sin respuestas aún</p>
               ) : (
                 <>
-                  <p className="text-2xl font-bold text-(--color-text)">
+                  <p className="text-2xl font-bold text-(--color-text) tabular-nums">
                     {compliance.percentage.toFixed(1)}%
                   </p>
                   <p className="text-xs text-text-subtle">
@@ -253,12 +251,9 @@ export function EvaluationDetail({
             </div>
 
             {evaluation.resultadoFinal && (
-              <span className={[
-                "text-xs font-semibold px-3 py-1 rounded-full border",
-                resultadoBadgeClass(evaluation.resultadoFinal),
-              ].join(" ")}>
+              <Badge variant={resultadoBadgeVariant(evaluation.resultadoFinal)}>
                 {RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}
-              </span>
+              </Badge>
             )}
           </div>
         </div>
@@ -275,8 +270,9 @@ export function EvaluationDetail({
             </span>
           )}
           {saveState !== null && saveState !== "saving" && saveState !== "error" && (
-            <span className="text-xs text-text-subtle">
-              Guardado ✓ {saveState.ts}
+            <span className="flex items-center gap-1 text-xs text-text-subtle">
+              <Check size={12} />
+              Guardado {saveState.ts}
             </span>
           )}
           {saveState === null && !readOnly && (
@@ -309,9 +305,9 @@ export function EvaluationDetail({
                     <DialogTitle>Cerrar evaluación</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 py-2">
-                    <div className="flex items-start gap-2 rounded-(--radius) bg-amber-50 border border-amber-200 p-3">
-                      <Warning size={16} className="shrink-0 mt-0.5 text-amber-600" />
-                      <p className="text-sm text-amber-700">
+                    <div className="flex items-start gap-2 rounded-(--radius) bg-(--color-warning-tint) border border-(--color-warning-line) p-3">
+                      <Warning size={16} className="shrink-0 mt-0.5 text-(--color-warning-ink)" />
+                      <p className="text-sm text-(--color-warning-ink)">
                         Una vez cerrada, la evaluación es <strong>inmutable</strong> por requerimiento legal (DS N°44/2024). Esta acción no se puede deshacer.
                       </p>
                     </div>
@@ -334,14 +330,7 @@ export function EvaluationDetail({
                       </div>
                     )}
 
-                    <div className="space-y-1">
-                      <label
-                        htmlFor="close-restricciones"
-                        className="text-sm font-medium text-(--color-text)"
-                      >
-                        Restricciones{" "}
-                        <span className="font-normal text-text-subtle">(opcional)</span>
-                      </label>
+                    <Field label="Restricciones" htmlFor="close-restricciones" helper="Opcional">
                       <Textarea
                         id="close-restricciones"
                         value={restricciones}
@@ -350,16 +339,9 @@ export function EvaluationDetail({
                         rows={3}
                         maxLength={500}
                       />
-                    </div>
+                    </Field>
 
-                    <div className="space-y-1">
-                      <label
-                        htmlFor="close-observaciones"
-                        className="text-sm font-medium text-(--color-text)"
-                      >
-                        Observaciones generales{" "}
-                        <span className="font-normal text-text-subtle">(opcional)</span>
-                      </label>
+                    <Field label="Observaciones generales" htmlFor="close-observaciones" helper="Opcional">
                       <Textarea
                         id="close-observaciones"
                         value={observaciones}
@@ -368,7 +350,7 @@ export function EvaluationDetail({
                         rows={4}
                         maxLength={1000}
                       />
-                    </div>
+                    </Field>
 
                     <div className="flex gap-2 justify-end">
                       <DialogClose asChild>
@@ -413,7 +395,7 @@ export function EvaluationDetail({
 
         {applicableSections.map((sec) => (
           <TabsContent key={sec.id} value={sec.id}>
-            <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5">
+            <div className="border border-(--color-border) bg-(--color-surface) p-5">
               <h3 className="text-base font-semibold text-(--color-text) mb-4">{sec.title}</h3>
               <ChecklistSectionPanel
                 section={sec}
@@ -427,25 +409,22 @@ export function EvaluationDetail({
 
         {/* Acta de cierre */}
         <TabsContent value="acta">
-          <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 space-y-5">
+          <div className="border border-(--color-border) bg-(--color-surface) p-5 space-y-5">
             <h3 className="text-base font-semibold text-(--color-text)">Acta de Cierre</h3>
 
             {evaluation.motivo && (
               <div>
                 <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Motivo</p>
-                <p className="text-sm text-(--color-text)">{evaluation.motivo}</p>
+                <p className="text-sm text-(--color-text)">{MOTIVO_LABELS[evaluation.motivo ?? ""] ?? evaluation.motivo}</p>
               </div>
             )}
 
             {isCerrado && evaluation.resultadoFinal && (
               <div>
                 <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Resultado Final</p>
-                <span className={[
-                  "inline-flex text-sm font-semibold px-3 py-1 rounded-full border",
-                  resultadoBadgeClass(evaluation.resultadoFinal),
-                ].join(" ")}>
+                <Badge variant={resultadoBadgeVariant(evaluation.resultadoFinal)}>
                   {RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}
-                </span>
+                </Badge>
                 {evaluation.porcentajeCumplimiento !== null && (
                   <p className="mt-1 text-sm text-text-subtle">
                     Cumplimiento: {evaluation.porcentajeCumplimiento.toFixed(1)}%
@@ -498,7 +477,7 @@ export function EvaluationDetail({
         {/* Seguimientos */}
         {evaluation.tipo === "seguimiento" && (
           <TabsContent value="seguimientos">
-            <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5">
+            <div className="border border-(--color-border) bg-(--color-surface) p-5">
               <h3 className="text-base font-semibold text-(--color-text) mb-4">Seguimientos programados</h3>
               <FollowupsPanel
                 followups={followups}
@@ -511,7 +490,7 @@ export function EvaluationDetail({
 
         {/* Plan de acción */}
         <TabsContent value="plan">
-          <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5">
+          <div className="border border-(--color-border) bg-(--color-surface) p-5">
             <ActionPlanPanel
               evaluationId={evaluation.id}
               items={actionPlan}
