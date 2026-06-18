@@ -34,17 +34,17 @@ function StatusButton({
   variant: "positive" | "negative" | "neutral"
   children: React.ReactNode
 }) {
-  const base = "px-3 py-1.5 text-xs font-semibold rounded-(--radius) border transition-colors"
+  const base = "px-3 py-1.5 text-xs font-semibold rounded-(--radius) border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1"
   const colors = {
     positive: active
-      ? "bg-emerald-500 text-white border-emerald-500"
-      : "border-(--color-border) text-text-subtle hover:border-emerald-400 hover:text-emerald-600",
+      ? "bg-(--color-success) text-(--color-success-ink) border-(--color-success) font-bold"
+      : "border-(--color-border) text-text-subtle hover:border-(--color-success-line) hover:text-(--color-success)",
     negative: active
-      ? "bg-rose-500 text-white border-rose-500"
-      : "border-(--color-border) text-text-subtle hover:border-rose-400 hover:text-rose-600",
+      ? "bg-(--color-danger) text-(--color-danger-ink) border-(--color-danger) font-bold"
+      : "border-(--color-border) text-text-subtle hover:border-(--color-danger-line) hover:text-(--color-danger)",
     neutral: active
-      ? "bg-slate-500 text-white border-slate-500"
-      : "border-(--color-border) text-text-subtle hover:border-slate-400 hover:text-slate-600",
+      ? "bg-(--color-surface-3) text-(--color-text) border-(--color-border-strong) font-bold"
+      : "border-(--color-border) text-text-subtle hover:border-(--color-border-strong)",
   }
 
   return (
@@ -116,15 +116,17 @@ function ItemField({
             </StatusButton>
           ))}
         </div>
-        <Textarea
-          placeholder="Observación (opcional)…"
-          value={resp.observacion}
-          onChange={(e) => onChange({ observacion: e.target.value })}
-          disabled={readOnly}
-          rows={2}
-          className="text-xs"
-          maxLength={500}
-        />
+        {(resp.estado !== null || resp.observacion) && (
+          <Textarea
+            placeholder="Observación (opcional)…"
+            value={resp.observacion}
+            onChange={(e) => onChange({ observacion: e.target.value })}
+            disabled={readOnly}
+            rows={2}
+            className="text-xs"
+            maxLength={500}
+          />
+        )}
         {item.kind === "cumple_nocumple_obs" && resp.estado === "no_cumple" && (
           <Textarea
             placeholder="Acción correctiva…"
@@ -208,7 +210,7 @@ function ItemField({
             onClick={() => toggleOption(opt.value)}
             aria-pressed={selected.includes(opt.value)}
             className={cn(
-              "px-3 py-1.5 rounded-(--radius) border text-xs font-medium transition-colors",
+              "px-3 py-1.5 rounded-(--radius) border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1",
               selected.includes(opt.value)
                 ? "bg-(--color-primary) text-(--color-primary-ink) border-(--color-primary)"
                 : "border-(--color-border) text-text-subtle hover:border-border-strong",
@@ -241,18 +243,15 @@ function ItemField({
 
 export function ChecklistSectionPanel({ section, responses, readOnly, onChange }: Props) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {section.description && (
         <p className="text-sm text-(--color-text-muted)">{section.description}</p>
       )}
-      <div className="space-y-5">
+      <div className="divide-y divide-(--color-border)">
         {section.items.map((item) => {
           const resp = responses[item.id] ?? { estado: null, observacion: "", accionCorrectiva: "" }
           return (
-            <div
-              key={item.id}
-              className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 space-y-3"
-            >
+            <div key={item.id} className="py-3 space-y-2">
               <p className="text-sm font-medium text-(--color-text)">{item.label}</p>
               <ItemField
                 item={item}
