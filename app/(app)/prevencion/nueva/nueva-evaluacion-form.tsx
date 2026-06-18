@@ -285,7 +285,6 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
             ref={cargosRef}
             role="group"
             aria-labelledby={`${uid}-cargos-label`}
-            aria-required
             className="flex flex-wrap gap-2 focus:outline-none"
             tabIndex={-1}
           >

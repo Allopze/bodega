@@ -25,12 +25,7 @@ vi.mock("@/db", () => ({
 
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
-import {
-  submitItem, approveItem, rejectItem, returnItem,
-  markItemPendingPurchase, postponeItem,
-  addItemToPurchaseOrder, receiveItem, deliverItem,
-  canTransition, TERMINAL_STATES,
-} from "@/lib/services/item-state"
+import { submitItem, approveItem, rejectItem, returnItem, markItemPendingPurchase, postponeItem } from "@/lib/services/item-state"
 
 describe("Item State Machine — DB integration", () => {
   const now = new Date().toISOString()

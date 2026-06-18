@@ -235,7 +235,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
       if (autoSaveRef.current) autoSaveRef.current = false
       else toast.error(draftState.message)
     }
-  }, [draftState])
+    }, [draftState, requestType])
 
   useEffect(() => {
     if (submitState.message && !submitState.ok) toast.error(submitState.message)

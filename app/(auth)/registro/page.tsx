@@ -39,7 +39,7 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
 
       if (!invitation) {
         inviteError = "Invitación inválida o ya utilizada."
-      } else if (new Date(invitation.expiresAt).getTime() < Date.now()) {
+        } else if (new Date(invitation.expiresAt) < new Date()) {
         inviteError = "La invitación expiró. Solicita una nueva al administrador."
       } else {
         initialEmail = invitation.email
