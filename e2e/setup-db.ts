@@ -324,7 +324,7 @@ async function main() {
       code: `SOL-BULK-E2E-${number}`,
       worksiteId: "ws-e2e",
       requesterId: "user-admin-e2e",
-      requestType: "stock",
+      requestType: "otro",
       urgency: "normal",
       requiredDate: "2026-08-15",
       status: "approved",

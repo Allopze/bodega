@@ -1,9 +1,11 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useRef, useId } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Field, FieldGroup } from "@/components/ui/field"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -48,6 +50,8 @@ const MOTIVO_OPTIONS = [
   { value: "otro",                           label: "Otro" },
 ]
 
+const today = new Date().toISOString().slice(0, 10)
+
 export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOptions }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -56,7 +60,7 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   const [workerId, setWorkerId]         = useState("")
   const [definicionCode, setDefinicion] = useState("")
   const [worksiteId, setWorksiteId]     = useState("")
-  const [fechaEvaluacion, setFecha]     = useState(() => new Date().toISOString().slice(0, 10))
+  const [fechaEvaluacion, setFecha]     = useState(today)
   const [selectedCargos, setCargos]     = useState<string[]>([])
   const [motivo, setMotivo]             = useState("")
   const [motivoOtro, setMotivoOtro]     = useState("")
@@ -64,12 +68,35 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   const [equipoPatente, setPatente]     = useState("")
   const [workerSearch, setWorkerSearch] = useState("")
 
+  // inline validation errors
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // refs to focus first invalid field
+  const workerRef     = useRef<HTMLButtonElement>(null)
+  const definicionRef = useRef<HTMLButtonElement>(null)
+  const worksiteRef   = useRef<HTMLButtonElement>(null)
+  const fechaRef      = useRef<HTMLInputElement>(null)
+  const cargosRef     = useRef<HTMLDivElement>(null)
+  const motivoRef     = useRef<HTMLButtonElement>(null)
+
+  // stable ids for accessibility
+  const uid       = useId()
+  const workerId_  = `${uid}-worker`
+  const searchId   = `${uid}-worker-search`
+  const defId      = `${uid}-definicion`
+  const siteId     = `${uid}-worksite`
+  const fechaId    = `${uid}-fecha`
+  const motivoId   = `${uid}-motivo`
+  const motivoOtroId = `${uid}-motivo-otro`
+  const descId     = `${uid}-desc`
+  const patenteId  = `${uid}-patente`
+
   const selectedDef = definiciones.find((d) => d.code === definicionCode)
   const isSeguimiento = selectedDef?.tipo === "seguimiento"
 
-  // When worker is selected, auto-set worksiteId if not already set
   function handleWorkerSelect(wid: string) {
     setWorkerId(wid)
+    setErrors((prev) => ({ ...prev, workerId: "" }))
     const worker = workers.find((w) => w.id === wid)
     if (worker && !worksiteId) {
       setWorksiteId(worker.worksiteId)
@@ -77,9 +104,11 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   }
 
   function toggleCargo(value: string) {
-    setCargos((prev) =>
-      prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value]
-    )
+    setCargos((prev) => {
+      const next = prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value]
+      if (next.length > 0) setErrors((e) => ({ ...e, cargos: "" }))
+      return next
+    })
   }
 
   const filteredWorkers = workerSearch.trim()
@@ -89,15 +118,31 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
       )
     : workers
 
+  function validate(): boolean {
+    const next: Record<string, string> = {}
+    if (!workerId)                              next.workerId = "Selecciona un trabajador"
+    if (!definicionCode)                        next.definicion = "Selecciona el tipo de evaluación"
+    if (!worksiteId)                            next.worksiteId = "Selecciona una faena"
+    if (!fechaEvaluacion)                       next.fecha = "Ingresa la fecha de evaluación"
+    if (selectedCargos.length === 0)            next.cargos = "Selecciona al menos un cargo"
+    if (isSeguimiento && !motivo)               next.motivo = "Selecciona el motivo de seguimiento"
+    setErrors(next)
+
+    if (Object.keys(next).length === 0) return true
+
+    // Focus the first invalid control
+    if (next.workerId)    { workerRef.current?.focus();     return false }
+    if (next.definicion)  { definicionRef.current?.focus(); return false }
+    if (next.worksiteId)  { worksiteRef.current?.focus();   return false }
+    if (next.fecha)       { fechaRef.current?.focus();      return false }
+    if (next.cargos)      { cargosRef.current?.focus();     return false }
+    if (next.motivo)      { motivoRef.current?.focus();     return false }
+    return false
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-
-    if (!workerId)        return toast.error("Selecciona un trabajador")
-    if (!definicionCode)  return toast.error("Selecciona el tipo de evaluación")
-    if (!worksiteId)      return toast.error("Selecciona una faena")
-    if (!fechaEvaluacion) return toast.error("Ingresa la fecha de evaluación")
-    if (selectedCargos.length === 0) return toast.error("Selecciona al menos un cargo")
-    if (isSeguimiento && !motivo) return toast.error("Selecciona el motivo de seguimiento")
+    if (!validate()) return
 
     startTransition(async () => {
       const result = await createEvaluationAction({
@@ -107,7 +152,9 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
         worksiteId,
         fechaEvaluacion,
         cargos: selectedCargos,
-        motivo: isSeguimiento && motivo ? motivo as Parameters<typeof createEvaluationAction>[0]["motivo"] : undefined,
+        motivo: isSeguimiento && motivo
+          ? motivo as Parameters<typeof createEvaluationAction>[0]["motivo"]
+          : undefined,
         motivoOtro:        motivoOtro        || undefined,
         descripcionEvento: descripcionEvento || undefined,
         equipoPatente:     equipoPatente     || undefined,
@@ -124,165 +171,226 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Worker */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--color-text)]">Trabajador</label>
-        <Input
-          placeholder="Buscar por nombre o RUT…"
-          value={workerSearch}
-          onChange={(e) => setWorkerSearch(e.target.value)}
-          className="mb-1"
-        />
-        <Select value={workerId} onValueChange={handleWorkerSelect}>
-          <SelectTrigger>
-            <SelectValue placeholder="Selecciona trabajador" />
-          </SelectTrigger>
-          <SelectContent>
-            {filteredWorkers.map((w) => (
-              <SelectItem key={w.id} value={w.id}>
-                {w.name}{w.rut ? ` — ${w.rut}` : ""}
-              </SelectItem>
-            ))}
-            {filteredWorkers.length === 0 && (
-              <div className="px-3 py-4 text-sm text-[var(--color-text-subtle)] text-center">
-                Sin resultados
-              </div>
-            )}
-          </SelectContent>
-        </Select>
-      </div>
+    <form onSubmit={handleSubmit} noValidate>
+      <FieldGroup className="space-y-6">
 
-      {/* Tipo / Definición */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--color-text)]">Tipo de evaluación</label>
-        <Select value={definicionCode} onValueChange={setDefinicion}>
-          <SelectTrigger>
-            <SelectValue placeholder="Selecciona tipo" />
-          </SelectTrigger>
-          <SelectContent>
-            {definiciones.map((d) => (
-              <SelectItem key={d.code} value={d.code}>
-                {d.code} — {d.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Faena */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--color-text)]">Faena</label>
-        <Select value={worksiteId} onValueChange={setWorksiteId}>
-          <SelectTrigger>
-            <SelectValue placeholder="Selecciona faena" />
-          </SelectTrigger>
-          <SelectContent>
-            {worksites.map((w) => (
-              <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Fecha */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--color-text)]">Fecha de evaluación</label>
-        <Input
-          type="date"
-          value={fechaEvaluacion}
-          onChange={(e) => setFecha(e.target.value)}
-        />
-      </div>
-
-      {/* Cargos */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--color-text)]">Cargos del trabajador</label>
-        <div className="flex flex-wrap gap-2">
-          {cargoOptions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => toggleCargo(opt.value)}
-              className={[
-                "px-3 py-1.5 rounded-[var(--radius)] text-sm border transition-colors",
-                selectedCargos.includes(opt.value)
-                  ? "bg-[var(--color-primary)] text-[var(--color-primary-ink)] border-[var(--color-primary)]"
-                  : "bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]",
-              ].join(" ")}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Seguimiento-specific fields */}
-      {isSeguimiento && (
-        <>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--color-text)]">Motivo del seguimiento</label>
-            <Select value={motivo} onValueChange={setMotivo}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona motivo" />
+        {/* Worker search + select */}
+        <div className="space-y-2">
+          <Field label="Buscar trabajador" htmlFor={searchId}>
+            <Input
+              id={searchId}
+              placeholder="Filtra por nombre o RUT…"
+              value={workerSearch}
+              onChange={(e) => setWorkerSearch(e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Trabajador"
+            htmlFor={workerId_}
+            required
+            error={errors.workerId}
+          >
+            <Select value={workerId} onValueChange={handleWorkerSelect}>
+              <SelectTrigger
+                id={workerId_}
+                ref={workerRef}
+                aria-invalid={!!errors.workerId}
+              >
+                <SelectValue placeholder="Selecciona trabajador" />
               </SelectTrigger>
               <SelectContent>
-                {MOTIVO_OPTIONS.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                {filteredWorkers.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name}{w.rut ? ` — ${w.rut}` : ""}
+                  </SelectItem>
                 ))}
+                {filteredWorkers.length === 0 && (
+                  <div className="px-3 py-4 text-sm text-text-subtle text-center">
+                    Sin resultados
+                  </div>
+                )}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
+        </div>
 
-          {motivo === "otro" && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[var(--color-text)]">Especifica el motivo</label>
-              <Input
-                value={motivoOtro}
-                onChange={(e) => setMotivoOtro(e.target.value)}
-                placeholder="Describe el motivo…"
-                maxLength={200}
-              />
-            </div>
+        {/* Tipo / Definición */}
+        <Field
+          label="Tipo de evaluación"
+          htmlFor={defId}
+          required
+          error={errors.definicion}
+        >
+          <Select value={definicionCode} onValueChange={(v) => { setDefinicion(v); setErrors((e) => ({ ...e, definicion: "" })) }}>
+            <SelectTrigger id={defId} ref={definicionRef} aria-invalid={!!errors.definicion}>
+              <SelectValue placeholder="Selecciona tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              {definiciones.map((d) => (
+                <SelectItem key={d.code} value={d.code}>
+                  {d.code} — {d.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        {/* Faena */}
+        <Field
+          label="Faena"
+          htmlFor={siteId}
+          required
+          error={errors.worksiteId}
+        >
+          <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setErrors((e) => ({ ...e, worksiteId: "" })) }}>
+            <SelectTrigger id={siteId} ref={worksiteRef} aria-invalid={!!errors.worksiteId}>
+              <SelectValue placeholder="Selecciona faena" />
+            </SelectTrigger>
+            <SelectContent>
+              {worksites.map((w) => (
+                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        {/* Fecha */}
+        <Field
+          label="Fecha de evaluación"
+          htmlFor={fechaId}
+          required
+          error={errors.fecha}
+        >
+          <Input
+            id={fechaId}
+            ref={fechaRef}
+            type="date"
+            value={fechaEvaluacion}
+            max={today}
+            onChange={(e) => { setFecha(e.target.value); setErrors((ev) => ({ ...ev, fecha: "" })) }}
+            aria-invalid={!!errors.fecha}
+          />
+        </Field>
+
+        {/* Cargos */}
+        <div>
+          <p
+            className="text-sm font-medium text-[var(--color-text)] mb-1.5"
+            id={`${uid}-cargos-label`}
+          >
+            Cargos del trabajador
+            <span className="ml-0.5 text-danger" aria-hidden>*</span>
+          </p>
+          <div
+            ref={cargosRef}
+            role="group"
+            aria-labelledby={`${uid}-cargos-label`}
+            aria-required
+            className="flex flex-wrap gap-2 focus:outline-none"
+            tabIndex={-1}
+          >
+            {cargoOptions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleCargo(opt.value)}
+                aria-pressed={selectedCargos.includes(opt.value)}
+                className={[
+                  "px-3 py-1.5 rounded-(--radius) text-sm border transition-colors",
+                  selectedCargos.includes(opt.value)
+                    ? "bg-(--color-primary) text-(--color-primary-ink) border-(--color-primary)"
+                    : "bg-(--color-surface) text-(--color-text) border-(--color-border) hover:border-border-strong",
+                ].join(" ")}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {errors.cargos && (
+            <p className="mt-1.5 text-xs text-danger leading-tight" role="alert">
+              {errors.cargos}
+            </p>
           )}
+        </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--color-text)]">
-              Descripción del evento{" "}
-              <span className="text-[var(--color-text-subtle)] font-normal">(opcional)</span>
-            </label>
-            <Input
-              value={descripcionEvento}
-              onChange={(e) => setDesc(e.target.value)}
-              placeholder="Describe el evento que origina el seguimiento…"
-              maxLength={500}
-            />
-          </div>
+        {/* Seguimiento-specific fields */}
+        {isSeguimiento && (
+          <>
+            <Field
+              label="Motivo del seguimiento"
+              htmlFor={motivoId}
+              required
+              error={errors.motivo}
+            >
+              <Select value={motivo} onValueChange={(v) => { setMotivo(v); setErrors((e) => ({ ...e, motivo: "" })) }}>
+                <SelectTrigger id={motivoId} ref={motivoRef} aria-invalid={!!errors.motivo}>
+                  <SelectValue placeholder="Selecciona motivo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MOTIVO_OPTIONS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--color-text)]">
-              Patente del equipo{" "}
-              <span className="text-[var(--color-text-subtle)] font-normal">(opcional)</span>
-            </label>
-            <Input
-              value={equipoPatente}
-              onChange={(e) => setPatente(e.target.value)}
-              placeholder="Ej. ABCD12"
-              maxLength={20}
-            />
-          </div>
-        </>
-      )}
+            {motivo === "otro" && (
+              <Field
+                label="Especifica el motivo"
+                htmlFor={motivoOtroId}
+              >
+                <Input
+                  id={motivoOtroId}
+                  value={motivoOtro}
+                  onChange={(e) => setMotivoOtro(e.target.value)}
+                  placeholder="Describe el motivo…"
+                  maxLength={200}
+                />
+              </Field>
+            )}
 
-      {/* Submit */}
-      <div className="flex items-center gap-3 pt-2">
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Creando…" : "Crear evaluación"}
-        </Button>
-        <Button type="button" variant="ghost" onClick={() => router.back()}>
-          Cancelar
-        </Button>
-      </div>
+            <Field
+              label="Descripción del evento"
+              htmlFor={descId}
+              helper="Opcional — describe el evento que origina el seguimiento"
+            >
+              <Textarea
+                id={descId}
+                value={descripcionEvento}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="Describe el evento que origina el seguimiento…"
+                maxLength={500}
+                rows={3}
+              />
+            </Field>
+
+            <Field
+              label="Patente del equipo"
+              htmlFor={patenteId}
+              helper="Opcional — p. ej. ABCD12"
+            >
+              <Input
+                id={patenteId}
+                value={equipoPatente}
+                onChange={(e) => setPatente(e.target.value)}
+                placeholder="Ej. ABCD12"
+                maxLength={20}
+              />
+            </Field>
+          </>
+        )}
+
+        {/* Submit */}
+        <div className="flex items-center gap-3 pt-2">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Creando…" : "Crear evaluación"}
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => router.back()}>
+            Cancelar
+          </Button>
+        </div>
+
+      </FieldGroup>
     </form>
   )
 }

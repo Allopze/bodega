@@ -10,6 +10,7 @@ const mockDefinition: ChecklistDefinition = {
   version: '01',
   revisionDate: '2026-01-01',
   title: 'Test',
+  tipo: 'nuevo',
   legalFramework: [],
   applicableTo: 'Test',
   sections: [

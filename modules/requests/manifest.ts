@@ -41,5 +41,9 @@ export const requestsModule = {
     { roleSlug: "solicitante_faena", permission: "requests:create" },
     { roleSlug: "solicitante_faena", permission: "requests:view_own" },
     { roleSlug: "solicitante_faena", permission: "requests:submit" },
+    // Jefe de mantención: crea, ve propias y envía (sin view_all)
+    { roleSlug: "jefe_mantencion", permission: "requests:create" },
+    { roleSlug: "jefe_mantencion", permission: "requests:view_own" },
+    { roleSlug: "jefe_mantencion", permission: "requests:submit" },
   ],
 } as const satisfies ModuleManifest

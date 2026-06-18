@@ -9,6 +9,7 @@ export const GLOBAL_ROLES = new Set([
   "jefa_chome",
   "secretaria",
   "prevencionista",
+  "jefe_mantencion",
 ])
 
 export function isGlobalRole(session: Session | null): boolean {

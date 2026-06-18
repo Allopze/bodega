@@ -10,6 +10,7 @@ import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { checkRateLimit, recordFailure, recordSuccess } from "@/lib/services/rate-limit"
 import { registerUserSchema, type ActionState } from "@/lib/validation/masters"
+import { headers } from "next/headers"
 
 type WorksiteAssignment = { worksiteId: string; isPrimary: boolean }
 
@@ -41,13 +42,29 @@ export async function registerUser(
 
   const data = parsed.data
 
-  // Rate-limit por email (defensa en profundidad + consistencia con login).
-  const rateKey = `registro:${data.email}`
-  const limit = await checkRateLimit(rateKey)
-  if (!limit.allowed) {
+  // Rate-limit por IP y email (defensa en profundidad).
+  let clientIp = "127.0.0.1"
+  try {
+    const h = await headers()
+    clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
+  } catch {}
+
+  const ipRateKey = `registro:ip:${clientIp}`
+  const emailRateKey = `registro:email:${data.email}`
+
+  const ipLimit = await checkRateLimit(ipRateKey)
+  if (!ipLimit.allowed) {
     return {
       ok: false,
-      message: `Demasiados intentos. Intenta de nuevo en ${Math.ceil(limit.waitTimeRemainingMs / 60000)} minutos.`,
+      message: `Demasiados intentos desde esta dirección. Intenta de nuevo en ${Math.ceil(ipLimit.waitTimeRemainingMs / 60000)} minutos.`,
+    }
+  }
+
+  const emailLimit = await checkRateLimit(emailRateKey)
+  if (!emailLimit.allowed) {
+    return {
+      ok: false,
+      message: `Demasiados intentos. Intenta de nuevo en ${Math.ceil(emailLimit.waitTimeRemainingMs / 60000)} minutos.`,
     }
   }
 
@@ -116,6 +133,8 @@ export async function registerUser(
       }
 
       if (existing) {
+        // Usuario pre-creado por admin: solo actualizar credenciales.
+        // Los roles y faenas ya fueron definidos por el admin al crear el usuario.
         await tx.update(users).set({
           name: data.name,
           hashedPassword,
@@ -123,9 +142,8 @@ export async function registerUser(
           isActive: true,
           updatedAt: new Date().toISOString(),
         }).where(eq(users.id, existing.id))
-        await tx.delete(userRoles).where(eq(userRoles.userId, existing.id))
-        await tx.delete(worksiteUsers).where(eq(worksiteUsers.userId, existing.id))
       } else {
+        // Nuevo usuario desde invitación: crear registro y aplicar asignaciones.
         await tx.insert(users).values({
           id,
           name: data.name,
@@ -134,18 +152,18 @@ export async function registerUser(
           avatarColor,
           isActive: true,
         })
-      }
 
-      await tx.insert(userRoles).values(roleIds.map((roleId) => ({ userId: id, roleId })))
+        await tx.insert(userRoles).values(roleIds.map((roleId) => ({ userId: id, roleId })))
 
-      if (worksiteAssignments.length > 0) {
-        await tx.insert(worksiteUsers).values(
-          worksiteAssignments.map((assignment) => ({
-            userId: id,
-            worksiteId: assignment.worksiteId,
-            isPrimary: assignment.isPrimary,
-          })),
-        )
+        if (worksiteAssignments.length > 0) {
+          await tx.insert(worksiteUsers).values(
+            worksiteAssignments.map((assignment) => ({
+              userId: id,
+              worksiteId: assignment.worksiteId,
+              isPrimary: assignment.isPrimary,
+            })),
+          )
+        }
       }
 
       if (invitationId) {
@@ -157,14 +175,16 @@ export async function registerUser(
     })
   } catch (err) {
     if (err instanceof RegistrationRollback && validationFailure) {
-      await recordFailure(rateKey)
+      await recordFailure(ipRateKey)
+      await recordFailure(emailRateKey)
       return validationFailure
     }
     logger.error("[registerUser]", err)
     return { ok: false, message: "No se pudo completar el registro" }
   }
 
-  await recordSuccess(rateKey)
+  await recordSuccess(ipRateKey)
+  await recordSuccess(emailRateKey)
   return {
     ok: true,
     message: isBootstrap

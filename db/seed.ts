@@ -9,7 +9,7 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import bcrypt from "bcryptjs"
 import { loadEnvConfig } from "@next/env"
 import * as schema from "./schema"
-import { eq, notInArray } from "drizzle-orm"
+import { eq, inArray, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../lib/auth/system-rbac"
 
@@ -355,6 +355,16 @@ async function main() {
       },
     })
 
+    // Delete referencing request_item_attributes first (FK ON DELETE NO ACTION)
+    const attrIds = (
+      await db
+        .select({ id: schema.productAttributes.id })
+        .from(schema.productAttributes)
+        .where(eq(schema.productAttributes.productId, item.id))
+    ).map((a) => a.id)
+    if (attrIds.length > 0) {
+      await db.delete(schema.requestItemAttributes).where(inArray(schema.requestItemAttributes.attributeId, attrIds))
+    }
     await db.delete(schema.productAttributes).where(eq(schema.productAttributes.productId, item.id))
     if (attributeRows.length > 0) {
       await db.insert(schema.productAttributes).values(attributeRows)

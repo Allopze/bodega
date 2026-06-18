@@ -35,6 +35,7 @@ export const userCreateSchema = z.object({
   isActive: z.coerce.boolean().default(true),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
   permissionIds: z.array(z.string()).default([]),
+  expiresInDays: z.coerce.number().int().min(1, "Mínimo 1 día").max(30, "Máximo 30 días").default(7),
   worksiteAssignments: z.array(
     z.object({
       worksiteId: z.string(),

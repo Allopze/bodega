@@ -34,17 +34,17 @@ function StatusButton({
   variant: "positive" | "negative" | "neutral"
   children: React.ReactNode
 }) {
-  const base = "px-3 py-1.5 text-xs font-semibold rounded-[var(--radius)] border transition-colors"
+  const base = "px-3 py-1.5 text-xs font-semibold rounded-(--radius) border transition-colors"
   const colors = {
     positive: active
       ? "bg-emerald-500 text-white border-emerald-500"
-      : "border-[var(--color-border)] text-[var(--color-text-subtle)] hover:border-emerald-400 hover:text-emerald-600",
+      : "border-(--color-border) text-text-subtle hover:border-emerald-400 hover:text-emerald-600",
     negative: active
       ? "bg-rose-500 text-white border-rose-500"
-      : "border-[var(--color-border)] text-[var(--color-text-subtle)] hover:border-rose-400 hover:text-rose-600",
+      : "border-(--color-border) text-text-subtle hover:border-rose-400 hover:text-rose-600",
     neutral: active
       ? "bg-slate-500 text-white border-slate-500"
-      : "border-[var(--color-border)] text-[var(--color-text-subtle)] hover:border-slate-400 hover:text-slate-600",
+      : "border-(--color-border) text-text-subtle hover:border-slate-400 hover:text-slate-600",
   }
 
   return (
@@ -52,6 +52,7 @@ function StatusButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
+      aria-pressed={active}
       className={cn(base, colors[variant], disabled && "opacity-50 cursor-not-allowed")}
     >
       {children}
@@ -98,7 +99,11 @@ function ItemField({
 
     return (
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div
+          role="group"
+          aria-label={item.label}
+          className="flex items-center gap-2 flex-wrap"
+        >
           {pairs.map((p) => (
             <StatusButton
               key={p.value}
@@ -190,18 +195,23 @@ function ItemField({
       onChange({ observacion: next.join(",") })
     }
     return (
-      <div className="flex flex-wrap gap-2">
+      <div
+        role="group"
+        aria-label={item.label}
+        className="flex flex-wrap gap-2"
+      >
         {item.options.map((opt) => (
           <button
             key={opt.value}
             type="button"
             disabled={readOnly}
             onClick={() => toggleOption(opt.value)}
+            aria-pressed={selected.includes(opt.value)}
             className={cn(
-              "px-3 py-1.5 rounded-[var(--radius)] border text-xs font-medium transition-colors",
+              "px-3 py-1.5 rounded-(--radius) border text-xs font-medium transition-colors",
               selected.includes(opt.value)
-                ? "bg-[var(--color-primary)] text-[var(--color-primary-ink)] border-[var(--color-primary)]"
-                : "border-[var(--color-border)] text-[var(--color-text-subtle)] hover:border-[var(--color-border-strong)]",
+                ? "bg-(--color-primary) text-(--color-primary-ink) border-(--color-primary)"
+                : "border-(--color-border) text-text-subtle hover:border-border-strong",
               readOnly && "opacity-50 cursor-not-allowed"
             )}
           >
@@ -214,14 +224,14 @@ function ItemField({
 
   if (kind === "readonly") {
     return (
-      <p className="text-sm text-[var(--color-text-subtle)] italic">{item.label}</p>
+      <p className="text-sm text-text-subtle italic">{item.label}</p>
     )
   }
 
   if (kind === "signature") {
     return (
-      <div className="h-16 rounded-[var(--radius)] border-2 border-dashed border-[var(--color-border)] flex items-center justify-center">
-        <span className="text-xs text-[var(--color-text-subtle)]">Firma manual en acta impresa</span>
+      <div className="h-16 rounded-(--radius) border-2 border-dashed border-(--color-border) flex items-center justify-center">
+        <span className="text-xs text-text-subtle">Firma manual en acta impresa</span>
       </div>
     )
   }
@@ -233,7 +243,7 @@ export function ChecklistSectionPanel({ section, responses, readOnly, onChange }
   return (
     <div className="space-y-6">
       {section.description && (
-        <p className="text-sm text-[var(--color-text-muted)]">{section.description}</p>
+        <p className="text-sm text-(--color-text-muted)">{section.description}</p>
       )}
       <div className="space-y-5">
         {section.items.map((item) => {
@@ -241,9 +251,9 @@ export function ChecklistSectionPanel({ section, responses, readOnly, onChange }
           return (
             <div
               key={item.id}
-              className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-3"
+              className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 space-y-3"
             >
-              <p className="text-sm font-medium text-[var(--color-text)]">{item.label}</p>
+              <p className="text-sm font-medium text-(--color-text)">{item.label}</p>
               <ItemField
                 item={item}
                 resp={resp}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose,
@@ -12,6 +13,7 @@ import {
 import { toast } from "@/lib/toast"
 import { saveResponsesAction, closeEvaluationAction } from "@/app/(app)/prevencion/actions"
 import { calculateCompliance } from "@/lib/sst/compliance"
+import { RESULTADO_LABELS, resultadoBadgeClass } from "@/lib/sst/badges"
 import type { ChecklistDefinition, StatusValue, ChecklistSection } from "@/lib/sst/types"
 import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan } from "@/db/schema/sst"
 import { ChecklistSectionPanel, type ItemResponse } from "./checklist-section"
@@ -48,20 +50,6 @@ function getApplicableSections(
     if (!sec.appliesWhen || sec.appliesWhen.length === 0) return true
     return cargos.some((c) => sec.appliesWhen!.includes(c))
   })
-}
-
-const RESULTADO_LABELS: Record<string, string> = {
-  habilitado_autonomo:      "Habilitado autónomo",
-  habilitado_restricciones: "Habilitado con restricciones",
-  no_habilitado:            "No habilitado",
-  requiere_reforzamiento:   "Requiere reforzamiento",
-}
-
-const RESULTADO_COLORS: Record<string, string> = {
-  habilitado_autonomo:      "bg-emerald-100 text-emerald-800 border-emerald-300",
-  habilitado_restricciones: "bg-amber-100 text-amber-800 border-amber-300",
-  no_habilitado:            "bg-rose-100 text-rose-800 border-rose-300",
-  requiere_reforzamiento:   "bg-blue-100 text-blue-800 border-blue-300",
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -107,7 +95,10 @@ export function EvaluationDetail({
   )
   const [followups, setFollowups]     = useState(initialFollowups)
   const [actionPlan, setActionPlan]   = useState(initialActionPlan)
-  const [saving, setSaving]           = useState(false)
+
+  // autosave state: null = idle | "saving" | { ts: string } = last-saved | "error"
+  const [saveState, setSaveState] = useState<null | "saving" | { ts: string } | "error">(null)
+
   const [closePending, startClose]    = useTransition()
 
   // Close dialog fields
@@ -140,7 +131,7 @@ export function EvaluationDetail({
     if (readOnly) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
-      setSaving(true)
+      setSaveState("saving")
       const batch = applicableSections.flatMap((sec) =>
         sec.items.map((item) => {
           const r = newMap[sec.id]?.[item.id] ?? { estado: null, observacion: "", accionCorrectiva: "" }
@@ -155,9 +146,15 @@ export function EvaluationDetail({
         })
       )
       const result = await saveResponsesAction(evaluation.id, batch)
-      setSaving(false)
       if (!result.ok) {
+        setSaveState("error")
         toast.error(result.message ?? "Error al guardar respuestas")
+      } else {
+        const now = new Date()
+        const ts  = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`
+        setSaveState({ ts })
+        // Reset to idle after 4 s so the confirmation fades away
+        setTimeout(() => setSaveState(null), 4000)
       }
     }, 800)
   }
@@ -207,18 +204,18 @@ export function EvaluationDetail({
   return (
     <div className="space-y-6">
       {/* Header card */}
-      <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 space-y-4">
+      <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-bold text-[var(--color-text)]">{workerName}</h2>
-              {workerRut && <span className="text-sm text-[var(--color-text-subtle)]">RUT {workerRut}</span>}
+              <h2 className="text-lg font-bold text-(--color-text)">{workerName}</h2>
+              {workerRut && <span className="text-sm text-text-subtle">RUT {workerRut}</span>}
             </div>
-            <p className="text-sm text-[var(--color-text-muted)]">{worksiteName}</p>
-            <p className="text-sm text-[var(--color-text-subtle)]">
+            <p className="text-sm text-(--color-text-muted)">{worksiteName}</p>
+            <p className="text-sm text-text-subtle">
               Cargos: {cargoLabels.join(", ")}
             </p>
-            <p className="text-sm text-[var(--color-text-subtle)]">
+            <p className="text-sm text-text-subtle">
               Fecha: {evaluation.fechaEvaluacion}
             </p>
           </div>
@@ -242,18 +239,24 @@ export function EvaluationDetail({
 
             {/* Compliance indicator */}
             <div className="text-right">
-              <p className="text-2xl font-bold text-[var(--color-text)]">
-                {compliance.percentage.toFixed(1)}%
-              </p>
-              <p className="text-xs text-[var(--color-text-subtle)]">
-                cumplimiento ({compliance.cumplidos}/{compliance.cumplidos + compliance.noCumplidos})
-              </p>
+              {compliance.total === 0 ? (
+                <p className="text-sm text-text-subtle">Sin respuestas aún</p>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-(--color-text)">
+                    {compliance.percentage.toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-text-subtle">
+                    cumplimiento ({compliance.cumplidos}/{compliance.cumplidos + compliance.noCumplidos})
+                  </p>
+                </>
+              )}
             </div>
 
             {evaluation.resultadoFinal && (
               <span className={[
                 "text-xs font-semibold px-3 py-1 rounded-full border",
-                RESULTADO_COLORS[evaluation.resultadoFinal] ?? "bg-slate-100 text-slate-700 border-slate-300",
+                resultadoBadgeClass(evaluation.resultadoFinal),
               ].join(" ")}>
                 {RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}
               </span>
@@ -262,22 +265,33 @@ export function EvaluationDetail({
         </div>
 
         {/* Action bar */}
-        <div className="flex items-center gap-2 pt-1 border-t border-[var(--color-border)]">
-          {saving && (
-            <span className="text-xs text-[var(--color-text-subtle)]">Guardando…</span>
+        <div className="flex items-center gap-2 pt-1 border-t border-(--color-border)">
+          {/* Autosave status */}
+          {saveState === "saving" && (
+            <span className="text-xs text-text-subtle">Guardando…</span>
           )}
-          {!saving && !readOnly && (
-            <span className="text-xs text-[var(--color-text-subtle)]">Autoguardado activo</span>
+          {saveState === "error" && (
+            <span className="text-xs text-danger font-medium">
+              Error al guardar — verifica tu conexión
+            </span>
+          )}
+          {saveState !== null && saveState !== "saving" && saveState !== "error" && (
+            <span className="text-xs text-text-subtle">
+              Guardado ✓ {saveState.ts}
+            </span>
+          )}
+          {saveState === null && !readOnly && (
+            <span className="text-xs text-text-subtle">Autoguardado activo</span>
           )}
           {isCerrado && (
-            <span className="flex items-center gap-1 text-xs text-[var(--color-text-subtle)]">
+            <span className="flex items-center gap-1 text-xs text-text-subtle">
               <LockSimple size={12} />
               Solo lectura — evaluación cerrada
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
             <Button asChild size="sm" variant="secondary">
-              <Link href={`/sst/${evaluation.id}/print`} target="_blank">
+              <Link href={`/sst/${evaluation.id}/print`} target="_blank" rel="noopener noreferrer">
                 <Printer size={14} className="mr-1.5" />
                 Imprimir
               </Link>
@@ -296,7 +310,7 @@ export function EvaluationDetail({
                     <DialogTitle>Cerrar evaluación</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 py-2">
-                    <div className="flex items-start gap-2 rounded-[var(--radius)] bg-amber-50 border border-amber-200 p-3">
+                    <div className="flex items-start gap-2 rounded-(--radius) bg-amber-50 border border-amber-200 p-3">
                       <Warning size={16} className="shrink-0 mt-0.5 text-amber-600" />
                       <p className="text-sm text-amber-700">
                         Una vez cerrada, la evaluación es <strong>inmutable</strong> por requerimiento legal (DS N°44/2024). Esta acción no se puede deshacer.
@@ -305,34 +319,32 @@ export function EvaluationDetail({
 
                     {evaluation.definicionCode === "LC-SST-002" && (
                       <div className="space-y-2">
-                        <p className="text-sm font-medium text-[var(--color-text)]">Condiciones especiales</p>
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={hasCritical}
-                            onChange={(e) => setHasCritical(e.target.checked)}
-                            className="rounded"
-                          />
-                          Existe desviación crítica
-                        </label>
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={hasReincidence}
-                            onChange={(e) => setHasReincidence(e.target.checked)}
-                            className="rounded"
-                          />
-                          Existe reincidencia
-                        </label>
+                        <p className="text-sm font-medium text-(--color-text)">Condiciones especiales</p>
+                        <Checkbox
+                          id="hasCritical"
+                          label="Existe desviación crítica"
+                          checked={hasCritical}
+                          onChange={(e) => setHasCritical(e.target.checked)}
+                        />
+                        <Checkbox
+                          id="hasReincidence"
+                          label="Existe reincidencia"
+                          checked={hasReincidence}
+                          onChange={(e) => setHasReincidence(e.target.checked)}
+                        />
                       </div>
                     )}
 
                     <div className="space-y-1">
-                      <label className="text-sm font-medium text-[var(--color-text)]">
+                      <label
+                        htmlFor="close-restricciones"
+                        className="text-sm font-medium text-(--color-text)"
+                      >
                         Restricciones{" "}
-                        <span className="font-normal text-[var(--color-text-subtle)]">(opcional)</span>
+                        <span className="font-normal text-text-subtle">(opcional)</span>
                       </label>
                       <Textarea
+                        id="close-restricciones"
                         value={restricciones}
                         onChange={(e) => setRestricciones(e.target.value)}
                         placeholder="Indica restricciones para el trabajador…"
@@ -342,11 +354,15 @@ export function EvaluationDetail({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-sm font-medium text-[var(--color-text)]">
+                      <label
+                        htmlFor="close-observaciones"
+                        className="text-sm font-medium text-(--color-text)"
+                      >
                         Observaciones generales{" "}
-                        <span className="font-normal text-[var(--color-text-subtle)]">(opcional)</span>
+                        <span className="font-normal text-text-subtle">(opcional)</span>
                       </label>
                       <Textarea
+                        id="close-observaciones"
                         value={observaciones}
                         onChange={(e) => setObservaciones(e.target.value)}
                         placeholder="Observaciones del evaluador…"
@@ -373,25 +389,33 @@ export function EvaluationDetail({
 
       {/* Tabs */}
       <Tabs defaultValue={applicableSections[0]?.id ?? "acta"}>
-        <div className="overflow-x-auto pb-1">
-          <TabsList>
-            {applicableSections.map((sec) => (
-              <TabsTrigger key={sec.id} value={sec.id}>
-                {sec.title}
-              </TabsTrigger>
-            ))}
-            <TabsTrigger value="acta">Acta de cierre</TabsTrigger>
-            {evaluation.tipo === "seguimiento" && (
-              <TabsTrigger value="seguimientos">Seguimientos</TabsTrigger>
-            )}
-            <TabsTrigger value="plan">Plan de acción</TabsTrigger>
-          </TabsList>
+        {/* Fade mask hints at horizontal scroll on narrow viewports */}
+        <div className="relative">
+          <div className="overflow-x-auto pb-1">
+            <TabsList>
+              {applicableSections.map((sec) => (
+                <TabsTrigger key={sec.id} value={sec.id}>
+                  {sec.title}
+                </TabsTrigger>
+              ))}
+              <TabsTrigger value="acta">Acta de cierre</TabsTrigger>
+              {evaluation.tipo === "seguimiento" && (
+                <TabsTrigger value="seguimientos">Seguimientos</TabsTrigger>
+              )}
+              <TabsTrigger value="plan">Plan de acción</TabsTrigger>
+            </TabsList>
+          </div>
+          {/* Right-edge fade signals there's more to scroll */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-(--color-bg) to-transparent"
+          />
         </div>
 
         {applicableSections.map((sec) => (
           <TabsContent key={sec.id} value={sec.id}>
-            <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h3 className="text-base font-semibold text-[var(--color-text)] mb-4">{sec.title}</h3>
+            <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5">
+              <h3 className="text-base font-semibold text-(--color-text) mb-4">{sec.title}</h3>
               <ChecklistSectionPanel
                 section={sec}
                 responses={responseMap[sec.id] ?? {}}
@@ -404,27 +428,27 @@ export function EvaluationDetail({
 
         {/* Acta de cierre */}
         <TabsContent value="acta">
-          <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 space-y-5">
-            <h3 className="text-base font-semibold text-[var(--color-text)]">Acta de Cierre</h3>
+          <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 space-y-5">
+            <h3 className="text-base font-semibold text-(--color-text)">Acta de Cierre</h3>
 
             {evaluation.motivo && (
               <div>
-                <p className="text-xs font-medium text-[var(--color-text-subtle)] uppercase tracking-wide mb-1">Motivo</p>
-                <p className="text-sm text-[var(--color-text)]">{evaluation.motivo}</p>
+                <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Motivo</p>
+                <p className="text-sm text-(--color-text)">{evaluation.motivo}</p>
               </div>
             )}
 
             {isCerrado && evaluation.resultadoFinal && (
               <div>
-                <p className="text-xs font-medium text-[var(--color-text-subtle)] uppercase tracking-wide mb-1">Resultado Final</p>
+                <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Resultado Final</p>
                 <span className={[
                   "inline-flex text-sm font-semibold px-3 py-1 rounded-full border",
-                  RESULTADO_COLORS[evaluation.resultadoFinal] ?? "bg-slate-100 text-slate-700 border-slate-300",
+                  resultadoBadgeClass(evaluation.resultadoFinal),
                 ].join(" ")}>
                   {RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}
                 </span>
                 {evaluation.porcentajeCumplimiento !== null && (
-                  <p className="mt-1 text-sm text-[var(--color-text-subtle)]">
+                  <p className="mt-1 text-sm text-text-subtle">
                     Cumplimiento: {evaluation.porcentajeCumplimiento.toFixed(1)}%
                   </p>
                 )}
@@ -433,21 +457,21 @@ export function EvaluationDetail({
 
             {evaluation.restricciones && (
               <div>
-                <p className="text-xs font-medium text-[var(--color-text-subtle)] uppercase tracking-wide mb-1">Restricciones</p>
-                <p className="text-sm text-[var(--color-text)]">{evaluation.restricciones}</p>
+                <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Restricciones</p>
+                <p className="text-sm text-(--color-text)">{evaluation.restricciones}</p>
               </div>
             )}
 
             {evaluation.observacionesGenerales && (
               <div>
-                <p className="text-xs font-medium text-[var(--color-text-subtle)] uppercase tracking-wide mb-1">Observaciones generales</p>
-                <p className="text-sm text-[var(--color-text)]">{evaluation.observacionesGenerales}</p>
+                <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Observaciones generales</p>
+                <p className="text-sm text-(--color-text)">{evaluation.observacionesGenerales}</p>
               </div>
             )}
 
             {!isCerrado && (
-              <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
-                <p className="text-sm text-[var(--color-text-muted)]">
+              <div className="rounded-(--radius) border border-(--color-border) bg-surface-2 px-4 py-3">
+                <p className="text-sm text-(--color-text-muted)">
                   El acta de cierre se completa al cerrar la evaluación. Usa el botón <strong>Cerrar evaluación</strong> en la cabecera cuando hayas finalizado el checklist.
                 </p>
               </div>
@@ -456,14 +480,14 @@ export function EvaluationDetail({
             {/* Roles de firma */}
             {definition.closingAct.signatureRoles.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-[var(--color-text-subtle)] uppercase tracking-wide mb-2">Firmas requeridas (en acta impresa)</p>
+                <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-2">Firmas requeridas (en acta impresa)</p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {definition.closingAct.signatureRoles.map((role) => (
                     <div
                       key={role}
-                      className="h-16 rounded-[var(--radius)] border-2 border-dashed border-[var(--color-border)] flex flex-col items-center justify-end pb-1"
+                      className="h-16 rounded-(--radius) border-2 border-dashed border-(--color-border) flex flex-col items-center justify-end pb-1"
                     >
-                      <span className="text-xs text-[var(--color-text-subtle)]">{role}</span>
+                      <span className="text-xs text-text-subtle">{role}</span>
                     </div>
                   ))}
                 </div>
@@ -475,8 +499,8 @@ export function EvaluationDetail({
         {/* Seguimientos */}
         {evaluation.tipo === "seguimiento" && (
           <TabsContent value="seguimientos">
-            <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h3 className="text-base font-semibold text-[var(--color-text)] mb-4">Seguimientos programados</h3>
+            <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5">
+              <h3 className="text-base font-semibold text-(--color-text) mb-4">Seguimientos programados</h3>
               <FollowupsPanel
                 followups={followups}
                 canManage={canManage}
@@ -488,7 +512,7 @@ export function EvaluationDetail({
 
         {/* Plan de acción */}
         <TabsContent value="plan">
-          <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+          <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5">
             <ActionPlanPanel
               evaluationId={evaluation.id}
               items={actionPlan}

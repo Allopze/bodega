@@ -350,6 +350,25 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
 
               {/* Active toggle */}
               <Checkbox id="isActive" name="isActive" value="on" defaultChecked={editUser?.isActive ?? true} label="Usuario activo" />
+
+              {!isEdit && (
+                <Field
+                  label="Vigencia de invitación"
+                  htmlFor="expiresInDays"
+                  helper="Días antes de que el enlace expire."
+                  error={state.fieldErrors?.expiresInDays?.[0]}
+                >
+                  <Input
+                    id="expiresInDays"
+                    name="expiresInDays"
+                    type="number"
+                    min={1}
+                    max={30}
+                    defaultValue={7}
+                    error={!!state.fieldErrors?.expiresInDays}
+                  />
+                </Field>
+              )}
             </FieldGroup>
 
             {/* Roles */}

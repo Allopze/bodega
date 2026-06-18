@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { and, eq, ne } from "drizzle-orm"
+import { and, eq, isNull, lt, ne } from "drizzle-orm"
 import { db } from "@/db"
 import { users, userRoles, userPermissions, worksiteUsers, userInvitations, roles } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -25,6 +25,17 @@ import {
 } from "./actions.helpers"
 
 const REVALIDATE = "/admin/usuarios"
+
+/** Marca como aceptadas las invitaciones pendientes expiradas de un email. */
+async function cleanupExpiredInvitations(email: string) {
+  await db.update(userInvitations)
+    .set({ acceptedAt: new Date().toISOString() })
+    .where(and(
+      eq(userInvitations.email, email),
+      isNull(userInvitations.acceptedAt),
+      lt(userInvitations.expiresAt, new Date().toISOString()),
+    ))
+}
 
 // ── Invite ───────────────────────────────────────────────────────────────────
 export async function inviteUser(
@@ -67,6 +78,15 @@ export async function inviteUser(
   const inviteUrl = `${getAppBaseUrl()}/registro?token=${encodeURIComponent(token)}`
   const expiresAt = new Date(Date.now() + d.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
   const invitationId = nanoid()
+
+  // Limpiar invitaciones expiradas e invalidar pendientes anteriores
+  await cleanupExpiredInvitations(d.email)
+  await db.update(userInvitations)
+    .set({ acceptedAt: new Date().toISOString() })
+    .where(and(
+      eq(userInvitations.email, d.email),
+      isNull(userInvitations.acceptedAt),
+    ))
 
   await db.insert(userInvitations).values({
     id: invitationId,
@@ -135,6 +155,7 @@ export async function createUser(
     isActive: formData.get("isActive") === "on",
     roleIds:  formData.getAll("roleIds"),
     permissionIds: formData.getAll("permissionIds"),
+    expiresInDays: formData.get("expiresInDays") || 7,
     worksiteAssignments: buildWorksiteAssignments(formData),
   }
 
@@ -167,8 +188,11 @@ export async function createUser(
   const avatarColor  = String(Math.abs(hashStr(displayName)) % 360)
   const token        = generateInvitationToken()
   const inviteUrl    = `${getAppBaseUrl()}/registro?token=${encodeURIComponent(token)}`
-  const expiresAt    = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  const expiresAt    = new Date(Date.now() + d.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
   const invitationId = nanoid()
+
+  // Limpiar invitaciones expiradas antes de crear nueva
+  await cleanupExpiredInvitations(d.email)
 
   await db.transaction(async (tx) => {
     await tx.insert(users).values({
@@ -190,18 +214,24 @@ export async function createUser(
         }))
       )
     }
-    if (d.isActive) {
-      await tx.insert(userInvitations).values({
-        id: invitationId,
-        email: d.email,
-        name: displayName,
-        tokenHash: hashInvitationToken(token),
-        roleIdsJson: JSON.stringify(d.roleIds),
-        worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
-        invitedByUserId: session.user.id,
-        expiresAt,
-      })
-    }
+    // Invalidar invitaciones pendientes anteriores para el mismo email
+    await tx.update(userInvitations)
+      .set({ acceptedAt: new Date().toISOString() })
+      .where(and(
+        eq(userInvitations.email, d.email),
+        isNull(userInvitations.acceptedAt),
+      ))
+
+    await tx.insert(userInvitations).values({
+      id: invitationId,
+      email: d.email,
+      name: displayName,
+      tokenHash: hashInvitationToken(token),
+      roleIdsJson: JSON.stringify(d.roleIds),
+      worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
+      invitedByUserId: session.user.id,
+      expiresAt,
+    })
   })
 
   let deliveryMessage = `Usuario ${displayName} creado. Invitación enviada para definir contraseña.`

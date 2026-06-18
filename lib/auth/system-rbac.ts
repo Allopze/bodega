@@ -6,6 +6,7 @@ export const SYSTEM_ROLES = [
   { id: "rol-sec", name: "secretaria", label: "Secretaría", description: "Revisa, aprueba y gestiona operación diaria" },
   { id: "rol-prev", name: "prevencionista", label: "Prevencionista oficina", description: "Revisa y aprueba solicitudes" },
   { id: "rol-sol-faena", name: "solicitante_faena", label: "Prevencionista faena", description: "Solicita ítems para sus faenas asignadas" },
+  { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas" },
 ] satisfies Array<typeof roles.$inferInsert>
 
 export const SYSTEM_PERMISSIONS = [
@@ -44,6 +45,11 @@ export const SYSTEM_PERMISSIONS = [
   { id: "p-srv-all", name: "servicios:view_all", module: "servicios", description: "Ver todas las solicitudes de servicios" },
   { id: "p-srv-submit", name: "servicios:submit", module: "servicios", description: "Enviar solicitudes de servicios a aprobación" },
   { id: "p-srv-approve", name: "servicios:approve", module: "servicios", description: "Aprobar cotizaciones de servicios" },
+  // SST module
+  { id: "p-sst-view", name: "sst:view", module: "sst", description: "Ver evaluaciones SST" },
+  { id: "p-sst-create", name: "sst:create", module: "sst", description: "Crear evaluaciones SST" },
+  { id: "p-sst-close", name: "sst:close", module: "sst", description: "Cerrar evaluaciones SST" },
+  { id: "p-sst-manage", name: "sst:manage", module: "sst", description: "Gestionar plan de acción SST" },
 ] satisfies Array<typeof permissions.$inferInsert>
 
 const JEFATURA_PERMISSION_IDS = [
@@ -72,6 +78,7 @@ const PREVENCIONISTA_OFICINA_PERMISSION_IDS = [
   "p-wh-stock", "p-wh-mov",
   "p-rep-view",
   "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup",
+  "p-sst-view", "p-sst-create", "p-sst-close", "p-sst-manage",
 ]
 
 const PREVENCIONISTA_FAENA_PERMISSION_IDS = [
@@ -110,6 +117,14 @@ const SERVICIOS_FAENA_PERMISSION_IDS = [
   "p-srv-create", "p-srv-own", "p-srv-submit",
 ]
 
+const JEFE_MANTENCION_PERMISSION_IDS = [
+  "p-req-create", "p-req-own", "p-req-submit",
+  "p-pur-view",
+  "p-rec-reg-faena", "p-rec-view",
+  "p-wh-stock",
+  "p-rep-view",
+]
+
 export const SYSTEM_ROLE_PERMISSIONS = [
   ...SYSTEM_PERMISSIONS.map((permission) => ({ roleId: "rol-admin", permissionId: permission.id })),
   ...JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
@@ -123,4 +138,5 @@ export const SYSTEM_ROLE_PERMISSIONS = [
   ...SERVICIOS_PREVENCIONISTA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...PREVENCIONISTA_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
   ...SERVICIOS_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
+  ...JEFE_MANTENCION_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
 ] satisfies Array<typeof rolePermissions.$inferInsert>

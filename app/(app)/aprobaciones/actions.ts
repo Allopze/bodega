@@ -19,6 +19,7 @@ function getRoleContext(roles: string[]): string {
   if (roles.includes("jefa_chome"))    return "jefa_chome"
   if (roles.includes("secretaria"))    return "secretaria"
   if (roles.includes("prevencionista")) return "prevencionista"
+  if (roles.includes("jefe_mantencion")) return "jefe_mantencion"
   return roles[0] ?? "unknown"
 }
 

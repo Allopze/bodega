@@ -9,6 +9,7 @@ import {
 import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
+import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
@@ -50,7 +51,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))
   if (!hasAccess) notFound()
 
-  const [allWorksites, allProducts, allAttrs, timelineEvents, allSuppliers] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, timelineEvents, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
@@ -75,6 +76,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       )
       .orderBy(desc(statusHistory.changedAt)),
     db.select().from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
+    getPdfMaxSizeMb(),
   ])
 
   const worksiteOptions = allWorksites
@@ -169,6 +171,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           products={productOptions}
           suppliers={supplierOptions}
           editRequest={editRequest}
+          maxFileSizeMb={maxFileSizeMb}
+          userRoles={session.user.roles}
         />
         <EntityTimeline entityType="request" events={timelineEvents} />
       </div>

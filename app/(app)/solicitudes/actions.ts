@@ -72,6 +72,11 @@ async function persistDraft(
   }
   const d = parsed.data
  
+  // Jefe de mantención no puede crear solicitudes EPP
+  if (session.user.roles.includes("jefe_mantencion") && d.requestType === "epp") {
+    return { ok: false, message: "No tienes permisos para crear solicitudes de EPP" }
+  }
+
   const isEdit = !!d.id
   if (!canAccessWorksite(session, d.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }

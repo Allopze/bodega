@@ -534,7 +534,7 @@ describe("Full procurement workflow integration", () => {
       code: "SOL-2026-MULTI",
       worksiteId,
       requesterId: userId,
-      requestType: "stock",
+      requestType: "otro",
       urgency: "normal",
       status: "approved",
       createdAt: now,

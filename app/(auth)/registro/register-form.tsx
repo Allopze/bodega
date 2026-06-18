@@ -2,8 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useActionState } from "react"
+import { useRouter } from "next/navigation"
+import { useActionState, useEffect } from "react"
 import { CheckCircle } from "@phosphor-icons/react"
+import { signIn } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -20,10 +22,26 @@ interface RegisterFormProps {
 }
 
 export function RegisterForm({ token, mode, initialName, initialEmail, inviteError, inviteNotice }: RegisterFormProps) {
+  const router = useRouter()
   const [state, formAction] = useActionState<ActionState, FormData>(registerUser, INITIAL_STATE)
   const isSuccess = state.ok
   const tokenError = state.fieldErrors?.token?.[0] ?? inviteError
   const disabledByInvite = mode === "invite" && (!!inviteError || !!inviteNotice)
+
+  // Credenciales capturadas antes del submit para auto-login
+  const credentialsRef = React.useRef<{ email: string; password: string } | null>(null)
+
+  // Auto-login después de registro exitoso
+  useEffect(() => {
+    if (!isSuccess || !credentialsRef.current) return
+    const { email, password } = credentialsRef.current
+    signIn("credentials", { email, password, redirect: false }).then((result) => {
+      if (result?.ok) {
+        router.push("/dashboard")
+        router.refresh()
+      }
+    })
+  }, [isSuccess, router])
 
   if (isSuccess) {
     return (
@@ -33,9 +51,9 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
           <div>
             <h1 className="font-display text-lg font-semibold text-[var(--color-text)]">Cuenta creada</h1>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              {state.message ?? "Ya puedes iniciar sesión con tus credenciales."}
+              Iniciando sesión automáticamente...
             </p>
-            <Button asChild className="mt-4" size="sm">
+            <Button asChild className="mt-4" size="sm" variant="secondary">
               <Link href="/login">Ir al inicio de sesión</Link>
             </Button>
           </div>
@@ -44,8 +62,16 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
     )
   }
 
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    const formData = new FormData(e.currentTarget)
+    credentialsRef.current = {
+      email: String(formData.get("email") ?? "").trim().toLowerCase(),
+      password: String(formData.get("password") ?? ""),
+    }
+  }
+
   return (
-    <form action={formAction} noValidate>
+    <form action={formAction} noValidate onSubmit={handleSubmit}>
       <input type="hidden" name="token" value={token} />
 
       {tokenError && (

@@ -142,9 +142,11 @@ interface RequestFormProps {
   products:     ProductOption[]
   suppliers:    SupplierOption[]
   editRequest?: EditRequest
+  maxFileSizeMb: number
+  userRoles?:   string[]
 }
 
-export function RequestForm({ worksites, products, suppliers, editRequest }: RequestFormProps) {
+export function RequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userRoles }: RequestFormProps) {
   const router = useRouter()
   const isEdit  = !!editRequest
   const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
@@ -420,7 +422,10 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
 
   const readOnly = !isDraft
   const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]
-  const requestTypeLabel = REQUEST_TYPE_OPTS.find((option) => option.value === requestType)?.label ?? requestType
+  const requestTypeOpts = userRoles?.includes("jefe_mantencion")
+    ? REQUEST_TYPE_OPTS.filter((o) => o.value !== "epp")
+    : REQUEST_TYPE_OPTS
+  const requestTypeLabel = requestTypeOpts.find((option) => option.value === requestType)?.label ?? requestType
   const urgencyLabel = URGENCY_OPTS.find((option) => option.value === urgency)?.label ?? urgency
   const worksiteLabel = worksites.find((worksite) => worksite.id === worksiteId)?.name ?? "Sin faena"
   const missingItems = buildRequestSummaryIssues({ worksiteId, requiredDate, items })
@@ -466,7 +471,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {REQUEST_TYPE_OPTS.map((o) => (
+                  {requestTypeOpts.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}
                 </SelectContent>
@@ -561,6 +566,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest }: Req
                 suppliers={suppliers}
                 readOnly={readOnly}
                 requestType={requestType}
+                maxFileSizeMb={maxFileSizeMb}
                 onUpdate={(patch) => updateItem(item._key, patch)}
                 onSelectProduct={(pid) => selectProduct(item._key, pid)}
                 onSelectFreeProduct={(name) => selectFreeProduct(item._key, name)}

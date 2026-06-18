@@ -89,6 +89,10 @@ const routeTargets: RouteTarget[] = [
   { slug: "servicios", path: "/servicios", auth: true },
   { slug: "servicios-nueva", path: "/servicios/nueva", auth: true },
   { slug: "servicios-detalle", path: "/servicios/srv-audit-1", auth: true },
+  { slug: "prevencion", path: "/prevencion", auth: true },
+  { slug: "prevencion-nueva", path: "/prevencion/nueva", auth: true },
+  { slug: "prevencion-detalle", path: "/prevencion/sst-audit-1", auth: true },
+  { slug: "sst-print", path: "/sst/sst-audit-1/print", auth: true },
   { slug: "admin", path: "/admin", auth: true },
   { slug: "admin-auditoria", path: "/admin/auditoria", auth: true },
   { slug: "admin-configuracion", path: "/admin/configuracion", auth: true },
@@ -113,6 +117,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "reportes", fixtures: ["solicitudes", "ítems", "OC", "recepciones", "estados variados"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
+  { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción"] },
   { section: "admin-faenas", fixtures: ["faenas activas"] },
   { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos"] },
   { section: "admin-proveedores", fixtures: ["proveedores activos con contacto"] },
@@ -268,6 +273,10 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "p-srv-all", name: "servicios:view_all", module: "servicios", description: "Ver todos los servicios" },
     { id: "p-srv-submit", name: "servicios:submit", module: "servicios", description: "Enviar servicios" },
     { id: "p-srv-approve", name: "servicios:approve", module: "servicios", description: "Aprobar cotizaciones de servicios" },
+    { id: "p-sst-view", name: "sst:view", module: "sst", description: "Ver evaluaciones SST" },
+    { id: "p-sst-create", name: "sst:create", module: "sst", description: "Crear evaluaciones SST" },
+    { id: "p-sst-close", name: "sst:close", module: "sst", description: "Cerrar evaluaciones SST" },
+    { id: "p-sst-manage", name: "sst:manage", module: "sst", description: "Gestionar plan de acción SST" },
   ]
 
   const roles: (typeof schema.roles.$inferInsert)[] = [
@@ -284,7 +293,7 @@ async function prepareDatabase(captureDbUrl: string) {
   const rolePermissionNames: Record<string, string[]> = {
     "rol-admin": permissions.map((permission) => permission.name),
     "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "purchasing:create_order", "purchasing:send_order", "receiving:view", "reports:view", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
-    "rol-prevencion": ["requests:create", "requests:view_own", "requests:submit", "repuestos:create", "repuestos:view_own", "repuestos:submit", "servicios:create", "servicios:view_own", "servicios:submit"],
+    "rol-prevencion": ["requests:create", "requests:view_own", "requests:submit", "repuestos:create", "repuestos:view_own", "repuestos:submit", "servicios:create", "servicios:view_own", "servicios:submit", "sst:view", "sst:create", "sst:close", "sst:manage"],
     "rol-bodega": ["receiving:view", "receiving:register", "receiving:register_office", "receiving:register_faena", "warehouse:view_stock", "warehouse:register_movement", "warehouse:adjust_stock", "reports:view"],
     "rol-secretaria": ["purchasing:view", "purchasing:create_order", "purchasing:send_order", "purchasing:manage_suppliers", "reports:view"],
   }
@@ -545,7 +554,7 @@ async function prepareDatabase(captureDbUrl: string) {
       code: "SOL-2026-0002",
       worksiteId,
       requesterId: "user-audit-prevencion",
-      requestType: "stock",
+      requestType: "otro",
       urgency: "critical",
       requiredDate: "2026-06-19",
       status: "submitted",
@@ -779,6 +788,60 @@ async function prepareDatabase(captureDbUrl: string) {
       notes: "Incluye visita técnica y repuestos menores.",
       createdAt: now,
       updatedAt: now,
+    },
+  ])
+
+  // ── SST Evaluations ──────────────────────────────────────────────────────
+  await db.insert(schema.sstEvaluations).values([
+    {
+      id: "sst-audit-1",
+      worksiteId,
+      workerId: "worker-audit-1",
+      createdBy: userId,
+      definicionCode: "LC-SST-001",
+      definicionVersion: "01",
+      tipo: "nuevo",
+      fechaEvaluacion: "2026-06-09",
+      estado: "cerrado",
+      cargosJson: JSON.stringify(["operador_maquinaria"]),
+      resultadoFinal: "apto",
+      porcentajeCumplimiento: 95.5,
+      observacionesGenerales: "Evaluación de ingreso para trabajador nuevo.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "sst-audit-2",
+      worksiteId,
+      workerId: "worker-audit-2",
+      createdBy: userId,
+      definicionCode: "LC-SST-002",
+      definicionVersion: "01",
+      tipo: "seguimiento",
+      motivo: "accidente",
+      descripcionEvento: "Seguimiento post-incidente menor.",
+      fechaEvaluacion: "2026-06-09",
+      estado: "cerrado",
+      cargosJson: JSON.stringify(["mecanico"]),
+      resultadoFinal: "apto",
+      porcentajeCumplimiento: 88.0,
+      resultadoEficacia: "eficaz",
+      observacionesGenerales: "Seguimiento por incidente menor en faena.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+
+  await db.insert(schema.sstActionPlan).values([
+    {
+      id: "sst-action-audit-1",
+      evaluationId: "sst-audit-1",
+      n: 1,
+      hallazgo: "Falta EPP en sector norte",
+      accion: "Entregar kit completo al trabajador",
+      responsable: "Jefe de faena",
+      plazo: "2026-06-15",
+      estado: "completado",
     },
   ])
 

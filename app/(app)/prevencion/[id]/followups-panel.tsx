@@ -81,13 +81,13 @@ function FollowupCard({
   }
 
   return (
-    <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-3">
+    <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-[var(--color-text)]">
+          <p className="text-sm font-semibold text-(--color-text)">
             {INSTANCIA_LABELS[followup.instancia] ?? followup.instancia}
           </p>
-          <p className="text-xs text-[var(--color-text-subtle)]">
+          <p className="text-xs text-text-subtle">
             Programado: {followup.fechaProgramada}
           </p>
         </div>
@@ -98,7 +98,7 @@ function FollowupCard({
               Realizado
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-xs font-medium text-[var(--color-text-subtle)]">
+            <span className="flex items-center gap-1 text-xs font-medium text-text-subtle">
               <Circle size={14} />
               Pendiente
             </span>
@@ -118,19 +118,26 @@ function FollowupCard({
 
       {followup.realizado && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[var(--color-text-subtle)]">¿Cumple?</span>
+          <div
+            role="group"
+            aria-label="¿Este seguimiento cumple?"
+            className="flex items-center gap-2"
+          >
+            <span className="text-xs text-text-subtle">¿Cumple?</span>
             {[{ val: true, label: "Sí" }, { val: false, label: "No" }].map(({ val, label }) => (
               <button
                 key={label}
                 type="button"
                 disabled={!canManage || isPending}
                 onClick={() => handleToggleCumple(followup.cumple === val ? null : val)}
+                aria-pressed={followup.cumple === val}
                 className={[
-                  "px-2.5 py-1 text-xs font-semibold rounded-[var(--radius)] border transition-colors",
+                  "px-2.5 py-1 text-xs font-semibold rounded-(--radius) border transition-colors",
                   followup.cumple === val
-                    ? val ? "bg-emerald-500 text-white border-emerald-500" : "bg-rose-500 text-white border-rose-500"
-                    : "border-[var(--color-border)] text-[var(--color-text-subtle)] hover:border-[var(--color-border-strong)]",
+                    ? val
+                      ? "bg-emerald-500 text-white border-emerald-500"
+                      : "bg-rose-500 text-white border-rose-500"
+                    : "border-(--color-border) text-text-subtle hover:border-border-strong",
                   (!canManage || isPending) && "opacity-50 cursor-not-allowed",
                 ].join(" ")}
               >
@@ -140,8 +147,9 @@ function FollowupCard({
           </div>
           <button
             type="button"
-            className="text-xs text-[var(--color-text-subtle)] underline"
+            className="text-xs text-text-subtle underline"
             onClick={() => setExpanded(!expanded)}
+            aria-expanded={expanded}
           >
             {expanded ? "Ocultar observaciones" : "Ver / editar observaciones"}
           </button>
@@ -175,7 +183,7 @@ export function FollowupsPanel({ followups, canManage, onUpdate }: Props) {
 
   if (followups.length === 0) {
     return (
-      <p className="text-sm text-[var(--color-text-subtle)] italic">
+      <p className="text-sm text-text-subtle italic">
         No hay seguimientos programados para esta evaluación.
       </p>
     )
@@ -183,7 +191,7 @@ export function FollowupsPanel({ followups, canManage, onUpdate }: Props) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-[var(--color-text-muted)]">
+      <p className="text-sm text-(--color-text-muted)">
         Seguimientos programados automáticamente al crear la evaluación.
       </p>
       {followups.map((f) => (

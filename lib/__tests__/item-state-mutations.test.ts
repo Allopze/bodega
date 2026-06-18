@@ -11,10 +11,12 @@ import { describe, it, expect, vi, afterAll, beforeAll } from "vitest"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
+import type { DB } from "@/db"
 
 const pg = new PGlite()
-const inMemoryDb = drizzle(pg, { schema })
-const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
+const pgLiteDb = drizzle(pg, { schema })
+const inMemoryDb = pgLiteDb as unknown as DB
+const testGlobal = globalThis as typeof globalThis & { __db?: DB }
 testGlobal.__db = inMemoryDb
 
 vi.mock("@/db", () => ({
@@ -38,7 +40,7 @@ describe("Item State Machine — DB integration", () => {
   const itemId = "item-test"
 
   beforeAll(async () => {
-    await migrate(inMemoryDb, { migrationsFolder })
+    await migrate(pgLiteDb, { migrationsFolder })
 
     await inMemoryDb.insert(schema.users).values({
       id: userId, name: "Test User", email: "test@chome.cl",

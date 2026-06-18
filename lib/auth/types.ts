@@ -24,3 +24,4 @@ export type RoleSlug =
   | "secretaria"
   | "prevencionista"
   | "solicitante_faena"
+  | "jefe_mantencion"

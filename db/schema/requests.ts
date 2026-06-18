@@ -20,7 +20,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
   requesterId:  text("requester_id").notNull().references(() => users.id),
 
-  requestType:  text("request_type").notNull().default("epp"), // epp | stock | mantencion | otro | repuestos | servicios
+  requestType:  text("request_type").notNull().default("epp"), // epp | otro | repuestos | servicios
   urgency:      text("urgency").notNull().default("normal"),   // normal | high | critical
   requiredDate: text("required_date"),
   status:       text("status").notNull().default("draft"),
@@ -97,7 +97,7 @@ export const approvalDecisions = pgTable("approval_decisions", {
   decidedAt:      timestamp("decided_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   reason:         text("reason"),
   modifiedQty:    real("modified_qty"),              // if quantity was modified during approval
-  roleContext:    text("role_context"),               // 'jefa_chome' | 'secretaria' | 'prevencionista' | 'admin'
+  roleContext:    text("role_context"),               // 'jefa_chome' | 'secretaria' | 'prevencionista' | 'jefe_mantencion' | 'admin'
 }, (table) => [
   // Invariant: modifiedQty is nullable but when set must be > 0; type from canonical decision types
   check("approval_decisions_modified_qty_positive", sql`${table.modifiedQty} IS NULL OR ${table.modifiedQty} > 0`),

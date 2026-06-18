@@ -10,14 +10,12 @@ export const REQUEST_TYPE_OPTS = [
   { value: "otro",      label: "Otros" },
 ] as const
 
-/** Includes legacy types (stock, mantencion) for display in existing records */
+/** Includes legacy types for display in existing records */
 export const REQUEST_TYPE_LABELS: Record<string, string> = {
   epp:        "EPP",
   repuestos:  "Repuestos",
   servicios:  "Servicios",
   otro:       "Otros",
-  stock:      "Stock",       // legacy
-  mantencion: "Mantención",  // legacy
 }
 
 export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
@@ -25,8 +23,6 @@ export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning
   repuestos:  "warning",
   servicios:  "info",
   otro:       "default",
-  stock:      "success",       // legacy
-  mantencion: "warning",       // legacy
 }
 
 /**

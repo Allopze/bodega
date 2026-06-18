@@ -50,8 +50,6 @@ const URGENCY_DOT: Record<string, string> = {
 
 const REQUEST_TYPE_LABELS: Record<string, string> = {
   epp:        "EPP",
-  stock:      "Stock",
-  mantencion: "Mantención",
   otro:       "Otro",
   repuestos:  "Repuestos",
   servicios:  "Servicios",
@@ -59,8 +57,6 @@ const REQUEST_TYPE_LABELS: Record<string, string> = {
 
 const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
   epp:        "info",
-  stock:      "success",
-  mantencion: "warning",
   otro:       "default",
   repuestos:  "warning",
   servicios:  "info",

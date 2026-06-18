@@ -29,6 +29,7 @@ interface ItemEditorProps {
   suppliers:       SupplierOption[]
   readOnly:        boolean
   requestType?:    string
+  maxFileSizeMb:   number
   onUpdate:        (patch: Partial<ItemRow>) => void
   onSelectProduct: (pid: string) => void
   onSelectFreeProduct: (name: string) => void
@@ -41,7 +42,7 @@ interface ItemEditorProps {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ItemEditor({
-  item, idx, products, suppliers, readOnly, requestType,
+  item, idx, products, suppliers, readOnly, requestType, maxFileSizeMb,
   onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
 }: ItemEditorProps) {
   const isQuotationType    = QUOTATION_TYPES.has(requestType ?? "")
@@ -54,11 +55,10 @@ export function ItemEditor({
   const handleFileSelect = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files) return
-    const MAX_SIZE_MB = 20
     const newCots: PendingCotizacion[] = []
     for (const file of Array.from(files)) {
-      if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-        toast.error(`${file.name} excede el tamaño máximo de ${MAX_SIZE_MB}MB`)
+      if (file.size > maxFileSizeMb * 1024 * 1024) {
+        toast.error(`${file.name} excede el tamaño máximo de ${maxFileSizeMb}MB`)
         continue
       }
       newCots.push({
@@ -72,7 +72,7 @@ export function ItemEditor({
       onUpdate({ cotizaciones: [...cotizacionesRef.current, ...newCots] })
     }
     if (fileInputRef.current) fileInputRef.current.value = ""
-  }, [onUpdate])
+  }, [onUpdate, maxFileSizeMb])
 
   const removeCotizacion = React.useCallback((id: string) => {
     onUpdate({ cotizaciones: cotizacionesRef.current.filter((c) => c._id !== id) })

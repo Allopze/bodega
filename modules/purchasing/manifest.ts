@@ -31,5 +31,6 @@ export const purchasingModule = {
     { roleSlug: "secretaria",     permission: "purchasing:create_order" },
     { roleSlug: "secretaria",     permission: "purchasing:send_order" },
     { roleSlug: "secretaria",     permission: "purchasing:manage_suppliers" },
+    { roleSlug: "jefe_mantencion", permission: "purchasing:view" },
   ],
 } as const satisfies ModuleManifest
