@@ -41,7 +41,7 @@ export async function updateTemplateAction(
     return { ok: false, message: "No se pudo actualizar la plantilla" }
   }
 
-  revalidatePath("/admin/configuracion/plantillas")
+  revalidatePath("/admin/plantillas")
   return { ok: true, message: "Plantilla actualizada" }
 }
 
@@ -62,7 +62,7 @@ export async function resetTemplateAction(
     return { ok: false, message: "No se pudo restaurar la plantilla" }
   }
 
-  revalidatePath("/admin/configuracion/plantillas")
+  revalidatePath("/admin/plantillas")
   return { ok: true, message: "Plantilla restaurada a su valor por defecto" }
 }
 
@@ -73,6 +73,6 @@ export async function seedTemplatesAction(): Promise<ActionState> {
   try { await seedDefaultTemplates() }
   catch { return { ok: false, message: "No se pudieron sembrar las plantillas" } }
 
-  revalidatePath("/admin/configuracion/plantillas")
+  revalidatePath("/admin/plantillas")
   return { ok: true, message: "Plantillas por defecto creadas" }
 }

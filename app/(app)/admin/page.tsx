@@ -79,7 +79,7 @@ export default async function AdminPage() {
     {
       title:       "Plantillas de correo",
       description: "Personalizar asunto y cuerpo HTML de los correos del sistema.",
-      href:        "/admin/configuracion/plantillas",
+      href:        "/admin/plantillas",
       icon:        FileText,
       permission:  "admin:config",
       group:       "gobierno",

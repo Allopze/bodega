@@ -24,7 +24,6 @@ export default async function PlantillasPage() {
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
             { label: "Administración", href: "/admin" },
-            { label: "Configuración", href: "/admin/configuracion" },
             { label: "Plantillas" },
           ]} />
         }

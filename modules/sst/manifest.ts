@@ -18,12 +18,6 @@ export const sstModule = {
           iconName: "ClipboardText",
           permissions: ["sst:view"],
         },
-        {
-          label: "Nueva Evaluación",
-          href: "/prevencion/nueva",
-          iconName: "Plus",
-          permissions: ["sst:create"],
-        },
       ],
     },
   ],
