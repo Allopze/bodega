@@ -59,6 +59,61 @@ export async function getPdfMaxSizeMb(): Promise<number> {
 }
 
 /**
+ * Get whether system emails are globally enabled.
+ * Acts as a kill-switch: when false, no outbound email is sent.
+ * Defaults to true when not set or invalid.
+ */
+export async function getEmailsEnabled(): Promise<boolean> {
+  try {
+    const setting = await db.query.systemSettings.findFirst({
+      where: eq(systemSettings.key, "emails_enabled"),
+    })
+    if (setting) return setting.value !== "false"
+  } catch (err) {
+    logger.error("Error fetching emails_enabled setting, defaulting to enabled:", err)
+  }
+  return true
+}
+
+/**
+ * Set whether system emails are globally enabled.
+ * Updates the database and logs the action to the audit log.
+ */
+export async function setEmailsEnabled(
+  value: boolean,
+  userId: string,
+  userEmail?: string,
+): Promise<void> {
+  const oldValue = await getEmailsEnabled()
+  const valStr = value ? "true" : "false"
+
+  await db
+    .insert(systemSettings)
+    .values({
+      key: "emails_enabled",
+      value: valStr,
+      updatedAt: new Date().toISOString(),
+    })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: {
+        value: valStr,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+  recordAudit({
+    userId,
+    userEmail,
+    action: "update",
+    entityType: "system_setting",
+    entityId: "emails_enabled",
+    oldState: { value: oldValue },
+    newState: { value },
+  })
+}
+
+/**
  * Get the configured company profile used in printable purchase orders.
  * Missing fields fall back to empty strings, while the company name defaults to Chome.
  */

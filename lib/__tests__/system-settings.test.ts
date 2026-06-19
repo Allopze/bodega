@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { getCompanyProfile, setCompanyProfile } from "@/lib/services/system-settings"
+import { getCompanyProfile, setCompanyProfile, getEmailsEnabled, setEmailsEnabled } from "@/lib/services/system-settings"
 import { recordAudit } from "@/lib/audit"
 
 const mocks = vi.hoisted(() => {
@@ -103,6 +103,42 @@ describe("system settings company profile", () => {
       action:     "update",
       entityType: "system_setting",
       entityId:   "company_profile",
+    }))
+  })
+})
+
+describe("system settings emails enabled flag", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("defaults to enabled when the setting is missing", async () => {
+    mocks.findFirst.mockResolvedValue(null)
+    await expect(getEmailsEnabled()).resolves.toBe(true)
+  })
+
+  it("returns false only when explicitly disabled", async () => {
+    mocks.findFirst.mockResolvedValueOnce({ key: "emails_enabled", value: "false" })
+    await expect(getEmailsEnabled()).resolves.toBe(false)
+
+    mocks.findFirst.mockResolvedValueOnce({ key: "emails_enabled", value: "true" })
+    await expect(getEmailsEnabled()).resolves.toBe(true)
+  })
+
+  it("persists the flag and records an audit entry", async () => {
+    mocks.findFirst.mockResolvedValue(null)
+
+    await setEmailsEnabled(false, "usr-admin", "admin@chome.cl")
+
+    expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({
+      key:   "emails_enabled",
+      value: "false",
+    }))
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action:     "update",
+      entityType: "system_setting",
+      entityId:   "emails_enabled",
+      newState:   { value: false },
     }))
   })
 })

@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest"
 import path from "node:path"
 import * as schema from "@/db/schema"
@@ -19,7 +19,7 @@ vi.mock("@/db", () => ({
   },
 }))
 
-await migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { getStockAlerts, getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 

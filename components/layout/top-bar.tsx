@@ -64,7 +64,7 @@ export function TopBar({
     <header className={cn(
       "flex items-center h-[3.25rem] px-4 md:px-5 gap-3",
       "bg-[var(--color-surface)] rounded-full",
-      "border border-[var(--color-border)] shadow-[var(--shadow-md)]",
+      "border border-[var(--color-border)] shadow-(--shadow-card)",
       // Auto-hide: slide out above the container's overflow clip, fade to 0.
       "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",
       hidden
@@ -77,7 +77,7 @@ export function TopBar({
           onClick={onMenuToggle}
           className={cn(
             "lg:hidden flex items-center justify-center",
-            "min-h-[44px] min-w-[44px] rounded-[var(--radius-lg)]",
+            "min-h-[44px] min-w-[44px] rounded-(--radius-lg)",
             "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
             "hover:bg-[var(--color-surface-2)]",
             "transition-[color,background-color] duration-[var(--duration-fast)]",
@@ -121,7 +121,7 @@ export function TopBar({
         {worksiteName && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-surface-2 border border-(--color-border)">
             <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" />
-            <span className="text-xs font-mono text-(--color-text-muted) truncate max-w-[16rem] 2xl:max-w-[20rem]">
+            <span className="text-xs font-medium text-(--color-text-muted) truncate max-w-[16rem] 2xl:max-w-[20rem]">
               {worksiteName}
             </span>
           </div>
@@ -144,7 +144,7 @@ export function TopBar({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filtrar en esta página..."
             className={cn(
-              "h-7 w-36 lg:w-52 rounded-full border bg-[var(--color-surface-2)] pl-8 text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-line)] transition-[border-color,box-shadow] duration-[var(--duration-fast)]",
+              "h-7 w-36 lg:w-52 rounded-(--radius) border bg-[var(--color-surface-2)] pl-8 text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-line)] transition-[border-color,box-shadow] duration-[var(--duration-fast)]",
               // Borde primario = filtro activo; deja espacio para el botón de limpiar
               searchQuery
                 ? "border-[var(--color-primary-line)] pr-7"

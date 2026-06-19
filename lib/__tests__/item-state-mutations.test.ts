@@ -6,7 +6,7 @@
 
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, vi, afterAll, beforeAll } from "vitest"
 import path from "node:path"
 import { eq } from "drizzle-orm"
@@ -35,7 +35,7 @@ describe("Item State Machine — DB integration", () => {
   const itemId = "item-test"
 
   beforeAll(async () => {
-    await migrate(pgLiteDb, { migrationsFolder })
+    await migratePGlite(pg, migrationsFolder)
 
     await inMemoryDb.insert(schema.users).values({
       id: userId, name: "Test User", email: "test@chome.cl",

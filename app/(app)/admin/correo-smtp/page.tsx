@@ -3,39 +3,40 @@ import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { getCompanyProfile, getPdfMaxSizeMb } from "@/lib/services/system-settings"
-import { ConfigForm } from "./config-form"
+import { getEmailsEnabled } from "@/lib/services/system-settings"
+import { getSmtpConfig } from "@/lib/services/smtp-settings"
+import { SmtpPageForms } from "./smtp-form"
 
-export const metadata: Metadata = { title: "Configuración del Sistema" }
+export const metadata: Metadata = { title: "Correo SMTP" }
 
-export default async function ConfiguracionPage() {
+export default async function CorreoSmtpPage() {
   try {
     await requirePermission("admin:config")
   } catch {
     redirect("/forbidden")
   }
 
-  const [pdfMaxSizeMb, companyProfile] = await Promise.all([
-    getPdfMaxSizeMb(),
-    getCompanyProfile(),
+  const [smtpConfig, emailsEnabled] = await Promise.all([
+    getSmtpConfig(),
+    getEmailsEnabled(),
   ])
 
   return (
     <PageContainer>
       <PageHeader
-        title="Configuración del Sistema"
-        description="Ajustar parámetros globales de Chome Solicitudes y Bodega."
+        title="Correo SMTP"
+        description="Configura el servidor de correo saliente y el interruptor global de notificaciones."
         breadcrumb={
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
               { label: "Administración", href: "/admin" },
-              { label: "Configuración" },
+              { label: "Correo SMTP" },
             ]}
           />
         }
       />
-      <ConfigForm initialPdfMaxSizeMb={pdfMaxSizeMb} initialCompanyProfile={companyProfile} />
+      <SmtpPageForms initialSmtpConfig={smtpConfig} initialEmailsEnabled={emailsEnabled} />
     </PageContainer>
   )
 }

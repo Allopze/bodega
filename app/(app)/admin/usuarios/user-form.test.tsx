@@ -38,6 +38,7 @@ const editUser = {
   name: "Alejandro Lopez Zelaya",
   email: "allopze@gmail.com",
   isActive: true,
+  emailNotifications: true,
   roleIds: ["rol-admin"],
   permissionIds: ["p-reports-view"],
   worksiteAssignments: [],
@@ -59,6 +60,38 @@ describe("UserForm permissions layout", () => {
     const selectedRole = screen.getByRole("button", { name: "Administrador" })
     expect(selectedRole).toHaveAttribute("aria-pressed", "true")
     expect(selectedRole).toHaveClass("bg-[var(--color-primary)]")
+  })
+
+  it("exposes the email-notifications toggle when editing, reflecting the saved value", () => {
+    render(
+      <UserForm
+        open
+        onClose={vi.fn()}
+        editUser={{ ...editUser, emailNotifications: false }}
+        allRoles={roles}
+        allPermissions={permissions}
+        allWorksites={[]}
+      />,
+    )
+
+    const toggle = screen.getByLabelText("Recibe notificaciones por correo") as HTMLInputElement
+    expect(toggle).toHaveAttribute("name", "emailNotifications")
+    expect(toggle.checked).toBe(false)
+  })
+
+  it("hides the email-notifications toggle when creating a user", () => {
+    render(
+      <UserForm
+        open
+        onClose={vi.fn()}
+        editUser={null}
+        allRoles={roles}
+        allPermissions={permissions}
+        allWorksites={[]}
+      />,
+    )
+
+    expect(screen.queryByLabelText("Recibe notificaciones por correo")).not.toBeInTheDocument()
   })
 
   it("keeps role chip dimensions stable between selected and unselected states", () => {

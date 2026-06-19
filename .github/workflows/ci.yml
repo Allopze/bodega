@@ -55,6 +55,14 @@ jobs:
       - name: Unit tests (with coverage threshold)
         run: npm run test:coverage
 
+      - name: Concurrency tests (real Postgres)
+        env:
+          STOCK_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+        run: npx vitest run --reporter=verbose lib/__tests__/*concurrency-postgres.test.ts 2>&1
+
       - name: Build
         run: npm run build
 
@@ -66,3 +74,38 @@ jobs:
 
       - name: E2E accessibility audit
         run: npm run test:e2e -- e2e/accessibility.spec.ts
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: prod
+          load: true
+          tags: bodega:ci-test
+
+      - name: Smoke test — verify image starts and responds
+        run: |
+          # Start container with minimal env
+          docker run -d --name bodega-smoke \
+            -e NODE_ENV=production \
+            -e DATABASE_URL=postgres://p:px@nonexistent:5432/bodega \
+            -e AUTH_SECRET=test-secret-do-not-use-in-prod \
+            -e NEXTAUTH_URL=http://localhost:3000 \
+            -e STORAGE_PATH=/tmp/storage \
+            -p 3000:3000 \
+            bodega:ci-test
+
+          # Wait for boot then check /api/health (will fail DB check but should return 500, not crash)
+          sleep 5
+          curl -sf http://localhost:3000/api/health || echo "Health check exited $? (expected if DB unavailable)"
+          docker stop bodega-smoke

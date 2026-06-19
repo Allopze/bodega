@@ -8,15 +8,13 @@ import { Input } from "@/components/ui/input"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { updateSystemSettings } from "./actions"
 import type { CompanyProfile } from "@/lib/services/system-settings"
-import type { SmtpConfigView } from "@/lib/services/smtp-settings"
 
 interface ConfigFormProps {
   initialPdfMaxSizeMb:   number
   initialCompanyProfile: CompanyProfile
-  initialSmtpConfig:     SmtpConfigView | null
 }
 
-export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile, initialSmtpConfig: _initialSmtpConfig }: ConfigFormProps) {
+export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: ConfigFormProps) {
   const [state, formAction] = useActionState(updateSystemSettings, INITIAL_STATE)
 
   useEffect(() => {
@@ -201,6 +199,7 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile, initial
                 </span>
               </div>
             </Field>
+
           </FieldGroup>
         </div>
 

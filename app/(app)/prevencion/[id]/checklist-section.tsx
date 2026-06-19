@@ -43,10 +43,10 @@ function StatusButton({
   const base = "h-8 px-3 text-xs font-semibold rounded-(--radius) border transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 active:scale-[0.98]"
   const colors = {
     positive: active
-      ? "bg-(--color-success) text-(--color-success-ink) border-(--color-success) shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
+      ? "bg-(--color-success) text-white border-(--color-success) shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
       : "bg-(--color-surface) border-(--color-border) text-text-subtle hover:border-(--color-success-line) hover:text-(--color-success)",
     negative: active
-      ? "bg-(--color-danger) text-(--color-danger-ink) border-(--color-danger) shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
+      ? "bg-(--color-danger) text-white border-(--color-danger) shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
       : "bg-(--color-surface) border-(--color-border) text-text-subtle hover:border-(--color-danger-line) hover:text-(--color-danger)",
     neutral: active
       ? "bg-(--color-surface-3) text-(--color-text) border-(--color-border-strong) shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
@@ -125,7 +125,7 @@ function ItemField({
 
     return (
       <div className="space-y-2">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
           <div
             role="group"
             aria-label={item.label}

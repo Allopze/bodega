@@ -30,6 +30,7 @@ interface UserForEdit {
   name:       string
   email:      string
   isActive:   boolean
+  emailNotifications: boolean
   roleIds:    string[]
   permissionIds: string[]
   worksiteAssignments: { worksiteId: string; isPrimary: boolean }[]
@@ -350,6 +351,17 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
 
               {/* Active toggle */}
               <Checkbox id="isActive" name="isActive" value="on" defaultChecked={editUser?.isActive ?? true} label="Usuario activo" />
+
+              {/* Email notifications toggle (edit only) */}
+              {isEdit && (
+                <Checkbox
+                  id="emailNotifications"
+                  name="emailNotifications"
+                  value="on"
+                  defaultChecked={editUser?.emailNotifications ?? true}
+                  label="Recibe notificaciones por correo"
+                />
+              )}
 
               {!isEdit && (
                 <Field

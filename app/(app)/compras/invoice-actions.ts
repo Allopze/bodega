@@ -14,14 +14,7 @@ import { createInvoiceAttachmentPath, resolvePurchaseOrdersDir } from "@/lib/sto
 import { invoiceSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 import { assertOrderAccess } from "./actions.helpers"
-
-const ALLOWED_INVOICE_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "application/xml",
-  "text/xml",
-])
+import { validateFile, MimeType } from "@/lib/file-validation"
 
 // ── File helpers ───────────────────────────────────────────────────────────────
 
@@ -40,14 +33,16 @@ async function persistInvoiceFile(value: FormDataEntryValue | null): Promise<
     return { ok: true, attachment: null }
   }
 
-  if (!ALLOWED_INVOICE_TYPES.has(value.type)) {
-    return { ok: false, message: "La factura debe ser PDF, JPG, PNG o XML" }
-  }
-
   const maxMb = await getPdfMaxSizeMb()
   const maxBytes = maxMb * 1024 * 1024
   if (value.size > maxBytes) {
     return { ok: false, message: `El archivo supera el límite de ${maxMb} MB` }
+  }
+
+  // Validate magic bytes and normalize MIME type
+  const validation = await validateFile(value, MimeType.INVOICE)
+  if (validation.error) {
+    return { ok: false, message: validation.error }
   }
 
   const safeName = sanitizeFileName(value.name || "factura")
@@ -66,7 +61,7 @@ async function persistInvoiceFile(value: FormDataEntryValue | null): Promise<
       fileName: safeName,
       filePath: relativePath,
       fileSize: value.size,
-      mimeType: value.type,
+      mimeType: validation.mimeType,
     },
   }
 }

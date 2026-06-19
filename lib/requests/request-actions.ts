@@ -25,6 +25,7 @@ import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
 import type { Permission } from "@/modules/permissions"
 import type { Session } from "next-auth"
+import { validateFile, MimeType } from "@/lib/file-validation"
 
 // ── Config type ───────────────────────────────────────────────────────────────
 
@@ -61,11 +62,7 @@ export interface RequestActionsConfig {
   logPrefix: string
 }
 
-const ALLOWED_QUOTATION_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-])
+
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
@@ -192,13 +189,15 @@ export function createRequestActions(config: RequestActionsConfig) {
     const file = formData.get("file") as File | null
     if (!file || file.size === 0) return { ok: false, message: "Selecciona un archivo" }
 
-    if (!ALLOWED_QUOTATION_TYPES.has(file.type)) {
-      return { ok: false, message: "Solo se permiten archivos PDF, JPG o PNG" }
-    }
-
     const maxMb = await getPdfMaxSizeMb()
     if (file.size > maxMb * 1024 * 1024) {
       return { ok: false, message: `El archivo supera el tamaño máximo de ${maxMb} MB` }
+    }
+
+    // Validate magic bytes and normalize MIME type
+    const validation = await validateFile(file, MimeType.QUOTATION)
+    if (validation.error) {
+      return { ok: false, message: validation.error }
     }
 
     const parsed = schemas.quotationUpload.safeParse({
@@ -241,7 +240,7 @@ export function createRequestActions(config: RequestActionsConfig) {
         notes:            d.notes ?? null,
         fileBuffer,
         fileName:         file.name,
-        mimeType:         file.type,
+        mimeType:         validation.mimeType,
         fileSize:         file.size,
         uploadedBy:       session.user.id,
         userEmail:        session.user.email ?? undefined,

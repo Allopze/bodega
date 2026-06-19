@@ -19,6 +19,7 @@
 import { randomUUID } from "node:crypto"
 import nodemailer, { type Transporter } from "nodemailer"
 import { getRawSmtpConfig } from "@/lib/services/smtp-settings"
+import { getEmailsEnabled } from "@/lib/services/system-settings"
 import { renderTemplate } from "@/lib/services/email-templates"
 
 type InvitationEmailInput = {
@@ -56,6 +57,12 @@ export function getAppBaseUrl() {
  * Returns null if neither source has a complete configuration.
  */
 async function getSmtpConfig(): Promise<SmtpConfig | null> {
+  // 0. Global kill-switch: when the admin disables system emails, no outbound
+  // mail is sent. Every send primitive funnels through here, so returning null
+  // pauses notifications, password resets and invitations at once. The admin's
+  // "test SMTP" path uses getRawSmtpConfig directly, so it stays unaffected.
+  if (!(await getEmailsEnabled())) return null
+
   // 1. Try DB config (admin-configurable)
   const dbConfig = await getRawSmtpConfig()
   if (dbConfig) {

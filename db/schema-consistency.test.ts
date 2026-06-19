@@ -1,11 +1,12 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
 import path from "node:path"
 import { describe, expect, it, afterAll } from "vitest"
 import { sql } from "drizzle-orm"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const pg = new PGlite()
+await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 const db = drizzle(pg)
 
 afterAll(async () => {
@@ -14,7 +15,6 @@ afterAll(async () => {
 
 describe("database schema consistency", () => {
   it("has office receiving columns required by the runtime schema", async () => {
-    await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
 
     const result = await db.execute(sql`
       SELECT column_name
@@ -27,7 +27,6 @@ describe("database schema consistency", () => {
   })
 
   it("has the user permissions join table required by direct RBAC grants", async () => {
-    await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
 
     const result = await db.execute(sql`
       SELECT column_name
@@ -40,7 +39,6 @@ describe("database schema consistency", () => {
   })
 
   it("rejects negative worksite stock at the database level", async () => {
-    await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
 
     await db.execute(sql`
       INSERT INTO worksites (id, name, code, is_active, created_at, updated_at)
@@ -62,7 +60,6 @@ describe("database schema consistency", () => {
   })
 
   it("rejects invalid operational quantities and money at the database level", async () => {
-    await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
     const fixture = await insertOperationalConstraintFixture("numeric-check")
 
     await expect(db.execute(sql`
@@ -72,7 +69,6 @@ describe("database schema consistency", () => {
 
     await expect(db.execute(sql`
       INSERT INTO purchase_orders (
-        id, code, worksite_id, supplier_id, created_by, status, net_amount, tax_amount, total_amount, created_at, updated_at
       )
       VALUES ('po-negative-money-check', 'OC-negative-money-check', ${fixture.worksiteId}, ${fixture.supplierId}, ${fixture.userId}, 'draft', -1, 0, 0, NOW(), NOW())
     `)).rejects.toThrow()
@@ -124,7 +120,6 @@ describe("database schema consistency", () => {
   })
 
   it("rejects invalid operational states at the database level", async () => {
-    await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
     const fixture = await insertOperationalConstraintFixture("state-check")
 
     await expect(db.execute(sql`

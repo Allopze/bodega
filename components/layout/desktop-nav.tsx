@@ -33,7 +33,7 @@ export function DesktopNav({ session, worksiteName, badgeCounts, collapsed, onCo
     return (
       <nav
         aria-label="Áreas"
-        className="hidden lg:flex lg:w-16 lg:shrink-0 lg:flex-col overflow-hidden rounded-full border border-(--color-border) bg-surface shadow-(--shadow-card)"
+        className="hidden lg:flex lg:w-16 lg:shrink-0 lg:flex-col overflow-hidden rounded-(--radius-2xl) border border-(--color-border) bg-surface shadow-(--shadow-card)"
       >
         <div className="flex items-center justify-center py-3">
           <BrandMark variant="light" size={30} hideText />
@@ -52,8 +52,8 @@ export function DesktopNav({ session, worksiteName, badgeCounts, collapsed, onCo
                   : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
               )}
             >
-              <SquaresFour size={22} weight={dashActive ? "bold" : "regular"} className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
-              <span className="w-full truncate text-center text-[10px] font-semibold leading-tight">Inicio</span>
+              <SquaresFour size={19} weight={dashActive ? "bold" : "regular"} className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
+              <span className="w-full truncate text-center text-eyebrow leading-tight">Inicio</span>
             </Link>
           </Tooltip>
 
@@ -220,8 +220,8 @@ function RailFlyout({
               : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
           )}
         >
-          <Icon size={22} weight={inRoute ? "bold" : "regular"} className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
-          <span className="w-full truncate text-center text-[10px] font-semibold leading-tight">{area.label}</span>
+          <Icon size={19} weight={inRoute ? "bold" : "regular"} className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
+          <span className="w-full truncate text-center text-eyebrow leading-tight">{area.label}</span>
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -229,7 +229,7 @@ function RailFlyout({
           side="right"
           align="start"
           sideOffset={10}
-          className="z-50 w-56 rounded-lg border border-(--color-border) bg-surface p-2 shadow-(--shadow-lg) data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+          className="z-50 w-56 rounded-(--radius-xl) border border-(--color-border) bg-surface p-2 shadow-(--shadow-lg) data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
           <p className="px-2 pb-1 text-eyebrow">
             {area.label}

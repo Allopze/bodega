@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -77,12 +77,20 @@ export default async function AdminPage() {
       group:       "gobierno",
     },
     {
+      title:       "Correo SMTP",
+      description: "Configurar el servidor de correo saliente y el interruptor global de envíos.",
+      href:        "/admin/correo-smtp",
+      icon:        EnvelopeSimple,
+      permission:  "admin:config",
+      group:       "correo",
+    },
+    {
       title:       "Plantillas de correo",
       description: "Personalizar asunto y cuerpo HTML de los correos del sistema.",
       href:        "/admin/plantillas",
       icon:        FileText,
       permission:  "admin:config",
-      group:       "gobierno",
+      group:       "correo",
     },
   ]
 
@@ -102,6 +110,11 @@ export default async function AdminPage() {
       key:         "gobierno",
       title:       "Control del sistema",
       description: "Parámetros globales, trazabilidad y auditoría.",
+    },
+    {
+      key:         "correo",
+      title:       "Correo SMTP",
+      description: "Servidor de envío, plantillas y configuración de notificaciones por correo.",
     },
   ]
 

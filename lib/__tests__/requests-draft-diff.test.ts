@@ -7,7 +7,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
@@ -24,7 +24,7 @@ vi.mock("@/db", () => ({
   },
 }))
 
-await migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 afterAll(async () => {
   await pg.close()

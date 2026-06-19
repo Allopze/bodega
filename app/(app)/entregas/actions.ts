@@ -11,8 +11,7 @@ import { registerWorkerEppDelivery, type DeliveryAttachmentInput } from "@/lib/s
 import { workerDeliverySchema, type ActionState } from "@/lib/validation/operations"
 
 import { createDeliveryAttachmentPath, resolveDeliveriesDir } from "@/lib/storage/config"
-
-const ALLOWED_PROOF_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"])
+import { validateFile, MimeType } from "@/lib/file-validation"
 
 export async function registerWorkerDeliveryAction(
   _prev: ActionState,
@@ -97,14 +96,16 @@ async function persistProofFile(value: FormDataEntryValue | null): Promise<{
     return { ok: true, attachment: null }
   }
 
-  if (!ALLOWED_PROOF_TYPES.has(value.type)) {
-    return { ok: false, message: "El comprobante debe ser PDF, JPG o PNG" }
-  }
-
   const maxMb = await getPdfMaxSizeMb()
   const maxBytes = maxMb * 1024 * 1024
   if (value.size > maxBytes) {
     return { ok: false, message: `El comprobante supera el límite de ${maxMb} MB` }
+  }
+
+  // Validate magic bytes and normalize MIME type
+  const validation = await validateFile(value, MimeType.PROOF)
+  if (validation.error) {
+    return { ok: false, message: validation.error }
   }
 
   const safeName = sanitizeFileName(value.name || "comprobante")
@@ -123,7 +124,7 @@ async function persistProofFile(value: FormDataEntryValue | null): Promise<{
       fileName: safeName,
       filePath: relativePath,
       fileSize: value.size,
-      mimeType: value.type,
+      mimeType: validation.mimeType,
     },
   }
 }

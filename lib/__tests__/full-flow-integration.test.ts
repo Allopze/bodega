@@ -17,7 +17,7 @@
 
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, vi, afterAll } from "vitest"
 import path from "node:path"
 import { eq } from "drizzle-orm"
@@ -41,7 +41,7 @@ vi.mock("@/db", () => ({
 
 // Run migrations to construct the database schema
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
-await migrate(inMemoryDb, { migrationsFolder })
+await migratePGlite(pg, migrationsFolder)
 
 // Import the services to test (they now reference the mocked in-memory database)
 import { submitItem, approveItem, markItemPendingPurchase } from "@/lib/services/item-state"

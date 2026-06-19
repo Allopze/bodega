@@ -1,9 +1,9 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
 import path from "node:path"
 import { afterAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -11,7 +11,6 @@ const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb 
 // @ts-expect-error — PGlite is structurally compatible at runtime; postgres-js type differs only in result-type HKT
 testGlobal.__db = inMemoryDb
 
-vi.mock("@/lib/auth/auth", () => ({ auth: vi.fn() }))
 
 vi.mock("@/db", () => ({
   get db() {
@@ -19,7 +18,9 @@ vi.mock("@/db", () => ({
   },
 }))
 
-await migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+vi.mock("@/lib/auth/auth", () => ({ auth: vi.fn() }))
+
+await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { buildTrazabilidadRows } from "@/lib/services/trazabilidad-export"
 

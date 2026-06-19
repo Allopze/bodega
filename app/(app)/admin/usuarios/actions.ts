@@ -270,6 +270,7 @@ export async function updateUser(
     name:     formData.get("name"),
     email:    formData.get("email"),
     isActive: formData.get("isActive") === "on",
+    emailNotifications: formData.get("emailNotifications") === "on",
     roleIds:  formData.getAll("roleIds"),
     permissionIds: formData.getAll("permissionIds"),
     worksiteAssignments: buildWorksiteAssignments(formData),
@@ -315,6 +316,7 @@ export async function updateUser(
     name:     d.name,
     email:    d.email,
     isActive: d.isActive,
+    emailNotifications: d.emailNotifications,
     updatedAt: new Date().toISOString(),
   }
 
@@ -344,8 +346,8 @@ export async function updateUser(
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "update", entityType: "user", entityId: d.id,
-    oldState: { name: current.name, email: current.email, isActive: current.isActive },
-    newState: { name: d.name, email: d.email, isActive: d.isActive, roles: d.roleIds, permissions: permissionIds },
+    oldState: { name: current.name, email: current.email, isActive: current.isActive, emailNotifications: current.emailNotifications },
+    newState: { name: d.name, email: d.email, isActive: d.isActive, emailNotifications: d.emailNotifications, roles: d.roleIds, permissions: permissionIds },
   })
 
   clearUserRbacCache(d.id)

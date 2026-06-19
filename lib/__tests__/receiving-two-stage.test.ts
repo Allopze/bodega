@@ -10,7 +10,7 @@
 
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest"
 import path from "node:path"
 import { eq } from "drizzle-orm"
@@ -30,7 +30,7 @@ vi.mock("@/db", () => ({
   },
 }))
 
-await migrate(inMemoryDb, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
+await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { registerReceipt } from "@/lib/services/receiving"
 

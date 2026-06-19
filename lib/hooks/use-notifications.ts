@@ -17,6 +17,9 @@ interface ApiResponse {
   unreadCount: number
 }
 
+// Lazy imports for Server Actions (avoids bundling server-only modules on the client)
+const markReadModule = () => import("@/app/(app)/notificaciones/actions")
+
 const NOTIFICATIONS_KEY = "notifications" as const
 
 async function fetchNotifications(): Promise<ApiResponse> {
@@ -47,21 +50,17 @@ export function useMarkRead() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      })
-      if (!res.ok) throw new Error("Error al marcar como leída")
+      const { markReadAction } = await markReadModule()
+      const result = await markReadAction(id)
+      if (!result.ok) throw new Error(result.error ?? "Error al marcar como leída")
     },
     onMutate: async (id) => {
-      // Optimistic update
       await queryClient.cancelQueries({ queryKey: [NOTIFICATIONS_KEY] })
       const prev = queryClient.getQueryData<ApiResponse>([NOTIFICATIONS_KEY])
       if (prev) {
         queryClient.setQueryData<ApiResponse>([NOTIFICATIONS_KEY], {
           items: prev.items.map((n) =>
-            n.id === id ? { ...n, isRead: true } : n
+            n.id === id ? { ...n, isRead: true } : n,
           ),
           unreadCount: Math.max(0, prev.unreadCount - 1),
         })
@@ -69,7 +68,6 @@ export function useMarkRead() {
       return { prev }
     },
     onError: (_err, _id, context) => {
-      // Rollback on error
       if (context?.prev) {
         queryClient.setQueryData([NOTIFICATIONS_KEY], context.prev)
       }
@@ -88,12 +86,9 @@ export function useMarkAllRead() {
 
   return useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markAll: true }),
-      })
-      if (!res.ok) throw new Error("Error al marcar todas como leídas")
+      const { markAllReadAction } = await markReadModule()
+      const result = await markAllReadAction()
+      if (!result.ok) throw new Error(result.error ?? "Error al marcar todas como leídas")
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: [NOTIFICATIONS_KEY] })

@@ -93,6 +93,7 @@ export default async function UsuariosPage() {
       name:        u.name,
       email:       u.email,
       isActive:    u.isActive,
+      emailNotifications: u.emailNotifications,
       passwordSetupPending: isPasswordSetupPending(u.hashedPassword),
       createdAt:   u.createdAt,
       avatarColor: u.avatarColor,

@@ -30,6 +30,7 @@ interface UserRow {
   name:        string
   email:       string
   isActive:    boolean
+  emailNotifications: boolean
   passwordSetupPending: boolean
   createdAt:   string
   avatarColor: string | null
