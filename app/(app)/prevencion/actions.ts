@@ -202,7 +202,7 @@ export async function getFollowupsAction(
 
 export async function saveActionPlanItemAction(
   input: z.infer<typeof sstActionPlanItemSchema>
-): Promise<ActionState> {
+): Promise<ActionState & { data?: { id: string } }> {
   const { session, error } = await guardPermission("sst:create")
   if (error) return error
 
@@ -210,9 +210,9 @@ export async function saveActionPlanItemAction(
   const worksiteIds = scopeToIds(scope)
 
   try {
-    await saveActionPlanItem(input, worksiteIds)
+    const saved = await saveActionPlanItem(input, worksiteIds)
     revalidatePath(`${REVALIDATE}/${input.evaluationId}`)
-    return { ok: true, message: "Ítem del plan guardado" }
+    return { ok: true, message: "Ítem del plan guardado", data: { id: saved.id } }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al guardar el ítem del plan" }
   }

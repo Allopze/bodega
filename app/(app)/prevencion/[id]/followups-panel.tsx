@@ -9,6 +9,7 @@ import { markFollowupAction } from "@/app/(app)/prevencion/actions"
 import type { SstScheduledFollowup } from "@/db/schema/sst"
 import { CalendarBlank, CheckCircle, Circle } from "@phosphor-icons/react"
 import { formatDateDisplay } from "@/lib/sst/date"
+import { cn } from "@/lib/utils"
 
 interface Props {
   followups: SstScheduledFollowup[]
@@ -95,7 +96,7 @@ function FollowupCard({
         </div>
         <div className="flex items-center gap-3">
           {followup.realizado ? (
-            <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+            <span className="flex items-center gap-1 text-xs font-medium text-(--color-success)">
               <CheckCircle size={14} weight="fill" />
               Realizado
             </span>
@@ -133,16 +134,16 @@ function FollowupCard({
                 disabled={!canManage || isPending}
                 onClick={() => handleToggleCumple(followup.cumple === val ? null : val)}
                 aria-pressed={followup.cumple === val}
-                className={[
+                className={cn(
                   "px-2.5 py-1 text-xs font-semibold rounded-(--radius) border transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1",
                   followup.cumple === val
                     ? val
                       ? "bg-(--color-success) text-(--color-success-ink) border-(--color-success) font-bold"
                       : "bg-(--color-danger) text-(--color-danger-ink) border-(--color-danger) font-bold"
                     : "border-(--color-border) text-text-subtle hover:border-(--color-border-strong)",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1",
                   (!canManage || isPending) && "opacity-50 cursor-not-allowed",
-                ].join(" ")}
+                )}
               >
                 {label}
               </button>
@@ -150,7 +151,7 @@ function FollowupCard({
           </div>
           <button
             type="button"
-            className="text-xs text-text-subtle underline"
+            className="text-xs text-text-subtle underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 rounded-(--radius)"
             onClick={() => setExpanded(!expanded)}
             aria-expanded={expanded}
           >

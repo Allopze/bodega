@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { ESTADO_OPTIONS, ESTADO_LABELS, estadoPlanBadgeVariant } from "@/lib/sst/badges"
 import type { SstActionPlan } from "@/db/schema/sst"
 import { Trash, Plus, ListBullets } from "@phosphor-icons/react"
+import { formatDateDisplay } from "@/lib/sst/date"
 
 interface Props {
   evaluationId: string
@@ -76,7 +77,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
         return
       }
       const newItem: SstActionPlan = {
-        id: `temp-${Date.now()}`,
+        id: result.data?.id ?? `temp-${Date.now()}`,
         evaluationId,
         n,
         hallazgo:    draft.hallazgo,
@@ -146,7 +147,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
                   <td className="py-2 px-3">{item.hallazgo}</td>
                   <td className="py-2 px-3">{item.accion}</td>
                   <td className="py-2 px-3">{item.responsable}</td>
-                  <td className="py-2 px-3">{item.plazo}</td>
+                  <td className="py-2 px-3 tabular-nums">{formatDateDisplay(item.plazo)}</td>
                   <td className="py-2 px-3">
                     <Badge variant={estadoPlanBadgeVariant(item.estado)}>
                       {ESTADO_LABELS[item.estado] ?? item.estado}
@@ -158,7 +159,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
                         type="button"
                         onClick={() => setDeleteTarget(item.id)}
                         disabled={isPending}
-                        className="text-text-subtle hover:text-danger disabled:opacity-50"
+                        className="text-text-subtle hover:text-danger disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 rounded-(--radius)"
                         aria-label={`Eliminar ítem ${item.n}`}
                       >
                         <Trash size={14} />

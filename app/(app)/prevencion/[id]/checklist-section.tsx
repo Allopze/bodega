@@ -127,7 +127,7 @@ function ItemField({
             maxLength={500}
           />
         )}
-        {item.kind === "cumple_nocumple_obs" && resp.estado === "no_cumple" && (
+        {["cumple_nocumple_obs", "cumple_nocumple_na_obs"].includes(item.kind) && resp.estado === "no_cumple" && (
           <Textarea
             placeholder="Acción correctiva…"
             value={resp.accionCorrectiva}
