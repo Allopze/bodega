@@ -17,6 +17,7 @@ import {
   requestItemAttributes,
   approvalDecisions,
 } from "@/db/schema"
+import type { DB, Tx } from "@/db"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -25,7 +26,6 @@ import path from "node:path"
 import { mkdirp, writeBuffer, removeFile } from "@/lib/storage/helpers"
 import type {
   RequestModuleConfig,
-  QuotationTable,
   RequestItemInput,
   RequestServiceInput,
   AddQuotationInput,
@@ -59,12 +59,10 @@ export function createRequestService(config: RequestModuleConfig) {
     storage,
   } = config
 
-  // Drizzle's table types are too complex for the generic factory.
-  // QuotationTable is `any`; the real shape is enforced by the concrete
-  // table instances passed in by each module (repuestoQuotations, serviceQuotations).
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  const qt = quotationsTable as any
-  /* eslint-enable @typescript-eslint/no-explicit-any */
+  const qt = quotationsTable
+  const quotationQueries = db.query as DB["query"]
+  const getQuotationQuery = <TDb extends { query: DB["query"] | Tx["query"] }>(client: TDb) =>
+    client.query[quotationsQueryName as keyof DB["query"]]
 
   /* ── Persist draft (create or update) ───────────────────────────────────── */
 
@@ -236,7 +234,7 @@ export function createRequestService(config: RequestModuleConfig) {
   /* ── Delete quotation ────────────────────────────────────────────────────── */
 
   async function deleteQuotation(input: DeleteQuotationInput): Promise<void> {
-    const quotation = await (db.query as any)[quotationsQueryName].findFirst({
+    const quotation = await quotationQueries[quotationsQueryName].findFirst({
       where: eq(qt.id, input.quotationId),
     })
     if (!quotation) throw new Error("Cotización no encontrada")
@@ -367,7 +365,7 @@ export function createRequestService(config: RequestModuleConfig) {
         throw new Error("La solicitud no está pendiente de aprobación")
       }
 
-      const quotation = await (tx.query as any)[quotationsQueryName].findFirst({
+      const quotation = await getQuotationQuery(tx).findFirst({
         where: and(
           eq(qt.id, input.quotationId),
           eq(qt.requestId, input.requestId),
@@ -520,7 +518,7 @@ export function createRequestService(config: RequestModuleConfig) {
   /* ── Queries ─────────────────────────────────────────────────────────────── */
 
   async function getQuotationsForRequest(requestId: string) {
-    return (db.query as any)[quotationsQueryName].findMany({
+    return quotationQueries[quotationsQueryName].findMany({
       where: eq(qt.requestId, requestId),
       with: {
         supplier:      { columns: { id: true, name: true } },

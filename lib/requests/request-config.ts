@@ -6,7 +6,9 @@
  */
 
 import type { Session } from "next-auth"
+import type { AnyPgTable } from "drizzle-orm/pg-core"
 import type { Permission } from "@/modules/permissions"
+import type { DB } from "@/db"
 
 // ── Attribute names map: field → display label ────────────────────────────────
 
@@ -24,14 +26,6 @@ export interface StorageConfig {
 }
 
 // ── Quotation table reference ────────────────────────────────────────────────
-
-/**
- * Drizzle table reference for the quotations table.
- * The actual type is `PgTableWithColumns<...>` which is too complex to
- * spell out generically. The service layer casts it once internally.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type QuotationTable = any
 
 // ── Service function signatures (shared by both modules) ──────────────────────
 
@@ -113,9 +107,9 @@ export interface RequestModuleConfig {
   /** Prefix for auto-generated codes (e.g. "REP", "SER") */
   codePrefix: string
   /** Drizzle table reference for the quotations table */
-  quotationsTable: QuotationTable
+  quotationsTable: AnyPgTable
   /** Key used in db.query[name] for the quotations table */
-  quotationsQueryName: string
+  quotationsQueryName: keyof DB["query"]
   /** Entity type value for audit logging */
   quotationEntityType: string
   /** Attribute names map: fieldName → displayLabel */
