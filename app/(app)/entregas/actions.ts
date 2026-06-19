@@ -11,7 +11,7 @@ import { registerWorkerEppDelivery, type DeliveryAttachmentInput } from "@/lib/s
 import { workerDeliverySchema, type ActionState } from "@/lib/validation/operations"
 
 import { createDeliveryAttachmentPath, resolveDeliveriesDir } from "@/lib/storage/config"
-import { validateFile, MimeType } from "@/lib/file-validation"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 
 export async function registerWorkerDeliveryAction(
   _prev: ActionState,
@@ -102,8 +102,9 @@ async function persistProofFile(value: FormDataEntryValue | null): Promise<{
     return { ok: false, message: `El comprobante supera el límite de ${maxMb} MB` }
   }
 
-  // Validate magic bytes and normalize MIME type
-  const validation = await validateFile(value, MimeType.PROOF)
+  // Read file once, validate magic bytes, then write to disk
+  const fileBuf = new Uint8Array(await value.arrayBuffer())
+  const validation = validateFileBuffer(fileBuf, value.size, MimeType.PROOF)
   if (validation.error) {
     return { ok: false, message: validation.error }
   }
@@ -115,7 +116,7 @@ async function persistProofFile(value: FormDataEntryValue | null): Promise<{
   const absolutePath = path.join(storageDir, storageName)
 
   await fs.mkdir(storageDir, { recursive: true })
-  await fs.writeFile(absolutePath, Buffer.from(await value.arrayBuffer()))
+  await fs.writeFile(absolutePath, Buffer.from(fileBuf))
 
   return {
     ok: true,

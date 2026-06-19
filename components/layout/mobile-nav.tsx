@@ -34,7 +34,7 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
       </div>
 
       {worksiteName && (
-        <div className="border-y border-[var(--color-border)] px-4 py-3">
+        <div className="border-y border-(--color-border) px-4 py-3">
           <p className="text-eyebrow mb-0.5">Faena activa</p>
           <div className="flex items-center gap-1.5">
             <MapPin size={12} weight="bold" className="shrink-0 text-(--color-primary)" />
@@ -49,7 +49,7 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
           onClick={onNavigate}
           aria-current={dashActive ? "page" : undefined}
           className={cn(
-            "mb-1 flex h-10 items-center gap-3 rounded-md px-3 text-[14px] transition-[color,background-color] duration-(--duration-fast) ease-out",
+            "mb-1 flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
             dashActive
               ? "font-semibold text-(--color-primary-ink)"
               : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",

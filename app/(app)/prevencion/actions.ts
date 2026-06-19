@@ -16,6 +16,7 @@ import {
   getFollowups,
   saveActionPlanItem,
   deleteActionPlanItem,
+  deleteEvaluation,
   getDashboardStats,
 } from "@/lib/services/sst"
 import type { ActionState } from "@/lib/validation/sst"
@@ -235,6 +236,30 @@ export async function deleteActionPlanItemAction(
     return { ok: true, message: "Ítem eliminado" }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar el ítem" }
+  }
+}
+
+// ── deleteEvaluationAction ───────────────────────────────────────────────────
+
+export async function deleteEvaluationAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const { session, error } = await guardPermission("sst:manage")
+  if (error) return error
+
+  const id = String(formData.get("evaluationId") ?? "")
+  if (!id) return { ok: false, message: "Evaluación requerida" }
+
+  const scope = resolveWorksiteScope(session)
+  const worksiteIds = scopeToIds(scope)
+
+  try {
+    await deleteEvaluation(id, worksiteIds)
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Evaluación eliminada" }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar la evaluación" }
   }
 }
 

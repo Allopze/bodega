@@ -3,10 +3,10 @@
  *
  * Cada módulo (repuestos, servicios) provee una config de este tipo.
  * El factory en request-service.ts la usa para generar las funciones compartidas.
- *
- * Nota: los tipos de tabla Drizzle son demasiado complejos para tiparlos aquí.
- *       La seguridad de tipos se mantiene en los wrappers delgados (lib/services/*.ts).
  */
+
+import type { Session } from "next-auth"
+import type { Permission } from "@/modules/permissions"
 
 // ── Attribute names map: field → display label ────────────────────────────────
 
@@ -23,6 +23,88 @@ export interface StorageConfig {
   resolveFile: (filePath: string) => string | null
 }
 
+// ── Quotation table reference ────────────────────────────────────────────────
+
+/**
+ * Drizzle table reference for the quotations table.
+ * The actual type is `PgTableWithColumns<...>` which is too complex to
+ * spell out generically. The service layer casts it once internally.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type QuotationTable = any
+
+// ── Service function signatures (shared by both modules) ──────────────────────
+
+export interface RequestServiceInput {
+  id?:            string
+  worksiteId:     string
+  urgency:        "normal" | "high" | "critical"
+  requiredDate:   string
+  justification?: string | null
+  items:          RequestItemInput[]
+}
+
+export interface RequestItemInput {
+  id?:            string
+  description:    string
+  quantity:       number
+  unitOfMeasure:  string
+  sortOrder?:     number
+  notes?:         string | null
+  equipmentName?: string | null
+  patent?:        string | null
+  brand?:         string | null
+  model?:         string | null
+  partNumber?:    string | null
+  location?:      string | null
+}
+
+export interface AddQuotationInput {
+  requestId:        string
+  totalAmount:      number
+  supplierId?:      string | null
+  supplierNameFree?: string | null
+  notes?:           string | null
+  fileBuffer:       Buffer
+  fileName:         string
+  mimeType?:        string | null
+  fileSize?:        number | null
+  uploadedBy:       string
+  userEmail?:       string
+}
+
+export interface DeleteQuotationInput {
+  quotationId:       string
+  expectedRequestId: string
+  session:           Session
+  elevatedPermission: Permission
+  userEmail?:        string
+}
+
+export interface SubmitRequestInput {
+  requestId: string
+  userId:    string
+  userEmail?: string
+}
+
+export interface SelectQuotationInput {
+  requestId:   string
+  quotationId: string
+  userId:      string
+  userEmail?:  string
+  roleContext?: string
+}
+
+/** Typed service functions expected by the action factory. */
+export interface RequestServiceFunctions {
+  persistDraft:     (session: Session, data: RequestServiceInput) => Promise<string>
+  addQuotation:     (input: AddQuotationInput) => Promise<string>
+  deleteQuotation:  (input: DeleteQuotationInput) => Promise<void>
+  submitRequest:    (input: SubmitRequestInput) => Promise<void>
+  selectQuotation:  (input: SelectQuotationInput) => Promise<void>
+  cancelRequest:    (id: string, userId: string, reason: string, opts?: { userEmail?: string }) => Promise<void>
+}
+
 // ── Complete module config ────────────────────────────────────────────────────
 
 export interface RequestModuleConfig {
@@ -31,7 +113,7 @@ export interface RequestModuleConfig {
   /** Prefix for auto-generated codes (e.g. "REP", "SER") */
   codePrefix: string
   /** Drizzle table reference for the quotations table */
-  quotationsTable: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Drizzle dynamic table type
+  quotationsTable: QuotationTable
   /** Key used in db.query[name] for the quotations table */
   quotationsQueryName: string
   /** Entity type value for audit logging */

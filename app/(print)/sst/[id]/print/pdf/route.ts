@@ -1,5 +1,6 @@
 import { chromium } from "playwright"
 import { requirePermission } from "@/lib/auth/can"
+import { encodeContentDisposition } from "@/lib/utils"
 import { loadActaData } from "../document"
 
 export const runtime = "nodejs"
@@ -49,7 +50,7 @@ export async function GET(
     return new Response(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${data.suggestedFilename}"`,
+        "Content-Disposition": encodeContentDisposition(data.suggestedFilename, "attachment"),
         "Cache-Control": "no-store",
       },
     })

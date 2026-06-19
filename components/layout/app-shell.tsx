@@ -70,7 +70,6 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
         {/* Desktop: rail de áreas + panel contextual (cada uno con su propia tarjeta) */}
         <DesktopNav
           session={session}
-          worksiteName={worksiteName}
           badgeCounts={badgeCounts}
           collapsed={panelCollapsed}
           onCollapsedChange={handlePanelCollapsedChange}
@@ -119,7 +118,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
                 worksiteName={worksiteName}
                 isMenuOpen={mobileOpen}
                 hidden={headerHidden}
-                className="sticky top-0 mx-3 md:mx-4 mb-2 z-10"
+                className="sticky top-0 mx-4 md:mx-8 mb-2 z-10"
               />
               {children}
             </main>

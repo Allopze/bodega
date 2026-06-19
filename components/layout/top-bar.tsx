@@ -28,7 +28,7 @@ interface TopBarProps {
   className?:    string
   isMenuOpen?:   boolean
   worksiteName?: string
-  /** When true, slides the pill out of view above the viewport clip. */
+  /** When true, slides the bar out of view above the viewport clip. */
   hidden?:       boolean
 }
 
@@ -50,7 +50,7 @@ export function TopBar({
   }, [pathname, setSearchQuery])
 
   // Derive active area + label from the nav tree — no extra plumbing needed
-  const activeNav    = findActiveBreadcrumb(pathname)
+  const activeNav     = findActiveBreadcrumb(pathname)
   const activeSection = activeNav?.areaLabel ?? null
   const activeLabel   = activeNav?.itemLabel ?? null
 
@@ -62,9 +62,8 @@ export function TopBar({
 
   return (
     <header className={cn(
-      "flex items-center h-[3.25rem] px-4 md:px-5 gap-3",
-      "bg-[var(--color-surface)] rounded-full",
-      "border border-[var(--color-border)] shadow-(--shadow-card)",
+      "flex items-center h-13 px-4 md:px-5 gap-3",
+      "bg-surface border border-(--color-border) shadow-(--shadow-card)",
       // Auto-hide: slide out above the container's overflow clip, fade to 0.
       "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",
       hidden
@@ -78,9 +77,9 @@ export function TopBar({
           className={cn(
             "lg:hidden flex items-center justify-center",
             "min-h-[44px] min-w-[44px] rounded-(--radius-lg)",
-            "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
-            "hover:bg-[var(--color-surface-2)]",
-            "transition-[color,background-color] duration-[var(--duration-fast)]",
+            "text-(--color-text-muted) hover:text-(--color-text)",
+            "hover:bg-surface-2",
+            "transition-[color,background-color] duration-(--duration-fast)",
           )}
           aria-label={isMenuOpen ? "Cerrar menú" : "Abrir menú"}
           aria-expanded={isMenuOpen}
@@ -107,11 +106,11 @@ export function TopBar({
           {header.title && (
             <div className="flex min-w-0 items-baseline gap-2">
               {/* No es h1: el heading semántico vive en PageHeader dentro del contenido */}
-              <p className="truncate text-sm font-semibold text-[var(--color-text)]">
+              <p className="truncate text-sm font-semibold text-(--color-text)">
                 {header.title}
               </p>
               {header.description && (
-                <p className="hidden min-w-0 truncate text-xs text-[var(--color-text-muted)] 2xl:block">
+                <p className="hidden min-w-0 truncate text-xs text-(--color-text-muted) 2xl:block">
                   {header.description}
                 </p>
               )}
@@ -137,18 +136,18 @@ export function TopBar({
 
       <div className="flex items-center gap-1.5">
         <div className="relative hidden sm:flex items-center">
-          <MagnifyingGlass size={14} className="absolute left-2.5 text-[var(--color-text-subtle)] pointer-events-none shrink-0" />
+          <MagnifyingGlass size={14} className="absolute left-2.5 text-(--color-text-subtle) pointer-events-none shrink-0" />
           <input
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filtrar en esta página..."
             className={cn(
-              "h-7 w-36 lg:w-52 rounded-(--radius) border bg-[var(--color-surface-2)] pl-8 text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-line)] transition-[border-color,box-shadow] duration-[var(--duration-fast)]",
+              "h-7 w-36 lg:w-52 rounded-(--radius-lg) border bg-surface-2 pl-8 text-xs text-(--color-text) placeholder:text-(--color-text-subtle) outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line) transition-[border-color,box-shadow] duration-(--duration-fast)",
               // Borde primario = filtro activo; deja espacio para el botón de limpiar
               searchQuery
-                ? "border-[var(--color-primary-line)] pr-7"
-                : "border-[var(--color-border)] pr-3",
+                ? "border-(--color-primary-line) pr-7"
+                : "border-(--color-border) pr-3",
             )}
             aria-label="Filtrar en esta página"
           />
@@ -156,7 +155,7 @@ export function TopBar({
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)] transition-colors duration-[var(--duration-fast)]"
+              className="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-(--color-text-subtle) hover:bg-surface-3 hover:text-(--color-text) transition-colors duration-(--duration-fast)"
               aria-label="Limpiar filtro"
             >
               <X size={11} weight="bold" />
@@ -168,7 +167,7 @@ export function TopBar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="ml-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] shrink-0 cursor-pointer"
+              className="ml-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) shrink-0 cursor-pointer"
               aria-label="Abrir menú de usuario"
             >
               <Avatar name={session.user.name ?? session.user.email ?? ""} size="sm" />
@@ -177,17 +176,17 @@ export function TopBar({
           <DropdownMenuContent align="end" className="min-w-[13rem]">
             <DropdownMenuLabel>
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-semibold text-[var(--color-text)]">{session.user.name}</span>
-                <span className="text-xs text-[var(--color-text-subtle)] font-normal truncate max-w-[12rem]">{session.user.email}</span>
+                <span className="text-sm font-semibold text-(--color-text)">{session.user.name}</span>
+                <span className="text-xs text-(--color-text-subtle) font-normal truncate max-w-[12rem]">{session.user.email}</span>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link
                 href="/perfil"
-                className="flex items-center gap-2 text-sm text-[var(--color-text)] w-full cursor-pointer"
+                className="flex items-center gap-2 text-sm text-(--color-text) w-full cursor-pointer"
               >
-                <UserCircle size={16} className="text-[var(--color-text-subtle)]" />
+                <UserCircle size={16} className="text-(--color-text-subtle)" />
                 <span>Mi perfil</span>
               </Link>
             </DropdownMenuItem>
@@ -196,9 +195,9 @@ export function TopBar({
                 <DropdownMenuItem asChild>
                   <Link
                     href="/admin"
-                    className="flex items-center gap-2 text-sm text-[var(--color-text)] w-full cursor-pointer"
+                    className="flex items-center gap-2 text-sm text-(--color-text) w-full cursor-pointer"
                   >
-                    <ShieldCheck size={16} className="text-[var(--color-text-subtle)]" />
+                    <ShieldCheck size={16} className="text-(--color-text-subtle)" />
                     <span>Administración</span>
                   </Link>
                 </DropdownMenuItem>
@@ -210,7 +209,7 @@ export function TopBar({
                 type="button"
                 onClick={handleSignOut}
                 disabled={isSigningOut}
-                className="flex w-full items-center gap-2 text-[var(--color-danger-ink)] disabled:cursor-wait disabled:opacity-70"
+                className="flex w-full items-center gap-2 text-(--color-danger-ink) disabled:cursor-wait disabled:opacity-70"
               >
                 <SignOut size={16} />
                 <span>{isSigningOut ? "Cerrando..." : "Cerrar sesión"}</span>

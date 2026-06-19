@@ -9,8 +9,6 @@
  *   // ...
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- Drizzle dynamic table types are too complex for proper typing here */
-
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { eq } from "drizzle-orm"
@@ -24,8 +22,14 @@ import { getUserIdsWithPermission, notifyManyUser, notifySafe } from "@/lib/serv
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
 import type { Permission } from "@/modules/permissions"
-import type { Session } from "next-auth"
-import { validateFile, MimeType } from "@/lib/file-validation"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import type {
+  RequestServiceFunctions,
+  RequestServiceInput,
+  RequestItemInput,
+  AddQuotationInput,
+  SelectQuotationInput,
+} from "./request-config"
 
 // ── Config type ───────────────────────────────────────────────────────────────
 
@@ -40,29 +44,20 @@ export interface RequestActionsConfig {
   }
   /** Base path for revalidation and redirects */
   routePrefix: string
-  /** Zod schemas for each action (use `as any` in the wrappers for inference) */
+  /** Zod schemas for each action */
   schemas: {
-    request: z.ZodType<any>
-    quotationUpload: z.ZodType<any>
-    selectQuotation: z.ZodType<any>
-    cancel: z.ZodType<any>
+    request:          z.ZodType<RequestServiceInput>
+    quotationUpload:  z.ZodType<Omit<AddQuotationInput, "fileBuffer" | "fileName" | "mimeType" | "fileSize" | "uploadedBy" | "userEmail">>
+    selectQuotation:  z.ZodType<Pick<SelectQuotationInput, "requestId" | "quotationId">>
+    cancel:           z.ZodType<{ requestId: string; reason: string }>
   }
   /** Service functions (already bound to the correct module config) */
-  services: {
-    persistDraft: (session: Session, data: any) => Promise<string>
-    addQuotation: (input: any) => Promise<string>
-    deleteQuotation: (input: any) => Promise<void>
-    submitRequest: (input: any) => Promise<void>
-    selectQuotation: (input: any) => Promise<void>
-    cancelRequest: (id: string, userId: string, reason: string, opts?: { userEmail?: string }) => Promise<void>
-  }
-  /** Maps form items to the input shape expected by the service */
-  itemMapper: (item: any, index: number) => Record<string, any>
+  services: RequestServiceFunctions
+  /** Maps parsed form items to the shape expected by the service. Input is already RequestItemInput after Zod validation. */
+  itemMapper: (item: RequestItemInput, index: number) => RequestItemInput
   /** Log prefix (e.g. "repuestos") */
   logPrefix: string
 }
-
-
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
@@ -100,7 +95,7 @@ export function createRequestActions(config: RequestActionsConfig) {
         fieldErrors: flattened.fieldErrors as Record<string, string[]>,
       }
     }
-  const d = parsed.data as any
+    const d = parsed.data
     if (!canAccessWorksite(session, d.worksiteId)) {
       return { ok: false, message: "No tienes acceso a la faena seleccionada" }
     }
@@ -194,8 +189,9 @@ export function createRequestActions(config: RequestActionsConfig) {
       return { ok: false, message: `El archivo supera el tamaño máximo de ${maxMb} MB` }
     }
 
-    // Validate magic bytes and normalize MIME type
-    const validation = await validateFile(file, MimeType.QUOTATION)
+    // Read once, validate magic bytes, then use the same buffer for storage
+    const fileBuf = new Uint8Array(await file.arrayBuffer())
+    const validation = validateFileBuffer(fileBuf, file.size, MimeType.QUOTATION)
     if (validation.error) {
       return { ok: false, message: validation.error }
     }
@@ -215,7 +211,7 @@ export function createRequestActions(config: RequestActionsConfig) {
         fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
       }
     }
-  const d = parsed.data as any
+    const d = parsed.data
 
     // Verify access to the request
     const request = await db.query.purchaseRequests.findFirst({
@@ -231,14 +227,13 @@ export function createRequestActions(config: RequestActionsConfig) {
     }
 
     try {
-      const fileBuffer = Buffer.from(await file.arrayBuffer())
       await services.addQuotation({
         requestId:        d.requestId,
         totalAmount:      d.totalAmount,
         supplierId:       d.supplierId ?? null,
         supplierNameFree: d.supplierNameFree ?? null,
         notes:            d.notes ?? null,
-        fileBuffer,
+        fileBuffer:       fileBuf as unknown as Buffer,
         fileName:         file.name,
         mimeType:         validation.mimeType,
         fileSize:         file.size,
@@ -300,7 +295,7 @@ export function createRequestActions(config: RequestActionsConfig) {
     if (!parsed.success) {
       return { ok: false, message: "Datos incompletos" }
     }
-    const d = parsed.data as any
+    const d = parsed.data
 
     const request = await db.query.purchaseRequests.findFirst({
       where: eq(purchaseRequests.id, d.requestId),
@@ -366,7 +361,7 @@ export function createRequestActions(config: RequestActionsConfig) {
         fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
       }
     }
-const d = parsed.data as any
+    const d = parsed.data
 
     const request = await db.query.purchaseRequests.findFirst({
       where: eq(purchaseRequests.id, d.requestId),

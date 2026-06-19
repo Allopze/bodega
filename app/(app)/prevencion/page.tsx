@@ -24,6 +24,7 @@ export default async function PrevencionPage() {
 
   const evaluations = await listEvaluations({ worksiteIds }, 50, 0)
   const canCreate = can(session, "sst:create")
+  const canDelete = can(session, "sst:manage")
 
   return (
     <PageContainer>
@@ -44,7 +45,7 @@ export default async function PrevencionPage() {
           ) : undefined
         }
       />
-      <EvaluationList evaluations={evaluations} canCreate={canCreate} />
+      <EvaluationList evaluations={evaluations} canCreate={canCreate} canDelete={canDelete} />
     </PageContainer>
   )
 }

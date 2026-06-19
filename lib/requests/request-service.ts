@@ -9,8 +9,6 @@
  *   // ...
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- Drizzle dynamic table types are too complex for proper typing here */
-
 import { eq, and } from "drizzle-orm"
 import { db } from "@/db"
 import {
@@ -25,73 +23,27 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { submitItemTx } from "@/lib/services/item-state"
 import path from "node:path"
 import { mkdirp, writeBuffer, removeFile } from "@/lib/storage/helpers"
-import type { RequestModuleConfig } from "./request-config"
+import type {
+  RequestModuleConfig,
+  QuotationTable,
+  RequestItemInput,
+  RequestServiceInput,
+  AddQuotationInput,
+  DeleteQuotationInput,
+  SubmitRequestInput,
+  SelectQuotationInput,
+} from "./request-config"
 import type { Session } from "next-auth"
 import { assertCanDeleteQuotation } from "./quotation-access"
-import type { Permission } from "@/modules/permissions"
 
-// ── Shared types ──────────────────────────────────────────────────────────────
-
-export interface RequestItemInput {
-  id?:            string
-  description:    string
-  quantity:       number
-  unitOfMeasure:  string
-  sortOrder?:     number
-  notes?:         string | null
-  equipmentName?: string | null
-  patent?:        string | null
-  brand?:         string | null
-  model?:         string | null
-  /** Repuestos: number de parte. Servicios: no se usa. */
-  partNumber?:    string | null
-  /** Servicios: ubicación. Repuestos: no se usa. */
-  location?:      string | null
-}
-
-export interface RequestInput {
-  id?:            string
-  worksiteId:     string
-  urgency:        "normal" | "high" | "critical"
-  requiredDate:   string
-  justification?: string | null
-  items:          RequestItemInput[]
-}
-
-export interface AddQuotationInput {
-  requestId:        string
-  totalAmount:      number
-  supplierId?:      string | null
-  supplierNameFree?: string | null
-  notes?:           string | null
-  fileBuffer:       Buffer
-  fileName:         string
-  mimeType?:        string | null
-  fileSize?:        number | null
-  uploadedBy:       string
-  userEmail?:       string
-}
-
-export interface DeleteQuotationInput {
-  quotationId:       string
-  expectedRequestId: string
-  session:           Session
-  elevatedPermission: Permission
-  userEmail?:        string
-}
-
-export interface SubmitRequestInput {
-  requestId: string
-  userId:    string
-  userEmail?: string
-}
-
-export interface SelectQuotationInput {
-  requestId:   string
-  quotationId: string
-  userId:      string
-  userEmail?:  string
-  roleContext?: string
+// Re-export shared types for backward compatibility
+export type {
+  RequestItemInput,
+  RequestServiceInput as RequestInput,
+  AddQuotationInput,
+  DeleteQuotationInput,
+  SubmitRequestInput,
+  SelectQuotationInput,
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────────
@@ -107,11 +59,18 @@ export function createRequestService(config: RequestModuleConfig) {
     storage,
   } = config
 
+  // Drizzle's table types are too complex for the generic factory.
+  // QuotationTable is `any`; the real shape is enforced by the concrete
+  // table instances passed in by each module (repuestoQuotations, serviceQuotations).
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const qt = quotationsTable as any
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
   /* ── Persist draft (create or update) ───────────────────────────────────── */
 
   async function persistDraft(
     session: Session,
-    data: RequestInput,
+    data: RequestServiceInput,
   ): Promise<string> {
     const isEdit = !!data.id
     const requestId = data.id ?? nanoid()
@@ -237,7 +196,7 @@ export function createRequestService(config: RequestModuleConfig) {
     const quotationId = nanoid()
 
     try {
-      await db.insert(quotationsTable).values({
+      await db.insert(qt).values({
         id:               quotationId,
         requestId:        input.requestId,
         supplierId:       input.supplierId ?? null,
@@ -252,7 +211,7 @@ export function createRequestService(config: RequestModuleConfig) {
         selectedAt:       null,
         createdAt:        now,
         updatedAt:        now,
-      } as any)
+      })
 
       await recordAudit({
         userId:     input.uploadedBy,
@@ -278,7 +237,7 @@ export function createRequestService(config: RequestModuleConfig) {
 
   async function deleteQuotation(input: DeleteQuotationInput): Promise<void> {
     const quotation = await (db.query as any)[quotationsQueryName].findFirst({
-      where: eq(quotationsTable.id, input.quotationId),
+      where: eq(qt.id, input.quotationId),
     })
     if (!quotation) throw new Error("Cotización no encontrada")
     if (quotation.status !== "pending") {
@@ -300,7 +259,7 @@ export function createRequestService(config: RequestModuleConfig) {
       elevatedPermission: input.elevatedPermission,
     })
 
-    await db.delete(quotationsTable).where(eq(quotationsTable.id, input.quotationId) as any)
+    await db.delete(qt).where(eq(qt.id, input.quotationId))
 
     const absolutePath = storage.resolveFile(quotation.filePath)
     if (absolutePath) {
@@ -336,11 +295,11 @@ export function createRequestService(config: RequestModuleConfig) {
 
       // Check quotation count rule
       const quotations = await tx
-        .select({ id: quotationsTable.id })
-        .from(quotationsTable)
+        .select({ id: qt.id })
+        .from(qt)
         .where(and(
-          eq(quotationsTable.requestId as any, input.requestId),
-          eq(quotationsTable.status as any, "pending"),
+          eq(qt.requestId, input.requestId),
+          eq(qt.status, "pending"),
         ))
 
       if (quotations.length < 3 && !request.notes?.trim()) {
@@ -410,8 +369,8 @@ export function createRequestService(config: RequestModuleConfig) {
 
       const quotation = await (tx.query as any)[quotationsQueryName].findFirst({
         where: and(
-          eq(quotationsTable.id, input.quotationId) as any,
-          eq(quotationsTable.requestId as any, input.requestId),
+          eq(qt.id, input.quotationId),
+          eq(qt.requestId, input.requestId),
         ),
       })
       if (!quotation) throw new Error("Cotización no encontrada")
@@ -420,15 +379,15 @@ export function createRequestService(config: RequestModuleConfig) {
       }
 
       // Mark selected quotation as 'selected', rest as 'rejected'
-      await tx.update(quotationsTable)
-        .set({ status: "selected", decidedBy: input.userId, selectedAt: now, updatedAt: now } as any)
-        .where(eq(quotationsTable.id, input.quotationId) as any)
+      await tx.update(qt)
+        .set({ status: "selected", decidedBy: input.userId, selectedAt: now, updatedAt: now })
+        .where(eq(qt.id, input.quotationId))
 
-      await tx.update(quotationsTable)
-        .set({ status: "rejected", updatedAt: now } as any)
+      await tx.update(qt)
+        .set({ status: "rejected", updatedAt: now })
         .where(and(
-          eq(quotationsTable.requestId as any, input.requestId),
-          eq(quotationsTable.status as any, "pending"),
+          eq(qt.requestId, input.requestId),
+          eq(qt.status, "pending"),
         ))
 
       const winningSupplierId = quotation.supplierId ?? null
@@ -562,12 +521,12 @@ export function createRequestService(config: RequestModuleConfig) {
 
   async function getQuotationsForRequest(requestId: string) {
     return (db.query as any)[quotationsQueryName].findMany({
-      where: eq(quotationsTable.requestId as any, requestId),
+      where: eq(qt.requestId, requestId),
       with: {
         supplier:      { columns: { id: true, name: true } },
         decidedByUser: { columns: { id: true, name: true } },
       },
-      orderBy: (q: any, { asc }: any) => asc(q.createdAt),
+      orderBy: (q: { createdAt: unknown }, helpers: { asc: (col: unknown) => unknown }) => helpers.asc(q.createdAt),
     })
   }
 

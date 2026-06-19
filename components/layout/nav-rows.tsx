@@ -17,7 +17,7 @@ function CountBadge({ count }: { count: number }) {
 }
 
 const rowBase =
-  "group relative flex h-9 items-center gap-2.5 text-[13px] font-medium transition-[color,background-color] duration-(--duration-fast) ease-out"
+  "group relative flex h-9 items-center gap-2.5 text-sm font-medium transition-[color,background-color] duration-(--duration-fast) ease-out"
 
 function itemRowClass(active: boolean) {
   return cn(
@@ -115,7 +115,7 @@ function BranchRow({
                   aria-current={ca ? "page" : undefined}
                   data-pressable
                   className={cn(
-                    "flex h-8 items-center rounded-md px-2.5 text-[12.5px] transition-[color,background-color] duration-(--duration-fast) ease-out",
+                    "flex h-8 items-center rounded-md px-2.5 text-xs transition-[color,background-color] duration-(--duration-fast) ease-out",
                     ca
                       ? "font-medium text-(--color-primary-ink)"
                       : "text-text-subtle hover:bg-surface-2 hover:text-(--color-text)",

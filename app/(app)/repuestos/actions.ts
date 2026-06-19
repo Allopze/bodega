@@ -1,7 +1,5 @@
 "use server"
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- Drizzle dynamic table types are too complex for proper typing here */
-
 import {
   persistRepuestoDraft,
   addQuotation,
@@ -17,6 +15,7 @@ import {
   cancelRepuestoSchema,
 } from "@/lib/validation/repuestos"
 import { createRequestActions } from "@/lib/requests/request-actions"
+import type { RequestItemInput } from "@/lib/requests/request-config"
 
 const actions = createRequestActions({
   moduleName: "repuestos",
@@ -33,14 +32,14 @@ const actions = createRequestActions({
     cancel:           cancelRepuestoSchema,
   },
   services: {
-    persistDraft:     persistRepuestoDraft as any,
-    addQuotation:     addQuotation as any,
-    deleteQuotation:  deleteQuotation as any,
-    submitRequest:    submitRepuestoRequest as any,
-    selectQuotation:  selectRepuestoQuotation as any,
-    cancelRequest:    cancelRepuestoRequest as any,
+    persistDraft:     persistRepuestoDraft,
+    addQuotation:     addQuotation,
+    deleteQuotation:  deleteQuotation,
+    submitRequest:    submitRepuestoRequest,
+    selectQuotation:  selectRepuestoQuotation,
+    cancelRequest:    cancelRepuestoRequest,
   },
-  itemMapper: (item: any, i: number) => ({
+  itemMapper: (item: RequestItemInput, i: number): RequestItemInput => ({
     id:            item.id,
     description:   item.description,
     quantity:      item.quantity,

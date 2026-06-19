@@ -68,8 +68,11 @@ function splitSqlStatements(sql: string): string[] {
       const quoteStart = i
       i++
       let tag = ""
-      while (i < sql.length && sql[i] !== "$" && sql[i] !== "(" && !/[\s;]/.test(sql[i])) {
-        tag += sql[i]; i++
+      while (i < sql.length) {
+        const char = sql[i]
+        if (char === undefined || char === "$" || char === "(" || /[\s;]/.test(char)) break
+        tag += char
+        i++
       }
       if (i < sql.length && sql[i] === "$") {
         i++
@@ -129,7 +132,9 @@ export async function migratePGlite(pg: PGlite, migrationsFolder: string): Promi
   const applied = new Set<string>()
   try {
     const result = await pg.exec("SELECT tag FROM _pglite_migrations")
-    for (const row of result.rows ?? []) applied.add(String(row.tag))
+    for (const queryResult of result) {
+      for (const row of queryResult.rows ?? []) applied.add(String(row.tag))
+    }
   } catch {
     /* first call - table is empty */
   }

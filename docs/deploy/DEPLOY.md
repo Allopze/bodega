@@ -1,88 +1,146 @@
 # Despliegue — Chome Solicitudes y Bodega
 
-Requisitos y guía para desplegar la aplicación en producción.
+Guía completa para desplegar la aplicación en producción.
+
+---
 
 ## Requisitos previos
 
 - **Node.js** ≥ 20
 - **PostgreSQL** ≥ 15
 - **Volumen persistente** para adjuntos (`STORAGE_PATH`)
+- **Docker** ≥ 24 (para despliegue en contenedor)
 
-## Variables de entorno obligatorias
+---
 
-| Variable | Descripción |
-|---|---|
-| `DATABASE_URL` | URL de conexión a PostgreSQL (ej: `postgres://user:pass@host:5432/chome`) |
-| `AUTH_SECRET` | Secreto para Auth.js/NextAuth (generar con `openssl rand -base64 32`) |
-| `NEXTAUTH_URL` | URL base de la app (ej: `https://bodega.chome.dev`) |
-| `STORAGE_PATH` | Ruta absoluta del volumen persistente para adjuntos |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Configuración de correo para notificaciones |
-| `SEED_ADMIN_PASSWORD` | Password del admin seed (solo para bootstrap inicial) |
+## Variables de entorno
 
-> **Fail-fast (DO-03):** la app lanza un error al arrancar si `DATABASE_URL` no
-> está definida (`db/index.ts`) y el pool usa `connect_timeout=10s` para fallar
-> rápido ante una BD que no responde. El `HEALTHCHECK` del contenedor sondea
-> `/api/health`, que hace `SELECT 1`; un contenedor sin BD válida queda
-> *unhealthy* en vez de servir tráfico roto.
+### Obligatorias
 
-## Variables de entorno opcionales
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `DATABASE_URL` | URL de conexión a PostgreSQL | `postgres://user:pass@host:5432/bodega` |
+| `AUTH_SECRET` | Secreto para firmar JWTs (`openssl rand -base64 32`) | — |
+| `NEXTAUTH_URL` | URL base de la app (para Origin check) | `https://bodega.chome.dev` |
+| `STORAGE_PATH` | Ruta absoluta del volumen persistente para adjuntos | `/srv/bodega/storage` |
+
+### SMTP (opcional pero recomendado)
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `APP_URL` / `AUTH_URL` | — | Alternativas a `NEXTAUTH_URL` para construir enlaces absolutos (correos). |
-| `SMTP_FROM` | = `SMTP_USER` | Remitente de los correos. |
-| `SMTP_SECURE` | `port === 465` | Forzar TLS implícito. |
-| `SMTP_DISABLED` | `false` | Si `true`, desactiva el envío de correo (las invitaciones muestran el enlace en la UI). |
-| `SEED_ADMIN_NAME` / `SEED_ADMIN_EMAIL` | `Administrador` / `admin@chome.cl` | Identidad del admin seed. |
-| `SEED_ALLOW_DEFAULT_PASSWORD` | `false` | Permite el password por defecto (`chome2026`) en `NODE_ENV=production`. **No usar en prod real.** |
-| `SEED_DRY_RUN` | `false` | Si `true`, `db/seed.ts` valida entradas y reporta sin escribir en la BD (A-16). |
+| `SMTP_HOST` | — | Host del servidor de correo |
+| `SMTP_PORT` | 587 | Puerto SMTP |
+| `SMTP_USER` | — | Usuario de autenticación |
+| `SMTP_PASS` | — | Contraseña de autenticación |
+| `SMTP_FROM` | = `SMTP_USER` | Remitente de correos |
+| `SMTP_SECURE` | `port === 465` | Forzar TLS implícito |
+| `SMTP_DISABLED` | `false` | Desactiva envío de correo |
 
-## Build y start
+### Seed (solo para bootstrap inicial)
 
-```bash
-npm ci
-npm run build
-PORT=3000 HOSTNAME=0.0.0.0 node .next/standalone/server.js
+| Variable | Default | Descripción |
+|---|---|---|
+| `SEED_ADMIN_PASSWORD` | — | Password del admin seed |
+| `SEED_ALLOW_DEFAULT_PASSWORD` | `false` | Permite el password por defecto en producción. **No usar.** |
+| `SEED_DRY_RUN` | `false` | Valida entradas sin escribir (A-16) |
+
+### Fail-fast
+
+La app lanza un error al arrancar si `DATABASE_URL` no está definida
+(`db/index.ts`). El pool usa `connect_timeout=10s` para fallar rápido ante una
+BD que no responde.
+
+---
+
+## Docker (producción)
+
+### Dockerfile
+
+El proyecto incluye un Dockerfile multi-stage con tres targets:
+
+```
+dev     → entorno de desarrollo con hot reload
+prod    → imagen de producción standalone (la que se deploya)
+build   → helper que ejecuta npm run build
 ```
 
-La app usa `output: "standalone"` (ver `next.config.ts`). El comando `npm run start` equivale a `node .next/standalone/server.js`. Asegurarse de copiar los directorios `public/` y `.next/static/` junto con `.next/standalone/` si se despliega en un contenedor.
+### Build y push (producción)
+
+```bash
+# Build la imagen de producción
+docker build --target prod -t bodega:latest .
+
+# Ejecutar con variables de entorno
+docker run -d --name bodega \
+  -e DATABASE_URL=postgres://user:pass@host:5432/bodega \
+  -e AUTH_SECRET=$(openssl rand -base64 32) \
+  -e NEXTAUTH_URL=https://bodega.chome.dev \
+  -e STORAGE_PATH=/app/storage \
+  -v bodega-storage:/app/storage \
+  -p 3000:3000 \
+  bodega:latest
+```
+
+### Detalles de la imagen de producción
+
+1. **Base:** `node:20-alpine` con `wget` para healthcheck
+2. **Output:** `output: "standalone"` (Next.js genera un bundle autónomo)
+3. **Archivos copiados:** `.next/standalone`, `.next/static`, `public/`, `db/migrations/`, `db/seed/`
+4. **Usuario:** `nextjs:nodejs` (UID 1001) — no ejecuta como root
+5. **Storage:** `/app/storage` se crea al build y se monta como volumen
+6. **Healthcheck:** `wget -qO- http://127.0.0.1:3000/api/health` cada 30s, timeout 5s, 3 reintentos
+
+---
 
 ## Migraciones de base de datos
 
 ```bash
-npx drizzle-kit push        # push schema a la DB
-# o
-npx drizzle-kit migrate     # aplicar migraciones desde db/migrations/
+# Aplicar migraciones (idempotente)
+npm run db:migrate
+# Equivalente a: drizzle-kit migrate
 ```
 
-Las migraciones están en `db/migrations/`. Ejecutarlas antes del primer start.
+Las migraciones están en `db/migrations/` y se aplican en orden alfabético.
 
-## Storage persistente
+### Despliegue CI/CD
 
-La app almacena adjuntos (facturas, cotizaciones, entregas) en el filesystem local bajo `STORAGE_PATH`. Si `STORAGE_PATH` no está definido, usa `./storage` relativo al working directory.
+El workflow `deploy.yml` ejecuta migraciones **antes** del rollout del contenedor:
 
-**En producción:** montar un volumen persistente en la ruta indicada por `STORAGE_PATH`. Los adjuntos son irrecuperables si se pierde el volumen.
-
-Estructura de storage:
 ```
-storage/
-├── deliveries/          # Entregas de EPP
-├── purchase-orders/     # Facturas de proveedor
-├── repuestos/           # Cotizaciones de repuestos
-└── servicios/           # Cotizaciones de servicios
+push to main
+  → build-and-push (Docker image → GHCR)
+  → migrate (aplica drizzle-kit migrate contra PRODUCTION_DATABASE_URL)
+  → [deploy] (comentado — configurable por plataforma)
 ```
 
-## Docker (referencia)
+La migración corre como un job separado con `environment: production` (requiere
+approval manual en GitHub Actions si está configurado).
 
-No hay Dockerfile oficial. Para containerizar:
+---
 
-1. Build stage: `npm ci && npm run build`
-2. Runtime stage: copiar `.next/standalone`, `public/`, `.next/static/` y `node_modules/` necesarios
-3. `output: "standalone"` ya está en `next.config.ts`
-4. Montar volumen en `STORAGE_PATH`
-5. Ejecutar migraciones antes del primer start
-6. Ejecutar: `PORT=3000 HOSTNAME=0.0.0.0 node .next/standalone/server.js`
-7. Exponer puerto 3000
+## CI/CD pipeline
+
+### CI (`ci.yml` — pull requests y pushes a main)
+
+| Paso | Qué verifica |
+|---|---|
+| `typecheck` | Errores de tipos TypeScript |
+| `lint` | ESLint |
+| `test:coverage` | Unit tests con umbral de cobertura |
+| `concurrency-postgres` | Tests de concurrencia contra PostgreSQL real |
+| `build` | Build de Next.js completo |
+| `e2e` | Playwright: admin-flow, purchase-flow, accessibility |
+| `docker-smoke` | Build de imagen prod + verifica que arranca (no crashea) |
+
+### Deploy (`deploy.yml` — push a main)
+
+| Job | Qué hace |
+|---|---|
+| `build-and-push` | Build imagen Docker `prod` → push a `ghcr.io` |
+| `migrate` | `drizzle-kit migrate` contra la DB de producción |
+| `deploy` | (Comentado) Rollout configurable por plataforma |
+
+---
 
 ## Healthcheck
 
@@ -90,20 +148,158 @@ No hay Dockerfile oficial. Para containerizar:
 curl -f http://localhost:3000/api/health || exit 1
 ```
 
-`/api/health` es público (no requiere auth) y verifica conectividad con la base de datos. Responde `200 {"status":"ok","db":"connected"}` si todo está bien, `503 {"status":"error","db":"disconnected"}` si la DB no responde.
+- **Público** (no requiere auth)
+- Verifica conectividad con PostgreSQL via `SELECT 1`
+- Responde `200 {"status":"ok","db":"connected"}` o `503 {"status":"error","db":"disconnected"}`
+- El Dockerfile incluye `HEALTHCHECK` que sondea este endpoint automáticamente
+- Un contenedor sin BD válida queda *unhealthy* en vez de servir tráfico roto
+
+---
+
+## Storage persistente
+
+La app almacena adjuntos (facturas, cotizaciones, entregas, actas) en el
+filesystem local bajo `STORAGE_PATH`. Si `STORAGE_PATH` no está definido, usa
+`./storage` relativo al working directory.
+
+**En producción:** montar un volumen persistente. Los adjuntos son
+irrecuperables si se pierde el volumen.
+
+Estructura:
+```
+storage/
+├── deliveries/          # Comprobantes de entrega de EPP
+├── purchase-orders/     # Facturas de proveedor
+├── repuestos/           # Cotizaciones de repuestos
+├── servicios/           # Cotizaciones de servicios
+└── prevencion/          # Actas y documentos SST
+```
+
+---
 
 ## Cron jobs
 
-- `cleanupOldNotifications(90)` — limpiar notificaciones leídas mayores a 90 días
-- `cleanupRateLimits()` — limpiar locks expirados y contadores stale
+| Job | Descripción | Frecuencia recomendada |
+|---|---|---|
+| `cleanupOldNotifications(90)` | Limpia notificaciones leídas > 90 días | Diaria / semanal |
+| `cleanupRateLimits()` | Limpia locks expirados y contadores stale | Diaria |
 
-Ejecutar periódicamente (diario/semanal) vía cron del sistema o herramienta de orquestación.
+Ejecutar vía cron del sistema o herramienta de orquestación.
 
-## Notas de seguridad
+---
 
-- `AUTH_SECRET` y `SEED_ADMIN_PASSWORD` son sensibles — nunca commitear valores reales
-- `.env.example` no contiene valores reales
-- `npm audit --omit=dev` reporta 0 vulnerabilidades (ejecutar en cada release)
-- CSP configurado en `proxy.ts`, headers de seguridad en `next.config.ts`
-- **Rate limiting:** el rate limit por IP usa `X-Forwarded-For`. El proxy frontal (NGINX, Traefik, Cloudflare, etc.) debe sobreescribir `X-Forwarded-For` con la IP real del cliente. Si el header no es confiable, un atacante podría rotarlo y evadir el rate limit por IP (el límite por email sigue mitigando fuerza bruta contra una cuenta concreta).
-- `/api/health` es público — considera agregar autenticación de orquestador (header secreto) en entornos con balancer externo.
+## Seguridad en producción
+
+### Headers de seguridad
+
+Configurados en `next.config.ts` y aplicados a todas las rutas:
+
+| Header | Valor |
+|---|---|
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
+
+### Autenticación
+
+- **NextAuth v5** con proveedor Credentials (email + password)
+- JWT firmado con `AUTH_SECRET` (≥ 32 bytes)
+- Cookie: `httpOnly; Secure; SameSite=Lax`
+- Permisos se re-leen de la DB en cada request (`getUserRbacById, bypassCache=true`)
+- Usuario inactivo → token nulo → sesión invalidada
+
+### CSRF
+
+Todas las mutaciones pasan por Server Actions (protección CSRF nativa de
+Next.js). Ver [CSRF.md](../security/CSRF.md).
+
+### Rate limiting
+
+- Login y registro: 5 intentos / 15 min por IP + email
+- Implementado con `INSERT...ON CONFLICT DO UPDATE` atómico en PostgreSQL
+- **Importante:** el proxy frontal (NGINX, Traefik, Cloudflare) debe
+  sobrescribir `X-Forwarded-For` con la IP real del cliente
+
+### Subida de archivos
+
+- Magic bytes validados server-side (PDF, JPEG, PNG, XML)
+- MIME normalizado independientemente del Content-Type declarado por el cliente
+- Tamaño máximo configurable via `PDF_MAX_SIZE_MB`
+
+### Auditoría
+
+Todas las mutaciones de datos escriben entradas en `audit_log` con `userId`,
+`action`, `entityId`, timestamp y estado anterior/nuevo.
+
+---
+
+## Plataformas de despliegue
+
+### Docker Compose (self-hosted)
+
+```yaml
+version: "3.8"
+services:
+  app:
+    build:
+      context: .
+      target: prod
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgres://user:pass@db:5432/bodega
+      - AUTH_SECRET=${AUTH_SECRET}
+      - NEXTAUTH_URL=https://bodega.chome.dev
+      - STORAGE_PATH=/app/storage
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bodega
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d bodega"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  storage:
+  pgdata:
+```
+
+### Vercel
+
+- `output: "standalone"` ya está configurado
+- Las migraciones se ejecutan via GitHub Actions (no Vercel build)
+- `STORAGE_PATH` requiere volumen externo (no disponible en Vercel Serverless)
+
+### Fly.io / Railway / Render
+
+- Usar el Dockerfile con target `prod`
+- Montar volumen persistente en `STORAGE_PATH`
+- Configurar `PRODUCTION_DATABASE_URL` como secret
+- Ejecutar migraciones como step de deploy
+
+---
+
+## Troubleshooting
+
+| Problema | Causa | Solución |
+|---|---|---|
+| 500 en todas las queries | DB no responde | Verificar `DATABASE_URL` y que PG esté corriendo |
+| `Unauthorized` en Server Actions | Cookie expirada / `AUTH_SECRET` cambió | Regenerar sesión; si rotaste el secret, los usuarios deben re-login |
+| Adjuntos 404 | `STORAGE_PATH` no montado como volumen | Verificar que el volumen persistente está montado |
+| Rate limit no funciona | Proxy no sobrescribe `X-Forwarded-For` | Configurar proxy para fijar IP real |
+| Migración falla | Schema desincronizado | Ejecutar `drizzle-kit migrate` manualmente |
+| Contenedor unhealthy | BD no accesible desde el contenedor | Verificar networking y credenciales de DB |

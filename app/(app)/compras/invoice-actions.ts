@@ -14,7 +14,7 @@ import { createInvoiceAttachmentPath, resolvePurchaseOrdersDir } from "@/lib/sto
 import { invoiceSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 import { assertOrderAccess } from "./actions.helpers"
-import { validateFile, MimeType } from "@/lib/file-validation"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 
 // ── File helpers ───────────────────────────────────────────────────────────────
 
@@ -39,8 +39,9 @@ async function persistInvoiceFile(value: FormDataEntryValue | null): Promise<
     return { ok: false, message: `El archivo supera el límite de ${maxMb} MB` }
   }
 
-  // Validate magic bytes and normalize MIME type
-  const validation = await validateFile(value, MimeType.INVOICE)
+  // Read file once, validate magic bytes, then write to disk
+  const fileBuf = new Uint8Array(await value.arrayBuffer())
+  const validation = validateFileBuffer(fileBuf, value.size, MimeType.INVOICE)
   if (validation.error) {
     return { ok: false, message: validation.error }
   }
@@ -52,7 +53,7 @@ async function persistInvoiceFile(value: FormDataEntryValue | null): Promise<
   const absolutePath = path.join(storageDir, storageName)
 
   await fs.mkdir(storageDir, { recursive: true })
-  await fs.writeFile(absolutePath, Buffer.from(await value.arrayBuffer()))
+  await fs.writeFile(absolutePath, Buffer.from(fileBuf))
 
   return {
     ok: true,

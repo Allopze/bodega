@@ -130,8 +130,8 @@ const SelectTrigger = React.forwardRef<
           }}
           placeholder="Buscar..."
           className="min-w-0 flex-1 bg-transparent text-sm text-(--color-text) outline-none placeholder:text-[var(--color-text-subtle)]"
-          onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
-          onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         />
       ) : (
         children

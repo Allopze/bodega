@@ -7,6 +7,7 @@ import { canAccessWorksite } from "@/lib/auth/can"
 import { getDefinition } from "@/lib/sst/definitions"
 import { getStatusLabel } from "@/lib/sst/compliance"
 import { CARGO_KEYS } from "@/lib/sst/cargos"
+import { buildActaFilename } from "@/lib/sst/acta-filename"
 import type { ChecklistDefinition, StatusValue } from "@/lib/sst/types"
 
 // ── Label helpers ─────────────────────────────────────────────────────────────
@@ -152,10 +153,10 @@ export async function loadActaData(id: string, session: Session): Promise<ActaDa
     return cargos.some((c) => sec.appliesWhen!.includes(c))
   })
 
-  const suggestedFilename = `Acta_SST_${worker.firstName}_${worker.lastName}_${evaluation.fechaEvaluacion}.pdf`
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^\w.-]/g, "_")
+  const suggestedFilename = buildActaFilename({
+    tipo: evaluation.tipo,
+    workerName: `${worker.firstName} ${worker.lastName}`,
+  })
 
   const resultColor =
     evaluation.resultadoFinal === "no_habilitado" ||

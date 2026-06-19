@@ -4,7 +4,7 @@
  */
 import { db } from "@/db"
 import { rateLimits } from "@/db/schema"
-import { and, eq, gt, lt } from "drizzle-orm"
+import { and, eq, gt, lt, sql } from "drizzle-orm"
 
 const LIMIT_ATTEMPTS = 5
 const LOCK_TIME = 15 * 60 * 1000 // 15 minutes
@@ -31,30 +31,43 @@ export async function checkRateLimit(key: string): Promise<{
     return { allowed: false, waitTimeRemainingMs: row.lockUntil - now }
   }
 
+  // Lock expired — reset count so a single new failure doesn't immediately re-lock
+  if (row.lockUntil > 0) {
+    await db.update(rateLimits).set({ count: 0, lockUntil: 0 }).where(eq(rateLimits.key, key))
+  }
+
   return { allowed: true, waitTimeRemainingMs: 0 }
 }
 
-/** Record a failed attempt for `key`. */
+/**
+ * Record a failed attempt for `key`.
+ *
+ * Uses a single atomic INSERT … ON CONFLICT DO UPDATE to avoid the
+ * read-then-write race where two concurrent failures both see “no row”
+ * and duplicate-key on insert.
+ */
 export async function recordFailure(key: string): Promise<void> {
   const now = Date.now()
-  const [row] = await db
-    .select()
-    .from(rateLimits)
-    .where(eq(rateLimits.key, key))
-    .limit(1)
-
-  if (row) {
-    const newCount = row.count + 1
-    const lockUntil = newCount >= LIMIT_ATTEMPTS
-      ? now + LOCK_TIME
-      : 0
-    await db.update(rateLimits)
-      .set({ count: newCount, lockUntil })
-      .where(eq(rateLimits.key, key))
-  } else {
-    await db.insert(rateLimits)
-      .values({ key, count: 1, lockUntil: 0 })
-  }
+  await db
+    .insert(rateLimits)
+    .values({
+      key,
+      count: 1,
+      lockUntil: 0,
+      updatedAt: new Date(now).toISOString(),
+    })
+    .onConflictDoUpdate({
+      target: rateLimits.key,
+      set: {
+        count: sql`LEAST(${rateLimits.count} + 1, ${LIMIT_ATTEMPTS})`,
+        lockUntil: sql`CASE
+          WHEN ${rateLimits.count} + 1 >= ${LIMIT_ATTEMPTS}
+          THEN ${now + LOCK_TIME}
+          ELSE 0
+        END`,
+        updatedAt: new Date(now).toISOString(),
+      },
+    })
 }
 
 /** Clear rate-limit record on successful login. */

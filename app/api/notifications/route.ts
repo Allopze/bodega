@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { getNotificationsForUser, getUnreadCount } from "@/lib/services/notifications"
+import type { NotificationItem } from "@/lib/hooks/use-notifications"
 
 export const dynamic = "force-dynamic"
 

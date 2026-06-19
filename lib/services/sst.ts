@@ -575,6 +575,23 @@ export async function deleteActionPlanItem(
   await db.delete(sstActionPlan).where(eq(sstActionPlan.id, id))
 }
 
+// ── deleteEvaluation ─────────────────────────────────────────────────────────
+
+export async function deleteEvaluation(
+  id: string,
+  worksiteIds: string[] | 'all'
+): Promise<void> {
+  const evaluation = await getEvaluation(id, worksiteIds)
+  if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
+
+  await db.transaction(async (tx) => {
+    await tx.delete(sstActionPlan).where(eq(sstActionPlan.evaluationId, id))
+    await tx.delete(sstScheduledFollowups).where(eq(sstScheduledFollowups.evaluationId, id))
+    await tx.delete(sstResponses).where(eq(sstResponses.evaluationId, id))
+    await tx.delete(sstEvaluations).where(eq(sstEvaluations.id, id))
+  })
+}
+
 // ── getDashboardStats ─────────────────────────────────────────────────────────
 
 export async function getDashboardStats(

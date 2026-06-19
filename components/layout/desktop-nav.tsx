@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import type { Session } from "next-auth"
 import * as Collapsible from "@radix-ui/react-collapsible"
 import * as Popover from "@radix-ui/react-popover"
-import { CaretDown, CaretRight, MapPin, SquaresFour } from "@phosphor-icons/react"
+import { CaretDown, CaretRight, SquaresFour } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { Tooltip } from "@/components/ui/tooltip"
 import { BrandMark } from "./brand-mark"
@@ -16,13 +16,12 @@ import { getVisibleAreas, findActiveArea, isHrefActive, DASHBOARD_ITEM, type Are
 
 interface DesktopNavProps {
   session:           Session
-  worksiteName?:     string
   badgeCounts?:      Record<string, number>
   collapsed:         boolean
   onCollapsedChange: (collapsed: boolean) => void
 }
 
-export function DesktopNav({ session, worksiteName, badgeCounts, collapsed, onCollapsedChange }: DesktopNavProps) {
+export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange }: DesktopNavProps) {
   const pathname = usePathname()
   const areas = React.useMemo(() => getVisibleAreas(session), [session])
   const routeArea = findActiveArea(areas, pathname)
@@ -74,7 +73,7 @@ export function DesktopNav({ session, worksiteName, badgeCounts, collapsed, onCo
               type="button"
               onClick={() => onCollapsedChange(false)}
               aria-label="Mostrar panel"
-              className="flex h-8 w-8 items-center justify-center rounded-full text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-surface-2 hover:text-(--color-text)"
+              className="flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-surface-2 hover:text-(--color-text)"
             >
               <CaretRight size={16} weight="bold" />
             </button>
@@ -96,22 +95,12 @@ export function DesktopNav({ session, worksiteName, badgeCounts, collapsed, onCo
             type="button"
             onClick={() => onCollapsedChange(true)}
             aria-label="Ocultar panel"
-            className="flex h-7 w-7 items-center justify-center rounded-full text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-surface-2 hover:text-(--color-text)"
+            className="flex h-7 w-7 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-surface-2 hover:text-(--color-text)"
           >
             <CaretRight size={14} weight="bold" className="rotate-180" />
           </button>
         </Tooltip>
       </div>
-
-      {worksiteName && (
-        <div className="border-y border-(--color-border) px-4 py-3">
-          <p className="text-eyebrow mb-0.5">Faena activa</p>
-          <div className="flex items-center gap-1.5">
-            <MapPin size={12} weight="bold" className="shrink-0 text-(--color-primary)" />
-            <span className="truncate text-sm font-semibold text-(--color-text)">{worksiteName}</span>
-          </div>
-        </div>
-      )}
 
       <div className="flex-1 overflow-y-auto px-2 py-3">
         <Link
@@ -119,7 +108,7 @@ export function DesktopNav({ session, worksiteName, badgeCounts, collapsed, onCo
           aria-current={dashActive ? "page" : undefined}
           data-pressable
           className={cn(
-            "mb-1 flex h-10 items-center gap-3 rounded-md px-3 text-[14px] transition-[color,background-color] duration-(--duration-fast) ease-out",
+            "mb-1 flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
             dashActive
               ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
               : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",

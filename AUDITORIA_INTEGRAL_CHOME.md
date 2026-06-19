@@ -4,9 +4,9 @@
 
 Chome Solicitudes y Bodega es un sistema interno funcional y bastante avanzado para reemplazar flujos manuales de abastecimiento, compras, recepción, stock por faena y entrega a trabajadores. La base técnica muestra buenas decisiones: autenticación centralizada con NextAuth, RBAC refrescado desde base de datos, helpers explícitos de scope por faena, servicios transaccionales para stock/recepción/entrega, constraints de base de datos, CSP, redacción de logs, pruebas unitarias/E2E y documentación de seguridad.
 
-La auditoría no encontró un hallazgo crítico confirmado, pero sí encontró bloqueadores altos para producción: dos brechas confirmadas de permisos en el flujo genérico de solicitudes/repuestos/servicios, un riesgo de eliminación de cotizaciones ajenas por falta de revalidación de ownership/scope, una ruta mutante fuera del modelo CSRF documentado, validación débil de archivos subidos, una falla reproducida en pruebas PGlite por migraciones y un pipeline Docker que puede publicar la etapa equivocada.
+La auditoría original no encontró un hallazgo crítico confirmado, pero sí encontró bloqueadores altos para producción: brechas de permisos en el flujo genérico de solicitudes/repuestos/servicios, riesgo de eliminación de cotizaciones ajenas por falta de revalidación de ownership/scope, una ruta mutante fuera del modelo CSRF documentado, validación débil de archivos subidos, una falla reproducida en pruebas PGlite por migraciones y un pipeline Docker que podía publicar la etapa equivocada. En la contrastación del 2026-06-19, esos puntos aparecen remediados o mitigados en el código revisado salvo validaciones de staging/infra y automatización productiva final.
 
-El área más sensible es RBAC/scope por faena. El sistema tiene helpers correctos (`canAccessWorksite`, `visibleWorksiteIds`, `requirePermission`), y muchas rutas los usan correctamente, pero hay rutas compartidas donde el permiso genérico `requests:*` permite operar tipos de solicitud que tienen permisos propios (`repuestos:*`, `servicios:*`). Ese patrón debe corregirse antes de producción.
+El área más sensible sigue siendo RBAC/scope por faena. El sistema tiene helpers correctos (`canAccessWorksite`, `visibleWorksiteIds`, `requirePermission`) y muchas rutas los usan correctamente. El patrón original donde `requests:*` permitía operar tipos con permisos propios (`repuestos:*`, `servicios:*`) ya tiene remediación observable; conviene mantener pruebas de regresión y una pasada E2E por perfiles.
 
 Fortalezas principales observadas: `lib/services/stock.ts` concentra el movimiento de stock con transacción y guardas de stock no negativo; `lib/services/receiving.ts` y `lib/services/deliveries.ts` usan transacciones y locks para flujos críticos; `next.config.ts`, `proxy.ts` y `lib/security/csp.ts` aplican headers y CSP; `lib/logger.ts` redacciona PII; los exports revisados usan XLSX y no CSV.
 
@@ -18,43 +18,45 @@ Nivel de confianza de esta auditoría: alto para el código, configuración, tes
 
 La decisión se basa en hallazgos confirmados, no en sospechas genéricas del stack. No se confirmó una vulnerabilidad crítica, pero sí existen hallazgos altos en RBAC y flujo de despliegue que afectan directamente permisos, evidencia de compras/cotizaciones y confiabilidad operativa.
 
-El sistema está cerca de ser productivo en términos de arquitectura de dominio: stock por faena, kardex/movimientos, recepción y entrega tienen servicios transaccionales razonables. Sin embargo, producción no debería abrirse mientras un usuario con permisos genéricos de solicitudes pueda crear o enviar tipos de solicitud que pertenecen a módulos con permisos separados, ni mientras una cotización pendiente pueda eliminarse sin revalidar ownership y scope por faena.
+El sistema está cerca de ser productivo en términos de arquitectura de dominio: stock por faena, kardex/movimientos, recepción y entrega tienen servicios transaccionales razonables. Tras la contrastación, los bloqueadores RBAC originales tienen remediación observable. La cautela de producción se mantiene por verificación incompleta de CI/build/staging, rollout productivo externo y validaciones operacionales no visibles en el repositorio.
 
-También bloquea la confianza de release que una prueba focalizada falle al aplicar migraciones PGlite y que el workflow de Docker pueda publicar la etapa `build/dev` en lugar de la etapa productiva `prod`. Esto afecta directamente la capacidad de demostrar que el commit desplegado fue probado y ejecutado en condiciones equivalentes a producción.
+La confianza de release mejora con el harness PGlite corregido, el workflow Docker apuntando a `target: prod` y CI habilitando tests de concurrencia contra Postgres real. Aun así, falta validar un smoke real de imagen/staging y mantener la suite completa verde antes de reconsiderar producción.
 
-La recomendación es ejecutar una remediación P0/P1 corta antes de producción: cerrar las brechas RBAC, arreglar el pipeline Docker, recuperar la suite de tests y habilitar pruebas de concurrencia críticas en CI con una base Postgres desechable.
+La recomendación actual es ejecutar una validación P0/P1 corta antes de producción: suite completa local/CI, smoke real de imagen `prod`, corrida de GitHub Actions con concurrencia Postgres, y ensayo de staging con proxy/storage reales.
 
 ## 3. Calificación global
 
-**Calificación global:** 6/10
+**Calificación global:** 7/10
 
 **Veredicto:** No listo
 
 **Justificación de la nota:**  
-El proyecto es funcional y tiene buenas bases de seguridad, dominio y transacciones, pero no puede recibir una nota mayor por la regla de la rúbrica: existen hallazgos altos confirmados en RBAC/scope y en el camino de release. La nota no baja más porque no se confirmó un hallazgo crítico, el stock y las recepciones/entregas tienen transacciones y constraints relevantes, y existe una suite amplia de pruebas/documentación. La distancia a producción parece acotada, pero los bloqueadores son reales.
+El proyecto es funcional y tiene buenas bases de seguridad, dominio y transacciones. Sube respecto de la auditoría original porque los hallazgos altos de RBAC/scope, CSRF de notificaciones, validación de archivos, PGlite y Docker stage tienen remediación observable en el checkout y pruebas focalizadas verdes. No sube más porque falta validar imagen/staging, la automatización de rollout productivo sigue externa/comentada, y no se ejecutó una pasada completa de CI/E2E/staging en esta contrastación.
 
 ## 4. Mapa técnico revisado
 
 | Área | Archivos/carpetas revisadas | Observación |
 |---|---|---|
 | Auth | `app/api/auth/[...nextauth]/route.ts`, `lib/auth/auth.ts`, `lib/auth/can.ts`, `lib/auth/rbac.ts`, `lib/auth/scope.ts`, `proxy.ts` | NextAuth Credentials + JWT, rate limit, refresh de permisos desde DB y middleware de autenticación revisados. |
-| RBAC / scope | `lib/auth/*`, `modules/*/manifest.ts`, `app/(app)/**/actions.ts`, rutas API, exports y servicios | Scope por faena existe y se usa ampliamente, pero se confirmaron brechas en solicitudes genéricas y eliminación de cotizaciones. |
+| RBAC / scope | `lib/auth/*`, `modules/*/manifest.ts`, `app/(app)/**/actions.ts`, rutas API, exports y servicios | Scope por faena existe y se usa ampliamente; las brechas originales en solicitudes genéricas y eliminación de cotizaciones tienen remediación y pruebas focalizadas. |
 | Server Actions | `app/(auth)/**/actions.ts`, `app/(app)/**/actions.ts`, `lib/requests/request-actions.ts` | Se revisaron acciones mutantes principales: solicitudes, aprobaciones, compras, recepción, bodega, entregas, repuestos, servicios, prevención y admin. |
 | API routes | `app/api/**/route.ts`, `app/(print)/**/route.ts` | Revisadas rutas de auth, health, notifications, attachments, invoices, reportes/export, trazabilidad/export y PDFs. |
-| Servicios de negocio | `lib/services/stock.ts`, `receiving.ts`, `deliveries.ts`, `item-state.ts`, `purchasing.ts`, `requests-draft.ts`, `trazabilidad-export.ts`, `rate-limit.ts` | Stock/recepción/entrega tienen transacciones y guardas fuertes; rate limit tiene carrera menor. |
-| Validaciones | `lib/validation/operations.ts`, `masters.ts`, `repuestos.ts`, `servicios.ts`, `sst.ts` | Zod se usa en flujos principales; algunos permisos no se derivan del tipo validado. |
+| Servicios de negocio | `lib/services/stock.ts`, `receiving.ts`, `deliveries.ts`, `item-state.ts`, `purchasing.ts`, `requests-draft.ts`, `trazabilidad-export.ts`, `rate-limit.ts` | Stock/recepción/entrega tienen transacciones y guardas fuertes; rate limit ahora usa `onConflictDoUpdate` atómico. |
+| Validaciones | `lib/validation/operations.ts`, `masters.ts`, `repuestos.ts`, `servicios.ts`, `sst.ts`, `lib/file-validation.ts` | Zod se usa en flujos principales; permisos por tipo y validación de magic bytes/MIME están centralizados en los puntos revisados. |
 | DB schema | `db/schema/*` | Revisadas tablas de auth, requests, purchasing, stock, receiving, audit, rate limit, attachments y dominios relacionados. Hay checks e índices relevantes. |
-| Migraciones | `db/migrations/*` | Se detectó incompatibilidad reproducida entre migración SQL nativa y migrador PGlite en tests. |
-| Configuración | `next.config.ts`, `tsconfig.json`, `drizzle.config.ts`, `Dockerfile`, `.dockerignore`, `package.json`, `.env.example` | Headers de seguridad presentes; Docker/workflow de release tienen inconsistencias relevantes. |
-| Tests | `lib/__tests__/*`, `components/__tests__/*`, `e2e/*`, `vitest.config.ts`, `playwright.config.ts` | Hay buena cobertura temática, pero una prueba focalizada falló y los tests reales de concurrencia se saltan por defecto. |
-| CI/CD | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml` | CI ejecuta lint/typecheck/test/build/e2e; deploy construye imagen sin `target: prod`. |
-| Documentación | `README.md`, `docs/**`, `AGENTS.md`, `CLAUDE.md`, `AUDITORIA_COMPLETA.md` | Documentación extensa, con contradicciones puntuales en Docker, CSRF y threat model. |
+| Migraciones | `db/migrations/*`, `lib/testing/pglite-migrate.ts` | La incompatibilidad PGlite fue mitigada con un runner compatible que divide statements top-level y parchea `next_document_code` para PGlite. |
+| Configuración | `next.config.ts`, `tsconfig.json`, `drizzle.config.ts`, `Dockerfile`, `.dockerignore`, `package.json`, `.env.example` | Headers de seguridad presentes; workflow Docker corregido a `target: prod`; falta smoke staging/productivo real. |
+| Tests | `lib/__tests__/*`, `components/__tests__/*`, `e2e/*`, `vitest.config.ts`, `playwright.config.ts` | Hay buena cobertura temática; la prueba focalizada PGlite pasa y concurrencia real está habilitada en CI. Falta ejecutar suite completa en esta contrastación. |
+| CI/CD | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml` | CI ejecuta lint/typecheck/test/build/e2e, concurrencia Postgres y Docker smoke; deploy construye imagen con `target: prod`. |
+| Documentación | `README.md`, `docs/**`, `AGENTS.md`, `CLAUDE.md`, `AUDITORIA_COMPLETA.md` | Documentación extensa; Docker, CSRF y threat model fueron actualizados para reflejar los fixes principales. |
 | Next.js local docs | `node_modules/next/dist/docs/01-app/**` | Se revisaron guías locales de Server Actions, Route Handlers y seguridad de datos antes de evaluar patrones App Router. |
 
 Comandos de validación ejecutados durante la auditoría:
 
 - `npm run check:secrets`: aprobado.
-- `npm test -- --run lib/__tests__/auth-can.test.ts lib/__tests__/item-state.test.ts lib/__tests__/storage-config.test.ts lib/__tests__/trazabilidad-export-scope.test.ts`: tres archivos pasaron; `lib/__tests__/trazabilidad-export-scope.test.ts` falló al aplicar migración PGlite con `cannot insert multiple commands into a prepared statement`.
+- Contrastación 2026-06-19: `npm test -- lib/__tests__/file-validation.test.ts lib/__tests__/quotation-access.test.ts lib/__tests__/request-type-permissions.test.ts lib/__tests__/request-type-actions-rejection.test.ts lib/__tests__/deploy-workflow.test.ts`: 5 archivos / 28 tests pasaron.
+- Contrastación 2026-06-19: `npm test -- lib/__tests__/trazabilidad-export-scope.test.ts`: 1 archivo / 1 test pasó.
+- Contrastación 2026-06-19: `npm run typecheck`: aprobado.
 
 ## 5. Hallazgos confirmados
 
@@ -95,7 +97,10 @@ Además, filtrar `REQUEST_TYPE_OPTS` en la UI según permisos efectivos del usua
 Agregar tests de Server Actions/servicio que prueben que un usuario con `requests:create` pero sin `repuestos:create` ni `servicios:create` no puede guardar ni enviar esos tipos. Repetir para `submit`. Ejecutar `npm test` y una prueba E2E de visibilidad de opciones por permisos.
 
 **Actualización 2026-06-19:**
-Remediado parcialmente en código. `lib/request-types.ts` ahora define `permissionForRequestType()` y `visibleRequestTypeOptions()` como regla central: `epp`/`otro` usan `requests:*`, `repuestos` usa `repuestos:*` y `servicios` usa `servicios:*`. `app/(app)/solicitudes/actions.ts` valida el permiso específico después de parsear el tipo real para guardar y después de cargar la solicitud para enviar. `app/(app)/solicitudes/nueva/page.tsx` permite entrar si el usuario tiene al menos un permiso de creación aplicable y `app/(app)/solicitudes/request-form.tsx` filtra los tipos visibles por permisos efectivos. Se agregó `lib/__tests__/request-type-permissions.test.ts`; prueba roja observada por funciones inexistentes y luego verde con `npm test -- lib/__tests__/request-type-permissions.test.ts`. Lint focalizado aprobado con `npm run lint -- 'app/(app)/solicitudes/actions.ts' 'app/(app)/solicitudes/nueva/page.tsx' 'app/(app)/solicitudes/request-form.tsx' 'app/(app)/solicitudes/[id]/page.tsx' lib/request-types.ts lib/__tests__/request-type-permissions.test.ts`. Pendiente todavía: prueba de Server Action/mock de sesión o E2E que demuestre el rechazo end-to-end.
+Remediado parcialmente en código en la primera pasada. `lib/request-types.ts` ahora define `permissionForRequestType()` y `visibleRequestTypeOptions()` como regla central: `epp`/`otro` usan `requests:*`, `repuestos` usa `repuestos:*` y `servicios` usa `servicios:*`. `app/(app)/solicitudes/actions.ts` valida el permiso específico después de parsear el tipo real para guardar y después de cargar la solicitud para enviar. `app/(app)/solicitudes/nueva/page.tsx` permite entrar si el usuario tiene al menos un permiso de creación aplicable y `app/(app)/solicitudes/request-form.tsx` filtra los tipos visibles por permisos efectivos. Se agregó `lib/__tests__/request-type-permissions.test.ts`.
+
+**Actualización 2026-06-19, contrastación:**
+La prueba negativa de acción ya existe en `lib/__tests__/request-type-actions-rejection.test.ts` y confirma rechazo de `repuestos`/`servicios` cuando la sesión solo tiene `requests:create`. Ejecutado junto con la matriz pura en `npm test -- lib/__tests__/file-validation.test.ts lib/__tests__/quotation-access.test.ts lib/__tests__/request-type-permissions.test.ts lib/__tests__/request-type-actions-rejection.test.ts lib/__tests__/deploy-workflow.test.ts`; resultado: 5 archivos / 28 tests pasaron. Queda recomendable un E2E visual de opciones por usuario, pero el bloqueo RBAC de acción queda cubierto.
 
 ### [RBAC-02] La eliminación de cotizaciones no revalida ownership ni scope por faena
 
@@ -154,6 +159,9 @@ Mover la mutación a una Server Action o agregar una validación explícita comp
 **Validación posterior:**  
 Agregar test de ruta que rechace `POST` cross-site simulado y test de documentación/grep que enumere handlers mutantes permitidos.
 
+**Actualización 2026-06-19, contrastación:**
+Remediado. `app/api/notifications/route.ts` ya no exporta `POST`; solo mantiene `GET` autenticado para listar notificaciones y unread count. Las mutaciones están en `app/(app)/notificaciones/actions.ts` como Server Actions (`markReadAction`, `markAllReadAction`) y `lib/hooks/use-notifications.ts` las invoca mediante import lazy. `docs/security/CSRF.md` documenta el cambio y enumera `/api/notifications` como GET-only. `npm run typecheck` aprobado.
+
 ### [S-02] Las subidas de archivos confían en el MIME declarado por el cliente
 
 **Severidad:** Medio  
@@ -187,6 +195,9 @@ Validar magic bytes para PDF/JPEG/PNG, parsear XML como XML, normalizar extensi�
 **Validación posterior:**  
 Agregar tests que intenten subir bytes HTML/JS con MIME PDF o PNG y esperen rechazo. Verificar que descargas devuelvan MIME normalizado.
 
+**Actualización 2026-06-19, contrastación:**
+Remediado en código para comprobantes, facturas y cotizaciones. `lib/file-validation.ts` expone `validateFileBuffer()` y `MimeType`; `app/(app)/entregas/actions.ts`, `app/(app)/compras/invoice-actions.ts` y `lib/requests/request-actions.ts` leen el buffer una vez, validan magic bytes y persisten el MIME detectado. `lib/__tests__/file-validation.test.ts` cubre PDF/JPEG/PNG/XML válidos, XML con BOM, HTML disfrazado y tipos no permitidos; ejecutado dentro del lote focalizado con resultado verde.
+
 ### [S-03] El rate limit usa read-then-write y puede fallar bajo concurrencia
 
 **Severidad:** Medio  
@@ -213,6 +224,9 @@ Reemplazar `select` + `insert/update` por un `insert ... on conflict do update` 
 
 **Validación posterior:**  
 Agregar test de concurrencia que dispare N fallos simultáneos para la misma clave y confirme conteo final/lock sin errores.
+
+**Actualización 2026-06-19, contrastación:**
+Mitigado en código. `lib/services/rate-limit.ts` reemplaza el flujo read-then-write de `recordFailure()` por `insert(...).onConflictDoUpdate()` con incremento y `lockUntil` calculado de forma atómica en PostgreSQL. También corrige el pruning para no borrar contadores activos `lockUntil = 0` recientes. Pendiente: agregar test concurrente específico para este servicio.
 
 ### [TEST-01] Una prueba focalizada falla al aplicar migraciones PGlite
 
@@ -242,6 +256,9 @@ Separar la migración en statements compatibles, adaptar el setup PGlite para ej
 
 **Validación posterior:**  
 Ejecutar `npm run test:coverage` completo y confirmar que `lib/__tests__/trazabilidad-export-scope.test.ts` pasa sin skips artificiales.
+
+**Actualización 2026-06-19, contrastación:**
+Remediado para el test afectado. `lib/__tests__/trazabilidad-export-scope.test.ts` usa `lib/testing/pglite-migrate.ts`, que aplica migraciones PGlite dividiendo statements top-level con soporte para dollar-quoting y luego instala una versión compatible de `next_document_code`. Ejecutado `npm test -- lib/__tests__/trazabilidad-export-scope.test.ts`; resultado: 1 archivo / 1 test pasó. Pendiente: ejecutar `npm run test:coverage` completo.
 
 ### [TEST-02] Los tests reales de concurrencia de stock/recepción/entrega no corren por defecto en CI
 
@@ -275,6 +292,9 @@ Crear un job de integración con PostgreSQL desechable, nombre de DB seguro y fl
 
 **Validación posterior:**  
 Verificar que el job de CI corre los tres archivos y falla si se rompe la concurrencia de stock/recepción/entrega.
+
+**Actualización 2026-06-19, contrastación:**
+Remediado en configuración del repositorio. `.github/workflows/ci.yml` incluye un servicio PostgreSQL `bodega_e2e`, exporta `DATABASE_URL`, y agrega el paso `Concurrency tests (real Postgres)` con `STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET`, `RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET` y `DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET` en `true`, ejecutando `npx vitest run --reporter=verbose lib/__tests__/*concurrency-postgres.test.ts`. Pendiente: observar una corrida real en GitHub Actions.
 
 ### [DEVOPS-01] El workflow Docker puede publicar la etapa equivocada
 
@@ -335,6 +355,9 @@ Actualizar `docs/deploy/DEPLOY.md` con el flujo real: build target, migraciones,
 
 **Validación posterior:**  
 Ejecutar el runbook actualizado en un entorno staging y registrar el smoke test.
+
+**Actualización 2026-06-19, contrastación:**
+Remediado documentalmente. `docs/deploy/DEPLOY.md` ya describe Docker como flujo oficial, `docker build --target prod`, detalles de imagen standalone/no-root/healthcheck, CI/CD, storage, rollback y smoke tests. Pendiente: ejecutar el runbook en staging.
 
 ### [DEVOPS-03] El despliegue productivo no está automatizado en el workflow
 
@@ -552,30 +575,30 @@ En staging, probar Server Actions desde origen no permitido y confirmar rechazo;
 
 | Área | Nota 1-10 | Justificación breve |
 |---|---:|---|
-| Seguridad | 7/10 | Auth, CSP, headers y log redaction son sólidos; quedan CSRF documental/API, MIME spoofing y rate limit concurrente. |
-| RBAC / scope por faena | 6/10 | Helpers y patrón general existen, pero hay dos brechas altas confirmadas en solicitudes/cotizaciones. |
+| Seguridad | 8/10 | Auth, CSP, headers y log redaction son sólidos; CSRF de notificaciones, MIME spoofing y rate limit concurrente tienen fixes observables. Quedan validaciones de proxy/infra y test concurrente específico de rate limit. |
+| RBAC / scope por faena | 7/10 | Helpers y patrón general existen; las brechas altas de solicitudes/cotizaciones tienen remediación y pruebas focalizadas. Falta E2E visual/flujo completo por perfiles. |
 | Arquitectura | 7/10 | Separación UI/actions/services/DB razonable; la abstracción genérica con `any` debilita contratos críticos. |
 | Máquina de estados | 8/10 | Hay servicio centralizado de estados y transiciones con auditoría; no se confirmó bypass mayor en esta revisión. |
-| Base de datos | 7/10 | Buen uso de constraints, índices y transacciones; falta recuperar compatibilidad de migraciones con tests y validar grants productivos. |
+| Base de datos | 7/10 | Buen uso de constraints, índices y transacciones; PGlite focalizado recuperado, pero falta cobertura completa y validar grants productivos. |
 | Performance | 7/10 | Hay límites y paginación en superficies revisadas; exports XLSX siguen siendo síncronos/en memoria. |
-| DevOps | 5/10 | CI es amplio, pero Docker puede publicar stage incorrecto, deploy no está automatizado y docs están desactualizados. |
+| DevOps | 7/10 | CI es amplio, Docker stage y Docker smoke están configurados; deploy productivo automatizado sigue pendiente/externo. |
 | Frontend / UX | 7/10 | UI funcional y formularios robustos; opciones de solicitud no se alinean con permisos efectivos y falta pasada visual completa. |
-| Testing | 6/10 | Cobertura temática buena; prueba focalizada falla y concurrencia crítica no corre por defecto en CI. |
-| Documentación | 7/10 | Documentación extensa; contradicciones en Docker, CSRF y threat model deben corregirse. |
+| Testing | 7/10 | Cobertura temática buena; prueba PGlite focalizada pasa y concurrencia crítica está habilitada en CI. Falta corrida completa de coverage/E2E/Actions. |
+| Documentación | 8/10 | Documentación extensa; Docker, CSRF y threat model fueron alineados en los puntos auditados. |
 
 ## 8. Deuda técnica priorizada
 
 | Prioridad | Deuda | Impacto | Esfuerzo | Recomendación |
 |---|---|---|---|---|
-| P0 | Cerrar bypass de permisos en `/solicitudes` para `repuestos` y `servicios` | Evita operaciones fuera del RBAC modular | Medio | Validar permisos por `requestType` en Server Actions y UI. |
-| P0 | Revalidar ownership/scope al eliminar cotizaciones | Protege evidencia de compras y límites por faena/usuario | Medio | Cargar request padre, validar faena, dueño o permiso elevado. |
-| P0 | Corregir Docker stage publicado por deploy | Evita ejecutar imagen dev/build en producción | Bajo | Usar `target: prod` o hacer `prod` la última etapa. |
-| P0 | Recuperar suite de tests con migraciones PGlite/Postgres | Restaura confianza del gate de release | Medio | Ajustar migración o mover esos tests a Postgres real. |
-| P1 | Ejecutar tests de concurrencia de stock/recepción/entrega en CI | Evita regresiones en stock y kardex | Medio | Job Postgres desechable con flags seguros. |
-| P1 | Alinear CSRF docs/código para `app/api/notifications` | Mantiene invariant de seguridad | Bajo | Server Action o guard explícito en Route Handler. |
-| P1 | Validar contenido real de archivos subidos | Reduce spoofing documental/malware | Medio | Magic bytes, parseo XML y MIME normalizado. |
-| P1 | Actualizar runbook de despliegue y threat model | Evita operación con documentación falsa | Bajo | Documentar Docker actual, storage, adjuntos y ownership real. |
-| P2 | Atomicidad de rate limit | Mejora defensa ante ráfagas concurrentes | Bajo | `onConflictDoUpdate` o backend atómico. |
+| P0 | Cerrar bypass de permisos en `/solicitudes` para `repuestos` y `servicios` | Evita operaciones fuera del RBAC modular | Medio | Remediado; queda E2E visual recomendado. |
+| P0 | Revalidar ownership/scope al eliminar cotizaciones | Protege evidencia de compras y límites por faena/usuario | Medio | Remediado con helper común y pruebas unitarias. |
+| P0 | Corregir Docker stage publicado por deploy | Evita ejecutar imagen dev/build en producción | Bajo | Remediado con `target: prod`; falta smoke staging real. |
+| P0 | Recuperar suite de tests con migraciones PGlite/Postgres | Restaura confianza del gate de release | Medio | Remediado para el test focalizado; falta `test:coverage` completo. |
+| P1 | Ejecutar tests de concurrencia de stock/recepción/entrega en CI | Evita regresiones en stock y kardex | Medio | Configurado en CI con Postgres desechable; falta evidencia de corrida Actions. |
+| P1 | Alinear CSRF docs/código para `app/api/notifications` | Mantiene invariant de seguridad | Bajo | Remediado con Server Actions y docs. |
+| P1 | Validar contenido real de archivos subidos | Reduce spoofing documental/malware | Medio | Remediado con magic bytes, MIME normalizado y tests. |
+| P1 | Actualizar runbook de despliegue y threat model | Evita operación con documentación falsa | Bajo | Remediado documentalmente; falta ensayo staging. |
+| P2 | Atomicidad de rate limit | Mejora defensa ante ráfagas concurrentes | Bajo | Mitigado con `onConflictDoUpdate`; falta test concurrente específico. |
 | P2 | Reducir `any` en abstracciones de requests | Mejora mantenibilidad y revisión de permisos | Medio | Generics/contratos por módulo y contexto de acceso. |
 | P3 | Export XLSX asíncrono si crece volumen | Mejora performance futura | Alto | Métricas primero; background jobs solo si datos lo justifican. |
 
@@ -583,25 +606,21 @@ En staging, probar Server Actions desde origen no permitido y confirmar rechazo;
 
 ### Semana 1
 
-- Corregir `RBAC-01`: permisos por `requestType` en `app/(app)/solicitudes/actions.ts`.
-- Corregir `RBAC-02`: ownership/scope al eliminar cotizaciones.
-- Agregar tests unitarios/integración para ambos hallazgos RBAC.
-- Arreglar Dockerfile/workflow para publicar la etapa `prod`.
-- Re-ejecutar `npm run check:secrets`, `npm run lint`, `npm run typecheck`, `npm test` y `npm run build`.
+- Ejecutar `npm run check:secrets`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:coverage` y `npm run build` sobre el estado remediado.
+- Observar una corrida real de GitHub Actions con concurrencia Postgres y Docker smoke.
+- Construir/levantar imagen `prod` en staging y confirmar `node server.js`, `NODE_ENV=production` y `/api/health`.
+- Agregar test concurrente específico para `lib/services/rate-limit.ts`.
+- Agregar E2E visual de opciones de solicitud por permisos efectivos si se quiere cerrar también el residuo UX.
 
 ### Semanas 2-3
 
-- Resolver incompatibilidad PGlite/migración o mover pruebas afectadas a PostgreSQL real.
-- Crear job CI con Postgres desechable para concurrencia de stock, recepción y entregas.
-- Mover `POST /api/notifications` a Server Action o agregar guard CSRF explícito.
-- Implementar validación de magic bytes/parseo real para adjuntos, facturas y cotizaciones.
-- Actualizar `docs/deploy/DEPLOY.md`, `docs/security/CSRF.md` y `docs/security/THREAT_MODEL.md`.
+- Completar ensayo del runbook de despliegue en staging.
+- Automatizar rollout productivo con environment protection y smoke post-deploy si la infraestructura lo permite.
+- Ejecutar auditoría browser de accesibilidad/responsive en rutas críticas.
 
 ### Mes 1
 
-- Endurecer rate limit con operación atómica.
 - Reducir `any` en `lib/requests/request-actions.ts` y `lib/requests/request-service.ts`.
-- Ejecutar auditoría browser de accesibilidad/responsive en rutas críticas.
 - Validar staging con proxy real: host/origin, `X-Forwarded-For`, HSTS, healthcheck y storage persistente.
 
 ### Mes 2+
@@ -613,25 +632,27 @@ En staging, probar Server Actions desde origen no permitido y confirmar rechazo;
 
 ## 10. Checklist de remediación inmediata
 
-- [x] Exigir `repuestos:create` / `repuestos:submit` cuando `requestType === "repuestos"` en el flujo genérico de solicitudes. Actualizado 2026-06-19; pendiente prueba end-to-end de la Server Action.
-- [x] Exigir `servicios:create` / `servicios:submit` cuando `requestType === "servicios"` en el flujo genérico de solicitudes. Actualizado 2026-06-19; pendiente prueba end-to-end de la Server Action.
+- [x] Exigir `repuestos:create` / `repuestos:submit` cuando `requestType === "repuestos"` en el flujo genérico de solicitudes. Actualizado 2026-06-19 y cubierto por pruebas puras/de acción; E2E visual queda recomendado.
+- [x] Exigir `servicios:create` / `servicios:submit` cuando `requestType === "servicios"` en el flujo genérico de solicitudes. Actualizado 2026-06-19 y cubierto por pruebas puras/de acción; E2E visual queda recomendado.
 - [x] Filtrar tipos visibles en `request-form.tsx` por permisos efectivos, no por rol local. Actualizado 2026-06-19 con `visibleRequestTypeOptions()`.
 - [x] Revalidar `requestId`, faena visible, dueño o permiso elevado antes de eliminar cotizaciones. Actualizado 2026-06-19 en `lib/requests/quotation-access.ts` y `lib/requests/request-service.ts`.
-- [ ] Agregar tests negativos de RBAC para creación/envío de repuestos/servicios desde `/solicitudes`. Avance 2026-06-19: cubierta la matriz pura tipo-permiso; falta prueba de acción o E2E.
+- [x] Agregar tests negativos de RBAC para creación/envío de repuestos/servicios desde `/solicitudes`. Actualizado 2026-06-19 con matriz pura y `lib/__tests__/request-type-actions-rejection.test.ts`; E2E visual queda recomendado, no bloqueante para la acción.
 - [x] Agregar tests negativos de eliminación de cotizaciones ajenas o de otra faena. Actualizado 2026-06-19 con `lib/__tests__/quotation-access.test.ts`.
 - [x] Corregir Dockerfile o `.github/workflows/deploy.yml` para publicar `target: prod`. Actualizado 2026-06-19 en `.github/workflows/deploy.yml` y cubierto por `lib/__tests__/deploy-workflow.test.ts`.
-- [ ] Confirmar que la imagen resultante ejecuta `node server.js` y responde `/api/health`. Pendiente de build/run de imagen con variables de entorno y DB de staging o local.
-- [ ] Arreglar la migración o el harness PGlite que rompe `trazabilidad-export-scope.test.ts`.
-- [ ] Habilitar tests de concurrencia críticos en un job CI con PostgreSQL desechable.
-- [ ] Alinear `POST /api/notifications` con el modelo CSRF.
-- [ ] Validar magic bytes/parseo real de archivos subidos.
-- [ ] Actualizar documentación de Docker/deploy, CSRF y threat model de adjuntos.
+- [ ] Confirmar que la imagen resultante ejecuta `node server.js` y responde `/api/health` en staging/local Docker. CI tiene Docker smoke configurado; falta evidencia de corrida real.
+- [x] Arreglar la migración o el harness PGlite que rompe `trazabilidad-export-scope.test.ts`. Actualizado 2026-06-19 con `lib/testing/pglite-migrate.ts`; test focalizado verde.
+- [x] Habilitar tests de concurrencia críticos en un job CI con PostgreSQL desechable. Actualizado 2026-06-19 en `.github/workflows/ci.yml`; falta observar una corrida Actions.
+- [x] Alinear `POST /api/notifications` con el modelo CSRF. Actualizado 2026-06-19; POST eliminado y mutaciones movidas a Server Actions.
+- [x] Validar magic bytes/parseo real de archivos subidos. Actualizado 2026-06-19 con `validateFileBuffer()` y tests.
+- [x] Actualizar documentación de Docker/deploy, CSRF y threat model de adjuntos.
+- [ ] Agregar test concurrente específico para `lib/services/rate-limit.ts`.
+- [ ] Ejecutar `npm run test:coverage`, `npm run lint`, `npm run build` y, si aplica, E2E smoke completo sobre el estado actual.
 
 ## 11. Conclusión
 
-**Calificación global:** 6/10.  
+**Calificación global:** 7/10.  
 **Decisión:** 🔴 No listo para producción.
 
-El sistema tiene fundamentos sólidos y no se confirmó un hallazgo crítico, pero los bloqueadores actuales afectan permisos, evidencia operativa, release y confianza de pruebas. Los principales puntos a corregir son el RBAC de tipos de solicitud, la eliminación de cotizaciones sin ownership/scope, el Docker stage publicado y la suite de tests/migraciones.
+El sistema tiene fundamentos sólidos y no se confirmó un hallazgo crítico. En el código contrastado, los principales bloqueadores originales de RBAC, cotizaciones, CSRF de notificaciones, archivos, Docker stage y PGlite tienen remediación observable y pruebas focalizadas verdes. La decisión sigue prudente porque faltan una corrida completa de verificación, smoke real de imagen/staging, evidencia de GitHub Actions y automatización de rollout productivo.
 
 El siguiente paso recomendado es ejecutar la remediación P0 durante una semana corta, agregar pruebas que bloqueen regresiones y repetir una validación completa de CI/build/staging antes de reconsiderar producción.

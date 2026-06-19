@@ -4,28 +4,22 @@
  * Rejects files whose actual content doesn't match the declared MIME type.
  * Returns the authoritative MIME type based on magic bytes so the caller
  * persists the *real* type, not the client-declared one.
+ *
+ * IMPORTANT: Callers should read the file into a buffer ONCE and pass it to
+ * both validateFile() and the disk write to avoid double memory allocation.
  */
 
 // ── Magic byte signatures ────────────────────────────────────────────────────
 
-const MAGIC: Array<{
-  mime: string
-  bytes: number[]
-  mask?: number[]
-}> = [
+const MAGIC: Array<{ mime: string; bytes: number[] }> = [
   // PDF — starts with %PDF
   { mime: "application/pdf", bytes: [0x25, 0x50, 0x44, 0x46] },
   // JPEG — starts with FF D8 FF
   { mime: "image/jpeg", bytes: [0xff, 0xd8, 0xff] },
   // PNG — starts with 89 50 4E 47 0D 0A 1A 0A
   { mime: "image/png", bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
-  // XML — starts with <?xml (any encoding, skip BOM)
+  // XML — starts with <?xml (after optional UTF-8 BOM EF BB BF)
   { mime: "application/xml", bytes: [0x3c, 0x3f, 0x78, 0x6d, 0x6c] },
-  // BOM-prefixed XML (UTF-8 BOM: EF BB BF)
-  {
-    mime: "application/xml",
-    bytes: [0xef, 0xbb, 0xbf, 0x3c, 0x3f, 0x78, 0x6d, 0x6c],
-  },
 ]
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -34,7 +28,7 @@ const MAGIC: Array<{
 export const MimeType = {
   /** Entregas: comprobantes de entrega */
   PROOF: new Set(["application/pdf", "image/jpeg", "image/png"]),
-  /** Compras: facturas */
+  /** Compras: facturas (PDF, images, XML) */
   INVOICE: new Set(["application/pdf", "image/jpeg", "image/png", "application/xml"]),
   /** Cotizaciones: ofertas de proveedores */
   QUOTATION: new Set(["application/pdf", "image/jpeg", "image/png"]),
@@ -50,26 +44,30 @@ export interface ValidateFileResult {
 }
 
 /**
- * Validate a file's magic bytes and return the real MIME type.
+ * Validate a file buffer's magic bytes and return the real MIME type.
+ *
+ * @param buf     The file contents as a Uint8Array (caller reads once).
+ * @param size    Original file size in bytes (for empty check).
+ * @param allowedMimes  Set of MIME types permitted for this upload context.
  *
  * Flow:
- * 1. Check the file has at least 8 bytes.
- * 2. Read the first 16 bytes and match against known magic signatures.
+ * 1. Check the file has at least 4 bytes.
+ * 2. Strip optional UTF-8 BOM, then match against known magic signatures.
  * 3. If the detected type is not in `allowedMimes`, reject.
- * 4. If the client-declared type differs from the detected type,
- *    use the detected type (normalized).
+ * 4. Return the detected (normalized) MIME type.
  */
-export async function validateFile(
-  file: File,
+export function validateFileBuffer(
+  buf: Uint8Array,
+  size: number,
   allowedMimes: MimeTypeSet,
-): Promise<ValidateFileResult> {
-  const minBytes = Math.min(16, file.size)
-  if (minBytes < 4) {
+): ValidateFileResult {
+  if (size < 4 || buf.length < 4) {
     return { mimeType: "", error: "El archivo está vacío o es demasiado pequeño" }
   }
 
-  const buf = new Uint8Array(await file.arrayBuffer())
-  const detected = detectMime(buf)
+  // Strip optional UTF-8 BOM before matching
+  const content = stripBom(buf)
+  const detected = detectMime(content)
 
   if (!detected) {
     return {
@@ -86,6 +84,14 @@ export async function validateFile(
 }
 
 // ── Internals ────────────────────────────────────────────────────────────────
+
+/** Strip UTF-8 BOM (EF BB BF) if present. */
+function stripBom(buf: Uint8Array): Uint8Array {
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return buf.slice(3)
+  }
+  return buf
+}
 
 function detectMime(buf: Uint8Array): string | null {
   for (const sig of MAGIC) {
