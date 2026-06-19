@@ -12,9 +12,11 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "@/lib/toast"
 import { saveActionPlanItemAction, deleteActionPlanItemAction } from "@/app/(app)/prevencion/actions"
-import { ESTADO_OPTIONS, ESTADO_LABELS, estadoPlanBadgeClass } from "@/lib/sst/badges"
+import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/ui/empty-state"
+import { ESTADO_OPTIONS, ESTADO_LABELS, estadoPlanBadgeVariant } from "@/lib/sst/badges"
 import type { SstActionPlan } from "@/db/schema/sst"
-import { Trash, Plus } from "@phosphor-icons/react"
+import { Trash, Plus, ListBullets } from "@phosphor-icons/react"
 
 interface Props {
   evaluationId: string
@@ -115,7 +117,12 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
       </div>
 
       {items.length === 0 && !draft && (
-        <p className="text-sm text-text-subtle italic">Sin ítems en el plan de acción.</p>
+        <EmptyState
+          compact
+          icon={<ListBullets size={20} />}
+          title="Plan vacío"
+          description="Sin ítems en el plan de acción."
+        />
       )}
 
       {items.length > 0 && (
@@ -141,12 +148,9 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
                   <td className="py-2 px-3">{item.responsable}</td>
                   <td className="py-2 px-3">{item.plazo}</td>
                   <td className="py-2 px-3">
-                    <span className={[
-                      "text-xs px-2 py-0.5 rounded-full border font-medium",
-                      estadoPlanBadgeClass(item.estado),
-                    ].join(" ")}>
+                    <Badge variant={estadoPlanBadgeVariant(item.estado)}>
                       {ESTADO_LABELS[item.estado] ?? item.estado}
-                    </span>
+                    </Badge>
                   </td>
                   {!readOnly && (
                     <td className="py-2 px-3">
