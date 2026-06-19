@@ -7,8 +7,8 @@ import type { ChecklistDefinition } from '../types'
  *
  * Conductores Camión Ampliroll, Batea y Operadores de Maquinaria Pesada
  */
-export const LC_SST_001: ChecklistDefinition = {
-  code: 'LC-SST-001',
+export const TRABAJADOR_NUEVO: ChecklistDefinition = {
+  code: 'trabajador_nuevo',
   version: '01',
   revisionDate: '2026-02-25',
   tipo: 'nuevo',

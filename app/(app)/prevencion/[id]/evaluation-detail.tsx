@@ -337,7 +337,7 @@ export function EvaluationDetail({
                       </p>
                     </div>
 
-                    {evaluation.definicionCode === "LC-SST-002" && (
+                    {evaluation.definicionCode === "trabajador_antiguo" && (
                       <div className="space-y-2">
                         <p className="text-sm font-medium text-(--color-text)">Condiciones especiales</p>
                         <Checkbox

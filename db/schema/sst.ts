@@ -14,7 +14,7 @@ export const sstEvaluations = pgTable("sst_evaluations", {
   worksiteId:             text("worksite_id").notNull().references(() => worksites.id),
   workerId:               text("worker_id").notNull().references(() => workers.id),
   createdBy:              text("created_by").notNull().references(() => users.id),
-  definicionCode:         text("definicion_code").notNull(),         // 'LC-SST-001' | 'LC-SST-002'
+  definicionCode:         text("definicion_code").notNull(),         // 'trabajador_nuevo' | 'trabajador_antiguo'
   definicionVersion:      text("definicion_version").notNull(),      // '01'
   tipo:                   text("tipo").notNull(),                    // TipoEvaluacion: 'nuevo' | 'seguimiento'
   motivo:                 text("motivo"),                            // MotivoSeguimiento

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getApplicableResponseStatuses } from '../checklist'
-import { LC_SST_002 } from '../definitions'
+import { TRABAJADOR_ANTIGUO } from '../definitions'
 import type { StatusValue } from '../types'
 
 describe('getApplicableResponseStatuses', () => {
@@ -13,7 +13,7 @@ describe('getApplicableResponseStatuses', () => {
     ]
 
     const complianceInput = getApplicableResponseStatuses(
-      LC_SST_002,
+      TRABAJADOR_ANTIGUO,
       'conductor_ampliroll',
       responses,
     )

@@ -28,8 +28,8 @@ Cumple con un marco legal exigente en Chile:
 * **ISO 45001:2018** (Sistemas de gestión de la seguridad y salud en el trabajo).
 
 ### Formularios SGI Soportados
-1. **Trabajadores Nuevos (`LC-SST-001`)**: Habilitación operacional inicial de personal nuevo, reubicado o con cambio de función.
-2. **Control de Seguimiento / Post-Incidente (`LC-SST-002`)**: Control periódico y seguimiento a trabajadores después de un incidente, conducta insegura, reincorporación o reforzamiento.
+1. **Trabajadores Nuevos (`trabajador_nuevo`)**: Habilitación operacional inicial de personal nuevo, reubicado o con cambio de función.
+2. **Control de Seguimiento / Post-Incidente (`trabajador_antiguo`)**: Control periódico y seguimiento a trabajadores después de un incidente, conducta insegura, reincorporación o reforzamiento.
 
 ---
 
@@ -209,7 +209,7 @@ Los tipos compartidos están definidos en [types.ts](file:///Users/allopze/dev/t
 * **`ChecklistDefinition`**: Estructura principal que define una evaluación.
   ```typescript
   interface ChecklistDefinition {
-    code: string;                // Ej: 'LC-SST-001'
+    code: string;                // Ej: 'trabajador_nuevo'
     version: string;             // Ej: '01'
     revisionDate: string;
     title: string;
@@ -248,7 +248,7 @@ $$\text{\% Cumplimiento} = \frac{\text{Ítems Cumplidos}}{\text{Ítems Cumplidos
 * **Estados Negativos (No Cumplidos)**: `'no_cumple'`, `'no_entregado'`, `'no_apto'`, `'no'`.
 * **Excluidos del cálculo**: Los ítems con estado `'na'` (No Aplica) o `null` (sin responder) **no suman ni restan** en el denominador.
 
-### 5.3 Clasificación de Eficacia (Para LC-SST-002)
+### 5.3 Clasificación de Eficacia (Para trabajador_antiguo)
 Clasifica el desempeño de un trabajador tras un periodo de seguimiento:
 * **Eficaz**: Porcentaje $\ge 90\%$ **Y** no posee desviaciones críticas **Y** no hay reincidencia.
 * **Parcialmente Eficaz**: Porcentaje entre $70\%$ y $89\%$.
@@ -259,23 +259,23 @@ La aplicación calcula automáticamente el resultado final (`ResultadoFinal`) ba
 
 1. **Secciones Bloqueantes (Safety Blockers)**:
    El incumplimiento (estado negativo) en cualquiera de los ítems de estas secciones resulta automáticamente en **NO HABILITADO**, sin importar el porcentaje global.
-   * **En LC-SST-001 (Nuevos)**: 
+   * **En trabajador_nuevo (Nuevos)**: 
      * Sección `documentacion_requisitos` (1.1 - Requisitos Legales).
      * Sección `induccion_capacitacion` (1.2 - Inducción Inicial), *con excepción del ítem `protocolos_minsal` (que no es bloqueante)*.
-   * **En LC-SST-002 (Seguimiento)**:
+   * **En trabajador_antiguo (Seguimiento)**:
      * Sección `verificacion_documental` (3 - Verificación Documental y Competencias).
 
 2. **Umbral de Aprobación por Porcentaje**:
-   * **Para Trabajadores Nuevos (`LC-SST-001`)**:
+   * **Para Trabajadores Nuevos (`trabajador_nuevo`)**:
      * Cumple (Habilitado Autónomo): Porcentaje $\ge 90\%$.
      * No Cumple (No Habilitado): Porcentaje $< 90\%$.
-   * **Para Control de Seguimiento (`LC-SST-002`)**:
+   * **Para Control de Seguimiento (`trabajador_antiguo`)**:
      * Habilitado Autónomo: Porcentaje $\ge 90\%$ (sin bloqueos).
      * Habilitado con Restricciones: Porcentaje entre $70\%$ y $89\%$.
      * No Habilitado: Porcentaje $< 70\%$ o presencia de desviación crítica o reincidencia.
 
 ### 5.5 Secciones Condicionales por Cargo
-En la lista de seguimiento (`LC-SST-002`), hay secciones específicas para cada rol operativo que solo deben mostrarse e influir en el cumplimiento si el trabajador posee dicho cargo:
+En la lista de seguimiento (`trabajador_antiguo`), hay secciones específicas para cada rol operativo que solo deben mostrarse e influir en el cumplimiento si el trabajador posee dicho cargo:
 * **Conductor Ampliroll**: Se muestra y evalúa la sección `control_operacional_ampliroll` (5.1).
 * **Conductor Batea**: Se muestra y evalúa la sección `control_operacional_batea` (5.2).
 * **Operador Maquinaria Pesada**: Se muestra y evalúa la sección `control_operacional_maquinaria` (5.3).
@@ -330,7 +330,7 @@ No puedes usar `webContents.printToPDF` en un navegador web convencional. Tienes
 
 ## 8. Alertas y Agenda de Seguimiento
 
-Cuando se crea una evaluación de tipo **seguimiento** (`LC-SST-002`), el backend genera automáticamente 4 hitos en la tabla `seguimientos_programados`:
+Cuando se crea una evaluación de tipo **seguimiento** (`trabajador_antiguo`), el backend genera automáticamente 4 hitos en la tabla `seguimientos_programados`:
 
 | Instancia | Cálculo de Fecha Programada | Objetivo del Hito |
 |---|---|---|

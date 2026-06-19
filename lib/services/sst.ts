@@ -33,6 +33,17 @@ import {
 } from '@/lib/validation/sst'
 import type { StatusValue } from '@/lib/sst/types'
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/**
+ * Sections excluded from the compliance percentage calculation per checklist code.
+ * Items in these sections still participate in blocking logic but do NOT
+ * contribute to the percentage numerator/denominator.
+ */
+const SECTIONS_EXCLUDED_FROM_PERCENTAGE: Record<string, string[]> = {
+  'trabajador_nuevo': ['competencias_operacionales'], // Section 2 — blocking, not counted for %
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /**
@@ -345,9 +356,13 @@ export async function closeEvaluation(
       applicableSet.has(`${r.seccionId}::${r.itemId}`)
     )
 
-    const complianceInput = applicableResponses.map((r) => ({
-      estado: r.estado as StatusValue,
-    }))
+    const excludedSections = SECTIONS_EXCLUDED_FROM_PERCENTAGE[evaluation.definicionCode] ?? []
+
+    const complianceInput = applicableResponses
+      .filter((r) => !excludedSections.includes(r.seccionId))
+      .map((r) => ({
+        estado: r.estado as StatusValue,
+      }))
 
     const { percentage } = calculateCompliance(complianceInput)
 
@@ -365,15 +380,22 @@ export async function closeEvaluation(
       data.hasReincidence ?? false
     )
 
-    // resultadoEficacia only for LC-SST-002
+    // resultadoEficacia only for trabajador_antiguo
     let resultadoEficacia: string | null = null
-    if (evaluation.definicionCode === 'LC-SST-002') {
+    if (evaluation.definicionCode === 'trabajador_antiguo') {
       // Compute hasBlocker separately for classifyEfficacy consistency
-      // Inside this branch definicionCode === 'LC-SST-002', so blocker section is verificacion_documental
+      // Secciones críticas (bloqueantes): 3, 4 y 5
+      const BLOCKER_SECTIONS = [
+        'verificacion_documental',
+        'procedimientos_criticos',
+        'control_ampliroll',
+        'control_batea',
+        'control_maquinaria',
+      ]
       const NEGATIVE_STATUSES_LOCAL = ['no_cumple', 'no_entregado', 'no_apto', 'no']
       const hasBlocker = applicableResponses.some((r) => {
         if (r.itemId === 'protocolos_minsal') return false
-        return r.seccionId === 'verificacion_documental' && NEGATIVE_STATUSES_LOCAL.includes(r.estado ?? '')
+        return BLOCKER_SECTIONS.includes(r.seccionId) && NEGATIVE_STATUSES_LOCAL.includes(r.estado ?? '')
       })
 
       const efficacy = classifyEfficacy(

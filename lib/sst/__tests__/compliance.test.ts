@@ -172,10 +172,10 @@ describe('classifyEfficacy', () => {
 // getAutomaticResultadoFinal
 // ---------------------------------------------------------------------------
 describe('getAutomaticResultadoFinal', () => {
-  describe('Trabajador Nuevo (LC-SST-001)', () => {
+  describe('Trabajador Nuevo (trabajador_nuevo)', () => {
     it('retorna habilitado_autonomo (CUMPLE) si tiene >= 90% y no hay bloqueos', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-001',
+        'trabajador_nuevo',
         92,
         [
           { seccionId: 'documentacion_requisitos', itemId: 'contrato_trabajo', estado: 'cumple' },
@@ -187,7 +187,7 @@ describe('getAutomaticResultadoFinal', () => {
 
     it('retorna no_habilitado (NO CUMPLE) si es < 90% aunque no haya bloqueos', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-001',
+        'trabajador_nuevo',
         88,
         [
           { seccionId: 'documentacion_requisitos', itemId: 'contrato_trabajo', estado: 'cumple' },
@@ -199,7 +199,7 @@ describe('getAutomaticResultadoFinal', () => {
 
     it('retorna no_habilitado si no cumple en 1.1 (documentacion_requisitos) independientemente del porcentaje', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-001',
+        'trabajador_nuevo',
         95,
         [
           { seccionId: 'documentacion_requisitos', itemId: 'contrato_trabajo', estado: 'no_cumple' },
@@ -211,7 +211,7 @@ describe('getAutomaticResultadoFinal', () => {
 
     it('retorna no_habilitado si no cumple en 1.2 (induccion_capacitacion) independientemente del porcentaje', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-001',
+        'trabajador_nuevo',
         95,
         [
           { seccionId: 'documentacion_requisitos', itemId: 'contrato_trabajo', estado: 'cumple' },
@@ -223,7 +223,7 @@ describe('getAutomaticResultadoFinal', () => {
 
     it('no bloquea si el ítem es protocolos_minsal en 1.2 y el porcentaje es >= 90%', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-001',
+        'trabajador_nuevo',
         91,
         [
           { seccionId: 'documentacion_requisitos', itemId: 'contrato_trabajo', estado: 'cumple' },
@@ -235,7 +235,7 @@ describe('getAutomaticResultadoFinal', () => {
 
     it('retorna no_habilitado si el ítem es protocolos_minsal pero el porcentaje total es < 90%', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-001',
+        'trabajador_nuevo',
         85,
         [
           { seccionId: 'documentacion_requisitos', itemId: 'contrato_trabajo', estado: 'cumple' },
@@ -244,12 +244,45 @@ describe('getAutomaticResultadoFinal', () => {
       )
       expect(result).toBe('no_habilitado')
     })
+
+    it('retorna no_habilitado si no cumple en sección 2 (competencias_operacionales) independientemente del porcentaje', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_nuevo',
+        95,
+        [
+          { seccionId: 'competencias_operacionales', itemId: 'reconoce_peligros', estado: 'no_apto' }
+        ]
+      )
+      expect(result).toBe('no_habilitado')
+    })
+
+    it('no bloquea si el ítem es protocolos_minsal en sección 2 y el porcentaje es >= 90%', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_nuevo',
+        91,
+        [
+          { seccionId: 'competencias_operacionales', itemId: 'protocolos_minsal', estado: 'no_apto' }
+        ]
+      )
+      expect(result).toBe('habilitado_autonomo')
+    })
+
+    it('no bloquea secciones no críticas si el porcentaje es suficiente', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_nuevo',
+        95,
+        [
+          { seccionId: 'epp', itemId: 'casco_seguridad', estado: 'no_entregado' }
+        ]
+      )
+      expect(result).toBe('habilitado_autonomo')
+    })
   })
 
-  describe('Trabajador Antiguo (LC-SST-002)', () => {
+  describe('Trabajador Antiguo (trabajador_antiguo)', () => {
     it('retorna no_habilitado si no cumple en sección 3 (verificacion_documental) independientemente del porcentaje', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-002',
+        'trabajador_antiguo',
         95,
         [
           { seccionId: 'verificacion_documental', itemId: 'contrato_vigente', estado: 'no_cumple' }
@@ -260,7 +293,7 @@ describe('getAutomaticResultadoFinal', () => {
 
     it('no bloquea si el ítem es protocolos_minsal en sección 3 y porcentaje es >= 90%', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-002',
+        'trabajador_antiguo',
         95,
         [
           { seccionId: 'verificacion_documental', itemId: 'protocolos_minsal', estado: 'no_cumple' }
@@ -271,13 +304,80 @@ describe('getAutomaticResultadoFinal', () => {
 
     it('no bloquea si el ítem es protocolos_minsal en sección 3 y porcentaje es 70-89%', () => {
       const result = getAutomaticResultadoFinal(
-        'LC-SST-002',
+        'trabajador_antiguo',
         85,
         [
           { seccionId: 'verificacion_documental', itemId: 'protocolos_minsal', estado: 'no_cumple' }
         ]
       )
       expect(result).toBe('habilitado_restricciones')
+    })
+
+    it('retorna no_habilitado si no cumple en sección 4 (procedimientos_criticos) independientemente del porcentaje', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_antiguo',
+        95,
+        [
+          { seccionId: 'procedimientos_criticos', itemId: 'bloqueo_energia', estado: 'no_cumple' }
+        ]
+      )
+      expect(result).toBe('no_habilitado')
+    })
+
+    it('retorna no_habilitado si no cumple en sección 5.1 (control_ampliroll) independientemente del porcentaje', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_antiguo',
+        95,
+        [
+          { seccionId: 'control_ampliroll', itemId: 'autorizacion_ampliroll', estado: 'no_cumple' }
+        ]
+      )
+      expect(result).toBe('no_habilitado')
+    })
+
+    it('retorna no_habilitado si no cumple en sección 5.2 (control_batea) independientemente del porcentaje', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_antiguo',
+        95,
+        [
+          { seccionId: 'control_batea', itemId: 'autorizacion_batea', estado: 'no_cumple' }
+        ]
+      )
+      expect(result).toBe('no_habilitado')
+    })
+
+    it('retorna no_habilitado si no cumple en sección 5.3 (control_maquinaria) independientemente del porcentaje', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_antiguo',
+        95,
+        [
+          { seccionId: 'control_maquinaria', itemId: 'autorizacion_maquinaria', estado: 'no_cumple' }
+        ]
+      )
+      expect(result).toBe('no_habilitado')
+    })
+
+    it('retorna no_habilitado si no cumple en múltiples secciones críticas simultáneamente', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_antiguo',
+        100,
+        [
+          { seccionId: 'procedimientos_criticos', itemId: 'bloqueo_energia', estado: 'no_cumple' },
+          { seccionId: 'control_batea', itemId: 'autorizacion_batea', estado: 'no_cumple' }
+        ]
+      )
+      expect(result).toBe('no_habilitado')
+    })
+
+    it('no bloquea secciones no críticas si el porcentaje es suficiente', () => {
+      const result = getAutomaticResultadoFinal(
+        'trabajador_antiguo',
+        95,
+        [
+          { seccionId: 'capacitaciones_continuas', itemId: 'curso_altura', estado: 'no_cumple' }
+        ]
+      )
+      expect(result).toBe('habilitado_autonomo')
     })
   })
 })

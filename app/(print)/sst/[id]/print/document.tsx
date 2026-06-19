@@ -276,12 +276,20 @@ export const ACTA_STYLES = `
 
   .sheet {
     width: 210mm;
-    min-height: 297mm;
-    margin: 0 auto 24px;
     padding: 12mm;
     background: #fbfcfb;
-    border: 1px solid #d8dfda;
-    box-shadow: 0 18px 55px rgba(26, 36, 30, 0.14);
+  }
+
+  /* On-screen "paper" affordance only. Kept out of print: a fixed 297mm height
+     equals the full A4 and, combined with @page margins, overflows the printable
+     area and produces a blank trailing page (e.g. in Safari's print preview). */
+  @media screen {
+    .sheet {
+      min-height: 297mm;
+      margin: 0 auto 24px;
+      border: 1px solid #d8dfda;
+      box-shadow: 0 18px 55px rgba(26, 36, 30, 0.14);
+    }
   }
 
   /* Block layout + margin-based spacing so break-inside:avoid is honored when
