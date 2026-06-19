@@ -9,20 +9,7 @@ export const serviciosModule = {
     "servicios:submit",
     "servicios:approve",
   ] as const,
-  nav: [
-    {
-      areaId: "operaciones",
-      items: [
-        {
-          label:       "Servicios",
-          href:        "/servicios",
-          iconName:    "Toolbox",
-          permissions: ["servicios:view_own", "servicios:view_all"],
-          badge:       "count" as const,
-        },
-      ],
-    },
-  ],
+  nav: [],
   defaultGrants: [
     // Administrador: acceso total
     { roleSlug: "administrador", permission: "servicios:create" },

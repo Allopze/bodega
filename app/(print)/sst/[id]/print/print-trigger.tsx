@@ -1,9 +1,17 @@
 "use client"
 
-import { ArrowLeft, Printer } from "@phosphor-icons/react"
+import { ArrowLeft, DownloadSimple, Printer } from "@phosphor-icons/react"
 import { useState } from "react"
 
-export function PrintTrigger({ backHref, suggestedFilename }: { backHref: string; suggestedFilename: string }) {
+export function PrintTrigger({
+  backHref,
+  pdfHref,
+  suggestedFilename,
+}: {
+  backHref: string
+  pdfHref: string
+  suggestedFilename: string
+}) {
   const [isPreparing, setIsPreparing] = useState(false)
 
   async function handlePrint() {
@@ -20,13 +28,21 @@ export function PrintTrigger({ backHref, suggestedFilename }: { backHref: string
 
   return (
     <div className="print-toolbar">
+      <a
+        href={pdfHref}
+        download={suggestedFilename}
+        className="print-action print-action-primary"
+      >
+        <DownloadSimple size={15} weight="bold" aria-hidden />
+        Descargar PDF
+      </a>
       <button
         onClick={handlePrint}
-        className="print-action print-action-primary"
+        className="print-action print-action-secondary"
         disabled={isPreparing}
       >
         <Printer size={15} weight="bold" aria-hidden />
-        {isPreparing ? "Preparando PDF..." : "Guardar PDF / Imprimir"}
+        {isPreparing ? "Preparando..." : "Imprimir"}
       </button>
       <a href={backHref} className="print-action print-action-secondary">
         <ArrowLeft size={15} weight="bold" aria-hidden />

@@ -121,7 +121,8 @@ function replaceVariables(template: string, variables: Record<string, string>): 
 
   // Simple variable replacement
   result = result.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
-    return key in variables ? escapeHtml(variables[key]) : `{{${key}}}`
+     const value = variables[key]
+     return value !== undefined ? escapeHtml(value) : `{{${key}}}`
   })
 
   return result

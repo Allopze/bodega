@@ -1,5 +1,7 @@
 "use client"
 
+import { useState } from "react"
+import { NotePencil } from "@phosphor-icons/react"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import {
@@ -34,17 +36,17 @@ function StatusButton({
   variant: "positive" | "negative" | "neutral"
   children: React.ReactNode
 }) {
-  const base = "px-3 py-1.5 text-xs font-semibold rounded-(--radius) border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1"
+  const base = "h-8 px-3 text-xs font-semibold rounded-(--radius) border transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 active:scale-[0.98]"
   const colors = {
     positive: active
-      ? "bg-(--color-success) text-(--color-success-ink) border-(--color-success) font-bold"
-      : "border-(--color-border) text-text-subtle hover:border-(--color-success-line) hover:text-(--color-success)",
+      ? "bg-(--color-success) text-(--color-success-ink) border-(--color-success) shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
+      : "bg-(--color-surface) border-(--color-border) text-text-subtle hover:border-(--color-success-line) hover:text-(--color-success)",
     negative: active
-      ? "bg-(--color-danger) text-(--color-danger-ink) border-(--color-danger) font-bold"
-      : "border-(--color-border) text-text-subtle hover:border-(--color-danger-line) hover:text-(--color-danger)",
+      ? "bg-(--color-danger) text-(--color-danger-ink) border-(--color-danger) shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
+      : "bg-(--color-surface) border-(--color-border) text-text-subtle hover:border-(--color-danger-line) hover:text-(--color-danger)",
     neutral: active
-      ? "bg-(--color-surface-3) text-(--color-text) border-(--color-border-strong) font-bold"
-      : "border-(--color-border) text-text-subtle hover:border-(--color-border-strong)",
+      ? "bg-(--color-surface-3) text-(--color-text) border-(--color-border-strong) shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
+      : "bg-(--color-surface) border-(--color-border) text-text-subtle hover:border-(--color-border-strong)",
   }
 
   return (
@@ -72,6 +74,9 @@ function ItemField({
   onChange: (patch: Partial<ItemResponse>) => void
 }) {
   const kind: FieldKind = item.kind
+  const [notesOpen, setNotesOpen] = useState(false)
+  const showObservation = notesOpen || Boolean(resp.observacion)
+  const needsCorrectiveAction = ["cumple_nocumple_obs", "cumple_nocumple_na_obs"].includes(item.kind) && resp.estado === "no_cumple"
 
   function setEstado(estado: StatusValue) {
     onChange({ estado: resp.estado === estado ? null : estado })
@@ -98,45 +103,74 @@ function ItemField({
     }
 
     return (
-      <div className="flex flex-col gap-2">
-        <div
-          role="group"
-          aria-label={item.label}
-          className="flex items-center gap-2 flex-wrap"
-        >
-          {pairs.map((p) => (
-            <StatusButton
-              key={p.value}
-              active={resp.estado === p.value}
-              onClick={() => setEstado(p.value)}
-              disabled={readOnly}
-              variant={p.variant}
+      <div className="space-y-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            role="group"
+            aria-label={item.label}
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            {pairs.map((p) => (
+              <StatusButton
+                key={p.value}
+                active={resp.estado === p.value}
+                onClick={() => setEstado(p.value)}
+                disabled={readOnly}
+                variant={p.variant}
+              >
+                {p.label}
+              </StatusButton>
+            ))}
+          </div>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => setNotesOpen((open) => !open)}
+              aria-expanded={showObservation}
+              className={cn(
+                "inline-flex h-8 w-fit items-center gap-1.5 rounded-(--radius) border px-2.5 text-xs font-semibold",
+                "transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.98]",
+                showObservation
+                  ? "border-(--color-primary-line) bg-(--color-primary-tint) text-(--color-primary)"
+                  : "border-(--color-border) bg-(--color-surface) text-text-subtle hover:border-(--color-border-strong) hover:text-(--color-text)"
+              )}
             >
-              {p.label}
-            </StatusButton>
-          ))}
+              <NotePencil size={14} weight="bold" aria-hidden="true" />
+              Nota
+            </button>
+          )}
         </div>
-        {(resp.estado !== null || resp.observacion) && (
-          <Textarea
-            placeholder="Observación (opcional)…"
-            value={resp.observacion}
-            onChange={(e) => onChange({ observacion: e.target.value })}
-            disabled={readOnly}
-            rows={2}
-            className="text-xs"
-            maxLength={500}
-          />
+        {showObservation && (
+          <div className="grid gap-1.5">
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
+              Observación
+            </label>
+            <Textarea
+              placeholder="Agregar una nota breve..."
+              value={resp.observacion}
+              onChange={(e) => onChange({ observacion: e.target.value })}
+              disabled={readOnly}
+              rows={2}
+              className="min-h-16 text-xs"
+              maxLength={500}
+            />
+          </div>
         )}
-        {["cumple_nocumple_obs", "cumple_nocumple_na_obs"].includes(item.kind) && resp.estado === "no_cumple" && (
-          <Textarea
-            placeholder="Acción correctiva…"
-            value={resp.accionCorrectiva}
-            onChange={(e) => onChange({ accionCorrectiva: e.target.value })}
-            disabled={readOnly}
-            rows={2}
-            className="text-xs"
-            maxLength={500}
-          />
+        {needsCorrectiveAction && (
+          <div className="grid gap-1.5 rounded-(--radius-lg) border border-(--color-danger-line) bg-(--color-danger-tint) p-3">
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-(--color-danger)">
+              Acción correctiva requerida
+            </label>
+            <Textarea
+              placeholder="Define responsable, acción y plazo..."
+              value={resp.accionCorrectiva}
+              onChange={(e) => onChange({ accionCorrectiva: e.target.value })}
+              disabled={readOnly}
+              rows={2}
+              className="min-h-16 bg-(--color-surface) text-xs"
+              maxLength={500}
+            />
+          </div>
         )}
       </div>
     )
@@ -210,7 +244,7 @@ function ItemField({
             onClick={() => toggleOption(opt.value)}
             aria-pressed={selected.includes(opt.value)}
             className={cn(
-              "px-3 py-1.5 rounded-(--radius) border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1",
+              "h-8 px-3 rounded-(--radius) border text-xs font-medium transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 active:scale-[0.98]",
               selected.includes(opt.value)
                 ? "bg-(--color-primary) text-(--color-primary-ink) border-(--color-primary)"
                 : "border-(--color-border) text-text-subtle hover:border-border-strong",
@@ -243,26 +277,40 @@ function ItemField({
 
 export function ChecklistSectionPanel({ section, responses, readOnly, onChange }: Props) {
   return (
-    <div className="space-y-4">
+    <section className="space-y-4">
       {section.description && (
         <p className="text-sm text-(--color-text-muted)">{section.description}</p>
       )}
-      <div className="divide-y divide-(--color-border)">
+      <div className="overflow-hidden rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface)">
         {section.items.map((item) => {
           const resp = responses[item.id] ?? { estado: null, observacion: "", accionCorrectiva: "" }
+          const answered = resp.estado !== null || Boolean(resp.observacion)
           return (
-            <div key={item.id} className="py-3 space-y-2">
-              <p className="text-sm font-medium text-(--color-text)">{item.label}</p>
-              <ItemField
-                item={item}
-                resp={resp}
-                readOnly={readOnly}
-                onChange={(patch) => onChange(section.id, item.id, patch)}
-              />
+            <div
+              key={item.id}
+              className="grid gap-3 border-b border-(--color-border) px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(280px,auto)] sm:items-start"
+            >
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-medium leading-5 text-(--color-text)">{item.label}</p>
+                <p className={cn(
+                  "text-xs font-medium",
+                  answered ? "text-text-subtle" : "text-(--color-warning)"
+                )}>
+                  {answered ? "Registrado" : "Pendiente de respuesta"}
+                </p>
+              </div>
+              <div className="min-w-0 sm:justify-self-end sm:text-right">
+                <ItemField
+                  item={item}
+                  resp={resp}
+                  readOnly={readOnly}
+                  onChange={(patch) => onChange(section.id, item.id, patch)}
+                />
+              </div>
             </div>
           )
         })}
       </div>
-    </div>
+    </section>
   )
 }

@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef, useId } from "react"
 import { useRouter } from "next/navigation"
+import { CalendarBlank, CheckCircle, IdentificationBadge, MapPin, UserFocus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -66,7 +67,6 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   const [motivoOtro, setMotivoOtro]     = useState("")
   const [descripcionEvento, setDesc]    = useState("")
   const [equipoPatente, setPatente]     = useState("")
-  const [workerSearch, setWorkerSearch] = useState("")
 
   // inline validation errors
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -82,7 +82,6 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   // stable ids for accessibility
   const uid       = useId()
   const workerId_  = `${uid}-worker`
-  const searchId   = `${uid}-worker-search`
   const defId      = `${uid}-definicion`
   const siteId     = `${uid}-worksite`
   const fechaId    = `${uid}-fecha`
@@ -93,6 +92,11 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
 
   const selectedDef = definiciones.find((d) => d.code === definicionCode)
   const isSeguimiento = selectedDef?.tipo === "seguimiento"
+  const selectedWorker = workers.find((w) => w.id === workerId)
+  const selectedWorksite = worksites.find((w) => w.id === worksiteId)
+  const selectedCargoLabels = cargoOptions
+    .filter((option) => selectedCargos.includes(option.value))
+    .map((option) => option.label)
 
   function handleWorkerSelect(wid: string) {
     setWorkerId(wid)
@@ -110,13 +114,6 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
       return next
     })
   }
-
-  const filteredWorkers = workerSearch.trim()
-    ? workers.filter((w) =>
-        w.name.toLowerCase().includes(workerSearch.toLowerCase()) ||
-        w.rut.includes(workerSearch)
-      )
-    : workers
 
   function validate(): boolean {
     const next: Record<string, string> = {}
@@ -171,109 +168,131 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate>
-      <FieldGroup className="space-y-6">
+    <form
+      onSubmit={handleSubmit}
+      noValidate
+      className="overflow-hidden rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) shadow-[var(--shadow-card)]"
+    >
+      <div className="border-b border-(--color-border) bg-(--color-surface-2) px-4 py-3 sm:px-5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Ficha base</p>
+        <p className="mt-1 text-sm text-(--color-text-muted)">
+          Identifica al trabajador, el alcance de la evaluación y los cargos aplicables.
+        </p>
+      </div>
+
+      <FieldGroup className="gap-5 p-4 sm:p-5">
 
         {/* Worker search + select */}
-        <div className="space-y-2">
-          <Field label="Buscar trabajador" htmlFor={searchId}>
-            <Input
-              id={searchId}
-              placeholder="Filtra por nombre o RUT…"
-              value={workerSearch}
-              onChange={(e) => setWorkerSearch(e.target.value)}
-            />
-          </Field>
+        <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-bg) p-3 sm:p-4">
+          <div className="mb-3 flex items-start gap-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-primary-tint) text-(--color-primary)">
+              <UserFocus size={18} weight="bold" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-(--color-text)">Trabajador evaluado</p>
+              <p className="mt-0.5 text-xs leading-5 text-text-subtle">
+                Abre el selector y busca por nombre o RUT antes de continuar.
+              </p>
+            </div>
+          </div>
           <Field
             label="Trabajador"
             htmlFor={workerId_}
             required
             error={errors.workerId}
+            helper="El selector permite buscar dentro de la lista."
           >
-            <Select value={workerId} onValueChange={handleWorkerSelect}>
+            <Select value={workerId} onValueChange={handleWorkerSelect} searchable>
               <SelectTrigger
                 id={workerId_}
                 ref={workerRef}
                 aria-invalid={!!errors.workerId}
               >
-                <SelectValue placeholder="Selecciona trabajador" />
+                <SelectValue placeholder="Busca y selecciona trabajador" />
               </SelectTrigger>
               <SelectContent>
-                {filteredWorkers.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.name}{w.rut ? ` — ${w.rut}` : ""}
+                {workers.map((w) => (
+                  <SelectItem key={w.id} value={w.id} textValue={w.name}>
+                    <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                      <span className="truncate">{w.name}</span>
+                      {w.rut && (
+                        <span className="shrink-0 rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-2 py-0.5 font-mono text-[11px] text-text-subtle">
+                          {w.rut}
+                        </span>
+                      )}
+                    </span>
                   </SelectItem>
                 ))}
-                {filteredWorkers.length === 0 && (
-                  <div className="px-3 py-4 text-sm text-text-subtle text-center">
-                    Sin resultados
-                  </div>
-                )}
               </SelectContent>
             </Select>
           </Field>
         </div>
 
-        {/* Tipo / Definición */}
-        <Field
-          label="Tipo de evaluación"
-          htmlFor={defId}
-          required
-          error={errors.definicion}
-        >
-          <Select value={definicionCode} onValueChange={(v) => { setDefinicion(v); setErrors((e) => ({ ...e, definicion: "" })) }}>
-            <SelectTrigger id={defId} ref={definicionRef} aria-invalid={!!errors.definicion}>
-              <SelectValue placeholder="Selecciona tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              {definiciones.map((d) => (
-                <SelectItem key={d.code} value={d.code}>
-                  {d.code} — {d.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+        <div className="grid gap-5 lg:grid-cols-2">
+          {/* Tipo / Definición */}
+          <Field
+            label="Tipo de evaluación"
+            htmlFor={defId}
+            required
+            error={errors.definicion}
+          >
+            <Select value={definicionCode} onValueChange={(v) => { setDefinicion(v); setErrors((e) => ({ ...e, definicion: "" })) }}>
+              <SelectTrigger id={defId} ref={definicionRef} aria-invalid={!!errors.definicion}>
+                <SelectValue placeholder="Selecciona tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                {definiciones.map((d) => (
+                  <SelectItem key={d.code} value={d.code}>
+                    {d.code} — {d.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
 
-        {/* Faena */}
-        <Field
-          label="Faena"
-          htmlFor={siteId}
-          required
-          error={errors.worksiteId}
-        >
-          <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setErrors((e) => ({ ...e, worksiteId: "" })) }}>
-            <SelectTrigger id={siteId} ref={worksiteRef} aria-invalid={!!errors.worksiteId}>
-              <SelectValue placeholder="Selecciona faena" />
-            </SelectTrigger>
-            <SelectContent>
-              {worksites.map((w) => (
-                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+          {/* Fecha */}
+          <Field
+            label="Fecha de evaluación"
+            htmlFor={fechaId}
+            required
+            error={errors.fecha}
+          >
+            <Input
+              id={fechaId}
+              ref={fechaRef}
+              type="date"
+              value={fechaEvaluacion}
+              max={today}
+              onChange={(e) => { setFecha(e.target.value); setErrors((ev) => ({ ...ev, fecha: "" })) }}
+              aria-invalid={!!errors.fecha}
+            />
+          </Field>
 
-        {/* Fecha */}
-        <Field
-          label="Fecha de evaluación"
-          htmlFor={fechaId}
-          required
-          error={errors.fecha}
-        >
-          <Input
-            id={fechaId}
-            ref={fechaRef}
-            type="date"
-            value={fechaEvaluacion}
-            max={today}
-            onChange={(e) => { setFecha(e.target.value); setErrors((ev) => ({ ...ev, fecha: "" })) }}
-            aria-invalid={!!errors.fecha}
-          />
-        </Field>
+          {/* Faena */}
+          <div className="lg:col-span-2">
+            <Field
+              label="Faena"
+              htmlFor={siteId}
+              required
+              error={errors.worksiteId}
+              helper={selectedWorker?.worksiteId === worksiteId ? "Se completó automáticamente desde el trabajador seleccionado." : undefined}
+            >
+              <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setErrors((e) => ({ ...e, worksiteId: "" })) }}>
+                <SelectTrigger id={siteId} ref={worksiteRef} aria-invalid={!!errors.worksiteId}>
+                  <SelectValue placeholder="Selecciona faena" />
+                </SelectTrigger>
+                <SelectContent>
+                  {worksites.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        </div>
 
         {/* Cargos */}
-        <div>
+        <div className="rounded-(--radius-lg) border border-(--color-border) p-3 sm:p-4">
           <p
             className="text-sm font-medium text-[var(--color-text)] mb-1.5"
             id={`${uid}-cargos-label`}
@@ -295,12 +314,15 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
                 onClick={() => toggleCargo(opt.value)}
                 aria-pressed={selectedCargos.includes(opt.value)}
                 className={[
-                  "px-3 py-1.5 rounded-(--radius) text-sm border transition-colors",
+                  "inline-flex h-8 items-center gap-1.5 rounded-(--radius) border px-3 text-sm font-medium",
+                  "transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out)] active:scale-[0.98]",
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
                   selectedCargos.includes(opt.value)
-                    ? "bg-(--color-primary) text-(--color-primary-ink) border-(--color-primary)"
-                    : "bg-(--color-surface) text-(--color-text) border-(--color-border) hover:border-border-strong",
+                    ? "bg-(--color-primary) text-white border-(--color-primary) shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]"
+                    : "bg-(--color-surface) text-(--color-text) border-(--color-border) hover:border-(--color-border-strong) hover:bg-(--color-surface-2)",
                 ].join(" ")}
               >
+                {selectedCargos.includes(opt.value) && <CheckCircle size={14} weight="fill" aria-hidden="true" />}
                 {opt.label}
               </button>
             ))}
@@ -379,17 +401,73 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
           </>
         )}
 
+        <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) p-3 sm:p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Resumen antes de crear</p>
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <SummaryItem
+              icon={<IdentificationBadge size={15} weight="bold" aria-hidden="true" />}
+              label="Trabajador"
+              value={selectedWorker ? `${selectedWorker.name}${selectedWorker.rut ? `, ${selectedWorker.rut}` : ""}` : "Pendiente"}
+              muted={!selectedWorker}
+            />
+            <SummaryItem
+              icon={<MapPin size={15} weight="bold" aria-hidden="true" />}
+              label="Faena"
+              value={selectedWorksite?.name ?? "Pendiente"}
+              muted={!selectedWorksite}
+            />
+            <SummaryItem
+              icon={<CalendarBlank size={15} weight="bold" aria-hidden="true" />}
+              label="Evaluación"
+              value={selectedDef ? `${selectedDef.code}, ${selectedDef.tipo === "seguimiento" ? "seguimiento" : "nuevo ingreso"}` : "Pendiente"}
+              muted={!selectedDef}
+            />
+            <SummaryItem
+              icon={<CheckCircle size={15} weight="bold" aria-hidden="true" />}
+              label="Cargos"
+              value={selectedCargoLabels.length > 0 ? selectedCargoLabels.join(", ") : "Pendiente"}
+              muted={selectedCargoLabels.length === 0}
+            />
+          </div>
+        </div>
+
         {/* Submit */}
-        <div className="flex items-center gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Creando…" : "Crear evaluación"}
-          </Button>
-          <Button type="button" variant="ghost" onClick={() => router.back()}>
+        <div className="flex flex-col-reverse gap-2 border-t border-(--color-border) pt-5 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="ghost" onClick={() => router.back()} className="sm:w-auto">
             Cancelar
+          </Button>
+          <Button type="submit" disabled={isPending} className="sm:w-auto">
+            {isPending ? "Creando..." : "Crear evaluación"}
           </Button>
         </div>
 
       </FieldGroup>
     </form>
+  )
+}
+
+function SummaryItem({
+  icon,
+  label,
+  value,
+  muted,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  muted: boolean
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-2 rounded-(--radius) bg-(--color-surface) px-3 py-2">
+      <span className={muted ? "mt-0.5 shrink-0 text-text-faint" : "mt-0.5 shrink-0 text-(--color-primary)"}>
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">{label}</p>
+        <p className={muted ? "truncate text-sm text-text-subtle" : "truncate text-sm font-medium text-(--color-text)"}>
+          {value}
+        </p>
+      </div>
+    </div>
   )
 }

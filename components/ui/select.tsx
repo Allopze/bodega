@@ -276,9 +276,10 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => {
+>(({ className, children, textValue, ...props }, ref) => {
   const query   = React.useContext(SelectFilterContext)
-  const matches = query === "" || getNodeText(children).toLowerCase().includes(query)
+  const searchableText = textValue ?? getNodeText(children)
+  const matches = query === "" || searchableText.toLowerCase().includes(query)
 
   return (
     <SelectPrimitive.Item
@@ -294,6 +295,7 @@ const SelectItem = React.forwardRef<
         "transition-colors duration-[var(--duration-fast)]",
         className,
       )}
+      textValue={textValue}
       {...props}
     >
       <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">

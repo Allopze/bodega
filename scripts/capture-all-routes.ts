@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { spawn, type ChildProcess } from "node:child_process"
+import crypto from "node:crypto"
 import postgres from "postgres"
 import bcrypt from "bcryptjs"
 import { chromium, type BrowserContext, type Page } from "@playwright/test"
@@ -65,8 +66,11 @@ const routeTargets: RouteTarget[] = [
   { slug: "root", path: "/", auth: false },
   { slug: "login", path: "/login", auth: false },
   { slug: "registro", path: "/registro", auth: false },
+  { slug: "recuperar", path: "/recuperar", auth: false },
+  { slug: "recuperar-token", path: "/recuperar/capture-reset-token", auth: false },
   { slug: "not-found", path: "/ruta-inexistente-auditoria", auth: true, expectedStatus: 404 },
   { slug: "dashboard", path: "/dashboard", auth: true },
+  { slug: "perfil", path: "/perfil", auth: true },
   { slug: "app-not-found", path: "/app-ruta-inexistente-auditoria", auth: true, expectedStatus: 404 },
   { slug: "solicitudes", path: "/solicitudes", auth: true },
   { slug: "solicitudes-nueva", path: "/solicitudes/nueva", auth: true },
@@ -97,6 +101,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-auditoria", path: "/admin/auditoria", auth: true },
   { slug: "admin-configuracion", path: "/admin/configuracion", auth: true },
   { slug: "admin-faenas", path: "/admin/faenas", auth: true },
+  { slug: "admin-plantillas", path: "/admin/plantillas", auth: true },
   { slug: "admin-productos", path: "/admin/productos", auth: true },
   { slug: "admin-productos-nuevo", path: "/admin/productos/nuevo", auth: true },
   { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true, notes: "Esta ruta redirige a /admin/productos." },
@@ -120,6 +125,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
   { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción"] },
   { section: "admin-faenas", fixtures: ["faenas activas"] },
+  { section: "admin-plantillas", fixtures: ["plantillas de correo del sistema"] },
   { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos"] },
   { section: "admin-proveedores", fixtures: ["proveedores activos con contacto"] },
   { section: "admin-trabajadores", fixtures: ["trabajadores por faena"] },
@@ -238,6 +244,8 @@ async function prepareDatabase(captureDbUrl: string) {
   const repuestoItemId = "rep-item-audit-1"
   const serviceRequestId = "srv-audit-1"
   const serviceItemId = "srv-item-audit-1"
+  const resetToken = "capture-reset-token"
+  const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex")
 
   const permissions: (typeof schema.permissions.$inferInsert)[] = [
     { id: "p-req-create", name: "requests:create", module: "requests", description: "Crear solicitudes" },
@@ -357,6 +365,13 @@ async function prepareDatabase(captureDbUrl: string) {
       updatedAt: now,
     },
   ])
+  await db.insert(schema.passwordResetTokens).values({
+    id: "reset-token-audit-1",
+    userId,
+    tokenHash: resetTokenHash,
+    expiresAt: "2030-01-01T00:00:00.000Z",
+    createdAt: now,
+  })
   await db.insert(schema.userRoles).values([
     { userId, roleId: "rol-admin" },
     { userId: "user-audit-jefa", roleId: "rol-jefa" },
