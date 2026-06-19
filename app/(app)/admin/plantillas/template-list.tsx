@@ -2,10 +2,14 @@
 
 import { useState } from "react"
 import { useActionState, useEffect } from "react"
+import Link from "next/link"
+import { EnvelopeSimple } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { SubmitButton } from "@/components/admin/submit-button"
-import { Field, FieldGroup } from "@/components/ui/field"
+import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { updateTemplateAction, resetTemplateAction } from "./actions"
 
@@ -28,11 +32,18 @@ export function TemplateList({ templates }: TemplateListProps) {
 
   if (templates.length === 0) {
     return (
-      <div className="rounded-[var(--radius-2xl)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-12 text-center">
-        <p className="text-sm text-[var(--color-text-muted)]">
-          No hay plantillas. Vuelve a sembrar los datos.
-        </p>
-      </div>
+      <EmptyState
+        icon={<EnvelopeSimple size={24} />}
+        title="No hay plantillas de correo activas"
+        description="Restaurar las plantillas base permite volver a enviar invitaciones, recuperaciones y avisos operativos con contenido revisable."
+        tone="warning"
+        className="rounded-[var(--radius-2xl)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]"
+        action={
+          <Button asChild variant="secondary">
+            <Link href="/admin/configuracion">Revisar configuración</Link>
+          </Button>
+        }
+      />
     )
   }
 

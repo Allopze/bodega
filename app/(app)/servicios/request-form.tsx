@@ -115,12 +115,20 @@ export function ServiceForm({ worksites, editRequest }: ServiceFormProps) {
       model:         item.model || null,
     }))
   )
+  const readyChecks = [
+    { label: "Faena seleccionada", done: Boolean(worksiteId) },
+    { label: "Fecha requerida", done: Boolean(requiredDate) },
+    { label: "Al menos un servicio", done: items.length > 0 },
+    { label: "Descripción, ubicación y cantidad completas", done: items.every((item) => item.description.trim() && item.location.trim() && Number(item.quantity) > 0) },
+  ]
+  const completedChecks = readyChecks.filter((check) => check.done).length
 
   return (
-    <div className="space-y-8">
-      {/* Header fields */}
-      <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">Datos generales</h2>
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="space-y-8">
+        {/* Header fields */}
+        <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-6 space-y-4">
+          <h2 className="text-sm font-semibold text-[var(--color-text)]">Datos generales</h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Faena" required htmlFor="worksiteId">
@@ -173,10 +181,10 @@ export function ServiceForm({ worksites, editRequest }: ServiceFormProps) {
             />
           </Field>
         </div>
-      </section>
+        </section>
 
-      {/* Items */}
-      <section className="space-y-3">
+        {/* Items */}
+        <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-[var(--color-text)]">
             Servicios solicitados
@@ -307,39 +315,69 @@ export function ServiceForm({ worksites, editRequest }: ServiceFormProps) {
             </div>
           </div>
         ))}
-      </section>
+        </section>
 
-      {/* Actions */}
-      <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
-        {/* Save draft form */}
-        <form action={draftAction} className="contents">
-          <input type="hidden" name="id" value={requestId ?? ""} />
-          <input type="hidden" name="worksiteId" value={worksiteId} />
-          <input type="hidden" name="urgency" value={urgency} />
-          <input type="hidden" name="requiredDate" value={requiredDate} />
-          <input type="hidden" name="justification" value={justification} />
-          <input type="hidden" name="itemsJson" value={itemsJson} />
-          <Button type="submit" variant="secondary" size="default" disabled={draftPending}>
-            <FloppyDisk size={16} />
-            {draftPending ? "Guardando…" : "Guardar borrador"}
-          </Button>
-        </form>
+        {/* Actions */}
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
+          {/* Save draft form */}
+          <form action={draftAction} className="contents">
+            <input type="hidden" name="id" value={requestId ?? ""} />
+            <input type="hidden" name="worksiteId" value={worksiteId} />
+            <input type="hidden" name="urgency" value={urgency} />
+            <input type="hidden" name="requiredDate" value={requiredDate} />
+            <input type="hidden" name="justification" value={justification} />
+            <input type="hidden" name="itemsJson" value={itemsJson} />
+            <Button type="submit" variant="secondary" size="default" disabled={draftPending}>
+              <FloppyDisk size={16} />
+              {draftPending ? "Guardando…" : "Guardar borrador"}
+            </Button>
+          </form>
 
-        {/* Submit form */}
-        <form action={submitFormAction} className="contents">
-          <input type="hidden" name="requestId" value={requestId ?? ""} />
-          <Button
-            type="submit"
-            variant="primary"
-            size="default"
-            disabled={submitPending || !requestId}
-            title={!requestId ? "Guarda el borrador antes de enviar" : undefined}
-          >
-            <PaperPlaneTilt size={16} />
-            {submitPending ? "Enviando…" : "Enviar a aprobación"}
-          </Button>
-        </form>
+          {/* Submit form */}
+          <form action={submitFormAction} className="contents">
+            <input type="hidden" name="requestId" value={requestId ?? ""} />
+            <Button
+              type="submit"
+              variant="primary"
+              size="default"
+              disabled={submitPending || !requestId}
+              title={!requestId ? "Guarda el borrador antes de enviar" : undefined}
+            >
+              <PaperPlaneTilt size={16} />
+              {submitPending ? "Enviando…" : "Enviar a aprobación"}
+            </Button>
+          </form>
+        </div>
       </div>
+
+      <aside className="h-fit rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] xl:sticky xl:top-6">
+        <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Resumen</p>
+        <div className="mt-3 grid gap-3 border-b border-[var(--color-border)] pb-4">
+          <div>
+            <p className="text-2xl font-semibold tabular-nums text-[var(--color-text)]">{items.length}</p>
+            <p className="text-xs text-[var(--color-text-muted)]">servicio{items.length === 1 ? "" : "s"} en la solicitud</p>
+          </div>
+          <div className="rounded-[var(--radius)] bg-[var(--color-surface-2)] px-3 py-2">
+            <p className="text-xs text-[var(--color-text-muted)]">Estado</p>
+            <p className="mt-0.5 text-sm font-medium text-[var(--color-text)]">
+              {requestId ? "Borrador guardado" : "Pendiente de guardar"}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 space-y-2">
+          {readyChecks.map((check) => (
+            <div key={check.label} className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-[var(--color-text-muted)]">{check.label}</span>
+              <span className={check.done ? "text-[var(--color-success-ink)]" : "text-[var(--color-warning-ink)]"}>
+                {check.done ? "Listo" : "Falta"}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 rounded-[var(--radius)] bg-[var(--color-primary-tint)] px-3 py-2 text-xs leading-relaxed text-[var(--color-primary-ink)]">
+          Guarda el borrador para habilitar el envío a aprobación. Progreso: {completedChecks}/{readyChecks.length}.
+        </p>
+      </aside>
     </div>
   )
 }

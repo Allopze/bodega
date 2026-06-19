@@ -30,7 +30,7 @@ export default async function EditarProductoPage({ params }: { params: Promise<{
   if (!product) notFound()
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title={product.name}
         description={`Editar SKU ${product.sku}`}

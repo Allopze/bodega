@@ -149,7 +149,7 @@ export default async function NuevaOcPage({
     : firstPendingWorksiteId ?? worksiteOptions[0]?.id
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title="Nueva orden de compra"
         description="Selecciona ítems aprobados, elige el proveedor y fija los precios."

@@ -33,6 +33,7 @@ export function ProductRouteSheet({
       categories={categories}
       allSuppliers={allSuppliers}
       editProduct={editProduct}
+      variant="embedded"
     />
   )
 }

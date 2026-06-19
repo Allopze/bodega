@@ -73,7 +73,7 @@ export default async function NuevaRecepcionPage({
   })
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title={`Recepción OC ${order.code}`}
         description="Registra primero la llegada a oficina Chome y luego la recepción en faena."

@@ -68,7 +68,7 @@ export default async function RecepcionDetallePage({
   const lineCount = receipt.items.length
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title={receipt.code}
         description={`Recepción de ${receipt.purchaseOrder.code} · ${receipt.purchaseOrder.supplier?.name ?? "Proveedor sin nombre"}`}

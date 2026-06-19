@@ -30,7 +30,7 @@ export default async function NuevoServicioPage() {
 
   if (worksiteOptions.length === 0) {
     return (
-      <PageContainer width="form">
+      <PageContainer width="workbench">
         <PageHeader
           title="Nueva solicitud de servicios"
           description="Solicitud de servicios externos con cotizaciones de proveedores."
@@ -59,7 +59,7 @@ export default async function NuevoServicioPage() {
   }
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title="Nueva solicitud de servicios"
         description="Completa los datos, agrega los servicios requeridos y adjunta las cotizaciones."

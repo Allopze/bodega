@@ -27,6 +27,8 @@ import path from "node:path"
 import { mkdirp, writeBuffer, removeFile } from "@/lib/storage/helpers"
 import type { RequestModuleConfig } from "./request-config"
 import type { Session } from "next-auth"
+import { assertCanDeleteQuotation } from "./quotation-access"
+import type { Permission } from "@/modules/permissions"
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -71,9 +73,11 @@ export interface AddQuotationInput {
 }
 
 export interface DeleteQuotationInput {
-  quotationId: string
-  userId:      string
-  userEmail?:  string
+  quotationId:       string
+  expectedRequestId: string
+  session:           Session
+  elevatedPermission: Permission
+  userEmail?:        string
 }
 
 export interface SubmitRequestInput {
@@ -283,11 +287,18 @@ export function createRequestService(config: RequestModuleConfig) {
 
     const request = await db.query.purchaseRequests.findFirst({
       where: eq(purchaseRequests.id, quotation.requestId),
-      columns: { status: true },
+      columns: { id: true, status: true, requesterId: true, worksiteId: true },
     })
     if (!request || !["draft", "returned"].includes(request.status)) {
       throw new Error("La solicitud ya no es editable")
     }
+    assertCanDeleteQuotation({
+      session: input.session,
+      request,
+      quotation,
+      expectedRequestId: input.expectedRequestId,
+      elevatedPermission: input.elevatedPermission,
+    })
 
     await db.delete(quotationsTable).where(eq(quotationsTable.id, input.quotationId) as any)
 
@@ -297,7 +308,7 @@ export function createRequestService(config: RequestModuleConfig) {
     }
 
     await recordAudit({
-      userId:     input.userId,
+      userId:     input.session.user.id,
       userEmail:  input.userEmail,
       action:     "delete",
       entityType: quotationEntityType,

@@ -3,9 +3,10 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { worksites, products, productAttributes, suppliers } from "@/db/schema"
 import { eq, asc } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
+import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
+import { visibleRequestTypeOptions } from "@/lib/request-types"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { RequestForm } from "../request-form"
@@ -18,8 +19,11 @@ export const metadata: Metadata = { title: "Nueva solicitud de compra" }
 
 export default async function NuevaSolicitudPage() {
   let session
-  try { session = await requirePermission("requests:create") }
+  try { session = await requireAuth() }
   catch { redirect("/forbidden") }
+
+  const requestTypeOptions = visibleRequestTypeOptions(session.user.permissions, "create")
+  if (requestTypeOptions.length === 0) redirect("/forbidden")
 
   const [allWorksites, allProducts, allAttrs, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites)
@@ -72,7 +76,7 @@ export default async function NuevaSolicitudPage() {
 
   if (worksiteOptions.length === 0) {
     return (
-      <PageContainer width="form">
+      <PageContainer width="workbench">
         <PageHeader
           title="Nueva solicitud de compra"
           description="Completa los datos y agrega los ítems que necesitas."
@@ -101,7 +105,7 @@ export default async function NuevaSolicitudPage() {
   }
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title="Nueva solicitud de compra"
         description="Completa los datos y agrega los ítems que necesitas."
@@ -119,6 +123,7 @@ export default async function NuevaSolicitudPage() {
         suppliers={supplierOptions}
         maxFileSizeMb={maxFileSizeMb}
         userRoles={session.user.roles}
+        userPermissions={session.user.permissions}
       />
     </PageContainer>
   )

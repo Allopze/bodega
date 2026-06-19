@@ -144,7 +144,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   }
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title={request.code}
         description={`Solicitado por ${request.requester?.name ?? "—"} · ${request.worksite?.name ?? "—"}`}
@@ -173,6 +173,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           editRequest={editRequest}
           maxFileSizeMb={maxFileSizeMb}
           userRoles={session.user.roles}
+          userPermissions={session.user.permissions}
         />
         <EntityTimeline entityType="request" events={timelineEvents} />
       </div>

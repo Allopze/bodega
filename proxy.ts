@@ -17,7 +17,7 @@ export default auth((req) => {
   requestHeaders.set("Content-Security-Policy", csp)
 
   // Public paths — no auth required
-  const publicPaths = ["/login", "/registro", "/api/auth", "/api/health"]
+  const publicPaths = ["/login", "/registro", "/recuperar", "/api/auth", "/api/health"]
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     // Redirect authenticated users away from login
     if (isLoggedIn && (pathname === "/login" || pathname === "/registro")) {

@@ -11,7 +11,6 @@ import { emailTemplates } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { logger } from "@/lib/logger"
 
 export interface EmailTemplate {
   id:        string

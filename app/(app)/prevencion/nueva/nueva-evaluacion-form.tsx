@@ -53,6 +53,11 @@ const MOTIVO_OPTIONS = [
 
 const today = new Date().toISOString().slice(0, 10)
 
+function getEvaluationTypeLabel(definition: DefinicionOption) {
+  if (definition.tipo === "seguimiento") return "Control de seguimiento"
+  return "Trabajador nuevo"
+}
+
 export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOptions }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -242,8 +247,8 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
               </SelectTrigger>
               <SelectContent>
                 {definiciones.map((d) => (
-                  <SelectItem key={d.code} value={d.code}>
-                    {d.code} — {d.title}
+                  <SelectItem key={d.code} value={d.code} textValue={getEvaluationTypeLabel(d)}>
+                    {getEvaluationTypeLabel(d)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -419,7 +424,7 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
             <SummaryItem
               icon={<CalendarBlank size={15} weight="bold" aria-hidden="true" />}
               label="Evaluación"
-              value={selectedDef ? `${selectedDef.code}, ${selectedDef.tipo === "seguimiento" ? "seguimiento" : "nuevo ingreso"}` : "Pendiente"}
+              value={selectedDef ? getEvaluationTypeLabel(selectedDef) : "Pendiente"}
               muted={!selectedDef}
             />
             <SummaryItem

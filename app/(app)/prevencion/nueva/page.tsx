@@ -65,7 +65,7 @@ export default async function NuevaEvaluacionPage() {
   }))
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title="Nueva Evaluación SST"
         description="Completa los datos para crear una nueva evaluación de seguridad."

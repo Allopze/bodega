@@ -6,13 +6,17 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose,
 } from "@/components/ui/dialog"
 import { toast } from "@/lib/toast"
 import { saveResponsesAction, closeEvaluationAction } from "@/app/(app)/prevencion/actions"
 import { calculateCompliance } from "@/lib/sst/compliance"
+import { getApplicableResponseStatuses } from "@/lib/sst/checklist"
 import { RESULTADO_LABELS, MOTIVO_LABELS, resultadoBadgeVariant, estadoBadgeVariant, tipoBadgeVariant } from "@/lib/sst/badges"
 import { Badge } from "@/components/ui/badge"
 import { Field } from "@/components/ui/field"
@@ -22,7 +26,7 @@ import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan } 
 import { ChecklistSectionPanel, type ItemResponse } from "./checklist-section"
 import { ActionPlanPanel } from "./action-plan-panel"
 import { FollowupsPanel } from "./followups-panel"
-import { Printer, LockSimple, Warning, Check } from "@phosphor-icons/react"
+import { CaretLeft, CaretRight, Check, LockSimple, Printer, Warning } from "@phosphor-icons/react"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -90,6 +94,18 @@ export function EvaluationDetail({
   const readOnly  = isCerrado || !canEdit
 
   const cargos = (evaluation.cargosJson as string[]) ?? []
+  const applicableSections = getApplicableSections(definition, cargos)
+  const navigationItems = [
+    ...applicableSections.map((section) => ({
+      value: section.id,
+      label: section.title,
+    })),
+    { value: "acta", label: "Acta de cierre" },
+    ...(evaluation.tipo === "seguimiento"
+      ? [{ value: "seguimientos", label: "Seguimientos" }]
+      : []),
+    { value: "plan", label: "Plan de acción" },
+  ]
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [responseMap, setResponseMap] = useState<ResponseMap>(
@@ -97,6 +113,7 @@ export function EvaluationDetail({
   )
   const [followups, setFollowups]     = useState(initialFollowups)
   const [actionPlan, setActionPlan]   = useState(initialActionPlan)
+  const [activeSection, setActiveSection] = useState(() => navigationItems[0]?.value ?? "acta")
 
   // autosave state: null = idle | "saving" | { ts: string } = last-saved | "error"
   const [saveState, setSaveState] = useState<null | "saving" | { ts: string } | "error">(null)
@@ -114,17 +131,20 @@ export function EvaluationDetail({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Compliance ─────────────────────────────────────────────────────────────
-  const applicableSections = getApplicableSections(definition, cargos)
-
-  const allResponses = applicableSections.flatMap((sec) =>
-    sec.items
-      .filter((item) =>
-        ["cumple_nocumple_obs","cumple_nocumple_na_obs","entregado_obs","apto_obs","si_no_obs"].includes(item.kind)
-      )
-      .map((item) => ({
-        estado: responseMap[sec.id]?.[item.id]?.estado ?? null,
-      }))
+  const activeNavigationIndex = Math.max(
+    navigationItems.findIndex((item) => item.value === activeSection),
+    0,
   )
+  const selectedNavigation = navigationItems[activeNavigationIndex] ?? navigationItems[0]
+
+  const visibleResponses = Object.entries(responseMap).flatMap(([seccionId, items]) =>
+    Object.entries(items).map(([itemId, response]) => ({
+      seccionId,
+      itemId,
+      estado: response.estado,
+    }))
+  )
+  const allResponses = getApplicableResponseStatuses(definition, cargos, visibleResponses)
 
   const compliance = calculateCompliance(allResponses)
 
@@ -181,6 +201,11 @@ export function EvaluationDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [evaluation.id, readOnly]
   )
+
+  function moveActiveSection(offset: number) {
+    const next = navigationItems[activeNavigationIndex + offset]
+    if (next) setActiveSection(next.value)
+  }
 
   // ── Close evaluation ────────────────────────────────────────────────────────
   function handleClose() {
@@ -368,29 +393,56 @@ export function EvaluationDetail({
         </div>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue={applicableSections[0]?.id ?? "acta"}>
-        {/* Fade mask hints at horizontal scroll on narrow viewports */}
-        <div className="relative">
-          <div className="overflow-x-auto pb-1">
-            <TabsList>
-              {applicableSections.map((sec) => (
-                <TabsTrigger key={sec.id} value={sec.id}>
-                  {sec.title}
-                </TabsTrigger>
-              ))}
-              <TabsTrigger value="acta">Acta de cierre</TabsTrigger>
-              {evaluation.tipo === "seguimiento" && (
-                <TabsTrigger value="seguimientos">Seguimientos</TabsTrigger>
-              )}
-              <TabsTrigger value="plan">Plan de acción</TabsTrigger>
-            </TabsList>
+      {/* Section navigation */}
+      <Tabs value={activeSection} onValueChange={setActiveSection}>
+        <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-3 shadow-[var(--shadow-card)] sm:p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Sección activa</p>
+              <p className="mt-1 truncate text-sm font-semibold text-(--color-text)">
+                {selectedNavigation?.label ?? "Selecciona una sección"}
+              </p>
+            </div>
+            <p className="shrink-0 text-xs font-medium text-text-subtle">
+              {activeNavigationIndex + 1} de {navigationItems.length}
+            </p>
           </div>
-          {/* Right-edge fade signals there's more to scroll */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-(--color-bg) to-transparent"
-          />
+
+          <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <Select value={activeSection} onValueChange={setActiveSection}>
+              <SelectTrigger aria-label="Seleccionar sección de evaluación" className="h-10">
+                <SelectValue placeholder="Selecciona una sección" />
+              </SelectTrigger>
+              <SelectContent>
+                {navigationItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value} textValue={item.label}>
+                    <span className="truncate">{item.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => moveActiveSection(-1)}
+                disabled={activeNavigationIndex === 0}
+              >
+                <CaretLeft size={14} weight="bold" aria-hidden="true" />
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => moveActiveSection(1)}
+                disabled={activeNavigationIndex >= navigationItems.length - 1}
+              >
+                Siguiente
+                <CaretRight size={14} weight="bold" aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
         </div>
 
         {applicableSections.map((sec) => (

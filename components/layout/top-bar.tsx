@@ -111,7 +111,7 @@ export function TopBar({
                 {header.title}
               </p>
               {header.description && (
-                <p className="hidden min-w-0 truncate text-xs text-[var(--color-text-muted)] xl:block">
+                <p className="hidden min-w-0 truncate text-xs text-[var(--color-text-muted)] 2xl:block">
                   {header.description}
                 </p>
               )}
@@ -121,13 +121,13 @@ export function TopBar({
         {worksiteName && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-surface-2 border border-(--color-border)">
             <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" />
-            <span className="text-xs font-mono text-(--color-text-muted) truncate max-w-[20rem]">
+            <span className="text-xs font-mono text-(--color-text-muted) truncate max-w-[16rem] 2xl:max-w-[20rem]">
               {worksiteName}
             </span>
           </div>
         )}
         {header.actions && (
-          <div className="hidden shrink-0 items-center gap-1.5 xl:flex">
+          <div className="hidden shrink-0 items-center gap-1.5 2xl:flex">
             {header.actions}
           </div>
         )}

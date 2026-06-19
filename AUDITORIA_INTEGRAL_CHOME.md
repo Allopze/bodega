@@ -94,6 +94,9 @@ Además, filtrar `REQUEST_TYPE_OPTS` en la UI según permisos efectivos del usua
 **Validación posterior:**  
 Agregar tests de Server Actions/servicio que prueben que un usuario con `requests:create` pero sin `repuestos:create` ni `servicios:create` no puede guardar ni enviar esos tipos. Repetir para `submit`. Ejecutar `npm test` y una prueba E2E de visibilidad de opciones por permisos.
 
+**Actualización 2026-06-19:**
+Remediado parcialmente en código. `lib/request-types.ts` ahora define `permissionForRequestType()` y `visibleRequestTypeOptions()` como regla central: `epp`/`otro` usan `requests:*`, `repuestos` usa `repuestos:*` y `servicios` usa `servicios:*`. `app/(app)/solicitudes/actions.ts` valida el permiso específico después de parsear el tipo real para guardar y después de cargar la solicitud para enviar. `app/(app)/solicitudes/nueva/page.tsx` permite entrar si el usuario tiene al menos un permiso de creación aplicable y `app/(app)/solicitudes/request-form.tsx` filtra los tipos visibles por permisos efectivos. Se agregó `lib/__tests__/request-type-permissions.test.ts`; prueba roja observada por funciones inexistentes y luego verde con `npm test -- lib/__tests__/request-type-permissions.test.ts`. Lint focalizado aprobado con `npm run lint -- 'app/(app)/solicitudes/actions.ts' 'app/(app)/solicitudes/nueva/page.tsx' 'app/(app)/solicitudes/request-form.tsx' 'app/(app)/solicitudes/[id]/page.tsx' lib/request-types.ts lib/__tests__/request-type-permissions.test.ts`. Pendiente todavía: prueba de Server Action/mock de sesión o E2E que demuestre el rechazo end-to-end.
+
 ### [RBAC-02] La eliminación de cotizaciones no revalida ownership ni scope por faena
 
 **Severidad:** Alto  
@@ -120,6 +123,9 @@ Cargar la solicitud padre junto con la cotización, validar que `requestId` reci
 
 **Validación posterior:**  
 Agregar tests que intenten borrar cotizaciones de otro usuario, otra faena y otro request ID. Deben fallar. Agregar test positivo para dueño/rol autorizado.
+
+**Actualización 2026-06-19:**
+Remediado en el servicio compartido de repuestos/servicios. Se agregó `lib/requests/quotation-access.ts` con `assertCanDeleteQuotation()`, que exige coincidencia entre `requestId` posteado y cotización real, faena visible, y que el actor sea solicitante, uploader de la cotización o tenga permiso elevado de aprobación del módulo. `lib/requests/request-service.ts` ahora carga la solicitud padre con `id`, `status`, `requesterId` y `worksiteId` antes de borrar, valida acceso con el helper y audita con el usuario de la sesión. `lib/requests/request-actions.ts` pasa `expectedRequestId`, `session` y `permissions.approve` al servicio. Se agregó `lib/__tests__/quotation-access.test.ts`; prueba roja observada por módulo inexistente, luego verde con `npm test -- lib/__tests__/quotation-access.test.ts`. Lint focalizado aprobado y `npm run typecheck` aprobado.
 
 ### [S-01] `app/api/notifications` es una ruta mutante fuera del modelo CSRF documentado
 
@@ -296,6 +302,9 @@ Reordenar el Dockerfile para que la última etapa sea `prod`, o configurar el wo
 
 **Validación posterior:**  
 Construir la imagen CI con el mismo comando del workflow, correrla localmente, verificar que inicia con `node server.js`, que usa `NODE_ENV=production`, que `/api/health` responde y que no ejecuta `next dev`.
+
+**Actualización 2026-06-19:**
+Remediado en configuración. `.github/workflows/deploy.yml` ahora pasa `target: prod` al paso `docker/build-push-action@v6`, evitando que Docker publique la última etapa `build` basada en `dev`. Se agregó `lib/__tests__/deploy-workflow.test.ts` para bloquear regresiones: la prueba falló primero porque el bloque no contenía `target: prod` y luego pasó con `npm test -- lib/__tests__/deploy-workflow.test.ts`. Lint focalizado aprobado con `npm run lint -- lib/__tests__/deploy-workflow.test.ts`. Pendiente todavía: construir y ejecutar la imagen localmente/staging para validar `node server.js`, `NODE_ENV=production` y `/api/health`.
 
 ### [DEVOPS-02] La documentación de despliegue contradice Docker y GitHub Actions
 
@@ -604,14 +613,14 @@ En staging, probar Server Actions desde origen no permitido y confirmar rechazo;
 
 ## 10. Checklist de remediación inmediata
 
-- [ ] Exigir `repuestos:create` / `repuestos:submit` cuando `requestType === "repuestos"` en el flujo genérico de solicitudes.
-- [ ] Exigir `servicios:create` / `servicios:submit` cuando `requestType === "servicios"` en el flujo genérico de solicitudes.
-- [ ] Filtrar tipos visibles en `request-form.tsx` por permisos efectivos, no por rol local.
-- [ ] Revalidar `requestId`, faena visible, dueño o permiso elevado antes de eliminar cotizaciones.
-- [ ] Agregar tests negativos de RBAC para creación/envío de repuestos/servicios desde `/solicitudes`.
-- [ ] Agregar tests negativos de eliminación de cotizaciones ajenas o de otra faena.
-- [ ] Corregir Dockerfile o `.github/workflows/deploy.yml` para publicar `target: prod`.
-- [ ] Confirmar que la imagen resultante ejecuta `node server.js` y responde `/api/health`.
+- [x] Exigir `repuestos:create` / `repuestos:submit` cuando `requestType === "repuestos"` en el flujo genérico de solicitudes. Actualizado 2026-06-19; pendiente prueba end-to-end de la Server Action.
+- [x] Exigir `servicios:create` / `servicios:submit` cuando `requestType === "servicios"` en el flujo genérico de solicitudes. Actualizado 2026-06-19; pendiente prueba end-to-end de la Server Action.
+- [x] Filtrar tipos visibles en `request-form.tsx` por permisos efectivos, no por rol local. Actualizado 2026-06-19 con `visibleRequestTypeOptions()`.
+- [x] Revalidar `requestId`, faena visible, dueño o permiso elevado antes de eliminar cotizaciones. Actualizado 2026-06-19 en `lib/requests/quotation-access.ts` y `lib/requests/request-service.ts`.
+- [ ] Agregar tests negativos de RBAC para creación/envío de repuestos/servicios desde `/solicitudes`. Avance 2026-06-19: cubierta la matriz pura tipo-permiso; falta prueba de acción o E2E.
+- [x] Agregar tests negativos de eliminación de cotizaciones ajenas o de otra faena. Actualizado 2026-06-19 con `lib/__tests__/quotation-access.test.ts`.
+- [x] Corregir Dockerfile o `.github/workflows/deploy.yml` para publicar `target: prod`. Actualizado 2026-06-19 en `.github/workflows/deploy.yml` y cubierto por `lib/__tests__/deploy-workflow.test.ts`.
+- [ ] Confirmar que la imagen resultante ejecuta `node server.js` y responde `/api/health`. Pendiente de build/run de imagen con variables de entorno y DB de staging o local.
 - [ ] Arreglar la migración o el harness PGlite que rompe `trazabilidad-export-scope.test.ts`.
 - [ ] Habilitar tests de concurrencia críticos en un job CI con PostgreSQL desechable.
 - [ ] Alinear `POST /api/notifications` con el modelo CSRF.

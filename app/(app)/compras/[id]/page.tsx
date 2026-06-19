@@ -13,6 +13,7 @@ import { InvoicesSection } from "./invoices-section"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { Button } from "@/components/ui/button"
+import { OcReceptionCta } from "./oc-reception-cta"
 
 export const metadata: Metadata = { title: "Orden de compra" }
 
@@ -102,13 +103,18 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
   const canManage    = session.user.permissions.includes("purchasing:create_order")
   const canSend      = session.user.permissions.includes("purchasing:send_order")
   const canInvoice   = canSend   // purchasing:send_order gate for invoice management
+  const canRegisterFaenaReception = session.user.permissions.includes("receiving:register_faena")
+  const pendingFaenaQuantity = order.items.reduce(
+    (total, item) => total + Math.max(0, (item.quantityOfficeReceived ?? 0) - (item.quantityReceived ?? 0)),
+    0,
+  )
   const canShowOrderActions =
     (order.status === "draft" && canManage) ||
     (order.status === "issued" && (canManage || canSend)) ||
     (order.status === "sent" && canManage)
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title={order.code}
         description={`${order.worksite?.name ?? "—"} · ${order.supplier?.name ?? "—"}`}
@@ -276,6 +282,12 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
               <DetailLine label="Condición de pago" value={order.paymentTerms ?? "—"} />
               <DetailLine label="Entrega estimada" value={order.estimatedDelivery ? formatDate(order.estimatedDelivery) : "—"} />
             </dl>
+            <OcReceptionCta
+              orderId={order.id}
+              pendingFaenaQuantity={pendingFaenaQuantity}
+              worksiteName={order.worksite?.name ?? "la faena"}
+              canRegisterFaena={canRegisterFaenaReception}
+            />
           </section>
 
           <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">

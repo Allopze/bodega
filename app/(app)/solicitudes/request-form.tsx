@@ -23,7 +23,7 @@ import { ItemEditor, URGENCY_OPTS } from "./item-editor"
 import type { ActionState } from "@/lib/validation/operations"
 import { formatDate } from "@/lib/utils"
 import type { ItemRow, AttrRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"
-import { REQUEST_TYPE_OPTS, QUOTATION_TYPES } from "@/lib/request-types"
+import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -144,12 +144,14 @@ interface RequestFormProps {
   editRequest?: EditRequest
   maxFileSizeMb: number
   userRoles?:   string[]
+  userPermissions?: string[]
 }
 
-export function RequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userRoles }: RequestFormProps) {
+export function RequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userPermissions = [] }: RequestFormProps) {
   const router = useRouter()
   const isEdit  = !!editRequest
   const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
+  const requestTypeOpts = visibleRequestTypeOptions(userPermissions)
 
   // ── Form action state
   const [draftState,  draftAction, draftPending] =
@@ -166,7 +168,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
 
   // ── Header fields
   const [worksiteId,  setWorksiteId]  = useState(editRequest?.worksiteId  ?? (worksites[0]?.id ?? ""))
-  const [requestType, setRequestType] = useState(editRequest?.requestType ?? "epp")
+  const [requestType, setRequestType] = useState(editRequest?.requestType ?? requestTypeOpts[0]?.value ?? "epp")
   const [urgency,     setUrgency]     = useState(editRequest?.urgency     ?? "normal")
   const [requiredDate, setRequiredDate] = useState(editRequest?.requiredDate ?? "")
   const [notes,       setNotes]       = useState(editRequest?.notes       ?? "")
@@ -422,9 +424,6 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
 
   const readOnly = !isDraft
   const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]
-  const requestTypeOpts = userRoles?.includes("jefe_mantencion")
-    ? REQUEST_TYPE_OPTS.filter((o) => o.value !== "epp")
-    : REQUEST_TYPE_OPTS
   const requestTypeLabel = requestTypeOpts.find((option) => option.value === requestType)?.label ?? requestType
   const urgencyLabel = URGENCY_OPTS.find((option) => option.value === urgency)?.label ?? urgency
   const worksiteLabel = worksites.find((worksite) => worksite.id === worksiteId)?.name ?? "Sin faena"
@@ -727,5 +726,4 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
     </div>
   )
 }
-
 

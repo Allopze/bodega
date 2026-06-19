@@ -1,4 +1,4 @@
-import type { ChecklistDefinition, ChecklistSection, ChecklistItem, FieldKind } from './types'
+import type { ChecklistDefinition, ChecklistSection, ChecklistItem, FieldKind, StatusValue } from './types'
 
 /**
  * Kinds que producen un valor de estado (cumple/no_cumple/na/entregado/etc.).
@@ -48,6 +48,34 @@ export function getApplicableItems(
       .filter((item: ChecklistItem) => isStatusKind(item.kind))
       .map((item: ChecklistItem) => ({ seccionId: sec.id, item }))
   })
+}
+
+type ChecklistResponseStatus = {
+  seccionId: string
+  itemId: string
+  estado: StatusValue
+}
+
+export function getApplicableResponses(
+  definition: ChecklistDefinition,
+  cargoKeys: string | string[],
+  respuestas: ChecklistResponseStatus[]
+): ChecklistResponseStatus[] {
+  const applicableSet = new Set(
+    getApplicableItems(definition, cargoKeys).map(({ seccionId, item }) => `${seccionId}::${item.id}`)
+  )
+
+  return respuestas.filter((r) => applicableSet.has(`${r.seccionId}::${r.itemId}`))
+}
+
+export function getApplicableResponseStatuses(
+  definition: ChecklistDefinition,
+  cargoKeys: string | string[],
+  respuestas: ChecklistResponseStatus[]
+): Array<{ estado: StatusValue }> {
+  return getApplicableResponses(definition, cargoKeys, respuestas).map((r) => ({
+    estado: r.estado,
+  }))
 }
 
 /**

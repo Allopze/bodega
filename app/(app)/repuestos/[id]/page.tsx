@@ -140,7 +140,7 @@ export default async function RepuestoPage({ params }: { params: Promise<{ id: s
   }))
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title={`Solicitud ${request.code}`}
         description={`${request.worksite?.name ?? ""} · Repuestos y maquinaria`}

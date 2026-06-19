@@ -271,7 +271,9 @@ export function createRequestActions(config: RequestActionsConfig) {
     try {
       await services.deleteQuotation({
         quotationId,
-        userId:    session.user.id,
+        expectedRequestId: requestId,
+        session,
+        elevatedPermission: permissions.approve,
         userEmail: session.user.email ?? undefined,
       })
       revalidatePath(`${routePrefix}/${requestId}`)

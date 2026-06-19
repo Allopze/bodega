@@ -84,25 +84,29 @@ export function ReceiptForm({
       notes:               null,
     }))
   )
+  const stageLabel = stage === "office" ? "Oficina" : "Faena"
+  const pendingLineCount = items.filter((item) => getRemaining(item, stage) > 0).length
+  const receivingLineCount = items.filter((item) => (qtys[item.id] ?? getRemaining(item, stage)) > 0).length
 
   return (
-    <form action={action} className="flex flex-col gap-6">
+    <form action={action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
       <input type="hidden" name="itemsJson"        value={itemsJson} />
       <input type="hidden" name="stage"            value={stage} />
 
-      {/* Header */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Field label="N° guía de despacho" htmlFor="receiptDispatchGuideNo" error={state.fieldErrors?.dispatchGuideNo?.[0]}>
-          <Input
-            id="receiptDispatchGuideNo"
-            name="dispatchGuideNo"
-            value={guideNo}
-            onChange={(e) => setGuideNo(e.target.value)}
-            placeholder="Ej: GD-000123"
-            error={!!state.fieldErrors?.dispatchGuideNo}
-          />
-        </Field>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Field label="N° guía de despacho" htmlFor="receiptDispatchGuideNo" error={state.fieldErrors?.dispatchGuideNo?.[0]}>
+            <Input
+              id="receiptDispatchGuideNo"
+              name="dispatchGuideNo"
+              value={guideNo}
+              onChange={(e) => setGuideNo(e.target.value)}
+              placeholder="Ej: GD-000123"
+              error={!!state.fieldErrors?.dispatchGuideNo}
+            />
+          </Field>
 
         <Field label="Tipo de recepción" className="md:col-span-2" error={state.fieldErrors?.stage?.[0]}>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -136,13 +140,13 @@ export function ReceiptForm({
             )}
           </div>
         </Field>
-      </div>
+        </div>
 
-      {/* Items table */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-h2 text-[var(--color-text)]">
-          Ítems de la OC {orderCode}
-        </h2>
+        {/* Items table */}
+        <div className="flex flex-col gap-2">
+          <h2 className="text-h2 text-[var(--color-text)]">
+            Ítems de la OC {orderCode}
+          </h2>
 
         <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] divide-y divide-[var(--color-border)] overflow-hidden">
           {/* Header */}
@@ -189,42 +193,68 @@ export function ReceiptForm({
             )
           })}
         </div>
+        </div>
+
+        {/* Notes */}
+        <Field label="Observaciones de recepción" htmlFor="receiptNotes" error={state.fieldErrors?.notes?.[0]}>
+          <Textarea
+            id="receiptNotes"
+            name="notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            placeholder="Estado del embalaje, condiciones de entrega..."
+            error={!!state.fieldErrors?.notes}
+          />
+        </Field>
+
+        {/* Error */}
+        {state.ok === false && state.message && state !== INITIAL_STATE && (
+          <p className="text-sm text-[var(--color-danger)] flex items-center gap-1.5">
+            <Warning size={14} /> {state.message}
+          </p>
+        )}
+
+        {/* Submit */}
+        <div className="flex items-center gap-3 pt-2 border-t border-[var(--color-border)]">
+          <SubmitButton
+            label="Marcar como recibido"
+            loadingLabel="Guardando..."
+            variant="primary"
+          />
+          <Link
+            href="/recepcion"
+            className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+          >
+            Cancelar
+          </Link>
+        </div>
       </div>
 
-      {/* Notes */}
-      <Field label="Observaciones de recepción" htmlFor="receiptNotes" error={state.fieldErrors?.notes?.[0]}>
-        <Textarea
-          id="receiptNotes"
-          name="notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
-          placeholder="Estado del embalaje, condiciones de entrega..."
-          error={!!state.fieldErrors?.notes}
-        />
-      </Field>
-
-      {/* Error */}
-      {state.ok === false && state.message && state !== INITIAL_STATE && (
-        <p className="text-sm text-[var(--color-danger)] flex items-center gap-1.5">
-          <Warning size={14} /> {state.message}
+      <aside className="h-fit rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] xl:sticky xl:top-6">
+        <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Resumen recepción</p>
+        <div className="mt-3 rounded-[var(--radius)] bg-[var(--color-surface-2)] px-3 py-2">
+          <p className="text-xs text-[var(--color-text-muted)]">Orden</p>
+          <p className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{orderCode}</p>
+        </div>
+        <div className="mt-4 space-y-2 border-b border-[var(--color-border)] pb-4 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--color-text-muted)]">Etapa</span>
+            <span className="font-medium text-[var(--color-text)]">{stageLabel}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--color-text-muted)]">Líneas pendientes</span>
+            <span className="tabular-nums text-[var(--color-text)]">{pendingLineCount}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--color-text-muted)]">Con cantidad</span>
+            <span className="tabular-nums text-[var(--color-text)]">{receivingLineCount}</span>
+          </div>
+        </div>
+        <p className="mt-4 rounded-[var(--radius)] bg-[var(--color-primary-tint)] px-3 py-2 text-xs leading-relaxed text-[var(--color-primary-ink)]">
+          {guideNo.trim() ? "La guía queda asociada a esta recepción." : "Puedes registrar la recepción sin guía si la operación aún no la entrega."}
         </p>
-      )}
-
-      {/* Submit */}
-      <div className="flex items-center gap-3 pt-2 border-t border-[var(--color-border)]">
-        <SubmitButton
-          label="Marcar como recibido"
-          loadingLabel="Guardando..."
-          variant="primary"
-        />
-        <Link
-          href="/recepcion"
-          className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-        >
-          Cancelar
-        </Link>
-      </div>
+      </aside>
     </form>
   )
 }

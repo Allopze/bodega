@@ -25,7 +25,7 @@ export default async function NuevoProductoPage() {
   ])
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title="Nuevo producto"
         description="Registra un producto del catálogo."

@@ -243,13 +243,14 @@ export function OcForm({
   )
 
   return (
-    <form action={action} className="flex flex-col gap-6">
+    <form action={action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
       <input type="hidden" name="itemsJson"  value={itemsJson} />
       <input type="hidden" name="supplierId" value={supplierId} />
       <input type="hidden" name="worksiteId" value={worksiteId} />
 
-      {/* Header fields */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-6">
+        {/* Header fields */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Faena" required htmlFor="ocWorksiteId">
           <Select value={worksiteId} onValueChange={setWorksiteId}>
             <SelectTrigger id="ocWorksiteId"><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
@@ -312,10 +313,10 @@ export function OcForm({
             placeholder="Instrucciones adicionales para el proveedor..."
           />
         </Field>
-      </div>
+        </div>
 
-      {/* Item selection */}
-      <div className="flex flex-col gap-3">
+        {/* Item selection */}
+        <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-h2 text-[var(--color-text)]">
             Ítems a incluir
@@ -467,57 +468,89 @@ export function OcForm({
             })}
           </div>
         )}
+        </div>
+
+        {/* Error */}
+        {state.ok === false && state.message && state !== INITIAL_STATE && (
+          <p className="text-sm text-[var(--color-danger)] flex items-center gap-1.5">
+            <Warning size={14} /> {state.message}
+          </p>
+        )}
+
+        {/* Submit */}
+        <div className="flex items-center gap-3 pt-2 border-t border-[var(--color-border)]">
+          <SubmitButton
+            label={`Crear OC (${includedItems.length} ítem${includedItems.length !== 1 ? "s" : ""})`}
+            loadingLabel="Creando..."
+            variant="primary"
+            disabled={includedItems.length === 0 || !supplierId || !worksiteId}
+          />
+          <Link
+            href="/compras"
+            className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+          >
+            Cancelar
+          </Link>
+        </div>
       </div>
 
-      {/* Totals */}
-      {includedItems.length > 0 && (
-        <div className="flex justify-end">
-          <div className="flex flex-col gap-1 min-w-[240px] border border-[var(--color-border)] rounded-[var(--radius)] p-4">
-            {supplierGroupCount > 1 && (
-              <div className="mb-2 flex justify-end">
-                <Badge variant="info" size="sm">
-                  {supplierGroupCount} OC por proveedor
-                </Badge>
-              </div>
-            )}
-            <div className="flex justify-between text-sm text-[var(--color-text-muted)]">
-              <span>Neto</span>
-              <span className="tabular-nums">{formatCLP(totals.netAmount)}</span>
-            </div>
-            <div className="flex justify-between text-sm text-[var(--color-text-muted)]">
-              <span>IVA (19%)</span>
-              <span className="tabular-nums">{formatCLP(totals.taxAmount)}</span>
-            </div>
-            <div className="flex justify-between text-sm font-semibold text-[var(--color-text)] pt-1 border-t border-[var(--color-border)] mt-1">
-              <span>Total</span>
-              <span className="tabular-nums">{formatCLP(totals.totalAmount)}</span>
-            </div>
+      <aside className="h-fit rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] xl:sticky xl:top-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Resumen OC</p>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              {includedItems.length} ítem{includedItems.length === 1 ? "" : "s"} seleccionado{includedItems.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          {supplierGroupCount > 1 && (
+            <Badge variant="info" size="sm">
+              {supplierGroupCount} OC
+            </Badge>
+          )}
+        </div>
+
+        <div className="mt-5 space-y-2 border-b border-[var(--color-border)] pb-4">
+          <div className="flex justify-between text-sm text-[var(--color-text-muted)]">
+            <span>Neto</span>
+            <span className="tabular-nums">{formatCLP(totals.netAmount)}</span>
+          </div>
+          <div className="flex justify-between text-sm text-[var(--color-text-muted)]">
+            <span>IVA (19%)</span>
+            <span className="tabular-nums">{formatCLP(totals.taxAmount)}</span>
+          </div>
+          <div className="flex justify-between text-base font-semibold text-[var(--color-text)] pt-2 border-t border-[var(--color-border)]">
+            <span>Total</span>
+            <span className="tabular-nums">{formatCLP(totals.totalAmount)}</span>
           </div>
         </div>
-      )}
 
-      {/* Error */}
-      {state.ok === false && state.message && state !== INITIAL_STATE && (
-        <p className="text-sm text-[var(--color-danger)] flex items-center gap-1.5">
-          <Warning size={14} /> {state.message}
-        </p>
-      )}
+        <div className="mt-4 space-y-2 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--color-text-muted)]">Faena</span>
+            <span className={worksiteId ? "text-[var(--color-success-ink)]" : "text-[var(--color-warning-ink)]"}>
+              {worksiteId ? "Lista" : "Falta"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--color-text-muted)]">Proveedor</span>
+            <span className={supplierId ? "text-[var(--color-success-ink)]" : "text-[var(--color-warning-ink)]"}>
+              {supplierId ? "Listo" : "Falta"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--color-text-muted)]">Ítems</span>
+            <span className={includedItems.length > 0 ? "text-[var(--color-success-ink)]" : "text-[var(--color-warning-ink)]"}>
+              {includedItems.length > 0 ? "Listos" : "Faltan"}
+            </span>
+          </div>
+        </div>
 
-      {/* Submit */}
-      <div className="flex items-center gap-3 pt-2 border-t border-[var(--color-border)]">
-        <SubmitButton
-          label={`Crear OC (${includedItems.length} ítem${includedItems.length !== 1 ? "s" : ""})`}
-          loadingLabel="Creando..."
-          variant="primary"
-          disabled={includedItems.length === 0 || !supplierId || !worksiteId}
-        />
-        <Link
-          href="/compras"
-          className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-        >
-          Cancelar
-        </Link>
-      </div>
+        {supplierGroupCount > 1 && (
+          <p className="mt-4 rounded-[var(--radius)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs leading-relaxed text-[var(--color-warning-ink)]">
+            Los ítems se dividirán por proveedor al crear la orden.
+          </p>
+        )}
+      </aside>
     </form>
   )
 }

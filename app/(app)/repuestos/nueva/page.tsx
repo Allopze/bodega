@@ -30,7 +30,7 @@ export default async function NuevaRepuestoPage() {
 
   if (worksiteOptions.length === 0) {
     return (
-      <PageContainer width="form">
+      <PageContainer width="workbench">
         <PageHeader
           title="Nueva solicitud de repuestos"
           description="Solicitud de repuestos para vehículos y maquinaria."
@@ -59,7 +59,7 @@ export default async function NuevaRepuestoPage() {
   }
 
   return (
-    <PageContainer width="form">
+    <PageContainer width="workbench">
       <PageHeader
         title="Nueva solicitud de repuestos"
         description="Completa los datos, agrega los repuestos y adjunta las cotizaciones."

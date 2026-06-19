@@ -2,8 +2,12 @@
 
 import { useState } from "react"
 import { NotePencil } from "@phosphor-icons/react"
+import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -75,11 +79,28 @@ function ItemField({
 }) {
   const kind: FieldKind = item.kind
   const [notesOpen, setNotesOpen] = useState(false)
-  const showObservation = notesOpen || Boolean(resp.observacion)
+  const [noteDraft, setNoteDraft] = useState(resp.observacion)
+  const hasObservation = Boolean(resp.observacion.trim())
   const needsCorrectiveAction = ["cumple_nocumple_obs", "cumple_nocumple_na_obs"].includes(item.kind) && resp.estado === "no_cumple"
 
   function setEstado(estado: StatusValue) {
     onChange({ estado: resp.estado === estado ? null : estado })
+  }
+
+  function handleNoteOpenChange(open: boolean) {
+    setNotesOpen(open)
+    if (open) setNoteDraft(resp.observacion)
+  }
+
+  function saveNote() {
+    onChange({ observacion: noteDraft.trim() })
+    setNotesOpen(false)
+  }
+
+  function removeNote() {
+    setNoteDraft("")
+    onChange({ observacion: "" })
+    setNotesOpen(false)
   }
 
   const renderStatusButtons = () => {
@@ -123,38 +144,75 @@ function ItemField({
             ))}
           </div>
           {!readOnly && (
-            <button
-              type="button"
-              onClick={() => setNotesOpen((open) => !open)}
-              aria-expanded={showObservation}
-              className={cn(
-                "inline-flex h-8 w-fit items-center gap-1.5 rounded-(--radius) border px-2.5 text-xs font-semibold",
-                "transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.98]",
-                showObservation
-                  ? "border-(--color-primary-line) bg-(--color-primary-tint) text-(--color-primary)"
-                  : "border-(--color-border) bg-(--color-surface) text-text-subtle hover:border-(--color-border-strong) hover:text-(--color-text)"
-              )}
-            >
-              <NotePencil size={14} weight="bold" aria-hidden="true" />
-              Nota
-            </button>
+            <Dialog open={notesOpen} onOpenChange={handleNoteOpenChange}>
+              <DialogTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-8 w-fit items-center gap-1.5 rounded-(--radius) border px-2.5 text-xs font-semibold",
+                    "transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.98]",
+                    hasObservation
+                      ? "border-(--color-primary-line) bg-(--color-primary-tint) text-(--color-primary)"
+                      : "border-(--color-border) bg-(--color-surface) text-text-subtle hover:border-(--color-border-strong) hover:text-(--color-text)"
+                  )}
+                >
+                  <NotePencil size={14} weight="bold" aria-hidden="true" />
+                  {hasObservation ? "Editar nota" : "Agregar nota"}
+                </button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-xl">
+                <DialogHeader>
+                  <DialogTitle>{hasObservation ? "Editar nota" : "Agregar nota"}</DialogTitle>
+                  <DialogDescription>
+                    Registra una observación breve para este punto de la evaluación.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Ítem</p>
+                    <p className="mt-1 text-sm font-medium leading-5 text-(--color-text)">{item.label}</p>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
+                      Observación
+                    </label>
+                    <Textarea
+                      autoFocus
+                      placeholder="Agrega una nota breve..."
+                      value={noteDraft}
+                      onChange={(e) => setNoteDraft(e.target.value)}
+                      rows={5}
+                      className="min-h-32 text-sm"
+                      maxLength={500}
+                    />
+                    <p className="text-right text-[11px] text-text-subtle">{noteDraft.length}/500</p>
+                  </div>
+                </div>
+                <DialogFooter className="flex-col-reverse sm:flex-row sm:items-center sm:justify-between">
+                  {hasObservation ? (
+                    <Button type="button" variant="ghost" onClick={removeNote} className="sm:mr-auto">
+                      Quitar nota
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <Button type="button" variant="secondary" onClick={() => setNotesOpen(false)}>
+                      Cancelar
+                    </Button>
+                    <Button type="button" onClick={saveNote}>
+                      Guardar nota
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
         </div>
-        {showObservation && (
-          <div className="grid gap-1.5">
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
-              Observación
-            </label>
-            <Textarea
-              placeholder="Agregar una nota breve..."
-              value={resp.observacion}
-              onChange={(e) => onChange({ observacion: e.target.value })}
-              disabled={readOnly}
-              rows={2}
-              className="min-h-16 text-xs"
-              maxLength={500}
-            />
-          </div>
+        {hasObservation && (
+          <p className="rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-2.5 py-1.5 text-left text-xs leading-5 text-(--color-text-muted)">
+            {resp.observacion}
+          </p>
         )}
         {needsCorrectiveAction && (
           <div className="grid gap-1.5 rounded-(--radius-lg) border border-(--color-danger-line) bg-(--color-danger-tint) p-3">

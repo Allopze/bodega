@@ -11,12 +11,12 @@ import {
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
-import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { can, canAccessWorksite, requireAuth, requirePermission } from "@/lib/auth/can"
 import { submitItemTx } from "@/lib/services/item-state"
 import { notifyManyUser, getUserIdsWithPermission, notifyAfterCommit } from "@/lib/services/notifications"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
-import { QUOTATION_TYPES } from "@/lib/request-types"
+import { isRequestType, permissionForRequestType, QUOTATION_TYPES } from "@/lib/request-types"
 import { addQuotation, persistRepuestoDraft, submitRepuestoRequest } from "@/lib/services/repuestos"
 import { addServiceQuotation, persistServiceDraft, submitServiceRequest } from "@/lib/services/servicios"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
@@ -31,8 +31,8 @@ export async function saveDraft(
   formData: FormData,
 ): Promise<ActionState & { requestId?: string; lastSavedAt?: string }> {
   let session
-  try { session = await requirePermission("requests:create") }
-  catch { return { ok: false, message: "Sin permisos para crear solicitudes" } }
+  try { session = await requireAuth() }
+  catch { return { ok: false, message: "Debes iniciar sesión para crear solicitudes" } }
 
   const result = await persistDraft(session, formData)
   if (!result.ok) return result
@@ -72,9 +72,9 @@ async function persistDraft(
   }
   const d = parsed.data
  
-  // Jefe de mantención no puede crear solicitudes EPP
-  if (session.user.roles.includes("jefe_mantencion") && d.requestType === "epp") {
-    return { ok: false, message: "No tienes permisos para crear solicitudes de EPP" }
+  const createPermission = permissionForRequestType(d.requestType, "create")
+  if (!can(session, createPermission)) {
+    return { ok: false, message: "No tienes permisos para crear este tipo de solicitud" }
   }
 
   const isEdit = !!d.id
@@ -171,8 +171,8 @@ async function persistDraft(
 
 export async function submitRequest(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("requests:submit") }
-  catch { return { ok: false, message: "Sin permisos para enviar solicitudes" } }
+  try { session = await requireAuth() }
+  catch { return { ok: false, message: "Debes iniciar sesión para enviar solicitudes" } }
 
   let requestId = formData.get("requestId") as string
   // Persistir siempre el contenido actual del formulario antes de enviar:
@@ -191,6 +191,10 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     with:  { items: true },
   })
   if (!request) return { ok: false, message: "Solicitud no encontrada" }
+  if (!isRequestType(request.requestType)) return { ok: false, message: "Tipo de solicitud no soportado" }
+  if (!can(session, permissionForRequestType(request.requestType, "submit"))) {
+    return { ok: false, message: "Sin permisos para enviar este tipo de solicitud" }
+  }
   if (request.status !== "draft") return { ok: false, message: "Solo se pueden enviar solicitudes en borrador" }
   if (request.items.length === 0) return { ok: false, message: "La solicitud debe tener al menos un ítem" }
   if (request.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {

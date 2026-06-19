@@ -20,9 +20,15 @@ export default function ForbiddenPage() {
         icon={<ShieldWarning size={24} />}
         title="No tienes acceso a esta sección"
         description="Tu cuenta no cuenta con los permisos necesarios. Si crees que es un error, pide a un administrador que revise tus roles o el alcance de tus faenas."
+        tone="warning"
         action={
           <Button asChild>
             <Link href="/dashboard">Volver al panel</Link>
+          </Button>
+        }
+        secondaryAction={
+          <Button asChild variant="secondary">
+            <Link href="/solicitudes">Ver mis solicitudes</Link>
           </Button>
         }
       />
