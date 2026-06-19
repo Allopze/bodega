@@ -17,6 +17,9 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { ESTADO_OPTIONS, ESTADO_LABELS, estadoPlanBadgeVariant } from "@/lib/sst/badges"
 import type { SstActionPlan } from "@/db/schema/sst"
 import { Trash, Plus, ListBullets } from "@phosphor-icons/react"
+import {
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+} from "@/components/ui/table"
 import { formatDateDisplay } from "@/lib/sst/date"
 
 interface Props {
@@ -128,33 +131,33 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
 
       {items.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-(--color-border)">
-                <th className="py-2 px-3 text-left text-xs font-medium text-text-subtle w-8">#</th>
-                <th className="py-2 px-3 text-left text-xs font-medium text-text-subtle">Hallazgo</th>
-                <th className="py-2 px-3 text-left text-xs font-medium text-text-subtle">Acción</th>
-                <th className="py-2 px-3 text-left text-xs font-medium text-text-subtle">Responsable</th>
-                <th className="py-2 px-3 text-left text-xs font-medium text-text-subtle">Plazo</th>
-                <th className="py-2 px-3 text-left text-xs font-medium text-text-subtle">Estado</th>
-                {!readOnly && <th className="w-8" />}
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8">#</TableHead>
+                <TableHead>Hallazgo</TableHead>
+                <TableHead>Acción</TableHead>
+                <TableHead>Responsable</TableHead>
+                <TableHead>Plazo</TableHead>
+                <TableHead>Estado</TableHead>
+                {!readOnly && <TableHead className="w-8" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {items.map((item) => (
-                <tr key={item.id} className="border-b border-(--color-border) hover:bg-surface-2">
-                  <td className="py-2 px-3 text-text-subtle">{item.n}</td>
-                  <td className="py-2 px-3">{item.hallazgo}</td>
-                  <td className="py-2 px-3">{item.accion}</td>
-                  <td className="py-2 px-3">{item.responsable}</td>
-                  <td className="py-2 px-3 tabular-nums">{formatDateDisplay(item.plazo)}</td>
-                  <td className="py-2 px-3">
+                <TableRow key={item.id}>
+                  <TableCell className="text-(--color-text-muted)">{item.n}</TableCell>
+                  <TableCell>{item.hallazgo}</TableCell>
+                  <TableCell>{item.accion}</TableCell>
+                  <TableCell>{item.responsable}</TableCell>
+                  <TableCell className="tabular-nums">{formatDateDisplay(item.plazo)}</TableCell>
+                  <TableCell>
                     <Badge variant={estadoPlanBadgeVariant(item.estado)}>
                       {ESTADO_LABELS[item.estado] ?? item.estado}
                     </Badge>
-                  </td>
+                  </TableCell>
                   {!readOnly && (
-                    <td className="py-2 px-3">
+                    <TableCell>
                       <button
                         type="button"
                         onClick={() => setDeleteTarget(item.id)}
@@ -164,12 +167,12 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
                       >
                         <Trash size={14} />
                       </button>
-                    </td>
+                    </TableCell>
                   )}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

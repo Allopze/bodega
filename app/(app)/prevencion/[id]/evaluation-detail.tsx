@@ -295,7 +295,7 @@ export function EvaluationDetail({
             {canClose && !isCerrado && (
               <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
                 <DialogTrigger asChild>
-                  <Button size="sm" variant="secondary">
+                  <Button size="sm" variant="signal">
                     <LockSimple size={14} className="mr-1.5" />
                     Cerrar evaluación
                   </Button>
@@ -415,7 +415,7 @@ export function EvaluationDetail({
             {evaluation.motivo && (
               <div>
                 <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Motivo</p>
-                <p className="text-sm text-(--color-text)">{MOTIVO_LABELS[evaluation.motivo ?? ""] ?? evaluation.motivo}</p>
+                <p className="text-sm text-(--color-text)">{MOTIVO_LABELS[evaluation.motivo] ?? evaluation.motivo}</p>
               </div>
             )}
 
