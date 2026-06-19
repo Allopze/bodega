@@ -3,10 +3,12 @@
 import { useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { EmptyState } from "@/components/ui/empty-state"
 import { toast } from "@/lib/toast"
 import { markFollowupAction } from "@/app/(app)/prevencion/actions"
 import type { SstScheduledFollowup } from "@/db/schema/sst"
-import { CheckCircle, Circle } from "@phosphor-icons/react"
+import { CalendarBlank, CheckCircle, Circle } from "@phosphor-icons/react"
+import { formatDateDisplay } from "@/lib/sst/date"
 
 interface Props {
   followups: SstScheduledFollowup[]
@@ -81,14 +83,14 @@ function FollowupCard({
   }
 
   return (
-    <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 space-y-3">
+    <div className="py-3 space-y-2">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-(--color-text)">
             {INSTANCIA_LABELS[followup.instancia] ?? followup.instancia}
           </p>
           <p className="text-xs text-text-subtle">
-            Programado: {followup.fechaProgramada}
+            Programado: {formatDateDisplay(followup.fechaProgramada)}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -135,9 +137,10 @@ function FollowupCard({
                   "px-2.5 py-1 text-xs font-semibold rounded-(--radius) border transition-colors",
                   followup.cumple === val
                     ? val
-                      ? "bg-emerald-500 text-white border-emerald-500"
-                      : "bg-rose-500 text-white border-rose-500"
-                    : "border-(--color-border) text-text-subtle hover:border-border-strong",
+                      ? "bg-(--color-success) text-(--color-success-ink) border-(--color-success) font-bold"
+                      : "bg-(--color-danger) text-(--color-danger-ink) border-(--color-danger) font-bold"
+                    : "border-(--color-border) text-text-subtle hover:border-(--color-border-strong)",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1",
                   (!canManage || isPending) && "opacity-50 cursor-not-allowed",
                 ].join(" ")}
               >
@@ -183,25 +186,30 @@ export function FollowupsPanel({ followups, canManage, onUpdate }: Props) {
 
   if (followups.length === 0) {
     return (
-      <p className="text-sm text-text-subtle italic">
-        No hay seguimientos programados para esta evaluación.
-      </p>
+      <EmptyState
+        compact
+        icon={<CalendarBlank size={20} />}
+        title="Sin seguimientos"
+        description="No hay seguimientos programados para esta evaluación."
+      />
     )
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <p className="text-sm text-(--color-text-muted)">
         Seguimientos programados automáticamente al crear la evaluación.
       </p>
-      {followups.map((f) => (
-        <FollowupCard
-          key={f.id}
-          followup={f}
-          canManage={canManage}
-          onUpdate={handleItemUpdate}
-        />
-      ))}
+      <div className="divide-y divide-(--color-border)">
+        {followups.map((f) => (
+          <FollowupCard
+            key={f.id}
+            followup={f}
+            canManage={canManage}
+            onUpdate={handleItemUpdate}
+          />
+        ))}
+      </div>
     </div>
   )
 }
