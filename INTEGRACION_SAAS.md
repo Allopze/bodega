@@ -263,7 +263,8 @@ La aplicación calcula automáticamente el resultado final (`ResultadoFinal`) ba
      * Sección `documentacion_requisitos` (1.1 - Requisitos Legales).
      * Sección `induccion_capacitacion` (1.2 - Inducción Inicial), *con excepción del ítem `protocolos_minsal` (que no es bloqueante)*.
    * **En trabajador_antiguo (Seguimiento)**:
-     * Sección `verificacion_documental` (3 - Verificación Documental y Competencias).
+     * Sección `procedimientos_criticos` (4 - Procedimientos Críticos).
+     * Secciones de control por cargo: `control_ampliroll` (5.1), `control_batea` (5.2) y `control_maquinaria` (5.3).
 
 2. **Umbral de Aprobación por Porcentaje**:
    * **Para Trabajadores Nuevos (`trabajador_nuevo`)**:

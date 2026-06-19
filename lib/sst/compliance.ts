@@ -144,7 +144,7 @@ export function isNegativeStatus(status: StatusValue): boolean {
  *   dará como resultado no habilitado (a excepcion de protocolo minsal que no será bloqueante).
  *   - Para trabajador_nuevo: Secciones 'documentacion_requisitos' (1.1), 'induccion_capacitacion' (1.2)
  *     y 'competencias_operacionales' (2).
- *   - Para trabajador_antiguo: Secciones 3 'verificacion_documental', 4 'procedimientos_criticos'
+ *   - Para trabajador_antiguo: Secciones 4 'procedimientos_criticos'
  *     y 5 'control_ampliroll' / 'control_batea' / 'control_maquinaria'.
  * - Si hay algún bloqueo -> 'no_habilitado'.
  * - Si es trabajador_nuevo:
@@ -174,7 +174,6 @@ export function getAutomaticResultadoFinal(
       ].includes(seccionId)
     } else {
         return [
-          'verificacion_documental',   // Sección 3
           'procedimientos_criticos',   // Sección 4
           'control_ampliroll',         // Sección 5.1
           'control_batea',             // Sección 5.2

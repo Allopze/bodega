@@ -17,6 +17,7 @@ import { toast } from "@/lib/toast"
 import { saveResponsesAction, closeEvaluationAction } from "@/app/(app)/prevencion/actions"
 import { calculateCompliance } from "@/lib/sst/compliance"
 import { getApplicableResponseStatuses } from "@/lib/sst/checklist"
+import { SIGNATURE_ROLE_LABELS } from "@/lib/sst/cargos"
 import { RESULTADO_LABELS, MOTIVO_LABELS, resultadoBadgeVariant, estadoBadgeVariant, tipoBadgeVariant } from "@/lib/sst/badges"
 import { Badge } from "@/components/ui/badge"
 import { Field } from "@/components/ui/field"
@@ -517,7 +518,7 @@ export function EvaluationDetail({
                       key={role}
                       className="h-16 rounded-(--radius) border-2 border-dashed border-(--color-border) flex flex-col items-center justify-end pb-1"
                     >
-                      <span className="text-xs text-text-subtle">{role}</span>
+                      <span className="text-xs text-text-subtle">{SIGNATURE_ROLE_LABELS[role] ?? role}</span>
                     </div>
                   ))}
                 </div>

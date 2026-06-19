@@ -62,7 +62,7 @@ export function TopBar({
 
   return (
     <header className={cn(
-      "flex items-center h-13 px-4 md:px-5 gap-3",
+      "flex items-center h-16 px-4 md:px-5 gap-3",
       "bg-surface border border-(--color-border) shadow-(--shadow-card)",
       // Auto-hide: slide out above the container's overflow clip, fade to 0.
       "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",

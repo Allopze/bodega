@@ -37,4 +37,16 @@ describe("createCspHeader (audit S-09)", () => {
     const csp = createCspHeader("nonce", { isDev: false })
     expect(csp).toMatch(/^default-src 'self'/)
   })
+
+  it("allows WebSocket (ws://, wss://) in development for HMR", () => {
+    const csp = createCspHeader("nonce", { isDev: true })
+    expect(csp).toContain("connect-src 'self' ws: wss:")
+  })
+
+  it("restricts connect-src to 'self' in production (no WebSocket)", () => {
+    const csp = createCspHeader("nonce", { isDev: false })
+    expect(csp).toContain("connect-src 'self'")
+    expect(csp).not.toContain("ws:")
+    expect(csp).not.toContain("wss:")
+  })
 })

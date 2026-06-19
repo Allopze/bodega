@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { sstEvaluations, sstResponses, sstScheduledFollowups, sstActionPlan } from "@/db/schema/sst"
+import { users, userRoles, roles } from "@/db/schema/users"
 import { workers, worksites } from "@/db/schema/worksites"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite } from "@/lib/auth/can"
@@ -84,6 +85,8 @@ export type ActaData = {
   evaluation: typeof sstEvaluations.$inferSelect
   worker: typeof workers.$inferSelect
   worksite: typeof worksites.$inferSelect
+  createdByUser: typeof users.$inferSelect | null
+  evaluatorRoleLabel: string
   definition: ChecklistDefinition
   responses: (typeof sstResponses.$inferSelect)[]
   followups: (typeof sstScheduledFollowups.$inferSelect)[]
@@ -111,15 +114,23 @@ export async function loadActaData(id: string, session: Session): Promise<ActaDa
   if (!evaluation) return null
   if (!canAccessWorksite(session, evaluation.worksiteId)) return null
 
-  const [worker, worksite, responses, followups, actionPlan] = await Promise.all([
+  const [worker, worksite, createdByUser, evaluatorRoleRows, responses, followups, actionPlan] = await Promise.all([
     db.query.workers.findFirst({ where: eq(workers.id, evaluation.workerId) }),
     db.query.worksites.findFirst({ where: eq(worksites.id, evaluation.worksiteId) }),
+    db.query.users.findFirst({ where: eq(users.id, evaluation.createdBy) }),
+    db.select({ label: roles.label })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(eq(userRoles.userId, evaluation.createdBy)),
     db.select().from(sstResponses).where(eq(sstResponses.evaluationId, id)),
     db.select().from(sstScheduledFollowups).where(eq(sstScheduledFollowups.evaluationId, id)),
     db.select().from(sstActionPlan).where(eq(sstActionPlan.evaluationId, id)),
   ])
 
   if (!worker || !worksite) return null
+
+  const evaluatorRoleLabels = evaluatorRoleRows.map((r) => r.label)
+  const evaluatorRoleLabel: string = evaluatorRoleLabels[0] ?? 'Evaluador'
 
   // Resolve definition — use snapshot when cerrado for legal traceability
   let definition: ChecklistDefinition
@@ -178,6 +189,8 @@ export async function loadActaData(id: string, session: Session): Promise<ActaDa
     evaluation,
     worker,
     worksite,
+    createdByUser: createdByUser ?? null,
+    evaluatorRoleLabel,
     definition,
     responses,
     followups,
@@ -466,37 +479,6 @@ export const ACTA_STYLES = `
     margin-top: 4px;
   }
 
-  .sig-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8mm;
-    margin-top: 2mm;
-  }
-
-  .sig-box {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    flex: 1 1 40mm;
-    min-width: 40mm;
-    max-width: 60mm;
-  }
-
-  .sig-area {
-    width: 80px;
-    height: 80px;
-    border: 1px solid #475569;
-  }
-
-  .sig-label {
-    font-size: 7.5pt;
-    font-weight: 760;
-    color: #17422b;
-    text-transform: uppercase;
-    text-align: center;
-  }
-
   .section-heading {
     font-size: 9pt;
     font-weight: 760;
@@ -553,6 +535,8 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
     evaluation,
     worker,
     worksite,
+    createdByUser,
+    evaluatorRoleLabel,
     definition,
     followups,
     actionPlan,
@@ -585,7 +569,7 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
 
         <aside className="doc-box" aria-label="Identificación de documento">
           <div className="doc-box-title">Acta SST</div>
-          <div className="doc-box-code">{evaluation.definicionCode}</div>
+          <div className="doc-box-code">{evaluation.definicionCode.replace(/_/g, ' ')}</div>
           <div style={{ marginTop: 4, fontSize: "7.5pt", color: "#475569" }}>
             v{evaluation.definicionVersion}
           </div>
@@ -615,7 +599,7 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
         {!isNuevo && evaluation.motivoOtro && (
           <FieldRow label="Motivo (detalle)" value={evaluation.motivoOtro} />
         )}
-        {worker.supervisor && <FieldRow label="Supervisor" value={worker.supervisor} />}
+        {worker.supervisor && <FieldRow label="Administrador de contrato" value={worker.supervisor} />}
         {worker.prevencionista && (
           <FieldRow label="Prevencionista" value={worker.prevencionista} />
         )}
@@ -772,14 +756,42 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
 
       {/* ── Signatures ──────────────────────────────────────────────────── */}
       <section aria-label="Firmas">
-        <h3 className="section-heading">Firmas</h3>
-        <div className="sig-grid">
-          {definition.closingAct.signatureRoles.map((role) => (
-            <div className="sig-box" key={role}>
-              <div className="sig-area" aria-hidden />
-              <div className="sig-label">{role.replace(/_/g, " ")}</div>
-            </div>
-          ))}
+        <h3 className="section-heading">Declaración y Conformidad</h3>
+        <div style={{
+          border: '1px solid #b8c6bd',
+          padding: '6mm 8mm',
+          breakInside: 'avoid',
+        }}>
+          <p style={{ fontSize: '9pt', lineHeight: 1.6, marginBottom: '4mm' }}>
+            <strong>{createdByUser?.name ?? '—'}</strong>{', '}
+            <strong>{evaluatorRoleLabel}</strong> certifica que{' '}
+            <strong>{worker.firstName} {worker.lastName}</strong>{' '}
+            {evaluation.resultadoFinal
+              ? getResultLabel(evaluation.resultadoFinal, isNuevo)
+              : 'fue evaluado(a)'}
+            .
+          </p>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '9pt',
+          }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '18px',
+              height: '18px',
+              border: '1.5px solid #17422b',
+              borderRadius: '3px',
+              fontSize: '11pt',
+              fontWeight: 700,
+              color: '#17422b',
+              lineHeight: 1,
+            }}>✓</span>
+            <span style={{ color: '#17422b', fontWeight: 600 }}>Acepto términos y condiciones</span>
+          </div>
         </div>
       </section>
 

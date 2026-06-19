@@ -384,9 +384,8 @@ export async function closeEvaluation(
     let resultadoEficacia: string | null = null
     if (evaluation.definicionCode === 'trabajador_antiguo') {
       // Compute hasBlocker separately for classifyEfficacy consistency
-      // Secciones críticas (bloqueantes): 3, 4 y 5
+      // Secciones críticas (bloqueantes): 4 y 5
       const BLOCKER_SECTIONS = [
-        'verificacion_documental',
         'procedimientos_criticos',
         'control_ampliroll',
         'control_batea',

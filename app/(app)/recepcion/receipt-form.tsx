@@ -97,7 +97,7 @@ export function ReceiptForm({
       <div className="space-y-6">
         {/* Header */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Field label="N° guía de despacho" htmlFor="receiptDispatchGuideNo" error={state.fieldErrors?.dispatchGuideNo?.[0]}>
+          <Field label="Guía o factura" htmlFor="receiptDispatchGuideNo" error={state.fieldErrors?.dispatchGuideNo?.[0]}>
             <Input
               id="receiptDispatchGuideNo"
               name="dispatchGuideNo"

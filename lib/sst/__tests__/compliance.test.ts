@@ -280,7 +280,7 @@ describe('getAutomaticResultadoFinal', () => {
   })
 
   describe('Trabajador Antiguo (trabajador_antiguo)', () => {
-    it('retorna no_habilitado si no cumple en sección 3 (verificacion_documental) independientemente del porcentaje', () => {
+    it('no bloquea si no cumple en sección 3 (verificacion_documental) y el porcentaje es >= 90%', () => {
       const result = getAutomaticResultadoFinal(
         'trabajador_antiguo',
         95,
@@ -288,7 +288,7 @@ describe('getAutomaticResultadoFinal', () => {
           { seccionId: 'verificacion_documental', itemId: 'contrato_vigente', estado: 'no_cumple' }
         ]
       )
-      expect(result).toBe('no_habilitado')
+      expect(result).toBe('habilitado_autonomo')
     })
 
     it('no bloquea si el ítem es protocolos_minsal en sección 3 y porcentaje es >= 90%', () => {
