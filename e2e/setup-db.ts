@@ -113,6 +113,50 @@ async function main() {
     worksiteId: "ws-e2e",
     isPrimary: true,
   })
+  // Second worksite for scope testing
+  await db.insert(schema.worksites).values({
+    id: "ws-restricted-e2e",
+    name: "Faena Restringida E2E",
+    code: "E2E-RESTR",
+    address: "Ruta Restringida",
+    region: "Testing",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  // Scoped user (solicitante_faena) — only has access to ws-e2e
+  await db.insert(schema.roles).values({
+    id: "rol-sol-faena",
+    name: "solicitante_faena",
+    label: "Solicitante faena",
+    description: "Solicita ítems para sus faenas asignadas — E2E",
+  })
+  const solFaenaPermissions = [
+    { roleId: "rol-sol-faena", permissionId: "p-req-create" },
+    { roleId: "rol-sol-faena", permissionId: "p-req-own" },
+    { roleId: "rol-sol-faena", permissionId: "p-req-submit" },
+    { roleId: "rol-sol-faena", permissionId: "p-rec-reg-faena" },
+    { roleId: "rol-sol-faena", permissionId: "p-rec-view" },
+    { roleId: "rol-sol-faena", permissionId: "p-wh-stock" },
+    { roleId: "rol-sol-faena", permissionId: "p-wh-mov" },
+  ]
+  await db.insert(schema.rolePermissions).values(solFaenaPermissions)
+  await db.insert(schema.users).values({
+    id: "user-scoped-e2e",
+    name: "Scoped E2E",
+    email: "scoped@e2e.chome.cl",
+    hashedPassword: await bcrypt.hash("scoped2026", 10),
+    avatarColor: "200",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.userRoles).values({ userId: "user-scoped-e2e", roleId: "rol-sol-faena" })
+  await db.insert(schema.worksiteUsers).values({
+    userId: "user-scoped-e2e",
+    worksiteId: "ws-e2e",
+    isPrimary: true,
+  })
   await db.insert(schema.suppliers).values({
     id: "sup-e2e",
     name: "Proveedor E2E",

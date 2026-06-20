@@ -127,12 +127,17 @@ export async function approveItem(
   opts?: { modifiedQty?: number; userEmail?: string; roleContext?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
-    if (!item) throw new Error(`Item ${itemId} not found`)
-    if (!canTransition(item.status as ItemStatus, "approved")) {
-      throw new Error(`Cannot approve item in state '${item.status}'`)
+    // Security audit SM-01: lock the row to prevent concurrent approvals
+    // from creating duplicate approval_decisions on the same item.
+    const [locked] = await tx
+      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
+
+    if (!locked) throw new Error(`Item ${itemId} not found`)
+    if (!canTransition(locked.status as ItemStatus, "approved")) {
+      throw new Error(`Cannot approve item in state '${locked.status}'`)
     }
 
     const now = new Date().toISOString()
@@ -144,10 +149,19 @@ export async function approveItem(
       updates.quantity = opts.modifiedQty
     }
 
-    await tx
+    // Atomic conditional update: only succeed if status hasn't changed since
+    // we locked the row. The FOR UPDATE + WHERE double guard ensures exactly
+    // one caller transitions the item.
+    const [updated] = await tx
       .update(purchaseRequestItems)
       .set(updates)
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(
+        and(
+          eq(purchaseRequestItems.id, itemId),
+          eq(purchaseRequestItems.status, locked.status),
+        ),
+      )
+      .returning({ id: purchaseRequestItems.id })
 
     await tx.insert(approvalDecisions).values({
       id:            nanoid(),

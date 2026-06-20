@@ -170,7 +170,7 @@ export function DataTable<T extends Record<string, unknown>>({
                         "inline-flex items-center gap-1",
                         "text-eyebrow hover:text-[var(--color-text)]",
                         "transition-[color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-                        "motion-safe:active:scale-[0.97]",
+                        "",
                         "select-none",
                       )}
                       aria-label={`Ordenar por ${col.label}${sortKey === col.key ? ` (${sortDir === "asc" ? "ascendente" : "descendente"})` : ""}`}

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { getApplicableItems, getUnansweredApplicableItems } from '../checklist'
-import type { ChecklistDefinition } from '../types'
+import { getApplicableItems, getUnansweredApplicableItems, isStatusKind, getApplicableResponses, getApplicableResponseStatuses } from '../checklist'
+import type { ChecklistDefinition, StatusValue } from '../types'
+
+type ChecklistResponseStatus = {
+  seccionId: string
+  itemId: string
+  estado: StatusValue
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -172,5 +178,126 @@ describe('getUnansweredApplicableItems', () => {
       respuestasCompletas
     )
     expect(unanswered.map((x) => x.item.id)).not.toContain('item_f')
+  })
+
+  it('returns all applicable items as unanswered when respuestas is empty', () => {
+    const unanswered = getUnansweredApplicableItems(
+      mockDefinition,
+      'conductor_ampliroll',
+      []
+    )
+    // Should include all items from sec_general + sec_ampliroll (excluding sec_clasif and item_texto)
+    const ids = unanswered.map((x) => x.item.id)
+    expect(ids).toContain('item_b')
+    expect(ids).toContain('item_c')
+    expect(ids).toContain('item_d')
+    expect(ids).toContain('item_e')
+    expect(ids).toHaveLength(4)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isStatusKind
+// ---------------------------------------------------------------------------
+describe('isStatusKind', () => {
+  it('returns true for cumple_nocumple_obs', () => {
+    expect(isStatusKind('cumple_nocumple_obs')).toBe(true)
+  })
+
+  it('returns true for cumple_nocumple_na_obs', () => {
+    expect(isStatusKind('cumple_nocumple_na_obs')).toBe(true)
+  })
+
+  it('returns true for entregado_obs', () => {
+    expect(isStatusKind('entregado_obs')).toBe(true)
+  })
+
+  it('returns true for apto_obs', () => {
+    expect(isStatusKind('apto_obs')).toBe(true)
+  })
+
+  it('returns true for si_no_obs', () => {
+    expect(isStatusKind('si_no_obs')).toBe(true)
+  })
+
+  it('returns false for text', () => {
+    expect(isStatusKind('text')).toBe(false)
+  })
+
+  it('returns false for date', () => {
+    expect(isStatusKind('date')).toBe(false)
+  })
+
+  it('returns false for select', () => {
+    expect(isStatusKind('select')).toBe(false)
+  })
+
+  it('returns false for multiselect', () => {
+    expect(isStatusKind('multiselect')).toBe(false)
+  })
+
+  it('returns false for signature', () => {
+    expect(isStatusKind('signature')).toBe(false)
+  })
+
+  it('returns false for readonly', () => {
+    expect(isStatusKind('readonly')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getApplicableResponses
+// ---------------------------------------------------------------------------
+describe('getApplicableResponses', () => {
+  it('filters responses to only applicable items', () => {
+    const responses: ChecklistResponseStatus[] = [
+      { seccionId: 'sec_general', itemId: 'item_b', estado: 'cumple' },
+      { seccionId: 'sec_general', itemId: 'item_c', estado: 'no_cumple' },
+      { seccionId: 'sec_ampliroll', itemId: 'item_d', estado: 'cumple' },
+      { seccionId: 'sec_batea', itemId: 'item_f', estado: 'cumple' }, // not applicable to ampliroll
+    ]
+    const filtered = getApplicableResponses(mockDefinition, 'conductor_ampliroll', responses)
+    const keys = filtered.map((r) => `${r.seccionId}::${r.itemId}`)
+    expect(keys).toContain('sec_general::item_b')
+    expect(keys).toContain('sec_general::item_c')
+    expect(keys).toContain('sec_ampliroll::item_d')
+    expect(keys).not.toContain('sec_batea::item_f')
+  })
+
+  it('returns empty array when no responses match', () => {
+    const responses: ChecklistResponseStatus[] = [
+      { seccionId: 'sec_batea', itemId: 'item_f', estado: 'cumple' },
+    ]
+    const filtered = getApplicableResponses(mockDefinition, 'conductor_ampliroll', responses)
+    expect(filtered).toHaveLength(0)
+  })
+
+  it('returns all responses when all are applicable', () => {
+    const responses: ChecklistResponseStatus[] = [
+      { seccionId: 'sec_general', itemId: 'item_b', estado: 'cumple' },
+      { seccionId: 'sec_general', itemId: 'item_c', estado: 'no_cumple' },
+      { seccionId: 'sec_ampliroll', itemId: 'item_d', estado: 'cumple' },
+      { seccionId: 'sec_ampliroll', itemId: 'item_e', estado: 'cumple' },
+    ]
+    const filtered = getApplicableResponses(mockDefinition, 'conductor_ampliroll', responses)
+    expect(filtered).toHaveLength(4)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getApplicableResponseStatuses (wrapper over getApplicableResponses)
+// ---------------------------------------------------------------------------
+describe('getApplicableResponseStatuses', () => {
+  it('returns only {estado} tuples for applicable items', () => {
+    const responses: ChecklistResponseStatus[] = [
+      { seccionId: 'sec_general', itemId: 'item_b', estado: 'cumple' },
+      { seccionId: 'sec_ampliroll', itemId: 'item_d', estado: 'no_cumple' },
+      { seccionId: 'sec_batea', itemId: 'item_f', estado: 'cumple' }, // not applicable
+    ]
+    const statuses = getApplicableResponseStatuses(mockDefinition, 'conductor_ampliroll', responses)
+    expect(statuses).toEqual([
+      { estado: 'cumple' },
+      { estado: 'no_cumple' },
+    ])
   })
 })

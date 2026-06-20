@@ -27,7 +27,7 @@ export default function GlobalError({
       }}>
         <div style={{ textAlign: "center", maxWidth: "24rem" }}>
           <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Error inesperado</p>
-          <p style={{ color: "oklch(0.421 0.010 155)", marginBottom: "1.25rem", fontSize: "0.875rem" }}>
+          <p style={{ color: "var(--color-text-muted)", marginBottom: "1.25rem", fontSize: "0.875rem" }}>
             Ocurrió un error crítico. Por favor recarga la página.
           </p>
           <button
@@ -35,7 +35,7 @@ export default function GlobalError({
             style={{
               padding: "0.5rem 1.25rem",
               borderRadius: "0.375rem",
-              border: "1px solid oklch(0.882 0.008 155)",
+              border: "1px solid var(--color-border-strong)",
               background: "oklch(0.962 0.007 155)",
               cursor: "pointer",
               fontSize: "0.875rem",

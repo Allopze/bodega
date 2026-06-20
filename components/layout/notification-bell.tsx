@@ -26,8 +26,6 @@ export function NotificationBell() {
             "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
             "hover:bg-[var(--color-surface-2)]",
             "transition-[background-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-            "active:scale-[0.95]",
-          )}
           aria-label={`Notificaciones${hasUnread ? ` (${data?.unreadCount} sin leer)` : ""}`}
         >
           <Bell size={16} />
@@ -117,7 +115,7 @@ function NotificationRow({
     "transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
     "hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)]",
     "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
-    "active:scale-[0.99]",
+    "",
     !notification.isRead && "bg-[var(--color-primary-tint)]",
   )
 

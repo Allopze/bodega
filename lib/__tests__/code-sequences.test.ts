@@ -1,23 +1,17 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as schema from "@/db/schema"
 import { nextCodeTx } from "@/lib/code-sequences"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import type { Tx } from "@/db"
 
 let pg: PGlite | null = null
 
 async function makeDb() {
   pg = new PGlite()
-  await pg.exec(`
-    create table code_sequences (
-      prefix text not null,
-      year integer not null,
-      next_value integer not null default 1,
-      updated_at timestamptz not null default now(),
-      primary key (prefix, year)
-    );
-  `)
+  await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
   return drizzle(pg, { schema })
 }
 

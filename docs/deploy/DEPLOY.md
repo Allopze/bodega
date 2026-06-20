@@ -138,7 +138,17 @@ approval manual en GitHub Actions si está configurado).
 |---|---|
 | `build-and-push` | Build imagen Docker `prod` → push a `ghcr.io` |
 | `migrate` | `drizzle-kit migrate` contra la DB de producción |
-| `deploy` | (Comentado) Rollout configurable por plataforma |
+| `deploy` | SSH al VPS → `docker compose pull` → `docker compose up -d` → healthcheck |
+
+### GitHub Secrets requeridos para deploy
+
+| Secret | Descripción | Ejemplo |
+|---|---|---|
+| `PRODUCTION_DATABASE_URL` | URL de conexión a la DB de producción | `postgres://user:pass@host:5432/bodega` |
+| `DEPLOY_HOST` | IP o hostname del VPS | `203.0.113.42` |
+| `DEPLOY_USER` | Usuario SSH del VPS | `deploy` |
+| `DEPLOY_SSH_KEY` | Clave SSH privada para conexión | `(contenido de ~/.ssh/id_ed25519)` |
+| `DEPLOY_PATH` | Ruta del proyecto en el VPS (opcional) | `/srv/bodega` |
 
 ---
 

@@ -11,10 +11,9 @@ const buttonVariants = cva(
     "font-sans font-semibold text-[13px] leading-[var(--leading-label)]",
     "rounded-[var(--radius)]",
     "select-none cursor-pointer",
-    "transition-[background-color,transform,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+    "transition-[background-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
     "disabled:pointer-events-none disabled:opacity-45",
-    "active:scale-[0.97]",
   ],
   {
     variants: {

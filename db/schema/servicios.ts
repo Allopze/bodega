@@ -21,6 +21,7 @@ export const serviceQuotations = pgTable("service_quotations", {
   fileName:         text("file_name").notNull(),
   filePath:         text("file_path").notNull(),
   fileSize:         text("file_size"),
+  uploadedBy:       text("uploaded_by").references(() => users.id),
   // Quoted total (shown to the jefa during selection)
   totalAmount:      numeric("total_amount", { precision: 12, scale: 2, mode: "number" }).notNull(),
   status:           text("status").notNull().default("pending"), // pending | selected | rejected
@@ -41,5 +42,6 @@ export const serviceQuotations = pgTable("service_quotations", {
 export const serviceQuotationsRelations = relations(serviceQuotations, ({ one }) => ({
   request:       one(purchaseRequests, { fields: [serviceQuotations.requestId], references: [purchaseRequests.id] }),
   supplier:      one(suppliers, { fields: [serviceQuotations.supplierId], references: [suppliers.id] }),
+  uploadedByUser: one(users, { fields: [serviceQuotations.uploadedBy], references: [users.id] }),
   decidedByUser: one(users, { fields: [serviceQuotations.decidedBy], references: [users.id] }),
 }))

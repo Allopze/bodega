@@ -23,6 +23,7 @@ export const reportsModule = {
     { roleSlug: "jefa_chome",     permission: "reports:view" },
     { roleSlug: "secretaria",     permission: "reports:view" },
     { roleSlug: "prevencionista", permission: "reports:view" },
+    { roleSlug: "prevencionista_faena", permission: "reports:view" },
     { roleSlug: "jefe_mantencion", permission: "reports:view" },
   ],
 } as const satisfies ModuleManifest

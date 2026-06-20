@@ -299,12 +299,18 @@ export interface DeleteInvoiceResult {
   filePath: string
 }
 
-export async function createPurchaseOrderInvoice(input: CreateInvoiceInput): Promise<string> {
+export async function createPurchaseOrderInvoice(
+  input: CreateInvoiceInput,
+  worksiteIds: string[] | 'all' = 'all',
+): Promise<string> {
   return await db.transaction(async (tx) => {
     const order = await tx.query.purchaseOrders.findFirst({
       where: eq(purchaseOrders.id, input.purchaseOrderId),
-      columns: { id: true, status: true, code: true },
+      columns: { id: true, status: true, code: true, worksiteId: true },
     })
+    if (worksiteIds !== 'all' && !worksiteIds.includes(order?.worksiteId ?? '')) {
+      throw new Error("No tienes acceso a esta faena")
+    }
     if (!order) {
       throw new Error("Orden de compra no encontrada")
     }
@@ -350,6 +356,7 @@ export async function createPurchaseOrderInvoice(input: CreateInvoiceInput): Pro
 export async function deletePurchaseOrderInvoice(
   invoiceId: string,
   userId: string,
+  worksiteIds: string[] | 'all' = 'all',
   opts?: { userEmail?: string },
 ): Promise<DeleteInvoiceResult> {
   return await db.transaction(async (tx) => {
@@ -362,8 +369,12 @@ export async function deletePurchaseOrderInvoice(
 
     const order = await tx.query.purchaseOrders.findFirst({
       where: eq(purchaseOrders.id, invoice.purchaseOrderId),
-      columns: { id: true, code: true },
+      columns: { id: true, code: true, worksiteId: true },
     })
+    if (!order) throw new Error("Orden de compra no encontrada")
+    if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
+      throw new Error("No tienes acceso a esta faena")
+    }
 
     await tx.delete(purchaseOrderInvoices).where(eq(purchaseOrderInvoices.id, invoiceId))
 
@@ -391,6 +402,7 @@ export async function cancelOrder(
   orderId: string,
   userId: string,
   reason: string,
+  worksiteIds: string[] | 'all' = 'all',
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
@@ -398,6 +410,9 @@ export async function cancelOrder(
       where: eq(purchaseOrders.id, orderId),
     })
     if (!order) throw new Error(`Order ${orderId} not found`)
+    if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
+      throw new Error("No tienes acceso a esta faena")
+    }
     if (!["draft", "issued", "sent"].includes(order.status)) {
       throw new Error(`Cannot cancel order in status '${order.status}'`)
     }

@@ -58,5 +58,6 @@ export const adminModule = {
     { roleSlug: "prevencionista", permission: "admin:suppliers" },
     // Prevencionista faena — solo trabajadores (para EPP tracking)
     { roleSlug: "solicitante_faena", permission: "admin:workers" },
+    { roleSlug: "prevencionista_faena", permission: "admin:workers" },
   ],
 } as const satisfies ModuleManifest

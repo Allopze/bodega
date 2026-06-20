@@ -32,6 +32,8 @@ export const receivingModule = {
     { roleSlug: "prevencionista", permission: "receiving:view" },
     { roleSlug: "solicitante_faena", permission: "receiving:register_faena" },
     { roleSlug: "solicitante_faena", permission: "receiving:view" },
+    { roleSlug: "prevencionista_faena", permission: "receiving:register_faena" },
+    { roleSlug: "prevencionista_faena", permission: "receiving:view" },
     { roleSlug: "jefe_mantencion", permission: "receiving:register_faena" },
     { roleSlug: "jefe_mantencion", permission: "receiving:view" },
   ],

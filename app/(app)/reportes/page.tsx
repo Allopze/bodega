@@ -312,7 +312,7 @@ function BreakdownPanel({
       {total > 0 && (
         <Link
           href={cta.href}
-          className="mt-4 inline-flex items-center gap-1.5 self-start text-xs font-medium text-[var(--color-primary)] transition-transform duration-[var(--duration-fast)] active:scale-[0.98]"
+          className="mt-4 inline-flex items-center gap-1.5 self-start text-xs font-medium text-[var(--color-primary)] transition-transform duration-[var(--duration-fast)] "
         >
           {cta.label}
           <ArrowRight size={13} />

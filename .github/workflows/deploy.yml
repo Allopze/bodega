@@ -80,18 +80,56 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Optional rollout job: deploys to a remote host. Kept commented
-  # because the target platform is environment-specific (Vercel, Fly,
-  # self-hosted, ECS, K8s, etc.). When you wire it up, gate it behind
-  # `needs: [migrate, build-and-push]` so migrations always run first.
-  #
-  # deploy:
-  #   runs-on: ubuntu-latest
-  #   needs: [migrate, build-and-push]
-  #   environment: production
-  #   steps:
-  #     - name: Pull and roll out new image
-  #       run: |
-  #         # Example for SSH + docker compose:
-  #         # ssh ${{ secrets.DEPLOY_HOST }} "cd /srv/bodega && \
-  #         #   docker compose pull && docker compose up -d"
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [migrate, build-and-push]
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH || '/srv/bodega' }}
+            # Save the previous image tag before pulling the new one
+            PREVIOUS_TAG=$(docker compose images --format json app 2>/dev/null | tail -1 | grep -o '"Tag":"[^"]*"' | cut -d'"' -f4 || echo "")
+            IMAGE_TAG=${{ github.sha }}
+            echo "Deploying tag: ${IMAGE_TAG}"
+            echo "Previous tag: ${PREVIOUS_TAG}"
+
+            # Pull the specific SHA tag (not latest)
+            docker compose pull app --image-tag ${IMAGE_TAG} 2>/dev/null || \
+              docker pull ghcr.io/${{ github.repository }}:${IMAGE_TAG}
+
+            # Tag the image so docker-compose picks it up
+            docker tag ghcr.io/${{ github.repository }}:${IMAGE_TAG} ghcr.io/${{ github.repository }}:${IMAGE_TAG}-deploy
+
+            docker compose up -d --no-deps app
+            sleep 15
+
+            # Health check with rollback on failure
+            if curl -sf http://localhost:3000/api/health; then
+              echo "Healthcheck passed. Deploy successful."
+            else
+              echo "Healthcheck failed. Rolling back to previous version..."
+              docker compose logs --tail=50 app
+
+              if [ -n "$PREVIOUS_TAG" ] && [ "$PREVIOUS_TAG" != "" ]; then
+                docker compose pull app --image-tag ${PREVIOUS_TAG} 2>/dev/null || true
+                docker tag ghcr.io/${{ github.repository }}:${PREVIOUS_TAG} ghcr.io/${{ github.repository }}:${PREVIOUS_TAG}-deploy 2>/dev/null || true
+                docker compose up -d --no-deps app
+                sleep 15
+                if curl -sf http://localhost:3000/api/health; then
+                  echo "Rollback successful. Container restored to previous version: ${PREVIOUS_TAG}"
+                else
+                  echo "Rollback also failed. Manual intervention required."
+                  docker compose logs --tail=50 app
+                  exit 1
+                fi
+              else
+                echo "No previous tag found for rollback. Manual intervention required."
+                exit 1
+              fi
+            fi

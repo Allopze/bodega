@@ -100,6 +100,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin", path: "/admin", auth: true },
   { slug: "admin-auditoria", path: "/admin/auditoria", auth: true },
   { slug: "admin-configuracion", path: "/admin/configuracion", auth: true },
+  { slug: "admin-correo-smtp", path: "/admin/correo-smtp", auth: true },
   { slug: "admin-faenas", path: "/admin/faenas", auth: true },
   { slug: "admin-plantillas", path: "/admin/plantillas", auth: true },
   { slug: "admin-productos", path: "/admin/productos", auth: true },

@@ -40,7 +40,7 @@ function StatusButton({
   variant: "positive" | "negative" | "neutral"
   children: React.ReactNode
 }) {
-  const base = "h-8 px-3 text-xs font-semibold rounded-(--radius) border transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 active:scale-[0.98]"
+  const base = "h-8 px-3 text-xs font-semibold rounded-(--radius) border transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 "
   const colors = {
     positive: active
       ? "bg-(--color-success) text-white border-(--color-success) shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
@@ -150,7 +150,7 @@ function ItemField({
                   type="button"
                   className={cn(
                     "inline-flex h-8 w-fit items-center gap-1.5 rounded-(--radius) border px-2.5 text-xs font-semibold",
-                    "transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.98]",
+                    "transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] ",
                     hasObservation
                       ? "border-(--color-primary-line) bg-(--color-primary-tint) text-(--color-primary)"
                       : "border-(--color-border) bg-(--color-surface) text-text-subtle hover:border-(--color-border-strong) hover:text-(--color-text)"
@@ -302,7 +302,7 @@ function ItemField({
             onClick={() => toggleOption(opt.value)}
             aria-pressed={selected.includes(opt.value)}
             className={cn(
-              "h-8 px-3 rounded-(--radius) border text-xs font-medium transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 active:scale-[0.98]",
+              "h-8 px-3 rounded-(--radius) border text-xs font-medium transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 ",
               selected.includes(opt.value)
                 ? "bg-(--color-primary) text-(--color-primary-ink) border-(--color-primary)"
                 : "border-(--color-border) text-text-subtle hover:border-border-strong",

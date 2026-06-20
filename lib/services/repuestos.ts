@@ -19,7 +19,6 @@ const repuestoConfig: RequestModuleConfig = {
   requestType:          "repuestos",
   codePrefix:           "REP",
   quotationsTable:      repuestoQuotations,
-  quotationsQueryName:  "repuestoQuotations",
   quotationEntityType:  "repuesto_quotation",
   attributeNames:       REPUESTO_ATTRIBUTE_NAMES,
   storage: {

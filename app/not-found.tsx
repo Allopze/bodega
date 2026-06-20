@@ -20,7 +20,7 @@ export default function NotFound() {
         <Link
           href="/login"
           data-pressable
-          className="mt-6 inline-flex h-10 items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 text-sm font-medium text-white transition-[background-color,transform] duration-[var(--duration-fast)] hover:bg-[var(--color-primary-strong)] active:scale-[0.98]"
+          className="mt-6 inline-flex h-10 items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 text-sm font-medium text-white transition-[background-color,transform] duration-[var(--duration-fast)] hover:bg-[var(--color-primary-strong)] "
         >
           Ir a iniciar sesión
           <ArrowRight size={15} />

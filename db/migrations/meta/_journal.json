@@ -134,6 +134,13 @@
       "when": 1784900000000,
       "tag": "0018_audit_log_archival",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785000000000,
+      "tag": "0019_quotation_uploaded_by",
+      "breakpoints": true
     }
   ]
 }

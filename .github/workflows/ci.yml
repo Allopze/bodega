@@ -46,6 +46,9 @@ jobs:
       - name: Check env files
         run: npm run check:secrets
 
+      - name: Security audit — npm audit
+        run: npm audit --audit-level=high || echo "npm audit found issues (non-blocking)"
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -58,9 +61,11 @@ jobs:
       - name: Concurrency tests (real Postgres)
         env:
           STOCK_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          RATE_LIMIT_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          RATE_LIMIT_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --reporter=verbose lib/__tests__/*concurrency-postgres.test.ts 2>&1
 
       - name: Build

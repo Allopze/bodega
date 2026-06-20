@@ -39,7 +39,10 @@ export interface RegisterReceiptInput {
 
 /* ── Register receipt ────────────────────────────────────────────────────────── */
 
-export async function registerReceipt(input: RegisterReceiptInput): Promise<string> {
+export async function registerReceipt(
+  input: RegisterReceiptInput,
+  worksiteIds: string[] | 'all' = 'all',
+): Promise<string> {
   if (input.items.length === 0) {
     throw new Error("At least one received item is required")
   }
@@ -58,6 +61,9 @@ export async function registerReceipt(input: RegisterReceiptInput): Promise<stri
       where: eq(purchaseOrders.id, input.purchaseOrderId),
     })
     if (!order) throw new Error(`Purchase order ${input.purchaseOrderId} not found`)
+    if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
+      throw new Error("No tienes acceso a esta faena")
+    }
     if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
       throw new Error(`Cannot receive against order in state '${order.status}'`)
     }

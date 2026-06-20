@@ -60,7 +60,7 @@ const DialogContent = React.forwardRef<
           "hover:bg-[var(--color-surface-2)]",
           "transition-[color,background-color,transform] duration-[var(--duration-fast)]",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-          "active:scale-[0.95]",
+          "",
         )}
       >
         <X size={15} weight="bold" />

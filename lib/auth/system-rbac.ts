@@ -5,7 +5,8 @@ export const SYSTEM_ROLES = [
   { id: "rol-jefa", name: "jefa_chome", label: "Jefatura", description: "Revisa, aprueba y administra la operación" },
   { id: "rol-sec", name: "secretaria", label: "Secretaría", description: "Revisa, aprueba y gestiona operación diaria" },
   { id: "rol-prev", name: "prevencionista", label: "Prevencionista oficina", description: "Revisa y aprueba solicitudes" },
-  { id: "rol-sol-faena", name: "solicitante_faena", label: "Prevencionista faena", description: "Solicita ítems para sus faenas asignadas" },
+  { id: "rol-sol-faena", name: "solicitante_faena", label: "Solicitante faena", description: "Solicita ítems para sus faenas asignadas" },
+  { id: "rol-prev-faena", name: "prevencionista_faena", label: "Prevencionista faena", description: "Evalúa EPP, recibe en faena y gestiona stock en sus faenas asignadas" },
   { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas" },
 ] satisfies Array<typeof roles.$inferInsert>
 
@@ -89,6 +90,17 @@ const PREVENCIONISTA_FAENA_PERMISSION_IDS = [
   "p-rep-create", "p-rep-own", "p-rep-submit",
 ]
 
+const PREVENCIONISTA_FAENA_SCOPE_PERMISSION_IDS = [
+  "p-req-create", "p-req-own", "p-req-submit",
+  "p-rec-reg-faena", "p-rec-view",
+  "p-wh-stock", "p-wh-mov",
+  "p-adm-wrk",
+  "p-rep-create", "p-rep-own", "p-rep-submit",
+  "p-srv-create", "p-srv-own", "p-srv-submit",
+  "p-sst-view", "p-sst-create",
+  "p-rep-view",
+]
+
 const REPUESTOS_JEFATURA_PERMISSION_IDS = [
   "p-rep-all", "p-rep-approve",
 ]
@@ -138,5 +150,6 @@ export const SYSTEM_ROLE_PERMISSIONS = [
   ...SERVICIOS_PREVENCIONISTA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...PREVENCIONISTA_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
   ...SERVICIOS_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
+  ...PREVENCIONISTA_FAENA_SCOPE_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev-faena", permissionId })),
   ...JEFE_MANTENCION_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
 ] satisfies Array<typeof rolePermissions.$inferInsert>

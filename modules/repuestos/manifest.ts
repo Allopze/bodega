@@ -34,5 +34,9 @@ export const repuestosModule = {
     { roleSlug: "solicitante_faena", permission: "repuestos:create" },
     { roleSlug: "solicitante_faena", permission: "repuestos:view_own" },
     { roleSlug: "solicitante_faena", permission: "repuestos:submit" },
+    // Prevencionista faena: crea y ve sus propias solicitudes
+    { roleSlug: "prevencionista_faena", permission: "repuestos:create" },
+    { roleSlug: "prevencionista_faena", permission: "repuestos:view_own" },
+    { roleSlug: "prevencionista_faena", permission: "repuestos:submit" },
   ],
 } as const satisfies ModuleManifest

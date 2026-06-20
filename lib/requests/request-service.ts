@@ -17,7 +17,6 @@ import {
   requestItemAttributes,
   approvalDecisions,
 } from "@/db/schema"
-import type { DB, Tx } from "@/db"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -53,16 +52,12 @@ export function createRequestService(config: RequestModuleConfig) {
     requestType,
     codePrefix,
     quotationsTable,
-    quotationsQueryName,
     quotationEntityType,
     attributeNames,
     storage,
   } = config
 
   const qt = quotationsTable
-  const quotationQueries = db.query as DB["query"]
-  const getQuotationQuery = <TDb extends { query: DB["query"] | Tx["query"] }>(client: TDb) =>
-    client.query[quotationsQueryName as keyof DB["query"]]
 
   /* ── Persist draft (create or update) ───────────────────────────────────── */
 
@@ -148,7 +143,7 @@ export function createRequestService(config: RequestModuleConfig) {
 
         // Insert open-field attributes (only those with a value)
         for (const [fieldName, displayName] of Object.entries(attributeNames)) {
-          const value = (item as unknown as Record<string, unknown>)[fieldName]
+          const value = item[fieldName as keyof RequestItemInput]
           if (typeof value === "string" && value.trim()) {
             await tx.insert(requestItemAttributes).values({
               id:            nanoid(),
@@ -202,6 +197,7 @@ export function createRequestService(config: RequestModuleConfig) {
         fileName:         input.fileName,
         filePath,
         fileSize:         input.fileSize ? String(input.fileSize) : null,
+        uploadedBy:       input.uploadedBy,
         totalAmount:      input.totalAmount,
         status:           "pending",
         notes:            input.notes ?? null,
@@ -234,9 +230,7 @@ export function createRequestService(config: RequestModuleConfig) {
   /* ── Delete quotation ────────────────────────────────────────────────────── */
 
   async function deleteQuotation(input: DeleteQuotationInput): Promise<void> {
-    const quotation = await quotationQueries[quotationsQueryName].findFirst({
-      where: eq(qt.id, input.quotationId),
-    })
+    const [quotation] = await db.select().from(qt).where(eq(qt.id, input.quotationId)).limit(1)
     if (!quotation) throw new Error("Cotización no encontrada")
     if (quotation.status !== "pending") {
       throw new Error("Solo se pueden eliminar cotizaciones pendientes")
@@ -365,12 +359,13 @@ export function createRequestService(config: RequestModuleConfig) {
         throw new Error("La solicitud no está pendiente de aprobación")
       }
 
-      const quotation = await getQuotationQuery(tx).findFirst({
-        where: and(
+      const [quotation] = await tx
+        .select()
+        .from(qt)
+        .where(and(
           eq(qt.id, input.quotationId),
           eq(qt.requestId, input.requestId),
-        ),
-      })
+        ))
       if (!quotation) throw new Error("Cotización no encontrada")
       if (quotation.status !== "pending") {
         throw new Error("La cotización ya fue procesada")
@@ -400,12 +395,19 @@ export function createRequestService(config: RequestModuleConfig) {
         ))
 
       for (const item of requestedItems) {
-        await tx.update(purchaseRequestItems).set({
+        // Security audit SM-02: only transition items still in 'requested'
+        // status. Another transaction may have already modified the item.
+        const [updated] = await tx.update(purchaseRequestItems).set({
           status:              "approved",
           suggestedSupplierId: winningSupplierId,
           supplierHint:        !winningSupplierId ? (quotation.supplierNameFree ?? null) : null,
           updatedAt:           now,
-        }).where(eq(purchaseRequestItems.id, item.id))
+        }).where(and(
+          eq(purchaseRequestItems.id, item.id),
+          eq(purchaseRequestItems.status, "requested"),
+        )).returning({ id: purchaseRequestItems.id })
+
+        if (!updated) continue // item was already modified — skip silently
 
         await tx.insert(approvalDecisions).values({
           id:            nanoid(),
@@ -518,14 +520,11 @@ export function createRequestService(config: RequestModuleConfig) {
   /* ── Queries ─────────────────────────────────────────────────────────────── */
 
   async function getQuotationsForRequest(requestId: string) {
-    return quotationQueries[quotationsQueryName].findMany({
-      where: eq(qt.requestId, requestId),
-      with: {
-        supplier:      { columns: { id: true, name: true } },
-        decidedByUser: { columns: { id: true, name: true } },
-      },
-      orderBy: (q: { createdAt: unknown }, helpers: { asc: (col: unknown) => unknown }) => helpers.asc(q.createdAt),
-    })
+    return db
+      .select()
+      .from(qt)
+      .where(eq(qt.requestId, requestId))
+      .orderBy(qt.createdAt)
   }
 
   return {

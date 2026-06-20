@@ -27,12 +27,12 @@ export default defineConfig({
       // T-03: regression floor, set just below the current measured
       // coverage (~45% lines / 44% stmts on lib/). CI fails if coverage
       // drops meaningfully. Ratchet these up as test coverage grows;
-      // the long-term target tracked in AUDITORIA_COMPLETA.md is 70%.
+      // the long-term target tracked in AUDITORIA_INTEGRAL_CHOME.md is 70%.
       thresholds: {
-        statements: 40,
-        branches:   33,
-        functions:  45,
-        lines:      40,
+        statements: 50,
+        branches:   40,
+        functions:  50,
+        lines:      50,
       },
     },
   },

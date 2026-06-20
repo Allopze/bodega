@@ -34,5 +34,9 @@ export const serviciosModule = {
     { roleSlug: "solicitante_faena", permission: "servicios:create" },
     { roleSlug: "solicitante_faena", permission: "servicios:view_own" },
     { roleSlug: "solicitante_faena", permission: "servicios:submit" },
+    // Prevencionista faena: crea y ve sus propias solicitudes
+    { roleSlug: "prevencionista_faena", permission: "servicios:create" },
+    { roleSlug: "prevencionista_faena", permission: "servicios:view_own" },
+    { roleSlug: "prevencionista_faena", permission: "servicios:submit" },
   ],
 } as const satisfies ModuleManifest

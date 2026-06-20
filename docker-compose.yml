@@ -1,0 +1,44 @@
+# Docker Compose for Chome Solicitudes y Bodega
+#
+# This file IS version-controlled. Do not make ad-hoc changes on the VPS;
+# commit them here and pull in production.
+#
+# Usage:
+#   docker compose up -d                 # start (pull first in CI)
+#   docker compose up -d --no-deps app   # replace app container only
+#   docker compose down                  # stop
+#
+# Environment variables are read from a .env file or the host's environment.
+# Copy .env.example to .env and fill in production values.
+
+services:
+  app:
+    # Image is built by CI and pushed to GitHub Container Registry.
+    # In production, CI passes the SHA tag (not "latest") for reproducible deploys.
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:?err}
+      - AUTH_SECRET=${AUTH_SECRET:?err}
+      - AUTH_URL=${AUTH_URL:?err}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
+    volumes:
+      - bodega-storage:/data/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  bodega-storage:

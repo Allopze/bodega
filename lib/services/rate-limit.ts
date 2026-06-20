@@ -62,7 +62,7 @@ export async function recordFailure(key: string): Promise<void> {
         count: sql`LEAST(${rateLimits.count} + 1, ${LIMIT_ATTEMPTS})`,
         lockUntil: sql`CASE
           WHEN ${rateLimits.count} + 1 >= ${LIMIT_ATTEMPTS}
-          THEN ${now + LOCK_TIME}
+          THEN ${now + LOCK_TIME}::bigint
           ELSE 0
         END`,
         updatedAt: new Date(now).toISOString(),

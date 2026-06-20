@@ -139,7 +139,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
                 <div className="flex items-center gap-2 justify-end">
                   <button
                     onClick={() => openEdit(u)}
-                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                     title="Editar"
                   >
                     <PencilSimple size={16} />
@@ -149,7 +149,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
                     <input type="hidden" name="activate" value={String(!u.isActive)} />
                     <button
                       type="submit"
-                      className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                      className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                       title={u.isActive ? "Desactivar" : "Activar"}
                     >
                       {u.isActive
@@ -200,7 +200,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
                 <button
                   onClick={() => openEdit(u)}
-                  className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                  className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                   title="Editar"
                 >
                   <PencilSimple size={16} />
@@ -210,7 +210,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
                   <input type="hidden" name="activate" value={String(!u.isActive)} />
                   <button
                     type="submit"
-                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                     title={u.isActive ? "Desactivar" : "Activar"}
                   >
                     {u.isActive

@@ -225,14 +225,10 @@ body {
   background: transparent;
 }
 
-/* ─── Pressable — subtle scale feedback on press ── */
+/* ─── Pressable — color transition on press (no scale) ── */
 @media (prefers-reduced-motion: no-preference) {
   [data-pressable] {
-    transition: background-color var(--duration-fast) var(--ease-out),
-                transform var(--duration-fast) var(--ease-out);
-  }
-  [data-pressable]:active {
-    transform: scale(0.97);
+    transition: background-color var(--duration-fast) var(--ease-out);
   }
 }
 
@@ -257,9 +253,9 @@ body {
   .animate-in, .animate-out {
     animation-duration: 0.01ms !important;
   }
-  [data-pressable]:active,
-  button:active {
-    transform: none !important;
+  [data-pressable],
+  button {
+    transition-duration: 0ms !important;
   }
   @keyframes shimmer {
     from { opacity: 0.5; }

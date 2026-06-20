@@ -14,46 +14,19 @@
 
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { and, eq, sql } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import { nextCodeTx } from "@/lib/code-sequences"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import type { Tx } from "@/db"
 
 let pg: PGlite | null = null
 
 async function makeDb() {
   pg = new PGlite()
-  await pg.exec(`
-    CREATE TABLE roles (
-      id text PRIMARY KEY,
-      name text NOT NULL UNIQUE,
-      label text NOT NULL,
-      description text
-    );
-    CREATE TABLE users (
-      id text PRIMARY KEY,
-      name text NOT NULL,
-      email text NOT NULL UNIQUE,
-      hashed_password text NOT NULL,
-      avatar_color text,
-      is_active boolean NOT NULL DEFAULT true,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE user_roles (
-      user_id text NOT NULL,
-      role_id text NOT NULL,
-      PRIMARY KEY (user_id, role_id)
-    );
-    CREATE TABLE code_sequences (
-      prefix text NOT NULL,
-      year integer NOT NULL,
-      next_value integer NOT NULL DEFAULT 1,
-      updated_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (prefix, year)
-    );
-  `)
+  await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
   return drizzle(pg, { schema })
 }
 
@@ -194,15 +167,20 @@ describe("integrity constraints (0002 migration parity)", () => {
   })
 
   it("rejects a duplicate (userId, worksiteId) assignment", async () => {
-    await makeDb()
-    await pg!.exec(`
-      CREATE TABLE worksite_users (
-        user_id text NOT NULL,
-        worksite_id text NOT NULL,
-        is_primary boolean NOT NULL DEFAULT false,
-        UNIQUE (user_id, worksite_id)
-      );
-    `)
+    const db = await makeDb()
+    await db.insert(schema.users).values({
+      id: "u1",
+      name: "A",
+      email: "a@x.cl",
+      hashedPassword: "x",
+      isActive: true,
+    })
+    await db.insert(schema.worksites).values({
+      id: "w1",
+      name: "Faena 1",
+      code: "F1",
+      isActive: true,
+    })
     await pg!.exec(`INSERT INTO worksite_users (user_id, worksite_id) VALUES ('u1', 'w1')`)
     await expect(
       pg!.exec(`INSERT INTO worksite_users (user_id, worksite_id) VALUES ('u1', 'w1')`),

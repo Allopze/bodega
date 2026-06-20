@@ -124,7 +124,7 @@ export function ItemEditor({
                 <button
                   type="button"
                   onClick={() => onUpdate({ productNameFree: "" })}
-                  className="shrink-0 text-xs text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-ink)] active:scale-[0.97]"
+                  className="shrink-0 text-xs text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-ink)]"
                 >
                   Elegir catálogo
                 </button>
@@ -146,7 +146,7 @@ export function ItemEditor({
           <button
             type="button"
             onClick={onRemove}
-            className="mt-0.5 p-1 rounded text-[var(--color-text-subtle)] hover:text-[var(--color-danger)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-95"
+            className="mt-0.5 p-1 rounded text-[var(--color-text-subtle)] hover:text-[var(--color-danger)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
             aria-label="Eliminar ítem"
           >
             <Trash size={14} />

@@ -142,14 +142,14 @@ export function ProductList({ products, categories, allSuppliers }: {
                     onClick={() => openEditProduct(p.id)}
                     disabled={loadingEditId === p.id}
                     className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
-                    title="Editar"
+                    title="Editar" aria-label="Editar producto"
                   >
                     <PencilSimple size={16} className={loadingEditId === p.id ? "animate-spin" : ""} />
                   </button>
                   <form action={toggleAction}>
                     <input type="hidden" name="id"       value={p.id} />
                     <input type="hidden" name="activate" value={String(!p.isActive)} />
-                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={p.isActive ? "Desactivar" : "Activar"}>
+                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={p.isActive ? "Desactivar" : "Activar"}>
                       {p.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                     </button>
                   </form>
@@ -201,7 +201,7 @@ export function ProductList({ products, categories, allSuppliers }: {
                 <form action={toggleAction}>
                   <input type="hidden" name="id" value={p.id} />
                   <input type="hidden" name="activate" value={String(!p.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={p.isActive ? "Desactivar" : "Activar"}>
+                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={p.isActive ? "Desactivar" : "Activar"}>
                     {p.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                   </button>
                 </form>
@@ -218,7 +218,7 @@ export function ProductList({ products, categories, allSuppliers }: {
             <p className="text-eyebrow">
               Categorías ({categories.length})
             </p>
-            <button onClick={openNewCat} className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1 active:scale-[0.97] transition-transform">
+            <button onClick={openNewCat} className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1 transition-transform">
               <Plus size={12} />Nueva categoría
             </button>
           </div>
@@ -228,7 +228,7 @@ export function ProductList({ products, categories, allSuppliers }: {
                 key={c.id}
                 type="button"
                 onClick={() => openEditCat(c)}
-                className="group flex items-center justify-between w-full text-left gap-2 px-4 py-3 text-sm rounded-[var(--radius-md)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]"
+                className="group flex items-center justify-between w-full text-left gap-2 px-4 py-3 text-sm rounded-[var(--radius-md)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)] transition-colors duration-[var(--duration-fast)]"
               >
                 <span className="text-[var(--color-text)] truncate">{c.name}</span>
                 <div className="flex items-center gap-1.5 shrink-0">

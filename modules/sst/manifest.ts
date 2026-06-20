@@ -26,6 +26,8 @@ export const sstModule = {
     { roleSlug: "prevencionista", permission: "sst:create" },
     { roleSlug: "prevencionista", permission: "sst:close" },
     { roleSlug: "prevencionista", permission: "sst:manage" },
+    { roleSlug: "prevencionista_faena", permission: "sst:view" },
+    { roleSlug: "prevencionista_faena", permission: "sst:create" },
     { roleSlug: "administrador", permission: "sst:view" },
     { roleSlug: "administrador", permission: "sst:create" },
     { roleSlug: "administrador", permission: "sst:close" },

@@ -97,13 +97,13 @@ export function FaenasList({
               </dl>
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <button onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title="Editar">
+                <button onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label="Editar faena">
                   <PencilSimple size={16} />
                 </button>
                 <form action={wsToggleAction}>
                   <input type="hidden" name="id" value={ws.id} />
                   <input type="hidden" name="activate" value={String(!ws.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] active:scale-[0.97]" title={ws.isActive ? "Desactivar" : "Activar"}>
+                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={ws.isActive ? "Desactivar" : "Activar"}>
                     {ws.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                   </button>
                 </form>
@@ -128,13 +128,13 @@ export function FaenasList({
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast) active:scale-[0.97]" title="Editar">
+                    <button onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast)" title="Editar">
                       <PencilSimple size={16} />
                     </button>
                     <form action={wsToggleAction}>
                       <input type="hidden" name="id"       value={ws.id} />
                       <input type="hidden" name="activate" value={String(!ws.isActive)} />
-                      <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast) active:scale-[0.97]" title={ws.isActive ? "Desactivar" : "Activar"}>
+                      <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast)" title={ws.isActive ? "Desactivar" : "Activar"}>
                         {ws.isActive ? <ToggleRight size={20} className="text-primary" /> : <ToggleLeft size={20} />}
                       </button>
                     </form>

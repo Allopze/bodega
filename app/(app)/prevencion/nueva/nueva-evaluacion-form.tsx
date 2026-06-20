@@ -320,7 +320,7 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
                 aria-pressed={selectedCargos.includes(opt.value)}
                 className={[
                   "inline-flex h-8 items-center gap-1.5 rounded-(--radius) border px-3 text-sm font-medium",
-                  "transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out)] active:scale-[0.98]",
+                  "transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out)] ",
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
                   selectedCargos.includes(opt.value)
                     ? "bg-(--color-primary) text-white border-(--color-primary) shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]"

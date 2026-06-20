@@ -110,7 +110,7 @@ const SelectTrigger = React.forwardRef<
         "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)]",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-[placeholder]:text-[var(--color-text-subtle)]",
-        "active:scale-[0.99]",
+        "",
         error && "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-[var(--color-danger-line)]",
         className,
       )}

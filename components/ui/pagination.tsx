@@ -83,7 +83,7 @@ function PageButton({
         "transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
         "disabled:pointer-events-none disabled:opacity-35",
         // Emil: press feedback
-        "active:scale-[0.95]",
+        "",
         active
           ? "bg-[var(--color-primary)] text-white"
           : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]",

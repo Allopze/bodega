@@ -1,7 +1,7 @@
 # Threat Model — Chome Solicitudes y Bodega
 
 **Methodology:** STRIDE (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege)  
-**Last updated:** 2026-06-19  
+**Last updated:** 2026-06-20  
 **Scope:** Web application + PostgreSQL database + SMTP relay. Internal tool (~50 users, private network).
 
 ---
@@ -71,7 +71,7 @@ Trust boundaries: public internet → reverse proxy → app server → database.
 | T2: CSRF on state-mutation forms | Server Actions | Next.js enforces `Origin` header check on Server Action POSTs; all mutations are Server Actions (see CSRF.md for full map) | Low |
 | T3: Tamper with purchase request items in-flight | `solicitudes/actions.ts` | Items locked once in `in_purchase_order` state; item state machine rejects invalid transitions | Low |
 | T4: Price tampering on OC via direct API call | `/api/*` routes | All mutating routes require authenticated session + permission check via `can()`; all `/api/*` routes are **read-only** (no mutation endpoints) | Low |
-| T5: Attachment substitution | `/api/attachments` | Attachment ownership validated against `userId` in session before serving | Low |
+| T5: Attachment substitution | `/api/attachments`, `/api/purchase-orders/invoices`, `/api/repuestos/quotaciones`, `/api/servicios/cotizaciones` | Each route resolves the parent entity's worksite and validates via `canAccessWorksite(session, worksiteId)` — users see only attachments belonging to their assigned worksites | Low |
 | T6: File upload spoofing | All upload handlers | Magic bytes validated server-side via `validateFileBuffer()` (lib/file-validation.ts); MIME normalized independently of client-declared Content-Type; accepts PDF, JPEG, PNG, XML | Low |
 
 ---
@@ -96,7 +96,7 @@ Trust boundaries: public internet → reverse proxy → app server → database.
 | I2: User enumeration via password reset | `/recuperar` | Always returns success message regardless of email existence | Low |
 | I3: Sensitive data in logs | Logger | `lib/logger.ts` redacts `password`, `token`, `secret`, `hash` keys | Low |
 | I4: Over-sharing in API responses | `/api/*` | Scope guard: non-global users see only their worksite data via `visibleWorksiteIds(session)` | Low |
-| I5: Attachment served to wrong user | `/api/attachments/[id]` | Ownership check: `attachment.userId === session.user.id` | Low |
+| I5: Attachment served to wrong user | `/api/attachments/[id]`, `/api/purchase-orders/invoices/[id]`, `/api/repuestos/quotaciones/[id]`, `/api/servicios/cotizaciones/[id]` | Worksite scope check: each route resolves the parent entity's worksite via `canAccessWorksite(session, worksiteId)` — users see only attachments belonging to their assigned worksites | Low |
 | I6: Error details leaked to client | Server Actions | Errors return generic `ActionState.message` strings; original errors logged server-side only | Low |
 | I7: SMTP credentials in environment | `.env` | Standard practice; `AUTH_SECRET` and `SMTP_PASS` never logged; `.env.example` contains no real values | Low |
 
@@ -159,7 +159,7 @@ Server Actions, inheriting CSRF protection. Additional controls:
 | JWT not revocable mid-session (except via `isActive` check) | Acceptable for short-lived sessions + `isActive` guard; full revocation would require Redis |
 | No 2FA | Internal tool, 50 users; admin can enforce strong passwords |
 | SMTP credentials in env | Standard practice; rotated on any suspected exposure |
-| `QuotationTable` typed as `any` in `request-config.ts` | Drizzle's deeply generic table types are impractical to spell in a factory pattern; real shape enforced by concrete table instances (`repuestoQuotations`, `serviceQuotations`) |
+| `QuotationTable` uses `as unknown as` cast in `request-service.ts` | Drizzle's deeply generic table types are impractical to spell in a factory pattern; real shape enforced by concrete table instances (`repuestoQuotations`, `serviceQuotations`) |
 | Rate limit depends on proxy setting `X-Forwarded-For` correctly | Documented in DEPLOY.md; email-based rate limit provides fallback per-account protection |
 
 ---
@@ -170,6 +170,7 @@ Server Actions, inheriting CSRF protection. Additional controls:
 |---|---|---|
 | Authentication | NextAuth v5 Credentials + JWT | `lib/auth/auth.ts` |
 | Authorization | RBAC with per-request-type permissions | `lib/auth/can.ts`, `lib/request-types.ts` |
+| Attachment access | Worksite scope via `canAccessWorksite()` on each route | `app/api/attachments/[id]`, `app/api/*/route.ts` |
 | CSRF | Server Actions only (no mutating API routes) | `docs/security/CSRF.md` |
 | Rate limiting | Atomic INSERT...ON CONFLICT DO UPDATE | `lib/services/rate-limit.ts` |
 | File validation | Magic bytes + MIME normalization | `lib/file-validation.ts` |

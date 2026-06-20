@@ -247,7 +247,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                         onClick={() => toggleRole(role.id)}
                         className={[
                           "rounded-[var(--radius)] border px-3 py-1 text-xs",
-                          "transition-[background-color,border-color,color] duration-[var(--duration-fast)] active:scale-[0.97]",
+                          "transition-[background-color,border-color,color] duration-[var(--duration-fast)] ",
                           checked
                             ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] font-medium text-[var(--color-primary-ink)]"
                             : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",

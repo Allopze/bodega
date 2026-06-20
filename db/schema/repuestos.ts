@@ -21,6 +21,7 @@ export const repuestoQuotations = pgTable("repuesto_quotations", {
   fileName:         text("file_name").notNull(),
   filePath:         text("file_path").notNull(),
   fileSize:         text("file_size"),
+  uploadedBy:       text("uploaded_by").references(() => users.id),
   // Quoted total (shown to the jefa during selection)
   totalAmount:      numeric("total_amount", { precision: 12, scale: 2, mode: "number" }).notNull(),
   status:           text("status").notNull().default("pending"), // pending | selected | rejected
@@ -41,5 +42,6 @@ export const repuestoQuotations = pgTable("repuesto_quotations", {
 export const repuestoQuotationsRelations = relations(repuestoQuotations, ({ one }) => ({
   request:       one(purchaseRequests, { fields: [repuestoQuotations.requestId], references: [purchaseRequests.id] }),
   supplier:      one(suppliers, { fields: [repuestoQuotations.supplierId], references: [suppliers.id] }),
+  uploadedByUser: one(users, { fields: [repuestoQuotations.uploadedBy], references: [users.id] }),
   decidedByUser: one(users, { fields: [repuestoQuotations.decidedBy], references: [users.id] }),
 }))

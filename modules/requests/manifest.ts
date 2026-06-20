@@ -41,6 +41,10 @@ export const requestsModule = {
     { roleSlug: "solicitante_faena", permission: "requests:create" },
     { roleSlug: "solicitante_faena", permission: "requests:view_own" },
     { roleSlug: "solicitante_faena", permission: "requests:submit" },
+    // Prevencionista faena: crea y ve las propias
+    { roleSlug: "prevencionista_faena", permission: "requests:create" },
+    { roleSlug: "prevencionista_faena", permission: "requests:view_own" },
+    { roleSlug: "prevencionista_faena", permission: "requests:submit" },
     // Jefe de mantención: crea, ve propias y envía (sin view_all)
     { roleSlug: "jefe_mantencion", permission: "requests:create" },
     { roleSlug: "jefe_mantencion", permission: "requests:view_own" },

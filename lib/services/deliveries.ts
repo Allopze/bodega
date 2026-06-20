@@ -46,8 +46,12 @@ export interface RegisterWorkerEppDeliveryInput {
   returnNotes?: string | null
 }
 
-export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryInput): Promise<string> {
+export async function registerWorksiteDelivery(
+  input: RegisterWorksiteDeliveryInput,
+  worksiteIds: string[] | 'all' = 'all',
+): Promise<string> {
   if (!input.worksiteId) throw new Error("Selecciona una faena")
+  if (worksiteIds !== 'all' && !worksiteIds.includes(input.worksiteId)) {
   if (!input.productId) throw new Error("Selecciona un producto")
   if (!input.receiverName.trim()) throw new Error("Indica quién recibió")
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
@@ -163,8 +167,14 @@ export async function registerWorksiteDelivery(input: RegisterWorksiteDeliveryIn
   return deliveryId
 }
 
-export async function registerWorkerEppDelivery(input: RegisterWorkerEppDeliveryInput): Promise<string> {
+export async function registerWorkerEppDelivery(
+  input: RegisterWorkerEppDeliveryInput,
+  worksiteIds: string[] | 'all' = 'all',
+): Promise<string> {
   if (!input.worksiteId) throw new Error("Selecciona una faena")
+  if (worksiteIds !== 'all' && !worksiteIds.includes(input.worksiteId)) {
+    throw new Error("No tienes acceso a esta faena")
+  }
   if (!input.workerId) throw new Error("Selecciona un trabajador")
   if (!input.requestItemId) throw new Error("Selecciona un EPP recibido")
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) {

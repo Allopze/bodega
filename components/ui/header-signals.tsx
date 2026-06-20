@@ -70,7 +70,7 @@ function SignalChip({ signal }: { signal: HeaderSignal }) {
       <Link
         href={signal.href}
         data-pressable
-        className="rounded-full transition-transform duration-[var(--duration-fast)] hover:brightness-95 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+        className="rounded-full transition-transform duration-[var(--duration-fast)] hover:brightness-95  focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
       >
         {chip}
       </Link>

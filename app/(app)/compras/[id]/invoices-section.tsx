@@ -156,7 +156,7 @@ function InvoiceItem({
             type="submit"
             disabled={pending}
             aria-label={`Eliminar factura ${invoice.invoiceNumber}`}
-            className="shrink-0 p-1 rounded text-text-subtle hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
+            className="shrink-0 p-1 rounded text-text-subtle hover:text-[var(--color-danger)] hover:bg-red-50 transition-colors disabled:opacity-40"
           >
             <Trash size={14} />
           </button>
@@ -187,7 +187,7 @@ function AddInvoiceForm({ purchaseOrderId }: { purchaseOrderId: string }) {
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
 
       {!state.ok && state.message && !("fieldErrors" in state) && (
-        <p className="flex items-center gap-1.5 text-xs text-red-600">
+        <p className="flex items-center gap-1.5 text-xs text-[var(--color-danger)]">
           <Warning size={12} weight="bold" />
           {state.message}
         </p>

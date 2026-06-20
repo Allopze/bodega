@@ -6,13 +6,11 @@
  */
 
 import type { Session } from "next-auth"
-import type { AnyPgTable } from "drizzle-orm/pg-core"
 import type { Permission } from "@/modules/permissions"
-import type { DB } from "@/db"
+import type { repuestoQuotations, serviceQuotations } from "@/db/schema"
 
-// ── Attribute names map: field → display label ────────────────────────────────
-
-export type AttributeNamesMap = Record<string, string>
+/** Attribute names map: field name on RequestItemInput → display label */
+export type AttributeNamesMap = Partial<Record<keyof RequestItemInput, string>>
 
 // ── Storage helpers config ────────────────────────────────────────────────────
 
@@ -107,9 +105,7 @@ export interface RequestModuleConfig {
   /** Prefix for auto-generated codes (e.g. "REP", "SER") */
   codePrefix: string
   /** Drizzle table reference for the quotations table */
-  quotationsTable: AnyPgTable
-  /** Key used in db.query[name] for the quotations table */
-  quotationsQueryName: keyof DB["query"]
+  quotationsTable: typeof repuestoQuotations | typeof serviceQuotations
   /** Entity type value for audit logging */
   quotationEntityType: string
   /** Attribute names map: fieldName → displayLabel */

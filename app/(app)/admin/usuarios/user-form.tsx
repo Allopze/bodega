@@ -404,7 +404,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
                         [
                           "inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-[var(--radius)] border",
                           "transition-[background-color,border-color,color] duration-[var(--duration-fast)]",
-                          "active:scale-[0.97]",
+                          "",
                           checked
                             ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] hover:bg-[var(--color-primary-strong)]"
                             : "bg-[var(--color-surface-2)] border-[var(--color-border)] text-[var(--color-text-muted)]",

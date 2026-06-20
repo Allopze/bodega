@@ -327,7 +327,7 @@ export default async function TrazabilidadPage({
         <Link
           href={`/api/trazabilidad/export${filterFaenaId ? `?faena=${filterFaenaId}` : ""}`}
           prefetch={false}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.97]"
+          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] "
           aria-label="Exportar trazabilidad a Excel"
         >
           <DownloadSimple className="h-3.5 w-3.5" aria-hidden />
@@ -524,7 +524,7 @@ export default async function TrazabilidadPage({
             {safePage > 1 && (
               <a
                 href={pageHref(safePage - 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.93]"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]"
                 aria-label="Página anterior"
               >
                 ←
@@ -536,7 +536,7 @@ export default async function TrazabilidadPage({
             {safePage < totalPages && (
               <a
                 href={pageHref(safePage + 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.93]"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]"
                 aria-label="Página siguiente"
               >
                 →

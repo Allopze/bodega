@@ -75,7 +75,7 @@ function PageLink({
   const className = cn(
     "inline-flex h-7 min-w-7 items-center justify-center rounded-[var(--radius)] px-2 text-xs font-medium",
     "transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-    "active:scale-[0.95]",
+    "",
     disabled && "pointer-events-none opacity-35",
     active
       ? "bg-[var(--color-primary)] text-white"

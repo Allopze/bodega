@@ -19,7 +19,6 @@ const serviceConfig: RequestModuleConfig = {
   requestType:          "servicios",
   codePrefix:           "SER",
   quotationsTable:      serviceQuotations,
-  quotationsQueryName:  "serviceQuotations",
   quotationEntityType:  "service_quotation",
   attributeNames:       SERVICE_ATTRIBUTE_NAMES,
   storage: {
