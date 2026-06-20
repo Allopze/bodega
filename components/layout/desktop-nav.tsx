@@ -43,16 +43,16 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
             <Link
               href={DASHBOARD_ITEM.href}
               aria-current={dashActive ? "page" : undefined}
+              aria-label="Inicio"
               data-pressable
               className={cn(
-                "flex flex-col items-center gap-1 rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
+                "flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
                 dashActive
                   ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
                   : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
               )}
             >
               <SquaresFour size={19} weight={dashActive ? "bold" : "regular"} className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
-              <span className="w-full truncate text-center text-eyebrow leading-tight">Inicio</span>
             </Link>
           </Tooltip>
 
@@ -124,20 +124,46 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
           <span>Inicio</span>
         </Link>
 
-        <div>
-          {areas.map((area, i) => (
-            <AreaSection
-              key={area.id}
-              area={area}
-              pathname={pathname}
-              badgeCounts={badgeCounts}
-              defaultOpen={routeArea === area.id}
-              first={i === 0}
-            />
-          ))}
-        </div>
+        <AccordionAreas areas={areas} pathname={pathname} badgeCounts={badgeCounts} routeArea={routeArea} />
       </div>
     </nav>
+  )
+}
+
+function AccordionAreas({
+  areas,
+  pathname,
+  badgeCounts,
+  routeArea,
+}: {
+  areas:         AreaNode[]
+  pathname:      string
+  badgeCounts?:  Record<string, number>
+  routeArea:     string | null
+}) {
+  const [openId, setOpenId] = React.useState<string | null>(routeArea)
+  React.useEffect(() => {
+    if (routeArea) setOpenId(routeArea)
+  }, [routeArea])
+
+  const handleToggle = React.useCallback((id: string) => {
+    setOpenId((prev) => (prev === id ? null : id))
+  }, [])
+
+  return (
+    <div>
+      {areas.map((area, i) => (
+        <AreaSection
+          key={area.id}
+          area={area}
+          pathname={pathname}
+          badgeCounts={badgeCounts}
+          open={openId === area.id}
+          onToggle={() => handleToggle(area.id)}
+          first={i === 0}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -145,31 +171,35 @@ function AreaSection({
   area,
   pathname,
   badgeCounts,
-  defaultOpen,
+  open,
+  onToggle,
   first,
 }: {
   area:         AreaNode
   pathname:     string
   badgeCounts?: Record<string, number>
-  defaultOpen:  boolean
+  open:         boolean
+  onToggle:     () => void
   first:        boolean
 }) {
-  const [open, setOpen] = React.useState(defaultOpen)
-  React.useEffect(() => {
-    if (defaultOpen) setOpen(true)
-  }, [defaultOpen])
+  const Icon = NAV_ICONS[area.iconName] ?? SquaresFour
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen} className={cn(!first && "mt-4")}>
+    <Collapsible.Root open={open} onOpenChange={onToggle} className={cn(!first && "mt-4")}>
       <Collapsible.Trigger asChild>
         <button
           type="button"
           aria-expanded={open}
           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-eyebrow transition-colors duration-(--duration-fast) hover:text-(--color-text-muted)"
         >
-          <span className="flex-1 truncate">{area.label}</span>
+          <Icon
+            size={16}
+            weight={open ? "fill" : "regular"}
+            className={cn("shrink-0", open ? "text-(--color-text-muted)" : "text-(--color-text-faint)")}
+          />
+          <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide">{area.label}</span>
           <CaretDown
-            size={12}
+            size={13}
             className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")}
           />
         </button>
@@ -203,14 +233,13 @@ function RailFlyout({
           type="button"
           aria-label={area.label}
           className={cn(
-            "group relative flex flex-col items-center gap-1 rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
+            "group relative flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
             inRoute
               ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
               : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
           )}
         >
           <Icon size={19} weight={inRoute ? "bold" : "regular"} className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
-          <span className="w-full truncate text-center text-eyebrow leading-tight">{area.label}</span>
         </button>
       </Popover.Trigger>
       <Popover.Portal>

@@ -4,7 +4,7 @@ import {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
   ChartLineUp, ChartBar, Package, Path, User, Stack, GearSix,
-  Wrench, Toolbox,
+  Wrench, Toolbox, HardHat,
 } from "@phosphor-icons/react"
 
 export type IconCmp = React.ComponentType<{ size?: number; weight?: IconWeight; className?: string }>

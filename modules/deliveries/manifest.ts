@@ -11,7 +11,7 @@ export const deliveriesModule = {
         {
           label:       "Entregas",
           href:        "/entregas",
-          iconName:    "User",
+          iconName:    "HardHat",
           permissions: ["warehouse:register_movement"],
         },
       ],
