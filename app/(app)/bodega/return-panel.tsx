@@ -152,7 +152,7 @@ export function ReturnPanel({
           </p>
         )}
 
-        <div className="pt-2">
+        <div className="flex justify-end pt-2">
           <SubmitButton
             label="Registrar devolución"
             loadingLabel="Guardando..."

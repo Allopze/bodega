@@ -74,13 +74,7 @@ export function OcActions({
             <Warning size={12} /> {cancelState.message}
           </p>
         )}
-        <div className="flex items-center gap-2 mt-1">
-          <SubmitButton
-            label="Confirmar anulación"
-            loadingLabel="Anulando..."
-            variant="destructive"
-            size="sm"
-          />
+        <div className="flex items-center justify-end gap-2 mt-1">
           <button
             type="button"
             onClick={() => setShowCancelForm(false)}
@@ -88,13 +82,19 @@ export function OcActions({
           >
             Volver
           </button>
+          <SubmitButton
+            label="Confirmar anulación"
+            loadingLabel="Anulando..."
+            variant="destructive"
+            size="sm"
+          />
         </div>
       </form>
     )
   }
 
   return (
-    <div className="flex items-center gap-3 pt-2 flex-wrap">
+    <div className="flex items-center justify-end gap-3 pt-2 flex-wrap">
       {status === "draft" && canManage && (
         <form action={issueAction}>
           <input type="hidden" name="orderId" value={orderId} />

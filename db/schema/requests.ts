@@ -16,7 +16,7 @@ import { products, productAttributes } from "./products"
 /* ── Purchase Requests ───────────────────────────────────────────────────── */
 export const purchaseRequests = pgTable("purchase_requests", {
   id:           text("id").primaryKey(),
-  code:         text("code").notNull().unique(),    // e.g. "SOL-2026-0042"
+  code:         text("code").notNull().unique(),    // e.g. "SOL-0042"
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
   requesterId:  text("requester_id").notNull().references(() => users.id),
 

@@ -593,7 +593,7 @@ function formatOrderNumber(code: string): string {
 }
 
 function formatRequestReference(code: string): string {
-  const match = code.match(/^SOL-\d{4}-(\d+)$/)
+  const match = code.match(/^SOL-(?:\d{4}-)?(\d+)$/)
   if (!match) return code.replace(/^SOL-/, "")
   return String(Number(match[1])).padStart(2, "0")
 }

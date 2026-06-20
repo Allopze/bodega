@@ -104,7 +104,7 @@ describe("persistRequestWithDiff (A-01/A-08)", () => {
       with: { items: true },
     })
     expect(request?.status).toBe("draft")
-    expect(request?.code).toMatch(/^SOL-\d{4}-0001$/)
+    expect(request?.code).toBe("SOL-0001")
     expect(request?.items).toHaveLength(1)
   })
 

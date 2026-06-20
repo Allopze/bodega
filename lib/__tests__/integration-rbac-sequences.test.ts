@@ -55,9 +55,9 @@ describe("code sequences — concurrent transactions", () => {
     }
 
     expect(codes.size).toBe(N * 2)
-    expect(codes.has("SOL-2026-0001")).toBe(true)
+    expect(codes.has("SOL-0001")).toBe(true)
     expect(codes.has("OC-2026-0001")).toBe(true)
-    expect(codes.has("SOL-2026-0000")).toBe(false)
+    expect(codes.has("SOL-0000")).toBe(false)
   })
 
   it("isolates year buckets so a 2026 counter never feeds 2027", async () => {
@@ -69,10 +69,10 @@ describe("code sequences — concurrent transactions", () => {
       await nextCodeTx(tx as unknown as Tx, "SOL", 2027),
     ])
     expect(seen).toEqual([
-      "SOL-2026-0001",
-      "SOL-2026-0002",
-      "SOL-2027-0001",
-      "SOL-2027-0002",
+      "SOL-0001",
+      "SOL-0002",
+      "SOL-0003",
+      "SOL-0004",
     ])
   })
 })

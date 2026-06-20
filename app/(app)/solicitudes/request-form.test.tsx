@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import type { PropsWithChildren } from "react"
 import type { ProductOption } from "./request-form.types"
@@ -45,9 +45,19 @@ vi.mock("@/components/ui/dialog", () => ({
 }))
 
 vi.mock("./item-editor", () => ({
-  ItemEditor: ({ item, idx }: { item: { productName?: string; productNameFree?: string }; idx: number }) => (
+  ItemEditor: ({
+    item,
+    idx,
+    onSelectProduct,
+  }: {
+    item: { productName?: string; productNameFree?: string; suggestedSupplierId?: string }
+    idx: number
+    onSelectProduct: (productId: string) => void
+  }) => (
     <div data-testid={`item-editor-${idx}`}>
       <span>{item.productName || "Sin producto"}</span>
+      <span data-testid={`item-supplier-${idx}`}>{item.suggestedSupplierId ?? ""}</span>
+      <button type="button" onClick={() => onSelectProduct("prod-1")}>Elegir casco</button>
     </div>
   ),
   URGENCY_OPTS: [
@@ -75,6 +85,7 @@ const products: ProductOption[] = [
     isEpp: true,
     categoryName: "EPP",
     referencePrice: null,
+    preferredSupplierId: "sup-1",
     attributes: [],
   },
   {
@@ -85,6 +96,7 @@ const products: ProductOption[] = [
     isEpp: true,
     categoryName: "EPP",
     referencePrice: null,
+    preferredSupplierId: null,
     attributes: [
       { id: "attr-1", name: "Talla", isRequired: true, type: "select", options: '["S","M","L"]' },
     ],
@@ -251,6 +263,23 @@ describe("RequestForm", () => {
       // "1 ítem" appears in items header count and sidebar badge
       const itemCountElements = screen.getAllByText("1 ítem")
       expect(itemCountElements.length).toBe(2)
+    })
+  })
+
+  describe("product supplier defaults", () => {
+    it("uses the selected EPP preferred supplier as the suggested supplier", () => {
+      render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          maxFileSizeMb={10}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Elegir casco" }))
+
+      expect(screen.getByTestId("item-supplier-0").textContent).toBe("sup-1")
     })
   })
 })

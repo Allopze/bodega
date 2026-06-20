@@ -10,7 +10,7 @@ export const auditLog = pgTable("audit_log", {
   action:       text("action").notNull(), // 'create' | 'update' | 'status_change' | 'delete'
   entityType:   text("entity_type").notNull(),  // 'purchase_request' | 'purchase_order' | etc.
   entityId:     text("entity_id").notNull(),
-  entityCode:   text("entity_code"),      // human-readable code (SOL-2026-0001)
+  entityCode:   text("entity_code"),      // human-readable code (SOL-0001)
   oldState:     text("old_state"),        // JSON of relevant old values
   newState:     text("new_state"),        // JSON of relevant new values
   reason:       text("reason"),           // mandatory for rejections/postponements/cancellations

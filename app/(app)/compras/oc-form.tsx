@@ -478,19 +478,19 @@ export function OcForm({
         )}
 
         {/* Submit */}
-        <div className="flex items-center gap-3 pt-2 border-t border-[var(--color-border)]">
-          <SubmitButton
-            label={`Crear OC (${includedItems.length} ítem${includedItems.length !== 1 ? "s" : ""})`}
-            loadingLabel="Creando..."
-            variant="primary"
-            disabled={includedItems.length === 0 || !supplierId || !worksiteId}
-          />
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-[var(--color-border)]">
           <Link
             href="/compras"
             className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
           >
             Cancelar
           </Link>
+          <SubmitButton
+            label={`Crear OC (${includedItems.length} ítem${includedItems.length !== 1 ? "s" : ""})`}
+            loadingLabel="Creando..."
+            variant="primary"
+            disabled={includedItems.length === 0 || !supplierId || !worksiteId}
+          />
         </div>
       </div>
 

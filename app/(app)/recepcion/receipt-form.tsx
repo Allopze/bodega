@@ -216,18 +216,18 @@ export function ReceiptForm({
         )}
 
         {/* Submit */}
-        <div className="flex items-center gap-3 pt-2 border-t border-[var(--color-border)]">
-          <SubmitButton
-            label="Marcar como recibido"
-            loadingLabel="Guardando..."
-            variant="primary"
-          />
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-[var(--color-border)]">
           <Link
             href="/recepcion"
             className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
           >
             Cancelar
           </Link>
+          <SubmitButton
+            label="Marcar como recibido"
+            loadingLabel="Guardando..."
+            variant="primary"
+          />
         </div>
       </div>
 

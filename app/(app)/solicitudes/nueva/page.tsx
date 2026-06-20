@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { worksites, products, productAttributes, suppliers, productSuppliers } from "@/db/schema"
+import { eq, asc, desc } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
@@ -25,7 +25,7 @@ export default async function NuevaSolicitudPage() {
   const requestTypeOptions = visibleRequestTypeOptions(session.user.permissions, "create")
   if (requestTypeOptions.length === 0) redirect("/forbidden")
 
-  const [allWorksites, allProducts, allAttrs, allSuppliers, maxFileSizeMb] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -34,6 +34,13 @@ export default async function NuevaSolicitudPage() {
       .orderBy(asc(products.name)),
     db.select().from(productAttributes)
       .orderBy(asc(productAttributes.sortOrder)),
+    db
+      .select({
+        productId:  productSuppliers.productId,
+        supplierId: productSuppliers.supplierId,
+      })
+      .from(productSuppliers)
+      .orderBy(desc(productSuppliers.isPreferred)),
     db.select().from(suppliers)
       .where(eq(suppliers.isActive, true))
       .orderBy(asc(suppliers.name)),
@@ -50,6 +57,14 @@ export default async function NuevaSolicitudPage() {
     name:        w.name,
   }))
 
+  const activeSupplierIds = new Set(allSuppliers.map((supplier) => supplier.id))
+  const preferredSupplierByProduct = new Map<string, string>()
+  for (const row of productSupplierRows) {
+    if (activeSupplierIds.has(row.supplierId) && !preferredSupplierByProduct.has(row.productId)) {
+      preferredSupplierByProduct.set(row.productId, row.supplierId)
+    }
+  }
+
   const productOptions = allProducts.map((p) => ({
     id:             p.id,
     sku:            p.sku,
@@ -58,6 +73,7 @@ export default async function NuevaSolicitudPage() {
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
+    preferredSupplierId: preferredSupplierByProduct.get(p.id) ?? null,
     attributes:     allAttrs
       .filter((a) => a.productId === p.id)
       .map((a) => ({

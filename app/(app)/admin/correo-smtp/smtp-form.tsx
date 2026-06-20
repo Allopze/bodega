@@ -73,11 +73,17 @@ function SmtpForm({ initialSmtpConfig }: { initialSmtpConfig: SmtpConfigView | n
     else if (state.message && !state.fieldErrors) toast.error(state.message)
   }, [state])
 
-  async function handleTest(e: React.FormEvent) {
+  async function handleTest(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault()
     setTesting(true)
     setTestState(null)
-    const form = e.currentTarget as HTMLFormElement
+    const form = e.currentTarget.closest("form")
+    if (!form) {
+      setTesting(false)
+      setTestState({ ok: false, message: "No se pudo leer el formulario SMTP" })
+      toast.error("No se pudo leer el formulario SMTP")
+      return
+    }
     const formData = new FormData(form)
     try {
       const result = await testSmtpAction(null, formData)
@@ -198,8 +204,7 @@ function SmtpForm({ initialSmtpConfig }: { initialSmtpConfig: SmtpConfigView | n
         </FieldGroup>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <SubmitButton label="Guardar Configuración SMTP" loadingLabel="Guardando..." variant="primary" />
+      <div className="mt-4 flex items-center justify-end gap-3">
         <button
           type="button"
           onClick={handleTest}
@@ -208,6 +213,7 @@ function SmtpForm({ initialSmtpConfig }: { initialSmtpConfig: SmtpConfigView | n
         >
           {testing ? "Enviando..." : "Enviar correo de prueba"}
         </button>
+        <SubmitButton label="Guardar Configuración SMTP" loadingLabel="Guardando..." variant="primary" />
       </div>
 
       {testState && (

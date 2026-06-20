@@ -31,10 +31,10 @@ describe("nextCodeTx", () => {
     ])
 
     expect(codes).toEqual([
-      "SOL-2026-0001",
-      "SOL-2026-0002",
+      "SOL-0001",
+      "SOL-0002",
       "OC-2026-0001",
-      "SOL-2027-0001",
+      "SOL-0003",
     ])
   })
 

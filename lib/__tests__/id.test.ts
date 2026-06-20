@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest"
 import { generateCode, nanoid } from "@/lib/id"
 
 describe("generateCode", () => {
-  it("generates a code with prefix, year, and zero-padded sequence", () => {
-    expect(generateCode("SOL", 42, 2026)).toBe("SOL-2026-0042")
+  it("generates friendly request codes without the year segment", () => {
+    expect(generateCode("SOL", 42, 2026)).toBe("SOL-0042")
+  })
+
+  it("keeps year-qualified codes for non-request documents", () => {
+    expect(generateCode("OC", 42, 2026)).toBe("OC-2026-0042")
   })
 
   it("does not truncate sequences longer than four digits", () => {

@@ -4,7 +4,7 @@ import { db } from "@/db"
 import {
   purchaseRequests,
   worksites, products, productAttributes,
-  statusHistory, users, suppliers,
+  statusHistory, users, suppliers, productSuppliers,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -51,10 +51,17 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))
   if (!hasAccess) notFound()
 
-  const [allWorksites, allProducts, allAttrs, timelineEvents, allSuppliers, maxFileSizeMb] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
+    db
+      .select({
+        productId:  productSuppliers.productId,
+        supplierId: productSuppliers.supplierId,
+      })
+      .from(productSuppliers)
+      .orderBy(desc(productSuppliers.isPreferred)),
     db
       .select({
         id:          statusHistory.id,
@@ -86,6 +93,14 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       name:        w.name,
     }))
 
+  const activeSupplierIds = new Set(allSuppliers.map((supplier) => supplier.id))
+  const preferredSupplierByProduct = new Map<string, string>()
+  for (const row of productSupplierRows) {
+    if (activeSupplierIds.has(row.supplierId) && !preferredSupplierByProduct.has(row.productId)) {
+      preferredSupplierByProduct.set(row.productId, row.supplierId)
+    }
+  }
+
   const productOptions = allProducts.map((p) => ({
     id:             p.id,
     sku:            p.sku,
@@ -94,6 +109,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
+    preferredSupplierId: preferredSupplierByProduct.get(p.id) ?? null,
     attributes:     allAttrs
       .filter((a) => a.productId === p.id)
       .map((a) => ({ id: a.id, name: a.name, type: a.type, isRequired: a.isRequired, options: a.options })),

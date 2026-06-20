@@ -254,13 +254,7 @@ function ItemRow({ item }: { item: ApprovalItem }) {
                 <Warning size={12} /> {approveState.message}
               </p>
             )}
-            <div className="flex items-center gap-2">
-              <SubmitButton
-                label="Confirmar aprobación"
-                loadingLabel="Aprobando..."
-                variant="primary"
-                size="sm"
-              />
+            <div className="flex items-center justify-end gap-2">
               <Button
                 type="button"
                 variant="ghost"
@@ -269,6 +263,12 @@ function ItemRow({ item }: { item: ApprovalItem }) {
               >
                 Cancelar
               </Button>
+              <SubmitButton
+                label="Confirmar aprobación"
+                loadingLabel="Aprobando..."
+                variant="primary"
+                size="sm"
+              />
             </div>
           </form>
         </div>
@@ -332,16 +332,16 @@ function ReasonForm({
             <Warning size={12} /> {state.message}
           </p>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Cancelar
+          </Button>
           <SubmitButton
             label={submitLabel}
             loadingLabel={submitLoadingLabel}
             variant="destructive"
             size="sm"
           />
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-            Cancelar
-          </Button>
         </div>
       </form>
     </div>

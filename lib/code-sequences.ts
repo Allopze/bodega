@@ -21,8 +21,9 @@ type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0]
  * is no longer written by the application hot path.
  */
 export async function nextCodeTx(tx: Tx, prefix: string, year = new Date().getFullYear()) {
+  const sequenceYear = prefix === "SOL" ? 0 : year
   const result = await tx.execute<{ next_document_code: number }>(
-    sql`SELECT next_document_code(${prefix}, ${year})`
+    sql`SELECT next_document_code(${prefix}, ${sequenceYear})`
   )
   // Normalize: drizzle PGlite adapter returns { rows: [...] } while
   // the postgres.js driver returns an array. Handle both.
@@ -32,7 +33,7 @@ export async function nextCodeTx(tx: Tx, prefix: string, year = new Date().getFu
   const row = rows?.[0]
 
   if (!row) {
-    throw new Error(`Failed to reserve next code for ${prefix}-${year}`)
+    throw new Error(`Failed to reserve next code for ${prefix}-${sequenceYear}`)
   }
   return generateCode(prefix, row.next_document_code, year)
 }

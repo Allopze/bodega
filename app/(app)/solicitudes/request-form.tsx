@@ -284,6 +284,8 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
         productName:     prod.name,
         unitOfMeasure:   prod.unitOfMeasure,
         isEpp:           prod.isEpp,
+        suggestedSupplierId: prod.isEpp ? (prod.preferredSupplierId ?? "") : "",
+        supplierHint:        "",
         attributes:      attrs,
         showAttrs:       attrs.length > 0,
       }
@@ -301,6 +303,8 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
         productName:     trimmed,
         isEpp:           false,
         unitOfMeasure:   i.unitOfMeasure || "unidad",
+        suggestedSupplierId: "",
+        supplierHint:    "",
         attributes:      [],
         showAttrs:       false,
       },
@@ -309,7 +313,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
 
   const clearProduct = useCallback((key: string) => {
     setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, attributes: [], showAttrs: false }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false }
     ))
   }, [])
 
@@ -726,4 +730,3 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
     </div>
   )
 }
-

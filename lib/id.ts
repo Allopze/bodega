@@ -9,8 +9,11 @@ export function nanoid(size = 21): string {
   return id
 }
 
-/** Generate a human-readable code like "SOL-2026-0042" */
+/** Generate a human-readable code like "SOL-0042" or "OC-2026-0042". */
 export function generateCode(prefix: string, seq: number, year?: number): string {
+  if (prefix === "SOL") {
+    return `${prefix}-${String(seq).padStart(4, "0")}`
+  }
   const y = year ?? new Date().getFullYear()
   return `${prefix}-${y}-${String(seq).padStart(4, "0")}`
 }
