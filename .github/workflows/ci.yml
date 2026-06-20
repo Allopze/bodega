@@ -49,6 +49,9 @@ jobs:
       - name: Security audit — npm audit
         run: npm audit --audit-level=high || echo "npm audit found issues (non-blocking)"
 
+      - name: Verify Drizzle migrations
+        run: npm run db:migrate
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -97,6 +100,17 @@ jobs:
           target: prod
           load: true
           tags: bodega:ci-test
+
+      - name: Trivy container scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'bodega:ci-test'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
 
       - name: Smoke test — verify image starts and responds
         run: |

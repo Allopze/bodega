@@ -27,7 +27,7 @@ function makeSession(overrides: Partial<Session["user"]> = {}): Session {
       id: "user-1",
       email: "op@test.cl",
       name: "Operador",
-      roles: ["secretaria"],
+      roles: ["solicitante_faena"],
       permissions: ["warehouse:register_movement"],
       worksiteIds: ["ws-1"],
       primaryWorksiteId: "ws-1",
@@ -67,7 +67,8 @@ describe("registerWorkerDeliveryAction", () => {
     const fd = makeFormData({ workerId: "" })
     const res = await registerWorkerDeliveryAction({ ok: false, message: "" }, fd)
     expect(res.ok).toBe(false)
-    expect(res.message).toContain("trabajador")
+    expect(res.message).toContain("Revisa los datos")
+    expect(res.fieldErrors?.workerId).toBeDefined()
     expect(mockRegisterWorker).not.toHaveBeenCalled()
   })
 
@@ -76,7 +77,8 @@ describe("registerWorkerDeliveryAction", () => {
     const fd = makeFormData({ quantity: "0" })
     const res = await registerWorkerDeliveryAction({ ok: false, message: "" }, fd)
     expect(res.ok).toBe(false)
-    expect(res.message).toContain("cantidad")
+    expect(res.message).toContain("Revisa los datos")
+    expect(res.fieldErrors?.quantity).toBeDefined()
     expect(mockRegisterWorker).not.toHaveBeenCalled()
   })
 

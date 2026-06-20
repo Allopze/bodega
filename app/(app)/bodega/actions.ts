@@ -5,12 +5,18 @@ import { db } from "@/db"
 import { deliveryItems, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
 import { applyMovement } from "@/lib/services/stock"
 import { dispatchSchema, setMinStockSchema, returnStockSchema, type ActionState }  from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 
 const REVALIDATE = "/bodega"
+
+function serviceWorksiteScope(session: Awaited<ReturnType<typeof requirePermission>>): string[] | "all" {
+  const scope = resolveWorksiteScope(session)
+  return scope.mode === "all" ? "all" : scope.ids
+}
 
 // ── Dispatch from worksite stock to worker ───────────────────────────────────
 
@@ -92,7 +98,7 @@ export async function dispatchAction(
       deliveredBy: session.user.id,
       userEmail: session.user.email ?? undefined,
       notes: notes || null,
-    })
+    }, serviceWorksiteScope(session))
 
     revalidatePath(REVALIDATE)
     revalidatePath("/entregas")

@@ -10,10 +10,24 @@ import type { Session } from "next-auth"
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRegisterReceipt = vi.hoisted(() => vi.fn())
+const mockRedirect = vi.hoisted(() => vi.fn(() => ({ ok: true, message: "redirect" })))
+const mockDbState = vi.hoisted(() => ({
+  order: { id: "oc-1", worksiteId: "ws-1" } as { id: string; worksiteId: string } | undefined,
+}))
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("@/lib/services/receiving", () => ({ registerReceipt: mockRegisterReceipt }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/navigation", () => ({ redirect: mockRedirect }))
+vi.mock("@/db", () => ({
+  db: {
+    query: {
+      purchaseOrders: {
+        findFirst: vi.fn(() => mockDbState.order),
+      },
+    },
+  },
+}))
 
 import { registerReceiptAction } from "@/app/(app)/recepcion/actions"
 
@@ -50,7 +64,10 @@ function makeFormData(overrides: Record<string, string> = {}): FormData {
 }
 
 describe("registerReceiptAction", () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDbState.order = { id: "oc-1", worksiteId: "ws-1" }
+  })
 
   it("returns error if user lacks permission", async () => {
     mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: [] }))
@@ -90,8 +107,9 @@ describe("registerReceiptAction", () => {
     mockAuthFn.mockResolvedValueOnce(makeSession())
     mockRegisterReceipt.mockResolvedValueOnce("rec-1")
     const res = await registerReceiptAction({ ok: false, message: "" }, makeFormData())
-    expect(res.ok).toBe(true)
-    expect(mockRegisterReceipt).toHaveBeenCalledOnce()
+    expect(res).toBeUndefined()
+    expect(mockRegisterReceipt).toHaveBeenCalledWith(expect.any(Object), "all")
+    expect(mockRedirect).toHaveBeenCalledWith("/recepcion/rec-1")
   })
 
   it("checks faena-stage permission vs office", async () => {

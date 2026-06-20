@@ -2,14 +2,12 @@
 
 import { useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose,
-} from "@/components/ui/dialog"
 import { toast } from "@/lib/toast"
 import { saveActionPlanItemAction, deleteActionPlanItemAction } from "@/app/(app)/prevencion/actions"
 import { Badge } from "@/components/ui/badge"
@@ -236,25 +234,16 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
         </div>
       )}
 
-      {/* Delete confirmation dialog */}
-      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Eliminar ítem</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-(--color-text-muted) py-2">
-            ¿Confirmas que deseas eliminar este ítem del plan de acción? Esta acción no se puede deshacer.
-          </p>
-          <div className="flex gap-2 justify-end">
-            <DialogClose asChild>
-              <Button variant="ghost" disabled={isPending}>Cancelar</Button>
-            </DialogClose>
-            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isPending}>
-              {isPending ? "Eliminando…" : "Eliminar"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+        title="Eliminar ítem"
+        description="Este ítem del plan de acción será eliminado. Esta acción no se puede deshacer."
+        confirmLabel="Eliminar"
+        variant="destructive"
+        loading={isPending}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   )
 }

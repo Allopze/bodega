@@ -6,11 +6,17 @@ import { db } from "@/db"
 import { purchaseOrders } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { registerReceipt } from "@/lib/services/receiving"
 import { receiptSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 
 const REVALIDATE = "/recepcion"
+
+function serviceWorksiteScope(session: Awaited<ReturnType<typeof requirePermission>>): string[] | "all" {
+  const scope = resolveWorksiteScope(session)
+  return scope.mode === "all" ? "all" : scope.ids
+}
 
 export async function registerReceiptAction(
   _prev: ActionState,
@@ -88,7 +94,7 @@ export async function registerReceiptAction(
       dispatchGuideNo: dispatchGuideNo || null,
       notes:           notes || null,
       items:           nonZeroItems,
-    })
+    }, serviceWorksiteScope(session))
 
     revalidatePath(REVALIDATE)
     revalidatePath("/compras")

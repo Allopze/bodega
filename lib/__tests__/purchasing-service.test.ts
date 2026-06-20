@@ -38,6 +38,7 @@ import {
 
 const now = new Date().toISOString()
 const userId = "u-purch"
+let lifecycleOrderId = ""
 
 describe("Purchasing service — edge cases", () => {
   beforeAll(async () => {
@@ -107,7 +108,7 @@ describe("Purchasing service — edge cases", () => {
         createdAt: now, updatedAt: now,
       })
 
-      const orderId = await createOrder({
+      lifecycleOrderId = await createOrder({
         worksiteId: "ws-purch",
         supplierId: "sup-purch",
         createdBy: userId,
@@ -122,7 +123,7 @@ describe("Purchasing service — edge cases", () => {
       })
 
       const order = await inMemoryDb.query.purchaseOrders.findFirst({
-        where: eq(schema.purchaseOrders.id, orderId),
+        where: eq(schema.purchaseOrders.id, lifecycleOrderId),
       })
       expect(order).toBeDefined()
       expect(order?.status).toBe("draft")
@@ -139,15 +140,10 @@ describe("Purchasing service — edge cases", () => {
 
     it("issueOrder transitions draft → issued", async () => {
       // Find the order we just created
-      const orders = await inMemoryDb.query.purchaseOrders.findMany({
-        where: eq(schema.purchaseOrders.status, "draft"),
-      })
-      const orderId = orders[orders.length - 1]!.id
-
-      await issueOrder(orderId, userId)
+      await issueOrder(lifecycleOrderId, userId)
 
       const order = await inMemoryDb.query.purchaseOrders.findFirst({
-        where: eq(schema.purchaseOrders.id, orderId),
+        where: eq(schema.purchaseOrders.id, lifecycleOrderId),
       })
       expect(order?.status).toBe("issued")
       expect(order?.issuedAt).toBeTruthy()
@@ -164,6 +160,37 @@ describe("Purchasing service — edge cases", () => {
 
     it("issueOrder throws if order does not exist", async () => {
       await expect(issueOrder("nonexistent", userId)).rejects.toThrow("not found")
+    })
+
+    it("issueOrder rejects orders outside the provided worksite scope", async () => {
+      const requestId = "req-issue-scope"
+      const requestItemId = "item-issue-scope"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-ISSUE-SCOPE", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+
+      const orderId = await createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [{
+          requestItemId,
+          productId: "prod-purch",
+          productNameFree: null,
+          quantity: 1,
+          unitOfMeasure: "unidad",
+          unitPrice: 1000,
+        }],
+      })
+
+      await expect(issueOrder(orderId, userId, ["ws-other"])).rejects.toThrow("No tienes acceso")
     })
 
     it("markOrderSent transitions issued → sent and moves items to purchased", async () => {
@@ -195,6 +222,37 @@ describe("Purchasing service — edge cases", () => {
       const orderId = orders[orders.length - 1]!.id
 
       await expect(markOrderSent(orderId, userId)).rejects.toThrow("Cannot mark")
+    })
+
+    it("markOrderSent rejects orders outside the provided worksite scope", async () => {
+      const requestId = "req-send-scope"
+      const requestItemId = "item-send-scope"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-SEND-SCOPE", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+      const orderId = await createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [{
+          requestItemId,
+          productId: "prod-purch",
+          productNameFree: null,
+          quantity: 1,
+          unitOfMeasure: "unidad",
+          unitPrice: 1000,
+        }],
+      })
+      await issueOrder(orderId, userId)
+
+      await expect(markOrderSent(orderId, userId, ["ws-other"])).rejects.toThrow("No tienes acceso")
     })
   })
 

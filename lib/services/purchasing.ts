@@ -156,6 +156,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
 export async function issueOrder(
   orderId: string,
   userId: string,
+  worksiteIds: string[] | 'all' = 'all',
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
@@ -163,6 +164,9 @@ export async function issueOrder(
       where: eq(purchaseOrders.id, orderId),
     })
     if (!order) throw new Error(`Order ${orderId} not found`)
+    if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
+      throw new Error("No tienes acceso a esta faena")
+    }
     if (order.status !== "draft") {
       throw new Error(`Cannot issue order in state '${order.status}'`)
     }
@@ -198,6 +202,7 @@ export async function issueOrder(
 export async function markOrderSent(
   orderId: string,
   userId: string,
+  worksiteIds: string[] | 'all' = 'all',
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
@@ -205,6 +210,9 @@ export async function markOrderSent(
       where: eq(purchaseOrders.id, orderId),
     })
     if (!order) throw new Error(`Order ${orderId} not found`)
+    if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
+      throw new Error("No tienes acceso a esta faena")
+    }
     if (order.status !== "issued") {
       throw new Error(`Cannot mark order as sent from state '${order.status}'`)
     }

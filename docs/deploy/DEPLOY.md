@@ -191,10 +191,14 @@ storage/
 
 | Job | Descripción | Frecuencia recomendada |
 |---|---|---|
+| `scripts/backup-pg.sh` | Backup `pg_dump -Fc` de PostgreSQL | Diaria |
+| `scripts/backup-storage.sh` | Sincroniza `storage/` a destino `rclone` externo | Diaria |
 | `cleanupOldNotifications(90)` | Limpia notificaciones leídas > 90 días | Diaria / semanal |
 | `cleanupRateLimits()` | Limpia locks expirados y contadores stale | Diaria |
 
 Ejecutar vía cron del sistema o herramienta de orquestación.
+
+Ver comandos concretos, prueba de restauración, SLO/RPO/RTO y flujo de incidentes en [RUNBOOK.md](RUNBOOK.md).
 
 ---
 

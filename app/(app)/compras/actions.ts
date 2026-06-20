@@ -6,6 +6,7 @@ import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests, suppliers, worksites } from "@/db/schema"
 import { count, eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { createOrdersBySupplier, issueOrder, markOrderSent, cancelOrder } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
 import { getUserIdsWithPermission, notifyManyUser, notifyAfterCommit } from "@/lib/services/notifications"
@@ -14,6 +15,11 @@ import { createOrderSchema, type ActionState } from "@/lib/validation/operations
 import { assertOrderAccess } from "./actions.helpers"
 
 const REVALIDATE = "/compras"
+
+function serviceWorksiteScope(session: Awaited<ReturnType<typeof requirePermission>>): string[] | "all" {
+  const scope = resolveWorksiteScope(session)
+  return scope.mode === "all" ? "all" : scope.ids
+}
 
 // ── Create OC ─────────────────────────────────────────────────────────────────
 
@@ -179,9 +185,12 @@ export async function issueOrderAction(
   if (accessError) return accessError
 
   try {
-    await issueOrder(orderId, session.user.id, {
-      userEmail: session.user.email ?? undefined,
-    })
+    await issueOrder(
+      orderId,
+      session.user.id,
+      serviceWorksiteScope(session),
+      { userEmail: session.user.email ?? undefined },
+    )
   } catch (e) {
     logger.error("[issueOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al emitir orden" }
@@ -225,9 +234,12 @@ export async function sendOrderAction(
   ])
 
   try {
-    await markOrderSent(orderId, session.user.id, {
-      userEmail: session.user.email ?? undefined,
-    })
+    await markOrderSent(
+      orderId,
+      session.user.id,
+      serviceWorksiteScope(session),
+      { userEmail: session.user.email ?? undefined },
+    )
   } catch (e) {
     logger.error("[sendOrderAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al enviar orden" }
@@ -328,9 +340,13 @@ export async function cancelOrderAction(
   if (accessError) return accessError
 
   try {
-    await cancelOrder(orderId, session.user.id, reason, {
-      userEmail: session.user.email ?? undefined,
-    })
+    await cancelOrder(
+      orderId,
+      session.user.id,
+      reason,
+      serviceWorksiteScope(session),
+      { userEmail: session.user.email ?? undefined },
+    )
     revalidatePath(REVALIDATE)
     revalidatePath(`/compras/${orderId}`)
     return { ok: true, message: "Orden de compra anulada correctamente" }

@@ -359,6 +359,13 @@ export function createRequestService(config: RequestModuleConfig) {
         throw new Error("La solicitud no está pendiente de aprobación")
       }
 
+      // Security audit: scope-defensive check — reject if caller's
+      // worksite scope doesn't cover this request's worksite.
+      const scope = input.worksiteIds ?? "all"
+      if (scope !== "all" && !scope.includes(request.worksiteId)) {
+        throw new Error("No tienes acceso a esta faena")
+      }
+
       const [quotation] = await tx
         .select()
         .from(qt)

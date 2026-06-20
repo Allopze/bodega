@@ -85,6 +85,8 @@ export interface SelectQuotationInput {
   userId:      string
   userEmail?:  string
   roleContext?: string
+  /** Scope-defensive: if set, only allows access to matching worksites. */
+  worksiteIds?: string[] | "all"
 }
 
 /** Typed service functions expected by the action factory. */

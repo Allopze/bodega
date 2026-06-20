@@ -154,8 +154,12 @@ describe("cancelOrderAction", () => {
     const res = await cancelOrderAction({ ok: false, message: "" }, formData)
     expect(res.ok).toBe(true)
     expect(res.message).toContain("anulada correctamente")
-    expect(mockCancelOrder).toHaveBeenCalledWith("oc-123", "usr-admin", "OC obsoleta", {
-      userEmail: "admin@chome.cl",
-    })
+    expect(mockCancelOrder).toHaveBeenCalledWith(
+      "oc-123",
+      "usr-admin",
+      "OC obsoleta",
+      ["ws-1"],
+      { userEmail: "admin@chome.cl" },
+    )
   })
 })

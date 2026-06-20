@@ -8,6 +8,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
@@ -111,6 +112,7 @@ function InvoiceItem({
 }) {
   const [state, action] = useActionState<ActionState, FormData>(deleteInvoiceAction, INITIAL_STATE)
   const [pending, startTransition] = React.useTransition()
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -120,13 +122,14 @@ function InvoiceItem({
     }
   }, [state])
 
-  function handleDelete(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    if (!confirm(`¿Eliminar la factura ${invoice.invoiceNumber}? Esta acción no se puede deshacer.`)) return
-    const formData = new FormData(e.currentTarget)
+  function handleConfirmDelete() {
+    const formData = new FormData()
+    formData.set("invoiceId", invoice.id)
+    formData.set("purchaseOrderId", purchaseOrderId)
     startTransition(() => {
       action(formData)
     })
+    setConfirmOpen(false)
   }
 
   return (
@@ -149,18 +152,27 @@ function InvoiceItem({
         </div>
       </div>
       {canManage && (
-        <form onSubmit={handleDelete}>
-          <input type="hidden" name="invoiceId" value={invoice.id} />
-          <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
+        <>
           <button
-            type="submit"
+            type="button"
             disabled={pending}
             aria-label={`Eliminar factura ${invoice.invoiceNumber}`}
+            onClick={() => setConfirmOpen(true)}
             className="shrink-0 p-1 rounded text-text-subtle hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-50)] transition-colors disabled:opacity-40"
           >
             <Trash size={14} />
           </button>
-        </form>
+          <ConfirmDialog
+            open={confirmOpen}
+            onOpenChange={setConfirmOpen}
+            title="Eliminar factura"
+            description={`La factura ${invoice.invoiceNumber} será eliminada permanentemente. Esta acción no se puede deshacer.`}
+            confirmLabel="Eliminar"
+            variant="destructive"
+            loading={pending}
+            onConfirm={handleConfirmDelete}
+          />
+        </>
       )}
     </li>
   )

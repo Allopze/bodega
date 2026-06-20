@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm"
 import type { z } from "zod"
 
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { purchaseRequests } from "@/db/schema"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
@@ -318,6 +319,7 @@ export function createRequestActions(config: RequestActionsConfig) {
         userId:      session.user.id,
         userEmail:   session.user.email ?? undefined,
         roleContext,
+        worksiteIds: isGlobalRole(session) ? "all" : visibleWorksiteIds(session),
       })
 
       // Notify requester (fire-and-forget)

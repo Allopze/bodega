@@ -6,6 +6,7 @@ import {
   FilePdf, Trash, CheckCircle, Upload, CurrencyCircleDollar,
 } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
@@ -76,6 +77,7 @@ export function QuotationPanel({
 
   // Delete quotation
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
+  const deleteFormRef = React.useRef<HTMLFormElement>(null)
   const [_deleteState, deleteAction, deletePending] = useActionState(
     async (prev: ActionState, formData: FormData): Promise<ActionState> => {
       const res = await deleteQuotationAction(prev, formData)
@@ -279,29 +281,20 @@ export function QuotationPanel({
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirm dialog */}
-      <Dialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>¿Eliminar cotización?</DialogTitle>
-            <DialogDescription>
-              Esta acción no se puede deshacer. El archivo será eliminado permanentemente.
-            </DialogDescription>
-          </DialogHeader>
-          <form action={deleteAction}>
-            <input type="hidden" name="quotationId" value={deleteId ?? ""} />
-            <input type="hidden" name="requestId" value={requestId} />
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="secondary" size="sm">Cancelar</Button>
-              </DialogClose>
-              <Button type="submit" variant="destructive" size="sm" disabled={deletePending}>
-                {deletePending ? "Eliminando…" : "Eliminar"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <form ref={deleteFormRef} action={deleteAction} className="hidden">
+        <input type="hidden" name="quotationId" value={deleteId ?? ""} />
+        <input type="hidden" name="requestId" value={requestId} />
+      </form>
+      <ConfirmDialog
+        open={!!deleteId}
+        onOpenChange={(open) => { if (!open) setDeleteId(null) }}
+        title="Eliminar cotización"
+        description="El archivo será eliminado permanentemente. Esta acción no se puede deshacer."
+        confirmLabel="Eliminar"
+        variant="destructive"
+        loading={deletePending}
+        onConfirm={() => deleteFormRef.current?.requestSubmit()}
+      />
 
       {/* Approve (select) confirm dialog */}
       <Dialog open={!!selectId} onOpenChange={(open) => { if (!open) setSelectId(null) }}>
