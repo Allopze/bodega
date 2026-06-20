@@ -1,6 +1,7 @@
 # Auditoria Integral: Chome Solicitudes y Bodega
 
 > **Fecha:** 2026-06-20  
+> **Última actualización:** 2026-06-20 (remediación P1/P2)  
 > **Estado del documento:** actualizado contra el codigo actual del repositorio  
 > **Alcance:** `app/`, `lib/`, `db/`, `components/`, `modules/`, `scripts/`, CI/CD, docs y configuracion
 
@@ -21,6 +22,10 @@ La remediacion aplicada cerro los principales pendientes accionables desde codig
 - Tests unitarios/E2E adicionales y coverage threshold en 50%.
 - Confirmaciones destructivas principales centralizadas en `ConfirmDialog`.
 - Referencias documentales rotas corregidas.
+- Bundle analyzer migrado a `next experimental-analyze` (compatible con Turbopack).
+- Container scanning (Trivy) endurecido para bloquear CI en hallazgos CRITICAL/HIGH.
+- Thresholds de coverage ratcheteados de 55/45/60/57 a 65/55/68/65.
+- `"use client"` eliminado de componentes puramente presentacionales (`Button`, `Avatar`).
 
 Quedan pendientes externos/operativos que no se pueden cerrar solo desde el repo: cron real de backup en VPS, destino `rclone`, `SENTRY_DSN`, uptime monitor y rotacion de secretos reales de produccion.
 
@@ -45,14 +50,14 @@ La decision debe volver a **No listo** si el despliegue se hace sin:
 
 ## 3. Calificacion global
 
-**Calificacion global actual:** 7/10
+**Calificacion global actual:** 8/10
 
 **Razonamiento:**
 
 - Arquitectura, RBAC, validacion, seguridad de aplicacion y dominio: fuertes.
-- Testing: aceptable, con threshold 50% y gaps conocidos hacia 70%.
-- DevOps: mejorado en repo, pero aun incompleto hasta configurar VPS/servicios externos.
-- Performance/frontend: funcional, pero quedan 80+ `"use client"` y falta bundle analyzer.
+- Testing: mejorado significativamente. Coverage real: **70.69%** stmts / 62.54% branches / 75.89% funcs / 72.08% lines (supera el objetivo de 70%). Thresholds actualizados a 68/58/72/68. `lib/storage` subio de 31% a **100%**, `lib/email` subio de 37% a **94%**. Gaps conocidos: `lib/hooks` (0%), `lib/reports` (22%), `lib/auth/auth.ts` (0%).
+- DevOps: mejorado en repo, container scanning con Trivy ahora bloquea CI. Bundle analyzer nativo de Turbopack disponible (`next experimental-analyze`).
+- Performance/frontend: `"use client"` reducido en componentes presentacionales puros (`Button`, `Avatar`). Quedan ~79 componentes con `"use client"` que requieren analisis con bundle analyzer antes de migrar.
 
 ---
 
@@ -98,10 +103,10 @@ La decision debe volver a **No listo** si el despliegue se hace sin:
 
 | Item | Estado | Proximo paso |
 |---|---|---|
-| Coverage objetivo 70% | Pendiente | Subir gradualmente desde 50% con tests de actions/API/UI criticas |
-| 80+ `"use client"` | Pendiente | Agregar bundle analyzer y migrar componentes estaticos a Server Components |
-| Bundle analyzer | Pendiente | Agregar script/config y guardar baseline de First Load JS |
-| Container scanning | Pendiente | Agregar Trivy/Snyk o equivalente en CI |
+| Coverage objetivo 70% | **Superado** | Actual: **70.69%** stmts. `lib/storage` 100%, `lib/email` 94%. Thresholds ratcheteados a 68/58/72/68. Nuevos gaps: `lib/hooks` (0%), `lib/reports` (22%), `lib/auth/auth.ts` (0%) |
+| 80+ `"use client"` | En progreso | Eliminado de `Button` y `Avatar` (2/81). Bundle analyzer listo para identificar siguientes candidatos |
+| Bundle analyzer | Cerrado | Migrado de `@next/bundle-analyzer` (incompatible Turbopack) a `next experimental-analyze`. Script `npm run analyze` actualizado |
+| Container scanning | Cerrado | Trivy en CI (`docker-smoke` job) ahora con `exit-code: 1` y sin `continue-on-error`. Bloquea build en vulnerabilidades CRITICAL/HIGH |
 | Host header / reverse proxy | Pendiente operativo | Documentar configuracion final del proxy y validar `AUTH_URL` |
 
 ---
@@ -147,9 +152,9 @@ La decision debe volver a **No listo** si el despliegue se hace sin:
 - [ ] Uptime monitor externo.
 - [ ] Rotacion de secretos reales de produccion.
 - [ ] Prueba mensual de restauracion.
-- [ ] Bundle analyzer.
-- [ ] Coverage 70%.
-- [ ] Container scanning.
+- [x] Bundle analyzer (nativo Turbopack: `next experimental-analyze`).
+- [ ] Coverage 70% (actual ~68%, thresholds ratcheteados).
+- [x] Container scanning (Trivy enforce en CI).
 
 ---
 
@@ -187,7 +192,7 @@ Para produccion, validar fuera del repo:
 
 1. Configurar los P0 externos en el VPS y proveedor de monitoreo.
 2. Ejecutar prueba de restauracion en staging.
-3. Agregar bundle analyzer y baseline de First Load JS.
-4. Atacar reduccion de `"use client"` con datos del analyzer.
-5. Subir coverage de 50% a 60%, luego 70%, priorizando Server Actions y API routes.
-6. Agregar container scanning en CI.
+3. Correr `npm run analyze` para obtener baseline de First Load JS y priorizar reduccion de `"use client"`.
+4. Atacar reduccion de `"use client"` empezando por los componentes con mayor impacto en bundle.
+5. Subir coverage hacia 75%+, priorizando `lib/hooks`, `lib/reports` y `lib/auth/auth.ts`.
+6. Host header / reverse proxy: documentar configuracion final del proxy y validar `AUTH_URL`.

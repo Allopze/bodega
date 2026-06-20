@@ -10,16 +10,31 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { redirect } from "next/navigation"
 import type { Session } from "next-auth"
+
+vi.mock("next/navigation", () => ({
+  redirect: vi.fn(() => { throw new Error("NEXT_REDIRECT") }),
+}))
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockCreateOrders = vi.hoisted(() => vi.fn())
+const mockFindManyItems = vi.hoisted(() => vi.fn())
+const mockFindManySuppliers = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("@/lib/services/purchasing", () => ({
   createOrdersBySupplier: mockCreateOrders,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("@/db", () => ({
+  db: {
+    query: {
+      purchaseRequestItems: { findMany: mockFindManyItems },
+      suppliers: { findMany: mockFindManySuppliers },
+    },
+  },
+}))
 
 import { createOrderAction } from "@/app/(app)/compras/actions"
 
@@ -56,7 +71,19 @@ function makeFormData(overrides: Record<string, string> = {}): FormData {
 }
 
 describe("createOrderAction", () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(redirect).mockImplementation(() => { throw new Error("NEXT_REDIRECT") })
+    // Default: items and suppliers found
+    mockFindManyItems.mockResolvedValue([{
+      id: "ri-1",
+      status: "pending_purchase",
+      quantity: 10,
+      requestId: "req-1",
+      request: { worksiteId: "ws-1" },
+    }])
+    mockFindManySuppliers.mockResolvedValue([{ id: "sup-1", isActive: true }])
+  })
 
   it("returns error if permission denied", async () => {
     mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: [] }))
@@ -95,8 +122,7 @@ describe("createOrderAction", () => {
   it("creates order successfully on happy path", async () => {
     mockAuthFn.mockResolvedValueOnce(makeSession())
     mockCreateOrders.mockResolvedValueOnce(["oc-1"])
-    const res = await createOrderAction({ ok: false, message: "" }, makeFormData())
-    expect(res.ok).toBe(true)
+    await expect(createOrderAction({ ok: false, message: "" }, makeFormData())).rejects.toThrow("NEXT_REDIRECT")
     expect(mockCreateOrders).toHaveBeenCalledOnce()
   })
 })

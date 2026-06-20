@@ -167,7 +167,7 @@ export async function deleteInvoiceAction(
   }
 
   try {
-    const { filePath } = await deletePurchaseOrderInvoice(invoiceId, session.user.id, {
+    const { filePath } = await deletePurchaseOrderInvoice(invoiceId, session.user.id, "all", {
       userEmail: session.user.email ?? undefined,
     })
 

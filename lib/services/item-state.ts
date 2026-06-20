@@ -166,7 +166,7 @@ export async function approveItem(
     await tx.insert(approvalDecisions).values({
       id:            nanoid(),
       requestItemId: itemId,
-      requestId:     item.requestId,
+      requestId:     locked.requestId,
       type:          opts?.modifiedQty !== undefined ? "modify" : "approve",
       decidedBy:     userId,
       modifiedQty:   opts?.modifiedQty ?? null,
@@ -176,7 +176,7 @@ export async function approveItem(
     await recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
-      fromStatus: item.status,
+      fromStatus: locked.status,
       toStatus:   "approved",
       changedBy:  userId,
     }, tx)
@@ -186,11 +186,11 @@ export async function approveItem(
       action:     "status_change",
       entityType: "request_item",
       entityId:   itemId,
-      oldState:   { status: item.status },
+      oldState:   { status: locked.status },
       newState:   { status: "approved", modifiedQty: opts?.modifiedQty },
     }, tx)
 
-    await rollupRequestStatus(item.requestId, tx)
+    await rollupRequestStatus(locked.requestId, tx)
   })
 }
 

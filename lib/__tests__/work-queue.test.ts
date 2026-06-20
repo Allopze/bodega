@@ -1,240 +1,308 @@
-import { describe, expect, it } from "vitest"
+/**
+ * Unit tests for work-queue pure functions.
+ */
+
+import { describe, it, expect } from "vitest"
+
 import {
-  buildRequestProgress,
   buildWorkTasks,
+  buildRequestProgress,
+  requestStatusLabel,
   itemStatusLabel,
+  itemStageLabel,
   requestNextAction,
-  type WorkActor,
-  type WorkQueueSnapshot,
 } from "@/lib/work-queue"
+import type { WorkActor, WorkQueueSnapshot } from "@/lib/work-queue"
 
-const baseActor: WorkActor = {
-  userId:      "user-1",
-  permissions: [],
-  worksiteIds: ["ws-1"],
-  isGlobal:    false,
-}
-
-const snapshot: WorkQueueSnapshot = {
-  requests: [
-    {
-      id:           "req-1",
-      code:         "SOL-1",
-      worksiteId:   "ws-1",
-      worksiteName: "Faena Norte",
-      requesterId:  "user-1",
-      status:       "in_purchasing",
-      urgency:      "high",
-      createdAt:    "2026-01-01T10:00:00.000Z",
-      submittedAt:  "2026-01-02T10:00:00.000Z",
-      itemCount:    2,
-      itemStatuses: ["approved", "pending_purchase"],
-    },
-    {
-      id:           "req-2",
-      code:         "SOL-2",
-      worksiteId:   "ws-2",
-      worksiteName: "Faena Sur",
-      requesterId:  "user-2",
-      status:       "in_review",
-      urgency:      "critical",
-      createdAt:    "2026-01-01T09:00:00.000Z",
-      submittedAt:  "2026-01-02T09:00:00.000Z",
-      itemCount:    1,
-      itemStatuses: ["requested"],
-    },
-  ],
-  items: [
-    {
-      id:            "item-1",
-      requestId:     "req-1",
-      requestCode:   "SOL-1",
-      worksiteId:    "ws-1",
-      worksiteName:  "Faena Norte",
-      requesterId:   "user-1",
-      productName:   "Guantes",
-      status:        "approved",
-      urgency:       "high",
-      createdAt:     "2026-01-02T10:00:00.000Z",
-      quantity:      5,
-      unitOfMeasure: "par",
-    },
-    {
-      id:            "item-2",
-      requestId:     "req-2",
-      requestCode:   "SOL-2",
-      worksiteId:    "ws-2",
-      worksiteName:  "Faena Sur",
-      requesterId:   "user-2",
-      productName:   "Casco",
-      status:        "requested",
-      urgency:       "critical",
-      createdAt:     "2026-01-01T09:00:00.000Z",
-      quantity:      1,
-      unitOfMeasure: "unidad",
-    },
-    {
-      id:            "item-3",
-      requestId:     "req-1",
-      requestCode:   "SOL-1",
-      worksiteId:    "ws-1",
-      worksiteName:  "Faena Norte",
-      requesterId:   "user-1",
-      productName:   "Arnés",
-      status:        "received",
-      urgency:       "normal",
-      createdAt:     "2026-01-03T10:00:00.000Z",
-      quantity:      2,
-      unitOfMeasure: "unidad",
-      hasStock:      true,
-    },
-  ],
-  orders: [
-    {
-      id:              "oc-1",
-      code:            "OC-1",
-      worksiteId:      "ws-1",
-      worksiteName:    "Faena Norte",
-      supplierName:    "Proveedor A",
-      status:          "sent",
-      createdAt:       "2026-01-04T10:00:00.000Z",
-      issuedAt:        "2026-01-05T10:00:00.000Z",
-      sentAt:          "2026-01-06T10:00:00.000Z",
-      itemCount:       2,
-      totalAmount:     10000,
-    },
-    {
-      id:              "oc-2",
-      code:            "OC-2",
-      worksiteId:      "ws-1",
-      worksiteName:    "Faena Norte",
-      supplierName:    "Proveedor B",
-      status:          "received",
-      createdAt:       "2026-01-07T10:00:00.000Z",
-      issuedAt:        "2026-01-08T10:00:00.000Z",
-      sentAt:          "2026-01-09T10:00:00.000Z",
-      itemCount:       1,
-      totalAmount:     5000,
-    },
-  ],
-}
-
-describe("buildWorkTasks", () => {
-  it("shows a scoped requester only their visible active requests", () => {
-    const tasks = buildWorkTasks(
-      { ...baseActor, permissions: ["requests:view_own"] },
-      snapshot,
-    )
-
-    expect(tasks).toHaveLength(1)
-    expect(tasks[0]).toMatchObject({
-      type: "request_followup",
-      href: "/solicitudes/req-1",
-    })
+describe("requestStatusLabel", () => {
+  it("returns correct labels", () => {
+    expect(requestStatusLabel("draft")).toBe("Borrador")
+    expect(requestStatusLabel("submitted")).toBe("Esperando revisión")
+    expect(requestStatusLabel("approved")).toBe("Aprobada para compra")
+    expect(requestStatusLabel("cancelled")).toBe("Cancelada")
+    expect(requestStatusLabel("unknown")).toBe("unknown")
   })
-
-  it("builds approval tasks for requested items in visible worksites", () => {
-    const tasks = buildWorkTasks(
-      {
-        ...baseActor,
-        permissions: ["approvals:approve"],
-        isGlobal: true,
-        worksiteIds: [],
-      },
-      snapshot,
-    )
-
-    expect(tasks).toEqual([
-      expect.objectContaining({
-        type: "approval",
-        href: "/aprobaciones?solicitud=req-2",
-        priority: "critical",
-      }),
-    ])
-  })
-
-  it("groups approved items into purchase tasks by worksite", () => {
-    const tasks = buildWorkTasks(
-      { ...baseActor, permissions: ["purchasing:create_order"] },
-      snapshot,
-    )
-
-    expect(tasks.some((task) =>
-      task.type === "purchase" && task.href === "/compras/nueva?faena=ws-1"
-    )).toBe(true)
-  })
-
-  it("shows sent orders as office arrival tasks for office staff", () => {
-    const tasks = buildWorkTasks(
-      { ...baseActor, permissions: ["receiving:register_office"] },
-      snapshot,
-    )
-
-    expect(tasks).toEqual([
-      expect.objectContaining({
-        id:   "receipt-office:oc-1",
-        type: "receipt",
-        href: "/recepcion/nueva?oc=oc-1",
-      }),
-    ])
-  })
-
-  it("does not show a sent order as a faena task before office reception", () => {
-    const tasks = buildWorkTasks(
-      { ...baseActor, permissions: ["receiving:register_faena"] },
-      snapshot,
-    )
-
-    // oc-1 is only "sent" (nothing at office yet) → no faena task.
-    expect(tasks).toEqual([])
-  })
-
-  it("shows received items with stock as warehouse delivery tasks", () => {
-    const tasks = buildWorkTasks(
-      { ...baseActor, permissions: ["warehouse:register_movement"] },
-      snapshot,
-    )
-
-    expect(tasks).toEqual([
-      expect.objectContaining({
-        type: "warehouse_delivery",
-        href: "/entregas?faena=ws-1&item=item-3",
-      }),
-    ])
-  })
-
 })
 
-describe("request progress labels", () => {
-  it("maps technical item statuses to user-facing labels", () => {
-    expect(itemStatusLabel("pending_purchase")).toBe("Aprobado para compra")
-    expect(itemStatusLabel("in_purchase_order")).toBe("Incluido en OC")
+describe("itemStatusLabel", () => {
+  it("returns correct labels", () => {
+    expect(itemStatusLabel("draft")).toBe("Borrador")
+    expect(itemStatusLabel("requested")).toBe("Esperando aprobación")
+    expect(itemStatusLabel("received")).toBe("Recibido")
+    expect(itemStatusLabel("delivered")).toBe("Entregado")
+    expect(itemStatusLabel("unknown")).toBe("unknown")
+  })
+})
+
+describe("itemStageLabel", () => {
+  it("maps status to correct stage", () => {
+    expect(itemStageLabel("draft")).toBe("Solicitado")
+    expect(itemStageLabel("requested")).toBe("Aprobación")
+    expect(itemStageLabel("approved")).toBe("Compra")
+    expect(itemStageLabel("pending_purchase")).toBe("Compra")
+    expect(itemStageLabel("in_purchase_order")).toBe("Compra")
+    expect(itemStageLabel("received")).toBe("Recepción")
+    expect(itemStageLabel("delivered")).toBe("Entrega")
+    expect(itemStageLabel("unknown")).toBe("Solicitado")
+  })
+})
+
+describe("requestNextAction", () => {
+  it("cancelled request", () => {
+    expect(requestNextAction("cancelled", ["draft"])).toContain("cancelada")
   })
 
-  it("returns the next human action for every main stage", () => {
-    expect(requestNextAction("submitted", ["requested"])).toBe("Aprobación debe revisar los ítems pendientes.")
-    expect(requestNextAction("approved", ["pending_purchase"])).toBe("El módulo de órdenes de compra debe generar la orden de compra.")
-    expect(requestNextAction("in_purchasing", ["purchased"])).toBe("Esperando recepción en oficina o bodega.")
-    expect(requestNextAction("in_purchasing", ["received"])).toBe("Bodega debe registrar la entrega a faena.")
-    expect(requestNextAction("closed", ["delivered"])).toBe("Pedido entregado en faena.")
+  it("no items", () => {
+    expect(requestNextAction("draft", [])).toContain("Agrega ítems")
   })
 
-  it("builds a compact progress summary", () => {
-    const progress = buildRequestProgress("in_purchasing", [
-      {
-        id: "item-1",
-        productName: "Guantes",
-        status: "purchased",
-        quantity: 5,
-        unitOfMeasure: "par",
-      },
+  it("all delivered", () => {
+    expect(requestNextAction("closed", ["delivered", "delivered"])).toContain("entregado")
+  })
+
+  it("all rejected", () => {
+    expect(requestNextAction("closed", ["rejected", "rejected"])).toContain("sin ítems aprobados")
+  })
+
+  it("has returned items", () => {
+    expect(requestNextAction("draft", ["returned"])).toContain("Corrige")
+  })
+
+  it("has draft items", () => {
+    expect(requestNextAction("draft", ["draft", "requested"])).toContain("Envía")
+  })
+
+  it("has requested items (needs approval)", () => {
+    expect(requestNextAction("submitted", ["requested"])).toContain("Aprobación")
+  })
+
+  it("has approved items (needs purchase)", () => {
+    expect(requestNextAction("approved", ["approved"])).toContain("compra")
+  })
+
+  it("has in_purchase_order items", () => {
+    expect(requestNextAction("in_purchasing", ["in_purchase_order"])).toContain("emitir")
+  })
+
+  it("has purchased items (needs receipt)", () => {
+    expect(requestNextAction("in_purchasing", ["purchased"])).toContain("recepción")
+  })
+
+  it("has received items (needs delivery)", () => {
+    expect(requestNextAction("in_purchasing", ["received"])).toContain("entrega")
+  })
+
+  it("closed request with all delivered items", () => {
+    // "delivered" hits the delivered branch first, not the closed branch
+    expect(requestNextAction("closed", ["delivered"])).toContain("entregado")
+  })
+
+  it("closed request with no active items", () => {
+    // "cancelled" status with no matching item branches hits the closed fallback
+    expect(requestNextAction("cancelled", ["postponed"])).toContain("cancelada")
+  })
+
+  it("fallback for unknown status", () => {
+    // Use a status that doesn't match any specific branch to reach the fallback
+    expect(requestNextAction("in_review", [])).toContain("Agrega")
+  })
+})
+
+describe("buildWorkTasks", () => {
+  const globalActor: WorkActor = {
+    userId: "u-1",
+    permissions: [
+      "requests:view_all",
+      "approvals:approve",
+      "purchasing:create_order",
+      "purchasing:send_order",
+      "receiving:register_office",
+      "receiving:register_faena",
+      "warehouse:register_movement",
+    ],
+    worksiteIds: [],
+    isGlobal: true,
+  }
+
+  const emptySnapshot: WorkQueueSnapshot = { requests: [], items: [], orders: [] }
+
+  it("returns empty for empty snapshot", () => {
+    expect(buildWorkTasks(globalActor, emptySnapshot)).toEqual([])
+  })
+
+  it("generates request_followup tasks", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [{
+        id: "req-1", code: "SOL-001", worksiteId: "ws-1", worksiteName: "Faena",
+        requesterId: "u-1", status: "submitted", urgency: "high",
+        createdAt: "2026-01-01", submittedAt: "2026-01-02", itemCount: 3, itemStatuses: ["requested"],
+      }],
+      items: [],
+      orders: [],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "request_followup")).toBe(true)
+  })
+
+  it("filters requests by requester when not view_all", () => {
+    const limitedActor: WorkActor = {
+      userId: "u-2",
+      permissions: ["requests:view_own"],
+      worksiteIds: ["ws-1"],
+      isGlobal: false,
+    }
+    const snapshot: WorkQueueSnapshot = {
+      requests: [{
+        id: "req-1", code: "SOL-001", worksiteId: "ws-1", worksiteName: "Faena",
+        requesterId: "u-other", status: "submitted", urgency: "normal",
+        createdAt: "2026-01-01", submittedAt: "2026-01-02", itemCount: 1, itemStatuses: [],
+      }],
+      items: [],
+      orders: [],
+    }
+    const tasks = buildWorkTasks(limitedActor, snapshot)
+    expect(tasks.some((t) => t.type === "request_followup")).toBe(false)
+  })
+
+  it("generates approval tasks for items with 'requested' status", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [{
+        id: "item-1", requestId: "req-1", requestCode: "SOL-001",
+        worksiteId: "ws-1", worksiteName: "Faena", requesterId: "u-1",
+        productName: "Casco", status: "requested", urgency: "critical",
+        createdAt: "2026-01-01", quantity: 10, unitOfMeasure: "unidad",
+      }],
+      orders: [],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "approval")).toBe(true)
+  })
+
+  it("generates purchase tasks for approved/pending_purchase items", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [{
+        id: "item-1", requestId: "req-1", requestCode: "SOL-001",
+        worksiteId: "ws-1", worksiteName: "Faena", requesterId: "u-1",
+        productName: "Casco", status: "approved", urgency: "normal",
+        createdAt: "2026-01-01", quantity: 5, unitOfMeasure: "unidad",
+      }],
+      orders: [],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "purchase")).toBe(true)
+  })
+
+  it("generates order tasks for draft OC", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [],
+      orders: [{
+        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
+        supplierName: "Proveedor", status: "draft",
+        createdAt: "2026-01-01", issuedAt: null, sentAt: null,
+        itemCount: 2, totalAmount: 10000,
+      }],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "purchase_order")).toBe(true)
+  })
+
+  it("generates receipt-office tasks for sent orders", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [],
+      orders: [{
+        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
+        supplierName: "Proveedor", status: "sent",
+        createdAt: "2026-01-01", issuedAt: null, sentAt: "2026-01-03",
+        itemCount: 2, totalAmount: 10000,
+      }],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("oficina"))).toBe(true)
+  })
+
+  it("generates delivery tasks for received items with stock", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [{
+        id: "item-1", requestId: "req-1", requestCode: "SOL-001",
+        worksiteId: "ws-1", worksiteName: "Faena", requesterId: "u-1",
+        productName: "Casco", status: "received", urgency: "normal",
+        createdAt: "2026-01-01", quantity: 10, unitOfMeasure: "unidad", hasStock: true,
+      }],
+      orders: [],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "warehouse_delivery")).toBe(true)
+  })
+
+  it("does not generate tasks for inactive statuses", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [{
+        id: "req-1", code: "SOL-001", worksiteId: "ws-1", worksiteName: "Faena",
+        requesterId: "u-1", status: "closed", urgency: "normal",
+        createdAt: "2026-01-01", submittedAt: null, itemCount: 0, itemStatuses: [],
+      }],
+      items: [],
+      orders: [],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.filter((t) => t.type === "request_followup")).toHaveLength(0)
+  })
+
+  it("restricts by worksite scope", () => {
+    const scopedActor: WorkActor = {
+      userId: "u-1",
+      permissions: ["requests:view_all"],
+      worksiteIds: ["ws-1"],
+      isGlobal: false,
+    }
+    const snapshot: WorkQueueSnapshot = {
+      requests: [{
+        id: "req-1", code: "SOL-001", worksiteId: "ws-2", worksiteName: "Other",
+        requesterId: "u-1", status: "submitted", urgency: "normal",
+        createdAt: "2026-01-01", submittedAt: "2026-01-02", itemCount: 1, itemStatuses: [],
+      }],
+      items: [],
+      orders: [],
+    }
+    const tasks = buildWorkTasks(scopedActor, snapshot)
+    expect(tasks).toHaveLength(0)
+  })
+})
+
+describe("buildRequestProgress", () => {
+  it("returns Solicitado stage for draft", () => {
+    const result = buildRequestProgress("draft", [])
+    expect(result.currentStage).toBe("Solicitado")
+    expect(result.completedStages).toEqual([])
+  })
+
+  it("returns correct stage for submitted with requested items", () => {
+    const result = buildRequestProgress("submitted", [
+      { id: "1", productName: "Casco", status: "requested", quantity: 5, unitOfMeasure: "unidad" },
     ])
+    expect(result.currentStage).toBe("Aprobación")
+    expect(result.completedStages).toContain("Solicitado")
+  })
 
-    expect(progress.currentStage).toBe("Compra")
-    expect(progress.completedStages).toEqual(["Solicitado", "Aprobación"])
-    expect(progress.items[0]).toMatchObject({
-      statusLabel: "Comprado",
-      stageLabel: "Compra",
-    })
+  it("returns Entrega stage for closed request", () => {
+    const result = buildRequestProgress("closed", [
+      { id: "1", productName: "Casco", status: "delivered", quantity: 5, unitOfMeasure: "unidad" },
+    ])
+    expect(result.currentStage).toBe("Entrega")
+    expect(result.completedStages).toContain("Recepción")
+  })
+
+  it("formats items with correct labels", () => {
+    const result = buildRequestProgress("submitted", [
+      { id: "1", productName: "Casco", status: "requested", quantity: 10, unitOfMeasure: "unidad" },
+    ])
+    const item = result.items[0]!
+    expect(item.quantityLabel).toContain("10")
+    expect(item.statusLabel).toBe("Esperando aprobación")
   })
 })

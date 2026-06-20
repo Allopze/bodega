@@ -106,11 +106,10 @@ jobs:
         with:
           image-ref: 'bodega:ci-test'
           format: 'table'
-          exit-code: '0'
+          exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
-        continue-on-error: true
 
       - name: Smoke test — verify image starts and responds
         run: |

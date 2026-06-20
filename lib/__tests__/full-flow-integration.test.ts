@@ -231,14 +231,14 @@ describe("Full procurement workflow integration", () => {
     expect(inOcReq?.items[0]?.status).toBe("in_purchase_order")
 
     // 7. Issue OC
-    await issueOrder(orderId, userId, { userEmail: "juan@chome.cl" })
+    await issueOrder(orderId, userId, "all", { userEmail: "juan@chome.cl" })
     const issuedOrder = await inMemoryDb.query.purchaseOrders.findFirst({
       where: eq(schema.purchaseOrders.id, orderId),
     })
     expect(issuedOrder?.status).toBe("issued")
 
     // 8. Send OC
-    await markOrderSent(orderId, userId, { userEmail: "juan@chome.cl" })
+    await markOrderSent(orderId, userId, "all", { userEmail: "juan@chome.cl" })
     const sentOrder = await inMemoryDb.query.purchaseOrders.findFirst({
       where: eq(schema.purchaseOrders.id, orderId),
     })

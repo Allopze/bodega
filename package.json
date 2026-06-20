@@ -25,7 +25,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "analyze": "ANALYZE=true npm run build"
+    "analyze": "next experimental-analyze"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
@@ -63,7 +63,6 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
     "@electric-sql/pglite": "^0.5.2",
-    "@next/bundle-analyzer": "^16.2.9",
     "@next/env": "^16.2.9",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",

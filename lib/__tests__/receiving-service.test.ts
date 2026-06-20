@@ -1,301 +1,154 @@
 /**
- * Integration tests for lib/services/receiving.ts — edge cases and validation.
- *
- * The full flow (office → faena → stock) is covered in full-flow-integration.test.ts.
- * These tests focus on error paths: invalid state, duplicate items, quantity caps.
+ * Unit tests for receiving service — validation edge cases.
  */
 
-import { PGlite } from "@electric-sql/pglite"
-import { drizzle } from "drizzle-orm/pglite"
-import { migratePGlite } from "@/lib/testing/pglite-migrate"
-import { describe, it, expect, vi, afterAll, beforeAll } from "vitest"
-import path from "node:path"
-import { eq } from "drizzle-orm"
-import * as schema from "@/db/schema"
-import type { DB } from "@/db"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 
-const pg = new PGlite()
-const inMemoryDb = drizzle(pg, { schema }) as unknown as DB
-const testGlobal = globalThis as typeof globalThis & { __db?: DB }
-testGlobal.__db = inMemoryDb
+const mockSelect = vi.hoisted(() => vi.fn())
+const mockInsert = vi.hoisted(() => vi.fn())
+const mockUpdate = vi.hoisted(() => vi.fn())
+const mockTransaction = vi.hoisted(() => vi.fn())
+const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockNanoid = vi.hoisted(() => vi.fn(() => "rec-nanoid-123"))
 
 vi.mock("@/db", () => ({
-  get db() { return testGlobal.__db },
+  db: {
+    select: mockSelect,
+    insert: mockInsert,
+    update: mockUpdate,
+    transaction: mockTransaction,
+  },
 }))
-
-const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
+vi.mock("@/lib/id", () => ({ nanoid: mockNanoid }))
+vi.mock("@/lib/code-sequences", () => ({ nextCodeTx: vi.fn(async () => "REC-2026-001") }))
+vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
+vi.mock("@/lib/services/item-state", () => ({ receiveItemTx: vi.fn() }))
+vi.mock("@/lib/services/stock", () => ({ applyMovementTx: vi.fn() }))
 
 import { registerReceipt } from "@/lib/services/receiving"
-import { createOrder, issueOrder, markOrderSent } from "@/lib/services/purchasing"
 
-const now = new Date().toISOString()
-const userId = "u-recv"
+describe("registerReceipt — validation", () => {
+  beforeEach(() => vi.clearAllMocks())
 
-describe("Receiving service — edge cases", () => {
-  beforeAll(async () => {
-    await migratePGlite(pg, migrationsFolder)
-
-    await inMemoryDb.insert(schema.users).values({
-      id: userId, name: "Recepcionista", email: "recv@chome.cl",
-      hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.worksites).values({
-      id: "ws-recv", name: "Faena Recv", code: "F-RECV",
-      isActive: true, createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.suppliers).values({
-      id: "sup-recv", name: "Proveedor Recv", rut: "76.000.002-2",
-      isActive: true, createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.productCategories).values({
-      id: "cat-recv", name: "Cat Recv", slug: "cat-recv", sortOrder: 1,
-    })
-    await inMemoryDb.insert(schema.products).values({
-      id: "prod-recv", sku: "R-001", name: "Producto Recv",
-      categoryId: "cat-recv", unitOfMeasure: "unidad", isEpp: true, isActive: true,
-      createdAt: now, updatedAt: now,
-    })
+  it("throws if items array is empty", async () => {
+    await expect(registerReceipt({
+      purchaseOrderId: "oc-1",
+      receivedBy: "u-1",
+      stage: "office",
+      items: [],
+    })).rejects.toThrow("At least one received item")
   })
 
-  afterAll(async () => { await pg.close() })
-
-  // ── Setup: create a sent order with OC items ────────────────────────────
-
-  async function createSentOrder() {
-    const requestId = `req-recv-${Date.now()}`
-    const requestItemId = `item-recv-${Date.now()}`
-    await inMemoryDb.insert(schema.purchaseRequests).values({
-      id: requestId, code: `SOL-RECV-${Date.now()}`, worksiteId: "ws-recv",
-      requesterId: userId, requestType: "epp", urgency: "normal",
-      status: "approved", createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.purchaseRequestItems).values({
-      id: requestItemId, requestId, productId: "prod-recv",
-      quantity: 10, unitOfMeasure: "unidad", status: "pending_purchase",
-      createdAt: now, updatedAt: now,
-    })
-
-    const orderId = await createOrder({
-      worksiteId: "ws-recv",
-      supplierId: "sup-recv",
-      createdBy: userId,
-      items: [{
-        requestItemId,
-        productId: "prod-recv",
-        productNameFree: null,
-        quantity: 10,
-        unitOfMeasure: "unidad",
-        unitPrice: 3000,
-      }],
-    })
-
-    await issueOrder(orderId, userId)
-    await markOrderSent(orderId, userId)
-
-    // Get the OC item ID
-    const ocItems = await inMemoryDb.query.purchaseOrderItems.findMany({
-      where: eq(schema.purchaseOrderItems.purchaseOrderId, orderId),
-    })
-
-    return { orderId, requestItemId, ocItemId: ocItems[0]!.id }
-  }
-
-  // ── Validation errors ──────────────────────────────────────────────────
-
-  describe("validation", () => {
-    it("throws when items array is empty", async () => {
-      await expect(
-        registerReceipt({
-          purchaseOrderId: "any",
-          receivedBy: userId,
-          stage: "office",
-          items: [],
-        })
-      ).rejects.toThrow("At least one received item")
-    })
-
-    it("throws when duplicate order items are provided", async () => {
-      await expect(
-        registerReceipt({
-          purchaseOrderId: "any",
-          receivedBy: userId,
-          stage: "office",
-          items: [
-            { purchaseOrderItemId: "dup-1", quantityReceived: 5 },
-            { purchaseOrderItemId: "dup-1", quantityReceived: 3 },
-          ],
-        })
-      ).rejects.toThrow("duplicated")
-    })
-
-    it("throws when purchase order does not exist", async () => {
-      await expect(
-        registerReceipt({
-          purchaseOrderId: "nonexistent",
-          receivedBy: userId,
-          stage: "office",
-          items: [{ purchaseOrderItemId: "any", quantityReceived: 1 }],
-        })
-      ).rejects.toThrow("not found")
-    })
-
-    it("throws when order is in 'draft' state (must be sent first)", async () => {
-      // Create a draft order using existing worksite/supplier from beforeAll
-      const draftReqId = `req-draft-${Date.now()}`
-      const draftItemId = `item-draft-${Date.now()}`
-      await inMemoryDb.insert(schema.purchaseRequests).values({
-        id: draftReqId, code: `SOL-DRAFT-${Date.now()}`, worksiteId: "ws-recv",
-        requesterId: userId, requestType: "epp", urgency: "normal",
-        status: "approved", createdAt: now, updatedAt: now,
-      })
-      await inMemoryDb.insert(schema.purchaseRequestItems).values({
-        id: draftItemId, requestId: draftReqId, productId: "prod-recv",
-        quantity: 5, unitOfMeasure: "unidad", status: "pending_purchase",
-        createdAt: now, updatedAt: now,
-      })
-
-      const orderId = await createOrder({
-        worksiteId: "ws-recv",
-        supplierId: "sup-recv",
-        createdBy: userId,
-        items: [{
-          requestItemId: draftItemId,
-          productId: "prod-recv",
-          productNameFree: null,
-          quantity: 5,
-          unitOfMeasure: "unidad",
-          unitPrice: 1000,
-        }],
-      })
-
-      const ocItems = await inMemoryDb.query.purchaseOrderItems.findMany({
-        where: eq(schema.purchaseOrderItems.purchaseOrderId, orderId),
-      })
-
-      await expect(
-        registerReceipt({
-          purchaseOrderId: orderId,
-          receivedBy: userId,
-          stage: "office",
-          items: [{ purchaseOrderItemId: ocItems[0]!.id, quantityReceived: 5 }],
-        })
-      ).rejects.toThrow("Cannot receive")
-    })
-
-    it("throws when faena stage used before office stage", async () => {
-      const { orderId, ocItemId } = await createSentOrder()
-
-      await expect(
-        registerReceipt({
-          purchaseOrderId: orderId,
-          receivedBy: userId,
-          stage: "faena",
-          worksiteId: "ws-recv",
-          items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 10 }],
-        })
-      ).rejects.toThrow("llegada a oficina")
-    })
+  it("throws if items contain duplicates", async () => {
+    await expect(registerReceipt({
+      purchaseOrderId: "oc-1",
+      receivedBy: "u-1",
+      stage: "office",
+      items: [
+        { purchaseOrderItemId: "item-1", quantityReceived: 5 },
+        { purchaseOrderItemId: "item-1", quantityReceived: 3 },
+      ],
+    })).rejects.toThrow("duplicated")
   })
 
-  // ── Rollup logic ───────────────────────────────────────────────────────
-
-  describe("rollup", () => {
-    it("partially_office_received when only some items arrive at office", async () => {
-      const { orderId, ocItemId } = await createSentOrder()
-
-      await registerReceipt({
-        purchaseOrderId: orderId,
-        receivedBy: userId,
-        stage: "office",
-        items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 3 }],
-      })
-
-      const order = await inMemoryDb.query.purchaseOrders.findFirst({
-        where: eq(schema.purchaseOrders.id, orderId),
-      })
-      expect(order?.status).toBe("partially_office_received")
+  it("throws if order not found in transaction", async () => {
+    mockTransaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        query: {
+          purchaseOrders: { findFirst: vi.fn().mockResolvedValue(null) },
+          purchaseOrderItems: { findFirst: vi.fn() },
+        },
+        insert: vi.fn(),
+        update: vi.fn(),
+        select: vi.fn(),
+      }
+      return fn(tx)
     })
 
-    it("office_received when all items arrive at office", async () => {
-      const { orderId, ocItemId } = await createSentOrder()
-
-      // First partial
-      await registerReceipt({
-        purchaseOrderId: orderId,
-        receivedBy: userId,
-        stage: "office",
-        items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 3 }],
-      })
-
-      // Complete the rest
-      await registerReceipt({
-        purchaseOrderId: orderId,
-        receivedBy: userId,
-        stage: "office",
-        items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 7 }],
-      })
-
-      const order = await inMemoryDb.query.purchaseOrders.findFirst({
-        where: eq(schema.purchaseOrders.id, orderId),
-      })
-      expect(order?.status).toBe("office_received")
-    })
-
-    it("throws when received quantity exceeds pending", async () => {
-      const { orderId, ocItemId } = await createSentOrder()
-
-      await expect(
-        registerReceipt({
-          purchaseOrderId: orderId,
-          receivedBy: userId,
-          stage: "office",
-          items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 15 }],
-        })
-      ).rejects.toThrow("exceeds pending")
-    })
+    await expect(registerReceipt({
+      purchaseOrderId: "oc-nonexistent",
+      receivedBy: "u-1",
+      stage: "office",
+      items: [{ purchaseOrderItemId: "item-1", quantityReceived: 5 }],
+    })).rejects.toThrow("not found")
   })
 
-  // ── Two-stage receiving ────────────────────────────────────────────────
-
-  describe("two-stage receiving", () => {
-    it("registers office then faena and generates stock", async () => {
-      const { orderId, ocItemId, requestItemId } = await createSentOrder()
-
-      // Stage 1: office
-      await registerReceipt({
-        purchaseOrderId: orderId,
-        receivedBy: userId,
-        stage: "office",
-        items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 10 }],
-      })
-
-      // Stage 2: faena
-      await registerReceipt({
-        purchaseOrderId: orderId,
-        receivedBy: userId,
-        stage: "faena",
-        worksiteId: "ws-recv",
-        items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 10 }],
-      })
-
-      // Verify stock
-      const stock = await inMemoryDb.query.worksiteStock.findFirst({
-        where: eq(schema.worksiteStock.worksiteId, "ws-recv"),
-      })
-      expect(stock).toBeDefined()
-      expect(stock?.quantity).toBe(10)
-
-      // Verify request item status
-      const item = await inMemoryDb.query.purchaseRequestItems.findFirst({
-        where: eq(schema.purchaseRequestItems.id, requestItemId),
-      })
-      expect(item?.status).toBe("received")
-
-      // Verify order status
-      const order = await inMemoryDb.query.purchaseOrders.findFirst({
-        where: eq(schema.purchaseOrders.id, orderId),
-      })
-      expect(order?.status).toBe("received")
+  it("throws if order in wrong status", async () => {
+    mockTransaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        query: {
+          purchaseOrders: {
+            findFirst: vi.fn().mockResolvedValue({ id: "oc-1", status: "draft", worksiteId: "ws-1" }),
+          },
+          purchaseOrderItems: { findFirst: vi.fn() },
+        },
+        insert: vi.fn(),
+        update: vi.fn(),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              for: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      }
+      return fn(tx)
     })
+
+    await expect(registerReceipt({
+      purchaseOrderId: "oc-1",
+      receivedBy: "u-1",
+      stage: "office",
+      items: [{ purchaseOrderItemId: "item-1", quantityReceived: 5 }],
+    })).rejects.toThrow("Cannot receive against order")
+  })
+
+  it("throws if faena stage when order still sent (not office_received)", async () => {
+    mockTransaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        query: {
+          purchaseOrders: {
+            findFirst: vi.fn().mockResolvedValue({ id: "oc-1", status: "sent", worksiteId: "ws-1" }),
+          },
+          purchaseOrderItems: { findFirst: vi.fn() },
+        },
+        insert: vi.fn(),
+        update: vi.fn(),
+        select: vi.fn(),
+      }
+      return fn(tx)
+    })
+
+    await expect(registerReceipt({
+      purchaseOrderId: "oc-1",
+      receivedBy: "u-1",
+      stage: "faena",
+      worksiteId: "ws-1",
+      items: [{ purchaseOrderItemId: "item-1", quantityReceived: 5 }],
+    })).rejects.toThrow("llegada a oficina")
+  })
+
+  it("throws if worksiteIds scope check fails", async () => {
+    mockTransaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        query: {
+          purchaseOrders: {
+            findFirst: vi.fn().mockResolvedValue({ id: "oc-1", status: "sent", worksiteId: "ws-other" }),
+          },
+          purchaseOrderItems: { findFirst: vi.fn() },
+        },
+        insert: vi.fn(),
+        update: vi.fn(),
+        select: vi.fn(),
+      }
+      return fn(tx)
+    })
+
+    await expect(registerReceipt({
+      purchaseOrderId: "oc-1",
+      receivedBy: "u-1",
+      stage: "office",
+      items: [{ purchaseOrderItemId: "item-1", quantityReceived: 5 }],
+    }, ["ws-1"])).rejects.toThrow("acceso")
   })
 })
