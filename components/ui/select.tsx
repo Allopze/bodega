@@ -129,6 +129,7 @@ const SelectTrigger = React.forwardRef<
             e.stopPropagation()
           }}
           placeholder="Buscar..."
+          aria-label="Buscar en opciones"
           className="min-w-0 flex-1 bg-transparent text-sm text-(--color-text) outline-none placeholder:text-[var(--color-text-subtle)]"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
@@ -236,6 +237,7 @@ const SelectContent = React.forwardRef<
               onChange={(e) => setLocalQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
               placeholder="Buscar..."
+          aria-label="Buscar en opciones"
               className="h-5 w-full bg-transparent text-sm text-(--color-text) outline-none placeholder:text-text-subtle"
             />
           </div>

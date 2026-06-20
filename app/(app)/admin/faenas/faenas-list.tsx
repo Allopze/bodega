@@ -103,7 +103,7 @@ export function FaenasList({
                 <form action={wsToggleAction}>
                   <input type="hidden" name="id" value={ws.id} />
                   <input type="hidden" name="activate" value={String(!ws.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={ws.isActive ? "Desactivar" : "Activar"}>
+                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={ws.isActive ? "Desactivar" : "Activar"} aria-label={`${ws.isActive ? "Desactivar" : "Activar"} faena ${ws.name}`}>
                     {ws.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                   </button>
                 </form>
@@ -134,7 +134,7 @@ export function FaenasList({
                     <form action={wsToggleAction}>
                       <input type="hidden" name="id"       value={ws.id} />
                       <input type="hidden" name="activate" value={String(!ws.isActive)} />
-                      <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast)" title={ws.isActive ? "Desactivar" : "Activar"}>
+                      <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast)" title={ws.isActive ? "Desactivar" : "Activar"} aria-label={`${ws.isActive ? "Desactivar" : "Activar"} faena ${ws.name}`}>
                         {ws.isActive ? <ToggleRight size={20} className="text-primary" /> : <ToggleLeft size={20} />}
                       </button>
                     </form>

@@ -21,7 +21,7 @@ export default async function LoginPage() {
         className="hidden lg:flex lg:flex-col justify-between relative overflow-hidden"
         style={{
           background:
-            "radial-gradient(120% 90% at 80% 8%, oklch(0.31 0.13 154) 0%, var(--color-text) 70%)",
+            "radial-gradient(120% 90% at 80% 8%, var(--color-primary) 0%, var(--color-text) 70%)",
         }}
       >
         {/* Capa 1 — textura de puntos */}

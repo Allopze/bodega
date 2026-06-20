@@ -26,6 +26,7 @@ export function NotificationBell() {
             "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
             "hover:bg-[var(--color-surface-2)]",
             "transition-[background-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+          )}
           aria-label={`Notificaciones${hasUnread ? ` (${data?.unreadCount} sin leer)` : ""}`}
         >
           <Bell size={16} />

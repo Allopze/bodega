@@ -239,7 +239,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                       <Checkbox id={`attr-req-${i}`} checked={attr.isRequired} onChange={(e) => updateAttr(i, { isRequired: e.target.checked })} label="Obligatorio" />
                     </div>
                   </div>
-                  <button type="button" onClick={() => removeAttr(i)} className="mt-6 p-1.5 rounded-sm text-text-subtle hover:text-danger hover:bg-danger-50 transition-colors duration-(--duration-fast) ">
+                  <button type="button" onClick={() => removeAttr(i)} className="mt-6 p-1.5 rounded-sm text-text-subtle hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-50)] transition-colors duration-(--duration-fast)" aria-label={`Eliminar atributo ${attr.label}`}>
                     <Trash size={14} />
                   </button>
                 </div>
@@ -275,7 +275,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                       <Checkbox id={`sup-pref-${i}`} checked={sr.isPreferred} onChange={(e) => updateSupp(i, { isPreferred: e.target.checked })} label="Proveedor preferido" />
                     </div>
                   </div>
-                  <button type="button" onClick={() => removeSupp(i)} className="mt-6 p-1.5 rounded-sm text-text-subtle hover:text-danger hover:bg-danger-50 transition-colors duration-(--duration-fast) ">
+                  <button type="button" onClick={() => removeSupp(i)} className="mt-6 p-1.5 rounded-sm text-text-subtle hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-50)] transition-colors duration-(--duration-fast)" aria-label={`Eliminar proveedor ${supp.name}`}>
                     <Trash size={14} />
                   </button>
                 </div>

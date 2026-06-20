@@ -162,7 +162,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
                         type="button"
                         onClick={() => setDeleteTarget(item.id)}
                         disabled={isPending}
-                        className="text-text-subtle hover:text-danger disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 rounded-(--radius)"
+                        className="text-text-subtle hover:text-[var(--color-danger)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 rounded-(--radius)"
                         aria-label={`Eliminar ítem ${item.n}`}
                       >
                         <Trash size={14} />

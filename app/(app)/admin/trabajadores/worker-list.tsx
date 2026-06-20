@@ -101,7 +101,7 @@ export function WorkerList({
                 <form action={toggleAction}>
                   <input type="hidden" name="id" value={w.id} />
                   <input type="hidden" name="activate" value={String(!w.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={w.isActive ? "Desactivar" : "Activar"}>
+                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={w.isActive ? "Desactivar" : "Activar"} aria-label={`${w.isActive ? "Desactivar" : "Activar"} trabajador ${w.firstName} ${w.lastName}`}>
                     {w.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                   </button>
                 </form>
@@ -140,6 +140,7 @@ export function WorkerList({
                     onClick={() => openEdit(w)}
                     className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
                     title="Editar"
+                    aria-label={`Editar trabajador ${w.firstName} ${w.lastName}`}
                   >
                     <PencilSimple size={16} />
                   </button>
@@ -150,6 +151,7 @@ export function WorkerList({
                       type="submit"
                       className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
                       title={w.isActive ? "Desactivar" : "Activar"}
+                      aria-label={`${w.isActive ? "Desactivar" : "Activar"} trabajador ${w.firstName} ${w.lastName}`}
                     >
                       {w.isActive
                         ? <ToggleRight size={20} className="text-[var(--color-primary)]" />

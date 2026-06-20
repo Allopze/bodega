@@ -52,6 +52,8 @@ export async function registerWorksiteDelivery(
 ): Promise<string> {
   if (!input.worksiteId) throw new Error("Selecciona una faena")
   if (worksiteIds !== 'all' && !worksiteIds.includes(input.worksiteId)) {
+    throw new Error("No tienes acceso a esta faena")
+  }
   if (!input.productId) throw new Error("Selecciona un producto")
   if (!input.receiverName.trim()) throw new Error("Indica quién recibió")
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) {

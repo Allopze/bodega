@@ -54,7 +54,7 @@ export function InvoicesSection({
       {invoices.length > 0 && (
         <div className={`mb-3 rounded-(--radius-lg) px-3 py-2 text-xs ${
           exceeds
-            ? "bg-red-50 border border-red-200 text-red-700"
+            ? "bg-[var(--color-danger-50)] border border-[var(--color-danger-200)] text-[var(--color-danger-700)]"
             : "bg-surface-2 text-(--color-text-muted)"
         }`}>
           <div className="flex items-center justify-between gap-2">
@@ -156,7 +156,7 @@ function InvoiceItem({
             type="submit"
             disabled={pending}
             aria-label={`Eliminar factura ${invoice.invoiceNumber}`}
-            className="shrink-0 p-1 rounded text-text-subtle hover:text-[var(--color-danger)] hover:bg-red-50 transition-colors disabled:opacity-40"
+            className="shrink-0 p-1 rounded text-text-subtle hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-50)] transition-colors disabled:opacity-40"
           >
             <Trash size={14} />
           </button>

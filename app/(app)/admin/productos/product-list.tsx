@@ -149,7 +149,7 @@ export function ProductList({ products, categories, allSuppliers }: {
                   <form action={toggleAction}>
                     <input type="hidden" name="id"       value={p.id} />
                     <input type="hidden" name="activate" value={String(!p.isActive)} />
-                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={p.isActive ? "Desactivar" : "Activar"}>
+                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={p.isActive ? "Desactivar" : "Activar"} aria-label={`${p.isActive ? "Desactivar" : "Activar"} producto ${p.name}`}>
                       {p.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                     </button>
                   </form>
@@ -201,7 +201,7 @@ export function ProductList({ products, categories, allSuppliers }: {
                 <form action={toggleAction}>
                   <input type="hidden" name="id" value={p.id} />
                   <input type="hidden" name="activate" value={String(!p.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={p.isActive ? "Desactivar" : "Activar"}>
+                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={p.isActive ? "Desactivar" : "Activar"} aria-label={`${p.isActive ? "Desactivar" : "Activar"} producto ${p.name}`}>
                     {p.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
                   </button>
                 </form>

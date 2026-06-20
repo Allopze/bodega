@@ -21,8 +21,8 @@ export default function GlobalError({
         justifyContent: "center",
         minHeight: "100vh",
         fontFamily: "system-ui, sans-serif",
-        color: "oklch(0.218 0.006 100)",
-        background: "oklch(0.974 0.005 155)",
+        color: "var(--color-text)",
+        background: "var(--color-bg)",
         margin: 0,
       }}>
         <div style={{ textAlign: "center", maxWidth: "24rem" }}>
@@ -36,7 +36,7 @@ export default function GlobalError({
               padding: "0.5rem 1.25rem",
               borderRadius: "0.375rem",
               border: "1px solid var(--color-border-strong)",
-              background: "oklch(0.962 0.007 155)",
+              background: "var(--color-neutral-100)",
               cursor: "pointer",
               fontSize: "0.875rem",
             }}
