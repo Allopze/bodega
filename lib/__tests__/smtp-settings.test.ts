@@ -8,7 +8,7 @@
  * - testSmtpConnection (success, error, no config)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 
 // Mock nodemailer BEFORE importing anything that uses it
 const mockSendMail = vi.fn()
@@ -48,7 +48,6 @@ vi.mock("@/db", () => ({
 }))
 
 import { getSmtpConfig, getRawSmtpConfig, setSmtpConfig, testSmtpConnection } from "@/lib/services/smtp-settings"
-import nodemailer from "nodemailer"
 
 beforeEach(() => {
   vi.clearAllMocks()

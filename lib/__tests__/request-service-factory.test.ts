@@ -84,7 +84,7 @@ function makeSession(overrides?: Partial<Session["user"]>): Session {
 // ── Import after mocks ───────────────────────────────────────────────────────
 
 import { createRequestService } from "@/lib/requests/request-service"
-import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { recordStatusChange } from "@/lib/audit"
 import { submitItemTx } from "@/lib/services/item-state"
 import { assertCanDeleteQuotation } from "@/lib/requests/quotation-access"
 import { mkdirp, writeBuffer, removeFile } from "@/lib/storage/helpers"

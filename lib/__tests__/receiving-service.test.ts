@@ -52,7 +52,7 @@ describe("registerReceipt — validation", () => {
   })
 
   it("throws if order not found in transaction", async () => {
-    mockTransaction.mockImplementation(async (fn: any) => {
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
         query: {
           purchaseOrders: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -62,7 +62,7 @@ describe("registerReceipt — validation", () => {
         update: vi.fn(),
         select: vi.fn(),
       }
-      return fn(tx)
+      return fn(tx as unknown as Record<string, unknown>)
     })
 
     await expect(registerReceipt({
@@ -74,7 +74,7 @@ describe("registerReceipt — validation", () => {
   })
 
   it("throws if order in wrong status", async () => {
-    mockTransaction.mockImplementation(async (fn: any) => {
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
         query: {
           purchaseOrders: {
@@ -92,7 +92,7 @@ describe("registerReceipt — validation", () => {
           }),
         }),
       }
-      return fn(tx)
+      return fn(tx as unknown as Record<string, unknown>)
     })
 
     await expect(registerReceipt({
@@ -104,7 +104,7 @@ describe("registerReceipt — validation", () => {
   })
 
   it("throws if faena stage when order still sent (not office_received)", async () => {
-    mockTransaction.mockImplementation(async (fn: any) => {
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
         query: {
           purchaseOrders: {
@@ -116,7 +116,7 @@ describe("registerReceipt — validation", () => {
         update: vi.fn(),
         select: vi.fn(),
       }
-      return fn(tx)
+      return fn(tx as unknown as Record<string, unknown>)
     })
 
     await expect(registerReceipt({
@@ -129,7 +129,7 @@ describe("registerReceipt — validation", () => {
   })
 
   it("throws if worksiteIds scope check fails", async () => {
-    mockTransaction.mockImplementation(async (fn: any) => {
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
         query: {
           purchaseOrders: {
@@ -141,7 +141,7 @@ describe("registerReceipt — validation", () => {
         update: vi.fn(),
         select: vi.fn(),
       }
-      return fn(tx)
+      return fn(tx as unknown as Record<string, unknown>)
     })
 
     await expect(registerReceipt({

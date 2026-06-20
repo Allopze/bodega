@@ -14,7 +14,7 @@ export const NAV_ICONS: Record<string, IconCmp> = {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
   ChartLineUp, ChartBar, Package, Path, User, Stack, GearSix,
-  Wrench, Toolbox,
+  Wrench, Toolbox, HardHat,
 }
 
 export function navIcon(name: string): IconCmp | undefined {

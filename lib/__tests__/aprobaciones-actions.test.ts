@@ -12,7 +12,6 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
 const mockApproveItem = vi.hoisted(() => vi.fn())

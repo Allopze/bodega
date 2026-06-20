@@ -172,9 +172,9 @@ describe("deleteEvaluation", () => {
 
   it("deletes in transaction", async () => {
     mockSelectFn.mockReturnValue(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
-    mockTransactionFn.mockImplementation(async (fn: any) => fn({
+    mockTransactionFn.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => fn({
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-    }))
+    } as unknown as Record<string, unknown>))
     await deleteEvaluation("e1", "all")
     expect(mockTransactionFn).toHaveBeenCalled()
   })

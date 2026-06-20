@@ -56,7 +56,6 @@ interface LogEntry {
   error?: string
 }
 
-import { sentry } from "@/lib/sentry"
 
 function writeLog(level: "debug" | "info" | "warn" | "error", args: unknown[]): void {
   if (!shouldLog(level)) return

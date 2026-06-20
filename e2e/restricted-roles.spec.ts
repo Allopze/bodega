@@ -9,7 +9,6 @@
  */
 
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
 
 test.describe("Restricted roles — faena scope enforcement", () => {
   test("scoped user cannot see the ws-restricted worksite in dashboard or solicitudes", async ({ page }) => {

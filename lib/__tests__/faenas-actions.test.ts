@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
-const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all", ids: [] })))
+const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as "all" | "some" | "none", ids: [] as string[] })))
 const mockFindFirstWorksite = vi.hoisted(() => vi.fn())
 const mockInsert = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
@@ -82,7 +82,7 @@ describe("createWorksite", () => {
 
   it("returns error if scope is not global", async () => {
     mockRequirePermission.mockResolvedValueOnce(makeSession())
-    mockResolveWorksiteScope.mockReturnValueOnce({ mode: "restricted", ids: ["ws-1"] } as any)
+    mockResolveWorksiteScope.mockReturnValueOnce({ mode: "some", ids: ["ws-1"] })
     const res = await createWorksite(prevState, makeFormData())
     expect(res.ok).toBe(false)
     expect(res.message).toContain("alcance global")

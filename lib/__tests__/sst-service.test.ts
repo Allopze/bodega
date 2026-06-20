@@ -9,14 +9,6 @@ const mockInsert = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
 const mockDelete = vi.hoisted(() => vi.fn())
 const mockTransaction = vi.hoisted(() => vi.fn())
-const mockFrom = vi.hoisted(() => vi.fn())
-const mockWhere = vi.hoisted(() => vi.fn())
-const mockLimit = vi.hoisted(() => vi.fn())
-const mockOrderBy = vi.hoisted(() => vi.fn())
-const mockOffset = vi.hoisted(() => vi.fn())
-const mockLeftJoin = vi.hoisted(() => vi.fn())
-const mockInnerJoin = vi.hoisted(() => vi.fn())
-
 const mockGetDefinition = vi.hoisted(() => vi.fn())
 const mockGetApplicableItems = vi.hoisted(() => vi.fn())
 
@@ -220,11 +212,11 @@ describe("deleteEvaluation", () => {
       }),
     })
 
-    mockTransaction.mockImplementation(async (fn: any) => {
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
         delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       }
-      return fn(tx)
+      return fn(tx as unknown as Record<string, unknown>)
     })
 
     await deleteEvaluation("eval-1", "all")

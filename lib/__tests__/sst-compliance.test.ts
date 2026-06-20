@@ -174,7 +174,7 @@ describe("getEfficacyLabel", () => {
   })
 
   it("returns empty for null/undefined", () => {
-    expect(getEfficacyLabel(null as any)).toBe("")
+    expect(getEfficacyLabel(null as never)).toBe("")
   })
 })
 
@@ -183,7 +183,7 @@ describe("getEfficacyColor", () => {
     expect(getEfficacyColor("eficaz")).toContain("emerald")
     expect(getEfficacyColor("parcialmente_eficaz")).toContain("amber")
     expect(getEfficacyColor("no_eficaz")).toContain("rose")
-    expect(getEfficacyColor(null as any)).toContain("slate")
+    expect(getEfficacyColor(null as never)).toContain("slate")
   })
 })
 
@@ -193,7 +193,7 @@ describe("getStatusLabel", () => {
     expect(getStatusLabel("no_cumple")).toBe("No cumple")
     expect(getStatusLabel("na")).toBe("N/A")
     expect(getStatusLabel("entregado")).toBe("Entregado")
-    expect(getStatusLabel(null as any)).toBe("—")
+    expect(getStatusLabel(null as never)).toBe("—")
   })
 })
 

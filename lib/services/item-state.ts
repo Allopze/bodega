@@ -163,6 +163,10 @@ export async function approveItem(
       )
       .returning({ id: purchaseRequestItems.id })
 
+    if (!updated) {
+      throw new Error("El ítem ya no está disponible — posible concurrencia")
+    }
+
     await tx.insert(approvalDecisions).values({
       id:            nanoid(),
       requestItemId: itemId,

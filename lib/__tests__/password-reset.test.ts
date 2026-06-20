@@ -113,14 +113,14 @@ describe("applyPasswordReset", () => {
   beforeEach(() => vi.clearAllMocks())
 
   it("returns error if token invalid in transaction", async () => {
-    mockTransaction.mockImplementation(async (fn: any) => {
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
         query: { passwordResetTokens: { findFirst: vi.fn().mockResolvedValue(null) } },
         update: vi.fn().mockReturnThis(),
         set: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
       }
-      return fn(tx)
+      return fn(tx as unknown as Record<string, unknown>)
     })
     const result = await applyPasswordReset("bad-token", "newpass123")
     expect(result.ok).toBe(false)
@@ -128,7 +128,7 @@ describe("applyPasswordReset", () => {
   })
 
   it("returns error if token expired in transaction", async () => {
-    mockTransaction.mockImplementation(async (fn: any) => {
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
         query: {
           passwordResetTokens: {
@@ -141,7 +141,7 @@ describe("applyPasswordReset", () => {
         set: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
       }
-      return fn(tx)
+      return fn(tx as unknown as Record<string, unknown>)
     })
     const result = await applyPasswordReset("expired-token", "newpass123")
     expect(result.ok).toBe(false)
@@ -149,7 +149,7 @@ describe("applyPasswordReset", () => {
   })
 
   it("succeeds with valid token", async () => {
-    mockTransaction.mockImplementation(async (fn: any) => {
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
         query: {
           passwordResetTokens: {
@@ -162,7 +162,7 @@ describe("applyPasswordReset", () => {
         set: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
       }
-      return fn(tx)
+      return fn(tx as unknown as Record<string, unknown>)
     })
     const result = await applyPasswordReset("valid-token", "newpass123")
     expect(result.ok).toBe(true)
@@ -174,7 +174,6 @@ describe("pruneResetTokens", () => {
 
   it("calls delete with timestamp condition", async () => {
     const whereChain = vi.fn().mockResolvedValue(undefined)
-    const ltChain = vi.fn().mockReturnValue(whereChain)
     mockDelete.mockReturnValue({ where: whereChain })
     await pruneResetTokens()
     expect(mockDelete).toHaveBeenCalled()
