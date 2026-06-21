@@ -57,6 +57,10 @@ export type NotificationType =
   | "oc_sent"
   | "receipt_done"
   | "dispatch_done"
+  | "ppa_stopped"
+  | "ppa_pending_review"
+  | "ppa_authorized"
+  | "ppa_rejected"
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

@@ -17,7 +17,9 @@ export default auth((req) => {
   requestHeaders.set("Content-Security-Policy", csp)
 
   // Public paths — no auth required
-  const publicPaths = ["/login", "/registro", "/recuperar", "/api/auth", "/api/health"]
+  // NOTE: "/ppa" es el formulario público del trabajador (sin login). El panel
+  // autenticado vive en "/prevencion/ppa" y NO calza con este prefijo.
+  const publicPaths = ["/login", "/registro", "/recuperar", "/api/auth", "/api/health", "/ppa"]
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     // Redirect authenticated users away from login
     if (isLoggedIn && (pathname === "/login" || pathname === "/registro")) {

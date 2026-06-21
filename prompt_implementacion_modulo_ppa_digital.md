@@ -12,33 +12,56 @@ El sistema debe permitir detectar condiciones inseguras, detener el trabajo, ale
 
 El objetivo no es crear un simple formulario digital. El objetivo es crear un flujo preventivo real que ayude a evitar que un trabajo comience si existe un riesgo no controlado.
 
+## Realidad del repositorio (stack y convenciones verificadas)
+
+Esta sección refleja cómo está construido realmente este proyecto. Respétala; no asumas otra cosa.
+
+- **Framework:** Next.js 16 con App Router y React 19 en TypeScript. OJO: es una versión con cambios respecto a lo habitual; antes de escribir código lee la guía relevante en `node_modules/next/dist/docs/` (lo exige `AGENTS.md`).
+- **Patrón de feature:** cada área vive en `app/(app)/<área>/` con su `page.tsx`, componentes co-ubicados y un `actions.ts` con **Server Actions**. La lógica de negocio va en `lib/services/`, la auth en `lib/auth/`, la validación en `lib/validation/`. **La fuente de verdad es `lib/` + `app/`, NO el scaffolding de `modules/`.** En `modules/` solo se tocan los `manifest.ts` para registrar navegación, permisos y defaultGrants (ver `AGENTS.md` y `modules/README.md`).
+- **Persistencia:** Drizzle ORM + PostgreSQL. Esquemas en `db/schema/*.ts`, IDs con `nanoid` (`@/lib/id`), migraciones con `drizzle-kit` (`npm run db:generate` / `db:migrate`). Hay seed en `db/seed.ts`.
+- **Validación:** Zod 4 (en `lib/validation/` y co-ubicada), aplicada tanto en cliente como dentro de las Server Actions.
+- **Autenticación:** next-auth v5 (Auth.js, beta). El gateo de rutas NO está en `middleware.ts` sino en **`proxy.ts`** en la raíz, que **bloquea toda ruta que no esté en `publicPaths`** y la redirige a `/login`. Hoy las únicas rutas públicas son `/login`, `/registro`, `/recuperar`, `/api/auth`, `/api/health`.
+- **Permisos (RBAC):** roles y permisos viven en base de datos, derivados de los `modules/*/manifest.ts` (cada manifest declara `permissions` + `defaultGrants` por `roleSlug`). Hay scoping por faena (`worksiteUsers`) para roles `*_faena`. Helpers en `lib/auth/` (`can.ts`, `rbac.ts`, `scope.ts`).
+- **Roles existentes (no hay más, NO existe un rol "supervisor"):** `administrador`, `jefa_chome`, `secretaria`, `prevencionista` (oficina), `prevencionista_faena` (scoped a faenas asignadas), `solicitante_faena`, `jefe_mantencion`. Ver `lib/auth/system-rbac.ts`.
+- **Trabajadores:** ya existe una **lista controlada** real: tabla `workers` (`db/schema/worksites.ts`) con `rut`, `firstName`, `lastName`, `position` (cargo), `supervisor` (nombre, texto), `prevencionista` (nombre asignado, texto), `worksiteId`, `isActive`. Se administra en `app/(app)/admin/trabajadores/`. Los trabajadores NO son usuarios del sistema.
+- **Faenas/worksites:** tabla `worksites`; cada trabajador pertenece a una faena. Útil para contexto del PPA (área/lugar) y para enrutar alertas por faena.
+- **Notificaciones:** servicio in-app en `lib/services/notifications.ts` (consumido por `NotificationBell` vía `/api/notifications`, con vista en `app/(app)/notificaciones/`). Email vía **Resend** en `lib/email/smtp.ts` (la fachada se sigue llamando "smtp" pero usa Resend; nodemailer fue eliminado) + plantillas en `lib/services/email-templates.ts`. Usa `notifySafe()` (fire-and-forget).
+- **Exportaciones:** SIEMPRE XLSX, NUNCA CSV (regla de `AGENTS.md`). Librería: `exceljs`. Patrones existentes en `lib/reports/export.ts` y `lib/services/trazabilidad-export.ts`.
+- **UI:** Radix UI + Tailwind v4, componentes en `components/`, íconos Phosphor. Toasts: importar `toast` desde `@/lib/toast` (NO de `sonner` directamente).
+- **QR:** **no hay librería de QR instalada.** El MVP debe entregar un enlace directo funcional; si se agrega QR, instalar algo simple (p. ej. `qrcode`) sin sobredimensionar.
+- **Impresión/PDF:** existe el route group `app/(print)/` y `lib/pdf/` por si el PPA o el acta necesitan versión imprimible.
+- **Pruebas:** Vitest (unit, `npm test`) y Playwright (e2e, `npm run test:e2e`). El proyecto SÍ tiene pruebas automatizadas extensas; agrega/actualiza pruebas.
+
+### Módulo de prevención ya existente (integrar, no duplicar)
+
+Ya existe un área de **Prevención**: `app/(app)/prevencion/` ("Evaluaciones SST" — checklists de trabajadores nuevos/antiguos post-incidente), con lógica en `lib/sst/` + `lib/services/sst.ts`, esquema `db/schema/sst.ts` y manifest `modules/sst/manifest.ts` (permisos `sst:view|create|close|manage`, área de nav `prevencion`). El PPA Digital debe sumarse como un submódulo coherente dentro de esa misma área de navegación `prevencion`, reutilizando sus convenciones (no crear una sección desconectada).
+
 ## Decisión importante sobre usuarios trabajadores
 
 No debes crear cuentas de usuario para cada trabajador.
 
 Los trabajadores no deben iniciar sesión ni tener contraseña. El acceso del trabajador debe ser simple, mediante QR o enlace directo al formulario PPA.
 
-Al inicio del formulario, el trabajador debe identificarse de una forma simple y ordenada. Debe poder buscarse o seleccionarse desde una lista controlada de trabajadores, o ingresar un identificador como nombre, RUT, código interno, empresa o dato equivalente según lo que ya exista en la webapp.
+Al inicio del formulario, el trabajador debe identificarse de una forma simple y ordenada. Debe poder buscarse o seleccionarse desde la **lista controlada de trabajadores que ya existe** (tabla `workers`: nombre, RUT, cargo, faena). Reutiliza esa tabla; no inventes otro origen de datos.
 
-Si el trabajador no aparece en la lista, el sistema debe permitir continuar con identificación manual, pero esa identificación debe quedar marcada visualmente para revisión o validación posterior por un usuario autorizado.
+Si el trabajador no aparece en la lista, el sistema debe permitir continuar con identificación manual (texto libre: nombre/RUT/empresa), pero ese registro debe quedar **marcado con una bandera de "identificación manual / pendiente de validación"** para revisión posterior por un usuario autorizado.
 
-Los usuarios autenticados del sistema deben ser solo perfiles internos como administrador, supervisor, prevencionista o jefe de área, según los roles que ya existan en la webapp.
+Los usuarios autenticados del sistema son solo perfiles internos. IMPORTANTE: en este repo **no existe un rol llamado "supervisor"**. Los roles reales son `administrador`, `jefa_chome`, `secretaria`, `prevencionista`, `prevencionista_faena`, `solicitante_faena` y `jefe_mantencion`. El "supervisor responsable" del flujo PPA debe mapearse a roles reales —típicamente `prevencionista_faena` (scoped a la faena del trabajador) y/o `prevencionista` y `jefa_chome`— y/o al campo de texto `worker.supervisor`/`worker.prevencionista` para mostrar el responsable. Si el flujo necesita un permiso/rol nuevo de revisión PPA, decláralo en el manifest del módulo con sus `defaultGrants`, sin crear un sistema de auth paralelo.
 
 No inventes un sistema nuevo de autenticación si ya existe uno. No crees usuarios trabajadores si no son necesarios. Mantén el flujo del trabajador con la menor fricción posible.
 
 ## Reglas técnicas generales
 
-Antes de implementar, inspecciona el repositorio y entiende:
+La sección "Realidad del repositorio" de arriba ya responde el grueso de la inspección. Antes de implementar, confírmala y profundiza en los puntos concretos del módulo:
 
-- Qué framework usa la webapp.
-- Cómo están organizadas las rutas, páginas, componentes y servicios.
-- Cómo se maneja la autenticación.
-- Cómo se manejan los permisos.
-- Cómo se persiste la información.
-- Cómo se validan formularios.
-- Cómo se muestran notificaciones, alertas, modales y estados.
-- Cómo se construyen tablas, dashboards o reportes.
-- Qué sistema de estilos o componentes visuales ya existe.
+- Rutas/feature: replica el patrón `app/(app)/<área>/page.tsx` + `actions.ts` + componentes co-ubicados; mira `app/(app)/prevencion/` como referencia directa.
+- Autenticación y rutas públicas: revisa `proxy.ts` (hay que **agregar la ruta pública del formulario PPA** a `publicPaths`, p. ej. `/ppa`, para que el trabajador acceda sin login sin que el proxy lo redirija).
+- Permisos: revisa `modules/sst/manifest.ts` y `lib/auth/` para declarar los permisos del PPA y sus `defaultGrants`.
+- Persistencia: revisa `db/schema/sst.ts` y `db/schema/worksites.ts` como modelo; agrega el/los esquemas del PPA en `db/schema/` con Drizzle + `nanoid` y genera migración.
+- Validación: replica el uso de Zod 4 dentro de las Server Actions (cliente + servidor).
+- Notificaciones/alertas/estados: usa `lib/services/notifications.ts` (`notifySafe`) y, para email, `lib/email/smtp.ts` (Resend) + plantillas.
+- Tablas/dashboards/reportes: replica los patrones existentes de listas, filtros y export XLSX (`exceljs`).
+- UI: Radix + Tailwind v4, componentes de `components/`, toasts vía `@/lib/toast`.
 
 Después de revisar el proyecto, implementa siguiendo los patrones actuales. No impongas una arquitectura externa si el proyecto ya tiene una forma clara de trabajar.
 
@@ -62,7 +85,7 @@ Implementa una primera versión funcional del módulo con el siguiente alcance:
 12. Historial de PPA realizados.
 13. Panel básico de análisis e indicadores.
 14. Filtros básicos para revisar la información.
-15. Exportación simple de datos si la webapp ya cuenta con mecanismos de exportación o si puede implementarse sin sobredimensionar.
+15. Exportación simple de datos en formato **XLSX** (la webapp ya exporta con `exceljs`; NUNCA CSV, por regla de `AGENTS.md`).
 
 ## Flujo del trabajador
 
@@ -88,18 +111,13 @@ Incluye estas preguntas como base funcional del formulario:
 
 ¿Qué trabajo voy a realizar?
 
-Opciones sugeridas:
+Las opciones deben ser los **mismos cargos que ya usa el módulo de evaluación**, reutilizando la lista controlada `CARGO_OPTIONS` de `lib/sst/cargos.ts` (no inventes una lista nueva). Excluye `conductor_general` (Conductor General). Las opciones quedan:
 
-- Mantención.
-- Operación.
-- Limpieza.
-- Izaje.
-- Trabajo en altura.
-- Espacio confinado.
-- Excavación.
-- Otro.
+- Conductor Ampliroll (`conductor_ampliroll`).
+- Conductor Batea (`conductor_batea`).
+- Operador Maquinaria Pesada (`operador_maquinaria_pesada`).
 
-Si el usuario selecciona “Otro”, debe poder especificar el tipo de trabajo.
+Es una lista cerrada y controlada: no incluyas opción "Otro" ni texto libre aquí.
 
 ### Pregunta 2
 
@@ -192,7 +210,9 @@ Ese resultado debe quedar registrado para trazabilidad y análisis posterior.
 
 ## Flujo del supervisor
 
-Cuando el sistema detecte una condición insegura, debe generarse una alerta para el supervisor correspondiente o para el panel de supervisión disponible.
+> Nota de alineación: en este documento "supervisor" se usa en sentido funcional (quien revisa y autoriza). En el repo NO existe un rol `supervisor`; este rol funcional se mapea a `prevencionista_faena` (para su faena) y/o `prevencionista`/`jefa_chome`. Ver la sección "Realidad del repositorio".
+
+Cuando el sistema detecte una condición insegura, debe generarse una alerta para el responsable de revisión correspondiente o para el panel de supervisión disponible.
 
 La alerta debe mostrar de forma clara:
 
@@ -281,22 +301,22 @@ No conviertas esto en una explicación de campos de base de datos. Resuelve la p
 
 ## Notificaciones
 
-Implementa notificaciones según lo que ya exista en la webapp.
+Usa la infraestructura de notificaciones que YA existe en la webapp.
 
 Prioridad de canales:
 
-1. Notificación interna dentro de la webapp.
-2. Correo electrónico, si el proyecto ya lo soporta o es simple de implementar.
-3. Integraciones externas solo si ya existen en el proyecto.
+1. **Notificación interna in-app** vía `lib/services/notifications.ts` (helper `notifySafe()`, fire-and-forget; se muestra en `NotificationBell` y en `app/(app)/notificaciones/`). Este es el canal principal del MVP.
+2. **Correo electrónico** vía la fachada `lib/email/smtp.ts` (powered by **Resend**) + plantillas en `lib/services/email-templates.ts`. Ya está soportado, úsalo cuando aplique.
+3. No agregues integraciones externas nuevas (Teams, Slack, WhatsApp). El proyecto no las tiene y quedan fuera del MVP.
 
-No agregues integraciones complejas como Teams, Slack o WhatsApp en el MVP si el proyecto no las tiene preparadas.
+Como no hay rol "supervisor", enruta las notificaciones por **permiso de revisión PPA y/o por faena** (p. ej. a los `prevencionista_faena` de la faena del trabajador y a `prevencionista`/`jefa_chome`), reutilizando el patrón de destinatarios por permiso/rol que ya usa `notifications.ts`.
 
 Las notificaciones mínimas son:
 
-- Al supervisor cuando un trabajo es detenido.
-- Al supervisor cuando un PPA queda pendiente de revisión.
-- Al trabajador o vista pública cuando el trabajo queda autorizado.
-- Al trabajador o vista pública cuando el trabajo queda rechazado o requiere corrección.
+- Al responsable de revisión (prevencionista/faena) cuando un trabajo es detenido.
+- Al responsable de revisión cuando un PPA queda pendiente de revisión.
+- A la vista pública del trabajador cuando el trabajo queda autorizado.
+- A la vista pública del trabajador cuando el trabajo queda rechazado o requiere corrección.
 
 ## Experiencia de usuario
 
@@ -321,15 +341,15 @@ El supervisor debe entender rápidamente qué ocurrió, qué debe revisar y qué
 
 ## Permisos
 
-Respeta el sistema de permisos existente en la webapp.
+Respeta el sistema de permisos existente (RBAC por base de datos, derivado de `modules/*/manifest.ts` con `defaultGrants` por `roleSlug` y scoping por faena vía `worksiteUsers`).
 
-Los trabajadores sin login solo deben poder acceder al formulario público/controlado y ver el resultado asociado al envío actual.
+Los trabajadores sin login solo deben poder acceder al formulario público (ruta agregada a `publicPaths` en `proxy.ts`) y ver el resultado asociado al envío actual. No deben poder navegar al resto de la app.
 
-Los supervisores deben poder ver y gestionar los PPA que les correspondan según la lógica del proyecto.
+El responsable de revisión (mapeado a `prevencionista_faena` para su faena, y/o `prevencionista`/`jefa_chome`) debe poder ver y gestionar los PPA que le correspondan. Recuerda: **no existe rol "supervisor"**.
 
-Los administradores o prevencionistas deben poder revisar el conjunto de registros e indicadores.
+Los `administrador` y `prevencionista` deben poder revisar el conjunto de registros e indicadores.
 
-Si el proyecto aún no tiene granularidad suficiente, implementa una solución mínima y coherente, sin crear una arquitectura de permisos innecesariamente compleja.
+Declara los permisos del PPA (p. ej. `ppa:view`, `ppa:review`, `ppa:manage`) en el manifest del módulo con sus `defaultGrants`, siguiendo el patrón de `modules/sst/manifest.ts`. No crees una arquitectura de permisos paralela.
 
 ## Validaciones
 
@@ -348,11 +368,9 @@ Las validaciones deben ocurrir tanto en el frontend como en el backend si el pro
 
 Implementa o deja preparado el acceso mediante QR o enlace directo.
 
-Si la webapp ya tiene generación de QR, úsala.
+**La webapp hoy NO tiene librería de generación de QR.** Por lo tanto, el MVP debe entregar un **enlace directo** funcional al formulario PPA (ruta pública agregada a `proxy.ts`). Si se quiere mostrar un QR, agrega una librería simple (p. ej. `qrcode`) sin sobredimensionar; no es bloqueante para el MVP.
 
-Si no existe, implementa una solución simple para generar o mostrar un enlace que luego pueda convertirse en QR.
-
-El QR o enlace debe llevar al formulario PPA correspondiente, idealmente con contexto de área, planta, faena o ubicación si la webapp ya maneja esa información.
+El enlace debe llevar al formulario PPA correspondiente, idealmente con contexto de **faena/worksite** (que sí existe en el proyecto) como parámetro, para precargar el contexto de trabajo.
 
 No bloquees el MVP por una generación avanzada de QR. El acceso directo al formulario es suficiente si queda bien preparado.
 
@@ -398,17 +416,17 @@ La implementación se considerará correcta si cumple con lo siguiente:
 
 ## Pruebas esperadas
 
-Si el proyecto tiene sistema de pruebas, agrega o actualiza pruebas para los flujos principales:
+El proyecto SÍ tiene pruebas automatizadas extensas: **Vitest** para unit (`npm test`) y **Playwright** para e2e (`npm run test:e2e`). Agrega o actualiza pruebas para los flujos principales:
 
-- Envío de PPA seguro.
+- Envío de PPA seguro (aprobado automáticamente).
 - Envío de PPA con trabajo detenido.
-- Validación de preguntas críticas.
-- Revisión por supervisor.
-- Autorización por supervisor.
-- Rechazo por supervisor.
-- Acceso y permisos básicos.
+- Validación de preguntas críticas (lógica de evaluación/detención en `lib/services`, testeable con Vitest).
+- Revisión por el responsable (prevencionista/faena).
+- Autorización por el responsable.
+- Rechazo por el responsable.
+- Acceso y permisos básicos (incluyendo que la ruta pública del PPA funcione sin login y el resto siga protegido por `proxy.ts`).
 
-Si el proyecto no tiene pruebas automatizadas, entrega una lista clara de pruebas manuales realizadas o recomendadas.
+Prioriza tests unitarios de la lógica de evaluación/estados en `lib/`, y al menos un e2e del flujo crítico del trabajador.
 
 ## Entrega esperada
 

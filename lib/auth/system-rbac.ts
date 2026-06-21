@@ -51,6 +51,10 @@ export const SYSTEM_PERMISSIONS = [
   { id: "p-sst-create", name: "sst:create", module: "sst", description: "Crear evaluaciones SST" },
   { id: "p-sst-close", name: "sst:close", module: "sst", description: "Cerrar evaluaciones SST" },
   { id: "p-sst-manage", name: "sst:manage", module: "sst", description: "Gestionar plan de acción SST" },
+  // PPA Digital module
+  { id: "p-ppa-view", name: "ppa:view", module: "ppa", description: "Ver PPA Digital e indicadores" },
+  { id: "p-ppa-review", name: "ppa:review", module: "ppa", description: "Revisar y autorizar/rechazar PPA detenidos" },
+  { id: "p-ppa-manage", name: "ppa:manage", module: "ppa", description: "Gestionar y exportar PPA Digital" },
 ] satisfies Array<typeof permissions.$inferInsert>
 
 const JEFATURA_PERMISSION_IDS = [
@@ -60,6 +64,8 @@ const JEFATURA_PERMISSION_IDS = [
   "p-rec-view",
   "p-wh-stock",
   "p-rep-view",
+  "p-ppa-view",
+  "p-ppa-review",
 ]
 
 const SECRETARIA_PERMISSION_IDS = [
@@ -80,6 +86,7 @@ const PREVENCIONISTA_OFICINA_PERMISSION_IDS = [
   "p-rep-view",
   "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup",
   "p-sst-view", "p-sst-create", "p-sst-close", "p-sst-manage",
+  "p-ppa-view", "p-ppa-review", "p-ppa-manage",
 ]
 
 const PREVENCIONISTA_FAENA_PERMISSION_IDS = [
@@ -99,6 +106,7 @@ const PREVENCIONISTA_FAENA_SCOPE_PERMISSION_IDS = [
   "p-srv-create", "p-srv-own", "p-srv-submit",
   "p-sst-view", "p-sst-create",
   "p-rep-view",
+  "p-ppa-view", "p-ppa-review",
 ]
 
 const REPUESTOS_JEFATURA_PERMISSION_IDS = [
