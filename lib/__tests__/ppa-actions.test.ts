@@ -35,27 +35,21 @@ describe("findWorkerByRutAction", () => {
     vi.resetAllMocks()
   })
 
-  it("retorna error si worksiteId no está presente", async () => {
-    const res = await findWorkerByRutAction("", "11111111-1")
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("Selecciona")
-  })
-
   it("retorna error si el RUT no está presente", async () => {
-    const res = await findWorkerByRutAction("ws-1", "")
+    const res = await findWorkerByRutAction("")
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Ingresa tu RUT")
   })
 
   it("retorna error si el RUT es inválido", async () => {
-    const res = await findWorkerByRutAction("ws-1", "123-abc")
+    const res = await findWorkerByRutAction("123-abc")
     expect(res.ok).toBe(false)
     expect(res.message).toContain("RUT inválido")
   })
 
   it("retorna error si el trabajador no existe", async () => {
     mockFindWorkerByRut.mockResolvedValueOnce(null)
-    const res = await findWorkerByRutAction("ws-1", "12345678-5") // RUT válido
+    const res = await findWorkerByRutAction("12345678-5") // RUT válido
     expect(res.ok).toBe(false)
     expect(res.message).toContain("No se encontró ningún trabajador")
   })
@@ -65,12 +59,18 @@ describe("findWorkerByRutAction", () => {
       id: "work-1",
       firstName: "Juan",
       lastName: "Pérez",
+      position: "Operador",
+      worksiteId: "ws-1",
+      worksiteName: "Obra Central",
     })
-    const res = await findWorkerByRutAction("ws-1", "12345678-5")
+    const res = await findWorkerByRutAction("12345678-5")
     expect(res.ok).toBe(true)
     expect(res.worker).toEqual({
       id: "work-1",
       name: "Juan Pérez",
+      position: "Operador",
+      worksiteId: "ws-1",
+      worksiteName: "Obra Central",
     })
   })
 })

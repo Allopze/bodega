@@ -5,35 +5,40 @@ import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   listPpa,
+  countPpa,
   getPpa,
   reviewPpa,
+  closePpa,
   getPpaStats,
   type PpaRow,
   type PpaStats,
 } from "@/lib/services/ppa"
 import { ppaReviewSchema, type ActionState, type PpaReviewInput } from "@/lib/validation/ppa"
-import { notifyAfterCommit, notifySafe } from "@/lib/services/notifications"
-import type { WorksiteScope } from "@/lib/auth/scope"
+import { scopeToIds } from "@/lib/ppa/utils"
 
 const REVALIDATE = "/prevencion/ppa"
 
-function scopeToIds(scope: WorksiteScope): string[] | "all" {
-  if (scope.mode === "all") return "all"
-  if (scope.mode === "none") return []
-  return scope.ids
+export interface PpaListClientFilters {
+  estado?: string
+  tipoTrabajo?: string
+  worksiteId?: string
+  search?: string
+  dateFrom?: string
+  dateTo?: string
 }
 
 export async function listPpaAction(
-  filters?: { estado?: string; tipoTrabajo?: string; workerId?: string },
-  limit = 50,
+  filters: PpaListClientFilters = {},
+  limit = 20,
   offset = 0,
-): Promise<ActionState & { data?: { rows: PpaRow[] } }> {
+): Promise<ActionState & { data?: { rows: PpaRow[]; total: number } }> {
   const { session, error } = await guardPermission("ppa:view")
   if (error) return error
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))
   try {
-    const rows = await listPpa({ worksiteIds, ...filters }, limit, offset)
-    return { ok: true, data: { rows } }
+    const f = { worksiteIds, ...filters }
+    const [rows, total] = await Promise.all([listPpa(f, limit, offset), countPpa(f)])
+    return { ok: true, data: { rows, total } }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al listar PPA" }
   }
@@ -74,23 +79,29 @@ export async function reviewPpaAction(
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${updated.id}`)
 
-    // Trazabilidad: notificación interna de la decisión (vista del responsable).
-    notifyAfterCommit(async () => {
-      const isAuth = updated.decision === "autorizado"
-      await notifySafe({
-        userId:     session.user.id,
-        type:       isAuth ? "ppa_authorized" : "ppa_rejected",
-        title:      isAuth ? "PPA autorizado" : "PPA resuelto",
-        body:       `${updated.workerName} — ${updated.estado}.`,
-        entityType: "ppa",
-        entityId:   updated.id,
-        entityHref: `${REVALIDATE}/${updated.id}`,
-      })
-    })
+    // El trabajador ve la decisión en su página pública de resultado
+    // (`/ppa/result/[token]`), que refleja el estado actual del caso. No se
+    // emite notificación interna aquí: el trabajador no es usuario del sistema.
 
     return { ok: true, message: "Revisión registrada" }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar la revisión" }
+  }
+}
+
+export async function closePpaAction(id: string): Promise<ActionState> {
+  const { session, error } = await guardPermission("ppa:review")
+  if (error) return error
+  if (!id) return { ok: false, message: "Falta el identificador del PPA." }
+
+  const worksiteIds = scopeToIds(resolveWorksiteScope(session))
+  try {
+    await closePpa(id, worksiteIds)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${id}`)
+    return { ok: true, message: "Caso cerrado" }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Error al cerrar el caso" }
   }
 }
 

@@ -20,6 +20,12 @@ export interface PpaEvaluationResult {
   esCritica: boolean
 }
 
+/** Sin contenido alguno (vacío o solo espacios). */
+function isEmpty(v: string | undefined | null): boolean {
+  return !v || v.trim().length === 0
+}
+
+/** Vacío o demasiado corto para considerarse una respuesta útil. */
 function isBlank(v: string | undefined | null): boolean {
   return !v || v.trim().length < PPA_MIN_ANSWER_LEN
 }
@@ -59,18 +65,27 @@ export function evaluatePpa(answers: PpaAnswers): PpaEvaluationResult {
   }
 
   // 5. Tareas críticas: las preguntas complementarias son obligatorias y deben
-  //    tener contenido suficiente. Sin identificar el peligro crítico se detiene.
+  //    tener contenido suficiente.
   if (esCritica) {
     const comp = answers.complementarias ?? {}
+
+    // 5a. La pregunta clave es identificar el peligro crítico. Si no lo hace
+    //     (vacío o insuficiente) → no identifica el peligro en una tarea crítica.
     if (isBlank(comp.peligroCritico)) {
       reasons.add("sin_peligro_en_tarea_critica")
     }
+
+    // 5b. Resto de complementarias obligatorias. Distinguimos "no respondió"
+    //     (vacía) de "respondió insuficiente" (no vacía pero demasiado corta).
     const otrasObligatorias: Array<keyof typeof comp> = [
       "queCambio",
       "revisionEquipo",
       "condicionClima",
     ]
-    if (otrasObligatorias.some((k) => isBlank(comp[k]))) {
+    if (otrasObligatorias.some((k) => isEmpty(comp[k]))) {
+      reasons.add("pregunta_critica_sin_responder")
+    }
+    if (otrasObligatorias.some((k) => !isEmpty(comp[k]) && isBlank(comp[k]))) {
       reasons.add("respuesta_insuficiente")
     }
   }

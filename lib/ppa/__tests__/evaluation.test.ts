@@ -83,6 +83,55 @@ describe("evaluatePpa", () => {
     expect(r.stop).toBe(false)
   })
 
+  it("trata respuestas de solo espacios como vacías (tarea crítica)", () => {
+    const r = evaluatePpa(safeAnswers({
+      tipoTrabajo: "operador_maquinaria_pesada",
+      complementarias: {
+        peligroCritico: "Volcamiento en pendiente",
+        queCambio:      "   ",            // solo espacios → no respondió
+        revisionEquipo: "Revisé frenos",
+        condicionClima: "Despejado y seco",
+      },
+    }))
+    expect(r.stop).toBe(true)
+    expect(r.reasons).toContain("pregunta_critica_sin_responder")
+    expect(r.reasons).not.toContain("sin_peligro_en_tarea_critica")
+  })
+
+  it("marca respuesta insuficiente cuando una complementaria es muy corta", () => {
+    const r = evaluatePpa(safeAnswers({
+      tipoTrabajo: "operador_maquinaria_pesada",
+      complementarias: {
+        peligroCritico: "Volcamiento en pendiente",
+        queCambio:      "ok",             // no vacía pero < mínimo → insuficiente
+        revisionEquipo: "Revisé frenos",
+        condicionClima: "Despejado y seco",
+      },
+    }))
+    expect(r.stop).toBe(true)
+    expect(r.reasons).toContain("respuesta_insuficiente")
+    expect(r.reasons).not.toContain("pregunta_critica_sin_responder")
+  })
+
+  it("detiene si no identifica el peligro crítico (solo espacios)", () => {
+    const r = evaluatePpa(safeAnswers({
+      tipoTrabajo: "operador_maquinaria_pesada",
+      complementarias: {
+        peligroCritico: "   ",
+        queCambio:      "Terreno húmedo",
+        revisionEquipo: "Revisé frenos",
+        condicionClima: "Despejado y seco",
+      },
+    }))
+    expect(r.reasons).toContain("sin_peligro_en_tarea_critica")
+  })
+
+  it("detiene si controles viene indefinido", () => {
+    const r = evaluatePpa(safeAnswers({ controles: undefined as unknown as string[] }))
+    expect(r.stop).toBe(true)
+    expect(r.reasons).toContain("faltan_controles")
+  })
+
   it("acumula múltiples razones sin duplicarlas", () => {
     const r = evaluatePpa(safeAnswers({
       seguroComenzar: "no",

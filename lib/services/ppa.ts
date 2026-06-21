@@ -4,7 +4,7 @@
  * Sin Server Actions ni imports de UI.
  */
 
-import { eq, and, inArray, desc } from "drizzle-orm"
+import { eq, and, or, inArray, desc, ilike, gte, lte, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { ppaSubmissions, type PpaSubmission } from "@/db/schema/ppa"
 import { workers, worksites } from "@/db/schema/worksites"
@@ -131,52 +131,138 @@ export async function createPpaSubmission(
 
 /* ── getPpaByToken (consulta pública del resultado) ──────────────────────────── */
 
-export async function getPpaByToken(token: string): Promise<PpaRow | null> {
+export type PpaTokenResult = PpaRow & {
+  /** Responsable del trabajador (texto en la lista controlada), si está enlazado. */
+  supervisor: string | null
+  prevencionista: string | null
+}
+
+export async function getPpaByToken(token: string): Promise<PpaTokenResult | null> {
   if (!token) return null
   const rows = await db
     .select({
       submission: ppaSubmissions,
       worksiteName: worksites.name,
+      supervisor: workers.supervisor,
+      prevencionista: workers.prevencionista,
     })
     .from(ppaSubmissions)
     .leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
+    .leftJoin(workers, eq(ppaSubmissions.workerId, workers.id))
     .where(eq(ppaSubmissions.publicToken, token))
     .limit(1)
 
   if (rows.length === 0) return null
-  return { ...rows[0]!.submission, worksiteName: rows[0]!.worksiteName }
+  const r = rows[0]!
+  return {
+    ...r.submission,
+    worksiteName: r.worksiteName,
+    supervisor: r.supervisor,
+    prevencionista: r.prevencionista,
+  }
 }
 
 /* ── listPpa (panel del responsable / historial) ─────────────────────────────── */
 
-export async function listPpa(
-  filters: {
-    worksiteIds: string[] | "all"
-    estado?: string
-    tipoTrabajo?: string
-    workerId?: string
-  },
-  limit = 50,
-  offset = 0,
-): Promise<PpaRow[]> {
-  if (filters.worksiteIds !== "all" && filters.worksiteIds.length === 0) return []
+export interface PpaListFilters {
+  worksiteIds: string[] | "all"
+  estado?: string
+  tipoTrabajo?: string
+  workerId?: string
+  worksiteId?: string
+  /** Búsqueda libre por nombre de trabajador o de faena. */
+  search?: string
+  /** Rango de fechas (ISO) sobre createdAt. */
+  dateFrom?: string
+  dateTo?: string
+}
+
+/** Construye las condiciones WHERE compartidas por listPpa y countPpa.
+ *  Devuelve `null` cuando el alcance no incluye ninguna faena (resultado vacío). */
+function buildPpaConditions(filters: PpaListFilters) {
+  if (filters.worksiteIds !== "all" && filters.worksiteIds.length === 0) return null
 
   const conditions = []
   if (filters.worksiteIds !== "all") conditions.push(inArray(ppaSubmissions.worksiteId, filters.worksiteIds))
-  if (filters.estado)      conditions.push(eq(ppaSubmissions.estado, filters.estado))
+  if (filters.estado === "pendientes") {
+    // Pseudo-filtro: todo lo que requiere acción del responsable.
+    conditions.push(inArray(ppaSubmissions.estado, ["detenido", "en_correccion"]))
+  } else if (filters.estado) {
+    conditions.push(eq(ppaSubmissions.estado, filters.estado))
+  }
   if (filters.tipoTrabajo) conditions.push(eq(ppaSubmissions.tipoTrabajo, filters.tipoTrabajo))
   if (filters.workerId)    conditions.push(eq(ppaSubmissions.workerId, filters.workerId))
+  if (filters.worksiteId)  conditions.push(eq(ppaSubmissions.worksiteId, filters.worksiteId))
+  if (filters.dateFrom)    conditions.push(gte(ppaSubmissions.createdAt, filters.dateFrom))
+  if (filters.dateTo)      conditions.push(lte(ppaSubmissions.createdAt, filters.dateTo))
+  if (filters.search) {
+    const like = `%${filters.search.trim()}%`
+    const term = or(ilike(ppaSubmissions.workerName, like), ilike(worksites.name, like))
+    if (term) conditions.push(term)
+  }
+  return conditions
+}
 
-  const rows = await db
-    .select({ submission: ppaSubmissions, worksiteName: worksites.name })
+export async function listPpa(
+  filters: PpaListFilters,
+  limit = 50,
+  offset = 0,
+): Promise<PpaRow[]> {
+  const conditions = buildPpaConditions(filters)
+  if (conditions === null) return []
+
+  // El JOIN con worksites solo es necesario cuando se filtra por búsqueda libre
+  // (ilike sobre worksites.name). Sin search, se omite el JOIN y se resuelven
+  // los nombres de faena en una segunda consulta batch.
+  if (filters.search) {
+    const rows = await db
+      .select({ submission: ppaSubmissions, worksiteName: worksites.name })
+      .from(ppaSubmissions)
+      .leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(ppaSubmissions.createdAt))
+      .limit(limit)
+      .offset(offset)
+    return rows.map((r) => ({ ...r.submission, worksiteName: r.worksiteName }))
+  }
+
+  // Sin search: query directo sobre ppa_submissions (sin JOIN).
+  const submissions = await db
+    .select()
     .from(ppaSubmissions)
-    .leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(ppaSubmissions.createdAt))
     .limit(limit)
     .offset(offset)
 
-  return rows.map((r) => ({ ...r.submission, worksiteName: r.worksiteName }))
+  if (submissions.length === 0) return []
+
+  // Batch-fetch los nombres de faena (≤limit ids, una sola consulta).
+  const ids = [...new Set(submissions.map((s) => s.worksiteId))]
+  const wsRows = ids.length > 0
+    ? await db.select({ id: worksites.id, name: worksites.name })
+        .from(worksites)
+        .where(inArray(worksites.id, ids))
+    : []
+  const wsMap = new Map(wsRows.map((w) => [w.id, w.name]))
+
+  return submissions.map((s) => ({ ...s, worksiteName: wsMap.get(s.worksiteId) ?? null }))
+}
+
+/** Total de PPA que coinciden con el filtro (para paginación). */
+export async function countPpa(filters: PpaListFilters): Promise<number> {
+  const conditions = buildPpaConditions(filters)
+  if (conditions === null) return 0
+
+  // El JOIN con worksites solo es necesario cuando se filtra por búsqueda libre
+  // (ilike sobre worksites.name). Para conteos sin filtro search se omite.
+  const base = db.select({ count: sql<number>`count(*)::int` }).from(ppaSubmissions)
+  const q = filters.search
+    ? base.leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
+    : base
+
+  const rows = await q.where(conditions.length > 0 ? and(...conditions) : undefined)
+  return rows[0]?.count ?? 0
 }
 
 /* ── getPpa (detalle, con scope) ─────────────────────────────────────────────── */
@@ -222,7 +308,7 @@ export async function reviewPpa(
 
   const now = new Date().toISOString()
 
-  await db.update(ppaSubmissions)
+  const result = await db.update(ppaSubmissions)
     .set({
       reviewedBy:       userId,
       fuiAlLugar:       data.fuiAlLugar,
@@ -233,10 +319,51 @@ export async function reviewPpa(
       reviewedAt:       now,
       updatedAt:        now,
     })
-    .where(eq(ppaSubmissions.id, data.ppaId))
+    // Optimistic concurrency: solo actualiza si el estado no cambió desde la lectura.
+    .where(and(
+      eq(ppaSubmissions.id, data.ppaId),
+      inArray(ppaSubmissions.estado, ["detenido", "en_correccion"]),
+    ))
+    .returning()
 
-  const updated = await db.query.ppaSubmissions.findFirst({ where: eq(ppaSubmissions.id, data.ppaId) })
-  return updated!
+  if (!result[0]) {
+    throw new Error("Este PPA ya fue procesado por otro responsable. Recarga la página.")
+  }
+
+  return result[0]
+}
+
+/* ── closePpa (cierre del caso) ──────────────────────────────────────────────── */
+
+/**
+ * Cierra un caso ya resuelto (autorizado o rechazado) → estado "cerrado".
+ * No requiere migración: reutiliza `updatedAt` como marca temporal del cierre.
+ */
+export async function closePpa(
+  id: string,
+  worksiteIds: string[] | "all",
+): Promise<PpaSubmission> {
+  const current = await getPpa(id, worksiteIds)
+  if (!current) throw new Error("PPA no encontrado o fuera de tu alcance.")
+  if (current.estado !== "autorizado" && current.estado !== "rechazado") {
+    throw new Error("Solo se pueden cerrar casos autorizados o rechazados.")
+  }
+
+  const now = new Date().toISOString()
+  const result = await db.update(ppaSubmissions)
+    .set({ estado: "cerrado", updatedAt: now })
+    // Optimistic concurrency: solo cierra si el estado no cambió desde la lectura.
+    .where(and(
+      eq(ppaSubmissions.id, id),
+      inArray(ppaSubmissions.estado, ["autorizado", "rechazado"]),
+    ))
+    .returning()
+
+  if (!result[0]) {
+    throw new Error("Este caso ya fue cerrado por otro responsable. Recarga la página.")
+  }
+
+  return result[0]
 }
 
 /* ── getPpaStats (panel de análisis) ─────────────────────────────────────────── */
@@ -249,14 +376,18 @@ export interface PpaStats {
   rechazados: number
   pendientes: number
   porcentajeDesviaciones: number
+  /** Promedio de minutos entre el envío y la revisión del responsable. null si no hay revisiones. */
+  avgResponseMinutes: number | null
   topReasons: { reason: string; count: number }[]
   topTareas: { tipoTrabajo: string; count: number }[]
+  topFaenas: { worksiteName: string; count: number }[]
 }
 
 export async function getPpaStats(worksiteIds: string[] | "all"): Promise<PpaStats> {
   const empty: PpaStats = {
     total: 0, detenidos: 0, aprobadosAuto: 0, autorizados: 0, rechazados: 0,
-    pendientes: 0, porcentajeDesviaciones: 0, topReasons: [], topTareas: [],
+    pendientes: 0, porcentajeDesviaciones: 0, avgResponseMinutes: null,
+    topReasons: [], topTareas: [], topFaenas: [],
   }
   if (worksiteIds !== "all" && worksiteIds.length === 0) return empty
 
@@ -264,49 +395,71 @@ export async function getPpaStats(worksiteIds: string[] | "all"): Promise<PpaSta
     ? inArray(ppaSubmissions.worksiteId, worksiteIds)
     : undefined
 
-  const rows = await db
+  // ── Counts + avg response (single aggregate row) ────────────────────────
+  const [totals] = await db
     .select({
-      estado:           ppaSubmissions.estado,
-      resultado:        ppaSubmissions.resultado,
-      tipoTrabajo:      ppaSubmissions.tipoTrabajo,
-      triggeredReasons: ppaSubmissions.triggeredReasons,
+      total:              sql<number>`count(*)::int`,
+      detenidos:          sql<number>`count(*) filter (where ${ppaSubmissions.resultado} = 'detenido')::int`,
+      aprobadosAuto:      sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'aprobado_auto')::int`,
+      autorizados:        sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'autorizado')::int`,
+      rechazados:         sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'rechazado')::int`,
+      pendientes:         sql<number>`count(*) filter (where ${ppaSubmissions.estado} in ('detenido', 'en_correccion'))::int`,
+      avgResponseMinutes: sql<number | null>`round(avg(extract(epoch from (${ppaSubmissions.reviewedAt} - ${ppaSubmissions.createdAt})) / 60) filter (where ${ppaSubmissions.reviewedAt} >= ${ppaSubmissions.createdAt}))`,
     })
     .from(ppaSubmissions)
     .where(scopeCond)
 
-  const stats = { ...empty }
-  stats.total = rows.length
-  const reasonCounts = new Map<string, number>()
-  const tareaCounts = new Map<string, number>()
+  // ── Top-N queries run in parallel (each returns ≤5 rows) ────────────────
+  const [topReasonsResult, topTareasRows, topFaenasRows] = await Promise.all([
+    // Top reasons (JSONB unnest — requires raw SQL)
+    db.execute(sql`
+      SELECT value AS reason, count(*)::int AS count
+      FROM ppa_submissions,
+           jsonb_array_elements_text(ppa_submissions.triggered_reasons) AS value
+      ${scopeCond ? sql`WHERE ${scopeCond}` : sql``}
+      GROUP BY value
+      ORDER BY count DESC
+      LIMIT 5
+    `),
 
-  for (const r of rows) {
-    if (r.estado === "aprobado_auto") stats.aprobadosAuto++
-    if (r.estado === "autorizado")    stats.autorizados++
-    if (r.estado === "rechazado")     stats.rechazados++
-    if (r.estado === "detenido" || r.estado === "en_correccion") stats.pendientes++
-    if (r.resultado === "detenido")   stats.detenidos++
+    // Top tareas (GROUP BY tipo_trabajo)
+    db.select({
+      tipoTrabajo: ppaSubmissions.tipoTrabajo,
+      count:       sql<number>`count(*)::int`,
+    }).from(ppaSubmissions)
+      .where(scopeCond)
+      .groupBy(ppaSubmissions.tipoTrabajo)
+      .orderBy(sql`count(*) desc`)
+      .limit(5),
 
-    tareaCounts.set(r.tipoTrabajo, (tareaCounts.get(r.tipoTrabajo) ?? 0) + 1)
-    for (const reason of (r.triggeredReasons as string[] | null) ?? []) {
-      reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1)
-    }
+    // Top faenas con más desviaciones (JOIN + filter detenidos + GROUP BY)
+    db.select({
+      worksiteName: worksites.name,
+      count:        sql<number>`count(*)::int`,
+    }).from(ppaSubmissions)
+      .leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
+      .where(and(scopeCond, eq(ppaSubmissions.resultado, "detenido")))
+      .groupBy(worksites.name)
+      .orderBy(sql`count(*) desc`)
+      .limit(5),
+  ])
+
+  const total     = totals?.total ?? 0
+  const detenidos = totals?.detenidos ?? 0
+
+  return {
+    total,
+    detenidos,
+    aprobadosAuto:          totals?.aprobadosAuto ?? 0,
+    autorizados:            totals?.autorizados ?? 0,
+    rechazados:             totals?.rechazados ?? 0,
+    pendientes:             totals?.pendientes ?? 0,
+    porcentajeDesviaciones: total > 0 ? Math.round((detenidos / total) * 100) : 0,
+    avgResponseMinutes:     totals?.avgResponseMinutes ?? null,
+    topReasons:             (topReasonsResult as Record<string, unknown>[]).map((r) => ({ reason: String(r.reason), count: Number(r.count) })),
+    topTareas:              topTareasRows.map((r) => ({ tipoTrabajo: r.tipoTrabajo, count: r.count })),
+    topFaenas:              topFaenasRows.map((r) => ({ worksiteName: r.worksiteName ?? "—", count: r.count })),
   }
-
-  stats.porcentajeDesviaciones = stats.total > 0
-    ? Math.round((stats.detenidos / stats.total) * 100)
-    : 0
-
-  stats.topReasons = [...reasonCounts.entries()]
-    .map(([reason, count]) => ({ reason, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
-
-  stats.topTareas = [...tareaCounts.entries()]
-    .map(([tipoTrabajo, count]) => ({ tipoTrabajo, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
-
-  return stats
 }
 
 /* ── Export XLSX ─────────────────────────────────────────────────────────────── */
@@ -350,11 +503,37 @@ export async function listWorksitesForPublicForm(): Promise<{ id: string; name: 
     .orderBy(worksites.name)
 }
 
+/** Faenas activas dentro del alcance del usuario (filtros internos + acceso QR). */
+export async function listScopedWorksites(
+  worksiteIds: string[] | "all",
+): Promise<{ id: string; name: string }[]> {
+  if (worksiteIds !== "all" && worksiteIds.length === 0) return []
+  const cond = worksiteIds !== "all"
+    ? and(eq(worksites.isActive, true), inArray(worksites.id, worksiteIds))
+    : eq(worksites.isActive, true)
+  return db
+    .select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(cond)
+    .orderBy(worksites.name)
+}
+
+/**
+ * Identifica al trabajador SOLO por RUT (único en la lista controlada) y deriva
+ * su faena. El trabajador no elige faena: se obtiene de su registro.
+ */
 export async function findWorkerByRut(
-  worksiteId: string,
   rut: string,
-): Promise<{ id: string; firstName: string; lastName: string; rut: string | null; position: string | null } | null> {
-  if (!worksiteId || !rut) return null
+): Promise<{
+  id: string
+  firstName: string
+  lastName: string
+  rut: string | null
+  position: string | null
+  worksiteId: string
+  worksiteName: string | null
+} | null> {
+  if (!rut) return null
   const cleaned = cleanRut(rut)
   const results = await db
     .select({
@@ -363,15 +542,12 @@ export async function findWorkerByRut(
       lastName: workers.lastName,
       rut: workers.rut,
       position: workers.position,
+      worksiteId: workers.worksiteId,
+      worksiteName: worksites.name,
     })
     .from(workers)
-    .where(
-      and(
-        eq(workers.worksiteId, worksiteId),
-        eq(workers.rut, cleaned),
-        eq(workers.isActive, true),
-      )
-    )
+    .leftJoin(worksites, eq(workers.worksiteId, worksites.id))
+    .where(and(eq(workers.rut, cleaned), eq(workers.isActive, true)))
     .limit(1)
 
   return results[0] ?? null

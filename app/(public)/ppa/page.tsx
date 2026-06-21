@@ -15,6 +15,7 @@ export default async function PpaPublicPage({
   const worksites = await listWorksitesForPublicForm()
 
   const initialWorksiteId = faena && worksites.some((w) => w.id === faena) ? faena : ""
+  const hasFaenaParam = !!faena
 
   return (
     <main className="mx-auto w-full max-w-lg px-4 py-6">
@@ -28,6 +29,7 @@ export default async function PpaPublicPage({
       <PpaForm
         worksites={worksites}
         initialWorksiteId={initialWorksiteId}
+        hasFaenaParam={hasFaenaParam}
         tipoTrabajoOptions={PPA_TIPO_TRABAJO_OPTIONS}
         controlOptions={PPA_CONTROL_OPTIONS.map((c) => ({ value: c.value, label: c.label }))}
         complementarias={PPA_COMPLEMENTARIAS.map((c) => ({ key: c.key, label: c.label }))}

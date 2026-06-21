@@ -1,29 +1,50 @@
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { requirePermission, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listPpa, getPpaStats } from "@/lib/services/ppa"
+import { listPpa, countPpa, getPpaStats, listScopedWorksites } from "@/lib/services/ppa"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
 import { PPA_STOP_REASON_LABELS, tipoTrabajoLabel, type PpaStopReason } from "@/lib/ppa/types"
+import { PpaMetricBar } from "./ppa-metric-bar"
 import { PpaList } from "./ppa-list"
+import { PpaAccessPanel } from "./ppa-access-panel"
+import { scopeToIds } from "@/lib/ppa/utils"
 
 export const metadata: Metadata = { title: "PPA Digital" }
 
-function scopeIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
-  return scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
-}
+const PAGE_SIZE = 20
 
-function StatCard({ label, value, tone }: { label: string; value: number | string; tone?: "danger" | "success" | "warning" }) {
-  const color =
-    tone === "danger" ? "text-[var(--color-danger)]" :
-    tone === "success" ? "text-[var(--color-success)]" :
-    tone === "warning" ? "text-[var(--color-warning)]" : ""
+function RankPanel({
+  title,
+  rows,
+}: {
+  title: string
+  rows: { label: ReactNode; count: number }[]
+}) {
+  if (rows.length === 0) return null
+  const max = Math.max(...rows.map((r) => r.count), 1)
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-      <p className="text-xs text-[var(--color-text-subtle)]">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4">
+      <h3 className="mb-3 text-eyebrow">{title}</h3>
+      <ul className="flex flex-col gap-2">
+        {rows.map((r, i) => (
+          <li key={i} className="flex flex-col gap-1">
+            <div className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="truncate text-[var(--color-text-muted)]">{r.label}</span>
+              <span className="font-mono font-semibold tabular-nums">{r.count}</span>
+            </div>
+            <div className="h-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+              <div
+                className="h-full rounded-full bg-[var(--color-border-strong)]"
+                style={{ width: `${Math.round((r.count / max) * 100)}%` }}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -33,10 +54,12 @@ export default async function PpaPanelPage() {
   try { session = await requirePermission("ppa:view") }
   catch { redirect("/forbidden") }
 
-  const worksiteIds = scopeIds(resolveWorksiteScope(session))
-  const [rows, stats] = await Promise.all([
-    listPpa({ worksiteIds }, 100, 0),
+  const worksiteIds = scopeToIds(resolveWorksiteScope(session))
+  const [rows, total, stats, worksiteOptions] = await Promise.all([
+    listPpa({ worksiteIds }, PAGE_SIZE, 0),
+    countPpa({ worksiteIds }),
     getPpaStats(worksiteIds),
+    listScopedWorksites(worksiteIds),
   ])
   const canReview = can(session, "ppa:review")
   const canExport = can(session, "ppa:manage")
@@ -62,49 +85,37 @@ export default async function PpaPanelPage() {
         }
       />
 
-      {/* Indicadores */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Total PPA" value={stats.total} />
-        <StatCard label="Trabajos detenidos" value={stats.detenidos} tone="danger" />
-        <StatCard label="Pendientes de revisión" value={stats.pendientes} tone="warning" />
-        <StatCard label="Aprobados automáticamente" value={stats.aprobadosAuto} tone="success" />
-        <StatCard label="Autorizados por revisor" value={stats.autorizados} tone="success" />
-        <StatCard label="Rechazados" value={stats.rechazados} tone="danger" />
-        <StatCard label="% con desviaciones" value={`${stats.porcentajeDesviaciones}%`} />
-      </div>
+      <PpaMetricBar stats={stats} />
 
-      {(stats.topReasons.length > 0 || stats.topTareas.length > 0) && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {stats.topReasons.length > 0 && (
-            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h3 className="mb-2 text-sm font-semibold">Motivos de alerta más frecuentes</h3>
-              <ul className="space-y-1 text-sm text-[var(--color-text-muted)]">
-                {stats.topReasons.map((r) => (
-                  <li key={r.reason} className="flex justify-between gap-2">
-                    <span>{PPA_STOP_REASON_LABELS[r.reason as PpaStopReason] ?? r.reason}</span>
-                    <span className="font-medium">{r.count}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {stats.topTareas.length > 0 && (
-            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h3 className="mb-2 text-sm font-semibold">Tareas con más PPA</h3>
-              <ul className="space-y-1 text-sm text-[var(--color-text-muted)]">
-                {stats.topTareas.map((t) => (
-                  <li key={t.tipoTrabajo} className="flex justify-between gap-2">
-                    <span>{tipoTrabajoLabel(t.tipoTrabajo)}</span>
-                    <span className="font-medium">{t.count}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+      {(stats.topReasons.length > 0 || stats.topTareas.length > 0 || stats.topFaenas.length > 0) && (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <RankPanel
+            title="Motivos de alerta más frecuentes"
+            rows={stats.topReasons.map((r) => ({
+              label: PPA_STOP_REASON_LABELS[r.reason as PpaStopReason] ?? r.reason,
+              count: r.count,
+            }))}
+          />
+          <RankPanel
+            title="Faenas con más desviaciones"
+            rows={stats.topFaenas.map((f) => ({ label: f.worksiteName, count: f.count }))}
+          />
+          <RankPanel
+            title="Tareas con más PPA"
+            rows={stats.topTareas.map((t) => ({ label: tipoTrabajoLabel(t.tipoTrabajo), count: t.count }))}
+          />
         </div>
       )}
 
-      <PpaList initialRows={rows} canReview={canReview} />
+      <PpaAccessPanel worksites={worksiteOptions} />
+
+      <PpaList
+        initialRows={rows}
+        total={total}
+        pageSize={PAGE_SIZE}
+        worksiteOptions={worksiteOptions}
+        canReview={canReview}
+      />
     </PageContainer>
   )
 }

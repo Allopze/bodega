@@ -2,8 +2,6 @@
 
 import { createPpaSubmission, findWorkerByRut } from "@/lib/services/ppa"
 import { ppaSubmitSchema, type ActionState } from "@/lib/validation/ppa"
-import { evaluatePpa } from "@/lib/ppa/evaluation"
-import type { PpaAnswers } from "@/lib/ppa/types"
 import { z } from "zod"
 import { logger } from "@/lib/logger"
 import { headers } from "next/headers"
@@ -57,12 +55,14 @@ export async function submitPpaAction(
   }
 }
 
-/** Busca un trabajador por RUT en una faena específica. */
+/** Identifica al trabajador por RUT y deriva su faena (sin elegirla). */
 export async function findWorkerByRutAction(
-  worksiteId: string,
   rut: string,
-): Promise<{ ok: boolean; worker?: { id: string; name: string }; message?: string }> {
-  if (!worksiteId) return { ok: false, message: "Selecciona una faena primero." }
+): Promise<{
+  ok: boolean
+  worker?: { id: string; name: string; position: string | null; worksiteId: string; worksiteName: string }
+  message?: string
+}> {
   if (!rut) return { ok: false, message: "Ingresa tu RUT." }
 
   if (!validateRut(rut)) {
@@ -70,27 +70,22 @@ export async function findWorkerByRutAction(
   }
 
   try {
-    const worker = await findWorkerByRut(worksiteId, rut)
+    const worker = await findWorkerByRut(rut)
     if (!worker) {
-      return { ok: false, message: "No se encontró ningún trabajador activo con este RUT en la faena seleccionada." }
+      return { ok: false, message: "No se encontró ningún trabajador activo con este RUT." }
     }
     return {
       ok: true,
       worker: {
         id: worker.id,
         name: `${worker.firstName} ${worker.lastName}`,
+        position: worker.position,
+        worksiteId: worker.worksiteId,
+        worksiteName: worker.worksiteName ?? "",
       },
     }
   } catch (e) {
     logger.error("[ppa] findWorkerByRut failed", e)
     return { ok: false, message: "Error al buscar el trabajador." }
   }
-}
-
-/**
- * Previsualización de evaluación en el cliente (opcional). Permite mostrar al
- * trabajador, antes de confirmar, si el envío detendrá el trabajo. Solo lógica pura.
- */
-export async function previewEvaluationAction(answers: PpaAnswers) {
-  return evaluatePpa(answers)
 }
