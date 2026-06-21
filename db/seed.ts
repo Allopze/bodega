@@ -12,7 +12,6 @@ import * as schema from "./schema"
 import { eq, inArray, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../lib/auth/system-rbac"
-import { seedDefaultTemplates } from "@/lib/services/email-templates"
 
 loadEnvConfig(process.cwd())
 
@@ -409,6 +408,7 @@ async function main() {
   /* ── Email templates ──────────────────────────────────────────────── */
   console.log("")
   console.log("  Sembrando plantillas de correo por defecto...")
+  const { seedDefaultTemplates } = await import("@/lib/services/email-templates")
   await seedDefaultTemplates()
   console.log("  Plantillas de correo cargadas.")
 

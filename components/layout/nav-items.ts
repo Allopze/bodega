@@ -88,6 +88,9 @@ export function getVisibleAreas(session: Session): AreaNode[] {
 
 export function isHrefActive(href: string, pathname: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard"
+  if (href === "/prevencion" && (pathname === "/prevencion/ppa" || pathname.startsWith("/prevencion/ppa/"))) {
+    return false
+  }
   return pathname === href || pathname.startsWith(href + "/")
 }
 const matchesHref = isHrefActive
