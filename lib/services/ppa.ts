@@ -11,6 +11,7 @@ import { workers, worksites } from "@/db/schema/worksites"
 import { nanoid } from "@/lib/id"
 import { ppaSubmitSchema, ppaReviewSchema, type PpaSubmitInput, type PpaReviewInput } from "@/lib/validation/ppa"
 import { evaluatePpa } from "@/lib/ppa/evaluation"
+import { cleanRut } from "@/lib/rut"
 import {
   isTareaCritica,
   tipoTrabajoLabel,
@@ -349,11 +350,13 @@ export async function listWorksitesForPublicForm(): Promise<{ id: string; name: 
     .orderBy(worksites.name)
 }
 
-export async function listWorkersForWorksite(
+export async function findWorkerByRut(
   worksiteId: string,
-): Promise<{ id: string; firstName: string; lastName: string; rut: string | null; position: string | null }[]> {
-  if (!worksiteId) return []
-  return db
+  rut: string,
+): Promise<{ id: string; firstName: string; lastName: string; rut: string | null; position: string | null } | null> {
+  if (!worksiteId || !rut) return null
+  const cleaned = cleanRut(rut)
+  const results = await db
     .select({
       id: workers.id,
       firstName: workers.firstName,
@@ -362,6 +365,14 @@ export async function listWorkersForWorksite(
       position: workers.position,
     })
     .from(workers)
-    .where(and(eq(workers.worksiteId, worksiteId), eq(workers.isActive, true)))
-    .orderBy(workers.firstName)
+    .where(
+      and(
+        eq(workers.worksiteId, worksiteId),
+        eq(workers.rut, cleaned),
+        eq(workers.isActive, true),
+      )
+    )
+    .limit(1)
+
+  return results[0] ?? null
 }

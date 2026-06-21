@@ -8,15 +8,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/lib/toast"
-import { submitPpaAction, listWorkersAction } from "./actions"
+import { submitPpaAction, findWorkerByRutAction } from "./actions"
 
 interface Option { value: string; label: string }
-interface WorkerOption { id: string; label: string }
 
 interface Props {
   worksites: { id: string; name: string }[]
   initialWorksiteId: string
-  initialWorkers: WorkerOption[]
   tipoTrabajoOptions: Option[]
   controlOptions: Option[]
   complementarias: { key: string; label: string }[]
@@ -56,14 +54,16 @@ function SiNo({
 }
 
 export function PpaForm({
-  worksites, initialWorksiteId, initialWorkers,
+  worksites, initialWorksiteId,
   tipoTrabajoOptions, controlOptions, complementarias,
 }: Props) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
 
   const [worksiteId, setWorksiteId] = React.useState(initialWorksiteId)
-  const [workers, setWorkers] = React.useState<WorkerOption[]>(initialWorkers)
+  const [rutSearch, setRutSearch] = React.useState("")
+  const [searchingWorker, setSearchingWorker] = React.useState(false)
+  const [matchedWorker, setMatchedWorker] = React.useState<{ id: string; name: string } | null>(null)
   const [workerId, setWorkerId] = React.useState("")
   const [manual, setManual] = React.useState(false)
   const [workerName, setWorkerName] = React.useState("")
@@ -84,9 +84,30 @@ export function PpaForm({
   async function onWorksiteChange(id: string) {
     setWorksiteId(id)
     setWorkerId("")
-    if (!id) { setWorkers([]); return }
-    const res = await listWorkersAction(id)
-    setWorkers(res.workers)
+    setMatchedWorker(null)
+    setRutSearch("")
+  }
+
+  async function handleVerifyRut() {
+    if (!worksiteId || !rutSearch) return
+    setSearchingWorker(true)
+    setMatchedWorker(null)
+    setWorkerId("")
+    try {
+      const res = await findWorkerByRutAction(worksiteId, rutSearch)
+      if (res.ok && res.worker) {
+        setMatchedWorker(res.worker)
+        setWorkerId(res.worker.id)
+        setWorkerRut(rutSearch)
+        toast.success("Trabajador verificado con éxito.")
+      } else {
+        toast.error(res.message ?? "No se encontró el trabajador.")
+      }
+    } catch (err) {
+      toast.error("Error al buscar el trabajador.")
+    } finally {
+      setSearchingWorker(false)
+    }
   }
 
   function toggleControl(value: string) {
@@ -101,7 +122,7 @@ export function PpaForm({
     if (manual) {
       if (workerName.trim().length < 2) e.workerName = ["Indica tu nombre."]
     } else if (!workerId) {
-      e.workerId = ["Selecciónate de la lista o usa identificación manual."]
+      e.workerId = ["Debes verificar tu RUT antes de enviar."]
     }
     if (!tipoTrabajo) e.tipoTrabajo = ["Selecciona el tipo de trabajo."]
     if (!cambioPlanificado) e.cambioPlanificado = ["Responde esta pregunta."]
@@ -118,15 +139,15 @@ export function PpaForm({
       return
     }
 
-    const selectedWorker = workers.find((w) => w.id === workerId)
-    const name = manual ? workerName.trim() : (selectedWorker?.label.split(" · ")[0] ?? workerName.trim())
+    const name = manual ? workerName.trim() : (matchedWorker?.name ?? "")
+    const rut = manual ? workerRut.trim() : rutSearch.trim()
 
     startTransition(async () => {
       const res = await submitPpaAction({
         worksiteId,
         workerId: manual ? undefined : workerId || undefined,
         workerName: name,
-        workerRut: workerRut || undefined,
+        workerRut: rut || undefined,
         workerCompany: workerCompany || undefined,
         tipoTrabajo,
         cambioPlanificado: cambioPlanificado as "si" | "no",
@@ -170,20 +191,38 @@ export function PpaForm({
         </Field>
 
         {!manual ? (
-          <Field label="Trabajador" htmlFor="worker" required error={err("workerId")}>
-            <select
-              id="worker"
-              className={selectCls}
-              value={workerId}
-              onChange={(e) => setWorkerId(e.target.value)}
-              disabled={!worksiteId}
-            >
-              <option value="">{worksiteId ? "Selecciónate…" : "Primero elige la faena"}</option>
-              {workers.map((w) => (
-                <option key={w.id} value={w.id}>{w.label}</option>
-              ))}
-            </select>
-          </Field>
+          <div className="flex flex-col gap-4">
+            <Field label="Ingresa tu RUT (sin puntos, con guion)" htmlFor="rutSearch" required error={err("workerId")}>
+              <div className="flex gap-2">
+                <Input
+                  id="rutSearch"
+                  placeholder="12345678-9"
+                  value={rutSearch}
+                  onChange={(e) => {
+                    setRutSearch(e.target.value)
+                    setMatchedWorker(null)
+                    setWorkerId("")
+                  }}
+                  disabled={!worksiteId}
+                />
+                <Button
+                  type="button"
+                  onClick={handleVerifyRut}
+                  disabled={!worksiteId || !rutSearch || searchingWorker}
+                  variant="secondary"
+                  className="px-4 shrink-0"
+                >
+                  {searchingWorker ? "Buscando..." : "Verificar"}
+                </Button>
+              </div>
+            </Field>
+
+            {matchedWorker && (
+              <div className="rounded-md border border-[var(--color-success)] bg-[var(--color-success-tint)] p-3 text-sm text-[var(--color-success-ink)]">
+                ✓ Verificado: <strong>{matchedWorker.name}</strong>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex flex-col gap-3 rounded-md border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3">
             <p className="text-xs text-[var(--color-warning-ink)]">
@@ -204,9 +243,9 @@ export function PpaForm({
         <button
           type="button"
           className="self-start text-sm font-medium text-[var(--color-primary)] underline"
-          onClick={() => { setManual((m) => !m); setErrors({}) }}
+          onClick={() => { setManual((m) => !m); setErrors({}); setMatchedWorker(null); setWorkerId("") }}
         >
-          {manual ? "Volver a la lista de trabajadores" : "No estoy en la lista (identificación manual)"}
+          {manual ? "Volver a verificación por RUT" : "No estoy en la lista (identificación manual)"}
         </button>
       </section>
 

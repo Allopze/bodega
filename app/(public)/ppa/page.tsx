@@ -1,4 +1,4 @@
-import { listWorksitesForPublicForm, listWorkersForWorksite } from "@/lib/services/ppa"
+import { listWorksitesForPublicForm } from "@/lib/services/ppa"
 import { PPA_TIPO_TRABAJO_OPTIONS, PPA_CONTROL_OPTIONS, PPA_COMPLEMENTARIAS } from "@/lib/ppa/types"
 import { PpaForm } from "./ppa-form"
 
@@ -15,12 +15,6 @@ export default async function PpaPublicPage({
   const worksites = await listWorksitesForPublicForm()
 
   const initialWorksiteId = faena && worksites.some((w) => w.id === faena) ? faena : ""
-  const initialWorkers = initialWorksiteId
-    ? (await listWorkersForWorksite(initialWorksiteId)).map((w) => ({
-        id: w.id,
-        label: `${w.firstName} ${w.lastName}${w.rut ? ` · ${w.rut}` : ""}`,
-      }))
-    : []
 
   return (
     <main className="mx-auto w-full max-w-lg px-4 py-6">
@@ -34,7 +28,6 @@ export default async function PpaPublicPage({
       <PpaForm
         worksites={worksites}
         initialWorksiteId={initialWorksiteId}
-        initialWorkers={initialWorkers}
         tipoTrabajoOptions={PPA_TIPO_TRABAJO_OPTIONS}
         controlOptions={PPA_CONTROL_OPTIONS.map((c) => ({ value: c.value, label: c.label }))}
         complementarias={PPA_COMPLEMENTARIAS.map((c) => ({ key: c.key, label: c.label }))}

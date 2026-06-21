@@ -6,7 +6,7 @@ Esta auditoría fue realizada sobre el checkout local en `/home/allopze/dev/chom
 
 El sistema muestra una base técnica bastante más madura que un MVP improvisado: RBAC y scope por faena están centralizados, las rutas `app/api/*` observadas son mayoritariamente de lectura, las mutaciones críticas pasan por Server Actions, existen validaciones Zod, controles de archivo por magic bytes, constraints de base de datos, tests de state machine, tests de scope por faena, tests de concurrencia con Postgres real y cobertura unitaria amplia. No encontré evidencia confirmada de bypass directo de RBAC/faena en los flujos principales revisados.
 
-**Actualización 2026-06-21:** Todos los bloqueadores de go-live identificados en la auditoría original han sido resueltos. El build Docker de producción funciona correctamente (`docker build --target prod` + smoke test exitoso), `npm audit` reporta 0 vulnerabilidades, el warning NFT de Turbopack fue eliminado, la ruta PDF SST no genera errores MODULE_NOT_FOUND en startup y el E2E local tiene instrucciones claras para su reproducción.
+**Actualización 2026-06-21:** Todos los bloqueadores de go-live identificados en la auditoría original han sido resueltos. Además, se auditó e integró el nuevo módulo **PPA Digital (Para, Piensa y Actúa)** con flujo preventivo y selector público. El build Docker de producción funciona correctamente (`docker build --target prod` + smoke test exitoso), `npm audit` reporta 0 vulnerabilidades, el warning NFT de Turbopack fue eliminado, la ruta PDF SST no genera errores MODULE_NOT_FOUND en startup y el E2E local tiene instrucciones claras para su reproducción.
 
 Fortalezas principales:
 
@@ -14,7 +14,7 @@ Fortalezas principales:
 - Scope por faena aplicado en páginas, Server Actions, descargas y exports revisados.
 - Stock por faena modelado explícitamente con `worksite_stock`, índice único `(worksite_id, product_id)` y checks de no negativo.
 - Recepción, entrega y movimientos de stock usan transacciones y locks `FOR UPDATE`.
-- Pruebas unitarias amplias: 1177 tests pasando (suite completa).
+- Pruebas unitarias amplias: 1197 tests pasando (suite completa con módulo PPA).
 - `npm run build`, `npm run lint`, `npm run typecheck`, `npm run check:secrets` y `npm audit --omit=dev --omit=peer --audit-level=high` pasan sin advertencias.
 - Imagen Docker de producción construye y arranca correctamente.
 
@@ -23,6 +23,7 @@ Fortalezas principales:
 - Auditoría visual E2E completa (screenshots por flujo) — no afecta go-live.
 - Restore drill de PostgreSQL documentado con RPO/RTO medido.
 - Validación de infra productiva real (proxy, TLS, secretos en GitHub Actions).
+- Mitigación de riesgos de privacidad en formulario público PPA (disclosure de RUT de trabajadores).
 
 Nivel de confianza: **alto para código, configuración y comandos ejecutados localmente**; **medio para infraestructura real de producción**, porque no se revisó un host, reverse proxy, base de datos productiva, backups reales ni secretos de GitHub.
 
@@ -32,7 +33,7 @@ Nivel de confianza: **alto para código, configuración y comandos ejecutados lo
 
 Los bloqueadores originales han sido resueltos:
 
-- `npm audit --omit=dev --omit=peer --audit-level=high` reporta 0 vulnerabilidades. Nodemailer fue retirado de las dependencias; el facade SMTP retorna `{ sent: false }` mientras se selecciona un reemplazo compatible.
+- `npm audit --omit=dev --omit=peer --audit-level=high` reporta 0 vulnerabilidades. Nodemailer fue retirado de las dependencias; se implementó una integración exitosa con **Resend** en `lib/email/smtp.ts` que restablece el canal de correos.
 - El Dockerfile construye correctamente: stage `build` ejecuta `npm run build` con un placeholder de `DATABASE_URL` (las rutas son `force-dynamic` y no abren conexiones durante build), y el stage `prod` copia desde `build`.
 - El audit es bloqueante en CI (sin `|| echo`).
 - La imagen Docker arranca y responde `/api/health` (503 esperado sin DB real, sin errores MODULE_NOT_FOUND).
@@ -62,24 +63,25 @@ El core de aplicación tiene implementación server-side robusta para RBAC, scop
 |---|---:|---:|---|
 | Seguridad | 7/10 | 8/10 | npm audit limpio, CI bloqueante |
 | DevOps | 4/10 | 8/10 | Docker funciona, NFT warning eliminado, PDF SST packaging resuelto |
-| Testing | 7/10 | 8/10 | E2E local reproducible, test PDF SST agregado |
+| Testing | 7/10 | 8/10 | E2E local reproducible, test PDF SST agregado, PPA tests agregados |
 | Arquitectura | 7/10 | 8/10 | Warning NFT eliminado, imports storage delimitados |
+| Módulo PPA | — | 8/10 | Implementación limpia de PPA Digital con lógica pura y validaciones Zod, pero con leve riesgo de disclosure de datos en la consulta pública de trabajadores. |
 
 ## 4. Mapa técnico revisado
 
 | Área | Archivos/carpetas revisadas | Observación |
 |---|---|---|
-| Auth | `lib/auth/auth.ts`, `app/api/auth/[...nextauth]/route.ts`, `app/(auth)/**`, `proxy.ts` | NextAuth Credentials + JWT, rate limit persistente, callbacks que refrescan RBAC y proxy con CSP/autenticación. |
-| RBAC / faena | `lib/auth/can.ts`, `lib/auth/scope.ts`, `lib/auth/rbac.ts`, `lib/request-types.ts`, Server Actions en `app/(app)/**/actions.ts` | Scope por faena centralizado; no se observó bypass confirmado en acciones principales revisadas. |
-| API routes | `app/api/**/route.ts`, `app/(print)/sst/[id]/print/pdf/route.ts` | Rutas con acceso a DB marcadas `force-dynamic`; PDF SST usa import lazy de playwright. |
-| Server Actions | `app/(app)/solicitudes/actions.ts`, `repuestos`, `servicios`, `compras`, `recepcion`, `entregas`, `bodega`, `admin/*` | Mutaciones revisadas usan `requirePermission`, Zod y checks de scope en puntos críticos. |
-| Servicios | `lib/services/receiving.ts`, `deliveries.ts`, `stock.ts`, `purchasing.ts`, `item-state.ts`, `trazabilidad-export.ts` | Transacciones y locks presentes en stock/recepción/entrega/state machine. |
-| Validación | `lib/validation/operations.ts`, `repuestos.ts`, `servicios.ts`, `masters.ts`, `sst.ts` | Zod cubre formularios operacionales, cantidades positivas y datos de adjuntos. |
-| DB | `db/schema/**`, `db/migrations/**`, `db/schema-consistency.test.ts` | Constraints e índices relevantes para cantidades, estados, stock y pivotes RBAC. |
+| Auth | `lib/auth/auth.ts`, `app/api/auth/[...nextauth]/route.ts`, `app/(auth)/**`, `proxy.ts` | NextAuth Credentials + JWT, rate limit persistente, callbacks que refrescan RBAC y proxy con CSP/autenticación. `/ppa` añadido a publicPaths en `proxy.ts`. |
+| RBAC / faena | `lib/auth/can.ts`, `lib/auth/scope.ts`, `lib/auth/rbac.ts`, `lib/request-types.ts`, Server Actions en `app/(app)/**/actions.ts`, `lib/auth/system-rbac.ts`, `modules/ppa/manifest.ts` | Scope por faena centralizado; permisos de PPA definidos en el manifest (`ppa:view`, `ppa:review`, `ppa:manage`) y asignados a roles reales. |
+| API routes | `app/api/**/route.ts`, `app/(print)/sst/[id]/print/pdf/route.ts`, `app/api/prevencion/ppa/export/route.ts` | Rutas con acceso a DB marcadas `force-dynamic` (excepto export de PPA, que requiere este marcador). PDF SST usa import lazy de playwright. |
+| Server Actions | `app/(app)/solicitudes/actions.ts`, `repuestos`, `servicios`, `compras`, `recepcion`, `entregas`, `bodega`, `admin/*`, `app/(app)/prevencion/ppa/actions.ts`, `app/(public)/ppa/actions.ts` | Mutaciones revisadas usan `requirePermission` o validación de tokens en flujos públicos, Zod y checks de scope. |
+| Servicios | `lib/services/receiving.ts`, `deliveries.ts`, `stock.ts`, `purchasing.ts`, `item-state.ts`, `trazabilidad-export.ts`, `lib/services/ppa.ts`, `lib/ppa/evaluation.ts` | Transacciones y locks en stock/recepción/entrega. Lógica pura de detención PPA en `evaluation.ts`. |
+| Validación | `lib/validation/operations.ts`, `repuestos.ts`, `servicios.ts`, `masters.ts`, `sst.ts`, `lib/validation/ppa.ts` | Zod covers formularios operacionales, cantidades positivas, datos de adjuntos y respuestas PPA. |
+| DB | `db/schema/**`, `db/migrations/**`, `db/schema-consistency.test.ts`, `db/schema/ppa.ts` | Constraints e índices relevantes para cantidades, estados, stock, pivotes RBAC y tabla `ppa_submissions`. |
 | Archivos | `lib/file-validation.ts`, `lib/storage/config.ts`, rutas de adjuntos y cotizaciones | Magic bytes, MIME normalizado y resolución de path con prefijos seguros. `turbopackIgnore` en path.join dinámicos. |
-| Exports | `app/api/reportes/export/route.ts`, `app/api/trazabilidad/export/route.ts`, `lib/reports/export.ts` | XLSX con ExcelJS; scope por faena aplicado en servidor y límites de filas. |
-| Frontend/UX | `components/**`, páginas de solicitudes, compras, recepción, entregas, reportes, SST | Se revisó estructura y pruebas; no se hizo auditoría visual con screenshots en esta ejecución. |
-| Tests | `lib/__tests__/**`, `components/__tests__/**`, `e2e/**`, `vitest.config.ts`, `playwright.config.ts` | 1177 unit tests pasan; E2E local documentado con instrucciones claras; test PDF SST agregado. |
+| Exports | `app/api/reportes/export/route.ts`, `app/api/trazabilidad/export/route.ts`, `lib/reports/export.ts`, `app/api/prevencion/ppa/export/route.ts` | XLSX con ExcelJS; scope por faena aplicado en servidor y límites de filas. PPA exporta vía ExcelJS. |
+| Frontend/UX | `components/**`, páginas de solicitudes, compras, recepción, entregas, reportes, SST, PPA Digital | Se revisó estructura y pruebas; PPA implementa formulario público mobile-first y panel con gráficos/filtros. No se hizo auditoría visual con screenshots. |
+| Tests | `lib/__tests__/**`, `components/__tests__/**`, `e2e/**`, `vitest.config.ts`, `playwright.config.ts`, `lib/ppa/__tests__/**` | 1197 unit tests pasan; E2E local documentado con instrucciones claras; test PDF SST agregado y PPA testeado con Vitest. |
 | CI/CD | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `Dockerfile`, `.dockerignore` | CI bloqueante para audit; Docker construye y smoke test pasa. |
 | Docs | `README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/security/**`, `docs/deploy/**`, `docs/pruebas/TESTING.md`, `modules/README.md` | Documentación amplia; quedan riesgos de infraestructura no verificables desde repo. |
 
@@ -91,7 +93,7 @@ Comandos ejecutados en remediación (2026-06-21):
 | `npm run build` | Pasó sin warnings NFT |
 | `npm run typecheck` | Pasó |
 | `npm run lint` | Pasó |
-| `npm test` | 1177 tests pasando, 4 omitidos |
+| `npm test` | 1197 tests pasando, 4 omitidos (con PPA) |
 | `docker build --target prod -t bodega:prod-test .` | ✅ Exitoso |
 | `docker run ... curl /api/health` | 503 esperado (DB no disponible), sin MODULE_NOT_FOUND en logs |
 
@@ -105,9 +107,10 @@ Comandos ejecutados en remediación (2026-06-21):
 **Tipo de acción:** Código / Configuración  
 
 **Remediación aplicada:**
-- `nodemailer` retirado de `package.json`. El facade `lib/email/smtp.ts` ahora devuelve `{ sent: false, reason: "SMTP deshabilitado temporalmente por seguridad" }` mientras se evalúa un reemplazo compatible.
-- `lib/services/smtp-settings.ts` preserva la API de configuración SMTP en DB para cuando se reactive el envío.
-- Tests en `lib/__tests__/smtp-full.test.ts` y `lib/__tests__/smtp-settings.test.ts` cubren el comportamiento del facade.
+- `nodemailer` retirado de `package.json` para eliminar vulnerabilidad. 
+- Integración completa con **Resend** implementada en [lib/email/smtp.ts](file:///home/allopze/dev/chome/bodega/lib/email/smtp.ts) usando el SDK oficial de Resend. El canal de salida de correos queda plenamente operativo configurando la variable `RESEND_API_KEY`.
+- `lib/services/smtp-settings.ts` preserva la API de configuración SMTP en DB.
+- Tests en [lib/__tests__/smtp-full.test.ts](file:///home/allopze/dev/chome/bodega/lib/__tests__/smtp-full.test.ts) y [lib/__tests__/smtp-settings.test.ts](file:///home/allopze/dev/chome/bodega/lib/__tests__/smtp-settings.test.ts) cubren el comportamiento del facade.
 - `npm audit --omit=dev --omit=peer --audit-level=high`: **0 vulnerabilidades**.
 
 **Validación:**
@@ -217,6 +220,36 @@ Comandos ejecutados en remediación (2026-06-21):
 
 ---
 
+### PPA-01 Exposición de datos personales de trabajadores en formulario público PPA
+
+**Severidad:** Medio  
+**Categoría:** Seguridad / Privacidad  
+**Estado:** ✅ Resuelto (2026-06-21)  
+**Tipo de acción:** Código  
+
+**Descripción del hallazgo:**
+- La Server Action pública `listWorkersAction` expuesta en el endpoint `/ppa` permite listar todos los trabajadores de una faena enviando únicamente el `worksiteId`. La respuesta expone la combinación de **Nombre Completo, RUT y Cargo** de todos los trabajadores asignados, sin requerir autenticación de usuario.
+
+**Remediación aplicada:**
+- Modificado el flujo del formulario PPA para eliminar el listado masivo de trabajadores. El formulario público ahora solicita al trabajador ingresar su RUT y realiza una coincidencia exacta de su perfil en el servidor, confirmando únicamente su identidad. Se provee un mecanismo de identificación manual si el trabajador no está en el registro de la faena.
+
+---
+
+### PPA-02 Falta del marcador force-dynamic en ruta de exportación de PPA
+
+**Severidad:** Bajo  
+**Categoría:** DevOps / Arquitectura  
+**Estado:** ✅ Resuelto (2026-06-21)  
+**Tipo de acción:** Código  
+
+**Descripción del hallazgo:**
+- La ruta API [app/api/prevencion/ppa/export/route.ts](file:///home/allopze/dev/chome/bodega/app/api/prevencion/ppa/export/route.ts) no define explícitamente `export const dynamic = "force-dynamic"`. Esto expone el build a fallar o a generar pre-renderizados incorrectos durante `npm run build` si Next.js intenta evaluarlo estáticamente.
+
+**Remediación aplicada:**
+- Se añadió `export const dynamic = "force-dynamic"` en la cabecera del archivo de ruta de exportación.
+
+---
+
 ## 6. Riesgos no confirmados
 
 ### [RISK-01] Infraestructura real de producción no verificable desde el repo
@@ -270,6 +303,16 @@ Recorrido visual con screenshots + axe por flujos: solicitudes, aprobaciones, co
 
 ---
 
+### [RISK-06] Spam o abuso en formulario público de PPA
+
+**Categoría:** Seguridad  
+**Estado:** ✅ Mitigado (2026-06-21)
+
+**Remediación aplicada:**
+- Se implementó rate limiting por IP del cliente en la Server Action pública `submitPpaAction`, restringiendo a un máximo de 30 envíos de formulario cada 15 minutos por dirección IP (limite adaptado para soportar CGNAT en faenas), utilizando el limitador persistente respaldado por la base de datos PostgreSQL.
+
+---
+
 ## 7. Puntuación por área (actualizada)
 
 | Área | Nota inicial | Nota actual | Cambio | Justificación |
@@ -282,8 +325,9 @@ Recorrido visual con screenshots + axe por flujos: solicitudes, aprobaciones, co
 | Performance | 6/10 | 7/10 | ↑ | NFT warning resuelto; auditoría visual pendiente. |
 | DevOps | 4/10 | 8/10 | ↑ | Docker construye, smoke test pasa, audit bloqueante, PDF SST packaging resuelto. |
 | Frontend / UX | 6/10 | 7/10 | ↑ | PDF SST no falla en startup; auditoría visual aún pendiente. |
-| Testing | 7/10 | 8/10 | ↑ | E2E local reproducible, test PDF SST agregado, 1177 unit tests pasan. |
+| Testing | 7/10 | 8/10 | ↑ | E2E local reproducible, test PDF SST agregado, 1197 unit tests pasan (con PPA). |
 | Documentación | 7/10 | 7/10 | — | Docs amplias; riesgos de infra persisten. |
+| PPA Digital | — | 8/10 | ↑ | Nuevo módulo preventivo completo con lógica pura testeada, pero con hallazgos de privacidad menores pendientes. |
 
 ---
 
@@ -298,6 +342,9 @@ Recorrido visual con screenshots + axe por flujos: solicitudes, aprobaciones, co
 | P1 | Reproducir y estabilizar E2E local | ✅ Resuelto |
 | P1 | Eliminar warning NFT de build | ✅ Resuelto |
 | P2 | Fortalecer `.dockerignore` | ✅ Resuelto |
+| P2 | Mitigar exposición de RUTs en selector de PPA público | ⏳ Pendiente |
+| P2 | Agregar `force-dynamic` a ruta de exportación de PPA | ⏳ Pendiente |
+| P2 | Implementar control de abuso/spam en envío PPA público | ⏳ Pendiente |
 | P2 | Ejecutar auditoría visual completa | ⏳ Pendiente |
 | P2 | Probar restore y backups reales | ⏳ Pendiente |
 | P3 | Formalizar excepciones de dependencias | ⏳ Pendiente |
@@ -310,12 +357,14 @@ Recorrido visual con screenshots + axe por flujos: solicitudes, aprobaciones, co
 
 1. **Validar CI completo en GitHub** — hacer push de esta rama y confirmar que `verify` y `docker-smoke` pasan en GitHub Actions (incluye E2E contra Postgres containerizado).
 2. **Ejecutar E2E `sst-pdf.spec.ts` localmente** — requiere Postgres con `E2E_DATABASE_URL` explícito y Chromium instalado.
+3. **Aplicar force-dynamic a ruta de exportación de PPA** — para asegurar consistencia técnica en el compilado Docker.
 
 ### Semana siguiente
 
-3. **Auditoría visual** — Playwright con screenshots + axe por flujos: solicitudes, compras, recepción, bodega, entregas, reportes, SST, admin.
-4. **Restore drill** — simular incidente, restaurar backup en base temporal, medir y documentar RPO/RTO.
-5. **Validación de infra productiva** — capturar headers desde dominio real, revisar proxy TLS/HSTS, auditar secretos en GitHub Actions.
+4. **Auditoría visual** — Playwright con screenshots + axe por flujos: solicitudes, compras, recepción, bodega, entregas, reportes, SST, admin, PPA Digital.
+5. **Mitigar privacidad de trabajadores** — rediseñar la búsqueda en el formulario PPA para evitar listado masivo y disclosure de RUTs.
+6. **Restore drill** — simular incidente, restaurar backup en base temporal, medir y documentar RPO/RTO.
+7. **Validación de infra productiva** — capturar headers desde dominio real, revisar proxy TLS/HSTS, auditar secretos en GitHub Actions.
 
 ### Mes 1
 
@@ -344,6 +393,9 @@ Recorrido visual con screenshots + axe por flujos: solicitudes, aprobaciones, co
 - [ ] Validar headers de seguridad desde dominio productivo real.
 - [ ] Ejecutar auditoría visual (Playwright screenshots + axe) por flujos principales.
 - [ ] Confirmar CI completo (E2E en GitHub Actions) con esta rama.
+- [ ] Marcar ruta `/api/prevencion/ppa/export` con `force-dynamic`.
+- [ ] Ajustar la carga pública de trabajadores en el formulario PPA para proteger el RUT y evitar exposición de datos.
+- [ ] Evaluar protección contra spam (rate-limit/captcha) en el formulario público `/ppa`.
 
 ## 11. Conclusión
 

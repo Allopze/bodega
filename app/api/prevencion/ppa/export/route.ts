@@ -3,6 +3,8 @@
  * Exporta los PPA visibles para el usuario como XLSX.
  */
 
+export const dynamic = "force-dynamic"
+
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
