@@ -11,16 +11,22 @@ const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
  * Use the env var STORAGE_PATH to override the default location
  * (process.cwd() + "/storage").  On ephemeral / serverless hosts this
  * should point to a persistent volume or object-storage mount.
+ *
+ * All path.join / path.resolve calls below carry `turbopackIgnore: true`
+ * because their first argument is always a runtime value (env var or
+ * process.cwd()).  Without the comments Turbopack traces the entire project
+ * directory into the standalone bundle and emits the "unexpected file in NFT
+ * list" warning.
  */
 export function resolveStorageDir(): string {
   if (process.env.STORAGE_PATH?.trim()) {
-    return path.resolve(process.env.STORAGE_PATH)
+    return path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_PATH)
   }
-  return path.join(process.cwd(), "storage")
+  return path.join(/*turbopackIgnore: true*/ process.cwd(), "storage")
 }
 
 export function resolveDeliveriesDir(): string {
-  return path.join(resolveStorageDir(), "deliveries")
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "deliveries")
 }
 
 export function createDeliveryAttachmentPath(storageName: string): string {
@@ -40,11 +46,11 @@ export function resolveDeliveryAttachmentFile(filePath: string): string | null {
     return null
   }
 
-  return path.join(resolveDeliveriesDir(), storageName)
+  return path.join(/*turbopackIgnore: true*/ resolveDeliveriesDir(), storageName)
 }
 
 export function resolvePurchaseOrdersDir(): string {
-  return path.join(resolveStorageDir(), "purchase-orders")
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "purchase-orders")
 }
 
 export function createInvoiceAttachmentPath(storageName: string): string {
@@ -64,15 +70,15 @@ export function resolveInvoiceAttachmentFile(filePath: string): string | null {
     return null
   }
 
-  return path.join(resolvePurchaseOrdersDir(), storageName)
+  return path.join(/*turbopackIgnore: true*/ resolvePurchaseOrdersDir(), storageName)
 }
 
 export function resolveRepuestosDir(): string {
-  return path.join(resolveStorageDir(), "repuestos")
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "repuestos")
 }
 
 export function resolveServiciosDir(): string {
-  return path.join(resolveStorageDir(), "servicios")
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "servicios")
 }
 
 export function createQuotationAttachmentPath(storageName: string): string {
@@ -92,7 +98,7 @@ export function resolveQuotationAttachmentFile(filePath: string): string | null 
     return null
   }
 
-  return path.join(resolveRepuestosDir(), storageName)
+  return path.join(/*turbopackIgnore: true*/ resolveRepuestosDir(), storageName)
 }
 
 export function createServiceQuotationPath(storageName: string): string {
@@ -112,7 +118,7 @@ export function resolveServiceQuotationFile(filePath: string): string | null {
     return null
   }
 
-  return path.join(resolveServiciosDir(), storageName)
+  return path.join(/*turbopackIgnore: true*/ resolveServiciosDir(), storageName)
 }
 
 function isSafeStorageName(storageName: string): boolean {

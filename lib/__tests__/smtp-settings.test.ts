@@ -5,22 +5,10 @@
  * - getSmtpConfig (DB and env paths)
  * - getRawSmtpConfig (DB and env paths)
  * - setSmtpConfig (save with/without password)
- * - testSmtpConnection (success, error, no config)
+ * - testSmtpConnection (paused transport, no config)
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
-
-// Mock nodemailer BEFORE importing anything that uses it
-const mockSendMail = vi.fn()
-const mockClose = vi.fn()
-vi.mock("nodemailer", () => ({
-  default: {
-    createTransport: vi.fn(() => ({
-      sendMail: mockSendMail,
-      close: mockClose,
-    })),
-  },
-}))
 
 // Mock audit
 vi.mock("@/lib/audit", () => ({
@@ -51,8 +39,6 @@ import { getSmtpConfig, getRawSmtpConfig, setSmtpConfig, testSmtpConnection } fr
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockSendMail.mockReset()
-  mockClose.mockReset()
   // Default env
   delete process.env.SMTP_HOST
   delete process.env.SMTP_PORT
@@ -387,7 +373,7 @@ describe("testSmtpConnection", () => {
     expect(result).toEqual({ ok: false, error: "SMTP no configurado" })
   })
 
-  it("returns ok: true when email sent successfully", async () => {
+  it("returns a paused-transport error when SMTP config exists", async () => {
     const dbValues: Record<string, string> = {
       smtp_host: "smtp.test.com",
       smtp_port: "587",
@@ -403,60 +389,9 @@ describe("testSmtpConnection", () => {
       callCount++
       return Promise.resolve({ key, value: dbValues[key as keyof typeof dbValues], updatedAt: "2024-01-01" })
     })
-
-    mockSendMail.mockResolvedValue({ messageId: "test-id" })
 
     const result = await testSmtpConnection("recipient@test.com")
-    expect(result).toEqual({ ok: true })
-    expect(mockSendMail).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "recipient@test.com" }),
-    )
-    expect(mockClose).toHaveBeenCalled()
+    expect(result).toEqual({ ok: false, error: "SMTP deshabilitado temporalmente por seguridad" })
   })
 
-  it("returns error when sendMail throws", async () => {
-    const dbValues: Record<string, string> = {
-      smtp_host: "smtp.test.com",
-      smtp_port: "587",
-      smtp_secure: "false",
-      smtp_user: "user@test.com",
-      smtp_pass: "pass",
-      smtp_from: "from@test.com",
-    }
-    let callCount = 0
-    mockFindFirst.mockImplementation(() => {
-      const keysArr = Object.keys(dbValues)
-      const key = keysArr[callCount % keysArr.length]!
-      callCount++
-      return Promise.resolve({ key, value: dbValues[key as keyof typeof dbValues], updatedAt: "2024-01-01" })
-    })
-
-    mockSendMail.mockRejectedValue(new Error("Connection refused"))
-
-    const result = await testSmtpConnection("test@example.com")
-    expect(result).toEqual({ ok: false, error: "Connection refused" })
-  })
-
-  it("handles non-Error thrown from sendMail", async () => {
-    const dbValues: Record<string, string> = {
-      smtp_host: "smtp.test.com",
-      smtp_port: "587",
-      smtp_secure: "false",
-      smtp_user: "user@test.com",
-      smtp_pass: "pass",
-      smtp_from: "from@test.com",
-    }
-    let callCount = 0
-    mockFindFirst.mockImplementation(() => {
-      const keysArr = Object.keys(dbValues)
-      const key = keysArr[callCount % keysArr.length]!
-      callCount++
-      return Promise.resolve({ key, value: dbValues[key as keyof typeof dbValues], updatedAt: "2024-01-01" })
-    })
-
-    mockSendMail.mockRejectedValue("string error")
-
-    const result = await testSmtpConnection("test@example.com")
-    expect(result).toEqual({ ok: false, error: "Error desconocido" })
-  })
 })

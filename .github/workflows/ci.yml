@@ -47,7 +47,7 @@ jobs:
         run: npm run check:secrets
 
       - name: Security audit — npm audit
-        run: npm audit --audit-level=high || echo "npm audit found issues (non-blocking)"
+        run: npm audit --omit=dev --omit=peer --audit-level=high
 
       - name: Verify Drizzle migrations
         run: npm run db:migrate

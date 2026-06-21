@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic"
+
 import { promises as fs } from "node:fs"
 import { NextResponse } from "next/server"
 import { eq } from "drizzle-orm"

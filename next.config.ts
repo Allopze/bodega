@@ -19,6 +19,12 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // playwright-core ships non-JS assets (browsers.json, etc.) that NFT
+  // doesn't trace automatically.  The key must be the URL path (route group
+  // parentheses are stripped), so /(print)/sst/... becomes /sst/...
+  outputFileTracingIncludes: {
+    "/sst/[id]/print/pdf": ["./node_modules/playwright-core/**/*"],
+  },
 };
 
 export default nextConfig;

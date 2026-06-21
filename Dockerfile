@@ -17,6 +17,15 @@ EXPOSE 3000
 CMD ["npm", "run", "dev", "--", "-p", "3000"]
 
 
+# ── Production build helper ──
+FROM dev AS build
+# DATABASE_URL must be set for db/index.ts module evaluation during
+# `next build` page-data collection.  The build never opens a real
+# connection (all routes using @/db are force-dynamic), so a placeholder
+# URL is safe here.  The real DATABASE_URL is injected at runtime only.
+RUN DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
+
+
 # ── Production stage: standalone build, minimal runtime ──
 FROM node:20-alpine AS prod
 
@@ -31,15 +40,28 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001
 
-# Install only runtime deps for sharp (if used) and PostgreSQL client libs
-RUN apk add --no-cache libc6-compat
+# Runtime deps: libc6-compat for sharp/native modules; chromium + fonts for
+# the server-side PDF route (app/(print)/sst/[id]/print/pdf/route.ts).
+# PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH tells playwright-core to use the
+# system Chromium rather than its own downloaded browser.
+RUN apk add --no-cache \
+    libc6-compat \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
 
-# Copy standalone output from build
-COPY --from=dev /app/.next/standalone ./
-COPY --from=dev /app/.next/static ./.next/static
-COPY --from=dev /app/public ./public
-COPY --from=dev /app/db/migrations ./db/migrations
-COPY --from=dev /app/db/seed ./db/seed
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# Copy standalone output from the stage that actually runs `next build`.
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
+COPY --from=build /app/public ./public
+COPY --from=build /app/db/migrations ./db/migrations
+COPY --from=build /app/db/seed ./db/seed
 
 # Ensure storage dir exists and is writable
 RUN mkdir -p /app/storage && chown -R nextjs:nodejs /app/storage
@@ -53,8 +75,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1
 
 CMD ["node", "server.js"]
-
-
-# ── Production build helper: use `docker build --target dev ...` for local dev ──
-FROM dev AS build
-RUN npm run build

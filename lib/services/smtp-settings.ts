@@ -8,7 +8,6 @@
 import { db } from "@/db"
 import { systemSettings } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import nodemailer from "nodemailer"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 
@@ -195,28 +194,6 @@ export async function testSmtpConnection(
     return { ok: false, error: "SMTP no configurado" }
   }
 
-  try {
-    const transport = nodemailer.createTransport({
-      host: config.host,
-      port: config.port,
-      secure: config.secure,
-      auth: { user: config.user, pass: config.pass },
-      connectionTimeout: 5_000,
-      greetingTimeout: 5_000,
-      socketTimeout: 10_000,
-    })
-
-    await transport.sendMail({
-      from: config.from,
-      to,
-      subject: "Prueba de conexión SMTP — Chome Bodega",
-      text: "Este es un correo de prueba para verificar la configuración SMTP.\n\nSi recibiste este mensaje, la configuración es correcta.",
-      html: "<p>Este es un correo de prueba para verificar la configuración SMTP.</p><p>Si recibiste este mensaje, la configuración es <strong>correcta</strong>.</p>",
-    })
-
-    transport.close()
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" }
-  }
+  void to
+  return { ok: false, error: "SMTP deshabilitado temporalmente por seguridad" }
 }

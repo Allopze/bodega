@@ -403,6 +403,25 @@ async function main() {
     }),
   )
 
+  // SST seed — one closed evaluation used by sst-pdf.spec.ts to verify the
+  // /sst/[id]/print/pdf route works in standalone without MODULE_NOT_FOUND.
+  await db.insert(schema.sstEvaluations).values({
+    id: "sst-eval-e2e",
+    worksiteId: "ws-e2e",
+    workerId: "worker-e2e",
+    createdBy: "user-admin-e2e",
+    definicionCode: "trabajador_nuevo",
+    definicionVersion: "01",
+    tipo: "nuevo",
+    fechaEvaluacion: "2026-06-20",
+    estado: "cerrado",
+    resultadoFinal: "cumple",
+    porcentajeCumplimiento: 100,
+    resultadoEficacia: "eficaz",
+    createdAt: now,
+    updatedAt: now,
+  })
+
   await client.end()
 }
 

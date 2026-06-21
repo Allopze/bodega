@@ -1,4 +1,3 @@
-import { chromium } from "playwright"
 import { requirePermission } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { loadActaData } from "../document"
@@ -11,6 +10,10 @@ export const dynamic = "force-dynamic"
  * Chromium and prints it, producing a clean A4 PDF with no browser chrome
  * (date / URL / page number) — unlike window.print(). The session cookie is
  * forwarded so the headless browser loads the page as the requesting user.
+ *
+ * playwright is imported lazily (inside the handler) so that playwright-core's
+ * module-level initialisation (which requires browsers.json) does not run at
+ * Next.js server startup — only when this route is actually requested.
  */
 export async function GET(
   req: Request,
@@ -34,6 +37,8 @@ export async function GET(
   const printUrl = `${origin}/sst/${id}/print`
   const cookie = req.headers.get("cookie") ?? ""
 
+  // Lazy import: keeps playwright-core out of the module graph at startup.
+  const { chromium } = await import("playwright")
   const browser = await chromium.launch()
   try {
     const ctx = await browser.newContext({ extraHTTPHeaders: cookie ? { cookie } : {} })

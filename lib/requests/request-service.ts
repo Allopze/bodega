@@ -182,7 +182,7 @@ export function createRequestService(config: RequestModuleConfig) {
 
     const ext = path.extname(input.fileName) || ".pdf"
     const storageName = `${nanoid()}${ext}`
-    const absolutePath = path.join(dir, storageName)
+    const absolutePath = path.join(/*turbopackIgnore: true*/ dir, storageName)
     await writeBuffer(absolutePath, input.fileBuffer)
 
     const filePath = storage.createPath(storageName)
