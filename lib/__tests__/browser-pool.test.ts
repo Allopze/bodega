@@ -162,7 +162,7 @@ describe("browser pool", () => {
       })
 
       // Allow both to start
-      await delay(10)
+      await delay(50)
       expect(order).toEqual(["start-1", "start-2"])
 
       // Third call should queue — it can't start yet
@@ -171,12 +171,12 @@ describe("browser pool", () => {
         return "third"
       })
 
-      await delay(10)
+      await delay(50)
       expect(order).not.toContain("start-3") // Still queued
 
       // Release first slot
       releaseFirst()
-      await delay(10)
+      await delay(50)
       expect(order).toContain("start-3") // Now running
       expect(order).toContain("end-1")
 
