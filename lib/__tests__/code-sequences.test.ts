@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import path from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -69,5 +69,13 @@ describe("nextCodeTx", () => {
     expect(numbers).toEqual(
       Array.from({ length: CONCURRENCY * PER_TX }, (_, i) => i + 1),
     )
+  })
+
+  it("throws error when db returns no rows for reserved code", async () => {
+    const mockTx = {
+      execute: vi.fn().mockResolvedValue([]),
+    } as unknown as Tx
+
+    await expect(nextCodeTx(mockTx, "SOL", 2026)).rejects.toThrow(/Failed to reserve next code/)
   })
 })

@@ -332,4 +332,197 @@ describe("persistRequestWithDiff (A-01/A-08)", () => {
     expect(items[1]?.productNameFree).toBe("Casco extra")
     expect(items[1]?.status).toBe("draft")
   })
+
+  it("throws error when trying to edit request but data.id is missing", async () => {
+    const { persistRequestWithDiff } = await import("@/lib/services/requests-draft")
+    await expect(
+      persistRequestWithDiff(
+        USER_ID, "u@example.test",
+        {
+          worksiteId: WS_ID,
+          requestType: "epp",
+          urgency: "normal",
+          requiredDate: "2026-07-01",
+          notes: "",
+          items: [],
+        },
+        /* isEdit */ true,
+        /* actorCanEditAnyRequest */ false,
+      )
+    ).rejects.toThrow(/isEdit=true but data.id is missing/)
+  })
+
+  it("throws error when request to update is not found", async () => {
+    const { persistRequestWithDiff } = await import("@/lib/services/requests-draft")
+    await expect(
+      persistRequestWithDiff(
+        USER_ID, "u@example.test",
+        {
+          id: "non-existent-request-id",
+          worksiteId: WS_ID,
+          requestType: "epp",
+          urgency: "normal",
+          requiredDate: "2026-07-01",
+          notes: "",
+          items: [],
+        },
+        /* isEdit */ true,
+        /* actorCanEditAnyRequest */ false,
+      )
+    ).rejects.toThrow(/Solicitud no encontrada/)
+  })
+
+  it("throws error when request status is not draft/returned", async () => {
+    await seedWorld()
+    const r = await createRequest()
+    // Manually change status to submitted
+    await inMemoryDb.update(schema.purchaseRequests)
+      .set({ status: "submitted" })
+      .where(eq(schema.purchaseRequests.id, r.requestId))
+
+    const { persistRequestWithDiff } = await import("@/lib/services/requests-draft")
+    await expect(
+      persistRequestWithDiff(
+        USER_ID, "u@example.test",
+        {
+          id: r.requestId,
+          worksiteId: WS_ID,
+          requestType: "epp",
+          urgency: "normal",
+          requiredDate: "2026-07-01",
+          notes: "",
+          items: [],
+        },
+        /* isEdit */ true,
+        /* actorCanEditAnyRequest */ false,
+      )
+    ).rejects.toThrow(/Solo se pueden editar solicitudes en borrador o devueltas/)
+  })
+
+  it("throws error when request belongs to another user and caller cannot edit any", async () => {
+    await seedWorld()
+    const r = await createRequest()
+    // Manually change owner
+    await inMemoryDb.update(schema.purchaseRequests)
+      .set({ requesterId: "approver-1" })
+      .where(eq(schema.purchaseRequests.id, r.requestId))
+
+    const { persistRequestWithDiff } = await import("@/lib/services/requests-draft")
+    await expect(
+      persistRequestWithDiff(
+        USER_ID, "u@example.test",
+        {
+          id: r.requestId,
+          worksiteId: WS_ID,
+          requestType: "epp",
+          urgency: "normal",
+          requiredDate: "2026-07-01",
+          notes: "",
+          items: [],
+        },
+        /* isEdit */ true,
+        /* actorCanEditAnyRequest */ false,
+      )
+    ).rejects.toThrow(/Solo puedes editar tus propias solicitudes/)
+
+    // If actorCanEditAnyRequest is true, it should succeed
+    const res = await persistRequestWithDiff(
+      USER_ID, "u@example.test",
+      {
+        id: r.requestId,
+        worksiteId: WS_ID,
+        requestType: "epp",
+        urgency: "normal",
+        requiredDate: "2026-07-01",
+        notes: "edited by other but allowed",
+        items: [],
+      },
+      /* isEdit */ true,
+      /* actorCanEditAnyRequest */ true,
+    )
+    expect(res.requestId).toBe(r.requestId)
+  })
+
+  it("saves and updates attributes on request items correctly", async () => {
+    await seedWorld()
+    const { persistRequestWithDiff } = await import("@/lib/services/requests-draft")
+
+    // Create item with attributes
+    const res = await persistRequestWithDiff(
+      USER_ID, "u@example.test",
+      {
+        worksiteId: WS_ID,
+        requestType: "epp",
+        urgency: "normal",
+        requiredDate: "2026-07-01",
+        notes: "",
+        items: [
+          {
+            productId: null,
+            productNameFree: "Guantes de cuero",
+            quantity: 2,
+            unitOfMeasure: "par",
+            urgency: "normal",
+            requiredDate: "2026-07-01",
+            workerId: null,
+            suggestedSupplierId: null,
+            supplierHint: "",
+            sortOrder: 0,
+            notes: "",
+            attributes: [
+              { attributeName: "Talla", value: "L" }
+            ],
+          },
+        ],
+      },
+      false, false,
+    )
+
+    const item = (await inMemoryDb.query.purchaseRequestItems.findFirst({
+      with: { attributes: true }
+    }))!
+    expect(item.attributes).toHaveLength(1)
+    expect(item.attributes[0]?.attributeName).toBe("Talla")
+    expect(item.attributes[0]?.value).toBe("L")
+
+    // Update with replaced attributes
+    await persistRequestWithDiff(
+      USER_ID, "u@example.test",
+      {
+        id: res.requestId,
+        worksiteId: WS_ID,
+        requestType: "epp",
+        urgency: "normal",
+        requiredDate: "2026-07-01",
+        notes: "",
+        items: [
+          {
+            id: item.id,
+            productId: null,
+            productNameFree: "Guantes de cuero",
+            quantity: 2,
+            unitOfMeasure: "par",
+            urgency: "normal",
+            requiredDate: "2026-07-01",
+            workerId: null,
+            suggestedSupplierId: null,
+            supplierHint: "",
+            sortOrder: 0,
+            notes: "",
+            attributes: [
+              { attributeName: "Talla", value: "XL" },
+              { attributeName: "Color", value: "Amarillo" },
+            ],
+          },
+        ],
+      },
+      true, false,
+    )
+
+    const updatedItem = (await inMemoryDb.query.purchaseRequestItems.findFirst({
+      with: { attributes: true }
+    }))!
+    expect(updatedItem.attributes).toHaveLength(2)
+    expect(updatedItem.attributes.map((a) => a.value).sort()).toEqual(["Amarillo", "XL"])
+  })
 })

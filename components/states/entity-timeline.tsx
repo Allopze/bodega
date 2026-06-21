@@ -1,7 +1,5 @@
-"use client"
-
 import * as React from "react"
-import { Clock, ArrowRight, User } from "@phosphor-icons/react"
+import { Clock, ArrowRight, User } from "@phosphor-icons/react/dist/ssr"
 import { formatDate } from "@/lib/utils"
 import { REQUEST_STATE_META, OC_STATE_META, type RequestStatus, type OcStatus } from "./state-badge"
 

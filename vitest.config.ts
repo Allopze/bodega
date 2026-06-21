@@ -25,15 +25,14 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       include:  ["lib/**/*.ts"],
       // T-03: regression floor, set just below the current measured
-      // coverage (58% stmts / 48% branches / 65% functions / 59% lines).
-      // CI fails if coverage drops meaningfully. Ratchet these up as
+      // coverage. CI fails if coverage drops meaningfully. Ratchet these up as
       // test coverage grows; the long-term target in AUDITORIA_INTEGRAL_CHOME.md is 70%.
-      // Actual coverage: 70.69% stmts / 62.54% branches / 75.89% funcs / 72.08% lines
+      // Actual coverage: 94.43% stmts / 83.8% branches / 95.29% funcs / 96.01% lines
       thresholds: {
-        statements: 68,
-        branches:   58,
-        functions:  72,
-        lines:      68,
+        statements: 94,
+        branches:   83,
+        functions:  95,
+        lines:      96,
       },
     },
   },

@@ -24,6 +24,11 @@ describe("safeInternalPath", () => {
     expect(safeInternalPath("%2F%2Fevil.test")).toBe("/dashboard")
     expect(safeInternalPath("%2Fdashboard%0D%0ASet-Cookie%3Afoo")).toBe("/dashboard")
   })
+
+  it("uses the fallback when decodeURIComponent throws an error on malformed paths", () => {
+    expect(safeInternalPath("%")).toBe("/dashboard")
+    expect(safeInternalPath("%E0%A4")).toBe("/dashboard")
+  })
 })
 
 describe("sidebar navigation", () => {

@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { getCompanyProfile, setCompanyProfile, getEmailsEnabled, setEmailsEnabled } from "@/lib/services/system-settings"
+import {
+  getCompanyProfile,
+  setCompanyProfile,
+  getEmailsEnabled,
+  setEmailsEnabled,
+  getPdfMaxSizeMb,
+  setPdfMaxSizeMb,
+} from "@/lib/services/system-settings"
 import { recordAudit } from "@/lib/audit"
 
 const mocks = vi.hoisted(() => {
@@ -140,5 +147,65 @@ describe("system settings emails enabled flag", () => {
       entityId:   "emails_enabled",
       newState:   { value: false },
     }))
+  })
+})
+
+describe("system settings pdf max size", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("defaults to 10MB when the setting is missing", async () => {
+    mocks.findFirst.mockResolvedValue(null)
+    await expect(getPdfMaxSizeMb()).resolves.toBe(10)
+  })
+
+  it("defaults to 10MB when the setting is invalid (NaN)", async () => {
+    mocks.findFirst.mockResolvedValue({ key: "pdf_max_size_mb", value: "not-a-number" })
+    await expect(getPdfMaxSizeMb()).resolves.toBe(10)
+  })
+
+  it("returns configured value when valid", async () => {
+    mocks.findFirst.mockResolvedValue({ key: "pdf_max_size_mb", value: "25" })
+    await expect(getPdfMaxSizeMb()).resolves.toBe(25)
+  })
+
+  it("persists the pdf limit and records an audit entry", async () => {
+    mocks.findFirst.mockResolvedValue(null)
+
+    await setPdfMaxSizeMb(15, "usr-admin", "admin@chome.cl")
+
+    expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({
+      key:   "pdf_max_size_mb",
+      value: "15",
+    }))
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action:     "update",
+      entityType: "system_setting",
+      entityId:   "pdf_max_size_mb",
+      newState:   { value: 15 },
+    }))
+  })
+})
+
+describe("system settings error handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("getPdfMaxSizeMb catches error and returns default", async () => {
+    mocks.findFirst.mockRejectedValue(new Error("DB failure"))
+    await expect(getPdfMaxSizeMb()).resolves.toBe(10)
+  })
+
+  it("getEmailsEnabled catches error and returns default", async () => {
+    mocks.findFirst.mockRejectedValue(new Error("DB failure"))
+    await expect(getEmailsEnabled()).resolves.toBe(true)
+  })
+
+  it("getCompanyProfile catches error and returns default profile", async () => {
+    mocks.findFirst.mockRejectedValue(new Error("DB failure"))
+    const profile = await getCompanyProfile()
+    expect(profile.name).toBe("Servicios Industriales Chome Limitada")
   })
 })

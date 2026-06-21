@@ -65,4 +65,56 @@ describe("destructive database guard", () => {
     expect(getDatabaseNameFromUrl("postgres:///bodega_e2e")).toBe("bodega_e2e")
     expect(quotePostgresIdentifier('bodega_"e2e')).toBe('"bodega_""e2e"')
   })
+
+  it("rejects database with missing database name", () => {
+    expect(() =>
+      assertSafeDestructiveDatabase({
+        databaseUrl: "postgres://localhost",
+        allowDestructiveReset: true,
+        context: "E2E",
+      }),
+    ).toThrow(/is not disposable/)
+  })
+
+  it("rejects unsafe hosts containing prod or staging keywords", () => {
+    expect(() =>
+      assertSafeDestructiveDatabase({
+        databaseUrl: "postgres://prod-host:5432/bodega_test",
+        allowDestructiveReset: true,
+        context: "E2E",
+      }),
+    ).toThrow(/does not look safe/)
+
+    expect(() =>
+      assertSafeDestructiveDatabase({
+        databaseUrl: "postgres://staging-host/bodega_test",
+        allowDestructiveReset: true,
+        context: "E2E",
+      }),
+    ).toThrow(/does not look safe/)
+  })
+
+  it("throws error for malformed database connection string", () => {
+    expect(() =>
+      assertSafeDestructiveDatabase({
+        databaseUrl: "not_a_url",
+        allowDestructiveReset: true,
+        context: "E2E",
+      }),
+    ).toThrow(/A Postgres connection URL is required/)
+
+    expect(() =>
+      assertSafeDestructiveDatabase({
+        databaseUrl: "http://localhost/bodega_test",
+        allowDestructiveReset: true,
+        context: "E2E",
+      }),
+    ).toThrow(/A Postgres connection URL is required/)
+  })
+
+  it("redacts credentials even when there is no host in databaseUrl", () => {
+    expect(
+      getRedactedDatabaseIdentifier("postgres:///bodega_test"),
+    ).toBe("postgres:///bodega_test")
+  })
 })

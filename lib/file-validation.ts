@@ -110,7 +110,7 @@ function matchesSignature(buf: Uint8Array, signature: number[]): boolean {
   return true
 }
 
-function friendlyName(mime: string): string {
+export function friendlyName(mime: string): string {
   switch (mime) {
     case "application/pdf":  return "PDF"
     case "image/jpeg":       return "JPG"

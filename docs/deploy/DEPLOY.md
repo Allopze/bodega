@@ -247,6 +247,49 @@ Next.js). Ver [CSRF.md](../security/CSRF.md).
 Todas las mutaciones de datos escriben entradas en `audit_log` con `userId`,
 `action`, `entityId`, timestamp y estado anterior/nuevo.
 
+### Configuración de Reverse Proxy
+
+En entornos de producción, la aplicación debe desplegarse detrás de un reverse proxy (como NGINX, Traefik o Cloudflare). Para garantizar el funcionamiento correcto de la autenticación (`next-auth` / Auth.js) y del rate limiting por IP, el proxy debe propagar correctamente las cabeceras originales del cliente.
+
+#### Requisitos clave:
+1. **Propagación del Host**: Auth.js requiere que la cabecera `Host` original coincida con la URL canónica de la aplicación para evitar ataques de redirección no autorizados. En el archivo `lib/auth/auth.ts`, la propiedad `trustHost: true` está activada para habilitar este comportamiento.
+2. **Propagación de IP**: El rate limiter (`lib/services/rate-limit.ts`) obtiene la IP del cliente leyendo la cabecera `X-Forwarded-For`. El proxy debe configurar esta cabecera con la IP real del cliente y no la del propio proxy.
+3. **Validación de `AUTH_URL`**: Asegúrese de definir la variable de entorno `AUTH_URL` (o `NEXTAUTH_URL` / `APP_URL`) apuntando a la URL pública y protocolo correctos (por ejemplo, `https://bodega.chome.dev`).
+
+#### Ejemplo de configuración para NGINX:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name bodega.chome.dev;
+
+    # Configuración de SSL ...
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        # Soporte para WebSockets (opcional/dev)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_cache_bypass $http_upgrade;
+
+        # Cabeceras de Host (Crítico para NextAuth/Auth.js)
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        # Cabeceras de IP (Crítico para Rate Limiting)
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+#### Configuración con Cloudflare:
+Si la aplicación se encuentra detrás de Cloudflare, asegúrese de que la cabecera `CF-Connecting-IP` o `X-Forwarded-For` sea respetada. La aplicación lee la primera IP del listado en `X-Forwarded-For`.
+
 ---
 
 ## Plataformas de despliegue

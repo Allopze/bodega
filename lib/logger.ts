@@ -27,9 +27,9 @@ function redactString(value: string): string {
 }
 
 function redact(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
+  if (depth > 4) return "[depth-limit]"
   if (typeof value === "string") return redactString(value)
   if (value === null || typeof value !== "object") return value
-  if (depth > 4) return "[depth-limit]"
   if (seen.has(value as object)) return "[circular]"
   seen.add(value as object)
 

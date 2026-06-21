@@ -42,7 +42,7 @@ export async function buildTrazabilidadRows(session: Session, filters: Trazabili
 
   const dateConditions = []
   if (filters.fromDate) dateConditions.push(sql`${purchaseRequests.createdAt} >= ${filters.fromDate}`)
-  if (filters.toDate) dateConditions.push(sql`${purchaseRequests.createdAt} <= ${filters.toDate}T23:59:59`)
+  if (filters.toDate) dateConditions.push(sql`${purchaseRequests.createdAt} <= ${filters.toDate + "T23:59:59"}`)
   const dateFilter = dateConditions.length > 0 ? and(...dateConditions) : undefined
 
   const requestFilter = and(
@@ -217,8 +217,9 @@ export async function getTrazabilidadXlsx(
   filename: string
   truncated: boolean
 }> {
-  // Pass maxRows as requestLimit so the DB query itself is bounded (A-07).
-  let rows = await buildTrazabilidadRows(session, filters, maxRows ?? 5_000)
+  // Pass maxRows + 1 as requestLimit so we can detect if there are more rows than requested (A-07).
+  const limit = maxRows !== undefined ? maxRows + 1 : 5_000
+  let rows = await buildTrazabilidadRows(session, filters, limit)
   const truncated = maxRows !== undefined && rows.length > maxRows
   if (truncated) rows = rows.slice(0, maxRows)
   const report = buildTrazabilidadReportData(rows)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { validateFileBuffer, MimeType } from "../file-validation"
+import { validateFileBuffer, MimeType, friendlyName } from "../file-validation"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -121,5 +121,13 @@ describe("validateFileBuffer", () => {
     expect(MimeType.QUOTATION.has("application/pdf")).toBe(true)
     expect(MimeType.QUOTATION.has("image/jpeg")).toBe(true)
     expect(MimeType.QUOTATION.has("image/png")).toBe(true)
+  })
+
+  it("friendlyName fallback matches default switch cases and handles custom MIME types", () => {
+    expect(friendlyName("application/pdf")).toBe("PDF")
+    expect(friendlyName("image/jpeg")).toBe("JPG")
+    expect(friendlyName("image/png")).toBe("PNG")
+    expect(friendlyName("application/xml")).toBe("XML")
+    expect(friendlyName("text/plain")).toBe("text/plain")
   })
 })
