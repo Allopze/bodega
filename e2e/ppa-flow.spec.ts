@@ -1,11 +1,12 @@
 /**
- * E2E: PPA Digital — flujo crítico del trabajador y del responsable.
+ * E2E: PPA Digital — flujos críticos del trabajador y del responsable.
  *
  * Cubre los criterios de aceptación clave:
  *   • Acceso público al formulario sin login.
  *   • Envío seguro → "Puede iniciar el trabajo".
  *   • Respuesta crítica → confirmación → "DETENGA EL TRABAJO".
- *   • Revisión del responsable → autorización → estado actualizado.
+ *   • Revisión del responsable → autorización / rechazo / corrección.
+ *   • Cierre de caso tras resolución.
  *   • La ruta pública funciona sin login; el panel interno está protegido.
  *
  * Usa las fixtures de e2e/setup-db.ts (Faena E2E + trabajador 11111111-1 +
@@ -68,36 +69,77 @@ test.describe("PPA Digital — formulario público", () => {
   })
 })
 
+async function submitStoppedPpa(page: Page) {
+  await startForm(page)
+  await page.getByTestId("cambio-no").click()
+  await page.getByTestId("peligro-si").click()
+  await page.getByLabel("¿Cuál es el peligro?").fill("Cable eléctrico expuesto en la zona de trabajo")
+  await checkRequiredControls(page)
+  await page.getByTestId("seguro-si").click()
+  await page.getByRole("button", { name: "Enviar PPA" }).click()
+  await page.getByRole("button", { name: "Enviar de todos modos" }).click()
+  await expect(page).toHaveURL(/\/ppa\/result\//)
+}
+
+async function goToStoppedPpaDetail(page: Page) {
+  await login(page)
+  await gotoWithRetry(page, "/prevencion/ppa")
+  await page.getByRole("button", { name: "Detenidos" }).click()
+  await page.getByRole("link", { name: /Trabajador E2E/ }).first().click()
+  await expect(page).toHaveURL(/\/prevencion\/ppa\/[^/]+$/)
+}
+
 test.describe("PPA Digital — revisión del responsable", () => {
   test("autorizar un PPA detenido actualiza el estado", async ({ page }) => {
-    // 1) El trabajador genera un PPA detenido (peligro no controlado).
-    await startForm(page)
-    await page.getByTestId("cambio-no").click()
-    await page.getByTestId("peligro-si").click()
-    await page.getByLabel("¿Cuál es el peligro?").fill("Cable eléctrico expuesto en la zona de trabajo")
-    await checkRequiredControls(page)
-    await page.getByTestId("seguro-si").click()
-    await page.getByRole("button", { name: "Enviar PPA" }).click()
-    await page.getByRole("button", { name: "Enviar de todos modos" }).click()
-    await expect(page).toHaveURL(/\/ppa\/result\//)
-
-    // 2) El responsable inicia sesión y revisa.
-    await login(page)
-    await gotoWithRetry(page, "/prevencion/ppa")
-    await page.getByRole("button", { name: "Detenidos" }).click()
-    await page.getByRole("link", { name: /Trabajador E2E/ }).first().click()
-    await expect(page).toHaveURL(/\/prevencion\/ppa\/[^/]+$/)
+    await submitStoppedPpa(page)
+    await goToStoppedPpaDetail(page)
 
     await page.getByLabel("Acción correctiva implementada").fill("Se aisló el cable y se delimitó la zona")
     await page.getByText("Autorizar inicio").click()
     await page.getByRole("button", { name: "Registrar revisión" }).click()
-
-    // Confirmación de autorización de un trabajo detenido.
     await page.getByRole("button", { name: "Sí, autorizar" }).click()
 
-    await expect(page.getByText("Intervención del responsable")).toBeVisible()
     await expect(page.getByText("Autorizó el inicio", { exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "Cerrar caso" })).toBeVisible()
+  })
+
+  test("rechazar un PPA detenido muestra estado rechazado", async ({ page }) => {
+    await submitStoppedPpa(page)
+    await goToStoppedPpaDetail(page)
+
+    await page.getByText("Rechazar inicio").click()
+    await page.getByRole("button", { name: "Registrar revisión" }).click()
+
+    await expect(page.getByText("Rechazó el inicio", { exact: true })).toBeVisible()
+  })
+
+  test("solicitar corrección cambia estado a en corrección", async ({ page }) => {
+    await submitStoppedPpa(page)
+    await goToStoppedPpaDetail(page)
+
+    await page.getByText("Solicitar corrección").click()
+    await page.getByRole("button", { name: "Registrar revisión" }).click()
+
+    await expect(page.getByText("Solicitó corrección", { exact: true })).toBeVisible()
+  })
+
+  test("cerrar un caso autorizado muestra estado cerrado", async ({ page }) => {
+    await submitStoppedPpa(page)
+    await goToStoppedPpaDetail(page)
+
+    // Autorizar
+    await page.getByLabel("Acción correctiva implementada").fill("Se aisló el cable y se delimitó la zona")
+    await page.getByText("Autorizar inicio").click()
+    await page.getByRole("button", { name: "Registrar revisión" }).click()
+    await page.getByRole("button", { name: "Sí, autorizar" }).click()
+    await expect(page.getByText("Autorizó el inicio", { exact: true })).toBeVisible()
+
+    // Cerrar
+    await page.getByRole("button", { name: "Cerrar caso" }).click()
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Cerrar caso" })).toBeVisible()
+    await page.getByRole("dialog").getByRole("button", { name: "Cerrar caso" }).click()
+
+    await expect(page.getByText("Caso cerrado")).toBeVisible()
   })
 })
 

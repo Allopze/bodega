@@ -14,7 +14,7 @@ import { buildPpaExport } from "@/lib/services/ppa"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   if (!can(session, "ppa:manage")) return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
@@ -23,8 +23,17 @@ export async function GET() {
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
 
+  const { searchParams } = new URL(request.url)
+  const filters = {
+    estado:    searchParams.get("estado")    || undefined,
+    worksiteId: searchParams.get("worksiteId") || undefined,
+    dateFrom:  searchParams.get("dateFrom")  || undefined,
+    dateTo:    searchParams.get("dateTo")    || undefined,
+    search:    searchParams.get("search")    || undefined,
+  }
+
   try {
-    const report = await buildPpaExport(worksiteIds)
+    const report = await buildPpaExport(worksiteIds, filters)
     const xlsx = await buildXlsxBuffer(report)
     return new NextResponse(xlsx, {
       status: 200,

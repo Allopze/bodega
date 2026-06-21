@@ -464,8 +464,19 @@ export async function getPpaStats(worksiteIds: string[] | "all"): Promise<PpaSta
 
 /* ── Export XLSX ─────────────────────────────────────────────────────────────── */
 
-export async function buildPpaExport(worksiteIds: string[] | "all"): Promise<ReportData> {
-  const rows = await listPpa({ worksiteIds }, 10_000, 0)
+export interface PpaExportFilters {
+  estado?: string
+  worksiteId?: string
+  dateFrom?: string
+  dateTo?: string
+  search?: string
+}
+
+export async function buildPpaExport(
+  worksiteIds: string[] | "all",
+  filters: PpaExportFilters = {},
+): Promise<ReportData> {
+  const rows = await listPpa({ worksiteIds, ...filters }, 10_000, 0)
   return {
     filenameBase: `ppa_digital_${new Date().toISOString().slice(0, 10)}`,
     worksheetName: "PPA Digital",

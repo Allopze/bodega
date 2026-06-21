@@ -6,11 +6,11 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { listPpa, countPpa, getPpaStats, listScopedWorksites } from "@/lib/services/ppa"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Button } from "@/components/ui/button"
 import { PPA_STOP_REASON_LABELS, tipoTrabajoLabel, type PpaStopReason } from "@/lib/ppa/types"
 import { PpaMetricBar } from "./ppa-metric-bar"
 import { PpaList } from "./ppa-list"
 import { PpaAccessPanel } from "./ppa-access-panel"
+import { PpaExportButton } from "./ppa-export-button"
 import { scopeToIds } from "@/lib/ppa/utils"
 
 export const metadata: Metadata = { title: "PPA Digital" }
@@ -76,12 +76,7 @@ export default async function PpaPanelPage() {
           ]} />
         }
         headerActions={
-          canExport ? (
-            <Button asChild variant="secondary">
-              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-              <a href="/api/prevencion/ppa/export">Exportar XLSX</a>
-            </Button>
-          ) : undefined
+          <PpaExportButton worksites={worksiteOptions} canExport={canExport} />
         }
       />
 
