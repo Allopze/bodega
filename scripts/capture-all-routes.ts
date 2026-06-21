@@ -97,6 +97,10 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-nueva", path: "/prevencion/nueva", auth: true },
   { slug: "prevencion-detalle", path: "/prevencion/sst-audit-1", auth: true },
   { slug: "sst-print", path: "/sst/sst-audit-1/print", auth: true },
+  { slug: "ppa-form", path: "/ppa", auth: false },
+  { slug: "ppa-result", path: "/ppa/result/capture-ppa-token", auth: false },
+  { slug: "prevencion-ppa", path: "/prevencion/ppa", auth: true },
+  { slug: "prevencion-ppa-detalle", path: "/prevencion/ppa/ppa-audit-1", auth: true },
   { slug: "admin", path: "/admin", auth: true },
   { slug: "admin-auditoria", path: "/admin/auditoria", auth: true },
   { slug: "admin-configuracion", path: "/admin/configuracion", auth: true },
@@ -859,6 +863,34 @@ async function prepareDatabase(captureDbUrl: string) {
       responsable: "Jefe de faena",
       plazo: "2026-06-15",
       estado: "completado",
+    },
+  ])
+
+  await db.insert(schema.ppaSubmissions).values([
+    {
+      id: "ppa-audit-1",
+      worksiteId,
+      workerId: "worker-audit-1",
+      workerName: "Daniela Fuentes",
+      workerRut: "18.111.222-3",
+      workerCompany: "Chome",
+      manualIdentificacion: false,
+      tipoTrabajo: "conductor_batea",
+      esCritica: false,
+      answersJson: {
+        tipoTrabajo: "conductor_batea",
+        cambioPlanificado: "no",
+        peligroNoControlado: "no",
+        controles: ["epp", "herramientas"],
+        seguroComenzar: "si",
+        complementarias: {},
+      },
+      resultado: "autorizado_auto",
+      triggeredReasons: [],
+      estado: "aprobado_auto",
+      publicToken: "capture-ppa-token",
+      createdAt: now,
+      updatedAt: now,
     },
   ])
 

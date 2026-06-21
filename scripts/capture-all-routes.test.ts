@@ -10,12 +10,14 @@ const dynamicSamples: Record<string, string> = {
   "/compras/[id]": "/compras/po-audit-1",
   "/compras/[id]/print": "/compras/po-audit-1/print",
   "/prevencion/[id]": "/prevencion/sst-audit-1",
+  "/prevencion/ppa/[id]": "/prevencion/ppa/ppa-audit-1",
   "/recepcion/[id]": "/recepcion/rec-audit-1",
   "/recuperar/[token]": "/recuperar/capture-reset-token",
   "/repuestos/[id]": "/repuestos/rep-audit-1",
   "/servicios/[id]": "/servicios/srv-audit-1",
   "/solicitudes/[id]": "/solicitudes/req-audit-1",
   "/sst/[id]/print": "/sst/sst-audit-1/print",
+  "/ppa/result/[token]": "/ppa/result/capture-ppa-token",
 }
 
 describe("capture-all-routes route inventory", () => {

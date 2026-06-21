@@ -24,10 +24,6 @@ CREATE TABLE "ppa_submissions" (
 	CONSTRAINT "ppa_submissions_public_token_unique" UNIQUE("public_token")
 );
 --> statement-breakpoint
-ALTER TABLE "repuesto_quotations" ADD COLUMN "uploaded_by" text;--> statement-breakpoint
-ALTER TABLE "service_quotations" ADD COLUMN "uploaded_by" text;--> statement-breakpoint
 ALTER TABLE "ppa_submissions" ADD CONSTRAINT "ppa_submissions_worksite_id_worksites_id_fk" FOREIGN KEY ("worksite_id") REFERENCES "public"."worksites"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ppa_submissions" ADD CONSTRAINT "ppa_submissions_worker_id_workers_id_fk" FOREIGN KEY ("worker_id") REFERENCES "public"."workers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ppa_submissions" ADD CONSTRAINT "ppa_submissions_reviewed_by_users_id_fk" FOREIGN KEY ("reviewed_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "repuesto_quotations" ADD CONSTRAINT "repuesto_quotations_uploaded_by_users_id_fk" FOREIGN KEY ("uploaded_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "service_quotations" ADD CONSTRAINT "service_quotations_uploaded_by_users_id_fk" FOREIGN KEY ("uploaded_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "ppa_submissions" ADD CONSTRAINT "ppa_submissions_reviewed_by_users_id_fk" FOREIGN KEY ("reviewed_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;

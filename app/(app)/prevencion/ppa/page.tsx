@@ -55,6 +55,7 @@ export default async function PpaPanelPage() {
         headerActions={
           canExport ? (
             <Button asChild variant="secondary">
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
               <a href="/api/prevencion/ppa/export">Exportar XLSX</a>
             </Button>
           ) : undefined
