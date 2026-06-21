@@ -1,23 +1,14 @@
 /**
- * Safe mail facade.
+ * Outbound mail facade — powered by Resend.
  *
- * Outbound SMTP delivery is intentionally paused while the project uses
- * next-auth@5 beta: Auth.js declares a vulnerable optional nodemailer peer, and
- * installing a patched nodemailer version breaks clean `npm ci` peer
- * resolution. Callers keep receiving the same `{ sent: false }` shape they
- * already use to expose a manual invitation/reset link fallback.
+ * Configuration: set RESEND_API_KEY in the environment.
+ * All sends are no-ops when the key is absent or the global
+ * emails kill-switch (system_settings: emails_enabled) is off.
  */
+import { Resend } from "resend"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
 
-type InvitationEmailInput = {
-  to: string
-  inviteUrl: string
-  invitedByName?: string | null
-}
-
-type SendResult = { sent: true } | { sent: false; reason: string }
-
-const SMTP_PAUSED_REASON = "SMTP deshabilitado temporalmente por seguridad"
+const FROM = "Chome Plataforma <plataforma@portalchome.cl>"
 
 export function getAppBaseUrl() {
   return (
@@ -27,31 +18,91 @@ export function getAppBaseUrl() {
   ).replace(/\/$/, "")
 }
 
-export async function sendInvitationEmail(_input: InvitationEmailInput): Promise<SendResult> {
-  return pausedMailResult()
+type InvitationEmailInput = {
+  to: string
+  inviteUrl: string
+  invitedByName?: string | null
 }
 
-export async function sendEmail(_message: {
-  to:      string
+export type SendResult = { sent: true } | { sent: false; reason: string }
+
+function getResend(): Resend | null {
+  const key = process.env.RESEND_API_KEY?.trim()
+  return key ? new Resend(key) : null
+}
+
+async function canSend(): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!(await getEmailsEnabled())) {
+    return { ok: false, reason: "Envío de correos desactivado" }
+  }
+  if (!getResend()) {
+    return { ok: false, reason: "RESEND_API_KEY no configurado" }
+  }
+  return { ok: true }
+}
+
+export async function sendInvitationEmail(input: InvitationEmailInput): Promise<SendResult> {
+  const { to, inviteUrl, invitedByName } = input
+  const byLine = invitedByName
+    ? `<strong>${invitedByName}</strong> te ha invitado a`
+    : "Has sido invitado a"
+
+  return sendEmail({
+    to,
+    subject: "Invitación a Chome Plataforma",
+    text: `${invitedByName ? `${invitedByName} te ha invitado a` : "Has sido invitado a"} Chome Plataforma.\n\nAccede aquí: ${inviteUrl}\n\nSi no esperabas esta invitación, ignora este correo.`,
+    html: `
+      <p>${byLine} <strong>Chome Plataforma</strong>.</p>
+      <p><a href="${inviteUrl}" style="display:inline-block;padding:10px 20px;background:#17422b;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Aceptar invitación</a></p>
+      <p style="color:#6b7280;font-size:13px">Si no esperabas esta invitación, ignora este correo.</p>
+    `,
+  })
+}
+
+export async function sendEmail(message: {
+  to: string
   subject: string
-  text:    string
-  html:    string
+  text: string
+  html: string
 }): Promise<SendResult> {
-  return pausedMailResult()
+  const gate = await canSend()
+  if (!gate.ok) return { sent: false, reason: gate.reason }
+
+  const resend = getResend()!
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: message.to,
+    subject: message.subject,
+    text: message.text,
+    html: message.html,
+  })
+
+  if (error) return { sent: false, reason: error.message }
+  return { sent: true }
 }
 
 export async function sendBatchEmails(
-  _messages: Array<{ to: string; subject: string; text: string; html: string }>,
+  messages: Array<{ to: string; subject: string; text: string; html: string }>,
 ): Promise<{ sent: true; count: number } | { sent: false; reason: string }> {
-  return pausedMailResult()
+  if (messages.length === 0) return { sent: true, count: 0 }
+
+  const gate = await canSend()
+  if (!gate.ok) return { sent: false, reason: gate.reason }
+
+  const resend = getResend()!
+  const { error } = await resend.batch.send(
+    messages.map((m) => ({
+      from: FROM,
+      to: m.to,
+      subject: m.subject,
+      text: m.text,
+      html: m.html,
+    })),
+  )
+
+  if (error) return { sent: false, reason: error.message }
+  return { sent: true, count: messages.length }
 }
 
-async function pausedMailResult(): Promise<{ sent: false; reason: string }> {
-  if (process.env.SMTP_DISABLED === "true" || !(await getEmailsEnabled())) {
-    return { sent: false, reason: "SMTP no configurado" }
-  }
-
-  return { sent: false, reason: SMTP_PAUSED_REASON }
-}
-
+// Re-export Buffer so callers that import it from here keep working.
 export { Buffer }

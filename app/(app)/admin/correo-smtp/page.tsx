@@ -4,10 +4,10 @@ import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
-import { getSmtpConfig } from "@/lib/services/smtp-settings"
-import { SmtpPageForms } from "./smtp-form"
+import { getResendStatus } from "@/lib/services/smtp-settings"
+import { CorreoForms } from "./smtp-form"
 
-export const metadata: Metadata = { title: "Correo SMTP" }
+export const metadata: Metadata = { title: "Configuración de Correo" }
 
 export default async function CorreoSmtpPage() {
   try {
@@ -16,27 +16,27 @@ export default async function CorreoSmtpPage() {
     redirect("/forbidden")
   }
 
-  const [smtpConfig, emailsEnabled] = await Promise.all([
-    getSmtpConfig(),
+  const [resendStatus, emailsEnabled] = await Promise.all([
+    getResendStatus(),
     getEmailsEnabled(),
   ])
 
   return (
     <PageContainer>
       <PageHeader
-        title="Correo SMTP"
-        description="Configura el servidor de correo saliente y el interruptor global de notificaciones."
+        title="Configuración de Correo"
+        description="Estado del servicio de envío de correos y configuración global de notificaciones."
         breadcrumb={
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
               { label: "Administración", href: "/admin" },
-              { label: "Correo SMTP" },
+              { label: "Correo" },
             ]}
           />
         }
       />
-      <SmtpPageForms initialSmtpConfig={smtpConfig} initialEmailsEnabled={emailsEnabled} />
+      <CorreoForms resendStatus={resendStatus} initialEmailsEnabled={emailsEnabled} />
     </PageContainer>
   )
 }

@@ -1,19 +1,20 @@
 import { requirePermission } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { loadActaData } from "../document"
+import { withBrowserContext } from "@/lib/pdf/browser-pool"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * Server-side PDF of the acta SST. Renders the existing print page with headless
- * Chromium and prints it, producing a clean A4 PDF with no browser chrome
- * (date / URL / page number) — unlike window.print(). The session cookie is
- * forwarded so the headless browser loads the page as the requesting user.
+ * Server-side PDF of the acta SST. Renders the existing print page with a
+ * pooled headless Chromium context, producing a clean A4 PDF without browser
+ * chrome (date / URL / page number) — unlike window.print().
  *
- * playwright is imported lazily (inside the handler) so that playwright-core's
- * module-level initialisation (which requires browsers.json) does not run at
- * Next.js server startup — only when this route is actually requested.
+ * The session cookie is forwarded so the headless browser loads the page as
+ * the requesting user. PDF_MAX_CONCURRENT (default 2) caps the number of
+ * simultaneous Chromium contexts; further requests queue rather than spawning
+ * additional browser processes.
  */
 export async function GET(
   req: Request,
@@ -28,8 +29,7 @@ export async function GET(
 
   const { id } = await params
 
-  // Enforce access and obtain the suggested filename up front (also avoids
-  // launching a browser for an evaluation the user can't see).
+  // Enforce access and get the filename before touching the browser pool.
   const data = await loadActaData(id, session)
   if (!data) return new Response("No encontrado", { status: 404 })
 
@@ -37,29 +37,20 @@ export async function GET(
   const printUrl = `${origin}/sst/${id}/print`
   const cookie = req.headers.get("cookie") ?? ""
 
-  // Lazy import: keeps playwright-core out of the module graph at startup.
-  const { chromium } = await import("playwright")
-  const browser = await chromium.launch()
-  try {
-    const ctx = await browser.newContext({ extraHTTPHeaders: cookie ? { cookie } : {} })
-    const page = await ctx.newPage()
-    await page.goto(printUrl, { waitUntil: "networkidle" })
-    // page.pdf() applies print media automatically, so the toolbar is hidden
-    // and the @media print rules (block layout, no margins) take effect.
-    const pdf = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      preferCSSPageSize: true,
-    })
+  const pdf = await withBrowserContext(
+    { extraHTTPHeaders: cookie ? { cookie } : {} },
+    async (ctx) => {
+      const page = await ctx.newPage()
+      await page.goto(printUrl, { waitUntil: "networkidle" })
+      return page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true })
+    },
+  )
 
-    return new Response(new Uint8Array(pdf), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": encodeContentDisposition(data.suggestedFilename, "attachment"),
-        "Cache-Control": "no-store",
-      },
-    })
-  } finally {
-    await browser.close()
-  }
+  return new Response(new Uint8Array(pdf), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": encodeContentDisposition(data.suggestedFilename, "attachment"),
+      "Cache-Control": "no-store",
+    },
+  })
 }
