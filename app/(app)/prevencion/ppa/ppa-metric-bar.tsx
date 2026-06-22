@@ -67,7 +67,9 @@ export function PpaMetricBar({ stats }: { stats: PpaStats }) {
 
 function StatCell({ cell }: { cell: Cell }) {
   const numeric = typeof cell.value === "number" ? cell.value : Number.parseFloat(String(cell.value)) || 0
-  const isZero = typeof cell.value === "number" && cell.value === 0
+  // Un valor en cero —sea número (0) o cadena ("0%", "—")— se atenúa por igual.
+  // Evita que "0%" pese visualmente más que los otros ceros de la tira.
+  const isZero = numeric === 0
   const signalActive = cell.tone === "signal" && numeric > 0
 
   return (

@@ -42,7 +42,7 @@ export async function GET(
     async (ctx) => {
       const page = await ctx.newPage()
       await page.goto(printUrl, { waitUntil: "networkidle" })
-      return page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true })
+      return page.pdf({ format: "A4", printBackground: true })
     },
   )
 

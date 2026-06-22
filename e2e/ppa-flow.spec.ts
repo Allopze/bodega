@@ -143,6 +143,29 @@ test.describe("PPA Digital — revisión del responsable", () => {
   })
 })
 
+test.describe("PPA Digital — exportación XLSX", () => {
+  test("abrir dialogo de exportación y descargar XLSX", async ({ page }) => {
+    await login(page)
+    await gotoWithRetry(page, "/prevencion/ppa")
+
+    // Abrir el dialogo de exportación.
+    await page.getByRole("button", { name: /Exportar XLSX/ }).click()
+    await expect(page.getByRole("dialog")).toBeVisible()
+    await expect(page.getByText("Exportar PPA Digital")).toBeVisible()
+
+    // Seleccionar filtro de estado.
+    await page.locator("#ppa-export-estado").click()
+    await page.getByRole("option", { name: "Detenidos" }).click()
+
+    // Descargar y verificar que devuelve un XLSX.
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("link", { name: "Descargar" }).click(),
+    ])
+    expect(download.suggestedFilename()).toMatch(/\.xlsx$/)
+  })
+})
+
 test.describe("PPA Digital — acceso y permisos", () => {
   test("la ruta pública abre sin login y el panel interno está protegido", async ({ page }) => {
     await page.goto("/ppa")

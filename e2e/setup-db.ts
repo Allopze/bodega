@@ -164,6 +164,10 @@ async function main() {
     id: "sup-e2e",
     name: "Proveedor E2E",
     rut: "76.000.000-0",
+    businessActivity: "Venta de material industrial",
+    address: "Av. Industrial 1234",
+    commune: "Santiago",
+    city: "Santiago",
     paymentTerms: "30 días",
     isActive: true,
     createdAt: now,
@@ -405,6 +409,90 @@ async function main() {
       } satisfies typeof schema.purchaseRequestItems.$inferInsert
     }),
   )
+
+  // ── Purchase Order fixture ──────────────────────────────────────────────
+  // Provides a self-contained OC for e2e/pdf-exports.spec.ts PO tests so they
+  // don't depend on purchase-flow.spec.ts creating one first.
+  await db.insert(schema.purchaseRequests).values({
+    id: "req-oc-e2e",
+    code: "SOL-OC-E2E",
+    worksiteId: "ws-e2e",
+    requesterId: "user-admin-e2e",
+    requestType: "otro",
+    urgency: "normal",
+    requiredDate: "2026-07-15",
+    status: "approved",
+    submittedAt: now,
+    notes: "Fixture E2E para orden de compra",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values({
+    id: "req-item-oc-e2e",
+    requestId: "req-oc-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    status: "approved",
+    urgency: "normal",
+    requiredDate: "2026-07-15",
+    workerId: null,
+    suggestedSupplierId: "sup-e2e",
+    sortOrder: 1,
+    notes: null,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-e2e",
+    code: "OC-2026-0001",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "issued",
+    issuedAt: now,
+    estimatedDelivery: "2026-07-20",
+    deliveryAddress: "Ruta E2E",
+    paymentTerms: "30 días",
+    netAmount: 11400,
+    taxAmount: 2166,
+    totalAmount: 13566,
+    notes: "Fixture E2E para PDF",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-e2e-01",
+    purchaseOrderId: "oc-e2e",
+    requestItemId: "req-item-oc-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    discount: 0,
+    subtotal: 10000,
+    status: "issued",
+    sortOrder: 1,
+    notes: null,
+  })
+  // Second item (uncatalogued) to exercise the productNameFree path
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-e2e-02",
+    purchaseOrderId: "oc-e2e",
+    requestItemId: null,
+    productId: null,
+    productNameFree: "Servicio de consultoría E2E",
+    quantity: 1,
+    unitOfMeasure: "servicio",
+    unitPrice: 1400,
+    discount: 0,
+    subtotal: 1400,
+    status: "issued",
+    sortOrder: 2,
+    notes: "Consultoría de implementación",
+  })
 
   // SST seed — one closed evaluation used by sst-pdf.spec.ts to verify the
   // /sst/[id]/print/pdf route works in standalone without MODULE_NOT_FOUND.

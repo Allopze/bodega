@@ -294,6 +294,17 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           font-size: 7.8pt;
         }
 
+        /* Repeat column headers when a table splits across pages, and
+           keep each row intact. */
+        thead {
+          display: table-header-group;
+        }
+
+        tr {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+
         .detail-note-row td {
           color: #232b25;
           padding-top: 0;
@@ -342,6 +353,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           grid-template-columns: 1fr 50mm;
           gap: 9mm;
           align-items: start;
+          break-inside: avoid;
+          page-break-inside: avoid;
         }
 
         .authorization {
@@ -353,6 +366,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         .authorization-field {
           padding-bottom: 7mm;
           border-bottom: 1px dotted #5f6b63;
+          break-inside: avoid;
+          page-break-inside: avoid;
         }
 
         .authorization-caption {
@@ -429,7 +444,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
 
           .sheet {
             width: auto;
-            min-height: 273mm;
+            min-height: auto;
             margin: 0;
             padding: 0;
             border: 0;

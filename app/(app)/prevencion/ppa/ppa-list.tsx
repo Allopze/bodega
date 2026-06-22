@@ -92,23 +92,23 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Quick-filters */}
-      <div className="flex flex-wrap items-center gap-1.5">
+      {/* Quick-filters — underline tabs */}
+      <div className="flex items-end gap-0 border-b border-[var(--color-border)]">
         {QUICK_FILTERS.map((f) => {
           const active = estado === f.value
           return (
             <button
               key={f.value || "all"}
               type="button"
-              data-pressable
               onClick={() => onFilterChange(() => setEstado(f.value))}
               className={cn(
-                "rounded-full px-3 py-1 text-xs font-medium transition-colors duration-[var(--duration-fast)]",
+                "-mb-px px-3.5 pb-2.5 pt-1 text-sm font-medium",
+                "border-b-2 transition-[color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
                 active
                   ? f.tone === "signal"
-                    ? "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)] ring-1 ring-[var(--color-signal-line)]"
-                    : "bg-[var(--color-text)] text-[var(--color-bg)]"
-                  : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-3)]",
+                    ? "border-[var(--color-signal)] text-[var(--color-signal-ink)]"
+                    : "border-[var(--color-text)] text-[var(--color-text)]"
+                  : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-border-strong)]",
               )}
               aria-pressed={active}
             >
@@ -117,7 +117,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
           )
         })}
         {canReview && (
-          <span className="ml-auto hidden text-xs text-[var(--color-text-subtle)] sm:inline">
+          <span className="ml-auto hidden pb-2.5 text-xs text-[var(--color-text-subtle)] sm:inline">
             Abre un PPA detenido para revisarlo.
           </span>
         )}
@@ -216,7 +216,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
       ) : (
         <>
           {/* Tabla (md+) */}
-          <TableRoot className={cn("hidden md:block", pending && "opacity-60 transition-opacity")}>
+          <TableRoot className={cn("hidden md:block", pending && "opacity-60 transition-opacity duration-[var(--duration-default)] ease-[var(--ease-out)]")}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -267,7 +267,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
           </TableRoot>
 
           {/* Cards (mobile) */}
-          <div className={cn("flex flex-col gap-2 md:hidden", pending && "opacity-60 transition-opacity")}>
+          <div className={cn("flex flex-col gap-2 md:hidden", pending && "opacity-60 transition-opacity duration-[var(--duration-default)] ease-[var(--ease-out)]")}>
             {rows.map((r) => (
               <Link
                 key={r.id}

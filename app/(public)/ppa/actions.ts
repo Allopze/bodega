@@ -1,5 +1,6 @@
 "use server"
 
+import { revalidatePath } from "next/cache"
 import { createPpaSubmission, findWorkerByRut } from "@/lib/services/ppa"
 import { ppaSubmitSchema, type ActionState } from "@/lib/validation/ppa"
 import { z } from "zod"
@@ -42,6 +43,7 @@ export async function submitPpaAction(
 
   try {
     const { token, submission } = await createPpaSubmission(parsed.data)
+    revalidatePath("/prevencion/ppa")
     return {
       ok: true,
       message: submission.resultado === "detenido"

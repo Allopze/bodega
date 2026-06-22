@@ -187,6 +187,10 @@ function buildPpaConditions(filters: PpaListFilters) {
   if (filters.estado === "pendientes") {
     // Pseudo-filtro: todo lo que requiere acción del responsable.
     conditions.push(inArray(ppaSubmissions.estado, ["detenido", "en_correccion"]))
+  } else if (filters.estado === "autorizado") {
+    // "Autorizados" agrupa aprobación automática y autorización manual por revisor,
+    // igual que la métrica de la barra superior (aprobadosAuto + autorizados).
+    conditions.push(inArray(ppaSubmissions.estado, ["autorizado", "aprobado_auto"]))
   } else if (filters.estado) {
     conditions.push(eq(ppaSubmissions.estado, filters.estado))
   }

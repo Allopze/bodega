@@ -76,41 +76,44 @@ export default async function PpaPanelPage() {
           ]} />
         }
         headerActions={
-          <PpaExportButton worksites={worksiteOptions} canExport={canExport} />
+          <>
+            <PpaAccessPanel worksites={worksiteOptions} />
+            <PpaExportButton worksites={worksiteOptions} canExport={canExport} />
+          </>
         }
       />
 
-      <PpaMetricBar stats={stats} />
+      <div className="flex flex-col gap-8">
+        <PpaMetricBar stats={stats} />
 
-      {(stats.topReasons.length > 0 || stats.topTareas.length > 0 || stats.topFaenas.length > 0) && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <RankPanel
-            title="Motivos de alerta más frecuentes"
-            rows={stats.topReasons.map((r) => ({
-              label: PPA_STOP_REASON_LABELS[r.reason as PpaStopReason] ?? r.reason,
-              count: r.count,
-            }))}
-          />
-          <RankPanel
-            title="Faenas con más desviaciones"
-            rows={stats.topFaenas.map((f) => ({ label: f.worksiteName, count: f.count }))}
-          />
-          <RankPanel
-            title="Tareas con más PPA"
-            rows={stats.topTareas.map((t) => ({ label: tipoTrabajoLabel(t.tipoTrabajo), count: t.count }))}
-          />
-        </div>
-      )}
+        {(stats.topReasons.length > 0 || stats.topTareas.length > 0 || stats.topFaenas.length > 0) && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <RankPanel
+              title="Motivos de alerta más frecuentes"
+              rows={stats.topReasons.map((r) => ({
+                label: PPA_STOP_REASON_LABELS[r.reason as PpaStopReason] ?? r.reason,
+                count: r.count,
+              }))}
+            />
+            <RankPanel
+              title="Faenas con más desviaciones"
+              rows={stats.topFaenas.map((f) => ({ label: f.worksiteName, count: f.count }))}
+            />
+            <RankPanel
+              title="Tareas con más PPA"
+              rows={stats.topTareas.map((t) => ({ label: tipoTrabajoLabel(t.tipoTrabajo), count: t.count }))}
+            />
+          </div>
+        )}
 
-      <PpaAccessPanel worksites={worksiteOptions} />
-
-      <PpaList
+        <PpaList
         initialRows={rows}
         total={total}
         pageSize={PAGE_SIZE}
         worksiteOptions={worksiteOptions}
         canReview={canReview}
-      />
+        />
+      </div>
     </PageContainer>
   )
 }

@@ -382,6 +382,8 @@ export const ACTA_STYLES = `
     padding: 5px 7px;
     border: 1px solid #b8c6bd;
     font-size: 8.5pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .field-row {
@@ -493,6 +495,8 @@ export const ACTA_STYLES = `
     font-size: 7pt;
     color: #94a3b8;
     text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   @media (max-width: 760px) {
