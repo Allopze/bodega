@@ -13,7 +13,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { Pagination } from "@/components/ui/pagination"
-import { cn } from "@/lib/utils"
+import { cn, formatDateTime } from "@/lib/utils"
 import type { PpaRow } from "@/lib/services/ppa"
 import { estadoPpaLabel, estadoPpaBadgeVariant, ESTADO_PPA_LABELS } from "@/lib/ppa/badges"
 import { tipoTrabajoLabel } from "@/lib/ppa/types"
@@ -26,11 +26,6 @@ const QUICK_FILTERS: { value: string; label: string; tone?: "signal" }[] = [
   { value: "autorizado",  label: "Autorizados" },
   { value: "rechazado",   label: "Rechazados" },
 ]
-
-function fmtDate(iso: string): string {
-  try { return new Date(iso).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" }) }
-  catch { return iso }
-}
 
 interface Props {
   initialRows: PpaRow[]
@@ -233,7 +228,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
                   const href = `/prevencion/ppa/${r.id}`
                   return (
                     <TableRow key={r.id} className="cursor-pointer hover:bg-[var(--color-primary-tint)]">
-                      <TableCell><Link href={href} className="block">{fmtDate(r.createdAt)}</Link></TableCell>
+                      <TableCell><Link href={href} className="block">{formatDateTime(r.createdAt)}</Link></TableCell>
                       <TableCell>
                         <Link href={href} className="block">
                           {r.workerName}
@@ -289,7 +284,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                   {tipoTrabajoLabel(r.tipoTrabajo)} · {r.worksiteName ?? "—"}
                 </p>
-                <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{fmtDate(r.createdAt)}</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{formatDateTime(r.createdAt)}</p>
               </Link>
             ))}
             <Pagination page={page} total={total} perPage={pageSize} onPage={setPage} />

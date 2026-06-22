@@ -8,6 +8,15 @@ describe("cleanRut", () => {
   it("strips dots, trims and upper-cases", () => {
     expect(cleanRut(" 12.345.678-k ")).toBe("12345678-K")
   })
+  it("inserts the dash when the input omits it", () => {
+    expect(cleanRut("123456789")).toBe("12345678-9")
+    expect(cleanRut("12345678 9")).toBe("12345678-9")
+    expect(cleanRut("12345678k")).toBe("12345678-K")
+  })
+  it("returns the compact value when too short to split", () => {
+    expect(cleanRut("")).toBe("")
+    expect(cleanRut("9")).toBe("9")
+  })
 })
 
 describe("computeRutDv", () => {

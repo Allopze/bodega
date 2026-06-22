@@ -27,10 +27,11 @@ async function gotoWithRetry(page: Page, url: string) {
 
 async function startForm(page: Page) {
   await page.goto("/ppa")
-  await page.locator("#worksite").selectOption({ label: FAENA })
+  // La faena se deriva del RUT: no hay selector de faena en el modo verificación.
   await page.locator("#rutSearch").fill(RUT)
   await page.getByRole("button", { name: "Verificar" }).click()
   await expect(page.getByText(/Verificado:/)).toBeVisible()
+  await expect(page.getByText(new RegExp(`Faena:.*${FAENA}`))).toBeVisible()
   await page.locator("#tipo").selectOption("conductor_batea")
 }
 
@@ -169,7 +170,7 @@ test.describe("PPA Digital — exportación XLSX", () => {
 test.describe("PPA Digital — acceso y permisos", () => {
   test("la ruta pública abre sin login y el panel interno está protegido", async ({ page }) => {
     await page.goto("/ppa")
-    await expect(page.locator("#worksite")).toBeVisible()
+    await expect(page.locator("#rutSearch")).toBeVisible()
 
     await gotoWithRetry(page, "/prevencion/ppa")
     await expect(page).toHaveURL(/\/login/)

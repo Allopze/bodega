@@ -10,9 +10,20 @@
  * The canonical stored form is uppercase, no dots, with dash.
  */
 
-/** Strip dots, trim and upper-case a RUT into its canonical comparison form. */
+/**
+ * Normalize any RUT spelling into its canonical comparison form `BODY-DV`
+ * (no dots, single dash before the check digit, upper-case DV).
+ *
+ * Accepts dotted, spaced, dash-less and mixed-case input — e.g. `12.345.678-9`,
+ * `123456789`, `12345678 9` and `12345678-k` all collapse to `12345678-9` /
+ * `12345678-K`. This matters because workers frequently type their RUT without
+ * the dash; without re-inserting it the canonical lookup (`workers.rut`) would
+ * miss and wrongly report "no existe".
+ */
 export function cleanRut(rut: string): string {
-  return rut.replace(/\./g, "").trim().toUpperCase()
+  const compact = rut.replace(/[^0-9kK]/g, "").toUpperCase()
+  if (compact.length < 2) return compact
+  return `${compact.slice(0, -1)}-${compact.slice(-1)}`
 }
 
 /** Compute the verification digit for a RUT body (the digits before the dash). */

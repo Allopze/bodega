@@ -138,17 +138,11 @@ export function PpaForm({
     }
   }
 
-  function handleWorksiteChange(val: string) {
-    setWorksiteId(val)
-    setMatchedWorker(null)
-    setWorkerId("")
-    setRutSearch("")
-    setWorkerRut("")
-  }
-
-  const isRutSearchDisabled = hasFaenaParam && !worksiteId
-  const isVerifyButtonDisabled = isRutSearchDisabled || !rutSearch || searchingWorker
-  const isWorksiteLocked = !!matchedWorker && !hasFaenaParam && !manual
+  const isVerifyButtonDisabled = !rutSearch || searchingWorker
+  // Faena fijada por QR/enlace (`?faena=`); en modo RUT la faena se deriva del trabajador.
+  const paramWorksiteName = hasFaenaParam
+    ? worksites.find((w) => w.id === worksiteId)?.name ?? ""
+    : ""
 
   function toggleControl(value: string) {
     setControles((prev) =>
@@ -242,28 +236,16 @@ export function PpaForm({
       <section className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
         <h2 className="text-base font-semibold">Identificación</h2>
 
-        <Field label="Faena / lugar de trabajo" htmlFor="worksite" required error={err("worksiteId")}>
-          <select
-            id="worksite"
-            className={selectCls}
-            value={worksiteId}
-            onChange={(e) => handleWorksiteChange(e.target.value)}
-            disabled={isWorksiteLocked}
-          >
-            <option value="">Selecciona la faena…</option>
-            {worksites.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-          {isWorksiteLocked && (
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Faena autoseleccionada y bloqueada por tu RUT. Si necesitas cambiar de faena, usa la identificación manual.
-            </p>
-          )}
-        </Field>
-
         {!manual ? (
           <div className="flex flex-col gap-4">
+            {hasFaenaParam && paramWorksiteName && (
+              <Field label="Faena / lugar de trabajo">
+                <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-3 text-base text-[var(--color-text-muted)]">
+                  {paramWorksiteName}
+                </div>
+              </Field>
+            )}
+
             <Field label="Ingresa tu RUT (sin puntos, con guion)" htmlFor="rutSearch" required error={err("workerId")}>
               <div className="flex gap-2">
                 <Input
@@ -272,13 +254,8 @@ export function PpaForm({
                   value={rutSearch}
                   onChange={(e) => {
                     setRutSearch(e.target.value)
-                    setMatchedWorker(null)
-                    setWorkerId("")
-                    if (!hasFaenaParam) {
-                      setWorksiteId("")
-                    }
+                    resetIdentity()
                   }}
-                  disabled={isRutSearchDisabled}
                 />
                 <Button
                   type="button"
@@ -293,9 +270,14 @@ export function PpaForm({
             </Field>
 
             {matchedWorker && (
-              <div className="flex items-center gap-2 rounded-md border border-[var(--color-success)] bg-[var(--color-success-tint)] p-3 text-sm text-[var(--color-success-ink)]">
-                <CheckCircle size={18} weight="fill" className="shrink-0" />
-                <span>Verificado: <strong>{matchedWorker.name}</strong></span>
+              <div className="flex flex-col gap-1 rounded-md border border-[var(--color-success)] bg-[var(--color-success-tint)] p-3 text-sm text-[var(--color-success-ink)]">
+                <div className="flex items-center gap-2">
+                  <CheckCircle size={18} weight="fill" className="shrink-0" />
+                  <span>Verificado: <strong>{matchedWorker.name}</strong></span>
+                </div>
+                {!hasFaenaParam && matchedWorker.worksiteName && (
+                  <span className="pl-7 text-xs">Faena: <strong>{matchedWorker.worksiteName}</strong></span>
+                )}
               </div>
             )}
           </div>
@@ -304,6 +286,20 @@ export function PpaForm({
             <p className="text-xs text-[var(--color-warning-ink)]">
               Identificación manual — quedará marcada como pendiente de validación.
             </p>
+            <Field label="Faena / lugar de trabajo" htmlFor="worksite" required error={err("worksiteId")}>
+              <select
+                id="worksite"
+                className={selectCls}
+                value={worksiteId}
+                onChange={(e) => setWorksiteId(e.target.value)}
+                disabled={hasFaenaParam}
+              >
+                <option value="">Selecciona la faena…</option>
+                {worksites.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </Field>
             <Field label="Nombre completo" htmlFor="wname" required error={err("workerName")}>
               <Input id="wname" value={workerName} onChange={(e) => setWorkerName(e.target.value)} />
             </Field>
