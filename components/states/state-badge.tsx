@@ -133,4 +133,4 @@ export function StateBadge({
 }
 
 /* ── Exports for external use ─────────────────────────────────────────────── */
-export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, FEEDBACK_ESTADO_META, FEEDBACK_TIPO_LABELS }
+export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META }

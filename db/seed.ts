@@ -12,6 +12,7 @@ import * as schema from "./schema"
 import { eq, inArray, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../lib/auth/system-rbac"
+import { seedNuevosRoles } from "./seed/nuevos-roles"
 
 loadEnvConfig(process.cwd())
 
@@ -405,6 +406,12 @@ async function main() {
     })
   }
 
+  /* ── Usuarios desde nuevos_roles.md ───────────────────────────────── */
+  console.log("")
+  console.log("  Sembrando usuarios de nuevos_roles.md...")
+  const nuevosRolesResult = await seedNuevosRoles(db, schema)
+  console.log(`  ${nuevosRolesResult.created} usuarios creados, ${nuevosRolesResult.assignedRoles} roles asignados, ${nuevosRolesResult.assignedWorksites} faenas asignadas, ${nuevosRolesResult.skipped} omitidos.`)
+
   /* ── Email templates ──────────────────────────────────────────────── */
   console.log("")
   console.log("  Sembrando plantillas de correo por defecto...")
@@ -421,6 +428,7 @@ async function main() {
   console.log("  La contraseña viene de SEED_ADMIN_PASSWORD; si no se define, usa chome2026.")
   console.log(`  Faenas cargadas: ${seedWorkerData.worksites.length}.`)
   console.log(`  Trabajadores cargados: ${seedWorkerData.workers.length} (${seedWorkerData.skippedDuplicateRuts} RUT duplicado omitido).`)
+  console.log(`  Nuevos roles: ${nuevosRolesResult.created} usuarios creados, ${nuevosRolesResult.assignedRoles} roles asignados, ${nuevosRolesResult.assignedWorksites} faenas asignadas.`)
   console.log(`  Catálogo EPP cargado: ${EPP_CATALOG_ITEMS.length} productos, ${EPP_SUPPLIERS.length} proveedores.`)
   console.log("  No se cargaron stock ni solicitudes demo.")
 }

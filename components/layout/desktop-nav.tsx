@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import type { Session } from "next-auth"
 import * as Collapsible from "@radix-ui/react-collapsible"
 import * as Popover from "@radix-ui/react-popover"
-import { CaretDown, CaretRight, SquaresFour } from "@phosphor-icons/react"
+import { CaretDown, CaretRight, Lifebuoy, SquaresFour } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { Tooltip } from "@/components/ui/tooltip"
 import { BrandMark } from "./brand-mark"
@@ -56,7 +56,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
             </Link>
           </Tooltip>
 
-          {areas.map((area) => (
+          {areas.filter((a) => a.id !== "soporte").map((area) => (
             <RailFlyout
               key={area.id}
               area={area}
@@ -67,7 +67,21 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
           ))}
         </div>
 
-        <div className="flex items-center justify-center border-t border-(--color-border) py-2">
+        <div className="flex flex-col items-center gap-1 border-t border-(--color-border) py-2">
+          {areas.filter((a) => a.id === "soporte").length > 0 && (
+            <Tooltip content="Soporte" side="right" delayDuration={250}>
+              <Link
+                href="/soporte"
+                aria-label="Soporte"
+                data-pressable
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-surface-2 hover:text-(--color-text)",
+                )}
+              >
+                <Lifebuoy size={17} />
+              </Link>
+            </Tooltip>
+          )}
           <Tooltip content="Mostrar panel" side="right" delayDuration={250}>
             <button
               type="button"
@@ -124,8 +138,31 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
           <span>Inicio</span>
         </Link>
 
-        <AccordionAreas areas={areas} pathname={pathname} badgeCounts={badgeCounts} routeArea={routeArea} />
+        <AccordionAreas areas={areas.filter((a) => a.id !== "soporte")} pathname={pathname} badgeCounts={badgeCounts} routeArea={routeArea} />
       </div>
+
+      {/* Soporte: botón fijo al final del panel, justo sobre el toggle de colapso */}
+      {areas.filter((a) => a.id === "soporte").length > 0 && (
+        <div className="border-t border-(--color-border) px-2 pt-2 pb-1">
+          <Link
+            href="/soporte"
+            data-pressable
+            className={cn(
+              "flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
+              isHrefActive("/soporte", pathname)
+                ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
+                : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+            )}
+          >
+            <Lifebuoy
+              size={19}
+              weight={isHrefActive("/soporte", pathname) ? "bold" : "regular"}
+              className={cn("shrink-0", isHrefActive("/soporte", pathname) && "text-(--color-primary)")}
+            />
+            <span>Soporte</span>
+          </Link>
+        </div>
+      )}
     </nav>
   )
 }

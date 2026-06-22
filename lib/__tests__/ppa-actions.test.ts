@@ -20,6 +20,10 @@ vi.mock("next/headers", () => ({
   headers: mockHeaders,
 }))
 
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}))
+
 vi.mock("@/lib/logger", () => ({
   logger: {
     error: vi.fn(),

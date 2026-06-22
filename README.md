@@ -11,7 +11,27 @@ npm run db:seed
 npm run dev
 ```
 
-El seed base no carga datos mock. Solo crea roles, permisos y datos base de catálogo.
+El seed base no carga datos mock. Solo crea roles, permisos, datos base de catálogo y los siguientes usuarios semilla:
+
+### Prevencionistas de faena
+
+| Nombre | Faena | Correo |
+|---|---|---|
+| Ruth Flores | Grúas (Rodantes) | chomerodantes.prevencion@gmail.com |
+| Mauricio Sandoval | Faena Cholguán | prevencion.chomecholguan@gmail.com |
+| Solangue Acuña | Faena Cabrero | prevencionmasisa@servicioschome.cl |
+| María Ancamilla | Faena Pacífico (Mininco) | prevencionpacifico.chome@gmail.com |
+| Nikole Osses | Faena Santa Fe y Calymag | prevencionresiduoschome@gmail.com |
+| María José | Faena Biodiversa | prevencion.b.chome@gmail.com |
+
+### Jefe de mantención
+
+| Nombre | Correo |
+|---|---|
+| Alexis Morales | alexismoraleschome@gmail.com |
+
+Estos usuarios se crean con contraseña pendiente y una invitación (válida 1 año) que deben usar desde `/registro` para definir su contraseña. Las URLs de invitación se muestran en la consola al ejecutar el seed.
+
 Para desarrollo rápido también puedes usar `npm run db:push`; para ambientes compartidos usa las migraciones versionadas en `db/migrations`.
 
 El primer usuario se crea desde `/registro` y recibe el rol `Administrador`.

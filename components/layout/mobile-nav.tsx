@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import type { Session } from "next-auth"
 import * as Collapsible from "@radix-ui/react-collapsible"
-import { CaretDown, MapPin } from "@phosphor-icons/react"
+import { CaretDown, Lifebuoy, MapPin } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { BrandMark } from "./brand-mark"
 import { NAV_ICONS } from "./nav-icons"
@@ -60,7 +60,7 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
         </Link>
 
         <div>
-          {areas.map((area, i) => (
+          {areas.filter((a) => a.id !== "soporte").map((area, i) => (
             <AreaAccordion
               key={area.id}
               area={area}
@@ -73,6 +73,30 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
           ))}
         </div>
       </nav>
+
+      {/* Soporte: botón fijo al final del drawer móvil */}
+      {areas.filter((a) => a.id === "soporte").length > 0 && (
+        <div className="border-t border-(--color-border) px-2 py-2">
+          <Link
+            href="/soporte"
+            onClick={onNavigate}
+            data-pressable
+            className={cn(
+              "flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
+              isHrefActive("/soporte", pathname)
+                ? "font-semibold text-(--color-primary-ink)"
+                : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+            )}
+          >
+            <Lifebuoy
+              size={19}
+              weight={isHrefActive("/soporte", pathname) ? "bold" : "regular"}
+              className={cn("shrink-0", isHrefActive("/soporte", pathname) && "text-(--color-primary)")}
+            />
+            <span>Soporte</span>
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
