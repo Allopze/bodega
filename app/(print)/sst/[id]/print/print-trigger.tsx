@@ -1,7 +1,7 @@
 "use client"
 
-import { ArrowLeft, DownloadSimple, Printer } from "@phosphor-icons/react"
 import { useState } from "react"
+import { ArrowLeft, DownloadSimple, SpinnerGap } from "@phosphor-icons/react"
 
 export function PrintTrigger({
   backHref,
@@ -12,82 +12,54 @@ export function PrintTrigger({
   pdfHref: string
   suggestedFilename: string
 }) {
-  const [isPreparing, setIsPreparing] = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  async function handlePrint() {
-    if (isPreparing) return
-    setIsPreparing(true)
+  async function handleDownload() {
+    setLoading(true)
     try {
-      window.focus()
-      await waitForPrintReady()
-      window.print()
+      const res = await fetch(pdfHref)
+      if (!res.ok) throw new Error(`Error ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = suggestedFilename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Silently reset — the user can retry.
     } finally {
-      setIsPreparing(false)
+      setLoading(false)
     }
   }
 
   return (
     <div className="print-toolbar">
-      <a
-        href={pdfHref}
-        download={suggestedFilename}
+      <button
+        type="button"
+        onClick={handleDownload}
+        disabled={loading}
         className="print-action print-action-primary"
       >
-        <DownloadSimple size={15} weight="bold" aria-hidden />
-        Descargar PDF
-      </a>
-      <button
-        onClick={handlePrint}
-        className="print-action print-action-secondary"
-        disabled={isPreparing}
-      >
-        <Printer size={15} weight="bold" aria-hidden />
-        {isPreparing ? "Preparando..." : "Imprimir"}
+        {loading ? (
+          <>
+            <SpinnerGap size={15} weight="bold" className="spin" aria-hidden />
+            Generando…
+          </>
+        ) : (
+          <>
+            <DownloadSimple size={15} weight="bold" aria-hidden />
+            Descargar PDF
+          </>
+        )}
       </button>
       <a href={backHref} className="print-action print-action-secondary">
         <ArrowLeft size={15} weight="bold" aria-hidden />
         Volver al Acta
       </a>
-      <span className="print-filename">Nombre sugerido: {suggestedFilename}</span>
+      <span className="print-filename">Nombre del archivo: {suggestedFilename}</span>
     </div>
   )
-}
-
-async function waitForPrintReady() {
-  await Promise.all([waitForFonts(), waitForImages()])
-  await nextFrame()
-  await nextFrame()
-}
-
-async function waitForFonts() {
-  if (!("fonts" in document)) return
-  await document.fonts.ready
-}
-
-async function waitForImages() {
-  const images = Array.from(document.images)
-  await Promise.all(
-    images.map(async (image) => {
-      if (image.complete && image.naturalWidth > 0) return
-      if (image.complete) return
-      if ("decode" in image) {
-        try {
-          await image.decode()
-          return
-        } catch {
-          // Fall back to load/error events below.
-        }
-      }
-      await new Promise<void>((resolve) => {
-        image.addEventListener("load", () => resolve(), { once: true })
-        image.addEventListener("error", () => resolve(), { once: true })
-      })
-    }),
-  )
-}
-
-function nextFrame() {
-  return new Promise<void>((resolve) => {
-    requestAnimationFrame(() => resolve())
-  })
 }

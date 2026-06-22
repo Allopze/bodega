@@ -16,6 +16,14 @@ import { assertOrderAccess } from "./actions.helpers"
 
 const REVALIDATE = "/compras"
 
+function dbErrMsg(e: unknown, fallback: string): string {
+  if (!(e instanceof Error)) return fallback
+  // DrizzleQueryError wraps the real DB error in .cause
+  const cause = (e as { cause?: unknown }).cause
+  if (cause instanceof Error && cause.message) return cause.message
+  return e.message
+}
+
 function serviceWorksiteScope(session: Awaited<ReturnType<typeof requirePermission>>): string[] | "all" {
   const scope = resolveWorksiteScope(session)
   return scope.mode === "all" ? "all" : scope.ids
@@ -165,7 +173,7 @@ export async function createOrderAction(
   } catch (e) {
     if (e instanceof Error && e.message.includes("NEXT_REDIRECT")) throw e
     logger.error("[createOrderAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al crear la orden" }
+    return { ok: false, message: dbErrMsg(e, "Error al crear la orden") }
   }
 }
 
@@ -193,7 +201,7 @@ export async function issueOrderAction(
     )
   } catch (e) {
     logger.error("[issueOrderAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al emitir orden" }
+    return { ok: false, message: dbErrMsg(e, "Error al emitir orden") }
   }
   redirect(`/compras/${orderId}?actualizada=emitida`)
 }
@@ -242,7 +250,7 @@ export async function sendOrderAction(
     )
   } catch (e) {
     logger.error("[sendOrderAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al enviar orden" }
+    return { ok: false, message: dbErrMsg(e, "Error al enviar orden") }
   }
 
   // S-05: notify only after the status change has committed.
@@ -316,7 +324,7 @@ export async function postponeItemAction(
     return { ok: true, message: "Ítem postergado" }
   } catch (e) {
     logger.error("[postponeItemAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al postergar ítem" }
+    return { ok: false, message: dbErrMsg(e, "Error al postergar ítem") }
   }
 }
 
@@ -352,6 +360,6 @@ export async function cancelOrderAction(
     return { ok: true, message: "Orden de compra anulada correctamente" }
   } catch (e) {
     logger.error("[cancelOrderAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al anular orden" }
+    return { ok: false, message: dbErrMsg(e, "Error al anular orden") }
   }
 }

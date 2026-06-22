@@ -96,7 +96,7 @@ export function EvaluationList({ evaluations, canCreate, canDelete }: Props) {
                 role="link"
                 tabIndex={0}
                 aria-label={`Abrir evaluación SST de ${ev.workerName || "trabajador sin nombre"}`}
-                className="cursor-pointer"
+                className="cursor-pointer hover:bg-[var(--color-primary-tint)]"
                 onClick={() => router.push(href)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {

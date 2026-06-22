@@ -152,7 +152,7 @@ export default async function AdminPage() {
                       <Link
                         key={m.href}
                         href={m.href}
-                        className="group flex items-start gap-3 px-4 py-3 transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-surface-2)] "
+                        className="group flex items-start gap-3 px-4 py-3 transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)] "
                       >
                         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] transition-[background-color,color] duration-[var(--duration-fast)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)]">
                           <Icon size={18} />

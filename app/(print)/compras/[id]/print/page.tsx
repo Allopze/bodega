@@ -7,6 +7,7 @@ import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { getCompanyProfile } from "@/lib/services/system-settings"
 import { formatDate } from "@/lib/utils"
 import { PrintTrigger } from "./print-trigger"
+import { ocPdfFilename } from "./filename"
 
 export const dynamic = "force-dynamic"
 
@@ -49,7 +50,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
   const productMap = Object.fromEntries(products.map((p) => [p.id, p]))
 
   const issuedDate = order.issuedAt ? formatDate(order.issuedAt) : formatDate(order.createdAt)
-  const suggestedFilename = `${order.code.replace(/[^\w-]+/g, "-")}.pdf`
+  const suggestedFilename = ocPdfFilename(order.code)
   const requestCodes = unique(
     order.items
       .map((item) => item.requestItem?.request?.code)
@@ -122,6 +123,19 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           transform: scale(0.97);
         }
 
+        .print-action:disabled {
+          opacity: 0.7;
+          cursor: wait;
+        }
+
+        .spin {
+          animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
         .print-action-primary {
           background: #17422b;
           color: #f2f7f4;
@@ -150,14 +164,25 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
 
         .sheet {
           width: 210mm;
-          min-height: 297mm;
-          margin: 0 auto 24px;
           padding: 12mm;
-          background: #fbfcfb;
-          border: 1px solid #d8dfda;
-          box-shadow: 0 18px 55px rgba(26, 36, 30, 0.14);
-          display: flex;
-          flex-direction: column;
+          background: #ffffff;
+        }
+
+        /* Block layout + margin-based spacing so break-inside:avoid is honored when
+           the browser paginates (flex containers break fragmentation in Chromium).
+           On-screen "paper" affordance only — kept out of print to avoid overflow:
+           a fixed 297mm height combined with @page margins produces a blank trailing page. */
+        .sheet > * + * {
+          margin-top: 6mm;
+        }
+
+        @media screen {
+          .sheet {
+            min-height: 297mm;
+            margin: 0 auto 24px;
+            border: 1px solid #d8dfda;
+            box-shadow: 0 18px 55px rgba(26, 36, 30, 0.14);
+          }
         }
 
         .doc-header {
@@ -174,8 +199,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         }
 
         .logo-mark {
-          width: 144px;
-          height: 144px;
+          width: 72px;
+          height: 72px;
           object-fit: contain;
           flex: 0 0 auto;
         }
@@ -264,11 +289,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         }
 
         .items-wrap {
-          margin-top: 0;
           border: 1px solid #b8c6bd;
           border-top: 0;
-          overflow: hidden;
-          flex: 1 1 auto;
         }
 
         table {
@@ -277,7 +299,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         }
 
         thead th {
-          background: #fbfcfb;
+          background: #ffffff;
           color: #17221b;
           padding: 4px 5px;
           text-align: left;
@@ -305,11 +327,6 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           page-break-inside: avoid;
         }
 
-        .detail-note-row td {
-          color: #232b25;
-          padding-top: 0;
-        }
-
         .item-name {
           font-weight: 520;
         }
@@ -335,64 +352,167 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
 
         tfoot td {
           padding: 4px 5px;
-          background: #fbfcfb;
+          background: #ffffff;
           font-size: 8pt;
         }
 
-        .amount-words {
-          margin-top: 4mm;
-          font-size: 8pt;
-          text-transform: uppercase;
-        }
-
-        .bottom-section {
-          margin-top: 5mm;
-          border-top: 1px solid #b8c6bd;
-          padding-top: 4mm;
+        /* Observaciones + totals sit side by side beneath the items table. */
+        .summary-row {
           display: grid;
-          grid-template-columns: 1fr 50mm;
-          gap: 9mm;
+          grid-template-columns: 1fr 62mm;
+          gap: 8mm;
           align-items: start;
           break-inside: avoid;
           page-break-inside: avoid;
         }
 
-        .authorization {
+        .observations {
           display: grid;
-          gap: 6mm;
-          font-size: 7.8pt;
+          gap: 3mm;
+          align-content: start;
         }
 
-        .authorization-field {
-          padding-bottom: 7mm;
-          border-bottom: 1px dotted #5f6b63;
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        .authorization-caption {
-          margin-top: 2mm;
+        .observations-title {
+          font-size: 7pt;
+          font-weight: 760;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
           color: #5f6b63;
-          font-size: 6.8pt;
-          text-align: center;
+          margin-bottom: 1mm;
+        }
+
+        .observations-list {
+          margin: 0;
+          padding-left: 4mm;
+          display: grid;
+          gap: 1mm;
+          color: #232b25;
+          font-size: 8.2pt;
+        }
+
+        .observations-list li::marker {
+          color: #17422b;
+        }
+
+        .amount-words {
+          margin-top: 1mm;
+          padding: 2.4mm 3mm;
+          background: #f1f5f3;
+          border-left: 2.5px solid #17422b;
+          font-size: 8pt;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+          text-transform: uppercase;
         }
 
         .totals {
           justify-self: end;
-          width: 50mm;
-          display: grid;
-          gap: 2px;
-          font-size: 8pt;
+          width: 62mm;
+          border: 1px solid #b8c6bd;
+          border-radius: 2px;
+          overflow: hidden;
+          font-size: 8.4pt;
         }
 
         .total-line {
           display: grid;
-          grid-template-columns: 1fr 5mm 22mm;
+          grid-template-columns: 1fr auto;
+          align-items: baseline;
+          padding: 2.2mm 3mm;
+        }
+
+        .total-line + .total-line {
+          border-top: 1px solid #dde4df;
+        }
+
+        .total-label {
+          color: #45514a;
+        }
+
+        .total-value {
+          text-align: right;
+          color: #17221b;
         }
 
         .total-line-final {
-          color: #17221b;
+          background: #17422b;
+          padding-top: 2.6mm;
+          padding-bottom: 2.6mm;
+          border-top: 1px solid #17422b;
+          font-size: 9.6pt;
           font-weight: 760;
+        }
+
+        .total-line-final .total-label,
+        .total-line-final .total-value {
+          color: #f4f8f5;
+        }
+
+        /* Authorization / signature block. */
+        .authorization {
+          border: 1px solid #b8c6bd;
+          border-radius: 2px;
+          padding: 4mm 4.5mm 3mm;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+
+        .auth-title {
+          font-size: 7pt;
+          font-weight: 760;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          color: #5f6b63;
+          margin-bottom: 6mm;
+        }
+
+        .auth-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          column-gap: 10mm;
+          row-gap: 8mm;
+        }
+
+        .auth-field {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .auth-field-wide {
+          grid-column: 1 / -1;
+        }
+
+        .auth-line {
+          height: 0;
+          border-bottom: 1px solid #9aa8a0;
+        }
+
+        .auth-label {
+          margin-top: 1.4mm;
+          font-size: 6.8pt;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+          color: #5f6b63;
+        }
+
+        .auth-signature {
+          margin-top: 12mm;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 1.6mm;
+        }
+
+        .auth-signature .auth-line {
+          width: 70mm;
+        }
+
+        .auth-caption {
+          color: #5f6b63;
+          font-size: 6.8pt;
+          line-height: 1.4;
+          text-align: center;
+          max-width: 80mm;
         }
 
         .footer {
@@ -419,8 +539,13 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
 
           .doc-header,
           .supplier-panel,
-          .bottom-section {
+          .summary-row {
             grid-template-columns: 1fr;
+          }
+
+          .totals {
+            justify-self: stretch;
+            width: 100%;
           }
 
           .doc-box {
@@ -435,7 +560,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         @media print {
           html,
           body {
-            background: #fbfcfb;
+            background: #ffffff;
           }
 
           .print-toolbar {
@@ -443,24 +568,25 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           }
 
           .sheet {
-            width: auto;
-            min-height: auto;
+            width: 186mm; /* 210mm page − 2×12mm @page margin */
+            padding: 12mm;
             margin: 0;
-            padding: 0;
             border: 0;
             box-shadow: none;
-            display: flex;
-            flex-direction: column;
           }
         }
       `}</style>
 
-      <PrintTrigger backHref={`/compras/${order.id}`} suggestedFilename={suggestedFilename} />
+      <PrintTrigger
+        backHref={`/compras/${order.id}`}
+        pdfHref={`/compras/${order.id}/print/pdf`}
+        suggestedFilename={suggestedFilename}
+      />
 
       <main className="sheet" aria-label={`Orden de compra ${order.code}`}>
         <header className="doc-header">
           <div className="brand-row">
-            <Image className="logo-mark" src="/chome_logo.svg" alt="Logo Chome" width={144} height={144} priority />
+            <Image className="logo-mark" src="/chome_logo.svg" alt="Logo Chome" width={72} height={72} priority />
             <div>
               <div className="company-name">{company.name}</div>
               <div className="company-lines">
@@ -537,37 +663,46 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                   </tr>
                 )
               })}
-              {orderDetailLines.map((line, index) => (
-                <tr key={`note-${index}`} className="detail-note-row">
-                  <td />
-                  <td />
-                  <td colSpan={6} className="item-note">{line}</td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </section>
 
-        <div className="amount-words">{totalInWords}</div>
-
-        <section className="bottom-section" aria-label="Totales y autorización">
-          <div className="authorization">
-            <div className="authorization-field">Nombre.............................................................................................</div>
-            <div className="authorization-field">R.U.T..................................................Fecha:...................................</div>
-            <div className="authorization-field">Recinto.............................................................................................</div>
-            <div>
-              <div className="authorization-field">Firma................................................................................................</div>
-              <div className="authorization-caption">
-                Nombre y Firma autorizada de persona responsable<br />
-                de la emision de esta Orden de Compra
-              </div>
-            </div>
+        <section className="summary-row" aria-label="Observaciones y totales">
+          <div className="observations">
+            {orderDetailLines.length > 0 && (
+              <>
+                <div className="observations-title">Observaciones</div>
+                <ul className="observations-list">
+                  {orderDetailLines.map((line, index) => (
+                    <li key={`note-${index}`}>{line}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <div className="amount-words">{totalInWords}</div>
           </div>
 
           <div className="totals" aria-label="Totales">
             <TotalLine label="Neto" value={formatPlainCLP(order.netAmount)} />
             <TotalLine label="IVA (19%)" value={formatPlainCLP(order.taxAmount)} />
             <TotalLine label="Total" value={formatPlainCLP(order.totalAmount)} final />
+          </div>
+        </section>
+
+        <section className="authorization" aria-label="Autorización">
+          <div className="auth-title">Autorización de emisión</div>
+          <div className="auth-grid">
+            <SignatureLine label="Nombre" wide />
+            <SignatureLine label="R.U.T." />
+            <SignatureLine label="Fecha" />
+            <SignatureLine label="Recinto" wide />
+          </div>
+          <div className="auth-signature">
+            <span className="auth-line" />
+            <span className="auth-caption">
+              Nombre y firma autorizada de la persona responsable
+              de la emisión de esta Orden de Compra
+            </span>
           </div>
         </section>
 
@@ -592,9 +727,17 @@ function FieldLine({ label, value, mono = false }: { label: string; value?: stri
 function TotalLine({ label, value, final = false }: { label: string; value: string; final?: boolean }) {
   return (
     <div className={final ? "total-line total-line-final" : "total-line"}>
-      <span>{label}</span>
-      <span>:</span>
-      <span className="text-right mono">{value}</span>
+      <span className="total-label">{label}</span>
+      <span className="total-value mono">$ {value}</span>
+    </div>
+  )
+}
+
+function SignatureLine({ label, wide = false }: { label: string; wide?: boolean }) {
+  return (
+    <div className={wide ? "auth-field auth-field-wide" : "auth-field"}>
+      <span className="auth-line" />
+      <span className="auth-label">{label}</span>
     </div>
   )
 }

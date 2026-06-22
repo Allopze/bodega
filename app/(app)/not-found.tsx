@@ -34,7 +34,7 @@ export default function NotFound() {
               key={link.href}
               href={link.href}
               data-pressable
-              className="group flex items-center gap-3 bg-[var(--color-surface)] p-4 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)]"
+              className="group flex items-center gap-3 bg-[var(--color-surface)] p-4 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]">
                 {link.icon}

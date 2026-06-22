@@ -154,7 +154,7 @@ function StatCell({ stat }: { stat: Stat }) {
         data-pressable
         className={cn(
           cellClass,
-          "block hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
+          "block hover:bg-[var(--color-primary-tint)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
         )}
       >
         {body}

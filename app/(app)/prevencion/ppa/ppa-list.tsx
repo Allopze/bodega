@@ -232,7 +232,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
                 {rows.map((r) => {
                   const href = `/prevencion/ppa/${r.id}`
                   return (
-                    <TableRow key={r.id} className="cursor-pointer">
+                    <TableRow key={r.id} className="cursor-pointer hover:bg-[var(--color-primary-tint)]">
                       <TableCell><Link href={href} className="block">{fmtDate(r.createdAt)}</Link></TableCell>
                       <TableCell>
                         <Link href={href} className="block">
@@ -273,7 +273,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
                 key={r.id}
                 href={`/prevencion/ppa/${r.id}`}
                 data-pressable
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3"
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
               >
                 <div className="flex items-start justify-between gap-2">
                   <span className="font-medium">

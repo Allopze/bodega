@@ -2,9 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { ArrowRight, CheckCircle, Plus, Warning } from "@phosphor-icons/react"
+import { CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -54,12 +55,12 @@ const COLUMNS = [
   { key: "status",        label: "Estado",     sortable: true,  width: "w-36" },
   { key: "invoiceCount",  label: "Facturas",   sortable: false, numeric: true, width: "w-24" },
   { key: "createdAt",     label: "Fecha",      sortable: true,  width: "w-32" },
-  { key: "",              label: "",           sortable: false, width: "w-12" },
 ]
 
 /* ── Row with inline actions ─────────────────────────────────────────────────── */
 
 function OcTableRow({ row }: { row: OcRow }) {
+  const router = useRouter()
   const [issueState, issueAction] = useActionState<ActionState, FormData>(
     issueOrderAction, INITIAL_STATE,
   )
@@ -81,8 +82,22 @@ function OcTableRow({ row }: { row: OcRow }) {
     }
   }, [sendState])
 
+  const href = `/compras/${row.id}`
+
   return (
-    <TableRow className="group">
+    <TableRow
+      className="cursor-pointer hover:bg-[var(--color-primary-tint)]"
+      role="link"
+      tabIndex={0}
+      aria-label={`Ver OC ${row.code}`}
+      onClick={() => router.push(href)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          router.push(href)
+        }
+      }}
+    >
       <TableCell>
         <span className="font-mono text-xs text-[var(--color-text)]">{row.code}</span>
       </TableCell>
@@ -107,7 +122,7 @@ function OcTableRow({ row }: { row: OcRow }) {
           <span className="text-xs text-[var(--color-text-subtle)]">—</span>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
           <StateBadge state={row.status} entity="oc" size="sm" />
           {/* Inline issue button for draft OCs */}
@@ -138,15 +153,6 @@ function OcTableRow({ row }: { row: OcRow }) {
       </TableCell>
       <TableCell className="text-xs text-[var(--color-text-subtle)]">
         {formatDate(row.sentAt ?? row.issuedAt ?? row.createdAt)}
-      </TableCell>
-      <TableCell className="text-right pr-3">
-        <Link
-          href={`/compras/${row.id}`}
-          className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 h-9 w-9 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] opacity-100 transition-[background-color,color,opacity,transform] duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]  sm:h-7 sm:w-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-          aria-label={`Ver OC ${row.code}`}
-        >
-          <ArrowRight size={16} />
-        </Link>
       </TableCell>
     </TableRow>
   )

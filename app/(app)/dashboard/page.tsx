@@ -250,7 +250,7 @@ function TaskRow({ task, index }: { task: WorkTask; index: number }) {
       href={task.href}
       className={cn(
         "group grid grid-cols-[2.25rem_1fr] gap-3 px-4 py-3 sm:grid-cols-[2.75rem_2.25rem_minmax(0,1fr)_8rem_8.5rem_10rem] sm:items-center sm:px-5",
-        "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-surface-2)]",
+        "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)]",
         "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
       )}
     >

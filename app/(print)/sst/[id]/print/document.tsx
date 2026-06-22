@@ -264,6 +264,19 @@ export const ACTA_STYLES = `
 
   .print-action:active { transform: scale(0.97); }
 
+  .print-action:disabled {
+    opacity: 0.7;
+    cursor: wait;
+  }
+
+  .spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
   .print-action-primary {
     background: #17422b;
     color: #f2f7f4;
@@ -291,7 +304,7 @@ export const ACTA_STYLES = `
   .sheet {
     width: 210mm;
     padding: 12mm;
-    background: #fbfcfb;
+    background: #ffffff;
   }
 
   /* On-screen "paper" affordance only. Kept out of print: a fixed 297mm height
@@ -515,13 +528,13 @@ export const ACTA_STYLES = `
   }
 
   @media print {
-    html, body { background: #fbfcfb; }
+    html, body { background: #ffffff; }
     .print-toolbar { display: none; }
     .sheet {
-      width: auto;
+      width: 186mm; /* 210mm page − 2×12mm @page margin */
+      padding: 12mm;
       min-height: auto;
       margin: 0;
-      padding: 0;
       border: 0;
       box-shadow: none;
     }

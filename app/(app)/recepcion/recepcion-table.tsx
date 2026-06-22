@@ -1,12 +1,12 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { DataTable } from "@/components/admin/data-table"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
 import { formatDate } from "@/lib/utils"
 
 interface OrderRow {
@@ -34,10 +34,11 @@ const COLUMNS = [
   { key: "status",       label: "Estado",     sortable: true,  width: "w-40" },
   { key: "transit",      label: "En tránsito", sortable: false, width: "w-32" },
   { key: "sentAt",       label: "Enviada",    sortable: true,  width: "w-32" },
-  { key: "",             label: "",           sortable: false, width: "w-12" },
 ]
 
 export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister }: RecepcionTableProps) {
+  const router = useRouter()
+
   return (
     <DataTable
       columns={COLUMNS}
@@ -49,8 +50,22 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister }: R
       emptyDescription="Las órdenes enviadas aparecerán aquí para registrar llegada a oficina y distribución a faena."
       renderRow={(row) => {
         const o = row as unknown as OrderRow
+        const href = `/compras/${o.id}`
         return (
-          <TableRow key={o.id} className="group">
+          <TableRow
+            key={o.id}
+            className="cursor-pointer hover:bg-[var(--color-primary-tint)]"
+            role="link"
+            tabIndex={0}
+            aria-label={`Ver OC ${o.code}`}
+            onClick={() => router.push(href)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                router.push(href)
+              }
+            }}
+          >
             <TableCell>
               <span className="font-mono text-xs">{o.code}</span>
             </TableCell>
@@ -60,7 +75,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister }: R
             <TableCell className="text-sm text-[var(--color-text-muted)]">
               {supMap[o.supplierId] ?? o.supplierId}
             </TableCell>
-            <TableCell>
+            <TableCell onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center gap-2">
                 <StateBadge state={o.status} entity="oc" size="sm" />
                 {canRegister && (
@@ -77,15 +92,6 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister }: R
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
               {o.sentAt ? formatDate(o.sentAt) : "—"}
-            </TableCell>
-            <TableCell className="text-right pr-3">
-              <Link
-                href={`/compras/${o.id}`}
-                className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 h-9 w-9 rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] opacity-100 transition-[background-color,color,opacity,transform] duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]  sm:h-7 sm:w-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-                aria-label={`Ver OC ${o.code}`}
-              >
-                <ArrowRight size={16} />
-              </Link>
             </TableCell>
           </TableRow>
         )

@@ -13,6 +13,13 @@ import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { createInvoiceAttachmentPath, resolvePurchaseOrdersDir } from "@/lib/storage/config"
 import { invoiceSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+
+function dbErrMsg(e: unknown, fallback: string): string {
+  if (!(e instanceof Error)) return fallback
+  const cause = (e as { cause?: unknown }).cause
+  if (cause instanceof Error && cause.message) return cause.message
+  return e.message
+}
 import { assertOrderAccess } from "./actions.helpers"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 
@@ -133,7 +140,7 @@ export async function addInvoiceAction(
       await fs.unlink(fileResult.absolutePath).catch(() => undefined)
     }
     logger.error("[addInvoiceAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al adjuntar factura" }
+    return { ok: false, message: dbErrMsg(e, "Error al adjuntar factura") }
   }
 }
 
@@ -183,6 +190,6 @@ export async function deleteInvoiceAction(
     return { ok: true, message: "Factura eliminada correctamente" }
   } catch (e) {
     logger.error("[deleteInvoiceAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar factura" }
+    return { ok: false, message: dbErrMsg(e, "Error al eliminar factura") }
   }
 }

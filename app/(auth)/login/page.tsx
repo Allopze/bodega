@@ -57,6 +57,7 @@ export default async function LoginPage() {
               width={96}
               height={96}
               unoptimized
+              loading="eager"
               style={{ width: 96, height: 96 }}
               className="shrink-0"
             />

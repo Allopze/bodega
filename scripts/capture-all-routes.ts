@@ -1295,6 +1295,49 @@ async function prepareDatabase(captureDbUrl: string) {
     { key: "purchase_order_footer", value: "Documento generado para auditoría visual.", updatedAt: now },
   ])
 
+  // Sync sequences past all hardcoded document codes inserted above.
+  // Each call to next_document_code creates the sequence (if needed) and
+  // consumes one value; setval then pins it at the max code we've inserted,
+  // so the next real app call gets max+1 with no collisions.
+  await db.execute(sql`
+    DO $$
+    DECLARE
+      yr int := EXTRACT(YEAR FROM NOW())::int;
+    BEGIN
+      -- SOL uses year=0 per code-sequences.ts
+      PERFORM next_document_code('SOL', 0);
+      PERFORM setval('code_seq_sol_0', GREATEST(
+        3,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM purchase_requests WHERE code ~ '^SOL-')
+      ));
+
+      PERFORM next_document_code('OC', yr);
+      PERFORM setval('code_seq_oc_' || yr, GREATEST(
+        2,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM purchase_orders WHERE code ~ ('^OC-' || yr || '-'))
+      ));
+
+      PERFORM next_document_code('REP', yr);
+      PERFORM setval('code_seq_rep_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM purchase_requests WHERE code ~ ('^REP-' || yr || '-'))
+      ));
+
+      PERFORM next_document_code('REC', yr);
+      PERFORM setval('code_seq_rec_' || yr, GREATEST(
+        2,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM receipts WHERE code ~ ('^REC-' || yr || '-'))
+      ));
+
+      PERFORM next_document_code('ENT', yr);
+      PERFORM setval('code_seq_ent_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM deliveries WHERE code ~ ('^ENT-' || yr || '-'))
+      ));
+    END;
+    $$
+  `)
+
   await pgClient.end()
 }
 

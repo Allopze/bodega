@@ -513,6 +513,10 @@ async function main() {
     updatedAt: now,
   })
 
+  // Advance the OC sequence past the fixture code (OC-2026-0001) so the
+  // first real app call gets OC-2026-0002 and doesn't collide.
+  await db.execute(sql`SELECT next_document_code('OC', EXTRACT(YEAR FROM NOW())::int)`)
+
   await client.end()
 }
 

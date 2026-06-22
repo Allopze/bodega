@@ -82,7 +82,7 @@ export function RecentActivity({ requests, orders, viewerId, canViewAll, limit =
               href={entry.href}
               className={cn(
                 "group grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-3 py-2.5 sm:gap-4",
-                "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-surface-2)]",
+                "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)]",
                 "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
               )}
             >

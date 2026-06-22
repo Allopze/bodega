@@ -67,7 +67,7 @@ export function QuickActions({ session }: { session: Session }) {
           data-pressable
           className={cn(
             pillBase,
-            "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-primary-ink)]",
+            "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)]",
           )}
         >
           <action.Icon
