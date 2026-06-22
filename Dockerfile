@@ -62,6 +62,13 @@ COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 COPY --from=build /app/db/migrations ./db/migrations
 COPY --from=build /app/db/seed ./db/seed
+# Standalone migration runner (uses runtime deps only; see scripts/migrate.mjs).
+COPY --from=build /app/scripts/migrate.mjs ./scripts/migrate.mjs
+# Next's standalone tracer only copies the files it sees imported, which can omit
+# the `drizzle-orm/postgres-js/migrator` submodule used solely by migrate.mjs.
+# Overlay the full packages so the migration runner always resolves.
+COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
 # Ensure storage dir exists and is writable
 RUN mkdir -p /app/storage && chown -R nextjs:nodejs /app/storage

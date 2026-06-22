@@ -17,6 +17,7 @@ const filesToCopy = [
   'package.json',
   'package-lock.json',
   'postcss.config.mjs',
+  'proxy.ts',
   'tsconfig.json',
   'app',
   'components',

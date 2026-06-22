@@ -4,24 +4,45 @@
 # commit them here and pull in production.
 #
 # Usage:
-#   docker compose up -d                 # start (pull first in CI)
+#   docker compose up -d --build         # self-contained: build from the bundled
+#                                        # Dockerfile/source (release.zip deploys)
+#   docker compose up -d                 # CI: uses the image pulled from GHCR
 #   docker compose up -d --no-deps app   # replace app container only
 #   docker compose down                  # stop
 #
 # Environment variables are read from a .env file or the host's environment.
 # Copy .env.example to .env and fill in production values.
+#
+# Self-contained DB: a `db` (postgres) service ships in this file and a one-shot
+# `migrate` service applies the Drizzle migrations before `app` starts. For that
+# path you only need to set POSTGRES_PASSWORD (and AUTH_SECRET/AUTH_URL);
+# DATABASE_URL is derived to point at the `db` service.
+#
+# Managed / external DB: set DATABASE_URL explicitly and deploy only the app
+# with `docker compose up -d --no-deps app` (skips the bundled db + migrate).
 
 services:
   app:
-    # Image is built by CI and pushed to GitHub Container Registry.
-    # In production, CI passes the SHA tag (not "latest") for reproducible deploys.
+    # Two deploy paths share this file:
+    #   • CI/GHCR: the image is built by CI and pushed; the VPS pulls the SHA tag
+    #     (set IMAGE_TAG) before `up`, so `build` is never triggered.
+    #   • Self-contained (release.zip): `up --build` builds the bundled Dockerfile
+    #     and tags it with the `image` name below.
+    build:
+      context: .
+      target: prod
     image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL:?err}
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - AUTH_SECRET=${AUTH_SECRET:?err}
       - AUTH_URL=${AUTH_URL:?err}
       - SMTP_HOST=${SMTP_HOST:-}
@@ -40,5 +61,41 @@ services:
       retries: 3
       start_period: 15s
 
+  # One-shot: applies Drizzle migrations, then exits 0. Runs the same image as
+  # `app` but with the standalone migrate runner (scripts/migrate.mjs).
+  migrate:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/migrate.mjs"]
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-bodega}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?err}
+      - POSTGRES_DB=${POSTGRES_DB:-bodega}
+    volumes:
+      - bodega-db:/var/lib/postgresql/data
+    healthcheck:
+      # Probe over TCP (-h 127.0.0.1), not the Unix socket: during first-boot
+      # initdb runs a temporary socket-only server (listen_addresses=''), so a
+      # socket probe would report "healthy" before TCP accepts connections and
+      # dependents (migrate/app) would hit ECONNREFUSED on db:5432.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER:-bodega} -d ${POSTGRES_DB:-bodega}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
 volumes:
   bodega-storage:
+  bodega-db:
