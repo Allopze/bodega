@@ -45,12 +45,9 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - AUTH_SECRET=${AUTH_SECRET:?err}
       - AUTH_URL=${AUTH_URL:?err}
-      - SMTP_HOST=${SMTP_HOST:-}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER:-}
-      - SMTP_PASS=${SMTP_PASS:-}
-      - SMTP_FROM=${SMTP_FROM:-}
-      - SMTP_SECURE=${SMTP_SECURE:-false}
+      # Outbound mail runs on Resend (lib/email/smtp.ts). Without this key the app
+      # boots fine but stays silent (no emails: invitations, password reset, etc.).
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
       - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
     volumes:
       - bodega-storage:/data/storage
@@ -75,6 +72,30 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/migrate.mjs"]
+
+  # One-shot, MANUAL: bootstrap seed (system roles, permissions, base catalog).
+  # Not part of the default `up` (guarded by the `seed` profile). Run explicitly:
+  #   docker compose run --rm seed
+  # Uses the `build` stage — not `prod` — because db/seed.ts needs the TypeScript
+  # source, db/schema, lib/ and the `tsx` devDependency that the slim prod image
+  # deliberately omits. NODE_ENV=production forces SEED_ADMIN_PASSWORD to be set.
+  seed:
+    profiles: ["seed"]
+    build:
+      context: .
+      target: build
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-}
+      - SEED_ADMIN_NAME=${SEED_ADMIN_NAME:-}
+      - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:?err}
+      - SEED_ALLOW_DEFAULT_PASSWORD=${SEED_ALLOW_DEFAULT_PASSWORD:-false}
+    command: ["npx", "tsx", "db/seed.ts"]
 
   db:
     image: postgres:16-alpine
