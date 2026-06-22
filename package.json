@@ -25,7 +25,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "analyze": "next experimental-analyze"
+    "analyze": "next experimental-analyze",
+    "release": "tsx scripts/release.ts"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
