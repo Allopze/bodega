@@ -71,8 +71,25 @@ const OC_STATE_META: Record<OcStatus, StateMeta> = {
   cancelled:          { label: "Anulada",              variant: "danger",   family: "danger"   },
 }
 
+/* ── Feedback (Soporte) states ───────────────────────────────────────────── */
+export type FeedbackEstado = "abierto" | "en_progreso" | "resuelto" | "descartado"
+export type FeedbackTipo   = "bug" | "consulta" | "sugerencia"
+
+export const FEEDBACK_ESTADO_META: Record<FeedbackEstado, StateMeta> = {
+  abierto:     { label: "Abierto",      variant: "info",    family: "info"    },
+  en_progreso: { label: "En progreso",  variant: "warning", family: "warning" },
+  resuelto:    { label: "Resuelto",     variant: "success", family: "success" },
+  descartado:  { label: "Descartado",   variant: "default", family: "neutral" },
+}
+
+export const FEEDBACK_TIPO_LABELS: Record<FeedbackTipo, string> = {
+  bug:        "Bug",
+  consulta:   "Consulta",
+  sugerencia: "Sugerencia",
+}
+
 /* ── StateBadge component ────────────────────────────────────────────────── */
-type EntityType = "item" | "request" | "oc"
+type EntityType = "item" | "request" | "oc" | "feedback"
 
 interface StateBadgeProps {
   state:      string
@@ -84,9 +101,10 @@ interface StateBadgeProps {
 
 function getStateMeta(state: string, entity: EntityType): StateMeta {
   switch (entity) {
-    case "request": return REQUEST_STATE_META[state as RequestStatus] ?? { label: state, variant: "default", family: "neutral" }
-    case "oc":      return OC_STATE_META[state as OcStatus]           ?? { label: state, variant: "default", family: "neutral" }
-    default:        return ITEM_STATE_META[state as ItemStatus]        ?? { label: state, variant: "default", family: "neutral" }
+    case "request":  return REQUEST_STATE_META[state as RequestStatus]   ?? { label: state, variant: "default", family: "neutral" }
+    case "oc":       return OC_STATE_META[state as OcStatus]             ?? { label: state, variant: "default", family: "neutral" }
+    case "feedback": return FEEDBACK_ESTADO_META[state as FeedbackEstado] ?? { label: state, variant: "default", family: "neutral" }
+    default:         return ITEM_STATE_META[state as ItemStatus]          ?? { label: state, variant: "default", family: "neutral" }
   }
 }
 
@@ -115,4 +133,4 @@ export function StateBadge({
 }
 
 /* ── Exports for external use ─────────────────────────────────────────────── */
-export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META }
+export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, FEEDBACK_ESTADO_META, FEEDBACK_TIPO_LABELS }

@@ -55,6 +55,11 @@ export const SYSTEM_PERMISSIONS = [
   { id: "p-ppa-view", name: "ppa:view", module: "ppa", description: "Ver PPA Digital e indicadores" },
   { id: "p-ppa-review", name: "ppa:review", module: "ppa", description: "Revisar y autorizar/rechazar PPA detenidos" },
   { id: "p-ppa-manage", name: "ppa:manage", module: "ppa", description: "Gestionar y exportar PPA Digital" },
+  // Feedback / Soporte module
+  { id: "p-fb-create", name: "feedback:create",   module: "feedback", description: "Enviar reportes de soporte (bug, consulta, sugerencia)" },
+  { id: "p-fb-own",    name: "feedback:view_own",  module: "feedback", description: "Ver los propios reportes de soporte" },
+  { id: "p-fb-all",    name: "feedback:view_all",  module: "feedback", description: "Ver todos los reportes de soporte" },
+  { id: "p-fb-manage", name: "feedback:manage",    module: "feedback", description: "Gestionar reportes de soporte (cambiar estado, nota interna)" },
 ] satisfies Array<typeof permissions.$inferInsert>
 
 const JEFATURA_PERMISSION_IDS = [
@@ -145,19 +150,34 @@ const JEFE_MANTENCION_PERMISSION_IDS = [
   "p-rep-view",
 ]
 
+// Feedback / Soporte module
+const FEEDBACK_MANAGER_PERMISSION_IDS = [
+  "p-fb-create", "p-fb-own", "p-fb-all", "p-fb-manage",
+]
+
+const FEEDBACK_USER_PERMISSION_IDS = [
+  "p-fb-create", "p-fb-own",
+]
+
 export const SYSTEM_ROLE_PERMISSIONS = [
   ...SYSTEM_PERMISSIONS.map((permission) => ({ roleId: "rol-admin", permissionId: permission.id })),
   ...JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
   ...REPUESTOS_JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
   ...SERVICIOS_JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
+  ...FEEDBACK_MANAGER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
   ...SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
   ...REPUESTOS_SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
   ...SERVICIOS_SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
+  ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
   ...PREVENCIONISTA_OFICINA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...REPUESTOS_PREVENCIONISTA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...SERVICIOS_PREVENCIONISTA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
+  ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...PREVENCIONISTA_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
   ...SERVICIOS_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
+  ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
   ...PREVENCIONISTA_FAENA_SCOPE_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev-faena", permissionId })),
+  ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev-faena", permissionId })),
   ...JEFE_MANTENCION_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
+  ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
 ] satisfies Array<typeof rolePermissions.$inferInsert>

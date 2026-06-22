@@ -61,6 +61,7 @@ export type NotificationType =
   | "ppa_pending_review"
   | "ppa_authorized"
   | "ppa_rejected"
+  | "feedback_submitted"
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),
