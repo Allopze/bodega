@@ -14,51 +14,29 @@ import * as Sentry from "@sentry/nextjs"
 
 const SENTRY_DSN = process.env.SENTRY_DSN
 
-let initialized = false
-
-function ensureInit() {
-  if (initialized || !SENTRY_DSN) return
-  if (process.env.NODE_ENV !== "production") return
-
-  Sentry.init({
-    dsn: SENTRY_DSN,
-    environment: process.env.NODE_ENV ?? "production",
-    tracesSampleRate: 0.1,
-    // Redact PII before sending
-    beforeSend(event) {
-      if (event.request?.headers) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { cookie, authorization, ...safe } = event.request.headers as Record<string, string>
-        event.request.headers = safe
-      }
-      return event
-    },
-  })
-  initialized = true
-}
+// Sentry is initialized eagerly by sentry.server.config.ts / sentry.client.config.ts
+// via withSentryConfig in next.config.ts. This wrapper re-exports the initialized
+// Sentry client for use in logger.error and other manual capture calls.
+const isReady = !!SENTRY_DSN
 
 export const sentry = {
   captureException(error: unknown, context?: Record<string, unknown>) {
-    ensureInit()
-    if (!SENTRY_DSN) return // silently skip if not configured
+    if (!isReady) return
     Sentry.captureException(error, { extra: context })
   },
 
   captureMessage(message: string, level: "info" | "warning" | "error" = "info") {
-    ensureInit()
-    if (!SENTRY_DSN) return
+    if (!isReady) return
     Sentry.captureMessage(message, level)
   },
 
   setUser(userId: string, email?: string) {
-    ensureInit()
-    if (!SENTRY_DSN) return
+    if (!isReady) return
     Sentry.setUser({ id: userId, email })
   },
 
   setTag(key: string, value: string) {
-    ensureInit()
-    if (!SENTRY_DSN) return
+    if (!isReady) return
     Sentry.setTag(key, value)
   },
 }

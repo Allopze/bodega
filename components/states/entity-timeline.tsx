@@ -1,7 +1,8 @@
 import * as React from "react"
 import { Clock, ArrowRight, User } from "@phosphor-icons/react/dist/ssr"
 import { formatDate } from "@/lib/utils"
-import { REQUEST_STATE_META, OC_STATE_META, type RequestStatus, type OcStatus } from "./state-badge"
+import { REQUEST_STATE_META, OC_STATE_META, ITEM_STATE_META, type RequestStatus, type OcStatus } from "./state-badge"
+import type { ItemStatus } from "@/lib/services/item-state"
 
 export interface TimelineEvent {
   id:         string
@@ -15,7 +16,7 @@ export interface TimelineEvent {
 }
 
 interface EntityTimelineProps {
-  entityType: "request" | "oc"
+  entityType: "request" | "oc" | "item"
   events:     TimelineEvent[]
 }
 
@@ -23,6 +24,9 @@ export function EntityTimeline({ entityType, events }: EntityTimelineProps) {
   function getStatusLabel(status: string) {
     if (entityType === "request") {
       return REQUEST_STATE_META[status as RequestStatus]?.label ?? status
+    }
+    if (entityType === "item") {
+      return ITEM_STATE_META[status as ItemStatus]?.label ?? status
     }
     return OC_STATE_META[status as OcStatus]?.label ?? status
   }

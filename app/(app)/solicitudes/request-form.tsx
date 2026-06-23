@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -536,13 +537,11 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
               htmlFor="requiredDate"
               error={draftState.fieldErrors?.requiredDate?.[0] ?? submitState.fieldErrors?.requiredDate?.[0]}
             >
-              <Input
+              <DatePicker
                 id="requiredDate"
-                type="date"
                 name="requiredDate"
                 value={requiredDate}
-                onChange={(event) => setRequiredDate(event.target.value)}
-                required
+                onChange={setRequiredDate}
                 disabled={readOnly}
               />
             </Field>

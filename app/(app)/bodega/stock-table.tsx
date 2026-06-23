@@ -11,6 +11,7 @@ import { formatQty, formatDate } from "@/lib/utils"
 import { setMinStockAction } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import type { ActionState } from "@/lib/validation/operations"
+import { StockExportButton } from "./stock-export-button"
 
 export interface StockTableProps {
   worksites: Array<{
@@ -18,6 +19,7 @@ export interface StockTableProps {
     name: string
     items: WorksiteStockWithProduct[]
   }>
+  canExport?: boolean
 }
 
 function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: number }) {
@@ -69,7 +71,7 @@ function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: nu
   )
 }
 
-export function StockTable({ worksites }: StockTableProps) {
+export function StockTable({ worksites, canExport }: StockTableProps) {
   const allItems = worksites.flatMap((ws) => ws.items)
   const lowStockCount = allItems.filter((item) => item.minStock > 0 && item.quantity <= item.minStock).length
 
@@ -82,12 +84,18 @@ export function StockTable({ worksites }: StockTableProps) {
             {allItems.length} {allItems.length === 1 ? "producto" : "productos"} en {worksites.length} {worksites.length === 1 ? "faena" : "faenas"}
           </p>
         </div>
-        {lowStockCount > 0 && (
-          <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-2.5 py-1 text-xs font-semibold text-[var(--color-signal-ink)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-signal)]" />
-            {lowStockCount} bajo mínimo
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {lowStockCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-2.5 py-1 text-xs font-semibold text-[var(--color-signal-ink)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-signal)]" />
+              {lowStockCount} bajo mínimo
+            </span>
+          )}
+          <StockExportButton
+            worksites={worksites.map((ws) => ({ id: ws.id, name: ws.name }))}
+            canExport={canExport ?? false}
+          />
+        </div>
       </div>
 
       {allItems.length === 0 ? (

@@ -11,6 +11,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { ESTADO_PPA_LABELS } from "@/lib/ppa/badges"
 
 interface WorksiteOption {
@@ -62,22 +63,20 @@ export function PpaExportButton({ worksites, canExport }: PpaExportButtonProps) 
               <label htmlFor="ppa-export-from" className="text-xs font-medium text-[var(--color-text-subtle)]">
                 Desde
               </label>
-              <Input
+              <DatePicker
                 id="ppa-export-from"
-                type="date"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={setFrom}
               />
             </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="ppa-export-to" className="text-xs font-medium text-[var(--color-text-subtle)]">
                 Hasta
               </label>
-              <Input
+              <DatePicker
                 id="ppa-export-to"
-                type="date"
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
+                onChange={setTo}
               />
             </div>
           </div>

@@ -6,6 +6,7 @@ import { Plus, Trash, FloppyDisk, PaperPlaneTilt } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -162,10 +163,9 @@ export function ServiceForm({ worksites, editRequest }: ServiceFormProps) {
           </Field>
 
           <Field label="Fecha requerida" required>
-            <Input
-              type="date"
+            <DatePicker
               value={requiredDate}
-              onChange={(e) => setRequiredDate(e.target.value)}
+              onChange={setRequiredDate}
             />
           </Field>
 

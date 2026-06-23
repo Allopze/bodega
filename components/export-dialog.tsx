@@ -6,6 +6,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { DatePicker } from "@/components/ui/date-picker"
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from "@/components/ui/select"
 
 interface WorksiteOption {
   id: string
@@ -28,9 +32,9 @@ export function ExportDialog({ tipo, label, worksites, statuses, tone = "neutral
 
   function buildUrl() {
     const params = new URLSearchParams({ tipo })
-    if (from) params.set("from", from)
-    if (to) params.set("to", to)
-    if (faena) params.set("faena", faena)
+    if (from)   params.set("from", from)
+    if (to)     params.set("to", to)
+    if (faena)  params.set("faena", faena)
     if (status) params.set("status", status)
     return `/api/reportes/export?${params.toString()}`
   }
@@ -64,61 +68,61 @@ export function ExportDialog({ tipo, label, worksites, statuses, tone = "neutral
               <label htmlFor={`from-${tipo}`} className="text-xs font-medium text-[var(--color-text-subtle)]">
                 Desde
               </label>
-              <input
+              <DatePicker
                 id={`from-${tipo}`}
-                type="date"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="h-9 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+                onChange={setFrom}
+                placeholder="Desde"
               />
             </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor={`to-${tipo}`} className="text-xs font-medium text-[var(--color-text-subtle)]">
                 Hasta
               </label>
-              <input
+              <DatePicker
                 id={`to-${tipo}`}
-                type="date"
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="h-9 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+                onChange={setTo}
+                placeholder="Hasta"
               />
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={`faena-${tipo}`} className="text-xs font-medium text-[var(--color-text-subtle)]">
-              Faena
-            </label>
-            <select
-              id={`faena-${tipo}`}
-              value={faena}
-              onChange={(e) => setFaena(e.target.value)}
-              className="h-9 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-            >
-              <option value="">Todas las faenas</option>
-              {worksites.map((ws) => (
-                <option key={ws.id} value={ws.id}>{ws.name}</option>
-              ))}
-            </select>
-          </div>
+          {worksites.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor={`faena-${tipo}`} className="text-xs font-medium text-[var(--color-text-subtle)]">
+                Faena
+              </label>
+              <Select value={faena || "_all"} onValueChange={(v) => setFaena(v === "_all" ? "" : v)}>
+                <SelectTrigger id={`faena-${tipo}`} aria-label="Filtrar por faena">
+                  <SelectValue placeholder="Todas las faenas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">Todas las faenas</SelectItem>
+                  {worksites.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {statuses.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <label htmlFor={`status-${tipo}`} className="text-xs font-medium text-[var(--color-text-subtle)]">
                 Estado
               </label>
-              <select
-                id={`status-${tipo}`}
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="h-9 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-              >
-                <option value="">Todos los estados</option>
-                {statuses.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
+              <Select value={status || "_all"} onValueChange={(v) => setStatus(v === "_all" ? "" : v)}>
+                <SelectTrigger id={`status-${tipo}`} aria-label="Filtrar por estado">
+                  <SelectValue placeholder="Todos los estados" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">Todos los estados</SelectItem>
+                  {statuses.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
         </div>

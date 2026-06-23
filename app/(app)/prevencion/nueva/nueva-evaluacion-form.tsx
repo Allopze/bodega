@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { CalendarBlank, CheckCircle, IdentificationBadge, MapPin, UserFocus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import {
@@ -262,14 +263,12 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
             required
             error={errors.fecha}
           >
-            <Input
+            <DatePicker
               id={fechaId}
-              ref={fechaRef}
-              type="date"
               value={fechaEvaluacion}
               max={today}
-              onChange={(e) => { setFecha(e.target.value); setErrors((ev) => ({ ...ev, fecha: "" })) }}
-              aria-invalid={!!errors.fecha}
+              onChange={(iso) => { setFecha(iso); setErrors((ev) => ({ ...ev, fecha: "" })) }}
+              error={!!errors.fecha}
             />
           </Field>
 

@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation"
 import { CheckCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -287,18 +290,20 @@ export function PpaForm({
               Identificación manual — quedará marcada como pendiente de validación.
             </p>
             <Field label="Faena / lugar de trabajo" htmlFor="worksite" required error={err("worksiteId")}>
-              <select
-                id="worksite"
-                className={selectCls}
+              <Select
                 value={worksiteId}
-                onChange={(e) => setWorksiteId(e.target.value)}
+                onValueChange={setWorksiteId}
                 disabled={hasFaenaParam}
               >
-                <option value="">Selecciona la faena…</option>
-                {worksites.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
+                <SelectTrigger id="worksite" aria-label="Selecciona la faena" error={!!err("worksiteId")}>
+                  <SelectValue placeholder="Selecciona la faena…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {worksites.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
             <Field label="Nombre completo" htmlFor="wname" required error={err("workerName")}>
               <Input id="wname" value={workerName} onChange={(e) => setWorkerName(e.target.value)} />
@@ -324,12 +329,16 @@ export function PpaForm({
       {/* ── Pregunta 1 ───────────────────────────────────────────────── */}
       <section className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
         <Field label="¿Qué trabajo voy a realizar?" htmlFor="tipo" required error={err("tipoTrabajo")}>
-          <select id="tipo" className={selectCls} value={tipoTrabajo} onChange={(e) => setTipoTrabajo(e.target.value)}>
-            <option value="">Selecciona…</option>
-            {tipoTrabajoOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+          <Select value={tipoTrabajo} onValueChange={setTipoTrabajo}>
+            <SelectTrigger id="tipo" aria-label="Selecciona el tipo de trabajo" error={!!err("tipoTrabajo")}>
+              <SelectValue placeholder="Selecciona…" />
+            </SelectTrigger>
+            <SelectContent>
+              {tipoTrabajoOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
       </section>
 

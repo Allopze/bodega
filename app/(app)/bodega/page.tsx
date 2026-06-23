@@ -46,6 +46,7 @@ export default async function BodegaPage({
   const canRegisterMovements = can(session, "warehouse:register_movement")
   const canAdjustStock       = can(session, "warehouse:adjust_stock")
   const canViewReceiving     = can(session, "receiving:view")
+  const canExportStock       = can(session, "warehouse:view_stock")
   const visibleWsIds = visibleWorksiteIds(session)
   const worksiteScope = isGlobalRole(session)
     ? undefined
@@ -173,12 +174,15 @@ export default async function BodegaPage({
               stockByWorksite={stockByWorksite}
               initialWorksiteId={initialWorksiteId}
               receivingHref={canViewReceiving ? "/recepcion" : undefined}
+              canExportStock={canExportStock}
             />
           </Suspense>
 
           <Suspense fallback={<SkeletonPage rows={6} />}>
             <KardexSection
               movements={visibleMovements as InventoryMovementWithRelations[]}
+              worksites={worksiteOptions}
+              canExport={canExportStock}
               pagination={kardexPagination}
               hrefForPage={kardexHref}
             />
@@ -242,11 +246,12 @@ function WarehouseHeaderMetrics({
   )
 }
 
-function StockSection({ worksites, stockByWorksite, initialWorksiteId, receivingHref }: {
+function StockSection({ worksites, stockByWorksite, initialWorksiteId, receivingHref, canExportStock }: {
   worksites: WorksiteOption[]
   stockByWorksite: Record<string, WorksiteStockWithProduct[]>
   initialWorksiteId?: string
   receivingHref?: string
+  canExportStock?: boolean
 }) {
   const sortedWorksites = [...worksites].sort((a, b) => {
     const aHasStock = (stockByWorksite[a.id] ?? []).some((item) => item.quantity > 0)
@@ -299,7 +304,7 @@ function StockSection({ worksites, stockByWorksite, initialWorksiteId, receiving
 
   return (
     <div className="space-y-6">
-      <StockTable worksites={worksitesWithStock} />
+      <StockTable worksites={worksitesWithStock} canExport={canExportStock} />
 
       {worksitesWithoutStock.length > 0 && (
         <section className="border-t border-[var(--color-border)] pt-4">
@@ -316,16 +321,20 @@ function StockSection({ worksites, stockByWorksite, initialWorksiteId, receiving
 
 function KardexSection({
   movements,
+  worksites,
+  canExport,
   pagination,
   hrefForPage,
 }: {
   movements: InventoryMovementWithRelations[]
+  worksites: WorksiteOption[]
+  canExport: boolean
   pagination: ReturnType<typeof resolvePagination>
   hrefForPage: (page: number) => string
 }) {
   return (
     <>
-      <KardexTable movements={movements} />
+      <KardexTable movements={movements} worksites={worksites} canExport={canExport} />
       <ServerPagination pagination={pagination} hrefForPage={hrefForPage} />
     </>
   )

@@ -5,6 +5,7 @@ import { NotePencil } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog"
@@ -252,10 +253,9 @@ function ItemField({
 
   if (kind === "date") {
     return (
-      <Input
-        type="date"
+      <DatePicker
         value={resp.observacion}
-        onChange={(e) => onChange({ observacion: e.target.value })}
+        onChange={(iso) => onChange({ observacion: iso })}
         disabled={readOnly}
       />
     )

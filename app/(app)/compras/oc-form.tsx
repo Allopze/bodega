@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -284,12 +285,11 @@ export function OcForm({
         </Field>
 
         <Field label="Entrega estimada" htmlFor="estimatedDelivery">
-          <Input
+          <DatePicker
             id="estimatedDelivery"
-            type="date"
             name="estimatedDelivery"
             value={estDelivery}
-            onChange={(e) => setEstDelivery(e.target.value)}
+            onChange={setEstDelivery}
           />
         </Field>
 

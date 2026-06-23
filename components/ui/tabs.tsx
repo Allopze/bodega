@@ -33,6 +33,8 @@ const TabsTrigger = React.forwardRef<
       "text-sm font-semibold text-[var(--color-text-muted)]",
       "rounded-[var(--radius)]",
       "transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+      // Emil: subtle press feedback on tabs
+      "active:scale-[0.96]",
       "hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]",
       "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
       "data-[state=active]:text-[var(--color-text)] data-[state=active]:bg-[var(--color-surface)] data-[state=active]:shadow-[var(--shadow-xs)]",

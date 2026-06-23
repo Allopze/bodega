@@ -8,6 +8,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
@@ -239,10 +240,9 @@ function AddInvoiceForm({ purchaseOrderId }: { purchaseOrderId: string }) {
           htmlFor="invoice-issue-date"
           error={state.fieldErrors?.issueDate?.[0]}
         >
-          <Input
+          <DatePicker
             id="invoice-issue-date"
             name="issueDate"
-            type="date"
           />
         </Field>
       </div>

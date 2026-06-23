@@ -1,11 +1,13 @@
 import type { InventoryMovementWithRelations } from "./types"
 import { formatDate } from "@/lib/utils"
+import { KardexExportButton } from "./kardex-export-button"
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   ingreso_oc:         "Ingreso OC",
   egreso_entrega:     "Entrega",
   ingreso_devolucion: "Devolución",
   egreso_desecho:     "Retiro",
+  ajuste:             "Ajuste",
 }
 
 const MOVEMENT_QTY_CLASS: Record<string, string> = {
@@ -15,20 +17,30 @@ const MOVEMENT_QTY_CLASS: Record<string, string> = {
   egreso_desecho:     "text-[var(--color-warning)]",
 }
 
-export interface KardexTableProps {
-  movements: InventoryMovementWithRelations[]
+interface WorksiteOption {
+  id: string
+  name: string
 }
 
-export function KardexTable({ movements }: KardexTableProps) {
+export interface KardexTableProps {
+  movements: InventoryMovementWithRelations[]
+  worksites?: WorksiteOption[]
+  canExport?: boolean
+}
+
+export function KardexTable({ movements, worksites = [], canExport = false }: KardexTableProps) {
   if (movements.length === 0) return null
 
   return (
     <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-      <div className="border-b border-[var(--color-border)] px-5 py-4">
-        <h2 className="text-h2 text-[var(--color-text)]">Kardex</h2>
-        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-          Últimos {movements.length} movimientos de inventario
-        </p>
+      <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+        <div>
+          <h2 className="text-h2 text-[var(--color-text)]">Kardex</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+            Últimos {movements.length} movimientos de inventario
+          </p>
+        </div>
+        <KardexExportButton worksites={worksites} canExport={canExport} />
       </div>
 
       <div className="hidden md:block overflow-x-auto" tabIndex={0} role="region" aria-label="Kardex de movimientos">

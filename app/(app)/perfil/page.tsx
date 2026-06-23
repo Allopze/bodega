@@ -7,6 +7,7 @@ import { users } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { EmailNotificationsForm } from "./email-notifications-form"
+import { PasswordChangeForm } from "./password-change-form"
 
 export const metadata: Metadata = {
   title: "Mi perfil",
@@ -53,6 +54,17 @@ export default async function PerfilPage() {
           <div>
             <h2 className="text-h2 text-[var(--color-text)] mb-3">Notificaciones</h2>
             <EmailNotificationsForm enabled={user.emailNotifications} />
+          </div>
+
+          <hr className="border-[var(--color-border)]" />
+
+          {/* Password change */}
+          <div>
+            <h2 className="text-h2 text-[var(--color-text)] mb-3">Seguridad</h2>
+            <p className="text-xs text-[var(--color-text-subtle)] mb-4">
+              Cambia tu contraseña para mantener tu cuenta segura.
+            </p>
+            <PasswordChangeForm />
           </div>
         </div>
       </div>

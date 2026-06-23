@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect } from "react"
+import { useActionState, useEffect, useState } from "react"
 import { toast } from "@/lib/toast"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from "@/components/ui/select"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { createWorker, updateWorker } from "./actions"
 
@@ -37,6 +40,7 @@ export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormP
   const isEdit = !!editWorker
   const action = isEdit ? updateWorker : createWorker
   const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
+  const [selectedWorksiteId, setSelectedWorksiteId] = useState(editWorker?.worksiteId ?? "")
 
   useEffect(() => {
     if (state.ok) {
@@ -109,19 +113,18 @@ export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormP
               </Field>
 
               <Field label="Faena" htmlFor="wrk-ws" required error={state.fieldErrors?.worksiteId?.[0]}>
-                <select
-                  id="wrk-ws" name="worksiteId"
-                  defaultValue={editWorker?.worksiteId ?? ""}
-                  className="h-9 w-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)]"
-                >
-                  <option value="">Selecciona una faena</option>
-                  {worksites.map((w) => (
-                    <option key={w.id} value={w.id}>{w.name}</option>
-                  ))}
-                </select>
-                {state.fieldErrors?.worksiteId && (
-                  <p className="mt-1 text-xs text-[var(--color-danger)]">{state.fieldErrors.worksiteId[0]}</p>
-                )}
+                {/* Hidden input carries value to FormData / server action */}
+                <input type="hidden" name="worksiteId" value={selectedWorksiteId} />
+                <Select value={selectedWorksiteId} onValueChange={setSelectedWorksiteId}>
+                  <SelectTrigger id="wrk-ws" error={!!state.fieldErrors?.worksiteId?.[0]}>
+                    <SelectValue placeholder="Selecciona una faena" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {worksites.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
 
               <Checkbox id="wrk-isActive" name="isActive" value="on" defaultChecked={editWorker?.isActive ?? true} label="Trabajador activo" />

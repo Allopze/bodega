@@ -370,7 +370,7 @@ export default async function TrazabilidadPage({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="text-sm font-medium text-[var(--color-text)]">{row.productName}</h2>
+                    <Link href={`/trazabilidad/${row.itemId}`} className="text-sm font-medium text-[var(--color-primary)] hover:underline underline-offset-2">{row.productName}</Link>
                     <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
                       {row.productSku ? <span className="font-mono">{row.productSku} · </span> : null}
                       {row.worksiteName}
@@ -450,9 +450,13 @@ export default async function TrazabilidadPage({
                   >
                     {/* Product */}
                     <TableCell className="max-w-[220px]">
-                      <div className="font-medium text-[var(--color-text)] truncate" title={row.productName}>
+                      <Link
+                        href={`/trazabilidad/${row.itemId}`}
+                        className="font-medium text-[var(--color-primary)] hover:underline underline-offset-2 truncate block"
+                        title={row.productName}
+                      >
                         {row.productName}
-                      </div>
+                      </Link>
                       {row.productSku && (
                         <div className="text-xs text-[var(--color-text-subtle)] font-mono">{row.productSku}</div>
                       )}

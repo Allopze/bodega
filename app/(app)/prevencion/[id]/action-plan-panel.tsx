@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -203,11 +204,10 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
               />
             </Field>
             <Field label="Plazo" htmlFor="draft-plazo">
-              <Input
+              <DatePicker
                 id="draft-plazo"
-                type="date"
                 value={draft.plazo}
-                onChange={(e) => setDraft({ ...draft, plazo: e.target.value })}
+                onChange={(iso) => setDraft({ ...draft, plazo: iso })}
               />
             </Field>
             <Field label="Estado" htmlFor="draft-estado">

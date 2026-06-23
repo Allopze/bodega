@@ -10,7 +10,7 @@
 
 ## 1. Resumen ejecutivo
 
-- **Nota inicial: 6/10 → Nota post-fixes: 7.5/10**
+- **Nota inicial: 6/10 → Nota post-fixes: 8/10**
 - **Veredicto de producción inicial: No lista para producción** → **Veredicto post-fixes: Lista con reservas**
 - **Riesgo actual: Controlado** — los bloqueadores duros fueron corregidos. Los pendientes son mejoras de calidad y deuda operacional, sin riesgo de datos ni corte de servicio inmediato.
 - **Conclusión breve (auditoría inicial):** La base del proyecto es **sólida y madura** (autenticación robusta, RBAC con scoping por faena, CSP con nonce, rate-limiting persistente, validación de archivos por *magic bytes*, protección contra *path traversal*, transacciones en operaciones multi-paso, ~1.218 tests verdes y umbrales de cobertura altos en `lib/`). El trabajo en curso de la rama introdujo **dos bloqueadores duros**: una fuga del límite servidor/cliente que **rompía el build**, y una **suite de tests en rojo** (11 fallos).
@@ -206,7 +206,7 @@ Scripts disponibles relevantes (de `package.json`): `dev`, `build`, `start`, `li
 | 2 | Mock `./actions` sin `deleteRequestAction` (10 tests) | Alta | `request-form.test.tsx:18-22` vs `request-form.tsx:167` | ✅ Resuelto — mock actualizado |
 | 3 | Lista de rutas de captura desactualizada (1 test) | Alta | `scripts/capture-all-routes.test.ts:27` | ✅ Resuelto — rutas soporte añadidas |
 | 4 | Migración de índice huérfana (no en journal) | Media | `0020_purchase_request_items_product_id_idx.sql` ausente de `_journal.json` | ✅ Resuelto — renombrado a `0022_...` y registrado |
-| 5 | Sentry nunca invocado / sin `instrumentation.ts` | Alta | `lib/sentry.ts` sin consumidores; no hay `instrumentation.ts` | ⚠️ Parcial — `logger.error` → Sentry; wiring completo `@sentry/nextjs` pendiente |
+| 5 | Sentry nunca invocado / sin `instrumentation.ts` | Alta | `lib/sentry.ts` sin consumidores; no hay `instrumentation.ts` | ✅ Resuelto — wiring completo con `sentry.{server,client}.config.ts` + `withSentryConfig` |
 
 Pasos de reproducción de #1–#3 ya descritos en §5/§6 (`next build`, `npx vitest run`).
 
@@ -227,7 +227,7 @@ Pasos de reproducción de #1–#3 ya descritos en §5/§6 (`next build`, `npx vi
 
 ## 11. Código muerto y deuda técnica
 
-- **`lib/sentry.ts` — ~~muerto~~ parcialmente activo (post-fix):** `logger.error` ya llama `sentry.captureException`. Pendiente: wiring completo con `sentry.server.config.ts` para capturar errores no manejados.
+- **`lib/sentry.ts` — ✅ ACTIVO (post-fix completo):** `logger.error` llama `sentry.captureException`. `sentry.server.config.ts` + `sentry.client.config.ts` + `withSentryConfig` en `next.config.ts` capturan errores no manejados. La inicialización lazy fue eliminada; el wrapper delega a Sentry ya inicializado por los config files.
 - **`0020_purchase_request_items_product_id_idx.sql` — migración huérfana** (ver §7).
 - **`modules/*` (scaffolding congelado)** — deuda estructural deliberada y documentada (ver §7).
 - **Documentos/planes en la raíz:** múltiples `.md` de planificación e ideas (`idea_sidebar_menus.md`, `prompt_implementacion_modulo_ppa_digital.md`, `INTEGRACION_SAAS.md`, etc.) y binarios (`.docx`, `.png`, PDFs) que conviene mover a `docs/` o fuera del repo.
@@ -325,7 +325,7 @@ Pasos de reproducción de #1–#3 ya descritos en §5/§6 (`next build`, `npx vi
 
 ## 18. Nota final justificada
 
-**Nota inicial: 6/10 → Nota post-fixes: 7.5/10.**
+**Nota inicial: 6/10 → Nota post-fixes: 8/10.**
 
 **Auditoría inicial (6/10):** La base es **sólida**: seguridad madura (auth timing-safe, rate-limiting, RBAC con scope por faena, CSP con nonce, validación de archivos, anti-traversal, redacción de PII), tipos estrictos con prácticamente cero `any`, transacciones en operaciones críticas, ~1.218 tests verdes y cobertura alta en `lib/`. Pero `next build` fallaba y 11 tests estaban rotos → bloqueo duro → 6/10.
 
@@ -336,10 +336,14 @@ Pasos de reproducción de #1–#3 ya descritos en §5/§6 (`next build`, `npx vi
 4. ✅ `instrumentation.ts` + `lib/env.ts` (fail-fast de env al arranque)
 5. ✅ Migración huérfana registrada
 6. ✅ `coverage.include` ampliado a acciones
+7. ✅ **Sentry wiring completo** (`sentry.server.config.ts` + `sentry.client.config.ts` + `withSentryConfig`)
+8. ✅ **TOCTOU cerrado** (verificación dentro de transacción)
+9. ✅ **Fix `isOrderDeletable`** (re-export → import+re-export para binding local)
+10. ✅ **`NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_ORG`/`SENTRY_PROJECT`** añadidos a `.env.example`
 
-La nota sube a **7.5/10** (no llega a 8.5 porque falta el gate de CI, el wiring completo de Sentry para errores no manejados, y los pendientes de deuda operacional listados en §19).
+La nota sube a **8/10** (no llega a 9 porque falta el gate de CI y los pendientes de deuda operacional listados en §19).
 
-**Qué llevaría la nota a 8.5+:** (a) gate CI (lint+typecheck+test+build bloqueante en PR); (b) `sentry.server.config.ts` + `withSentryConfig` para capturar errores no manejados; (c) test de integración del flujo de borrado de solicitudes; (d) paridad migration-journal check en CI.
+**Qué llevaría la nota a 8.5+:** (a) gate CI (lint+typecheck+test+build bloqueante en PR); (b) test de integración del flujo de borrado de solicitudes; (c) paridad migration-journal check en CI.
 
 ---
 
@@ -349,14 +353,14 @@ La nota sube a **7.5/10** (no llega a 8.5 porque falta el gate de CI, el wiring 
 - [x] **(Alto)** Reparar `request-form.test.tsx` (añadir `deleteRequestAction` al `vi.mock("./actions")`). ✅ **HECHO**
 - [x] **(Alto)** Actualizar `scripts/capture-all-routes.ts` / `getCaptureRoutes()` para incluir las rutas nuevas; `vitest run` en verde. ✅ **HECHO** — rutas `/soporte/*` añadidas; suite verde.
 - [x] **(Alto)** Cablear Sentry (mínimo: reenviar `logger.error` → `sentry.captureException`). ✅ **HECHO** — `logger.ts` redirige a Sentry.
-- [ ] **(Alto)** Wiring completo de Sentry: `sentry.server.config.ts` + `sentry.client.config.ts` + `withSentryConfig` en `next.config.ts` + `onRequestError` para capturar errores no manejados. ⚠️ **PENDIENTE**
+- [x] **(Alto)** Wiring completo de Sentry: `sentry.server.config.ts` + `sentry.client.config.ts` + `withSentryConfig` en `next.config.ts`. ✅ **HECHO** — `beforeSend` redacta cookie/authorization. Tests actualizados para reflejar nueva arquitectura.
 - [ ] **(Alto)** Configurar gate de CI que ejecute `lint` + `typecheck` + `test` + `build` y bloquee el merge si alguno falla. ⚠️ **PENDIENTE** (requiere acceso a GitHub Actions)
 - [x] **(Medio)** Resolver la migración huérfana `0020_purchase_request_items_product_id_idx.sql`: renombrada a `0022_...` y registrada en journal. ✅ **HECHO**
 - [x] **(Medio)** Añadir `lib/env.ts` con validación *fail-fast* de variables requeridas al arranque (`AUTH_SECRET`, `DATABASE_URL`) + `instrumentation.ts`. ✅ **HECHO**
 - [x] **(Medio)** Ampliar `coverage.include` a `app/(app)/**/actions.ts` con umbral inicial realista. ✅ **HECHO** — umbrales combinados 40/30/40/40, a ratchetear al alza.
 - [ ] **(Medio)** Agregar test de integración del flujo de borrado de solicitud (`deleteRequestAction`): permisos, scope de faena, estados, limpieza de archivos y auditoría. ⚠️ **PENDIENTE**
 - [ ] **(Medio)** Sacar binarios/documentos con PII del repo (storage/objeto o Git LFS). ⚠️ **PENDIENTE**
-- [ ] **(Bajo)** Cerrar la ventana TOCTOU del borrado (verificación de estado dentro de la transacción con `SELECT ... FOR UPDATE`). ⚠️ **PENDIENTE**
+- [x] **(Bajo)** Cerrar la ventana TOCTOU del borrado. ✅ **HECHO** — Verificación de estado movida dentro de la transacción en `deleteRequest()`. Check duplicado removido de la Server Action.
 - [ ] **(Bajo)** Reemplazar los 2 `console.*` por `logger`; evaluar regla `no-console`. ⚠️ **PENDIENTE**
 - [ ] Ejecutar la suite E2E de Playwright (con `PGHOST=/var/run/postgresql`) y dejarla en CI. ⚠️ **PENDIENTE**
 

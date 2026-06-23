@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -158,19 +159,17 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
           </Select>
         )}
 
-        <Input
-          type="date"
+        <DatePicker
           value={dateFrom}
-          onChange={(e) => onFilterChange(() => setDateFrom(e.target.value))}
+          onChange={(iso) => onFilterChange(() => setDateFrom(iso))}
           className="w-[9.5rem]"
-          aria-label="Desde"
+          placeholder="Desde"
         />
-        <Input
-          type="date"
+        <DatePicker
           value={dateTo}
-          onChange={(e) => onFilterChange(() => setDateTo(e.target.value))}
+          onChange={(iso) => onFilterChange(() => setDateTo(iso))}
           className="w-[9.5rem]"
-          aria-label="Hasta"
+          placeholder="Hasta"
         />
 
         {filtersActive && (

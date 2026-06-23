@@ -179,4 +179,192 @@ describe("report export helpers", () => {
     const data = await getReportData("unknown_report", session, {})
     expect(data.filenameBase).toBe("gasto-por-faena")
   })
+
+  // ── buildXlsxBuffer edge cases ───────────────────────────────────────
+
+  it("builds XLSX with empty rows", async () => {
+    const report: ReportData = {
+      filenameBase: "empty",
+      worksheetName: "Empty",
+      headers: ["Col A", "Col B"],
+      rows: [],
+    }
+    const buffer = await buildXlsxBuffer(report)
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(buffer) as never)
+    const ws = workbook.getWorksheet("Empty")
+    expect(ws).toBeDefined()
+    expect(ws?.actualRowCount).toBe(1) // header only
+    expect(ws?.getRow(1).values.slice(1)).toEqual(["Col A", "Col B"])
+  })
+
+  it("builds XLSX with rowLimitApplied flag set", async () => {
+    const report: ReportData = {
+      filenameBase: "limited",
+      worksheetName: "Limited",
+      headers: ["ID"],
+      rows: [[1], [2]],
+      rowLimitApplied: true,
+    }
+    const buffer = await buildXlsxBuffer(report)
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(buffer) as never)
+    const ws = workbook.getWorksheet("Limited")
+    expect(ws?.actualRowCount).toBe(3) // header + 2 rows
+  })
+
+  // ── gasto_faena edge cases ───────────────────────────────────────────
+
+  it("gasto_faena returns empty rows when no orders match", async () => {
+    mockSelect.mockImplementation(() => ({
+      from: () => ({
+        where() { return this },
+        limit() { return this },
+        then(resolve: (val: unknown) => void) { resolve([]) },
+      })
+    }))
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("gasto_faena", session, {})
+    expect(data.rows).toEqual([])
+    expect(data.rowLimitApplied).toBe(false)
+  })
+
+  it("gasto_faena with only fromDate filter", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("gasto_faena", session, { fromDate: "2026-01-01" })
+    expect(data.filenameBase).toBe("gasto-por-faena")
+    // Mock returns hardcoded data; exercises buildDateFilter fromDate-only branch
+    expect(data.rows).toHaveLength(2)
+  })
+
+  it("gasto_faena with only toDate filter", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("gasto_faena", session, { toDate: "2026-12-31" })
+    expect(data.filenameBase).toBe("gasto-por-faena")
+    // Exercises buildDateFilter toDate-only branch
+    expect(data.rows).toHaveLength(2)
+  })
+
+  it("gasto_faena with maxRows=1 truncates to 1 row", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("gasto_faena", session, {}, 1)
+    expect(data.rows).toHaveLength(1)
+    expect(data.rowLimitApplied).toBe(true)
+  })
+
+  it("gasto_faena with null session applies no RBAC filter", async () => {
+    const data = await getReportData("gasto_faena", null, {})
+    expect(data.rows).toHaveLength(2)
+  })
+
+  // ── items_sin_oc edge cases ──────────────────────────────────────────
+
+  it("items_sin_oc with custom status filter", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("items_sin_oc", session, { status: "approved" })
+    expect(data.filenameBase).toBe("items-sin-oc")
+    // Mock returns both items; status filter is applied via inArray
+    expect(data.rows).toHaveLength(2)
+  })
+
+  it("items_sin_oc with date range filter", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("items_sin_oc", session, {
+      fromDate: "2026-01-01",
+      toDate: "2026-01-10",
+    })
+    expect(data.filenameBase).toBe("items-sin-oc")
+    // Exercises buildDateFilter with both fromDate and toDate
+    expect(data.rows).toHaveLength(2)
+  })
+
+  it("items_sin_oc with maxRows=1 truncates", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("items_sin_oc", session, {}, 1)
+    expect(data.rows).toHaveLength(1)
+    expect(data.rowLimitApplied).toBe(true)
+  })
+
+  it("items_sin_oc with null session applies no RBAC filter", async () => {
+    const data = await getReportData("items_sin_oc", null, {})
+    expect(data.rows).toHaveLength(2)
+  })
+
+  // ── oc_por_estado edge cases ─────────────────────────────────────────
+
+  it("oc_por_estado returns empty rows when no orders match", async () => {
+    mockSelect.mockImplementation(() => ({
+      from: () => ({
+        where() { return this },
+        limit() { return this },
+        then(resolve: (val: unknown) => void) { resolve([]) },
+      })
+    }))
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("oc_por_estado", session, {})
+    expect(data.rows).toEqual([])
+  })
+
+  it("oc_por_estado with status filter", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("oc_por_estado", session, { status: "sent" })
+    expect(data.filenameBase).toBe("oc-por-estado")
+    // Mock returns hardcoded data; exercises statusFilter branch
+    expect(data.rows).toHaveLength(2)
+  })
+
+  it("oc_por_estado with date range filter", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("oc_por_estado", session, {
+      fromDate: "2026-01-01",
+      toDate: "2026-01-10",
+    })
+    expect(data.filenameBase).toBe("oc-por-estado")
+    expect(data.rows).toHaveLength(2)
+  })
+
+  it("oc_por_estado with maxRows=1 truncates", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("oc_por_estado", session, {}, 1)
+    expect(data.rows).toHaveLength(1)
+    expect(data.rowLimitApplied).toBe(true)
+  })
+
+  it("oc_por_estado with null confirmedAt renders empty string", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("oc_por_estado", session, {})
+    // PO-1 has confirmedAt: null, PO-2 has confirmedAt set
+    expect(data.rows[0][6]).toBe("") // confirmedAt empty for PO-1
+    expect(data.rows[1][6]).toBe("05-01-2026") // confirmedAt for PO-2
+  })
+
+  // ── Scoped session edge cases ────────────────────────────────────────
+
+  it("gasto_faena scoped to specific worksite", async () => {
+    mockIsGlobalRole.mockReturnValue(false)
+    mockVisibleWorksiteIds.mockReturnValue(["ws-1"])
+    const session = { user: { id: "user-1", email: "user@test.com" } } as Session
+    const data = await getReportData("gasto_faena", session, { worksiteId: "ws-1" })
+    expect(data.filenameBase).toBe("gasto-por-faena")
+    // Mock returns hardcoded data regardless; exercises both wsScope and wsFilter
+    expect(data.rows).toHaveLength(2)
+  })
+
+  it("items_sin_oc scoped to specific worksite", async () => {
+    mockIsGlobalRole.mockReturnValue(false)
+    mockVisibleWorksiteIds.mockReturnValue(["ws-1"])
+    const session = { user: { id: "user-1", email: "user@test.com" } } as Session
+    const data = await getReportData("items_sin_oc", session, { worksiteId: "ws-1" })
+    expect(data.filenameBase).toBe("items-sin-oc")
+    expect(data.rows).toHaveLength(2)
+  })
+
+  it("oc_por_estado scoped to specific worksite", async () => {
+    mockIsGlobalRole.mockReturnValue(false)
+    mockVisibleWorksiteIds.mockReturnValue(["ws-1"])
+    const session = { user: { id: "user-1", email: "user@test.com" } } as Session
+    const data = await getReportData("oc_por_estado", session, { worksiteId: "ws-1" })
+    expect(data.filenameBase).toBe("oc-por-estado")
+    expect(data.rows).toHaveLength(2)
+  })
 })

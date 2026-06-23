@@ -45,18 +45,6 @@ export async function deleteRequest(
   userId: string,
   opts?: DeleteRequestOpts,
 ): Promise<void> {
-  // Pre-fetch file paths antes de la transacción para limpiar disco después
-  const [repuestoFiles, servicioFiles] = await Promise.all([
-    db
-      .select({ filePath: repuestoQuotations.filePath })
-      .from(repuestoQuotations)
-      .where(eq(repuestoQuotations.requestId, requestId)),
-    db
-      .select({ filePath: serviceQuotations.filePath })
-      .from(serviceQuotations)
-      .where(eq(serviceQuotations.requestId, requestId)),
-  ])
-
   // R-25: Pre-fetch file paths before transaction for disk cleanup after commit.
   // The status check and deletion happen inside the transaction to close
   // the TOCTOU window (status could change between read and delete).
@@ -95,13 +83,13 @@ export async function deleteRequest(
     await tx.delete(approvalDecisions).where(eq(approvalDecisions.requestId, requestId))
 
     // 4. Eliminar la solicitud — cascade borra items, attributes, quotations
-    const [{ rowCount }] = await tx
+    const deletedRows = await tx
       .delete(purchaseRequests)
       .where(eq(purchaseRequests.id, requestId))
-      .returning({ rowCount: purchaseRequests.id })
+      .returning({ id: purchaseRequests.id })
 
     // 5. Verify deletion occurred (paranoid check)
-    if (!rowCount) throw new Error("La solicitud fue modificada concurrentemente")
+    if (deletedRows.length === 0) throw new Error("La solicitud fue modificada concurrentemente")
 
     // 6. Auditoría (entityId string sobrevive al borrado)
     await recordAudit(
