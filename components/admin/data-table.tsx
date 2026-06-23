@@ -162,6 +162,7 @@ export function DataTable<T extends Record<string, unknown>>({
                   key={col.key}
                   className={cn(col.width, col.numeric && "text-right")}
                   aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+                  aria-label={!col.label ? "Acciones" : undefined}
                 >
                   {col.sortable ? (
                     <button

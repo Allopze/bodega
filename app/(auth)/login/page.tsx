@@ -81,7 +81,7 @@ export default async function LoginPage() {
       </aside>
 
       {/* ── Login form (right) — lienzo gris + card flotante ── */}
-      <div className="flex items-center justify-center px-6 py-12 lg:px-16 bg-[var(--color-bg)]">
+      <main className="flex items-center justify-center px-6 py-12 lg:px-16 bg-[var(--color-bg)]">
         <div className="w-full max-w-[26rem] rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)] p-8">
           {/* Mobile brand — solo visible sin el hero */}
           <div className="mb-8 lg:hidden">
@@ -100,7 +100,7 @@ export default async function LoginPage() {
             </Suspense>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

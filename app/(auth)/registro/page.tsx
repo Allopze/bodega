@@ -49,7 +49,7 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
   }
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center bg-[var(--color-bg)] px-6 py-12">
+    <main className="min-h-[100dvh] flex items-center justify-center bg-[var(--color-bg)] px-6 py-12">
       <div className="w-full max-w-sm rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)] p-8">
         <div className="mb-8">
           <BrandMark variant="light" size={36} subtitle titleSize="base" />
@@ -79,6 +79,6 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   )
 }

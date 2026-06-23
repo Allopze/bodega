@@ -295,7 +295,7 @@ export default async function TrazabilidadPage({
       <form method="GET" className="mb-4 flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-[var(--color-text-muted)]">Faena</label>
-          <select name="faena" defaultValue={filterFaenaId} className={inputCls}>
+          <select name="faena" defaultValue={filterFaenaId} className={inputCls} aria-label="Filtrar por faena">
             <option value="">Todas las faenas</option>
             {visibleWorksites.map((w) => (
               <option key={w.id} value={w.id}>{w.name}</option>
@@ -304,7 +304,7 @@ export default async function TrazabilidadPage({
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-[var(--color-text-muted)]">Estado</label>
-          <select name="estado" defaultValue={filterEstado} className={inputCls}>
+          <select name="estado" defaultValue={filterEstado} className={inputCls} aria-label="Filtrar por estado">
             <option value="">Todos los estados</option>
             <option value="alert">Alerta: aprobado sin OC</option>
             <option value="pending">Pendiente de compra</option>

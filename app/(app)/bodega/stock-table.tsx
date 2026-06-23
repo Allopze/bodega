@@ -60,6 +60,7 @@ function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: nu
         onChange={(e) => setValue(e.target.value)}
         className="w-20 h-7 text-xs tabular-nums"
         autoFocus
+        aria-label="Stock mínimo"
       />
       <button type="submit" className="h-7 w-7 flex items-center justify-center rounded-sm text-[var(--color-success)] hover:bg-[var(--color-surface-2)] transition-colors">
         <Check size={14} />
@@ -170,7 +171,7 @@ export function StockTable({ worksites }: StockTableProps) {
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-2.5">
                               {lowStock && (
-                                <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-signal)]" aria-label="Stock bajo" />
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-signal)]" role="img" aria-label="Stock bajo" />
                               )}
                               <div className="min-w-0">
                                 <p className="font-medium text-[var(--color-text)]">{s.product?.name ?? s.productId}</p>

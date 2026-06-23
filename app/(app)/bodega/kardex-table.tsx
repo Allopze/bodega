@@ -31,7 +31,7 @@ export function KardexTable({ movements }: KardexTableProps) {
         </p>
       </div>
 
-      <div className="hidden md:block overflow-x-auto">
+      <div className="hidden md:block overflow-x-auto" tabIndex={0} role="region" aria-label="Kardex de movimientos">
         <table className="w-full text-sm" aria-label="Kardex de movimientos de inventario">
           <caption className="sr-only">Últimos {movements.length} movimientos de inventario registrados en todas las faenas</caption>
           <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">

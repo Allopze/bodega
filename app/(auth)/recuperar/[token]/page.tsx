@@ -20,7 +20,7 @@ export default async function ResetPasswordPage({ params }: Props) {
   if (!result.valid) notFound()
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center px-6 py-12 bg-[var(--color-bg)]">
+    <main className="min-h-[100dvh] flex items-center justify-center px-6 py-12 bg-[var(--color-bg)]">
       <div className="w-full max-w-[26rem] rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)] p-8">
         <div className="mb-8">
           <BrandMark variant="light" size={48} subtitle titleSize="base" />
@@ -34,6 +34,6 @@ export default async function ResetPasswordPage({ params }: Props) {
           <ResetPasswordForm token={token} />
         </div>
       </div>
-    </div>
+    </main>
   )
 }

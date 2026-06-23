@@ -188,6 +188,7 @@ export function ReceiptForm({
                   onChange={(e) => setQtys((p) => ({ ...p, [item.id]: parseFloat(e.target.value) || 0 }))}
                   className="h-7 text-sm tabular-nums text-right"
                   disabled={!pending}
+                  aria-label={`Cantidad a recibir de ${item.productName}`}
                 />
               </div>
             )

@@ -79,8 +79,8 @@
 
   --color-text:           oklch(0.180 0.004 90);   /* near black         */
   --color-text-muted:     oklch(0.430 0.005 90);
-  --color-text-subtle:    oklch(0.605 0.005 90);
-  --color-text-faint:     oklch(0.740 0.004 90);
+  --color-text-subtle:    oklch(0.500 0.005 90);   /* WCAG AA ≥ 4.5:1    */
+  --color-text-faint:     oklch(0.560 0.004 90);   /* WCAG AA ≥ 4.5:1    */
 
   /* ── Brand surface ── */
   --color-brand-surface:       oklch(1.000 0 0);

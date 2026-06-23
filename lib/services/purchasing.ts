@@ -592,11 +592,6 @@ export async function closeOrder(
 
 /* ── Delete Order (hard delete: draft/issued/sent) ───────────────────────────── */
 
-import {
-  DELETABLE_ORDER_STATUSES,
-  isOrderDeletable,
-} from "@/lib/services/purchasing.constants"
-
 export {
   DELETABLE_ORDER_STATUSES,
   isOrderDeletable,
