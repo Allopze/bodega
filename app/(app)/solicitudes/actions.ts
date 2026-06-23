@@ -524,9 +524,8 @@ export async function deleteRequestAction(_prev: ActionState, formData: FormData
   if (!canAccessWorksite(session, request.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
   }
-  if (!isRequestDeletable(request.status)) {
-    return { ok: false, message: `No se puede eliminar una solicitud en estado '${request.status}'` }
-  }
+  // R-25: Status check now happens inside deleteRequest's transaction (TOCTOU fix).
+  // No duplicate check here.
 
   try {
     await deleteRequest(requestId, session.user.id, { userEmail: session.user.email ?? undefined })

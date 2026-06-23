@@ -57,17 +57,30 @@ export async function deleteRequest(
       .where(eq(serviceQuotations.requestId, requestId)),
   ])
 
-  const request = await db.query.purchaseRequests.findFirst({
-    where: eq(purchaseRequests.id, requestId),
-    columns: { id: true, code: true, status: true, requestType: true, worksiteId: true, requesterId: true },
-  })
-  if (!request) throw new Error("Solicitud no encontrada")
-  if (!isRequestDeletable(request.status)) {
-    throw new Error(`No se puede eliminar una solicitud en estado '${request.status}'`)
-  }
+  // R-25: Pre-fetch file paths before transaction for disk cleanup after commit.
+  // The status check and deletion happen inside the transaction to close
+  // the TOCTOU window (status could change between read and delete).
+  const [repuestoFiles, servicioFiles] = await Promise.all([
+    db.select({ filePath: repuestoQuotations.filePath })
+      .from(repuestoQuotations)
+      .where(eq(repuestoQuotations.requestId, requestId)),
+    db.select({ filePath: serviceQuotations.filePath })
+      .from(serviceQuotations)
+      .where(eq(serviceQuotations.requestId, requestId)),
+  ])
 
   await db.transaction(async (tx) => {
-    // 1. Obtener todos los request item IDs para limpiar approvalDecisions
+    // 1. Read request INSIDE the transaction to avoid TOCTOU
+    const request = await tx.query.purchaseRequests.findFirst({
+      where: eq(purchaseRequests.id, requestId),
+      columns: { id: true, code: true, status: true, requestType: true, worksiteId: true, requesterId: true },
+    })
+    if (!request) throw new Error("Solicitud no encontrada")
+    if (!isRequestDeletable(request.status)) {
+      throw new Error(`No se puede eliminar una solicitud en estado '${request.status}'`)
+    }
+
+    // 2. Obtener todos los request item IDs para limpiar approvalDecisions
     const items = await tx
       .select({ id: purchaseRequestItems.id })
       .from(purchaseRequestItems)
@@ -75,16 +88,22 @@ export async function deleteRequest(
 
     const itemIds = items.map((i) => i.id)
 
-    // 2. Eliminar approvalDecisions (FK sin cascade referencia requestId e itemId)
+    // 3. Eliminar approvalDecisions (FK sin cascade referencia requestId e itemId)
     if (itemIds.length > 0) {
       await tx.delete(approvalDecisions).where(inArray(approvalDecisions.requestItemId, itemIds))
     }
     await tx.delete(approvalDecisions).where(eq(approvalDecisions.requestId, requestId))
 
-    // 3. Eliminar la solicitud — cascade borra items, attributes, quotations
-    await tx.delete(purchaseRequests).where(eq(purchaseRequests.id, requestId))
+    // 4. Eliminar la solicitud — cascade borra items, attributes, quotations
+    const [{ rowCount }] = await tx
+      .delete(purchaseRequests)
+      .where(eq(purchaseRequests.id, requestId))
+      .returning({ rowCount: purchaseRequests.id })
 
-    // 4. Auditoría (entityId string sobrevive al borrado)
+    // 5. Verify deletion occurred (paranoid check)
+    if (!rowCount) throw new Error("La solicitud fue modificada concurrentemente")
+
+    // 6. Auditoría (entityId string sobrevive al borrado)
     await recordAudit(
       {
         userId,
