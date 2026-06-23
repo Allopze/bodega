@@ -65,7 +65,7 @@ describe("system role permission matrix", () => {
     expect(perms).not.toContain("admin:audit_log")
   })
 
-  it("allows prevencionista oficina to manage catalog, suppliers, users, faenas, workers, and worker deliveries", () => {
+  it("allows Jefa Dpto. Prevención de riesgos to manage catalog, suppliers, users, faenas, workers, and worker deliveries", () => {
     const perms = rolePermissions("rol-prev")
 
     expect(perms).toEqual(expect.arrayContaining([

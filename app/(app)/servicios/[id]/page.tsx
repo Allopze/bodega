@@ -16,6 +16,7 @@ import { buildRequestProgress } from "@/lib/work-queue"
 import { ServiceForm } from "../request-form"
 import { ServiceQuotationPanel } from "./quotation-panel"
 import { SERVICE_ATTRIBUTE_NAMES } from "@/lib/validation/servicios"
+import { DeleteRequestButton } from "@/components/solicitudes/delete-request-button"
 
 export const metadata: Metadata = { title: "Solicitud de servicios" }
 
@@ -144,7 +145,20 @@ export default async function ServicioPage({ params }: { params: Promise<{ id: s
       <PageHeader
         title={`Solicitud ${request.code}`}
         description={`${request.worksite?.name ?? ""} · Servicios externos`}
-        actions={<StateBadge state={request.status} entity="request" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <StateBadge state={request.status} entity="request" />
+            <DeleteRequestButton
+              requestId={request.id}
+              requestCode={request.code}
+              requestStatus={request.status}
+              requesterId={request.requesterId}
+              currentUserId={session.user.id}
+              canDeleteAny={can(session, "requests:delete")}
+              redirectTo="/servicios"
+            />
+          </div>
+        }
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },

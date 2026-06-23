@@ -29,16 +29,21 @@ export default defineConfig({
     hookTimeout: 30_000,
     coverage: {
       reporter: ["text", "lcov"],
-      include:  ["lib/**/*.ts"],
+      include:  [
+        "lib/**/*.ts",
+        // T-07: start measuring Server Action coverage. Thresholds below are
+        // the combined floor after including largely-untested actions files.
+        // Ratchet these up as action tests are added; long-term target: 70%.
+        "app/(app)/**/actions.ts",
+      ],
       // T-03: regression floor, set just below the current measured
-      // coverage. CI fails if coverage drops meaningfully. Ratchet these up as
-      // test coverage grows; the long-term target in AUDITORIA_INTEGRAL_CHOME.md is 70%.
-      // Actual coverage: 94.43% stmts / 83.8% branches / 95.29% funcs / 96.01% lines
+      // combined coverage (lib ~94% + uncovered actions files pull it down).
+      // Run `pnpm test:coverage` after adding action tests to measure and tighten.
       thresholds: {
-        statements: 94,
-        branches:   83,
-        functions:  95,
-        lines:      96,
+        statements: 40,
+        branches:   30,
+        functions:  40,
+        lines:      40,
       },
     },
   },

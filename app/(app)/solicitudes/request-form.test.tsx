@@ -19,6 +19,7 @@ vi.mock("./actions", () => ({
   saveDraft: vi.fn(async () => INITIAL_STATE),
   submitRequest: vi.fn(async () => INITIAL_STATE),
   cancelRequest: vi.fn(async () => INITIAL_STATE),
+  deleteRequestAction: vi.fn(async () => INITIAL_STATE),
 }))
 
 vi.mock("@/components/admin/submit-button", () => ({

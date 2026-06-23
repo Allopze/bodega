@@ -25,7 +25,7 @@ export const repuestosModule = {
     { roleSlug: "secretaria", permission: "repuestos:view_own" },
     { roleSlug: "secretaria", permission: "repuestos:view_all" },
     { roleSlug: "secretaria", permission: "repuestos:submit" },
-    // Prevencionista oficina: crea y envía para sus faenas
+    // Jefa Dpto. Prevención de riesgos: crea y envía para sus faenas
     { roleSlug: "prevencionista", permission: "repuestos:create" },
     { roleSlug: "prevencionista", permission: "repuestos:view_own" },
     { roleSlug: "prevencionista", permission: "repuestos:view_all" },

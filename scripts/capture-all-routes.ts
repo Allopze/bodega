@@ -114,6 +114,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-trabajadores", path: "/admin/trabajadores", auth: true },
   { slug: "admin-usuarios", path: "/admin/usuarios", auth: true },
   { slug: "forbidden", path: "/forbidden", auth: true },
+  { slug: "soporte", path: "/soporte", auth: true },
+  { slug: "soporte-nuevo", path: "/soporte/nuevo", auth: true },
+  { slug: "soporte-detalle", path: "/soporte/sop-audit-1", auth: true },
 ]
 
 const seedCoverage: CaptureSeedArea[] = [
@@ -138,6 +141,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "admin-auditoria", fixtures: ["eventos create", "status_change", "update"] },
   { section: "admin-configuracion", fixtures: ["datos empresa", "pie OC", "límite PDF"] },
   { section: "notificaciones", fixtures: ["notificación no leída", "notificación leída"] },
+  { section: "soporte", fixtures: ["reporte de soporte abierto", "reporte resuelto"] },
 ]
 
 export function getCaptureRoutes() {

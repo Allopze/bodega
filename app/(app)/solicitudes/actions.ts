@@ -21,6 +21,7 @@ import { addQuotation, persistRepuestoDraft, submitRepuestoRequest } from "@/lib
 import { addServiceQuotation, persistServiceDraft, submitServiceRequest } from "@/lib/services/servicios"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { persistRequestWithDiff } from "@/lib/services/requests-draft"
+import { deleteRequest, isRequestDeletable } from "@/lib/services/requests-delete"
 
 const REVALIDATE = "/solicitudes"
 
@@ -431,4 +432,43 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
 
   revalidatePath(REVALIDATE)
   redirect(REVALIDATE)
+}
+
+// ── Delete a request (hard delete, non-approved statuses) ─────────────────────
+
+export async function deleteRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("requests:view_own") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const requestId = formData.get("requestId") as string
+  if (!requestId) return { ok: false, message: "ID requerido" }
+
+  const request = await db.query.purchaseRequests.findFirst({
+    where: eq(purchaseRequests.id, requestId),
+  })
+  if (!request) return { ok: false, message: "Solicitud no encontrada" }
+
+  // Owner puede eliminar sus propias; requests:delete permite eliminar cualquiera
+  const isOwner = request.requesterId === session.user.id
+  const canDeleteAny = can(session, "requests:delete")
+  if (!isOwner && !canDeleteAny) {
+    return { ok: false, message: "Solo puedes eliminar tus propias solicitudes" }
+  }
+  if (!canAccessWorksite(session, request.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
+  }
+  if (!isRequestDeletable(request.status)) {
+    return { ok: false, message: `No se puede eliminar una solicitud en estado '${request.status}'` }
+  }
+
+  try {
+    await deleteRequest(requestId, session.user.id, { userEmail: session.user.email ?? undefined })
+  } catch (e) {
+    logger.error("[deleteRequestAction]", e)
+    return { ok: false, message: "Error al eliminar la solicitud" }
+  }
+
+  revalidatePath(REVALIDATE)
+  return { ok: true, message: "Solicitud eliminada correctamente" }
 }

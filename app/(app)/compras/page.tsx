@@ -87,6 +87,7 @@ export default async function ComprasPage({
   const pageHref = (page: number) => buildPaginationHref("/compras", sp, page)
 
   const canCreateOrder = can(session, "purchasing:create_order")
+  const canDeleteOrder = can(session, "purchasing:delete_order")
   const headerSignals: HeaderSignal[] = [
     { key: "no-oc", label: "Sin OC", value: pendingCount, href: canCreateOrder ? "/compras/nueva" : undefined, tone: "signal" },
   ]
@@ -105,7 +106,7 @@ export default async function ComprasPage({
           }
           headerActions={<HeaderSignals signals={headerSignals} />}
         />
-        <OcList orders={[]} pendingCount={0} canCreate={canCreateOrder} createdCount={createdCount} />
+        <OcList orders={[]} pendingCount={0} canCreate={canCreateOrder} canDelete={canDeleteOrder} createdCount={createdCount} />
 
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
@@ -184,6 +185,7 @@ export default async function ComprasPage({
         orders={rows}
         pendingCount={pendingCount}
         canCreate={canCreateOrder}
+        canDelete={canDeleteOrder}
         createdCount={createdCount}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />

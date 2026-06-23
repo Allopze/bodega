@@ -16,6 +16,7 @@ import { buildRequestProgress } from "@/lib/work-queue"
 import { RepuestoForm } from "../request-form"
 import { QuotationPanel } from "./quotation-panel"
 import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
+import { DeleteRequestButton } from "@/components/solicitudes/delete-request-button"
 
 export const metadata: Metadata = { title: "Solicitud de repuestos" }
 
@@ -144,7 +145,20 @@ export default async function RepuestoPage({ params }: { params: Promise<{ id: s
       <PageHeader
         title={`Solicitud ${request.code}`}
         description={`${request.worksite?.name ?? ""} · Repuestos y maquinaria`}
-        actions={<StateBadge state={request.status} entity="request" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <StateBadge state={request.status} entity="request" />
+            <DeleteRequestButton
+              requestId={request.id}
+              requestCode={request.code}
+              requestStatus={request.status}
+              requesterId={request.requesterId}
+              currentUserId={session.user.id}
+              canDeleteAny={can(session, "requests:delete")}
+              redirectTo="/repuestos"
+            />
+          </div>
+        }
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },

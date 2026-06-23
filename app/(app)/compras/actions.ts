@@ -7,7 +7,7 @@ import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseReque
 import { count, eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { createOrdersBySupplier, issueOrder, markOrderSent, cancelOrder } from "@/lib/services/purchasing"
+import { createOrdersBySupplier, issueOrder, markOrderSent, cancelOrder, deleteOrder, isOrderDeletable } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
 import { getUserIdsWithPermission, notifyManyUser, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
@@ -361,5 +361,45 @@ export async function cancelOrderAction(
   } catch (e) {
     logger.error("[cancelOrderAction]", e)
     return { ok: false, message: dbErrMsg(e, "Error al anular orden") }
+  }
+}
+
+// ── Delete Order (hard delete: draft/issued/sent) ──────────────────────────────
+
+export async function deleteOrderAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("purchasing:delete_order") }
+  catch { return { ok: false, message: "Sin permisos para eliminar la orden" } }
+
+  const orderId = formData.get("orderId") as string | null
+  if (!orderId) return { ok: false, message: "Orden no especificada" }
+
+  const accessError = await assertOrderAccess(session, orderId)
+  if (accessError) return accessError
+
+  const order = await db.query.purchaseOrders.findFirst({
+    where: eq(purchaseOrders.id, orderId),
+    columns: { status: true },
+  })
+  if (!order) return { ok: false, message: "Orden no encontrada" }
+  if (!isOrderDeletable(order.status)) {
+    return { ok: false, message: `No se puede eliminar una orden en estado '${order.status}'` }
+  }
+
+  try {
+    await deleteOrder(
+      orderId,
+      session.user.id,
+      serviceWorksiteScope(session),
+      { userEmail: session.user.email ?? undefined },
+    )
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Orden de compra eliminada correctamente" }
+  } catch (e) {
+    logger.error("[deleteOrderAction]", e)
+    return { ok: false, message: dbErrMsg(e, "Error al eliminar orden") }
   }
 }

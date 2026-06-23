@@ -96,7 +96,7 @@ export default async function SolicitudesPage({
             ]} />
           }
         />
-        <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />
+        <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -130,7 +130,10 @@ export default async function SolicitudesPage({
     itemCount:      cntMap[r.id] ?? 0,
     submittedAt:    r.submittedAt,
     createdAt:      r.createdAt,
+    requesterId:    r.requesterId,
   }))
+
+  const canDeleteAny = can(session, "requests:delete")
 
   return (
     <PageContainer>
@@ -144,7 +147,13 @@ export default async function SolicitudesPage({
           ]} />
         }
       />
-      <RequestList requests={rows} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />
+      <RequestList
+        requests={rows}
+        canCreate={can(session, "requests:create")}
+        hasWorksites={hasWorksites}
+        currentUserId={session.user.id}
+        canDeleteAny={canDeleteAny}
+      />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )

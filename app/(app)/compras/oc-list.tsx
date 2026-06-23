@@ -13,7 +13,11 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { formatCLP, formatDate } from "@/lib/utils"
-import { issueOrderAction, sendOrderAction } from "./actions"
+import { issueOrderAction, sendOrderAction, deleteOrderAction } from "./actions"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Trash } from "@phosphor-icons/react"
+import { useTransition } from "react"
+import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
 import type { ActionState } from "@/lib/validation/operations"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
@@ -59,7 +63,7 @@ const COLUMNS = [
 
 /* ── Row with inline actions ─────────────────────────────────────────────────── */
 
-function OcTableRow({ row }: { row: OcRow }) {
+function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?: boolean }) {
   const router = useRouter()
   const [issueState, issueAction] = useActionState<ActionState, FormData>(
     issueOrderAction, INITIAL_STATE,
@@ -67,6 +71,17 @@ function OcTableRow({ row }: { row: OcRow }) {
   const [sendState, sendAction] = useActionState<ActionState, FormData>(
     sendOrderAction, INITIAL_STATE,
   )
+  const [deleteState, deleteAction] = useActionState<ActionState, FormData>(
+    deleteOrderAction, INITIAL_STATE,
+  )
+  const [deletePending, startDeleteTransition] = useTransition()
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!deleteState.message) return
+    if (deleteState.ok) toast.success(deleteState.message)
+    else toast.error(deleteState.message)
+  }, [deleteState])
 
   React.useEffect(() => {
     if (issueState.ok && issueState.message) toast.success(issueState.message)
@@ -149,6 +164,35 @@ function OcTableRow({ row }: { row: OcRow }) {
               />
             </form>
           )}
+          {canDelete && (DELETABLE_ORDER_STATUSES as readonly string[]).includes(row.status) && (
+            <>
+              <button
+                type="button"
+                disabled={deletePending}
+                onClick={(e) => { e.stopPropagation(); setDeleteOpen(true) }}
+                className="inline-flex items-center justify-center rounded p-1 text-text-subtle hover:text-danger hover:bg-danger-tint transition-colors disabled:opacity-40"
+                title="Eliminar orden"
+                aria-label={`Eliminar OC ${row.code}`}
+              >
+                <Trash size={15} />
+              </button>
+              <ConfirmDialog
+                open={deleteOpen}
+                onOpenChange={setDeleteOpen}
+                title="¿Eliminar orden de compra?"
+                description={`La orden ${row.code} será eliminada permanentemente junto con sus ítems y facturas adjuntas. Los ítems de la solicitud original volverán a estado pendiente. Esta acción no se puede deshacer.`}
+                confirmLabel="Eliminar"
+                variant="destructive"
+                loading={deletePending}
+                onConfirm={() => {
+                  const fd = new FormData()
+                  fd.set("orderId", row.id)
+                  startDeleteTransition(() => deleteAction(fd))
+                  setDeleteOpen(false)
+                }}
+              />
+            </>
+          )}
         </div>
       </TableCell>
       <TableCell className="text-xs text-[var(--color-text-subtle)]">
@@ -164,11 +208,13 @@ export function OcList({
   orders,
   pendingCount,
   canCreate,
+  canDelete = false,
   createdCount = 0,
 }: {
   orders:       OcRow[]
   pendingCount: number
   canCreate:    boolean
+  canDelete?:   boolean
   createdCount?: number
 }) {
   return (
@@ -230,7 +276,7 @@ export function OcList({
             </Button>
           ) : undefined
         }
-        renderRow={(row) => <OcTableRow key={(row as unknown as OcRow).id} row={row as unknown as OcRow} />}
+        renderRow={(row) => <OcTableRow key={(row as unknown as OcRow).id} row={row as unknown as OcRow} canDelete={canDelete} />}
       />
     </div>
   )

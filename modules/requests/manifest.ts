@@ -7,6 +7,7 @@ export const requestsModule = {
     "requests:view_own",
     "requests:view_all",
     "requests:submit",
+    "requests:delete",
   ] as const,
   nav: [
     {
@@ -28,11 +29,14 @@ export const requestsModule = {
     { roleSlug: "administrador",   permission: "requests:view_own" },
     { roleSlug: "administrador",   permission: "requests:view_all" },
     { roleSlug: "administrador",   permission: "requests:submit" },
+    { roleSlug: "administrador",   permission: "requests:delete" },
     { roleSlug: "jefa_chome",      permission: "requests:view_all" },
+    { roleSlug: "jefa_chome",      permission: "requests:delete" },
     { roleSlug: "secretaria",      permission: "requests:create" },
     { roleSlug: "secretaria",      permission: "requests:view_own" },
     { roleSlug: "secretaria",      permission: "requests:view_all" },
     { roleSlug: "secretaria",      permission: "requests:submit" },
+    { roleSlug: "secretaria",      permission: "requests:delete" },
     { roleSlug: "prevencionista",  permission: "requests:create" },
     { roleSlug: "prevencionista",  permission: "requests:view_own" },
     { roleSlug: "prevencionista",  permission: "requests:view_all" },

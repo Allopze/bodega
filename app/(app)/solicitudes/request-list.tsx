@@ -3,16 +3,23 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Plus, Warning } from "@phosphor-icons/react"
+import { Plus, Warning, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
+import { toast } from "@/lib/toast"
+import { useActionState, useTransition } from "react"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
+import { deleteRequestAction } from "./actions"
+import { DELETABLE_REQUEST_STATUSES } from "@/lib/services/requests-delete.constants"
+import { INITIAL_STATE } from "@/components/admin/form-state"
+import type { ActionState } from "@/lib/validation/operations"
 
 export interface RequestRow {
   id:            string
@@ -24,6 +31,7 @@ export interface RequestRow {
   itemCount:     number
   submittedAt:   string | null
   createdAt:     string
+  requesterId:   string
 }
 
 const COLUMNS = [
@@ -34,6 +42,7 @@ const COLUMNS = [
   { key: "itemCount",     label: "Ítems",      sortable: true,  numeric: true, width: "w-20" },
   { key: "status",        label: "Estado",     sortable: true,  width: "w-36" },
   { key: "createdAt",     label: "Fecha",      sortable: true,  width: "w-32" },
+  { key: "_actions",      label: "",           sortable: false, width: "w-10" },
 ]
 
 const URGENCY_LABELS: Record<string, string> = {
@@ -72,14 +81,62 @@ function detailHref(r: RequestRow): string {
   return `${DETAIL_BASE[r.requestType] ?? "/solicitudes"}/${r.id}`
 }
 
+function DeleteRequestButton({ requestId, code }: { requestId: string; code: string }) {
+  const [state, action] = useActionState<ActionState, FormData>(deleteRequestAction, INITIAL_STATE)
+  const [pending, startTransition] = useTransition()
+  const [open, setOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!state.message) return
+    if (state.ok) toast.success(state.message)
+    else toast.error(state.message)
+  }, [state])
+
+  function handleConfirm() {
+    const fd = new FormData()
+    fd.set("requestId", requestId)
+    startTransition(() => action(fd))
+    setOpen(false)
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={(e) => { e.stopPropagation(); setOpen(true) }}
+        className="inline-flex items-center justify-center rounded p-1 text-text-subtle hover:text-danger hover:bg-danger-tint transition-colors disabled:opacity-40"
+        title="Eliminar solicitud"
+        aria-label={`Eliminar solicitud ${code}`}
+      >
+        <Trash size={15} />
+      </button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="¿Eliminar solicitud?"
+        description={`La solicitud ${code} será eliminada permanentemente junto con todos sus ítems y archivos adjuntos. Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        variant="destructive"
+        loading={pending}
+        onConfirm={handleConfirm}
+      />
+    </>
+  )
+}
+
 export function RequestList({
   requests,
   canCreate,
   hasWorksites = true,
+  currentUserId,
+  canDeleteAny = false,
 }: {
   requests: RequestRow[]
   canCreate: boolean
   hasWorksites?: boolean
+  currentUserId: string
+  canDeleteAny?: boolean
 }) {
   const [showWarningModal, setShowWarningModal] = React.useState(false)
   const router = useRouter()
@@ -170,6 +227,8 @@ export function RequestList({
         renderRow={(row) => {
           const r = row as unknown as RequestRow
           const href = detailHref(r)
+          const canDelete = (canDeleteAny || r.requesterId === currentUserId)
+            && (DELETABLE_REQUEST_STATUSES as readonly string[]).includes(r.status)
           return (
             <TableRow
               key={r.id}
@@ -209,6 +268,11 @@ export function RequestList({
               </TableCell>
               <TableCell className="text-xs text-[var(--color-text-subtle)]">
                 {formatDate(r.submittedAt ?? r.createdAt)}
+              </TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
+                {canDelete && (
+                  <DeleteRequestButton requestId={r.id} code={r.code} />
+                )}
               </TableCell>
             </TableRow>
           )

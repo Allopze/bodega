@@ -18,6 +18,7 @@ const dynamicSamples: Record<string, string> = {
   "/solicitudes/[id]": "/solicitudes/req-audit-1",
   "/sst/[id]/print": "/sst/sst-audit-1/print",
   "/ppa/result/[token]": "/ppa/result/capture-ppa-token",
+  "/soporte/[id]": "/soporte/sop-audit-1",
 }
 
 describe("capture-all-routes route inventory", () => {
@@ -51,6 +52,7 @@ describe("capture-all-routes route inventory", () => {
       "admin-auditoria",
       "admin-configuracion",
       "notificaciones",
+      "soporte",
     ]))
     expect(getCaptureSeedCoverage().every((area) => area.fixtures.length > 0)).toBe(true)
   })

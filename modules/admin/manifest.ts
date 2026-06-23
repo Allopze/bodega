@@ -50,7 +50,7 @@ export const adminModule = {
     { roleSlug: "secretaria", permission: "admin:workers" },
     { roleSlug: "secretaria", permission: "admin:products" },
     { roleSlug: "secretaria", permission: "admin:suppliers" },
-    // Prevencionista oficina
+    // Jefa Dpto. Prevención de riesgos
     { roleSlug: "prevencionista", permission: "admin:users" },
     { roleSlug: "prevencionista", permission: "admin:worksites" },
     { roleSlug: "prevencionista", permission: "admin:workers" },

@@ -45,7 +45,7 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
       <SheetContent>
-        <form action={formAction}>
+        <form action={formAction} className="flex flex-col flex-1 min-h-0">
           {isEdit && <input type="hidden" name="id" value={editCategory.id} />}
           <SheetHeader>
             <div>

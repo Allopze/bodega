@@ -25,7 +25,7 @@ export const serviciosModule = {
     { roleSlug: "secretaria", permission: "servicios:view_own" },
     { roleSlug: "secretaria", permission: "servicios:view_all" },
     { roleSlug: "secretaria", permission: "servicios:submit" },
-    // Prevencionista oficina: crea y envía para sus faenas
+    // Jefa Dpto. Prevención de riesgos: crea y envía para sus faenas
     { roleSlug: "prevencionista", permission: "servicios:create" },
     { roleSlug: "prevencionista", permission: "servicios:view_own" },
     { roleSlug: "prevencionista", permission: "servicios:view_all" },

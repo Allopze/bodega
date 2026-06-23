@@ -4,7 +4,7 @@ export const SYSTEM_ROLES = [
   { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total técnico del sistema" },
   { id: "rol-jefa", name: "jefa_chome", label: "Jefatura", description: "Revisa, aprueba y administra la operación" },
   { id: "rol-sec", name: "secretaria", label: "Secretaría", description: "Revisa, aprueba y gestiona operación diaria" },
-  { id: "rol-prev", name: "prevencionista", label: "Prevencionista oficina", description: "Revisa y aprueba solicitudes" },
+  { id: "rol-prev", name: "prevencionista", label: "Jefa Dpto. Prevención de riesgos", description: "Revisa y aprueba solicitudes" },
   { id: "rol-sol-faena", name: "solicitante_faena", label: "Solicitante faena", description: "Solicita ítems para sus faenas asignadas" },
   { id: "rol-prev-faena", name: "prevencionista_faena", label: "Prevencionista faena", description: "Evalúa EPP, recibe en faena y gestiona stock en sus faenas asignadas" },
   { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas" },
@@ -15,11 +15,13 @@ export const SYSTEM_PERMISSIONS = [
   { id: "p-req-own", name: "requests:view_own", module: "requests", description: "Ver solicitudes propias" },
   { id: "p-req-all", name: "requests:view_all", module: "requests", description: "Ver todas las solicitudes" },
   { id: "p-req-submit", name: "requests:submit", module: "requests", description: "Enviar solicitudes a aprobación" },
+  { id: "p-req-delete", name: "requests:delete", module: "requests", description: "Eliminar solicitudes no aprobadas" },
   { id: "p-apr", name: "approvals:approve", module: "approvals", description: "Revisar y aprobar solicitudes" },
   { id: "p-pur-view", name: "purchasing:view", module: "purchasing", description: "Ver módulo de órdenes de compra" },
   { id: "p-pur-create", name: "purchasing:create_order", module: "purchasing", description: "Crear órdenes de compra" },
   { id: "p-pur-send", name: "purchasing:send_order", module: "purchasing", description: "Enviar OC a proveedor" },
   { id: "p-pur-sup", name: "purchasing:manage_suppliers", module: "purchasing", description: "Administrar proveedores" },
+  { id: "p-pur-delete", name: "purchasing:delete_order", module: "purchasing", description: "Eliminar órdenes de compra no recibidas" },
   { id: "p-rec-reg-office", name: "receiving:register_office", module: "receiving", description: "Registrar llegada a oficina" },
   { id: "p-rec-reg-faena", name: "receiving:register_faena", module: "receiving", description: "Registrar recepción en faena" },
   { id: "p-rec-view", name: "receiving:view", module: "receiving", description: "Ver recepciones" },
@@ -64,8 +66,10 @@ export const SYSTEM_PERMISSIONS = [
 
 const JEFATURA_PERMISSION_IDS = [
   "p-req-all",
+  "p-req-delete",
   "p-apr",
   "p-pur-view",
+  "p-pur-delete",
   "p-rec-view",
   "p-wh-stock",
   "p-rep-view",
@@ -74,9 +78,9 @@ const JEFATURA_PERMISSION_IDS = [
 ]
 
 const SECRETARIA_PERMISSION_IDS = [
-  "p-req-create", "p-req-own", "p-req-all", "p-req-submit",
+  "p-req-create", "p-req-own", "p-req-all", "p-req-submit", "p-req-delete",
   "p-apr",
-  "p-pur-view", "p-pur-create", "p-pur-send", "p-pur-sup",
+  "p-pur-view", "p-pur-create", "p-pur-send", "p-pur-sup", "p-pur-delete",
   "p-rec-reg-office", "p-rec-reg-faena", "p-rec-view",
   "p-wh-stock", "p-wh-mov",
   "p-rep-view",

@@ -14,6 +14,8 @@
  * masked. This keeps PII (RUT, email, hashed passwords, tokens) out of logs
  * that may be shipped to an external SaaS — relevant for Ley 19.628 (Chile) / GDPR.
  */
+import { sentry } from "@/lib/sentry"
+
 const LEVEL = process.env.NODE_ENV === "production" ? "warn" : "debug"
 
 const SENSITIVE_KEY = /^(password|hashed_?password|token|token_?hash|secret|authorization|cookie|rut|email|phone|telefono)$/i
@@ -121,5 +123,14 @@ export const logger = {
 
   error(...args: unknown[]) {
     writeLog("error", args)
+    // Forward errors to Sentry for production observability. The sentry wrapper
+    // is a no-op when SENTRY_DSN is not set or NODE_ENV !== "production".
+    const firstError = args.find((a) => a instanceof Error) as Error | undefined
+    if (firstError) {
+      sentry.captureException(firstError)
+    } else {
+      const msg = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")
+      sentry.captureMessage(msg, "error")
+    }
   },
 }

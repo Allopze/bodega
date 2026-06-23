@@ -115,19 +115,19 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
               <div
                 role="status"
                 aria-live="polite"
-                className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4"
+                className="rounded-(--radius) border border-(--color-warning-line) bg-(--color-warning-tint) p-4"
               >
                 <div className="flex items-start gap-2">
-                  <Envelope size={16} weight="bold" className="mt-0.5 text-[var(--color-warning)]" />
+                  <Envelope size={16} weight="bold" className="mt-0.5 text-(--color-warning)" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-[var(--color-text)]">
+                    <p className="text-sm font-medium text-(--color-text)">
                       Enlace de registro
                     </p>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    <p className="mt-1 text-xs text-(--color-text-muted)">
                       Caduca automáticamente. No lo pegues en canales públicos.
                     </p>
                     <div className="mt-3 flex items-stretch gap-2">
-                      <code className="flex-1 break-all rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs font-mono text-[var(--color-text)]">
+                      <code className="flex-1 break-all rounded-(--radius-sm) border border-(--color-border) bg-surface px-2 py-1.5 text-xs font-mono text-(--color-text)">
                         {pending.inviteUrl}
                       </code>
                       <Button
@@ -164,7 +164,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
             </SheetFooter>
           </>
         ) : (
-          <form action={formAction}>
+          <form action={formAction} className="flex flex-col flex-1 min-h-0">
             {selectedRoles.map((roleId) => (
               <input key={roleId} type="hidden" name="roleIds" value={roleId} />
             ))}
@@ -187,7 +187,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
 
             <SheetBody>
               {state.message && !state.ok && !state.fieldErrors && (
-                <p className="mb-4 text-sm text-[var(--color-danger)]">{state.message}</p>
+                <p className="mb-4 text-sm text-(--color-danger)">{state.message}</p>
               )}
 
               <FieldGroup className="gap-4">
@@ -235,7 +235,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                   Roles
                 </p>
                 {state.fieldErrors?.roleIds?.[0] && (
-                  <p className="mb-2 text-xs text-[var(--color-danger)]">{state.fieldErrors.roleIds[0]}</p>
+                  <p className="mb-2 text-xs text-(--color-danger)">{state.fieldErrors.roleIds[0]}</p>
                 )}
                 <div className="flex flex-wrap gap-2">
                   {allRoles.map((role) => {
@@ -246,11 +246,11 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                         type="button"
                         onClick={() => toggleRole(role.id)}
                         className={[
-                          "rounded-[var(--radius)] border px-3 py-1 text-xs",
-                          "transition-[background-color,border-color,color] duration-[var(--duration-fast)] ",
+                          "rounded-(--radius) border px-3 py-1.5 text-xs font-sans",
+                          "transition-all duration-(--duration-fast) ease-[var(--ease-out)] cursor-pointer select-none",
                           checked
-                            ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] font-medium text-[var(--color-primary-ink)]"
-                            : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
+                            ? "border-(--color-primary) bg-(--color-primary-tint) font-semibold text-(--color-primary-ink) shadow-(--shadow-xs)"
+                            : "border-(--color-border) bg-surface text-(--color-text-muted) hover:bg-surface-2 hover:border-(--color-border-strong) hover:text-(--color-text)",
                         ].join(" ")}
                       >
                         {role.label}
@@ -265,12 +265,12 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                   Faenas asignadas
                 </p>
                 {state.fieldErrors?.worksiteAssignments?.[0] && (
-                  <p className="mb-2 text-xs text-[var(--color-danger)]">
+                  <p className="mb-2 text-xs text-(--color-danger)">
                     {state.fieldErrors.worksiteAssignments[0]}
                   </p>
                 )}
                 {allWorksites.length === 0 && (
-                  <p className="text-xs text-[var(--color-text-subtle)]">No hay faenas registradas</p>
+                  <p className="text-xs text-(--color-text-subtle)">No hay faenas registradas</p>
                 )}
                 <div className="flex flex-col gap-1">
                   {allWorksites.map((worksite) => {
@@ -279,17 +279,23 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                     return (
                       <label
                         key={worksite.id}
-                        className="group flex cursor-pointer items-center gap-3 rounded-[var(--radius)] px-2 py-1.5 hover:bg-[var(--color-surface-2)]"
+                        className={[
+                          "group flex cursor-pointer items-center gap-3 rounded-(--radius) px-2 py-1.5 select-none",
+                          "transition-colors duration-(--duration-fast) ease-[var(--ease-out)]",
+                          isChecked
+                            ? "bg-(--color-primary-tint) hover:bg-(--color-primary-tint)"
+                            : "hover:bg-surface-2",
+                        ].join(" ")}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => toggleWorksite(worksite.id)}
-                          className="h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+                          className="h-4 w-4 shrink-0 accent-(--color-primary) cursor-pointer"
                         />
-                        <span className="flex-1 text-sm text-[var(--color-text)]">
+                        <span className="flex-1 text-sm text-(--color-text)">
                           {worksite.name}
-                          <span className="ml-1.5 font-mono text-xs text-[var(--color-text-subtle)]">
+                          <span className="ml-1.5 font-mono text-xs text-(--color-text-subtle)">
                             {worksite.code}
                           </span>
                         </span>
@@ -298,10 +304,11 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                             type="button"
                             onClick={(e) => { e.preventDefault(); setPrimaryWorksiteId(worksite.id) }}
                             className={[
-                              "rounded-[var(--radius-sm)] border px-2 py-0.5 text-xs transition-colors duration-[var(--duration-fast)]",
+                              "rounded-(--radius-sm) border px-2 py-0.5 text-xs cursor-pointer select-none",
+                              "transition-all duration-(--duration-fast) ease-[var(--ease-out)]",
                               isPrimary
-                                ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                                : "border-[var(--color-border)] bg-transparent text-[var(--color-text-subtle)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]",
+                                ? "border-(--color-primary) bg-(--color-primary) text-white font-medium shadow-(--shadow-xs)"
+                                : "border-(--color-border) bg-surface text-(--color-text-subtle) hover:border-(--color-primary) hover:text-(--color-primary) hover:bg-surface-2",
                             ].join(" ")}
                           >
                             {isPrimary ? "Principal" : "Marcar principal"}

@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
 import { purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
 import { and, desc, eq } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
+import { requirePermission, can } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -100,18 +100,19 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
   const reqItemMap = Object.fromEntries(requestItemRows.map((ri) => [ri.id, ri]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
 
-  const canManage    = session.user.permissions.includes("purchasing:create_order")
-  const canSend      = session.user.permissions.includes("purchasing:send_order")
-  const canInvoice   = canSend   // purchasing:send_order gate for invoice management
+  const canManage      = session.user.permissions.includes("purchasing:create_order")
+  const canSend        = session.user.permissions.includes("purchasing:send_order")
+  const canDeleteOrder = can(session, "purchasing:delete_order")
+  const canInvoice     = canSend   // purchasing:send_order gate for invoice management
   const canRegisterFaenaReception = session.user.permissions.includes("receiving:register_faena")
   const pendingFaenaQuantity = order.items.reduce(
     (total, item) => total + Math.max(0, (item.quantityOfficeReceived ?? 0) - (item.quantityReceived ?? 0)),
     0,
   )
   const canShowOrderActions =
-    (order.status === "draft" && canManage) ||
-    (order.status === "issued" && (canManage || canSend)) ||
-    (order.status === "sent" && canManage)
+    (order.status === "draft" && (canManage || canDeleteOrder)) ||
+    (order.status === "issued" && (canManage || canSend || canDeleteOrder)) ||
+    (order.status === "sent" && (canManage || canDeleteOrder))
 
   return (
     <PageContainer width="workbench">
@@ -307,9 +308,11 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
               <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Acciones</h2>
               <OcActions
                 orderId={order.id}
+                orderCode={order.code}
                 status={order.status}
                 canManage={canManage}
                 canSend={canSend}
+                canDelete={canDeleteOrder}
               />
             </section>
           )}

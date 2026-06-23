@@ -70,8 +70,17 @@ COPY --from=build /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
-# Ensure storage dir exists and is writable
-RUN mkdir -p /app/storage && chown -R nextjs:nodejs /app/storage
+# Ensure storage + the Next.js ISR/prerender cache dirs exist and are writable.
+# The standalone output copies .next/static but not a cache dir; at runtime the
+# `nextjs` user writes the incremental cache to /app/.next/cache, which would
+# fail with EACCES if the dir is missing or root-owned.
+# /data/storage is the docker-compose volume mountpoint (STORAGE_PATH); it must be
+# pre-created and owned by nextjs so that a freshly created named volume inherits
+# UID/GID 1001 (Docker copies the mountpoint's ownership into an empty volume).
+# Otherwise the volume defaults to root and `mkdir /data/storage/<repuestos|...>`
+# at runtime fails with EACCES.
+RUN mkdir -p /app/storage /app/.next/cache /data/storage && \
+    chown -R nextjs:nodejs /app/storage /app/.next /data/storage
 
 USER nextjs
 

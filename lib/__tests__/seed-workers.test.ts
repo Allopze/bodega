@@ -3,7 +3,7 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { loadSeedWorkerData } from "@/db/seed/workers"
 
-const sourcePath = path.join(process.cwd(), "trabajadores_por_faena_actualizado.md")
+const sourcePath = path.join(process.cwd(), "db/seed/trabajadores_por_faena_actualizado.md")
 const hasSourceFile = fs.existsSync(sourcePath)
 const describeIf = hasSourceFile ? describe : describe.skip
 

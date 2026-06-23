@@ -6,21 +6,32 @@ import { toast } from "@/lib/toast"
 import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { issueOrderAction, sendOrderAction, cancelOrderAction } from "../actions"
+import { issueOrderAction, sendOrderAction, cancelOrderAction, deleteOrderAction } from "../actions"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Trash } from "@phosphor-icons/react"
+import { useTransition } from "react"
+import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
+import { useRouter } from "next/navigation"
 import type { ActionState } from "@/lib/validation/operations"
 
 export function OcActions({
   orderId,
+  orderCode,
   status,
   canManage,
   canSend,
+  canDelete = false,
 }: {
-  orderId:   string
-  status:    string
-  canManage: boolean
-  canSend:   boolean
+  orderId:    string
+  orderCode:  string
+  status:     string
+  canManage:  boolean
+  canSend:    boolean
+  canDelete?: boolean
 }) {
+  const router = useRouter()
   const [showCancelForm, setShowCancelForm] = React.useState(false)
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
 
   const [issueState, issueAction] = useActionState<ActionState, FormData>(
     issueOrderAction, INITIAL_STATE,
@@ -31,6 +42,10 @@ export function OcActions({
   const [cancelState, cancelAction] = useActionState<ActionState, FormData>(
     cancelOrderAction, INITIAL_STATE,
   )
+  const [deleteState, deleteAction] = useActionState<ActionState, FormData>(
+    deleteOrderAction, INITIAL_STATE,
+  )
+  const [deletePending, startDeleteTransition] = useTransition()
 
   React.useEffect(() => {
     if (issueState.ok && issueState.message) toast.success(issueState.message)
@@ -54,6 +69,16 @@ export function OcActions({
       toast.error(cancelState.message)
     }
   }, [cancelState])
+
+  React.useEffect(() => {
+    if (!deleteState.message) return
+    if (deleteState.ok) {
+      toast.success(deleteState.message)
+      router.push("/compras")
+    } else {
+      toast.error(deleteState.message)
+    }
+  }, [deleteState, router])
 
   if (status !== "draft" && status !== "issued" && status !== "sent") return null
 
@@ -123,6 +148,34 @@ export function OcActions({
         >
           Anular orden
         </button>
+      )}
+      {canDelete && (DELETABLE_ORDER_STATUSES as readonly string[]).includes(status) && (
+        <>
+          <button
+            type="button"
+            disabled={deletePending}
+            onClick={() => setDeleteOpen(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-danger hover:bg-danger-tint px-3 py-1.5 rounded-(--radius) transition-colors disabled:opacity-40"
+          >
+            <Trash size={13} />
+            Eliminar orden
+          </button>
+          <ConfirmDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            title="¿Eliminar orden de compra?"
+            description={`La orden ${orderCode} será eliminada permanentemente junto con sus ítems y facturas adjuntas. Los ítems de la solicitud original volverán a estado pendiente. Esta acción no se puede deshacer.`}
+            confirmLabel="Eliminar"
+            variant="destructive"
+            loading={deletePending}
+            onConfirm={() => {
+              const fd = new FormData()
+              fd.set("orderId", orderId)
+              startDeleteTransition(() => deleteAction(fd))
+              setDeleteOpen(false)
+            }}
+          />
+        </>
       )}
       {issueState.ok === false && issueState.message && issueState !== INITIAL_STATE && (
         <p className="text-sm text-[var(--color-danger)] flex items-center gap-1.5">

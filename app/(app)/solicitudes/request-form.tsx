@@ -17,7 +17,10 @@ import {
   Dialog, DialogTrigger, DialogContent, DialogHeader,
   DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
-import { saveDraft, submitRequest, cancelRequest } from "./actions"
+import { saveDraft, submitRequest, cancelRequest, deleteRequestAction } from "./actions"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DELETABLE_REQUEST_STATUSES } from "@/lib/services/requests-delete.constants"
+import { Trash } from "@phosphor-icons/react"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { ItemEditor, URGENCY_OPTS } from "./item-editor"
 import type { ActionState } from "@/lib/validation/operations"
@@ -152,12 +155,18 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
   const isEdit  = !!editRequest
   const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
   const requestTypeOpts = visibleRequestTypeOptions(userPermissions)
+  const canDeleteRequest = isEdit
+    && (DELETABLE_REQUEST_STATUSES as readonly string[]).includes(editRequest.status)
+    && (userPermissions.includes("requests:delete") || userPermissions.includes("requests:view_own"))
 
   // ── Form action state
   const [draftState,  draftAction, draftPending] =
     useActionState<ActionState & { requestId?: string }, FormData>(saveDraft, INITIAL_STATE)
   const [submitState, submitAction] = useActionState<ActionState, FormData>(submitRequest, INITIAL_STATE)
   const [cancelState, cancelAction] = useActionState<ActionState, FormData>(cancelRequest, INITIAL_STATE)
+  const [deleteState, deleteAction] = useActionState<ActionState, FormData>(deleteRequestAction, INITIAL_STATE)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [isDeleting, startDeleteTransition] = useTransition()
   const [isSaving, startSaveTransition] = useTransition()
   const [isSubmitting, startSubmitTransition] = useTransition()
 
@@ -246,6 +255,16 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
   useEffect(() => {
     if (cancelState.message && !cancelState.ok) toast.error(cancelState.message)
   }, [cancelState])
+
+  useEffect(() => {
+    if (!deleteState.message) return
+    if (deleteState.ok) {
+      toast.success(deleteState.message)
+      router.push("/solicitudes")
+    } else {
+      toast.error(deleteState.message)
+    }
+  }, [deleteState, router])
 
   // ── Reset items when requestType changes to/from a quotation type
   //    (only when creating a new request, not when editing an existing one)
@@ -665,16 +684,64 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
                 </DialogContent>
               </Dialog>
             )}
+            {isDraft && canDeleteRequest && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-danger hover:text-danger"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={isDeleting}
+              >
+                <Trash size={14} className="mr-1" />
+                Eliminar
+              </Button>
+            )}
             <SubmitButton label="Enviar a aprobación" loadingLabel="Enviando..." variant="primary" />
           </div>
         </form>
       )}
 
-      {/* ── Read-only notice ──────────────────────────────────────────────── */}
+      {/* ── Read-only notice + eliminar (estados no-draft eliminables) ────────── */}
       {readOnly && (
-        <p className="text-xs text-[var(--color-text-subtle)] pt-2">
-          Esta solicitud está en estado <strong>{statusLabel}</strong> y no puede modificarse.
-        </p>
+        <div className="flex items-center justify-between pt-2">
+          <p className="text-xs text-text-subtle">
+            Esta solicitud está en estado <strong>{statusLabel}</strong> y no puede modificarse.
+          </p>
+          {canDeleteRequest && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-danger hover:text-danger shrink-0"
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={isDeleting}
+            >
+              <Trash size={14} className="mr-1" />
+              Eliminar solicitud
+            </Button>
+          )}
+        </div>
+      )}
+
+      {isEdit && canDeleteRequest && (
+        <>
+          <ConfirmDialog
+            open={deleteConfirmOpen}
+            onOpenChange={setDeleteConfirmOpen}
+            title="¿Eliminar solicitud?"
+            description={`La solicitud ${editRequest.code} será eliminada permanentemente junto con todos sus ítems y archivos adjuntos. Esta acción no se puede deshacer.`}
+            confirmLabel="Eliminar"
+            variant="destructive"
+            loading={isDeleting}
+            onConfirm={() => {
+              const fd = new FormData()
+              fd.set("requestId", editRequest.id)
+              startDeleteTransition(() => deleteAction(fd))
+              setDeleteConfirmOpen(false)
+            }}
+          />
+        </>
       )}
       </div>
 

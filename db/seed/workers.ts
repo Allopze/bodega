@@ -25,7 +25,10 @@ type ParsedWorkerRow = {
 
 const SOURCE_FILE = "trabajadores_por_faena_actualizado.md"
 
-export function loadSeedWorkerData(sourcePath = path.join(process.cwd(), SOURCE_FILE)) {
+// Resolve relative to this module, not process.cwd(): the file ships alongside
+// the seed code (db/seed/) so it travels in the prod image and release.zip,
+// regardless of the working directory the seed is launched from.
+export function loadSeedWorkerData(sourcePath = path.join(__dirname, SOURCE_FILE)) {
   const markdown = fs.readFileSync(sourcePath, "utf8")
   const parsedRows = parseWorkerMarkdown(markdown)
   const worksites = buildWorksites(parsedRows)
