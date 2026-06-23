@@ -28,7 +28,7 @@ function makeSession(overrides: Partial<Session["user"]> = {}): Session {
       email: "op@test.cl",
       name: "Operador",
       roles: ["solicitante_faena"],
-      permissions: ["warehouse:register_movement"],
+      permissions: ["deliveries:create"],
       worksiteIds: ["ws-1"],
       primaryWorksiteId: "ws-1",
       avatarColor: "#000",

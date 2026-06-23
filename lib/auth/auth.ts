@@ -141,6 +141,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.primaryWorksiteId = token.primaryWorksiteId as string | null
       session.user.avatarColor      = token.avatarColor as string | null
       session.user.isActive         = token.isActive as boolean
+      session.user.isGlobal         = token.isGlobal as boolean
       return session
     },
   },

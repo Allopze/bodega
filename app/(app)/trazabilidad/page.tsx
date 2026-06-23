@@ -38,7 +38,7 @@ export default async function TrazabilidadPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   let session
-  try { session = await requirePermission("reports:view") }
+  try { session = await requirePermission("traceability:view") }
   catch { redirect("/forbidden") }
 
   const sp = await searchParams

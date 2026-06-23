@@ -112,7 +112,10 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
   const canShowOrderActions =
     (order.status === "draft" && (canManage || canDeleteOrder)) ||
     (order.status === "issued" && (canManage || canSend || canDeleteOrder)) ||
-    (order.status === "sent" && (canManage || canDeleteOrder))
+    (order.status === "sent" && (canManage || canDeleteOrder)) ||
+    (order.status === "supplier_confirmed" && canManage) ||
+    (order.status === "partially_received" && canManage) ||
+    (order.status === "received" && canManage)
 
   return (
     <PageContainer width="workbench">

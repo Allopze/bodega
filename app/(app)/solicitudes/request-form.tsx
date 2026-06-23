@@ -17,7 +17,7 @@ import {
   Dialog, DialogTrigger, DialogContent, DialogHeader,
   DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
-import { saveDraft, submitRequest, cancelRequest, deleteRequestAction } from "./actions"
+import { saveDraft, submitRequest, cancelRequest, deleteRequestAction, resubmitReturnedItemAction } from "./actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DELETABLE_REQUEST_STATUSES } from "@/lib/services/requests-delete.constants"
 import { Trash } from "@phosphor-icons/react"
@@ -169,6 +169,8 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
   const [isDeleting, startDeleteTransition] = useTransition()
   const [isSaving, startSaveTransition] = useTransition()
   const [isSubmitting, startSubmitTransition] = useTransition()
+  const [resubmitState, resubmitAction, resubmitPending] =
+    useActionState<ActionState, FormData>(resubmitReturnedItemAction, INITIAL_STATE)
 
   // Id del borrador persistido. Para solicitudes nuevas se adopta el id que
   // devuelve saveDraft, de modo que cada guardado posterior actualice el mismo
@@ -198,6 +200,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
           suggestedSupplierId: item.suggestedSupplierId ?? "",
           supplierHint:        item.supplierHint ?? "",
           notes:               item.notes ?? "",
+          status:              item.status,
           isEpp:               prod?.isEpp ?? false,
           productName:         prod?.name ?? item.productNameFree ?? "",
           showAttrs:           item.attributes.length > 0,
@@ -265,6 +268,16 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
       toast.error(deleteState.message)
     }
   }, [deleteState, router])
+
+  useEffect(() => {
+    if (!resubmitState.message) return
+    if (resubmitState.ok) {
+      toast.success(resubmitState.message)
+      router.refresh()
+    } else if (resubmitState !== INITIAL_STATE) {
+      toast.error(resubmitState.message)
+    }
+  }, [resubmitState, router])
 
   // ── Reset items when requestType changes to/from a quotation type
   //    (only when creating a new request, not when editing an existing one)
@@ -580,23 +593,38 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
 
           <div className="space-y-2">
             {items.map((item, idx) => (
-              <ItemEditor
-                key={item._key}
-                item={item}
-                idx={idx}
-                products={products}
-                suppliers={suppliers}
-                readOnly={readOnly}
-                requestType={requestType}
-                maxFileSizeMb={maxFileSizeMb}
-                onUpdate={(patch) => updateItem(item._key, patch)}
-                onSelectProduct={(pid) => selectProduct(item._key, pid)}
-                onSelectFreeProduct={(name) => selectFreeProduct(item._key, name)}
-                onClearProduct={() => clearProduct(item._key)}
-                onUpdateAttr={(i, v) => updateAttr(item._key, i, v)}
-                onRemove={() => removeItem(item._key)}
-                canRemove={items.length > 1}
-              />
+              <div key={item._key}>
+                <ItemEditor
+                  item={item}
+                  idx={idx}
+                  products={products}
+                  suppliers={suppliers}
+                  readOnly={readOnly}
+                  requestType={requestType}
+                  maxFileSizeMb={maxFileSizeMb}
+                  onUpdate={(patch) => updateItem(item._key, patch)}
+                  onSelectProduct={(pid) => selectProduct(item._key, pid)}
+                  onSelectFreeProduct={(name) => selectFreeProduct(item._key, name)}
+                  onClearProduct={() => clearProduct(item._key)}
+                  onUpdateAttr={(i, v) => updateAttr(item._key, i, v)}
+                  onRemove={() => removeItem(item._key)}
+                  canRemove={items.length > 1}
+                />
+                {readOnly && item.status === "returned" && item.id && (
+                  <div className="mt-1 flex justify-end">
+                    <form action={resubmitAction}>
+                      <input type="hidden" name="itemId" value={item.id} />
+                      <button
+                        type="submit"
+                        disabled={resubmitPending}
+                        className="text-xs font-medium text-(--color-primary) hover:underline disabled:opacity-40 px-2 py-1"
+                      >
+                        {resubmitPending ? "Re-enviando..." : "Re-enviar a aprobación →"}
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </section>

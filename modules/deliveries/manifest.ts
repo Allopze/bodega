@@ -2,8 +2,10 @@ import type { ModuleManifest } from "@/modules/manifest-types"
 
 export const deliveriesModule = {
   id: "deliveries",
-  // Las entregas dependen de warehouse:register_movement — no hay permiso propio adicional
-  permissions: [] as const,
+  permissions: [
+    "deliveries:view",
+    "deliveries:create",
+  ] as const,
   nav: [
     {
       areaId: "bodega",
@@ -12,10 +14,21 @@ export const deliveriesModule = {
           label:       "Entregas",
           href:        "/entregas",
           iconName:    "HardHat",
-          permissions: ["warehouse:register_movement"],
+          permissions: ["deliveries:view"],
         },
       ],
     },
   ],
-  defaultGrants: [],
+  defaultGrants: [
+    { roleSlug: "administrador",       permission: "deliveries:view" },
+    { roleSlug: "administrador",       permission: "deliveries:create" },
+    { roleSlug: "jefa_chome",          permission: "deliveries:view" },
+    { roleSlug: "secretaria",          permission: "deliveries:view" },
+    { roleSlug: "secretaria",          permission: "deliveries:create" },
+    { roleSlug: "prevencionista",      permission: "deliveries:view" },
+    { roleSlug: "prevencionista",      permission: "deliveries:create" },
+    { roleSlug: "solicitante_faena",   permission: "deliveries:view" },
+    { roleSlug: "prevencionista_faena", permission: "deliveries:view" },
+    { roleSlug: "prevencionista_faena", permission: "deliveries:create" },
+  ],
 } as const satisfies ModuleManifest

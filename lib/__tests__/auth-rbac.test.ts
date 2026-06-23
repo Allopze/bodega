@@ -7,6 +7,7 @@ const activeSnapshot: UserRbacSnapshot = {
   email: "user@example.com",
   avatarColor: "120",
   isActive: true,
+  isGlobal: true,
   roles: ["administrador"],
   permissions: ["reports:view"],
   worksiteIds: ["ws-1"],

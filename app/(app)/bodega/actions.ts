@@ -2,13 +2,13 @@
 
 import { revalidatePath }    from "next/cache"
 import { db } from "@/db"
-import { deliveryItems, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { deliveryItems, inventoryMovements, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
+import { and, eq, inArray } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
 import { applyMovement } from "@/lib/services/stock"
-import { dispatchSchema, setMinStockSchema, returnStockSchema, type ActionState }  from "@/lib/validation/operations"
+import { dispatchSchema, setMinStockSchema, returnStockSchema, adjustStockSchema, type ActionState }  from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 
 const REVALIDATE = "/bodega"
@@ -147,6 +147,63 @@ export async function setMinStockAction(
   }
 }
 
+// ── Adjust stock (manual correction) ────────────────────────────────────────
+
+export async function adjustStockAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("warehouse:adjust_stock") }
+  catch { return { ok: false, message: "Sin permisos para ajustar inventario" } }
+
+  const parsed = adjustStockSchema.safeParse({
+    worksiteId: formData.get("worksiteId"),
+    productId:  formData.get("productId"),
+    quantity:   formData.get("quantity"),
+    direction:  formData.get("direction"),
+    reason:     formData.get("reason"),
+    notes:      formData.get("notes"),
+  })
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Revisa los datos del ajuste",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    }
+  }
+
+  const { worksiteId, productId, quantity, direction, reason, notes } = parsed.data
+
+  if (!canAccessWorksite(session, worksiteId)) {
+    return { ok: false, message: "No tienes acceso a esta faena" }
+  }
+
+  const delta = direction === "ingreso" ? quantity : -quantity
+
+  try {
+    await applyMovement({
+      worksiteId,
+      productId,
+      type: "ajuste",
+      quantity: delta,
+      referenceType: "adjustment",
+      performedBy: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      reason,
+      notes: notes || undefined,
+    })
+
+    revalidatePath(REVALIDATE)
+    const sign = direction === "ingreso" ? "+" : "-"
+    return { ok: true, message: `Ajuste registrado: ${sign}${quantity} unidades` }
+  } catch (e) {
+    logger.error("[adjustStockAction]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar ajuste" }
+  }
+}
+
 // ── Return stock to worksite ─────────────────────────────────────────────────
 
 export async function returnStockAction(
@@ -177,6 +234,29 @@ export async function returnStockAction(
 
   if (!canAccessWorksite(session, worksiteId)) {
     return { ok: false, message: "No tienes acceso a esta faena" }
+  }
+
+  // MISS-05: cap return to net delivered (egreso_entrega − ingreso_devolucion)
+  const priorMovements = await db
+    .select({ type: inventoryMovements.type, quantity: inventoryMovements.quantity })
+    .from(inventoryMovements)
+    .where(and(
+      eq(inventoryMovements.worksiteId, worksiteId),
+      eq(inventoryMovements.productId, productId),
+      inArray(inventoryMovements.type, ["egreso_entrega", "ingreso_devolucion"]),
+    ))
+  const totalDelivered = priorMovements
+    .filter((m) => m.type === "egreso_entrega")
+    .reduce((sum, m) => sum + Math.abs(m.quantity), 0)
+  const totalReturned = priorMovements
+    .filter((m) => m.type === "ingreso_devolucion")
+    .reduce((sum, m) => sum + Math.abs(m.quantity), 0)
+  const maxReturnable = totalDelivered - totalReturned
+  if (maxReturnable <= 0) {
+    return { ok: false, message: "No hay entregas previas registradas para devolver en esta faena" }
+  }
+  if (quantity > maxReturnable) {
+    return { ok: false, message: `La cantidad excede lo entregado neto. Máximo devolvible: ${maxReturnable}` }
   }
 
   try {

@@ -2,17 +2,17 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
-  purchaseRequests, purchaseRequestItems, requestItemAttributes,
+  purchaseRequests, purchaseRequestItems, requestItemAttributes, products,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { can, canAccessWorksite, requireAuth, requirePermission } from "@/lib/auth/can"
-import { submitItemTx } from "@/lib/services/item-state"
+import { submitItem, submitItemTx } from "@/lib/services/item-state"
 import { notifyManyUser, getUserIdsWithPermission, notifyAfterCommit } from "@/lib/services/notifications"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
@@ -203,6 +203,21 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
   }
   if (!canAccessWorksite(session, request.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
+  }
+
+  // MISS-06: bloquear ítems de catálogo que fueron desactivados
+  const catalogProductIds = request.items
+    .map((i) => i.productId)
+    .filter((id): id is string => id != null)
+  if (catalogProductIds.length > 0) {
+    const inactiveProducts = await db
+      .select({ name: products.name })
+      .from(products)
+      .where(and(inArray(products.id, catalogProductIds), eq(products.isActive, false)))
+    if (inactiveProducts.length > 0) {
+      const names = inactiveProducts.map((p) => p.name).join(", ")
+      return { ok: false, message: `Los siguientes productos están inactivos y no pueden solicitarse: ${names}` }
+    }
   }
 
   // ── Quotation branch: delegate submit to factory ───────────────────────────
@@ -432,6 +447,57 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
 
   revalidatePath(REVALIDATE)
   redirect(REVALIDATE)
+}
+
+// ── Re-submit a single returned item (returned → requested) ──────────────────
+
+export async function resubmitReturnedItemAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requireAuth() }
+  catch { return { ok: false, message: "Debes iniciar sesión" } }
+
+  const itemId = formData.get("itemId") as string | null
+  if (!itemId) return { ok: false, message: "Ítem no especificado" }
+
+  const row = await db
+    .select({
+      id:          purchaseRequestItems.id,
+      status:      purchaseRequestItems.status,
+      requestId:   purchaseRequestItems.requestId,
+      requesterId: purchaseRequests.requesterId,
+      worksiteId:  purchaseRequests.worksiteId,
+    })
+    .from(purchaseRequestItems)
+    .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+    .where(eq(purchaseRequestItems.id, itemId))
+    .then((rows) => rows[0])
+
+  if (!row) return { ok: false, message: "Ítem no encontrado" }
+  if (row.status !== "returned") {
+    return { ok: false, message: "Solo se pueden re-enviar ítems devueltos" }
+  }
+
+  const isOwner = row.requesterId === session.user.id
+  const canManageAll = can(session, "requests:view_all")
+  if (!isOwner && !canManageAll) {
+    return { ok: false, message: "Solo el solicitante puede re-enviar el ítem" }
+  }
+  if (!canAccessWorksite(session, row.worksiteId)) {
+    return { ok: false, message: "Sin acceso a la faena de esta solicitud" }
+  }
+
+  try {
+    await submitItem(itemId, session.user.id, { userEmail: session.user.email ?? undefined })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${row.requestId}`)
+    return { ok: true, message: "Ítem re-enviado a aprobación" }
+  } catch (e) {
+    logger.error("[resubmitReturnedItemAction]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al re-enviar ítem" }
+  }
 }
 
 // ── Delete a request (hard delete, non-approved statuses) ─────────────────────

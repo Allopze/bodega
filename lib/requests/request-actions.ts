@@ -307,10 +307,7 @@ export function createRequestActions(config: RequestActionsConfig) {
       return { ok: false, message: "No tienes acceso a esta solicitud" }
     }
 
-    const roleContext =
-      session.user.roles.includes("administrador") ? "admin" :
-      session.user.roles.includes("jefa_chome")    ? "jefa_chome" :
-      session.user.roles[0] ?? "unknown"
+    const roleContext = session.user.roles[0] ?? "unknown"
 
     try {
       await services.selectQuotation({

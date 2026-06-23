@@ -84,7 +84,10 @@ function makeFormData(fields: Record<string, string> = {}): FormData {
 }
 
 describe("approveItemAction", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFindFirstItem.mockReset()
+  })
 
   it("returns error if permission denied", async () => {
     mockRequirePermission.mockRejectedValueOnce(new Error("No permission"))
@@ -132,7 +135,7 @@ describe("approveItemAction", () => {
     expect(res.ok).toBe(true)
     expect(mockApproveItem).toHaveBeenCalledWith("item-1", "user-1", expect.objectContaining({
       userEmail: "admin@test.cl",
-      roleContext: "admin",
+      roleContext: "administrador",
     }))
   })
 
@@ -147,7 +150,10 @@ describe("approveItemAction", () => {
 })
 
 describe("rejectItemAction", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFindFirstItem.mockReset()
+  })
 
   it("returns error if permission denied", async () => {
     mockRequirePermission.mockRejectedValueOnce(new Error("No permission"))
@@ -175,7 +181,10 @@ describe("rejectItemAction", () => {
 })
 
 describe("returnItemAction", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFindFirstItem.mockReset()
+  })
 
   it("returns error if permission denied", async () => {
     mockRequirePermission.mockRejectedValueOnce(new Error("No permission"))
@@ -199,5 +208,121 @@ describe("returnItemAction", () => {
     const res = await returnItemAction(prevState, makeFormData({ reason: "Falta detalle" }))
     expect(res.ok).toBe(true)
     expect(mockReturnItem).toHaveBeenCalledWith("item-1", "user-1", "Falta detalle", expect.any(Object))
+  })
+})
+
+// ── EPP approval gating (MISS-04) ─────────────────────────────────────────────
+// Business rule: EPP requests originate from prevencionista; only
+// jefatura / secretaría / administrador can approve, reject, or return them.
+
+function makeEppItemBefore() {
+  return {
+    id: "item-epp-1",
+    status: "requested",
+    request: { id: "req-epp", code: "SOL-EPP", requesterId: "user-prev", worksiteId: "ws-1", requestType: "epp" },
+  }
+}
+
+describe("EPP approval gating (MISS-04)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Reset findFirst mock to avoid leftover resolved values from other blocks
+    mockFindFirstItem.mockReset()
+  })
+
+  // ── approveItemAction ──────────────────────────────────────────────────────
+
+  it("approveItemAction: blocks EPP approval by non-authorized role (prevencionista)", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["prevencionista"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await approveItemAction(prevState, makeFormData())
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("EPP")
+    expect(res.message).toContain("Jefatura o Secretaría")
+    expect(mockApproveItem).not.toHaveBeenCalled()
+  })
+
+  it("approveItemAction: allows EPP approval by jefa_chome", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["jefa_chome"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await approveItemAction(prevState, makeFormData())
+    expect(res.ok).toBe(true)
+    // approveItem receives itemId from formData ("item-1"), not from findFirst result
+    expect(mockApproveItem).toHaveBeenCalledWith("item-1", "user-1", expect.objectContaining({
+      roleContext: "jefa_chome",
+    }))
+  })
+
+  it("approveItemAction: allows EPP approval by secretaria", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["secretaria"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await approveItemAction(prevState, makeFormData())
+    expect(res.ok).toBe(true)
+    expect(mockApproveItem).toHaveBeenCalled()
+  })
+
+  it("approveItemAction: allows EPP approval by administrador", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["administrador"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await approveItemAction(prevState, makeFormData())
+    expect(res.ok).toBe(true)
+    expect(mockApproveItem).toHaveBeenCalled()
+  })
+
+  it("approveItemAction: allows non-EPP approval by any role with permission", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["prevencionista"] }))
+    // makeItemBefore() returns a request without requestType (no "epp")
+    mockFindFirstItem.mockResolvedValueOnce(makeItemBefore())
+    const res = await approveItemAction(prevState, makeFormData())
+    expect(res.ok).toBe(true)
+    expect(mockApproveItem).toHaveBeenCalled()
+  })
+
+  // ── rejectItemAction ───────────────────────────────────────────────────────
+
+  it("rejectItemAction: blocks EPP rejection by non-authorized role", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["prevencionista"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await rejectItemAction(prevState, makeFormData({ reason: "No cumple norma" }))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("EPP")
+    expect(mockRejectItem).not.toHaveBeenCalled()
+  })
+
+  it("rejectItemAction: allows EPP rejection by jefa_chome", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["jefa_chome"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await rejectItemAction(prevState, makeFormData({ reason: "No cumple" }))
+    expect(res.ok).toBe(true)
+    expect(mockRejectItem).toHaveBeenCalled()
+  })
+
+  // ── returnItemAction ───────────────────────────────────────────────────────
+
+  it("returnItemAction: blocks EPP return by non-authorized role", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["prevencionista"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await returnItemAction(prevState, makeFormData({ reason: "Falta detalle" }))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("EPP")
+    expect(mockReturnItem).not.toHaveBeenCalled()
+  })
+
+  it("returnItemAction: allows EPP return by secretaria", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["secretaria"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await returnItemAction(prevState, makeFormData({ reason: "Corregir" }))
+    expect(res.ok).toBe(true)
+    expect(mockReturnItem).toHaveBeenCalled()
+  })
+
+  // ── Multi-role: user with both authorized and unauthorized roles ────────────
+
+  it("approveItemAction: allows EPP when user has at least one authorized role", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["prevencionista", "secretaria"] }))
+    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
+    const res = await approveItemAction(prevState, makeFormData())
+    expect(res.ok).toBe(true)
+    expect(mockApproveItem).toHaveBeenCalled()
   })
 })

@@ -12,7 +12,7 @@ export async function setEmailsEnabledAction(
 ): Promise<ActionState> {
   let session
   try {
-    session = await requirePermission("admin:config")
+    session = await requirePermission("admin:smtp")
   } catch {
     return { ok: false, message: "Sin permisos para configurar el sistema" }
   }
@@ -35,7 +35,7 @@ export async function testResendAction(
 ): Promise<ActionState> {
   let session
   try {
-    session = await requirePermission("admin:config")
+    session = await requirePermission("admin:smtp")
   } catch {
     return { ok: false, message: "Sin permisos" }
   }

@@ -45,6 +45,7 @@ export const roles = pgTable("roles", {
   name:        text("name").notNull().unique(), // slug: 'administrador', 'jefa_chome', etc.
   label:       text("label").notNull(),         // human-readable: 'Administrador'
   description: text("description"),
+  isGlobal:    boolean("is_global").notNull().default(false), // true = sees all worksites, no faena scoping
 })
 
 /* ── Permissions ─────────────────────────────────────────────────────────── */

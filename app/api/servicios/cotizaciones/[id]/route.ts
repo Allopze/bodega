@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { serviceQuotations, purchaseRequests } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveServiceQuotationFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
 
@@ -17,6 +17,9 @@ export async function GET(
   const session = await auth()
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  }
+  if (!can(session, "servicios:view_own") && !can(session, "servicios:view_all")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
   const { id } = await params

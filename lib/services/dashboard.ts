@@ -5,7 +5,6 @@
  * and make the data layer testable.
  */
 
-import { unstable_cache } from "next/cache"
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
@@ -397,22 +396,6 @@ export async function getDashboardData(session: Session): Promise<DashboardData>
     worksitesBreakdown,
   }
 }
-
-// ── Cached variants (A-06) ────────────────────────────────────────────────────
-// Cache key = userId + role context. TTL 30s.
-// Invalidate via revalidateTag('dashboard') in any mutating server action.
-
-export const getCachedWorkQueueSnapshot = unstable_cache(
-  getWorkQueueSnapshot,
-  ["work-queue-snapshot"],
-  { revalidate: 30, tags: ["dashboard"] },
-)
-
-export const getCachedDashboardData = unstable_cache(
-  getDashboardData,
-  ["dashboard-data"],
-  { revalidate: 30, tags: ["dashboard"] },
-)
 
 // ── Actor builder ─────────────────────────────────────────────────────────────
 

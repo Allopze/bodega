@@ -118,7 +118,7 @@ describe("Item State Machine — DB integration", () => {
         unitOfMeasure: "unidad", status: "requested",
         createdAt: now, updatedAt: now,
       })
-      await approveItem(modItem, userId, { modifiedQty: 3 })
+      await approveItem(modItem, userId, { modifiedQty: 3, reason: "Ajuste por disponibilidad real" })
 
       const updated = await inMemoryDb.query.purchaseRequestItems
         .findFirst({ where: eq(schema.purchaseRequestItems.id, modItem) })

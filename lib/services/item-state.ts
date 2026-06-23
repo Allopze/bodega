@@ -124,7 +124,7 @@ export async function submitItemTx(
 export async function approveItem(
   itemId: string,
   userId: string,
-  opts?: { modifiedQty?: number; userEmail?: string; roleContext?: string },
+  opts?: { modifiedQty?: number; reason?: string; userEmail?: string; roleContext?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // Security audit SM-01: lock the row to prevent concurrent approvals
@@ -167,12 +167,17 @@ export async function approveItem(
       throw new Error("El ítem ya no está disponible — posible concurrencia")
     }
 
+    if (opts?.modifiedQty !== undefined && !opts?.reason) {
+      throw new Error("Se requiere un motivo al modificar la cantidad aprobada")
+    }
+
     await tx.insert(approvalDecisions).values({
       id:            nanoid(),
       requestItemId: itemId,
       requestId:     locked.requestId,
       type:          opts?.modifiedQty !== undefined ? "modify" : "approve",
       decidedBy:     userId,
+      reason:        opts?.reason ?? null,
       modifiedQty:   opts?.modifiedQty ?? null,
       roleContext:   opts?.roleContext ?? null,
     })
@@ -342,8 +347,12 @@ async function rollupRequestStatus(
   const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
   const allRejected   = statuses.every((s) => s === "rejected")
   const allReturned   = statuses.every((s) => s === "returned")
+  // "closed" aquí = compra completada (todos los ítems recibidos/resueltos),
+  // NO necesariamente entregados al trabajador. El ciclo puede continuar
+  // received→partially_delivered→delivered mientras la solicitud figure "closed".
+  // Ver INC-04 en la auditoría de lógica.
   const allClosed     = statuses.every((s) => ["received", "rejected", "delivered", "postponed"].includes(s))
-  const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_received", "received"].includes(s))
+  const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_received", "received", "partially_delivered"].includes(s))
   const allResolved   = !pendingReview
 
   let newStatus: string
@@ -377,8 +386,8 @@ async function rollupRequestStatus(
     .where(
       and(
         eq(purchaseRequests.id, requestId),
-        // Only advance from submitted/in_review — don't regress from "in_purchasing" etc.
-        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved", "approved", "rejected", "returned", "in_purchasing", "closed"]),
+        // Never regress from "closed" — once all items are received the purchase is final.
+        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved", "approved", "rejected", "returned", "in_purchasing"]),
       ),
     )
 }

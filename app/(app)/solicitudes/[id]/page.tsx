@@ -151,6 +151,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       suggestedSupplierId: item.suggestedSupplierId,
       supplierHint:        item.supplierHint,
       notes:               item.notes,
+      status:              item.status,
       attributes:          item.attributes.map((a) => ({
         attributeId:   a.attributeId,
         attributeName: a.attributeName,

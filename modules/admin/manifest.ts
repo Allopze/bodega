@@ -17,6 +17,7 @@ export const adminModule = {
   permissions: [
     // Usuarios y roles
     "admin:users",
+    "admin:manage_admins",
     // Datos maestros
     "admin:worksites",
     "admin:workers",
@@ -24,6 +25,8 @@ export const adminModule = {
     "admin:suppliers",
     // Sistema
     "admin:config",
+    "admin:smtp",
+    "admin:email_templates",
     "admin:audit_log",
   ] as const,
 
@@ -38,11 +41,14 @@ export const adminModule = {
   defaultGrants: [
     // Administrador — todos los permisos del módulo
     { roleSlug: "administrador", permission: "admin:users" },
+    { roleSlug: "administrador", permission: "admin:manage_admins" },
     { roleSlug: "administrador", permission: "admin:worksites" },
     { roleSlug: "administrador", permission: "admin:workers" },
     { roleSlug: "administrador", permission: "admin:products" },
     { roleSlug: "administrador", permission: "admin:suppliers" },
     { roleSlug: "administrador", permission: "admin:config" },
+    { roleSlug: "administrador", permission: "admin:smtp" },
+    { roleSlug: "administrador", permission: "admin:email_templates" },
     { roleSlug: "administrador", permission: "admin:audit_log" },
     // Secretaría
     { roleSlug: "secretaria", permission: "admin:users" },

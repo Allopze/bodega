@@ -79,9 +79,96 @@ const URGENCY_CLASS: Record<string, string> = {
   critical: "text-[var(--color-danger)] font-semibold",
 }
 
+/* ── Approve inline form ─────────────────────────────────────────────────────── */
+
+function ApproveForm({
+  item, approveAction, approveState, onCancel,
+}: {
+  item:          ApprovalItem
+  // biome-ignore lint/suspicious/noExplicitAny: react dispatch type
+  approveAction: (formData: FormData) => void
+  approveState:  ActionState
+  onCancel:      () => void
+}) {
+  const [qty, setQty] = React.useState("")
+  const isModified = qty !== "" && parseFloat(qty) !== item.quantity
+
+  return (
+    <div className="border-t border-(--color-border) bg-surface-2 p-3">
+      <form action={approveAction} className="flex flex-col gap-2">
+        <input type="hidden" name="itemId" value={item.id} />
+        <div className="flex items-center gap-3">
+          <label
+            htmlFor={`modifiedQty-${item.id}`}
+            className="text-xs text-(--color-text-muted) shrink-0"
+          >
+            Qty aprobada
+          </label>
+          <Input
+            id={`modifiedQty-${item.id}`}
+            type="number"
+            name="modifiedQty"
+            step="0.01"
+            min="0.01"
+            placeholder={String(item.quantity)}
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            className="h-7 w-28 text-sm"
+          />
+          <span className="text-xs text-text-subtle">
+            {item.unitOfMeasure} (dejar vacío para aprobar {formatQty(item.quantity)})
+          </span>
+        </div>
+        {isModified && (
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor={`reason-${item.id}`}
+              className="text-xs font-medium text-(--color-text-muted)"
+            >
+              Motivo del cambio de cantidad <span className="text-danger">*</span>
+            </label>
+            <Textarea
+              id={`reason-${item.id}`}
+              name="reason"
+              required
+              placeholder="Explica por qué se modifica la cantidad solicitada..."
+              className="text-xs resize-none"
+              rows={2}
+            />
+          </div>
+        )}
+        <p className="text-[11px] text-text-subtle">
+          Una vez confirmada, la aprobación no se puede revertir desde aquí.
+        </p>
+        {approveState.ok === false && approveState.message && approveState !== INITIAL_STATE && (
+          <p className="text-xs text-danger flex items-center gap-1">
+            <Warning size={12} /> {approveState.message}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+          >
+            Cancelar
+          </Button>
+          <SubmitButton
+            label="Confirmar aprobación"
+            loadingLabel="Aprobando..."
+            variant="primary"
+            size="sm"
+          />
+        </div>
+      </form>
+    </div>
+  )
+}
+
 /* ── Single item row ─────────────────────────────────────────────────────────── */
 
-function ItemRow({ item }: { item: ApprovalItem }) {
+function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canApprove?: boolean }) {
   const [action, setAction] = React.useState<ItemAction>("idle")
 
   const [approveState, approveAction] = useActionState<ActionState, FormData>(
@@ -196,8 +283,8 @@ function ItemRow({ item }: { item: ApprovalItem }) {
           )}
         </div>
 
-        {/* Action buttons — only shown when idle */}
-        {action === "idle" && (
+        {/* Action buttons — only shown when idle and user can approve */}
+        {action === "idle" && canApprove && (
           <div className="flex items-center gap-1.5 shrink-0">
             <Button
               variant="secondary"
@@ -219,63 +306,25 @@ function ItemRow({ item }: { item: ApprovalItem }) {
             </Button>
           </div>
         )}
+        {action === "idle" && !canApprove && (
+          <span className="text-[11px] text-[var(--color-text-subtle)] italic shrink-0 max-w-[140px] text-right leading-tight">
+            Requiere Jefatura o Secretaría
+          </span>
+        )}
       </div>
 
       {/* Approve inline form (with optional qty change) */}
-      {action === "approving" && (
-        <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-          <form action={approveAction} className="flex flex-col gap-2">
-            <input type="hidden" name="itemId" value={item.id} />
-            <div className="flex items-center gap-3">
-              <label
-                htmlFor={`modifiedQty-${item.id}`}
-                className="text-xs text-[var(--color-text-muted)] shrink-0"
-              >
-                Qty aprobada
-              </label>
-              <Input
-                id={`modifiedQty-${item.id}`}
-                type="number"
-                name="modifiedQty"
-                step="0.01"
-                min="0.01"
-                placeholder={String(item.quantity)}
-                className="h-7 w-28 text-sm"
-              />
-              <span className="text-xs text-[var(--color-text-subtle)]">
-                {item.unitOfMeasure} (dejar vacío para aprobar {formatQty(item.quantity)})
-              </span>
-            </div>
-            <p className="text-[11px] text-[var(--color-text-subtle)]">
-              Una vez confirmada, la aprobación no se puede revertir desde aquí.
-            </p>
-            {approveState.ok === false && approveState.message && approveState !== INITIAL_STATE && (
-              <p className="text-xs text-[var(--color-danger)] flex items-center gap-1">
-                <Warning size={12} /> {approveState.message}
-              </p>
-            )}
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setAction("idle")}
-              >
-                Cancelar
-              </Button>
-              <SubmitButton
-                label="Confirmar aprobación"
-                loadingLabel="Aprobando..."
-                variant="primary"
-                size="sm"
-              />
-            </div>
-          </form>
-        </div>
+      {action === "approving" && canApprove && (
+        <ApproveForm
+          item={item}
+          approveAction={approveAction}
+          approveState={approveState}
+          onCancel={() => setAction("idle")}
+        />
       )}
 
       {/* Reject inline form */}
-      {action === "rejecting" && (
+      {action === "rejecting" && canApprove && (
         <ReasonForm
           itemId={item.id}
           actionFn={rejectAction}
@@ -350,7 +399,7 @@ function ReasonForm({
 
 /* ── Request group card ──────────────────────────────────────────────────────── */
 
-function RequestGroup({ request }: { request: ApprovalRequest }) {
+function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequest; canApproveEpp: boolean }) {
   const [collapsed, setCollapsed]   = React.useState(false)
   const [bulkState, bulkAction]     = useActionState<ActionState, FormData>(
     bulkApproveRequestAction, INITIAL_STATE,
@@ -366,6 +415,7 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
 
   const pendingIds = request.pendingItems.map((i) => i.id).join(",")
   const allApproved = bulkState.ok === true
+  const canApproveThisRequest = request.requestType !== "epp" || canApproveEpp
 
   return (
     <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden">
@@ -406,8 +456,8 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
             {request.pendingCount} pendiente{request.pendingCount !== 1 ? "s" : ""}
           </span>
 
-          {/* Bulk approve */}
-          {!allApproved && (
+          {/* Bulk approve — hidden for EPP when user lacks clearance */}
+          {!allApproved && canApproveThisRequest && (
             <form action={bulkAction}>
               <input type="hidden" name="itemIds" value={pendingIds} />
               <SubmitButton
@@ -428,7 +478,7 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
       {!collapsed && (
         <ul className="p-3 flex flex-col gap-2">
           {request.pendingItems.map((item) => (
-            <ItemRow key={item.id} item={item} />
+            <ItemRow key={item.id} item={item} canApprove={canApproveThisRequest} />
           ))}
         </ul>
       )}
@@ -438,7 +488,7 @@ function RequestGroup({ request }: { request: ApprovalRequest }) {
 
 /* ── Main panel ──────────────────────────────────────────────────────────────── */
 
-export function ApprovalPanel({ requests }: { requests: ApprovalRequest[] }) {
+export function ApprovalPanel({ requests, canApproveEpp }: { requests: ApprovalRequest[]; canApproveEpp: boolean }) {
   if (requests.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -454,7 +504,7 @@ export function ApprovalPanel({ requests }: { requests: ApprovalRequest[] }) {
   return (
     <div className="flex flex-col gap-4">
       {requests.map((req) => (
-        <RequestGroup key={req.id} request={req} />
+        <RequestGroup key={req.id} request={req} canApproveEpp={canApproveEpp} />
       ))}
     </div>
   )

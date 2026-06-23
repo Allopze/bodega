@@ -162,6 +162,27 @@
       "when": 1785200000000,
       "tag": "0022_purchase_request_items_product_id_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785300000000,
+      "tag": "0023_add_ajuste_movement_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785400000000,
+      "tag": "0024_add_deliveries_and_split_admin_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785500000000,
+      "tag": "0025_is_global_roles_and_traceability_permission",
+      "breakpoints": true
     }
   ]
 }

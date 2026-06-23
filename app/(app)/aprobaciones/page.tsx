@@ -91,7 +91,7 @@ export default async function AprobacionesPage({
             ]} />
           }
         />
-        <ApprovalPanel requests={[]} />
+        <ApprovalPanel requests={[]} canApproveEpp={false} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -241,7 +241,10 @@ export default async function AprobacionesPage({
           ]} />
         }
       />
-      <ApprovalPanel requests={displayedRows} />
+      <ApprovalPanel
+        requests={displayedRows}
+        canApproveEpp={session.user.roles.some((r) => ["administrador", "jefa_chome", "secretaria"].includes(r))}
+      />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )

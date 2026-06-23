@@ -36,7 +36,7 @@ export default async function Page({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   let session
-  try { session = await requirePermission("warehouse:register_movement") }
+  try { session = await requirePermission("deliveries:view") }
   catch { redirect("/forbidden") }
 
   const sp = await searchParams

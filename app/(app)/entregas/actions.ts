@@ -24,7 +24,7 @@ export async function registerWorkerDeliveryAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("warehouse:register_movement") }
+  try { session = await requirePermission("deliveries:create") }
   catch { return { ok: false, message: "Sin permisos para registrar entregas" } }
 
   const parsed = workerDeliverySchema.safeParse({

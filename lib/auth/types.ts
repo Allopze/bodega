@@ -11,6 +11,7 @@ declare module "next-auth" {
       primaryWorksiteId: string | null
       avatarColor:       string | null
       isActive:          boolean
+      isGlobal?:         boolean  // Derived from roles.is_global at login; optional for backward compat
     }
   }
 }

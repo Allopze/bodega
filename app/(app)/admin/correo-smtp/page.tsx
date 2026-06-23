@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Configuración de Correo" }
 
 export default async function CorreoSmtpPage() {
   try {
-    await requirePermission("admin:config")
+    await requirePermission("admin:smtp")
   } catch {
     redirect("/forbidden")
   }

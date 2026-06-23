@@ -14,12 +14,14 @@ const REVALIDATE = "/aprobaciones"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// EPP requests come from prevencionista — only jefatura/secretaría/admin can approve.
+const EPP_APPROVER_ROLES = new Set(["administrador", "jefa_chome", "secretaria"])
+
+function canApproveEpp(roles: string[]): boolean {
+  return roles.some((r) => EPP_APPROVER_ROLES.has(r))
+}
+
 function getRoleContext(roles: string[]): string {
-  if (roles.includes("administrador")) return "admin"
-  if (roles.includes("jefa_chome"))    return "jefa_chome"
-  if (roles.includes("secretaria"))    return "secretaria"
-  if (roles.includes("prevencionista")) return "prevencionista"
-  if (roles.includes("jefe_mantencion")) return "jefe_mantencion"
   return roles[0] ?? "unknown"
 }
 
@@ -38,24 +40,32 @@ export async function approveItemAction(
 
   const modifiedQtyRaw = formData.get("modifiedQty") as string | null
   const modifiedQty    = modifiedQtyRaw ? parseFloat(modifiedQtyRaw) : undefined
+  const reason         = (formData.get("reason") as string | null)?.trim() || undefined
 
   if (modifiedQty !== undefined && (isNaN(modifiedQty) || modifiedQty <= 0)) {
     return { ok: false, message: "Cantidad modificada debe ser un número positivo" }
+  }
+  if (modifiedQty !== undefined && !reason) {
+    return { ok: false, message: "Se requiere un motivo al modificar la cantidad aprobada" }
   }
 
   try {
     // Load item before service call to get requester info for notification
     const itemBefore = await db.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-      with: { request: { columns: { id: true, code: true, requesterId: true, worksiteId: true } } },
+      with: { request: { columns: { id: true, code: true, requesterId: true, worksiteId: true, requestType: true } } },
     })
     if (!itemBefore) return { ok: false, message: "Ítem no encontrado" }
     if (!canAccessWorksite(session, itemBefore.request.worksiteId)) {
       return { ok: false, message: "No tienes acceso a la faena de este ítem" }
     }
+    if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
+      return { ok: false, message: "Las solicitudes de EPP solo pueden ser aprobadas por Jefatura o Secretaría" }
+    }
 
     await approveItem(itemId, session.user.id, {
       modifiedQty,
+      reason,
       userEmail:   session.user.email ?? undefined,
       roleContext: getRoleContext(session.user.roles),
     })
@@ -106,11 +116,14 @@ export async function rejectItemAction(
   try {
     const itemBefore = await db.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-      with: { request: { columns: { id: true, code: true, requesterId: true, worksiteId: true } } },
+      with: { request: { columns: { id: true, code: true, requesterId: true, worksiteId: true, requestType: true } } },
     })
     if (!itemBefore) return { ok: false, message: "Ítem no encontrado" }
     if (!canAccessWorksite(session, itemBefore.request.worksiteId)) {
       return { ok: false, message: "No tienes acceso a la faena de este ítem" }
+    }
+    if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
+      return { ok: false, message: "Las solicitudes de EPP solo pueden ser gestionadas por Jefatura o Secretaría" }
     }
 
     await rejectItem(itemId, session.user.id, reason, {
@@ -161,11 +174,14 @@ export async function returnItemAction(
   try {
     const itemBefore = await db.query.purchaseRequestItems.findFirst({
       where: eq(purchaseRequestItems.id, itemId),
-      with: { request: { columns: { worksiteId: true } } },
+      with: { request: { columns: { worksiteId: true, requestType: true } } },
     })
     if (!itemBefore) return { ok: false, message: "Ítem no encontrado" }
     if (!canAccessWorksite(session, itemBefore.request.worksiteId)) {
       return { ok: false, message: "No tienes acceso a la faena de este ítem" }
+    }
+    if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
+      return { ok: false, message: "Las solicitudes de EPP solo pueden ser gestionadas por Jefatura o Secretaría" }
     }
 
     await returnItem(itemId, session.user.id, reason, {
@@ -194,15 +210,20 @@ export async function bulkApproveRequestAction(
   if (!itemIds?.length) return { ok: false, message: "No hay ítems para aprobar" }
 
   const roleContext = getRoleContext(session.user.roles)
+  const userCanApproveEpp = canApproveEpp(session.user.roles)
   let approved = 0
   const errors: string[] = []
   const scopedItems = await db.query.purchaseRequestItems.findMany({
     where: inArray(purchaseRequestItems.id, itemIds),
-    with: { request: { columns: { worksiteId: true } } },
+    with: { request: { columns: { worksiteId: true, requestType: true } } },
   })
   const allowedItemIds = new Set(
     scopedItems
-      .filter((item) => canAccessWorksite(session, item.request.worksiteId))
+      .filter((item) => {
+        if (!canAccessWorksite(session, item.request.worksiteId)) return false
+        if (item.request.requestType === "epp" && !userCanApproveEpp) return false
+        return true
+      })
       .map((item) => item.id),
   )
 

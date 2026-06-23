@@ -16,7 +16,7 @@ export async function updateTemplateAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("admin:config") }
+  try { session = await requirePermission("admin:email_templates") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const key = formData.get("key")?.toString()
@@ -50,7 +50,7 @@ export async function resetTemplateAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("admin:config") }
+  try { session = await requirePermission("admin:email_templates") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const key = formData.get("key")?.toString()
@@ -67,7 +67,7 @@ export async function resetTemplateAction(
 }
 
 export async function seedTemplatesAction(): Promise<ActionState> {
-  try { await requirePermission("admin:config") }
+  try { await requirePermission("admin:email_templates") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   try { await seedDefaultTemplates() }

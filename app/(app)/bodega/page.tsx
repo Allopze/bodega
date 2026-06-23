@@ -16,9 +16,11 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { SkeletonPage } from "@/components/ui/skeleton"
 import { ArrowRight, Package, Warehouse, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { ReturnPanel } from "./return-panel"
+import { AdjustPanel } from "./adjust-panel"
 import { StockTable } from "./stock-table"
 import { KardexTable } from "./kardex-table"
 import type { ReturnPanelStockOption } from "./return-panel"
+import type { AdjustPanelStockOption } from "./adjust-panel"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 
 export const metadata: Metadata = { title: "Bodega" }
@@ -42,7 +44,8 @@ export default async function BodegaPage({
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
 
   const canRegisterMovements = can(session, "warehouse:register_movement")
-  const canViewReceiving = can(session, "receiving:view")
+  const canAdjustStock       = can(session, "warehouse:adjust_stock")
+  const canViewReceiving     = can(session, "receiving:view")
   const visibleWsIds = visibleWorksiteIds(session)
   const worksiteScope = isGlobalRole(session)
     ? undefined
@@ -139,7 +142,9 @@ export default async function BodegaPage({
   const initialWorksiteId = (requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId) ? requestedWorksiteId : undefined)
     ?? firstStockWorksiteId
     ?? worksiteOptions[0]?.id
-  const showReturnPanel = canRegisterMovements && returnProducts.length > 0 && worksiteOptions.length > 0
+  const adjustProducts: AdjustPanelStockOption[] = returnProducts
+  const showReturnPanel  = canRegisterMovements && returnProducts.length > 0 && worksiteOptions.length > 0
+  const showAdjustPanel  = canAdjustStock && worksiteOptions.length > 0
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const s of visibleStockRows) {
@@ -160,7 +165,7 @@ export default async function BodegaPage({
           />
         )}
       />
-      <div className={showReturnPanel ? "grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start" : "flex flex-col gap-8"}>
+      <div className={(showReturnPanel || showAdjustPanel) ? "grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start" : "flex flex-col gap-8"}>
         <div className="min-w-0 space-y-8">
           <Suspense fallback={<SkeletonPage rows={6} />}>
             <StockSection
@@ -180,9 +185,14 @@ export default async function BodegaPage({
           </Suspense>
         </div>
 
-        {showReturnPanel && (
-          <aside className="xl:sticky xl:top-6">
-            <ReturnPanel products={returnProducts} worksites={worksiteOptions} />
+        {(showReturnPanel || showAdjustPanel) && (
+          <aside className="xl:sticky xl:top-6 flex flex-col gap-6">
+            {showReturnPanel && (
+              <ReturnPanel products={returnProducts} worksites={worksiteOptions} />
+            )}
+            {showAdjustPanel && (
+              <AdjustPanel products={adjustProducts} worksites={worksiteOptions} />
+            )}
           </aside>
         )}
       </div>

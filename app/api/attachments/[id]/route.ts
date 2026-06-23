@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { attachments, deliveries } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveDeliveryAttachmentFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
 
@@ -27,6 +27,9 @@ export async function GET(
   const session = await auth()
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  }
+  if (!can(session, "deliveries:view")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
   const { id } = await params

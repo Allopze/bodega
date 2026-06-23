@@ -48,6 +48,7 @@ export interface EditItem {
   suggestedSupplierId: string | null
   supplierHint:        string | null
   notes:               string | null
+  status:              string
   attributes:          { attributeId: string | null; attributeName: string; value: string }[]
 }
 
@@ -56,6 +57,7 @@ export interface EditItem {
 export interface ItemRow {
   _key:                string
   id?:                 string
+  status?:             string
   productId:           string | null
   productNameFree:     string
   quantity:            string

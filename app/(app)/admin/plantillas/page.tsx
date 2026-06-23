@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Plantillas de correo" }
 
 export default async function PlantillasPage() {
-  try { await requirePermission("admin:config") }
+  try { await requirePermission("admin:email_templates") }
   catch { redirect("/forbidden") }
 
   const templates = await getAllTemplates()

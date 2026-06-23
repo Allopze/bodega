@@ -129,7 +129,7 @@ export const logger = {
     if (firstError) {
       sentry.captureException(firstError)
     } else {
-      const msg = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")
+      const msg = args.map((a) => (typeof a === "string" ? a : JSON.stringify(redact(a)))).join(" ")
       sentry.captureMessage(msg, "error")
     }
   },

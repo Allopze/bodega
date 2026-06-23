@@ -3,6 +3,8 @@ import { inArray, sql, type AnyColumn, type SQL } from "drizzle-orm"
 
 /**
  * Roles with global worksite visibility (no faena scoping).
+ * Kept as a static fallback; prefer session.isGlobal which is derived
+ * from the roles.is_global DB column at login time.
  */
 export const GLOBAL_ROLES = new Set([
   "administrador",
@@ -12,9 +14,16 @@ export const GLOBAL_ROLES = new Set([
   "jefe_mantencion",
 ])
 
+/**
+ * Check if a user has global worksite visibility.
+ * Prefers the session.isGlobal flag (derived from DB at login),
+ * falls back to the static GLOBAL_ROLES set for backward compatibility.
+ */
 export function isGlobalRole(session: Session | null): boolean {
-  if (!session?.user?.roles) return false
-  return session.user.roles.some((role) => GLOBAL_ROLES.has(role))
+  if (!session?.user) return false
+  if (typeof session.user.isGlobal === "boolean") return session.user.isGlobal
+  // Fallback for sessions created before isGlobal was added
+  return session.user.roles?.some((role) => GLOBAL_ROLES.has(role)) ?? false
 }
 
 /**

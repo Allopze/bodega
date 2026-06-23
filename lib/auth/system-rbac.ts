@@ -1,13 +1,13 @@
 import { permissions, rolePermissions, roles } from "../../db/schema"
 
 export const SYSTEM_ROLES = [
-  { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total técnico del sistema" },
-  { id: "rol-jefa", name: "jefa_chome", label: "Jefatura", description: "Revisa, aprueba y administra la operación" },
-  { id: "rol-sec", name: "secretaria", label: "Secretaría", description: "Revisa, aprueba y gestiona operación diaria" },
-  { id: "rol-prev", name: "prevencionista", label: "Jefa Dpto. Prevención de riesgos", description: "Revisa y aprueba solicitudes" },
-  { id: "rol-sol-faena", name: "solicitante_faena", label: "Solicitante faena", description: "Solicita ítems para sus faenas asignadas" },
-  { id: "rol-prev-faena", name: "prevencionista_faena", label: "Prevencionista faena", description: "Evalúa EPP, recibe en faena y gestiona stock en sus faenas asignadas" },
-  { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas" },
+  { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total técnico del sistema", isGlobal: true },
+  { id: "rol-jefa", name: "jefa_chome", label: "Jefatura", description: "Revisa, aprueba y administra la operación", isGlobal: true },
+  { id: "rol-sec", name: "secretaria", label: "Secretaría", description: "Revisa, aprueba y gestiona operación diaria", isGlobal: true },
+  { id: "rol-prev", name: "prevencionista", label: "Jefa Dpto. Prevención de riesgos", description: "Revisa y aprueba solicitudes", isGlobal: true },
+  { id: "rol-sol-faena", name: "solicitante_faena", label: "Solicitante faena", description: "Solicita ítems para sus faenas asignadas", isGlobal: false },
+  { id: "rol-prev-faena", name: "prevencionista_faena", label: "Prevencionista faena", description: "Evalúa EPP, recibe en faena y gestiona stock en sus faenas asignadas", isGlobal: false },
+  { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas", isGlobal: true },
 ] satisfies Array<typeof roles.$inferInsert>
 
 export const SYSTEM_PERMISSIONS = [
@@ -35,6 +35,9 @@ export const SYSTEM_PERMISSIONS = [
   { id: "p-adm-prod", name: "admin:products", module: "admin", description: "Gestionar catálogo" },
   { id: "p-adm-sup", name: "admin:suppliers", module: "admin", description: "Gestionar proveedores" },
   { id: "p-adm-cfg", name: "admin:config", module: "admin", description: "Configuración del sistema" },
+  { id: "p-adm-smtp", name: "admin:smtp", module: "admin", description: "Configurar servidor SMTP" },
+  { id: "p-adm-tpl", name: "admin:email_templates", module: "admin", description: "Gestionar plantillas de correo" },
+  { id: "p-adm-mgt", name: "admin:manage_admins", module: "admin", description: "Asignar roles y permisos de administración" },
   { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Ver log de auditoría" },
   // Repuestos module
   { id: "p-rep-create", name: "repuestos:create", module: "repuestos", description: "Crear solicitudes de repuestos" },
@@ -62,6 +65,11 @@ export const SYSTEM_PERMISSIONS = [
   { id: "p-fb-own",    name: "feedback:view_own",  module: "feedback", description: "Ver los propios reportes de soporte" },
   { id: "p-fb-all",    name: "feedback:view_all",  module: "feedback", description: "Ver todos los reportes de soporte" },
   { id: "p-fb-manage", name: "feedback:manage",    module: "feedback", description: "Gestionar reportes de soporte (cambiar estado, nota interna)" },
+  // Deliveries module
+  { id: "p-del-view",   name: "deliveries:view",   module: "deliveries", description: "Ver historial de entregas" },
+  { id: "p-del-create", name: "deliveries:create", module: "deliveries", description: "Registrar entregas a trabajadores" },
+  // Traceability module
+  { id: "p-trace-view", name: "traceability:view", module: "traceability", description: "Ver trazabilidad de ítems" },
 ] satisfies Array<typeof permissions.$inferInsert>
 
 const JEFATURA_PERMISSION_IDS = [
@@ -73,6 +81,7 @@ const JEFATURA_PERMISSION_IDS = [
   "p-rec-view",
   "p-wh-stock",
   "p-rep-view",
+  "p-trace-view",
   "p-ppa-view",
   "p-ppa-review",
 ]
@@ -83,7 +92,7 @@ const SECRETARIA_PERMISSION_IDS = [
   "p-pur-view", "p-pur-create", "p-pur-send", "p-pur-sup", "p-pur-delete",
   "p-rec-reg-office", "p-rec-reg-faena", "p-rec-view",
   "p-wh-stock", "p-wh-mov",
-  "p-rep-view",
+  "p-rep-view", "p-trace-view",
   "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup",
 ]
 
@@ -92,7 +101,7 @@ const PREVENCIONISTA_OFICINA_PERMISSION_IDS = [
   "p-apr",
   "p-rec-reg-office", "p-rec-view",
   "p-wh-stock", "p-wh-mov",
-  "p-rep-view",
+  "p-rep-view", "p-trace-view",
   "p-adm-usr", "p-adm-ws", "p-adm-wrk", "p-adm-prod", "p-adm-sup",
   "p-sst-view", "p-sst-create", "p-sst-close", "p-sst-manage",
   "p-ppa-view", "p-ppa-review", "p-ppa-manage",
@@ -151,7 +160,7 @@ const JEFE_MANTENCION_PERMISSION_IDS = [
   "p-pur-view",
   "p-rec-reg-faena", "p-rec-view",
   "p-wh-stock",
-  "p-rep-view",
+  "p-rep-view", "p-trace-view",
 ]
 
 // Feedback / Soporte module
@@ -163,25 +172,34 @@ const FEEDBACK_USER_PERMISSION_IDS = [
   "p-fb-create", "p-fb-own",
 ]
 
+// Deliveries module
+const DELIVERIES_VIEW_PERMISSION_IDS = ["p-del-view"]
+const DELIVERIES_CREATE_PERMISSION_IDS = ["p-del-view", "p-del-create"]
+
 export const SYSTEM_ROLE_PERMISSIONS = [
   ...SYSTEM_PERMISSIONS.map((permission) => ({ roleId: "rol-admin", permissionId: permission.id })),
   ...JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
   ...REPUESTOS_JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
   ...SERVICIOS_JEFATURA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
   ...FEEDBACK_MANAGER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
+  ...DELIVERIES_VIEW_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefa", permissionId })),
   ...SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
   ...REPUESTOS_SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
   ...SERVICIOS_SECRETARIA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
   ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
+  ...DELIVERIES_CREATE_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sec", permissionId })),
   ...PREVENCIONISTA_OFICINA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...REPUESTOS_PREVENCIONISTA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...SERVICIOS_PREVENCIONISTA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
+  ...DELIVERIES_CREATE_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev", permissionId })),
   ...PREVENCIONISTA_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
   ...SERVICIOS_FAENA_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
   ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
+  ...DELIVERIES_VIEW_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-sol-faena", permissionId })),
   ...PREVENCIONISTA_FAENA_SCOPE_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev-faena", permissionId })),
   ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev-faena", permissionId })),
+  ...DELIVERIES_CREATE_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev-faena", permissionId })),
   ...JEFE_MANTENCION_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
   ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
 ] satisfies Array<typeof rolePermissions.$inferInsert>

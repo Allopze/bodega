@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import type { DB } from "@/db"
 import * as schema from "@/db/schema"
 import { canManageUserInAdminScope, visibleUserIdsForAdminScope } from "@/lib/auth/admin-user-scope"
+import { GLOBAL_ROLES } from "@/lib/auth/scope"
 
 let pg: PGlite | null = null
 
@@ -80,6 +81,7 @@ function session(roles: string[], worksiteIds: string[] = []): Session {
       primaryWorksiteId: worksiteIds[0] ?? null,
       avatarColor: null,
       isActive: true,
+      isGlobal: roles.some((r) => GLOBAL_ROLES.has(r)),
     },
     expires: "2099-01-01T00:00:00.000Z",
   }

@@ -81,7 +81,7 @@ export default async function AdminPage() {
       description: "Configurar el servidor de correo saliente y el interruptor global de envíos.",
       href:        "/admin/correo-smtp",
       icon:        EnvelopeSimple,
-      permission:  "admin:config",
+      permission:  "admin:smtp",
       group:       "correo",
     },
     {
@@ -89,7 +89,7 @@ export default async function AdminPage() {
       description: "Personalizar asunto y cuerpo HTML de los correos del sistema.",
       href:        "/admin/plantillas",
       icon:        FileText,
-      permission:  "admin:config",
+      permission:  "admin:email_templates",
       group:       "correo",
     },
   ]

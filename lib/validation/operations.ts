@@ -135,6 +135,16 @@ export const setMinStockSchema = z.object({
   minStock:  z.coerce.number().refine(Number.isFinite, "Valor inválido").min(0, "No puede ser negativo"),
 })
 
+// ── Stock adjust ────────────────────────────────────────────────────────────
+export const adjustStockSchema = z.object({
+  worksiteId: z.string().min(1, "Selecciona una faena"),
+  productId:  z.string().min(1, "Selecciona un producto"),
+  quantity:   positiveQuantitySchema,
+  direction:  z.enum(["ingreso", "egreso"]),
+  reason:     z.string().trim().min(1, "Indica el motivo del ajuste").max(300),
+  notes:      z.string().trim().max(500).nullable().optional().or(z.literal("")),
+})
+
 // ── Stock return ────────────────────────────────────────────────────────────
 export const returnStockSchema = z.object({
   worksiteId:   z.string().min(1, "Selecciona una faena"),
@@ -157,5 +167,6 @@ export type InvoiceFormData = z.infer<typeof invoiceSchema>
 export type ReceiptFormData = z.infer<typeof receiptSchema>
 export type DispatchFormData = z.infer<typeof dispatchSchema>
 export type WorkerDeliveryFormData = z.infer<typeof workerDeliverySchema>
+export type AdjustStockFormData = z.infer<typeof adjustStockSchema>
 export type SetMinStockFormData = z.infer<typeof setMinStockSchema>
 export type ReturnStockFormData = z.infer<typeof returnStockSchema>

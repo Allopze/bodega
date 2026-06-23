@@ -8,7 +8,7 @@ import { and, eq, inArray } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { userRoles, roles, permissions } from "@/db/schema"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { canAccessWorksite, can } from "@/lib/auth/can"
 import type { ActionState } from "@/lib/validation/masters"
 
 // ── Worksite assignments ──────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ export async function validatePermissionRules(
 // ── Admin guard ───────────────────────────────────────────────────────────────
 
 export function canManageAdministratorRole(session: Session) {
-  return session.user.roles.includes("administrador")
+  return can(session, "admin:manage_admins")
 }
 
 export function uniqueIds(ids: string[]) {

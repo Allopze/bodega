@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { permissions, rolePermissions, roles, userPermissions, userRoles, users, worksites, worksiteUsers } from "@/db/schema"
 import { and, eq, inArray, sql } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
+import { requirePermission, can } from "@/lib/auth/can"
 import { visibleUserIdsForAdminScope } from "@/lib/auth/admin-user-scope"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
@@ -81,7 +81,7 @@ export default async function UsuariosPage() {
   })
 
   // Assemble user rows
-  const canManageAdmins = session.user.roles.includes("administrador")
+  const canManageAdmins = can(session, "admin:manage_admins")
   const userRows = allUsers.flatMap((u) => {
     const uRoles = allUserRoleRows.filter((r) => r.userId === u.id)
     const uPermissions = allUserPermissionRows.filter((p) => p.userId === u.id)

@@ -15,6 +15,7 @@ export type MovementType =
   | "egreso_entrega"       // - : delivered to worker
   | "ingreso_devolucion"   // + : returned from worker/faena
   | "egreso_desecho"       // 0 : discarded/retired EPP (record only, no stock change)
+  | "ajuste"               // +/-: manual inventory adjustment with mandatory reason
 
 /* ── Apply movement ─────────────────────────────────────────────────────────── */
 
@@ -60,6 +61,16 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
   }
 
   const now = new Date().toISOString()
+
+  // ajuste requires a reason; quantity may be positive (ingreso) or negative (egreso)
+  if (input.type === "ajuste") {
+    if (!input.reason?.trim()) {
+      throw new Error("El ajuste de inventario requiere un motivo")
+    }
+    if (input.quantity === 0) {
+      throw new Error("La cantidad de ajuste no puede ser cero")
+    }
+  }
 
   // egreso_desecho is record-only — no stock delta, just trail the retirement
   if (input.type === "egreso_desecho") {

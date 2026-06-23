@@ -7,7 +7,7 @@ import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseReque
 import { count, eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { createOrdersBySupplier, issueOrder, markOrderSent, cancelOrder, deleteOrder, isOrderDeletable } from "@/lib/services/purchasing"
+import { createOrdersBySupplier, issueOrder, markOrderSent, cancelOrder, confirmOrder, closeOrder, deleteOrder, isOrderDeletable } from "@/lib/services/purchasing"
 import { postponeItem } from "@/lib/services/item-state"
 import { getUserIdsWithPermission, notifyManyUser, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
@@ -325,6 +325,73 @@ export async function postponeItemAction(
   } catch (e) {
     logger.error("[postponeItemAction]", e)
     return { ok: false, message: dbErrMsg(e, "Error al postergar ítem") }
+  }
+}
+
+// ── Confirm order (sent → supplier_confirmed) ─────────────────────────────────
+
+export async function confirmOrderAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("purchasing:create_order") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const orderId = formData.get("orderId") as string | null
+  if (!orderId) return { ok: false, message: "Orden no especificada" }
+  const accessError = await assertOrderAccess(session, orderId)
+  if (accessError) return accessError
+
+  try {
+    await confirmOrder(
+      orderId,
+      session.user.id,
+      serviceWorksiteScope(session),
+      { userEmail: session.user.email ?? undefined },
+    )
+    revalidatePath(REVALIDATE)
+    revalidatePath(`/compras/${orderId}`)
+    return { ok: true, message: "Orden confirmada por proveedor" }
+  } catch (e) {
+    logger.error("[confirmOrderAction]", e)
+    return { ok: false, message: dbErrMsg(e, "Error al confirmar orden") }
+  }
+}
+
+// ── Close order (supplier_confirmed/partially_received/received → closed) ──────
+
+export async function closeOrderAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("purchasing:create_order") }
+  catch { return { ok: false, message: "Sin permisos para cerrar la orden" } }
+
+  const orderId = formData.get("orderId") as string | null
+  const reason  = (formData.get("reason") as string | null)?.trim()
+
+  if (!orderId) return { ok: false, message: "Orden no especificada" }
+  if (!reason)  return { ok: false, message: "El motivo de cierre es obligatorio" }
+
+  const accessError = await assertOrderAccess(session, orderId)
+  if (accessError) return accessError
+
+  try {
+    await closeOrder(
+      orderId,
+      session.user.id,
+      reason,
+      serviceWorksiteScope(session),
+      { userEmail: session.user.email ?? undefined },
+    )
+    revalidatePath(REVALIDATE)
+    revalidatePath(`/compras/${orderId}`)
+    return { ok: true, message: "Orden de compra cerrada" }
+  } catch (e) {
+    logger.error("[closeOrderAction]", e)
+    return { ok: false, message: dbErrMsg(e, "Error al cerrar orden") }
   }
 }
 

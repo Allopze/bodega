@@ -8,6 +8,7 @@ export interface UserRbacSnapshot {
   email: string
   avatarColor: string | null
   isActive: boolean
+  isGlobal: boolean
   roles: string[]
   permissions: string[]
   worksiteIds: string[]
@@ -70,7 +71,7 @@ export async function getUserRbacById(
   // and once userRoles resolves we issue rolePermissions in a chained
   // .then. The total round-trip cost drops from (1+1+1+1) to (1+1).
   const userRoleRowsPromise = db
-    .select({ roleId: userRoles.roleId, roleName: roles.name })
+    .select({ roleId: userRoles.roleId, roleName: roles.name, isGlobal: roles.isGlobal })
     .from(userRoles)
     .innerJoin(roles, eq(userRoles.roleId, roles.id))
     .where(eq(userRoles.userId, user.id))
@@ -116,6 +117,7 @@ export async function getUserRbacById(
     email: user.email,
     avatarColor: user.avatarColor,
     isActive: user.isActive,
+    isGlobal: userRoleRows.some((r) => r.isGlobal),
     roles: userRoleRows.map((r) => r.roleName),
     permissions: permissionNames,
     worksiteIds: wsRows.map((w) => w.worksiteId),
@@ -137,6 +139,7 @@ export function applyRbacToToken(
     token.primaryWorksiteId = null
     token.avatarColor = null
     token.isActive = false
+    token.isGlobal = false
     return token
   }
 
@@ -149,6 +152,7 @@ export function applyRbacToToken(
   token.primaryWorksiteId = snapshot.primaryWorksiteId
   token.avatarColor = snapshot.avatarColor
   token.isActive = true
+  token.isGlobal = snapshot.isGlobal
   return token
 }
 
