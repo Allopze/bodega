@@ -16,7 +16,7 @@ import {
 import { toast } from "@/lib/toast"
 import { saveResponsesAction, closeEvaluationAction } from "@/app/(app)/prevencion/actions"
 import { calculateCompliance } from "@/lib/sst/compliance"
-import { getApplicableResponseStatuses } from "@/lib/sst/checklist"
+import { getApplicableResponseStatuses, type SectionAccess } from "@/lib/sst/checklist"
 import { SIGNATURE_ROLE_LABELS } from "@/lib/sst/cargos"
 import { RESULTADO_LABELS, MOTIVO_LABELS, resultadoBadgeVariant, estadoBadgeVariant, tipoBadgeVariant } from "@/lib/sst/badges"
 import { Badge } from "@/components/ui/badge"
@@ -74,6 +74,8 @@ interface Props {
   canClose: boolean
   canEdit: boolean
   canManage: boolean
+  canViewFullEvaluation: boolean
+  sectionAccess: Record<string, SectionAccess>
 }
 
 export function EvaluationDetail({
@@ -89,23 +91,42 @@ export function EvaluationDetail({
   canClose,
   canEdit,
   canManage,
+  canViewFullEvaluation,
+  sectionAccess,
 }: Props) {
   const router = useRouter()
   const isCerrado = evaluation.estado === "cerrado"
-  const readOnly  = isCerrado || !canEdit
 
+  const fullReadOnly = isCerrado || !canEdit
   const cargos = (evaluation.cargosJson as string[]) ?? []
+  // applicableSections (filtrado por cargo) se usa solo para el cálculo de
+  // compliance; visibleSections además filtra por permiso de sección.
   const applicableSections = getApplicableSections(definition, cargos)
+  const visibleSections = applicableSections.filter(
+    (sec) => sectionAccess[sec.id]?.canView ?? false,
+  )
+  // readOnly por sección: cerrado, o el usuario no puede editar esa sección.
+  const isSectionReadOnly = useCallback(
+    (sectionId: string) => isCerrado || !(sectionAccess[sectionId]?.canEdit ?? false),
+    [isCerrado, sectionAccess],
+  )
+  // ¿Puede editar al menos una sección visible? (controla el autoguardado)
+  const canEditAnyVisible = visibleSections.some((sec) => !isSectionReadOnly(sec.id))
+
   const navigationItems = [
-    ...applicableSections.map((section) => ({
+    ...visibleSections.map((section) => ({
       value: section.id,
       label: section.title,
     })),
-    { value: "acta", label: "Acta de cierre" },
-    ...(evaluation.tipo === "seguimiento"
-      ? [{ value: "seguimientos", label: "Seguimientos" }]
+    ...(canViewFullEvaluation
+      ? [
+          { value: "acta", label: "Acta de cierre" },
+          ...(evaluation.tipo === "seguimiento"
+            ? [{ value: "seguimientos", label: "Seguimientos" }]
+            : []),
+          { value: "plan", label: "Plan de acción" },
+        ]
       : []),
-    { value: "plan", label: "Plan de acción" },
   ]
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -151,11 +172,14 @@ export function EvaluationDetail({
 
   // ── Auto-save ──────────────────────────────────────────────────────────────
   function scheduleAutoSave(newMap: ResponseMap) {
-    if (readOnly) return
+    if (!canEditAnyVisible) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    // Solo se persisten las secciones que el usuario puede editar — así un rol
+    // acotado (conductor_lider) nunca pisa secciones ajenas con nulls.
+    const editableSections = visibleSections.filter((sec) => !isSectionReadOnly(sec.id))
     debounceRef.current = setTimeout(async () => {
       setSaveState("saving")
-      const batch = applicableSections.flatMap((sec) =>
+      const batch = editableSections.flatMap((sec) =>
         sec.items.map((item) => {
           const r = newMap[sec.id]?.[item.id] ?? { estado: null, observacion: "", accionCorrectiva: "" }
           return {
@@ -200,7 +224,7 @@ export function EvaluationDetail({
       })
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [evaluation.id, readOnly]
+    [evaluation.id, canEditAnyVisible]
   )
 
   function moveActiveSection(offset: number) {
@@ -261,6 +285,7 @@ export function EvaluationDetail({
             </div>
 
             {/* Compliance indicator */}
+            {canViewFullEvaluation && (
             <div className="text-right">
               {compliance.total === 0 ? (
                 <p className="text-sm text-text-subtle">Sin respuestas aún</p>
@@ -275,8 +300,9 @@ export function EvaluationDetail({
                 </>
               )}
             </div>
+            )}
 
-            {evaluation.resultadoFinal && (
+            {canViewFullEvaluation && evaluation.resultadoFinal && (
               <Badge variant={resultadoBadgeVariant(evaluation.resultadoFinal)}>
                 {RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}
               </Badge>
@@ -301,7 +327,7 @@ export function EvaluationDetail({
               Guardado {saveState.ts}
             </span>
           )}
-          {saveState === null && !readOnly && (
+          {saveState === null && canEditAnyVisible && (
             <span className="text-xs text-text-subtle">Autoguardado activo</span>
           )}
           {isCerrado && (
@@ -311,12 +337,14 @@ export function EvaluationDetail({
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <Button asChild size="sm" variant="secondary">
-              <Link href={`/sst/${evaluation.id}/print`} target="_blank" rel="noopener noreferrer">
-                <Printer size={14} className="mr-1.5" />
-                Imprimir
-              </Link>
-            </Button>
+            {canViewFullEvaluation && (
+              <Button asChild size="sm" variant="secondary">
+                <Link href={`/sst/${evaluation.id}/print`} target="_blank" rel="noopener noreferrer">
+                  <Printer size={14} className="mr-1.5" />
+                  Imprimir
+                </Link>
+              </Button>
+            )}
 
             {canClose && !isCerrado && (
               <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
@@ -446,20 +474,21 @@ export function EvaluationDetail({
           </div>
         </div>
 
-        {applicableSections.map((sec) => (
+        {visibleSections.map((sec) => (
           <TabsContent key={sec.id} value={sec.id}>
             <div className="border border-(--color-border) bg-(--color-surface) p-5">
               <h3 className="text-base font-semibold text-(--color-text) mb-4">{sec.title}</h3>
               <ChecklistSectionPanel
                 section={sec}
                 responses={responseMap[sec.id] ?? {}}
-                readOnly={readOnly}
+                readOnly={isSectionReadOnly(sec.id)}
                 onChange={handleResponseChange}
               />
             </div>
           </TabsContent>
         ))}
 
+        {canViewFullEvaluation && <>
         {/* Acta de cierre */}
         <TabsContent value="acta">
           <div className="border border-(--color-border) bg-(--color-surface) p-5 space-y-5">
@@ -547,11 +576,12 @@ export function EvaluationDetail({
             <ActionPlanPanel
               evaluationId={evaluation.id}
               items={actionPlan}
-              readOnly={readOnly}
+              readOnly={fullReadOnly}
               onUpdate={setActionPlan}
             />
           </div>
         </TabsContent>
+        </>}
       </Tabs>
     </div>
   )

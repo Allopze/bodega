@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { requirePermission, can } from "@/lib/auth/can"
+import { requireAuth, can, canAny } from "@/lib/auth/can"
+import { getSectionAccess } from "@/lib/sst/checklist"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getEvaluation } from "@/lib/services/sst"
 import { db } from "@/db"
@@ -23,8 +24,10 @@ export default async function EvaluacionDetailPage({ params }: Props) {
   const { id } = await params
 
   let session
-  try { session = await requirePermission("sst:view") }
+  try { session = await requireAuth() }
   catch { redirect("/forbidden") }
+  // Acceso: prevención (sst:view) o roles acotados a una sección (p.ej. conductor_lider)
+  if (!canAny(session, "sst:view", "sst:evaluate_acompanamiento")) redirect("/forbidden")
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
@@ -64,6 +67,14 @@ export default async function EvaluacionDetailPage({ params }: Props) {
   // (no separate sst:edit permission in this module)
   const canEdit   = can(session, "sst:create")
   const canManage = can(session, "sst:manage")
+  // Quien no tiene sst:view (p.ej. conductor_lider) solo accede a sus secciones
+  // por permiso: no ve acta / plan / seguimientos / cierre / compliance global.
+  const canViewFullEvaluation = can(session, "sst:view")
+  const sectionAccess = getSectionAccess(
+    definition,
+    session.user.permissions ?? [],
+    { canCreate: canEdit, canViewFull: canViewFullEvaluation },
+  )
 
   return (
     <PageContainer>
@@ -91,6 +102,8 @@ export default async function EvaluacionDetailPage({ params }: Props) {
         canClose={canClose}
         canEdit={canEdit}
         canManage={canManage}
+        canViewFullEvaluation={canViewFullEvaluation}
+        sectionAccess={sectionAccess}
       />
     </PageContainer>
   )

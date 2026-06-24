@@ -99,4 +99,19 @@ describe("system role permission matrix", () => {
     expect(perms).not.toContain("admin:users")
     expect(perms).not.toContain("admin:products")
   })
+
+  it("grants conductor_lider only the acompanamiento (Punto 3) evaluation permission", () => {
+    const perms = rolePermissions("rol-cond-lider")
+
+    expect(perms).toEqual(["sst:evaluate_acompanamiento"])
+    expect(perms).not.toContain("sst:view")
+    expect(perms).not.toContain("sst:create")
+    expect(perms).not.toContain("sst:close")
+  })
+
+  it("hides the acompanamiento (Punto 3) permission from prevención roles but keeps it for admin", () => {
+    expect(rolePermissions("rol-admin")).toContain("sst:evaluate_acompanamiento")
+    expect(rolePermissions("rol-prev")).not.toContain("sst:evaluate_acompanamiento")
+    expect(rolePermissions("rol-prev-faena")).not.toContain("sst:evaluate_acompanamiento")
+  })
 })

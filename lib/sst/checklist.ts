@@ -78,6 +78,52 @@ export function getApplicableResponseStatuses(
   }))
 }
 
+export type SectionAccess = { canView: boolean; canEdit: boolean }
+
+/**
+ * Calcula el acceso por sección de un usuario sobre un checklist.
+ *
+ * - Secciones con `requiresPermission`: solo visibles/editables si el usuario
+ *   tiene ese permiso (independiente de sst:view/sst:create).
+ * - Secciones normales: visibles si `canViewFull` (sst:view) y editables si
+ *   `canCreate` (sst:create).
+ *
+ * Resultado serializable, apto para pasar a un Client Component.
+ */
+export function getSectionAccess(
+  definition: ChecklistDefinition,
+  permissions: string[],
+  opts: { canCreate: boolean; canViewFull: boolean },
+): Record<string, SectionAccess> {
+  const map: Record<string, SectionAccess> = {}
+  for (const sec of definition.sections) {
+    if (sec.requiresPermission) {
+      const has = permissions.includes(sec.requiresPermission)
+      map[sec.id] = { canView: has, canEdit: has }
+    } else {
+      map[sec.id] = { canView: opts.canViewFull, canEdit: opts.canCreate }
+    }
+  }
+  return map
+}
+
+/**
+ * Conjunto de seccionId que el usuario puede escribir. Usado para reforzar en el
+ * servidor que un rol acotado (p.ej. conductor_lider) solo persista su sección.
+ */
+export function writableSectionIds(
+  definition: ChecklistDefinition,
+  permissions: string[],
+  canCreate: boolean,
+): Set<string> {
+  const access = getSectionAccess(definition, permissions, { canCreate, canViewFull: canCreate })
+  return new Set(
+    Object.entries(access)
+      .filter(([, a]) => a.canEdit)
+      .map(([id]) => id),
+  )
+}
+
 /**
  * Verifica si todos los ítems aplicables tienen una respuesta no nula.
  * Retorna la lista de ítems sin responder (vacía si está completo).

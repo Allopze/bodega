@@ -7,6 +7,7 @@ export const sstModule = {
     "sst:create",
     "sst:close",
     "sst:manage",
+    "sst:evaluate_acompanamiento",
   ] as const,
   nav: [
     {
@@ -16,7 +17,7 @@ export const sstModule = {
           label: "Evaluaciones SST",
           href: "/prevencion",
           iconName: "ClipboardText",
-          permissions: ["sst:view"],
+          permissions: ["sst:view", "sst:evaluate_acompanamiento"],
         },
       ],
     },
@@ -32,5 +33,7 @@ export const sstModule = {
     { roleSlug: "administrador", permission: "sst:create" },
     { roleSlug: "administrador", permission: "sst:close" },
     { roleSlug: "administrador", permission: "sst:manage" },
+    { roleSlug: "administrador", permission: "sst:evaluate_acompanamiento" },
+    { roleSlug: "conductor_lider", permission: "sst:evaluate_acompanamiento" },
   ],
 } as const satisfies ModuleManifest

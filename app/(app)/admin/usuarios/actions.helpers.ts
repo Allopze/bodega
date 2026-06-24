@@ -58,12 +58,13 @@ export async function validateRoleWorksiteRules(
       },
     }
   }
-  const isFaenaRequester = selected.some((role) => role.name === "solicitante_faena")
-  if (isFaenaRequester && worksiteAssignments.length === 0) {
+  const FAENA_SCOPED_ROLES = ["solicitante_faena", "prevencionista_faena", "conductor_lider"]
+  const isFaenaScoped = selected.some((role) => FAENA_SCOPED_ROLES.includes(role.name))
+  if (isFaenaScoped && worksiteAssignments.length === 0) {
     return {
       ok: false,
       fieldErrors: {
-        worksiteAssignments: ["El prevencionista faena debe tener al menos una faena asignada"],
+        worksiteAssignments: ["Este rol de faena debe tener al menos una faena asignada"],
       },
     }
   }

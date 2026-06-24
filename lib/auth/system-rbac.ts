@@ -8,6 +8,7 @@ export const SYSTEM_ROLES = [
   { id: "rol-sol-faena", name: "solicitante_faena", label: "Solicitante faena", description: "Solicita ítems para sus faenas asignadas", isGlobal: false },
   { id: "rol-prev-faena", name: "prevencionista_faena", label: "Prevencionista faena", description: "Evalúa EPP, recibe en faena y gestiona stock en sus faenas asignadas", isGlobal: false },
   { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas", isGlobal: true },
+  { id: "rol-cond-lider", name: "conductor_lider", label: "Conductor líder", description: "Evalúa el acompañamiento en terreno (Punto 3) de trabajadores nuevos en sus faenas asignadas", isGlobal: false },
 ] satisfies Array<typeof roles.$inferInsert>
 
 export const SYSTEM_PERMISSIONS = [
@@ -56,6 +57,7 @@ export const SYSTEM_PERMISSIONS = [
   { id: "p-sst-create", name: "sst:create", module: "sst", description: "Crear evaluaciones SST" },
   { id: "p-sst-close", name: "sst:close", module: "sst", description: "Cerrar evaluaciones SST" },
   { id: "p-sst-manage", name: "sst:manage", module: "sst", description: "Gestionar plan de acción SST" },
+  { id: "p-sst-acomp", name: "sst:evaluate_acompanamiento", module: "sst", description: "Evaluar acompañamiento en terreno (Punto 3) de evaluación de trabajador nuevo" },
   // PPA Digital module
   { id: "p-ppa-view", name: "ppa:view", module: "ppa", description: "Ver PPA Digital e indicadores" },
   { id: "p-ppa-review", name: "ppa:review", module: "ppa", description: "Revisar y autorizar/rechazar PPA detenidos" },
@@ -172,6 +174,9 @@ const FEEDBACK_USER_PERMISSION_IDS = [
   "p-fb-create", "p-fb-own",
 ]
 
+// Conductor líder: único permiso — evaluar el Punto 3 (acompañamiento en terreno)
+const CONDUCTOR_LIDER_PERMISSION_IDS = ["p-sst-acomp"]
+
 // Deliveries module
 const DELIVERIES_VIEW_PERMISSION_IDS = ["p-del-view"]
 const DELIVERIES_CREATE_PERMISSION_IDS = ["p-del-view", "p-del-create"]
@@ -202,4 +207,5 @@ export const SYSTEM_ROLE_PERMISSIONS = [
   ...DELIVERIES_CREATE_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-prev-faena", permissionId })),
   ...JEFE_MANTENCION_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
   ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
+  ...CONDUCTOR_LIDER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-cond-lider", permissionId })),
 ] satisfies Array<typeof rolePermissions.$inferInsert>

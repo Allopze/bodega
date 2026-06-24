@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { requirePermission, can } from "@/lib/auth/can"
+import { requireAuth, can, canAny } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { listEvaluations } from "@/lib/services/sst"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -13,8 +13,9 @@ export const metadata: Metadata = { title: "Evaluaciones SST" }
 
 export default async function PrevencionPage() {
   let session
-  try { session = await requirePermission("sst:view") }
+  try { session = await requireAuth() }
   catch { redirect("/forbidden") }
+  if (!canAny(session, "sst:view", "sst:evaluate_acompanamiento")) redirect("/forbidden")
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | 'all' =

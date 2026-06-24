@@ -75,6 +75,7 @@ afterEach(() => cleanup())
 
 import { EvaluationDetail } from "./evaluation-detail"
 import { TRABAJADOR_NUEVO } from "@/lib/sst/definitions"
+import { getSectionAccess } from "@/lib/sst/checklist"
 
 type EvaluationDetailProps = Parameters<typeof EvaluationDetail>[0]
 
@@ -119,6 +120,12 @@ const defaultProps = {
   canClose: true,
   canEdit: true,
   canManage: false,
+  canViewFullEvaluation: true,
+  sectionAccess: getSectionAccess(
+    TRABAJADOR_NUEVO,
+    ["sst:view", "sst:create", "sst:evaluate_acompanamiento"],
+    { canCreate: true, canViewFull: true },
+  ),
 } satisfies EvaluationDetailProps
 
 // ── Tests ───────────────────────────────────────────────────────────────────

@@ -206,6 +206,7 @@ export const TRABAJADOR_NUEVO: ChecklistDefinition = {
       description: 'Periodo evaluado: Semana 1 / Semana 2 / Semana 3 / Semana 4',
       countsForCompliance: true,
       hasActionCorrectiva: true,
+      requiresPermission: 'sst:evaluate_acompanamiento',
       items: [
         {
           id: 'procedimientos_trabajo_seguro',

@@ -53,6 +53,7 @@ export interface ChecklistSection {
   appliesWhen?: CargoCondition[]  // only show for specific cargos
   countsForCompliance?: boolean   // whether items count toward % calculation
   hasActionCorrectiva?: boolean   // adds "Acción correctiva" column
+  requiresPermission?: string     // gate: only users with this permission can view/edit this section
 }
 
 export type Cargo = string
