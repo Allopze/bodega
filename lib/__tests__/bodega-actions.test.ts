@@ -46,21 +46,6 @@ function makeSession(perm: string, worksiteIds: string[] = ["ws-1"]): Session {
   } as unknown as Session
 }
 
-function makeGlobalSession(perm: string): Session {
-  return {
-    user: {
-      id: "user-admin",
-      name: "Admin",
-      email: "admin@chome.cl",
-      permissions: [perm],
-      roles: ["administrador"],
-      worksiteIds: [],
-      isGlobal: true,
-    },
-    expires: new Date(Date.now() + 86400000).toISOString(),
-  } as unknown as Session
-}
-
 describe("bodega actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()

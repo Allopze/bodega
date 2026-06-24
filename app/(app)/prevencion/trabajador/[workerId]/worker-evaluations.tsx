@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -16,7 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FieldGroup } from "@/components/ui/field"
+import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -25,15 +24,13 @@ import {
   Briefcase,
   Car,
   Trash,
-  Check,
-  LockSimple,
-  Calendar,
-  Warning,
 } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { createEvaluationAction, deleteEvaluationAction } from "@/app/(app)/prevencion/actions"
 import { CARGO_OPTIONS } from "@/lib/sst/cargos"
 import type { SstEvaluation, SstWeeklyEvaluation } from "@/db/schema/sst"
+import { sstEvaluationCreateSchema } from "@/lib/validation/sst"
+import type { z } from "zod"
 import {
   RESULTADO_LABELS,
   estadoLabel,
@@ -148,7 +145,7 @@ export function WorkerEvaluations({
         worksiteId: worker.worksiteId,
         fechaEvaluacion,
         cargos: selectedCargos,
-        motivo: isSeguimiento && motivo ? motivo as any : undefined,
+        motivo: isSeguimiento && motivo ? (motivo as z.infer<typeof sstEvaluationCreateSchema>["motivo"]) : undefined,
         motivoOtro: motivoOtro || undefined,
         equipoPatente: equipoPatente || undefined,
         descripcionEvento: descripcionEvento || undefined,

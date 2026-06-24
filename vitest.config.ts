@@ -34,7 +34,15 @@ export default defineConfig({
         // T-07: start measuring Server Action coverage. Thresholds below are
         // the combined floor after including largely-untested actions files.
         // Ratchet these up as action tests are added; long-term target: 70%.
-        "app/(app)/**/actions.ts",
+        "app/**/actions.ts",
+      ],
+      exclude: [
+        "lib/auth/types.ts",
+        "lib/sst/types.ts",
+        "lib/requests/request-config.ts",
+        "lib/sst/index.ts",
+        "**/*.d.ts",
+        "**/node_modules/**",
       ],
       // T-03: regression floor, set just below the current measured
       // combined coverage (lib ~94% + uncovered actions files pull it down).

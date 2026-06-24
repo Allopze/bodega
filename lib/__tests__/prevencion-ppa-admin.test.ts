@@ -23,7 +23,6 @@ const mockGetPpa = vi.hoisted(() => vi.fn())
 const mockReviewPpa = vi.hoisted(() => vi.fn())
 const mockClosePpa = vi.hoisted(() => vi.fn())
 const mockGetPpaStats = vi.hoisted(() => vi.fn())
-const mockDbSelect = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))

@@ -21,7 +21,7 @@ import { addQuotation, persistRepuestoDraft, submitRepuestoRequest } from "@/lib
 import { addServiceQuotation, persistServiceDraft, submitServiceRequest } from "@/lib/services/servicios"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { persistRequestWithDiff } from "@/lib/services/requests-draft"
-import { deleteRequest, isRequestDeletable } from "@/lib/services/requests-delete"
+import { deleteRequest } from "@/lib/services/requests-delete"
 
 const REVALIDATE = "/solicitudes"
 

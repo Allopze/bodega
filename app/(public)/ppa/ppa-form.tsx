@@ -28,11 +28,6 @@ interface Props {
   controlOptions: Option[]
   complementarias: { key: string; label: string }[]
 }
-
-const selectCls =
-  "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-3 text-base " +
-  "focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-
 function SiNo({
   value, onChange, name, dangerOn,
 }: {
