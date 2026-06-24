@@ -1,12 +1,14 @@
 import ExcelJS from "exceljs"
 import type { Session } from "next-auth"
-import { and, eq, inArray, sql, type SQLWrapper } from "drizzle-orm"
+import { and, count, desc, eq, inArray, sql, type SQLWrapper } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  purchaseRequests, purchaseRequestItems, purchaseOrders,
-  products, worksites, suppliers,
+  purchaseRequests, purchaseRequestItems, purchaseOrders, purchaseOrderItems,
+  purchaseOrderInvoices, products, worksites, suppliers,
 } from "@/db/schema"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { textSearchSql } from "@/lib/operaciones/list-query"
+import { REQUEST_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
 import { formatDate } from "@/lib/utils"
 
 export type ReportCell = string | number | null | undefined
@@ -15,7 +17,23 @@ export interface ExportFilters {
   fromDate?:  string
   toDate?:    string
   worksiteId?: string
+  supplierId?: string
   status?:    string
+  /** Free-text query (matched against code). */
+  q?:         string
+}
+
+const REQUEST_TYPE_LABELS: Record<string, string> = {
+  epp: "EPP", otro: "Otro", repuestos: "Repuestos", servicios: "Servicios",
+}
+const URGENCY_LABELS: Record<string, string> = {
+  normal: "Normal", high: "Alta", critical: "Crítica",
+}
+function requestStatusLabel(s: string): string {
+  return REQUEST_STATE_META[s as keyof typeof REQUEST_STATE_META]?.label ?? s
+}
+function ocStatusLabel(s: string): string {
+  return OC_STATE_META[s as keyof typeof OC_STATE_META]?.label ?? s
 }
 
 export interface ReportData {
@@ -65,9 +83,185 @@ export async function getReportData(tipo: string, session: Session | null, filte
       return itemsSinOc(session, filters, maxRows)
     case "oc_por_estado":
       return ocPorEstado(session, filters, maxRows)
+    case "solicitudes":
+      return solicitudesList(session, filters, maxRows)
+    case "compras":
+      return comprasList(session, filters, maxRows)
+    case "recepcion":
+      return recepcionList(session, filters, maxRows)
     case "gasto_faena":
     default:
       return gastoPorFaena(session, filters, maxRows)
+  }
+}
+
+/* ── List exports (mirror the on-screen Operaciones lists) ─────────────────── */
+
+const RECEIVABLE_OC_STATUSES = ["sent", "partially_office_received", "office_received", "partially_received"]
+
+/** Solicitudes list export — same columns/filters as /solicitudes. */
+async function solicitudesList(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
+  const where = and(
+    buildWorksiteFilter(session, purchaseRequests.worksiteId),
+    buildDateFilter(filters, purchaseRequests.createdAt),
+    filters.status ? eq(purchaseRequests.status, filters.status) : undefined,
+    filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined,
+    textSearchSql(filters.q ?? "", [purchaseRequests.code]),
+  )
+
+  const rows = await db
+    .select({
+      id:          purchaseRequests.id,
+      code:        purchaseRequests.code,
+      requestType: purchaseRequests.requestType,
+      worksiteId:  purchaseRequests.worksiteId,
+      urgency:     purchaseRequests.urgency,
+      status:      purchaseRequests.status,
+      submittedAt: purchaseRequests.submittedAt,
+      createdAt:   purchaseRequests.createdAt,
+    })
+    .from(purchaseRequests)
+    .where(where)
+    .orderBy(desc(purchaseRequests.createdAt))
+    .limit(limit + 1)
+
+  const rowLimitApplied = rows.length > limit
+  const limited = rowLimitApplied ? rows.slice(0, limit) : rows
+
+  const ids   = limited.map((r) => r.id)
+  const wsIds = [...new Set(limited.map((r) => r.worksiteId))]
+  const [wsRows, itemCounts] = await Promise.all([
+    wsIds.length ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds)) : [],
+    ids.length ? db.select({ requestId: purchaseRequestItems.requestId, total: count() }).from(purchaseRequestItems).where(inArray(purchaseRequestItems.requestId, ids)).groupBy(purchaseRequestItems.requestId) : [],
+  ])
+  const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
+  const cntMap = Object.fromEntries(itemCounts.map((c) => [c.requestId, c.total]))
+
+  return {
+    filenameBase: "solicitudes",
+    worksheetName: "Solicitudes",
+    headers: ["Código", "Tipo", "Faena", "Urgencia", "Ítems", "Estado", "Fecha"],
+    rows: limited.map((r) => [
+      r.code,
+      REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType,
+      wsMap[r.worksiteId] ?? r.worksiteId,
+      URGENCY_LABELS[r.urgency ?? ""] ?? r.urgency ?? "",
+      cntMap[r.id] ?? 0,
+      requestStatusLabel(r.status),
+      formatDate(r.submittedAt ?? r.createdAt),
+    ]),
+    rowLimitApplied,
+  }
+}
+
+/** Compras (OC) list export — same columns/filters as /compras. */
+async function comprasList(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
+  const where = and(
+    buildWorksiteFilter(session, purchaseOrders.worksiteId),
+    buildDateFilter(filters, purchaseOrders.createdAt),
+    filters.status ? eq(purchaseOrders.status, filters.status) : undefined,
+    filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined,
+    filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined,
+    textSearchSql(filters.q ?? "", [purchaseOrders.code]),
+  )
+
+  const rows = await db
+    .select({
+      id:          purchaseOrders.id,
+      code:        purchaseOrders.code,
+      worksiteId:  purchaseOrders.worksiteId,
+      supplierId:  purchaseOrders.supplierId,
+      status:      purchaseOrders.status,
+      totalAmount: purchaseOrders.totalAmount,
+      createdAt:   purchaseOrders.createdAt,
+    })
+    .from(purchaseOrders)
+    .where(where)
+    .orderBy(desc(purchaseOrders.createdAt))
+    .limit(limit + 1)
+
+  const rowLimitApplied = rows.length > limit
+  const limited = rowLimitApplied ? rows.slice(0, limit) : rows
+
+  const ids    = limited.map((o) => o.id)
+  const wsIds  = [...new Set(limited.map((o) => o.worksiteId))]
+  const supIds = [...new Set(limited.map((o) => o.supplierId))]
+  const [wsRows, supRows, itemCounts, invoiceCounts] = await Promise.all([
+    wsIds.length  ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds)) : [],
+    supIds.length ? db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(inArray(suppliers.id, supIds)) : [],
+    ids.length ? db.select({ purchaseOrderId: purchaseOrderItems.purchaseOrderId, total: count() }).from(purchaseOrderItems).where(inArray(purchaseOrderItems.purchaseOrderId, ids)).groupBy(purchaseOrderItems.purchaseOrderId) : [],
+    ids.length ? db.select({ purchaseOrderId: purchaseOrderInvoices.purchaseOrderId, total: count() }).from(purchaseOrderInvoices).where(inArray(purchaseOrderInvoices.purchaseOrderId, ids)).groupBy(purchaseOrderInvoices.purchaseOrderId) : [],
+  ])
+  const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
+  const supMap = Object.fromEntries(supRows.map((s) => [s.id, s.name]))
+  const cntMap = Object.fromEntries(itemCounts.map((c) => [c.purchaseOrderId, c.total]))
+  const invMap = Object.fromEntries(invoiceCounts.map((c) => [c.purchaseOrderId, c.total]))
+
+  return {
+    filenameBase: "ordenes-de-compra",
+    worksheetName: "Órdenes de compra",
+    headers: ["Código OC", "Faena", "Proveedor", "Ítems", "Total", "Estado", "Facturas", "Fecha"],
+    rows: limited.map((o) => [
+      o.code,
+      wsMap[o.worksiteId] ?? o.worksiteId,
+      supMap[o.supplierId] ?? o.supplierId,
+      cntMap[o.id] ?? 0,
+      o.totalAmount,
+      ocStatusLabel(o.status),
+      invMap[o.id] ?? 0,
+      formatDate(o.createdAt),
+    ]),
+    rowLimitApplied,
+  }
+}
+
+/** Recepción list export — OCs in receivable states, same filters as /recepcion. */
+async function recepcionList(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
+  const where = and(
+    inArray(purchaseOrders.status, RECEIVABLE_OC_STATUSES),
+    buildWorksiteFilter(session, purchaseOrders.worksiteId),
+    filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined,
+    filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined,
+    textSearchSql(filters.q ?? "", [purchaseOrders.code]),
+  )
+
+  const rows = await db
+    .select({
+      code:       purchaseOrders.code,
+      worksiteId: purchaseOrders.worksiteId,
+      supplierId: purchaseOrders.supplierId,
+      status:     purchaseOrders.status,
+      sentAt:     purchaseOrders.sentAt,
+    })
+    .from(purchaseOrders)
+    .where(where)
+    .orderBy(desc(purchaseOrders.sentAt))
+    .limit(limit + 1)
+
+  const rowLimitApplied = rows.length > limit
+  const limited = rowLimitApplied ? rows.slice(0, limit) : rows
+
+  const wsIds  = [...new Set(limited.map((o) => o.worksiteId))]
+  const supIds = [...new Set(limited.map((o) => o.supplierId))]
+  const [wsRows, supRows] = await Promise.all([
+    wsIds.length  ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds)) : [],
+    supIds.length ? db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(inArray(suppliers.id, supIds)) : [],
+  ])
+  const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
+  const supMap = Object.fromEntries(supRows.map((s) => [s.id, s.name]))
+
+  return {
+    filenameBase: "recepcion",
+    worksheetName: "Recepción",
+    headers: ["Código OC", "Faena", "Proveedor", "Estado", "Enviada"],
+    rows: limited.map((o) => [
+      o.code,
+      wsMap[o.worksiteId] ?? o.worksiteId,
+      supMap[o.supplierId] ?? o.supplierId,
+      ocStatusLabel(o.status),
+      o.sentAt ? formatDate(o.sentAt) : "",
+    ]),
+    rowLimitApplied,
   }
 }
 

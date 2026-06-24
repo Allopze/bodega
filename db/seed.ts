@@ -24,16 +24,14 @@ if (!process.env.DATABASE_URL) {
 const adminName = process.env.SEED_ADMIN_NAME ?? "Administrador"
 const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@chome.cl").toLowerCase()
 const NODE_ENV = process.env.NODE_ENV ?? "development"
-const SEED_ALLOW_DEFAULT_PASSWORD = process.env.SEED_ALLOW_DEFAULT_PASSWORD === "true"
 
 function resolveSeedAdminPassword(): string {
   const explicit = process.env.SEED_ADMIN_PASSWORD
   if (explicit && explicit.length > 0) return explicit
-  if (NODE_ENV === "production" && !SEED_ALLOW_DEFAULT_PASSWORD) {
+  if (NODE_ENV === "production") {
     console.error(
       "Refusing to seed: SEED_ADMIN_PASSWORD is not set and NODE_ENV=production.\n" +
-      "Define a strong password via SEED_ADMIN_PASSWORD, or set SEED_ALLOW_DEFAULT_PASSWORD=true\n" +
-      "to fall back to the development default (chome2026).",
+      "Define a strong password via SEED_ADMIN_PASSWORD.",
     )
     process.exit(1)
   }

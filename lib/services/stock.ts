@@ -75,14 +75,15 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
     }
   }
 
-  // egreso_desecho is record-only — no stock delta, just trail the retirement
+  // egreso_desecho: deducts stock if available, otherwise record-only.
+  // Covers two valid scenarios:
+  //  - EPP in worksite stock → deduct (item retired from inventory)
+  //  - EPP already delivered to worker (stock=0) → record-only (already out of stock)
   if (input.type === "egreso_desecho") {
-    // S-17: record-only movements must carry a positive count. The DB CHECK
-    // only guards stock_before/after >= 0, not the movement quantity itself,
-    // so a negative quantity would silently land in the kardex.
     if (!(input.quantity > 0)) {
       throw new Error("La cantidad de un movimiento de desecho debe ser mayor que cero")
     }
+
     const existing = await tx.query.worksiteStock.findFirst({
       where: and(
         eq(worksiteStock.worksiteId, input.worksiteId),
@@ -91,16 +92,29 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
     })
     const currentQty = existing?.quantity ?? 0
 
+    // If stock is available, deduct; if already 0, record-only
+    const deductQty = currentQty > 0 ? Math.min(input.quantity, currentQty) : 0
+    const newQty = currentQty - deductQty
+
+    if (deductQty > 0) {
+      await tx.update(worksiteStock)
+        .set({ quantity: newQty, lastMovementAt: now, updatedAt: now })
+        .where(and(
+          eq(worksiteStock.worksiteId, input.worksiteId),
+          eq(worksiteStock.productId, input.productId),
+        ))
+    }
+
     await tx.insert(inventoryMovements).values({
       id: nanoid(),
       worksiteId: input.worksiteId,
       productId: input.productId,
       type: input.type,
-      quantity: input.quantity,
+      quantity: -deductQty, // negative = egress in kardex
       referenceType: input.referenceType ?? null,
       referenceId: input.referenceId ?? null,
       stockBefore: currentQty,
-      stockAfter: currentQty,
+      stockAfter: newQty,
       performedBy: input.performedBy,
       reason: input.reason ?? null,
       notes: input.notes ?? null,
@@ -117,11 +131,11 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
         productId: input.productId,
         quantity: input.quantity,
         stockBefore: currentQty,
-        stockAfter: currentQty,
+        stockAfter: newQty,
       },
     }, tx)
 
-    return currentQty
+    return newQty
   }
 
   const { currentQty, newQty } = await applyStockDelta(tx, input, now)

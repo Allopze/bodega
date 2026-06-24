@@ -5,7 +5,8 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Plus, Warning, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
-import { StateBadge } from "@/components/states/state-badge"
+import { StateBadge, REQUEST_STATE_META } from "@/components/states/state-badge"
+import { ListFilters, type FilterOption } from "@/components/operaciones/list-filters"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -125,66 +126,62 @@ function DeleteRequestButton({ requestId, code }: { requestId: string; code: str
   )
 }
 
+const STATUS_OPTIONS: FilterOption[] = Object.entries(REQUEST_STATE_META).map(
+  ([value, meta]) => ({ value, label: meta.label }),
+)
+
 export function RequestList({
   requests,
   canCreate,
   hasWorksites = true,
   currentUserId,
   canDeleteAny = false,
+  worksiteOptions = [],
 }: {
   requests: RequestRow[]
   canCreate: boolean
   hasWorksites?: boolean
   currentUserId: string
   canDeleteAny?: boolean
+  worksiteOptions?: FilterOption[]
 }) {
   const [showWarningModal, setShowWarningModal] = React.useState(false)
   const router = useRouter()
 
+  const nuevaButton = canCreate ? (
+    hasWorksites ? (
+      <Button variant="primary" size="sm" asChild>
+        <Link href="/solicitudes/nueva">
+          <Plus weight="bold" size={16} />
+          Nueva solicitud
+        </Link>
+      </Button>
+    ) : (
+      <Button variant="primary" size="sm" onClick={() => setShowWarningModal(true)}>
+        <Plus weight="bold" size={16} />
+        Nueva solicitud
+      </Button>
+    )
+  ) : undefined
+
   return (
     <>
+      <ListFilters
+        searchPlaceholder="Buscar por código..."
+        statusOptions={STATUS_OPTIONS}
+        worksiteOptions={worksiteOptions}
+        exportTipo="solicitudes"
+        actions={nuevaButton}
+      />
       <DataTable
         columns={COLUMNS}
         rows={requests as unknown as Record<string, unknown>[]}
         searchKeys={["code", "worksiteName", "status", "requestType"]}
+        disableInternalSearch
         pageSize={25}
-        searchPlaceholder="Buscar solicitud, faena, código..."
         emptyTitle="Sin solicitudes"
-        emptyDescription="Las solicitudes de compra aparecerán aquí."
-        emptyAction={
-          canCreate ? (
-            hasWorksites ? (
-              <Button variant="primary" size="sm" asChild>
-                <Link href="/solicitudes/nueva">
-                  <Plus weight="bold" size={16} />
-                  Nueva solicitud
-                </Link>
-              </Button>
-            ) : (
-              <Button variant="primary" size="sm" onClick={() => setShowWarningModal(true)}>
-                <Plus weight="bold" size={16} />
-                Nueva solicitud
-              </Button>
-            )
-          ) : undefined
-        }
-        actions={
-          canCreate ? (
-            hasWorksites ? (
-              <Button variant="primary" size="sm" asChild>
-                <Link href="/solicitudes/nueva">
-                  <Plus weight="bold" size={16} />
-                  Nueva solicitud
-                </Link>
-              </Button>
-            ) : (
-              <Button variant="primary" size="sm" onClick={() => setShowWarningModal(true)}>
-                <Plus weight="bold" size={16} />
-                Nueva solicitud
-              </Button>
-            )
-          ) : undefined
-        }
+        emptyDescription="No hay solicitudes que coincidan con los filtros."
+        emptyAction={nuevaButton}
         renderMobileCard={(row) => {
           const r = row as unknown as RequestRow
           return (

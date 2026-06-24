@@ -23,6 +23,11 @@ vi.mock("@/db", () => ({
   get db() { return testGlobal.__db },
 }))
 
+// Defense-in-depth: ensure NextAuth runtime is never loaded in this pure-service test
+vi.mock("@/lib/auth/auth", () => ({
+  auth: vi.fn(),
+}))
+
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
 import { applyMovement } from "@/lib/services/stock"
@@ -56,6 +61,11 @@ describe("Stock service — applyMovement", () => {
     })
     await inMemoryDb.insert(schema.products).values({
       id: "prod-stock-2", sku: "S-002", name: "Producto Stock 2",
+      categoryId: "cat-stock", unitOfMeasure: "unidad", isActive: true,
+      createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.products).values({
+      id: "prod-stock-3", sku: "S-003", name: "Producto Stock 3",
       categoryId: "cat-stock", unitOfMeasure: "unidad", isActive: true,
       createdAt: now, updatedAt: now,
     })
@@ -149,10 +159,10 @@ describe("Stock service — applyMovement", () => {
     })
   })
 
-  // ── egress_desecho (record-only) ───────────────────────────────────────
+  // ── egress_desecho ────────────────────────────────────────────────────────
 
-  describe("egress_desecho (record-only)", () => {
-    it("does NOT change stock level", async () => {
+  describe("egress_desecho", () => {
+    it("deducts from stock (item retired from worksite inventory)", async () => {
       const stockBefore = await inMemoryDb.query.worksiteStock.findFirst({
         where: and(
           eq(schema.worksiteStock.worksiteId, "ws-stock"),
@@ -170,8 +180,8 @@ describe("Stock service — applyMovement", () => {
         reason: "EPP desgastado",
       })
 
-      // Stock should NOT change
-      expect(newQty).toBe(qtyBefore)
+      // Stock SHOULD decrease
+      expect(newQty).toBe(qtyBefore - 2)
 
       const stockAfter = await inMemoryDb.query.worksiteStock.findFirst({
         where: and(
@@ -179,7 +189,7 @@ describe("Stock service — applyMovement", () => {
           eq(schema.worksiteStock.productId, "prod-stock"),
         ),
       })
-      expect(stockAfter?.quantity).toBe(qtyBefore)
+      expect(stockAfter?.quantity).toBe(qtyBefore - 2)
     })
 
     it("requires quantity > 0", async () => {
@@ -210,8 +220,30 @@ describe("Stock service — applyMovement", () => {
       expect(movements.length).toBeGreaterThanOrEqual(1)
       const last = movements[movements.length - 1]!
       expect(last.productId).toBe("prod-stock")
-      expect(last.quantity).toBe(1)
+      expect(last.quantity).toBe(-1) // stored as negative (egress)
       expect(last.reason).toBe("Retiro por daño")
+    })
+
+    it("records movement even when stock is already zero (EPP already delivered)", async () => {
+      // Use prod-stock-3 which has never been touched (stock = 0)
+      const newQty = await applyMovement({
+        worksiteId: "ws-stock",
+        productId: "prod-stock-3",
+        type: "egreso_desecho",
+        quantity: 5,
+        performedBy: userId,
+        reason: "EPP ya entregado, descartado por trabajador",
+      })
+
+      // Stock stays at 0 (record-only when no stock to deduct)
+      expect(newQty).toBe(0)
+
+      const movements = await inMemoryDb.query.inventoryMovements.findMany({
+        where: eq(schema.inventoryMovements.productId, "prod-stock-3"),
+      })
+      expect(movements.length).toBeGreaterThanOrEqual(1)
+      const last = movements[movements.length - 1]!
+      expect(last.quantity).toBe(0) // 0 deducted (record-only)
     })
   })
 

@@ -16,7 +16,7 @@ import {
   worksiteStock,
   worksites,
 } from "@/db/schema"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import type { Session } from "next-auth"
 import type {
   WorkActor,

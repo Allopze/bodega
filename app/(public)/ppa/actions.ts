@@ -7,7 +7,7 @@ import { z } from "zod"
 import { logger } from "@/lib/logger"
 import { headers } from "next/headers"
 import { checkRateLimit, recordFailure } from "@/lib/services/rate-limit"
-import { validateRut } from "@/lib/rut"
+import { cleanRut, validateRut } from "@/lib/rut"
 
 /**
  * Acción PÚBLICA (sin login). El trabajador envía el PPA. No usa guardPermission:
@@ -18,7 +18,18 @@ export async function submitPpaAction(
 ): Promise<ActionState & { data?: { token: string; resultado: string } }> {
   const h = await headers()
   const clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
-  const rateLimitKey = `ppa:${clientIp}`
+
+  // Pre-parse para escopar el rate limit por trabajador (UX-01). Preferimos una
+  // identidad estable (id de la lista controlada, luego RUT normalizado) para que
+  // un NAT compartido no bloquee a trabajadores legítimos distintos. Caemos a IP
+  // solo cuando el envío no trae ninguna identidad.
+  const preParsed = ppaSubmitSchema.safeParse(input)
+  const rateLimitIdentity = preParsed.success
+    ? (preParsed.data.workerId
+        || (preParsed.data.workerRut ? cleanRut(preParsed.data.workerRut) : "")
+        || clientIp)
+    : clientIp
+  const rateLimitKey = `ppa:${rateLimitIdentity}`
 
   const limitRes = await checkRateLimit(rateLimitKey)
   if (!limitRes.allowed) {
@@ -71,9 +82,26 @@ export async function findWorkerByRutAction(
     return { ok: false, message: "RUT inválido. Debe tener formato 12345678-9 o similar." }
   }
 
+  // Rate limit por IP para evitar enumeración masiva de trabajadores (S-01)
+  const h = await headers()
+  const clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
+  const lookupLimitKey = `ppa-lookup:${clientIp}`
+  const limitRes = await checkRateLimit(lookupLimitKey)
+  if (!limitRes.allowed) {
+    const minutes = Math.ceil(limitRes.waitTimeRemainingMs / 60000)
+    return {
+      ok: false,
+      message: `Demasiadas consultas. Intenta de nuevo en ${minutes} minutos.`,
+    }
+  }
+
   try {
     const worker = await findWorkerByRut(rut)
     if (!worker) {
+      // Contamos solo el intento fallido (RUT no encontrado): las identificaciones
+      // legítimas no penalizan al NAT compartido. Umbral generoso (10/15min) para
+      // tolerar algunos errores de tipeo de una faena sin permitir enumeración masiva.
+      await recordFailure(lookupLimitKey, { maxAttempts: 10 })
       return { ok: false, message: "No se encontró ningún trabajador activo con este RUT." }
     }
     return {

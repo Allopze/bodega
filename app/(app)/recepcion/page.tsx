@@ -4,7 +4,7 @@ import { db } from "@/db"
 import {
   purchaseOrders, purchaseOrderItems, worksites, suppliers,
 } from "@/db/schema"
-import { and, inArray, desc, count } from "drizzle-orm"
+import { and, eq, inArray, desc, count } from "drizzle-orm"
 import { requirePermission, canAny } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -12,6 +12,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { parseListParams, buildListWhere } from "@/lib/operaciones/list-query"
 import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
@@ -33,10 +34,23 @@ export default async function RecepcionPage({
     worksiteScopeSql(session, purchaseOrders.worksiteId),
   )
 
+  // URL-synced search & filters (server-side, so search finds records on any page)
+  const listParams = parseListParams(sp)
+  const where = buildListWhere({
+    base:           scopeFilter,
+    textColumns:    [purchaseOrders.code],
+    query:          listParams.q,
+    estados:        [],
+    worksiteColumn: purchaseOrders.worksiteId,
+    faena:          listParams.faena,
+    supplierColumn: purchaseOrders.supplierId,
+    proveedor:      listParams.proveedor,
+  })
+
   const [totalRow] = await db
     .select({ total: count() })
     .from(purchaseOrders)
-    .where(scopeFilter)
+    .where(where)
 
   const pagination = resolvePagination({
     pageParam: sp.page,
@@ -55,12 +69,27 @@ export default async function RecepcionPage({
       createdAt:   purchaseOrders.createdAt,
     })
     .from(purchaseOrders)
-    .where(scopeFilter)
+    .where(where)
     .orderBy(desc(purchaseOrders.sentAt))
     .limit(pagination.limit)
     .offset(pagination.offset)
 
   const pageHref = (page: number) => buildPaginationHref("/recepcion", sp, page)
+
+  // Worksite options for the faena filter (scoped + active)
+  const worksiteOptionRows = await db
+    .select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)))
+  const worksiteOptions = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
+
+  // Supplier options for the proveedor filter (active suppliers)
+  const supplierOptionRows = await db
+    .select({ id: suppliers.id, name: suppliers.name })
+    .from(suppliers)
+    .where(eq(suppliers.isActive, true))
+    .orderBy(suppliers.name)
+  const supplierOptions = supplierOptionRows.map((s) => ({ value: s.id, label: s.name }))
 
   const wsIds       = [...new Set(visible.map((o) => o.worksiteId))]
   const supplierIds = [...new Set(visible.map((o) => o.supplierId))]
@@ -119,6 +148,8 @@ export default async function RecepcionPage({
         supMap={supMap}
         gapMap={gapMap}
         canRegister={canRegister}
+        worksiteOptions={worksiteOptions}
+        supplierOptions={supplierOptions}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>

@@ -1,0 +1,23 @@
+# Monthly maintenance jobs:
+# - Audit log retention cleanup (DEVOPS-01)
+#   Runs cleanup_old_audit_log() to enforce the 6-year retention policy.
+#   Legal basis: DS N°44/2024, Ley 16.744 (min 5 years, we keep 6).
+name: Maintenance
+
+on:
+  schedule:
+    # 1st of every month at 03:00 UTC
+    - cron: "0 3 1 * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  audit-log-cleanup:
+    name: Audit log retention cleanup
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Run cleanup_old_audit_log()
+        run: |
+          psql "$DATABASE_URL" -c "SELECT cleanup_old_audit_log() AS rows_deleted;"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

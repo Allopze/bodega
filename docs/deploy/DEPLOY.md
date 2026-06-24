@@ -40,8 +40,7 @@ Guía completa para desplegar la aplicación en producción.
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `SEED_ADMIN_PASSWORD` | — | Password del admin seed |
-| `SEED_ALLOW_DEFAULT_PASSWORD` | `false` | Permite el password por defecto en producción. **No usar.** |
+| `SEED_ADMIN_PASSWORD` | — | Password del admin seed (**requerida** en producción) |
 | `SEED_DRY_RUN` | `false` | Valida entradas sin escribir (A-16) |
 
 ### Fail-fast

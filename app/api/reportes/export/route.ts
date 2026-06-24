@@ -6,16 +6,26 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
-import { can } from "@/lib/auth/can"
+import { canAny } from "@/lib/auth/can"
+import type { Permission } from "@/modules/permissions"
 import { buildXlsxBuffer, getReportData, type ExportFilters } from "@/lib/reports/export"
 import { logger } from "@/lib/logger"
 import { encodeContentDisposition } from "@/lib/utils"
 
-const REPORT_TYPES = new Set([
-  "gasto_faena",
-  "items_sin_oc",
-  "oc_por_estado",
-])
+/**
+ * Each export type requires one of the listed permissions. Report types
+ * stay behind reports:view; the on-screen Operaciones list exports are
+ * gated by the same permission needed to see the list ("si lo ves, lo
+ * puedes exportar").
+ */
+const TYPE_PERMISSIONS: Record<string, Permission[]> = {
+  gasto_faena:   ["reports:view"],
+  items_sin_oc:  ["reports:view"],
+  oc_por_estado: ["reports:view"],
+  solicitudes:   ["requests:view_own", "requests:view_all"],
+  compras:       ["purchasing:view", "purchasing:create_order"],
+  recepcion:     ["receiving:view", "receiving:register_office", "receiving:register_faena"],
+}
 
 const MAX_EXPORT_ROWS = 10_000
 
@@ -24,24 +34,29 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   }
-  if (!can(session, "reports:view")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
-  }
 
   const tipo = req.nextUrl.searchParams.get("tipo") ?? "gasto_faena"
-  if (!REPORT_TYPES.has(tipo)) {
+  const requiredPermissions = TYPE_PERMISSIONS[tipo]
+  if (!requiredPermissions) {
     return NextResponse.json({ error: "Tipo de reporte inválido" }, { status: 400 })
+  }
+  if (!canAny(session, ...requiredPermissions)) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
   const filters: ExportFilters = {}
   const from = req.nextUrl.searchParams.get("from")
   const to = req.nextUrl.searchParams.get("to")
   const faena = req.nextUrl.searchParams.get("faena")
+  const proveedor = req.nextUrl.searchParams.get("proveedor")
   const status = req.nextUrl.searchParams.get("status")
+  const q = req.nextUrl.searchParams.get("q")
   if (from) filters.fromDate = from
   if (to) filters.toDate = to
   if (faena) filters.worksiteId = faena
+  if (proveedor) filters.supplierId = proveedor
   if (status) filters.status = status
+  if (q) filters.q = q
 
   try {
     const report = await getReportData(tipo, session, filters, MAX_EXPORT_ROWS)

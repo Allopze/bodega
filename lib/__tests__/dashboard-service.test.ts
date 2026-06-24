@@ -46,7 +46,7 @@ vi.mock("@/db", () => ({
 
 // ── Mock auth ────────────────────────────────────────────────────────────────
 
-vi.mock("@/lib/auth/can", () => ({
+vi.mock("@/lib/auth/scope", () => ({
   isGlobalRole: vi.fn(),
   visibleWorksiteIds: vi.fn(),
 }))
@@ -54,7 +54,7 @@ vi.mock("@/lib/auth/can", () => ({
 // ── Import after mocks ───────────────────────────────────────────────────────
 
 import { getWorkQueueSnapshot, getDashboardData, buildActor } from "@/lib/services/dashboard"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 
 const mockIsGlobalRole = vi.mocked(isGlobalRole)
 const mockVisibleWorksiteIds = vi.mocked(visibleWorksiteIds)

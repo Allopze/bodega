@@ -429,7 +429,8 @@ describe("Full procurement workflow integration", () => {
     expect(item.returnReason).toBe("desgastado")
     expect(item.returnNotes).toBe("Casco con golpes")
 
-    // Verify egreso_desecho movement was created (no stock change)
+    // Verify egreso_desecho movement was created
+    // Note: prod-old was never in worksite stock, so this is record-only (quantity=0 deducted)
     const movements = await inMemoryDb
       .select()
       .from(schema.inventoryMovements)
@@ -438,13 +439,13 @@ describe("Full procurement workflow integration", () => {
     const retireMovement = movements.find((m: typeof schema.inventoryMovements.$inferSelect) => m.referenceId === deliveryId)
     expect(retireMovement).toBeDefined()
     expect(retireMovement!.productId).toBe(returnProductId)
-    expect(retireMovement!.quantity).toBe(1)
+    expect(retireMovement!.quantity).toBe(0) // record-only: prod-old had no stock to deduct
 
-    // Verify stock was NOT affected by the return
+    // Verify stock was NOT affected by the return (prod-new stock unchanged)
     const stock = await inMemoryDb.query.worksiteStock.findFirst({
       where: eq(schema.worksiteStock.worksiteId, worksiteId),
     })
-    expect(stock!.quantity).toBe(8) // 10 - 2 delivered, return didn't add stock
+    expect(stock!.quantity).toBe(8) // 10 - 2 delivered, return didn't touch prod-new stock
   })
 
   it("creates separate purchase orders for items assigned to different suppliers", async () => {

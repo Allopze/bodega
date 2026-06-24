@@ -19,6 +19,7 @@ const dynamicSamples: Record<string, string> = {
   "/sst/[id]/print": "/sst/sst-audit-1/print",
   "/ppa/result/[token]": "/ppa/result/capture-ppa-token",
   "/soporte/[id]": "/soporte/sop-audit-1",
+  "/trazabilidad/[itemId]": "/trazabilidad/req-item-audit-1",
 }
 
 describe("capture-all-routes route inventory", () => {

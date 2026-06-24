@@ -47,6 +47,10 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   actions?:     React.ReactNode
   /** When true renders skeleton rows instead of EmptyState — prevents "no results" flash during load */
   loading?:     boolean
+  /** When true, disables the in-memory text filter and its toolbar input.
+   *  Use when search/filtering is handled server-side (URL-synced) so the
+   *  table only renders + sorts the already-filtered server page. */
+  disableInternalSearch?: boolean
 }
 
 type SortDir = "asc" | "desc" | null
@@ -69,12 +73,16 @@ export function DataTable<T extends Record<string, unknown>>({
   className,
   actions,
   loading = false,
+  disableInternalSearch = false,
 }: DataTableProps<T>) {
   const { searchQuery } = useSafeShellHeader()
 
   // If explicit search prop is given, use it. Otherwise, fall back to header context search.
-  const currentSearch = search !== undefined ? search : searchQuery
-  const hasExplicitSearch = search !== undefined
+  // When server-side filtering is in effect, the in-memory filter is a no-op.
+  const currentSearch = disableInternalSearch
+    ? ""
+    : search !== undefined ? search : searchQuery
+  const hasExplicitSearch = !disableInternalSearch && search !== undefined
   const [sortKey, setSortKey] = React.useState<string | null>(null)
   const [sortDir, setSortDir] = React.useState<SortDir>(null)
   const [page,    setPage]    = React.useState(1)

@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { DataTable } from "@/components/admin/data-table"
+import { ListFilters, type FilterOption } from "@/components/operaciones/list-filters"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Badge } from "@/components/ui/badge"
@@ -20,11 +21,13 @@ interface OrderRow {
 }
 
 interface RecepcionTableProps {
-  orders:       OrderRow[]
-  wsMap:        Record<string, string>
-  supMap:       Record<string, string>
-  gapMap:       Record<string, number>
-  canRegister:  boolean
+  orders:           OrderRow[]
+  wsMap:            Record<string, string>
+  supMap:           Record<string, string>
+  gapMap:           Record<string, number>
+  canRegister:      boolean
+  worksiteOptions?: FilterOption[]
+  supplierOptions?: FilterOption[]
 }
 
 const COLUMNS = [
@@ -36,18 +39,25 @@ const COLUMNS = [
   { key: "sentAt",       label: "Enviada",    sortable: true,  width: "w-32" },
 ]
 
-export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister }: RecepcionTableProps) {
+export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, worksiteOptions = [], supplierOptions = [] }: RecepcionTableProps) {
   const router = useRouter()
 
   return (
+    <>
+    <ListFilters
+      searchPlaceholder="Buscar por código de OC..."
+      worksiteOptions={worksiteOptions}
+      supplierOptions={supplierOptions}
+      exportTipo="recepcion"
+    />
     <DataTable
       columns={COLUMNS}
       rows={orders as unknown as Record<string, unknown>[]}
       searchKeys={["code"]}
+      disableInternalSearch
       pageSize={20}
-      searchPlaceholder="Buscar OC..."
       emptyTitle="Sin OCs pendientes de recepción"
-      emptyDescription="Las órdenes enviadas aparecerán aquí para registrar llegada a oficina y distribución a faena."
+      emptyDescription="No hay órdenes que coincidan con los filtros."
       renderRow={(row) => {
         const o = row as unknown as OrderRow
         const href = `/compras/${o.id}`
@@ -97,5 +107,6 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister }: R
         )
       }}
     />
+    </>
   )
 }

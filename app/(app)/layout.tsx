@@ -12,7 +12,7 @@ import { SessionProvider } from "@/components/providers/session-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
 import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { Toaster } from "sonner"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 
 // P-01: Cache badge counts per user for 30s. Prevents 3 DB queries on every
 // navigation event. Invalidated via revalidateTag('badge-counts-{userId}')

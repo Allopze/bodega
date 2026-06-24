@@ -10,6 +10,17 @@ const LIMIT_ATTEMPTS = 5
 const LOCK_TIME = 15 * 60 * 1000 // 15 minutes
 
 /**
+ * Per-surface tuning for `recordFailure`. Defaults match the login limiter
+ * (5 attempts / 15 min). Public, NAT-shared surfaces (e.g. the PPA worker
+ * lookup) can pass a more generous `maxAttempts` so a faena behind a single
+ * IP isn't locked out while still bounding bulk enumeration.
+ */
+export interface RateLimitOptions {
+  maxAttempts?: number
+  lockMs?: number
+}
+
+/**
  * Check whether `key` (IP or email) is allowed to attempt login.
  * Returns `{ allowed, waitTimeRemainingMs }`.
  */
@@ -17,7 +28,10 @@ export async function checkRateLimit(key: string): Promise<{
   allowed: boolean
   waitTimeRemainingMs: number
 }> {
-  await pruneExpiredLocks()
+  // PERF-01: run pruning probabilistically (1 in 10 calls) to reduce write overhead
+  if (Math.random() < 0.1) {
+    await pruneExpiredLocks().catch(() => { /* non-critical */ })
+  }
   const [row] = await db
     .select()
     .from(rateLimits)
@@ -46,8 +60,10 @@ export async function checkRateLimit(key: string): Promise<{
  * read-then-write race where two concurrent failures both see “no row”
  * and duplicate-key on insert.
  */
-export async function recordFailure(key: string): Promise<void> {
+export async function recordFailure(key: string, opts?: RateLimitOptions): Promise<void> {
   const now = Date.now()
+  const maxAttempts = opts?.maxAttempts ?? LIMIT_ATTEMPTS
+  const lockMs = opts?.lockMs ?? LOCK_TIME
   await db
     .insert(rateLimits)
     .values({
@@ -59,10 +75,10 @@ export async function recordFailure(key: string): Promise<void> {
     .onConflictDoUpdate({
       target: rateLimits.key,
       set: {
-        count: sql`LEAST(${rateLimits.count} + 1, ${LIMIT_ATTEMPTS})`,
+        count: sql`LEAST(${rateLimits.count} + 1, ${maxAttempts})`,
         lockUntil: sql`CASE
-          WHEN ${rateLimits.count} + 1 >= ${LIMIT_ATTEMPTS}
-          THEN ${now + LOCK_TIME}::bigint
+          WHEN ${rateLimits.count} + 1 >= ${maxAttempts}
+          THEN ${now + lockMs}::bigint
           ELSE 0
         END`,
         updatedAt: new Date(now).toISOString(),

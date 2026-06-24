@@ -94,7 +94,6 @@ services:
       - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-}
       - SEED_ADMIN_NAME=${SEED_ADMIN_NAME:-}
       - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:?err}
-      - SEED_ALLOW_DEFAULT_PASSWORD=${SEED_ALLOW_DEFAULT_PASSWORD:-false}
     command: ["npx", "tsx", "db/seed.ts"]
 
   db:

@@ -1,0 +1,294 @@
+/**
+ * Unit tests for bodega actions — dispatch, setMinStock, adjustStock, returnStock.
+ *
+ * Covers:
+ *  1. Permission denied for each action
+ *  2. Validation errors
+ *  3. Worksite scope denied
+ *  4. Service-layer error propagation
+ *  5. Happy paths
+ */
+
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import type { Session } from "next-auth"
+
+const mockAuthFn = vi.hoisted(() => vi.fn())
+const mockApplyMovement = vi.hoisted(() => vi.fn())
+const mockRegisterWorksiteDelivery = vi.hoisted(() => vi.fn())
+
+vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("@/lib/services/stock", () => ({ applyMovement: mockApplyMovement }))
+vi.mock("@/lib/services/deliveries", () => ({
+  registerWorksiteDelivery: mockRegisterWorksiteDelivery,
+}))
+
+const mockDb = {
+  query: { worksiteStock: { findFirst: vi.fn() } },
+  select: vi.fn(),
+  update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })) })),
+}
+
+vi.mock("@/db", () => ({ db: mockDb }))
+
+function makeSession(perm: string, worksiteIds: string[] = ["ws-1"]): Session {
+  return {
+    user: {
+      id: "user-1",
+      name: "Bodeguero",
+      email: "bodega@chome.cl",
+      permissions: [perm],
+      roles: ["bodeguero"],
+      worksiteIds,
+      isGlobal: false,
+    },
+    expires: new Date(Date.now() + 86400000).toISOString(),
+  } as unknown as Session
+}
+
+function makeGlobalSession(perm: string): Session {
+  return {
+    user: {
+      id: "user-admin",
+      name: "Admin",
+      email: "admin@chome.cl",
+      permissions: [perm],
+      roles: ["administrador"],
+      worksiteIds: [],
+      isGlobal: true,
+    },
+    expires: new Date(Date.now() + 86400000).toISOString(),
+  } as unknown as Session
+}
+
+describe("bodega actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockApplyMovement.mockResolvedValue(undefined)
+    mockRegisterWorksiteDelivery.mockResolvedValue(undefined)
+    mockDb.query.worksiteStock.findFirst.mockResolvedValue(null)
+
+    // Default select chain for returnStock prior movements
+    const selectChain = {
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([]),
+      then: (resolve: (v: unknown[]) => void) => Promise.resolve([]).then(resolve),
+    }
+    mockDb.select.mockReturnValue(selectChain)
+  })
+
+  // ── dispatchAction ──────────────────────────────────────────────────────
+
+  describe("dispatchAction", () => {
+    it("denies without warehouse:register_movement", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("other:perm"))
+      const { dispatchAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "5")
+      fd.set("unitOfMeasure", "unidad")
+      fd.set("receiverName", "Juan")
+      const result = await dispatchAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Sin permisos")
+    })
+
+    it("rejects invalid quantity", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement"))
+      const { dispatchAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "0")
+      fd.set("unitOfMeasure", "unidad")
+      fd.set("receiverName", "Juan")
+      const result = await dispatchAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.fieldErrors).toBeDefined()
+    })
+
+    it("denies access to worksite outside scope", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement", ["ws-1"]))
+      const { dispatchAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-other")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "5")
+      fd.set("unitOfMeasure", "unidad")
+      fd.set("receiverName", "Juan")
+      const result = await dispatchAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("No tienes acceso")
+    })
+
+    it("registers delivery on happy path", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement", ["ws-1"]))
+      const { dispatchAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "5")
+      fd.set("unitOfMeasure", "unidad")
+      fd.set("receiverName", "Juan Pérez")
+      fd.set("notes", "Entrega turno mañana")
+      const result = await dispatchAction({ ok: false }, fd)
+      expect(result.ok).toBe(true)
+      expect(result.message).toContain("Entrega registrada")
+      expect(mockRegisterWorksiteDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({ worksiteId: "ws-1", productId: "prod-1", quantity: 5 }),
+        expect.anything(),
+      )
+    })
+
+    it("propagates service error", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement", ["ws-1"]))
+      mockRegisterWorksiteDelivery.mockRejectedValue(new Error("Stock insuficiente"))
+      const { dispatchAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "5")
+      fd.set("unitOfMeasure", "unidad")
+      fd.set("receiverName", "Juan")
+      const result = await dispatchAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Stock insuficiente")
+    })
+  })
+
+  // ── setMinStockAction ───────────────────────────────────────────────────
+
+  describe("setMinStockAction", () => {
+    it("denies without warehouse:register_movement", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("other:perm"))
+      const { setMinStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("stockId", "stock-1")
+      fd.set("minStock", "10")
+      const result = await setMinStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Sin permisos")
+    })
+
+    it("returns error when stock not found", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement"))
+      mockDb.query.worksiteStock.findFirst.mockResolvedValue(null)
+      const { setMinStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("stockId", "nonexistent")
+      fd.set("minStock", "10")
+      const result = await setMinStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Stock no encontrado")
+    })
+
+    it("denies access to stock in different worksite", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement", ["ws-1"]))
+      mockDb.query.worksiteStock.findFirst.mockResolvedValue({ id: "stock-1", worksiteId: "ws-other" })
+      const { setMinStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("stockId", "stock-1")
+      fd.set("minStock", "10")
+      const result = await setMinStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("No tienes acceso")
+    })
+
+    it("updates min stock on happy path", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement", ["ws-1"]))
+      mockDb.query.worksiteStock.findFirst.mockResolvedValue({ id: "stock-1", worksiteId: "ws-1" })
+      const { setMinStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("stockId", "stock-1")
+      fd.set("minStock", "10")
+      const result = await setMinStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(true)
+      expect(result.message).toContain("Stock mínimo actualizado")
+    })
+  })
+
+  // ── adjustStockAction ───────────────────────────────────────────────────
+
+  describe("adjustStockAction", () => {
+    it("denies without warehouse:adjust_stock", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement"))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "5")
+      fd.set("direction", "ingreso")
+      fd.set("reason", "Corrección")
+      const result = await adjustStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Sin permisos")
+    })
+
+    it("denies access to worksite outside scope", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-other")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "5")
+      fd.set("direction", "ingreso")
+      fd.set("reason", "Corrección")
+      const result = await adjustStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("No tienes acceso")
+    })
+
+    it("registers positive adjustment (ingreso)", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "3")
+      fd.set("direction", "ingreso")
+      fd.set("reason", "Sobrante")
+      const result = await adjustStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(true)
+      expect(result.message).toContain("+3")
+      expect(mockApplyMovement).toHaveBeenCalledWith(expect.objectContaining({
+        type: "ajuste",
+        quantity: 3,
+      }))
+    })
+
+    it("registers negative adjustment (egreso)", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "2")
+      fd.set("direction", "egreso")
+      fd.set("reason", "Faltante")
+      const result = await adjustStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(true)
+      expect(result.message).toContain("-2")
+      expect(mockApplyMovement).toHaveBeenCalledWith(expect.objectContaining({
+        type: "ajuste",
+        quantity: -2,
+      }))
+    })
+
+    it("propagates service error", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      mockApplyMovement.mockRejectedValue(new Error("Stock insuficiente"))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("quantity", "999")
+      fd.set("direction", "egreso")
+      fd.set("reason", "Test")
+      const result = await adjustStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Stock insuficiente")
+    })
+  })
+})

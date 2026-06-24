@@ -7,7 +7,8 @@ import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
-import { StateBadge } from "@/components/states/state-badge"
+import { StateBadge, OC_STATE_META } from "@/components/states/state-badge"
+import { ListFilters, type FilterOption } from "@/components/operaciones/list-filters"
 import { Button } from "@/components/ui/button"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -146,7 +147,7 @@ function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?: boolea
               <input type="hidden" name="orderId" value={row.id} />
               <SubmitButton
                 label="Emitir"
-                loadingLabel="..."
+                loadingLabel="Emitiendo…"
                 variant="secondary"
                 size="sm"
               />
@@ -158,7 +159,7 @@ function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?: boolea
               <input type="hidden" name="orderId" value={row.id} />
               <SubmitButton
                 label="Marcar enviada"
-                loadingLabel="..."
+                loadingLabel="Enviando…"
                 variant="secondary"
                 size="sm"
               />
@@ -204,19 +205,36 @@ function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?: boolea
 
 /* ── OC List component ───────────────────────────────────────────────────────── */
 
+const OC_STATUS_OPTIONS: FilterOption[] = Object.entries(OC_STATE_META).map(
+  ([value, meta]) => ({ value, label: meta.label }),
+)
+
 export function OcList({
   orders,
   pendingCount,
   canCreate,
   canDelete = false,
   createdCount = 0,
+  worksiteOptions = [],
+  supplierOptions = [],
 }: {
   orders:       OcRow[]
   pendingCount: number
   canCreate:    boolean
   canDelete?:   boolean
   createdCount?: number
+  worksiteOptions?: FilterOption[]
+  supplierOptions?: FilterOption[]
 }) {
+  const nuevaButton = canCreate ? (
+    <Button variant="primary" size="sm" asChild>
+      <Link href="/compras/nueva">
+        <Plus weight="bold" size={14} />
+        Nueva OC
+      </Link>
+    </Button>
+  ) : undefined
+
   return (
     <div className="flex flex-col gap-4">
       {createdCount > 1 && (
@@ -247,35 +265,26 @@ export function OcList({
         </div>
       )}
 
+      {/* Filtros server-side (URL-synced) */}
+      <ListFilters
+        searchPlaceholder="Buscar por código de OC..."
+        statusOptions={OC_STATUS_OPTIONS}
+        worksiteOptions={worksiteOptions}
+        supplierOptions={supplierOptions}
+        exportTipo="compras"
+        actions={nuevaButton}
+      />
+
       {/* OC table */}
       <DataTable
         columns={COLUMNS}
         rows={orders as unknown as Record<string, unknown>[]}
         searchKeys={["code", "worksiteName", "supplierName", "status"]}
+        disableInternalSearch
         pageSize={25}
-        searchPlaceholder="Buscar OC, faena, proveedor..."
         emptyTitle="Sin órdenes de compra"
-        emptyDescription="Las órdenes de compra aparecerán aquí."
-        emptyAction={
-          canCreate ? (
-            <Button variant="primary" size="sm" asChild>
-              <Link href="/compras/nueva">
-                <Plus weight="bold" size={14} />
-                Nueva OC
-              </Link>
-            </Button>
-          ) : undefined
-        }
-        actions={
-          canCreate ? (
-            <Button variant="primary" size="sm" asChild>
-              <Link href="/compras/nueva">
-                <Plus weight="bold" size={14} />
-                Nueva OC
-              </Link>
-            </Button>
-          ) : undefined
-        }
+        emptyDescription="No hay órdenes que coincidan con los filtros."
+        emptyAction={nuevaButton}
         renderRow={(row) => <OcTableRow key={(row as unknown as OcRow).id} row={row as unknown as OcRow} canDelete={canDelete} />}
       />
     </div>

@@ -8,6 +8,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { parseListParams, buildListWhere } from "@/lib/operaciones/list-query"
 import { RequestList } from "./request-list"
 
 export const metadata: Metadata = { title: "Solicitudes de compra" }
@@ -38,11 +39,23 @@ export default async function SolicitudesPage({
           : sql`false`
       )
 
+  // URL-synced search & filters (server-side, so search finds records on any page)
+  const listParams = parseListParams(sp)
+  const where = buildListWhere({
+    base:           filterConditions,
+    textColumns:    [purchaseRequests.code],
+    query:          listParams.q,
+    statusColumn:   purchaseRequests.status,
+    estados:        listParams.estados,
+    worksiteColumn: purchaseRequests.worksiteId,
+    faena:          listParams.faena,
+  })
+
   // Count total matching requests for pagination
   const [totalRow] = await db
     .select({ total: count() })
     .from(purchaseRequests)
-    .where(filterConditions)
+    .where(where)
 
   const pagination = resolvePagination({
     pageParam: sp.page,
@@ -65,12 +78,12 @@ export default async function SolicitudesPage({
         requesterId:  purchaseRequests.requesterId,
       })
       .from(purchaseRequests)
-      .where(filterConditions)
+      .where(where)
       .orderBy(desc(purchaseRequests.createdAt))
       .limit(pagination.limit)
       .offset(pagination.offset),
 
-    db.select({ id: worksites.id })
+    db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
       .where(eq(worksites.isActive, true))
   ])
@@ -80,6 +93,7 @@ export default async function SolicitudesPage({
     (w) => canAccessWorksite(session, w.id),
   )
   const hasWorksites = scopedWorksites.length > 0
+  const worksiteOptions = scopedWorksites.map((w) => ({ value: w.id, label: w.name }))
 
   const pageHref = (page: number) => buildPaginationHref("/solicitudes", sp, page)
 
@@ -96,7 +110,7 @@ export default async function SolicitudesPage({
             ]} />
           }
         />
-        <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} />
+        <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} worksiteOptions={worksiteOptions} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -153,6 +167,7 @@ export default async function SolicitudesPage({
         hasWorksites={hasWorksites}
         currentUserId={session.user.id}
         canDeleteAny={canDeleteAny}
+        worksiteOptions={worksiteOptions}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>

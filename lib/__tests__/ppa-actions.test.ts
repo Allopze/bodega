@@ -37,6 +37,11 @@ import { findWorkerByRutAction, submitPpaAction } from "@/app/(public)/ppa/actio
 describe("findWorkerByRutAction", () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    mockHeaders.mockResolvedValue({
+      get: (key: string) => (key === "x-forwarded-for" ? "203.0.113.1" : null),
+    })
+    mockCheckRateLimit.mockResolvedValue({ allowed: true, waitTimeRemainingMs: 0 })
+    mockRecordFailure.mockResolvedValue(undefined)
   })
 
   it("retorna error si el RUT no está presente", async () => {
@@ -56,6 +61,18 @@ describe("findWorkerByRutAction", () => {
     const res = await findWorkerByRutAction("12345678-5") // RUT válido
     expect(res.ok).toBe(false)
     expect(res.message).toContain("No se encontró ningún trabajador")
+    expect(mockRecordFailure).toHaveBeenCalledWith(
+      expect.stringContaining("ppa-lookup:"),
+      expect.objectContaining({ maxAttempts: 10 }),
+    )
+  })
+
+  it("bloquea si se supera el rate limit de lookup", async () => {
+    mockCheckRateLimit.mockResolvedValueOnce({ allowed: false, waitTimeRemainingMs: 300000 })
+    const res = await findWorkerByRutAction("12345678-5")
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Demasiadas consultas")
+    expect(mockFindWorkerByRut).not.toHaveBeenCalled()
   })
 
   it("retorna el trabajador si existe", async () => {
@@ -123,7 +140,20 @@ describe("submitPpaAction - Rate Limiting", () => {
 
     const res = await submitPpaAction(baseInput)
     expect(res.ok).toBe(true)
-    expect(mockRecordFailure).toHaveBeenCalledWith("ppa:203.0.113.1")
+    expect(mockRecordFailure).toHaveBeenCalledWith("ppa:12345678-5")
     expect(mockCreatePpaSubmission).toHaveBeenCalled()
+  })
+
+  it("escopa el rate limit por workerId cuando está presente (UX-01)", async () => {
+    mockCheckRateLimit.mockResolvedValueOnce({ allowed: true, waitTimeRemainingMs: 0 })
+    mockCreatePpaSubmission.mockResolvedValueOnce({
+      token: "tok-2",
+      submission: { resultado: "aprobado_auto" },
+    })
+
+    const res = await submitPpaAction({ ...baseInput, workerId: "work-42" })
+    expect(res.ok).toBe(true)
+    // Identidad estable (workerId) → distintos trabajadores tras un NAT no colisionan.
+    expect(mockRecordFailure).toHaveBeenCalledWith("ppa:work-42")
   })
 })

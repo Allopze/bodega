@@ -15,6 +15,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { parseListParams, buildListWhere } from "@/lib/operaciones/list-query"
 import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
 import { purchaseRequestItems } from "@/db/schema"
@@ -56,15 +57,49 @@ export default async function ComprasPage({
       requestWorksiteScope,
     ))
   const pendingCount = pendingRow?.total ?? 0
+
+  // URL-synced search & filters (server-side, so search finds records on any page)
+  const listParams = parseListParams(sp)
+  const ordersWhere = buildListWhere({
+    base:           worksiteScope,
+    textColumns:    [purchaseOrders.code],
+    query:          listParams.q,
+    statusColumn:   purchaseOrders.status,
+    estados:        listParams.estados,
+    worksiteColumn: purchaseOrders.worksiteId,
+    faena:          listParams.faena,
+    supplierColumn: purchaseOrders.supplierId,
+    proveedor:      listParams.proveedor,
+  })
+
   const [totalOrdersRow] = await db
     .select({ total: count() })
     .from(purchaseOrders)
-    .where(worksiteScope)
+    .where(ordersWhere)
   const pagination = resolvePagination({
     pageParam: sp.page,
     totalItems: totalOrdersRow?.total ?? 0,
     pageSize: ORDERS_PAGE_SIZE,
   })
+
+  // Worksite options for the faena filter (scoped + active)
+  const worksiteOptionRows = await db
+    .select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(isGlobalRole(session)
+      ? eq(worksites.isActive, true)
+      : visibleWsIds.length > 0
+        ? and(eq(worksites.isActive, true), inArray(worksites.id, visibleWsIds))
+        : sql`false`)
+  const worksiteOptions = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
+
+  // Supplier options for the proveedor filter (active suppliers)
+  const supplierOptionRows = await db
+    .select({ id: suppliers.id, name: suppliers.name })
+    .from(suppliers)
+    .where(eq(suppliers.isActive, true))
+    .orderBy(suppliers.name)
+  const supplierOptions = supplierOptionRows.map((s) => ({ value: s.id, label: s.name }))
 
   // ── Purchase orders ──────────────────────────────────────────────────────────
   const visibleOrders = await db
@@ -80,7 +115,7 @@ export default async function ComprasPage({
       createdAt:   purchaseOrders.createdAt,
     })
     .from(purchaseOrders)
-    .where(worksiteScope)
+    .where(ordersWhere)
     .orderBy(desc(purchaseOrders.createdAt))
     .limit(pagination.limit)
     .offset(pagination.offset)
@@ -106,7 +141,7 @@ export default async function ComprasPage({
           }
           headerActions={<HeaderSignals signals={headerSignals} />}
         />
-        <OcList orders={[]} pendingCount={0} canCreate={canCreateOrder} canDelete={canDeleteOrder} createdCount={createdCount} />
+        <OcList orders={[]} pendingCount={0} canCreate={canCreateOrder} canDelete={canDeleteOrder} createdCount={createdCount} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
 
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
@@ -187,6 +222,8 @@ export default async function ComprasPage({
         canCreate={canCreateOrder}
         canDelete={canDeleteOrder}
         createdCount={createdCount}
+        worksiteOptions={worksiteOptions}
+        supplierOptions={supplierOptions}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
