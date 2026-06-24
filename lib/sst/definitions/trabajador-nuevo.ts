@@ -198,15 +198,151 @@ export const TRABAJADOR_NUEVO: ChecklistDefinition = {
     },
 
     // ============================================================
-    // 3. Acompañamiento en terreno — Primeros 30 días
+    // 3.1 Acompañamiento en terreno — Semana 1 (días 1-7)
     // ============================================================
     {
-      id: 'acompanamiento_terreno',
-      title: '3. Acompañamiento en terreno — Primeros 30 días',
-      description: 'Periodo evaluado: Semana 1 / Semana 2 / Semana 3 / Semana 4',
+      id: 'acompanamiento_terreno_s1',
+      title: '3.1 Acompañamiento en terreno — Semana 1',
+      description: 'Días 1–7 desde la fecha de evaluación',
       countsForCompliance: true,
       hasActionCorrectiva: true,
       requiresPermission: 'sst:evaluate_acompanamiento',
+      weekNumber: 1,
+      items: [
+        {
+          id: 'procedimientos_trabajo_seguro',
+          label: 'Cumple procedimientos operativos de trabajo seguro',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'zonas_estacionamiento',
+          label: 'Respeta zonas establecidas de estacionamiento',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'distancias_estacionamiento',
+          label: 'Respeta distancias de seguridad al estacionarse cerca de equipos, estructuras u otros obstáculos',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'conductas_preventivas',
+          label: 'Mantiene conductas preventivas',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'sin_exceso_confianza',
+          label: 'No incurre en excesos de confianza',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'aplica_piensa_actua',
+          label: 'Aplica Piensa y Actúa',
+          kind: 'cumple_nocumple_obs'
+        }
+      ]
+    },
+
+    // ============================================================
+    // 3.2 Acompañamiento en terreno — Semana 2 (días 8-14)
+    // ============================================================
+    {
+      id: 'acompanamiento_terreno_s2',
+      title: '3.2 Acompañamiento en terreno — Semana 2',
+      description: 'Días 8–14 desde la fecha de evaluación',
+      countsForCompliance: true,
+      hasActionCorrectiva: true,
+      requiresPermission: 'sst:evaluate_acompanamiento',
+      weekNumber: 2,
+      items: [
+        {
+          id: 'procedimientos_trabajo_seguro',
+          label: 'Cumple procedimientos operativos de trabajo seguro',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'zonas_estacionamiento',
+          label: 'Respeta zonas establecidas de estacionamiento',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'distancias_estacionamiento',
+          label: 'Respeta distancias de seguridad al estacionarse cerca de equipos, estructuras u otros obstáculos',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'conductas_preventivas',
+          label: 'Mantiene conductas preventivas',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'sin_exceso_confianza',
+          label: 'No incurre en excesos de confianza',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'aplica_piensa_actua',
+          label: 'Aplica Piensa y Actúa',
+          kind: 'cumple_nocumple_obs'
+        }
+      ]
+    },
+
+    // ============================================================
+    // 3.3 Acompañamiento en terreno — Semana 3 (días 15-21)
+    // ============================================================
+    {
+      id: 'acompanamiento_terreno_s3',
+      title: '3.3 Acompañamiento en terreno — Semana 3',
+      description: 'Días 15–21 desde la fecha de evaluación',
+      countsForCompliance: true,
+      hasActionCorrectiva: true,
+      requiresPermission: 'sst:evaluate_acompanamiento',
+      weekNumber: 3,
+      items: [
+        {
+          id: 'procedimientos_trabajo_seguro',
+          label: 'Cumple procedimientos operativos de trabajo seguro',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'zonas_estacionamiento',
+          label: 'Respeta zonas establecidas de estacionamiento',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'distancias_estacionamiento',
+          label: 'Respeta distancias de seguridad al estacionarse cerca de equipos, estructuras u otros obstáculos',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'conductas_preventivas',
+          label: 'Mantiene conductas preventivas',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'sin_exceso_confianza',
+          label: 'No incurre en excesos de confianza',
+          kind: 'cumple_nocumple_obs'
+        },
+        {
+          id: 'aplica_piensa_actua',
+          label: 'Aplica Piensa y Actúa',
+          kind: 'cumple_nocumple_obs'
+        }
+      ]
+    },
+
+    // ============================================================
+    // 3.4 Acompañamiento en terreno — Semana 4 (días 22-30)
+    // ============================================================
+    {
+      id: 'acompanamiento_terreno_s4',
+      title: '3.4 Acompañamiento en terreno — Semana 4',
+      description: 'Días 22–30 desde la fecha de evaluación',
+      countsForCompliance: true,
+      hasActionCorrectiva: true,
+      requiresPermission: 'sst:evaluate_acompanamiento',
+      weekNumber: 4,
       items: [
         {
           id: 'procedimientos_trabajo_seguro',

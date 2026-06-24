@@ -4,9 +4,10 @@ import { worksites, workers } from "./worksites"
 import { users } from "./users"
 
 /* ── SST Evaluations ─────────────────────────────────────────────────────── */
-// Main evaluation record — one per worker per checklist visit.
+// Main evaluation record — one per worker per checklist visit, per evaluator role.
 // tipo: 'nuevo' | 'seguimiento'
 // estado: 'borrador' | 'cerrado'
+// evaluatorRole: EvaluatorRole ('prevencionista_faena' | 'admin_contrato' | 'conductor_lider' | null for legacy)
 // resultadoFinal: ResultadoFinal
 // resultadoEficacia: ResultadoEficacia
 export const sstEvaluations = pgTable("sst_evaluations", {
@@ -17,6 +18,7 @@ export const sstEvaluations = pgTable("sst_evaluations", {
   definicionCode:         text("definicion_code").notNull(),         // 'trabajador_nuevo' | 'trabajador_antiguo'
   definicionVersion:      text("definicion_version").notNull(),      // '01'
   tipo:                   text("tipo").notNull(),                    // TipoEvaluacion: 'nuevo' | 'seguimiento'
+  evaluatorRole:          text("evaluator_role"),                    // EvaluatorRole: 'prevencionista_faena' | 'admin_contrato' | 'conductor_lider' | null (legacy)
   motivo:                 text("motivo"),                            // MotivoSeguimiento
   motivoOtro:             text("motivo_otro"),
   descripcionEvento:      text("descripcion_evento"),
@@ -72,14 +74,29 @@ export const sstActionPlan = pgTable("sst_action_plan", {
   estado:       text("estado").notNull(),
 })
 
+/* ── SST Weekly Evaluations ──────────────────────────────────────────────── */
+// 4 hitos semanales creados cuando conductor_lider inicia evaluación de trabajador_nuevo.
+// Cada semana tiene sus propias respuestas en sstResponses con seccionId = 'acompanamiento_terreno_sN'.
+// estado: 'pendiente' | 'completada'
+export const sstWeeklyEvaluations = pgTable("sst_weekly_evaluations", {
+  id:               text("id").primaryKey(),
+  evaluationId:     text("evaluation_id").notNull().references(() => sstEvaluations.id, { onDelete: "cascade" }),
+  semana:           integer("semana").notNull(),           // 1, 2, 3, 4
+  fechaDesbloqueo:  text("fecha_desbloqueo").notNull(),    // ISO date: cuándo se desbloquea para editar
+  estado:           text("estado").notNull().default("pendiente"), // 'pendiente' | 'completada'
+  fechaCompletada:  text("fecha_completada"),              // ISO date: cuándo se marcó completada
+  alertSentAt:      timestamp("alert_sent_at", { withTimezone: true, mode: "string" }), // cuándo se envió la alerta de mora
+})
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const sstEvaluationsRelations = relations(sstEvaluations, ({ one, many }) => ({
-  worksite:    one(worksites,  { fields: [sstEvaluations.worksiteId], references: [worksites.id] }),
-  worker:      one(workers,    { fields: [sstEvaluations.workerId],   references: [workers.id] }),
-  createdByUser: one(users,   { fields: [sstEvaluations.createdBy],  references: [users.id] }),
-  responses:   many(sstResponses),
-  followups:   many(sstScheduledFollowups),
-  actionPlan:  many(sstActionPlan),
+  worksite:        one(worksites,  { fields: [sstEvaluations.worksiteId], references: [worksites.id] }),
+  worker:          one(workers,    { fields: [sstEvaluations.workerId],   references: [workers.id] }),
+  createdByUser:   one(users,      { fields: [sstEvaluations.createdBy],  references: [users.id] }),
+  responses:       many(sstResponses),
+  followups:       many(sstScheduledFollowups),
+  actionPlan:      many(sstActionPlan),
+  weeklyEvals:     many(sstWeeklyEvaluations),
 }))
 
 export const sstResponsesRelations = relations(sstResponses, ({ one }) => ({
@@ -94,12 +111,18 @@ export const sstActionPlanRelations = relations(sstActionPlan, ({ one }) => ({
   evaluation: one(sstEvaluations, { fields: [sstActionPlan.evaluationId], references: [sstEvaluations.id] }),
 }))
 
+export const sstWeeklyEvaluationsRelations = relations(sstWeeklyEvaluations, ({ one }) => ({
+  evaluation: one(sstEvaluations, { fields: [sstWeeklyEvaluations.evaluationId], references: [sstEvaluations.id] }),
+}))
+
 /* ── Inferred Types ──────────────────────────────────────────────────────── */
-export type SstEvaluation        = typeof sstEvaluations.$inferSelect
-export type NewSstEvaluation     = typeof sstEvaluations.$inferInsert
-export type SstResponse          = typeof sstResponses.$inferSelect
-export type NewSstResponse       = typeof sstResponses.$inferInsert
-export type SstScheduledFollowup = typeof sstScheduledFollowups.$inferSelect
+export type SstEvaluation           = typeof sstEvaluations.$inferSelect
+export type NewSstEvaluation        = typeof sstEvaluations.$inferInsert
+export type SstResponse             = typeof sstResponses.$inferSelect
+export type NewSstResponse          = typeof sstResponses.$inferInsert
+export type SstScheduledFollowup    = typeof sstScheduledFollowups.$inferSelect
 export type NewSstScheduledFollowup = typeof sstScheduledFollowups.$inferInsert
-export type SstActionPlan        = typeof sstActionPlan.$inferSelect
-export type NewSstActionPlan     = typeof sstActionPlan.$inferInsert
+export type SstActionPlan           = typeof sstActionPlan.$inferSelect
+export type NewSstActionPlan        = typeof sstActionPlan.$inferInsert
+export type SstWeeklyEvaluation     = typeof sstWeeklyEvaluations.$inferSelect
+export type NewSstWeeklyEvaluation  = typeof sstWeeklyEvaluations.$inferInsert

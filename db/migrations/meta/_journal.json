@@ -183,6 +183,13 @@
       "when": 1785500000000,
       "tag": "0025_is_global_roles_and_traceability_permission",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782319573834,
+      "tag": "0026_sst_evaluator_role_weekly",
+      "breakpoints": true
     }
   ]
 }

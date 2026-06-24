@@ -42,5 +42,7 @@ export const feedbackModule = {
     { roleSlug: "prevencionista_faena", permission: "feedback:view_own" },
     { roleSlug: "jefe_mantencion",     permission: "feedback:create"    },
     { roleSlug: "jefe_mantencion",     permission: "feedback:view_own"  },
+    { roleSlug: "admin_contrato",      permission: "feedback:create"    },
+    { roleSlug: "admin_contrato",      permission: "feedback:view_own"  },
   ],
 } as const satisfies ModuleManifest

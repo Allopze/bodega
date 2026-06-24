@@ -5,7 +5,7 @@ import { getSectionAccess } from "@/lib/sst/checklist"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getEvaluation } from "@/lib/services/sst"
 import { db } from "@/db"
-import { sstResponses, sstScheduledFollowups, sstActionPlan } from "@/db/schema/sst"
+import { sstResponses, sstScheduledFollowups, sstActionPlan, sstWeeklyEvaluations } from "@/db/schema/sst"
 import { workers, worksites } from "@/db/schema/worksites"
 import { eq } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -39,7 +39,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
   if (!evaluation) redirect("/prevencion")
 
   // Load related data in parallel
-  const [responses, followups, actionPlan, workerRow, worksiteRow] = await Promise.all([
+  const [responses, followups, actionPlan, workerRow, worksiteRow, weeklyEvals] = await Promise.all([
     db.select().from(sstResponses).where(eq(sstResponses.evaluationId, id)),
     db.select().from(sstScheduledFollowups).where(eq(sstScheduledFollowups.evaluationId, id)),
     db.select().from(sstActionPlan).where(eq(sstActionPlan.evaluationId, id)),
@@ -47,6 +47,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
       .from(workers).where(eq(workers.id, evaluation.workerId)).limit(1),
     db.select({ name: worksites.name })
       .from(worksites).where(eq(worksites.id, evaluation.worksiteId)).limit(1),
+    db.select().from(sstWeeklyEvaluations).where(eq(sstWeeklyEvaluations.evaluationId, id)).orderBy(sstWeeklyEvaluations.semana),
   ])
 
   const worker   = workerRow[0]
@@ -104,6 +105,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
         canManage={canManage}
         canViewFullEvaluation={canViewFullEvaluation}
         sectionAccess={sectionAccess}
+        weeklyEvals={weeklyEvals}
       />
     </PageContainer>
   )

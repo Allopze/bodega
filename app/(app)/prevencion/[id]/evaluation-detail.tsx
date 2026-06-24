@@ -14,7 +14,7 @@ import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose,
 } from "@/components/ui/dialog"
 import { toast } from "@/lib/toast"
-import { saveResponsesAction, closeEvaluationAction } from "@/app/(app)/prevencion/actions"
+import { saveResponsesAction, closeEvaluationAction, markWeekCompletedAction } from "@/app/(app)/prevencion/actions"
 import { calculateCompliance } from "@/lib/sst/compliance"
 import { getApplicableResponseStatuses, type SectionAccess } from "@/lib/sst/checklist"
 import { SIGNATURE_ROLE_LABELS } from "@/lib/sst/cargos"
@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge"
 import { Field } from "@/components/ui/field"
 import { formatDateDisplay } from "@/lib/sst/date"
 import type { ChecklistDefinition, StatusValue, ChecklistSection } from "@/lib/sst/types"
-import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan } from "@/db/schema/sst"
+import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan, SstWeeklyEvaluation } from "@/db/schema/sst"
 import { ChecklistSectionPanel, type ItemResponse } from "./checklist-section"
 import { ActionPlanPanel } from "./action-plan-panel"
 import { FollowupsPanel } from "./followups-panel"
@@ -76,6 +76,13 @@ interface Props {
   canManage: boolean
   canViewFullEvaluation: boolean
   sectionAccess: Record<string, SectionAccess>
+  weeklyEvals?: SstWeeklyEvaluation[]
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  prevencionista_faena: "Prevencionista de faena",
+  admin_contrato: "Administrador de contrato / Supervisor de faena",
+  conductor_lider: "Conductor líder",
 }
 
 export function EvaluationDetail({
@@ -93,6 +100,7 @@ export function EvaluationDetail({
   canManage,
   canViewFullEvaluation,
   sectionAccess,
+  weeklyEvals = [],
 }: Props) {
   const router = useRouter()
   const isCerrado = evaluation.estado === "cerrado"
@@ -105,25 +113,50 @@ export function EvaluationDetail({
   const visibleSections = applicableSections.filter(
     (sec) => sectionAccess[sec.id]?.canView ?? false,
   )
+
   // readOnly por sección: cerrado, o el usuario no puede editar esa sección.
+  // Además, para las secciones de conductor líder, se verifica el estado de desbloqueo y completado de la semana.
+  const isWeekLocked = useCallback((semana: number) => {
+    const weekly = weeklyEvals.find(w => w.semana === semana)
+    if (!weekly) return false
+    const today = new Date().toISOString().slice(0, 10)
+    return today < weekly.fechaDesbloqueo
+  }, [weeklyEvals])
+
   const isSectionReadOnly = useCallback(
-    (sectionId: string) => isCerrado || !(sectionAccess[sectionId]?.canEdit ?? false),
-    [isCerrado, sectionAccess],
+    (sectionId: string) => {
+      if (isCerrado) return true
+
+      const sec = visibleSections.find(s => s.id === sectionId)
+      if (sec?.weekNumber) {
+        const weekly = weeklyEvals.find(w => w.semana === sec.weekNumber)
+        if (weekly) {
+          if (weekly.estado === 'completada') return true
+          if (isWeekLocked(sec.weekNumber)) return true
+        }
+      }
+
+      return !(sectionAccess[sectionId]?.canEdit ?? false)
+    },
+    [isCerrado, sectionAccess, visibleSections, weeklyEvals, isWeekLocked],
   )
   // ¿Puede editar al menos una sección visible? (controla el autoguardado)
   const canEditAnyVisible = visibleSections.some((sec) => !isSectionReadOnly(sec.id))
 
   const navigationItems = [
-    ...visibleSections.map((section) => ({
-      value: section.id,
-      label: section.title,
-    })),
+    ...visibleSections.map((section) => {
+      const isLocked = section.weekNumber ? isWeekLocked(section.weekNumber) : false
+      return {
+        value: section.id,
+        label: section.title + (isLocked ? " 🔒" : ""),
+      }
+    }),
     ...(canViewFullEvaluation
       ? [
           { value: "acta", label: "Acta de cierre" },
           ...(evaluation.tipo === "seguimiento"
-            ? [{ value: "seguimientos", label: "Seguimientos" }]
-            : []),
+             ? [{ value: "seguimientos", label: "Seguimientos" }]
+             : []),
           { value: "plan", label: "Plan de acción" },
         ]
       : []),
@@ -141,6 +174,19 @@ export function EvaluationDetail({
   const [saveState, setSaveState] = useState<null | "saving" | { ts: string } | "error">(null)
 
   const [closePending, startClose]    = useTransition()
+  const [isPending, startTransition] = useTransition()
+
+  const handleMarkWeekComplete = useCallback((weeklyId: string) => {
+    startTransition(async () => {
+      const result = await markWeekCompletedAction(weeklyId)
+      if (result.ok) {
+        toast.success("Semana marcada como completada")
+        router.refresh()
+      } else {
+        toast.error(result.message ?? "Error al marcar la semana")
+      }
+    })
+  }, [router])
 
   // Close dialog fields
   const [closeOpen, setCloseOpen]         = useState(false)
@@ -262,6 +308,11 @@ export function EvaluationDetail({
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold text-(--color-text)">{workerName}</h2>
               {workerRut && <span className="text-sm text-text-subtle">RUT {workerRut}</span>}
+              {evaluation.evaluatorRole && (
+                <Badge variant="outline">
+                  Rol: {ROLE_LABELS[evaluation.evaluatorRole] ?? evaluation.evaluatorRole}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-(--color-text-muted)">{worksiteName}</p>
             <p className="text-sm text-text-subtle">
@@ -474,19 +525,54 @@ export function EvaluationDetail({
           </div>
         </div>
 
-        {visibleSections.map((sec) => (
-          <TabsContent key={sec.id} value={sec.id}>
-            <div className="border border-(--color-border) bg-(--color-surface) p-5">
-              <h3 className="text-base font-semibold text-(--color-text) mb-4">{sec.title}</h3>
-              <ChecklistSectionPanel
-                section={sec}
-                responses={responseMap[sec.id] ?? {}}
-                readOnly={isSectionReadOnly(sec.id)}
-                onChange={handleResponseChange}
-              />
-            </div>
-          </TabsContent>
-        ))}
+        {visibleSections.map((sec) => {
+          const weekly = sec.weekNumber && weeklyEvals ? weeklyEvals.find(w => w.semana === sec.weekNumber) : null
+          const isWeekLockedVal = sec.weekNumber ? isWeekLocked(sec.weekNumber) : false
+          const canMarkComplete = weekly && weekly.estado === 'pendiente' && !isWeekLockedVal && !(isSectionReadOnly(sec.id))
+
+          return (
+            <TabsContent key={sec.id} value={sec.id}>
+              <div className="border border-(--color-border) bg-(--color-surface) p-5 space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-base font-semibold text-(--color-text)">{sec.title}</h3>
+                  {weekly && (
+                    <Badge variant={weekly.estado === 'completada' ? 'success' : isWeekLockedVal ? 'outline' : 'warning'}>
+                      {weekly.estado === 'completada' ? 'Completada' : isWeekLockedVal ? 'Bloqueada' : 'Pendiente'}
+                    </Badge>
+                  )}
+                </div>
+
+                {isWeekLockedVal && weekly && (
+                  <div className="flex items-center gap-2 p-3 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-sm rounded-[var(--radius)]">
+                    <LockSimple size={16} />
+                    <span>Sección bloqueada hasta el <strong>{formatDateDisplay(weekly.fechaDesbloqueo)}</strong></span>
+                  </div>
+                )}
+
+                <ChecklistSectionPanel
+                  section={sec}
+                  responses={responseMap[sec.id] ?? {}}
+                  readOnly={isSectionReadOnly(sec.id)}
+                  onChange={handleResponseChange}
+                />
+
+                {canMarkComplete && (
+                  <div className="pt-4 border-t border-[var(--color-border)] flex justify-end">
+                    <Button
+                      type="button"
+                      variant="signal"
+                      onClick={() => handleMarkWeekComplete(weekly.id)}
+                      disabled={isPending}
+                    >
+                      <Check size={14} className="mr-1.5" />
+                      Marcar Semana {sec.weekNumber} como Completada
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          )
+        })}
 
         {canViewFullEvaluation && <>
         {/* Acta de cierre */}

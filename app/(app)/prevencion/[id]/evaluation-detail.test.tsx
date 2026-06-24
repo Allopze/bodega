@@ -94,7 +94,7 @@ function makeEvaluation(overrides: Partial<SstEvaluation> = {}): SstEvaluation {
     descripcionEvento: null,
     equipoPatente: null,
     fechaEvaluacion: "2026-06-15",
-    cargosJson: ["conductor_general"],
+    cargosJson: ["conductor_ampliroll"],
     resultadoFinal: null,
     porcentajeCumplimiento: null,
     resultadoEficacia: null,
@@ -103,6 +103,7 @@ function makeEvaluation(overrides: Partial<SstEvaluation> = {}): SstEvaluation {
     schemaJson: null,
     createdAt: "2026-06-15T10:00:00Z",
     updatedAt: "2026-06-15T10:00:00Z",
+    evaluatorRole: null,
     ...overrides,
   }
 }

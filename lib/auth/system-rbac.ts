@@ -9,6 +9,7 @@ export const SYSTEM_ROLES = [
   { id: "rol-prev-faena", name: "prevencionista_faena", label: "Prevencionista faena", description: "Evalúa EPP, recibe en faena y gestiona stock en sus faenas asignadas", isGlobal: false },
   { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas", isGlobal: true },
   { id: "rol-cond-lider", name: "conductor_lider", label: "Conductor líder", description: "Evalúa el acompañamiento en terreno (Punto 3) de trabajadores nuevos en sus faenas asignadas", isGlobal: false },
+  { id: "rol-admin-contrato", name: "admin_contrato", label: "Administrador de contrato / Supervisor de faena", description: "Evalúa SST (secciones 1-2) de trabajadores nuevos y antiguos en sus faenas asignadas", isGlobal: false },
 ] satisfies Array<typeof roles.$inferInsert>
 
 export const SYSTEM_PERMISSIONS = [
@@ -174,8 +175,14 @@ const FEEDBACK_USER_PERMISSION_IDS = [
   "p-fb-create", "p-fb-own",
 ]
 
-// Conductor líder: único permiso — evaluar el Punto 3 (acompañamiento en terreno)
+// Conductor líder: único permiso — evaluar el Punto 3 (acompañamiento en terreno) de evaluación de trabajador nuevo
 const CONDUCTOR_LIDER_PERMISSION_IDS = ["p-sst-acomp"]
+
+// Administrador de contrato / Supervisor de faena: evalúa SST secciones 1-2 en sus faenas
+const ADMIN_CONTRATO_PERMISSION_IDS = [
+  "p-sst-view", "p-sst-create", "p-sst-close",
+  "p-fb-create", "p-fb-own",
+]
 
 // Deliveries module
 const DELIVERIES_VIEW_PERMISSION_IDS = ["p-del-view"]
@@ -208,4 +215,5 @@ export const SYSTEM_ROLE_PERMISSIONS = [
   ...JEFE_MANTENCION_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
   ...FEEDBACK_USER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-jefe-mant", permissionId })),
   ...CONDUCTOR_LIDER_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-cond-lider", permissionId })),
+  ...ADMIN_CONTRATO_PERMISSION_IDS.map((permissionId) => ({ roleId: "rol-admin-contrato", permissionId })),
 ] satisfies Array<typeof rolePermissions.$inferInsert>

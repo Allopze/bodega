@@ -12,20 +12,24 @@ import {
   createEvaluation,
   getEvaluation,
   listEvaluations,
+  listEvaluationsGroupedByWorker,
   saveResponses,
   closeEvaluation,
   markFollowup,
   getFollowups,
+  getWeeklyEvaluations,
+  markWeekCompleted,
   saveActionPlanItem,
   deleteActionPlanItem,
   deleteEvaluation,
   getDashboardStats,
-} from "@/lib/services/sst"
+  type WorkerEvaluationGroup,
+} from '@/lib/services/sst'
 import type { ActionState } from "@/lib/validation/sst"
 import type {
   SstEvaluation,
 } from "@/db/schema/sst"
-import { sstScheduledFollowups } from "@/db/schema/sst"
+import { sstScheduledFollowups, sstWeeklyEvaluations } from "@/db/schema/sst"
 import type {
   sstEvaluationCreateSchema,
   sstResponsesBatchSchema,
@@ -44,13 +48,39 @@ function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | 
   return scope.ids
 }
 
+/**
+ * Determina el EvaluatorRole del usuario autenticado basándose en sus permisos.
+ * - conductor_lider: tiene sst:evaluate_acompanamiento pero NO sst:create
+ * - admin_contrato:  tiene sst:create y su rol en DB es rol-admin-contrato
+ * - prevencionista_faena: tiene sst:create (fallback)
+ */
+function resolveEvaluatorRole(
+  session: Awaited<ReturnType<typeof guardAuth>>['session'] extends infer S ? (S extends null ? never : NonNullable<S>) : never
+): import('@/lib/sst/types').EvaluatorRole | undefined {
+  const perms = session.user.permissions ?? []
+  const roleNames: string[] = session.user.roles ?? []
+
+  if (perms.includes('sst:evaluate_acompanamiento') && !perms.includes('sst:create')) {
+    return 'conductor_lider'
+  }
+  if (perms.includes('sst:create')) {
+    if (roleNames.includes('admin_contrato')) return 'admin_contrato'
+    return 'prevencionista_faena'
+  }
+  return undefined
+}
+
+
 // ── createEvaluationAction ────────────────────────────────────────────────────
 
 export async function createEvaluationAction(
   input: z.infer<typeof sstEvaluationCreateSchema>
 ): Promise<ActionState & { data?: { id: string } }> {
-  const { session, error } = await guardPermission("sst:create")
+  const { session, error } = await guardAuth()
   if (error) return error
+  if (!canAny(session, 'sst:create', 'sst:evaluate_acompanamiento')) {
+    return { ok: false, message: 'No tienes permisos para crear evaluaciones.' }
+  }
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds = scopeToIds(scope)
@@ -69,12 +99,15 @@ export async function createEvaluationAction(
     return { ok: false, message: 'El trabajador no pertenece a la faena seleccionada.' }
   }
 
+  // Auto-detect evaluatorRole from session
+  const evaluatorRole = resolveEvaluatorRole(session)
+
   try {
-    const evaluation = await createEvaluation(input, session.user.id)
+    const evaluation = await createEvaluation(input, session.user.id, evaluatorRole)
     revalidatePath(REVALIDATE)
-    return { ok: true, message: "Evaluación creada", data: { id: evaluation.id } }
+    return { ok: true, message: 'Evaluación creada', data: { id: evaluation.id } }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al crear la evaluación" }
+    return { ok: false, message: e instanceof Error ? e.message : 'Error al crear la evaluación' }
   }
 }
 
@@ -307,5 +340,73 @@ export async function getDashboardStatsAction(): Promise<ActionState & {
     return { ok: true, data: stats }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al obtener estadísticas" }
+  }
+}
+
+// ── listWorkerEvaluationsAction ───────────────────────────────────────────────
+
+export async function listWorkerEvaluationsAction(
+  limit = 50,
+  offset = 0
+): Promise<ActionState & { data?: { workers: WorkerEvaluationGroup[] } }> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!canAny(session, 'sst:view', 'sst:evaluate_acompanamiento')) {
+    return { ok: false, message: 'No tienes permisos para ver evaluaciones.' }
+  }
+
+  const scope = resolveWorksiteScope(session)
+  const worksiteIds = scopeToIds(scope)
+
+  try {
+    const workers = await listEvaluationsGroupedByWorker(worksiteIds, limit, offset)
+    return { ok: true, data: { workers } }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Error al listar evaluaciones por trabajador' }
+  }
+}
+
+// ── getWeeklyEvaluationsAction ────────────────────────────────────────────────
+
+export async function getWeeklyEvaluationsAction(
+  evaluationId: string
+): Promise<ActionState & { data?: { weeks: typeof sstWeeklyEvaluations.$inferSelect[] } }> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!canAny(session, 'sst:view', 'sst:evaluate_acompanamiento')) {
+    return { ok: false, message: 'No tienes permisos.' }
+  }
+
+  const scope = resolveWorksiteScope(session)
+  const worksiteIds = scopeToIds(scope)
+
+  try {
+    const weeks = await getWeeklyEvaluations(evaluationId, worksiteIds)
+    return { ok: true, data: { weeks } }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Error al obtener semanas' }
+  }
+}
+
+// ── markWeekCompletedAction ───────────────────────────────────────────────────
+
+export async function markWeekCompletedAction(
+  weeklyEvalId: string
+): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!canAny(session, 'sst:create', 'sst:evaluate_acompanamiento')) {
+    return { ok: false, message: 'No tienes permisos para marcar semanas.' }
+  }
+
+  const scope = resolveWorksiteScope(session)
+  const worksiteIds = scopeToIds(scope)
+
+  try {
+    await markWeekCompleted(weeklyEvalId, worksiteIds)
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: 'Semana marcada como completada' }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Error al marcar semana' }
   }
 }

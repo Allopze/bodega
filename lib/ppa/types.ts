@@ -10,7 +10,7 @@ import { CARGO_KEYS, type CargoKey } from "@/lib/sst/cargos"
  * Reutiliza la lista controlada de cargos del módulo de evaluación, EXCLUYENDO
  * `conductor_general` (decisión de negocio, ver prompt). Lista cerrada.
  */
-export const PPA_TIPO_TRABAJO_EXCLUDED: CargoKey[] = ["conductor_general"]
+export const PPA_TIPO_TRABAJO_EXCLUDED: CargoKey[] = []
 
 export const PPA_TIPO_TRABAJO_OPTIONS = (Object.entries(CARGO_KEYS) as [CargoKey, string][])
   .filter(([key]) => !PPA_TIPO_TRABAJO_EXCLUDED.includes(key))

@@ -97,6 +97,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion", path: "/prevencion", auth: true },
   { slug: "prevencion-nueva", path: "/prevencion/nueva", auth: true },
   { slug: "prevencion-detalle", path: "/prevencion/sst-audit-1", auth: true },
+  { slug: "prevencion-trabajador-detalle", path: "/prevencion/trabajador/worker-audit-1", auth: true },
   { slug: "sst-print", path: "/sst/sst-audit-1/print", auth: true },
   { slug: "ppa-form", path: "/ppa", auth: false },
   { slug: "ppa-result", path: "/ppa/result/capture-ppa-token", auth: false },

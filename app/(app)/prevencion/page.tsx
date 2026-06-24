@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { requireAuth, can, canAny } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listEvaluations } from "@/lib/services/sst"
+import { listEvaluationsGroupedByWorker } from "@/lib/services/sst"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
@@ -23,15 +23,15 @@ export default async function PrevencionPage() {
     scope.mode === "some" ? scope.ids :
     []
 
-  const evaluations = await listEvaluations({ worksiteIds }, 50, 0)
-  const canCreate = can(session, "sst:create")
+  const workerGroups = await listEvaluationsGroupedByWorker(worksiteIds, 50, 0)
+  const canCreate = can(session, "sst:create") || can(session, "sst:evaluate_acompanamiento")
   const canDelete = can(session, "sst:manage")
 
   return (
     <PageContainer>
       <PageHeader
         title="Evaluaciones SST"
-        description="Registro de evaluaciones de seguridad y salud en el trabajo."
+        description="Registro de evaluaciones de seguridad y salud en el trabajo, agrupadas por trabajador."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -46,7 +46,7 @@ export default async function PrevencionPage() {
           ) : undefined
         }
       />
-      <EvaluationList evaluations={evaluations} canCreate={canCreate} canDelete={canDelete} />
+      <EvaluationList workerGroups={workerGroups} canCreate={canCreate} canDelete={canDelete} />
     </PageContainer>
   )
 }

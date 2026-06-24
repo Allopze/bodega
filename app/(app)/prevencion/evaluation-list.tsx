@@ -3,59 +3,31 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useActionState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   TableRoot, Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table"
 import { EmptyState } from "@/components/ui/empty-state"
-import { ClipboardText, Trash } from "@phosphor-icons/react"
-import type { SstEvaluation } from "@/db/schema/sst"
+import { ClipboardText, CaretRight } from "@phosphor-icons/react"
 import {
   RESULTADO_LABELS,
   estadoLabel,
   estadoBadgeVariant,
   resultadoBadgeVariant,
 } from "@/lib/sst/badges"
-import { formatDateDisplay } from "@/lib/sst/date"
-import { deleteEvaluationAction } from "./actions"
-import type { ActionState } from "@/lib/validation/sst"
-import { toast } from "@/lib/toast"
-
-const TIPO_LABELS: Record<string, string> = {
-  nuevo:       "Nuevo",
-  seguimiento: "Seguimiento",
-}
-
-type EvaluationRow = SstEvaluation & { workerName: string; worksiteName: string }
+import type { WorkerEvaluationGroup } from "@/lib/services/sst"
 
 interface Props {
-  evaluations: EvaluationRow[]
+  workerGroups: WorkerEvaluationGroup[]
   canCreate: boolean
   canDelete: boolean
 }
 
-export function EvaluationList({ evaluations, canCreate, canDelete }: Props) {
+export function EvaluationList({ workerGroups, canCreate }: Props) {
   const router = useRouter()
-  const [deleteTarget, setDeleteTarget] = React.useState<EvaluationRow | null>(null)
-  const deleteFormRef = React.useRef<HTMLFormElement>(null)
-  const [_deleteState, deleteAction, deletePending] = useActionState(
-    async (prev: ActionState, formData: FormData): Promise<ActionState> => {
-      const res = await deleteEvaluationAction(prev, formData)
-      if (res.ok) {
-        toast.success(res.message ?? "Evaluación eliminada")
-        setDeleteTarget(null)
-      } else {
-        toast.error(res.message ?? "Error al eliminar")
-      }
-      return res
-    },
-    { ok: false },
-  )
 
-  if (evaluations.length === 0) {
+  if (workerGroups.length === 0) {
     return (
       <EmptyState
         icon={<ClipboardText size={28} />}
@@ -78,24 +50,28 @@ export function EvaluationList({ evaluations, canCreate, canDelete }: Props) {
         <TableHeader>
           <TableRow>
             <TableHead>Trabajador</TableHead>
-            <TableHead>Tipo</TableHead>
-            <TableHead>Fecha</TableHead>
             <TableHead>Faena</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>Resultado</TableHead>
-            {canDelete && <TableHead><span className="sr-only">Acciones</span></TableHead>}
+            <TableHead>Prevencionista</TableHead>
+            <TableHead>Admin Contrato / Supervisor</TableHead>
+            <TableHead>Conductor Líder</TableHead>
+            <TableHead><span className="sr-only">Ver</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {evaluations.map((ev) => {
-            const href = `/prevencion/${ev.id}`
+          {workerGroups.map((group) => {
+            const href = `/prevencion/trabajador/${group.workerId}`
+
+            // Find evaluations for each role
+            const prevEval = group.evaluations.find(e => e.evaluatorRole === 'prevencionista_faena' || e.evaluatorRole === null)
+            const adminEval = group.evaluations.find(e => e.evaluatorRole === 'admin_contrato')
+            const condEval = group.evaluations.find(e => e.evaluatorRole === 'conductor_lider')
 
             return (
               <TableRow
-                key={ev.id}
+                key={group.workerId}
                 role="link"
                 tabIndex={0}
-                aria-label={`Abrir evaluación SST de ${ev.workerName || "trabajador sin nombre"}`}
+                aria-label={`Ver evaluaciones SST de ${group.workerName || "trabajador sin nombre"}`}
                 className="cursor-pointer hover:bg-[var(--color-primary-tint)]"
                 onClick={() => router.push(href)}
                 onKeyDown={(event) => {
@@ -106,74 +82,81 @@ export function EvaluationList({ evaluations, canCreate, canDelete }: Props) {
                 }}
               >
                 <TableCell>
-                  <Link
-                    href={href}
-                    onClick={(event) => event.stopPropagation()}
-                    className="font-medium text-(--color-text) hover:underline"
-                  >
-                    {ev.workerName || <span className="text-text-subtle italic">Sin nombre</span>}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-(--color-text-muted)">
-                  {TIPO_LABELS[ev.tipo] ?? ev.tipo}
-                </TableCell>
-                <TableCell className="text-(--color-text-muted) tabular-nums">
-                  {formatDateDisplay(ev.fechaEvaluacion)}
-                </TableCell>
-                <TableCell className="text-(--color-text-muted)">
-                  {ev.worksiteName || <span className="italic">—</span>}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={estadoBadgeVariant(ev.estado)}>
-                    {estadoLabel(ev.estado)}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {ev.resultadoFinal
-                    ? (
-                      <Badge variant={resultadoBadgeVariant(ev.resultadoFinal)}>
-                        {RESULTADO_LABELS[ev.resultadoFinal] ?? ev.resultadoFinal}
-                      </Badge>
-                    )
-                    : <span className="text-(--color-text-muted) text-sm">—</span>
-                  }
-                </TableCell>
-                {canDelete && (
-                  <TableCell className="w-12 text-right">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-[var(--color-text-subtle)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
-                      aria-label="Eliminar evaluación"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setDeleteTarget(ev)
-                      }}
+                  <div>
+                    <Link
+                      href={href}
+                      onClick={(event) => event.stopPropagation()}
+                      className="font-medium text-(--color-text) hover:underline"
                     >
-                      <Trash size={14} />
-                    </Button>
-                  </TableCell>
-                )}
+                      {group.workerName || <span className="text-text-subtle italic">Sin nombre</span>}
+                    </Link>
+                    {group.workerRut && (
+                      <div className="text-xs text-(--color-text-muted)">
+                        RUT: {group.workerRut}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-(--color-text-muted)">
+                  {group.worksiteName || <span className="italic">—</span>}
+                </TableCell>
+                <TableCell>
+                  {prevEval ? (
+                    <div className="flex flex-col gap-1 items-start">
+                      <Badge variant={estadoBadgeVariant(prevEval.estado)}>
+                        {estadoLabel(prevEval.estado)}
+                      </Badge>
+                      {prevEval.resultadoFinal && (
+                        <Badge variant={resultadoBadgeVariant(prevEval.resultadoFinal)}>
+                          {RESULTADO_LABELS[prevEval.resultadoFinal] ?? prevEval.resultadoFinal}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-(--color-text-muted) italic">Pendiente</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {adminEval ? (
+                    <div className="flex flex-col gap-1 items-start">
+                      <Badge variant={estadoBadgeVariant(adminEval.estado)}>
+                        {estadoLabel(adminEval.estado)}
+                      </Badge>
+                      {adminEval.resultadoFinal && (
+                        <Badge variant={resultadoBadgeVariant(adminEval.resultadoFinal)}>
+                          {RESULTADO_LABELS[adminEval.resultadoFinal] ?? adminEval.resultadoFinal}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-(--color-text-muted) italic">Pendiente</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {condEval ? (
+                    <div className="flex flex-col gap-1 items-start">
+                      <Badge variant={estadoBadgeVariant(condEval.estado)}>
+                        {estadoLabel(condEval.estado)}
+                      </Badge>
+                      {condEval.resultadoFinal && (
+                        <Badge variant={resultadoBadgeVariant(condEval.resultadoFinal)}>
+                          {RESULTADO_LABELS[condEval.resultadoFinal] ?? condEval.resultadoFinal}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-(--color-text-muted) italic">Pendiente</span>
+                  )}
+                </TableCell>
+                <TableCell className="w-12 text-right text-(--color-text-muted)">
+                  <CaretRight size={16} />
+                </TableCell>
               </TableRow>
             )
           })}
         </TableBody>
       </Table>
-
-      <form ref={deleteFormRef} action={deleteAction} className="hidden">
-        <input type="hidden" name="evaluationId" value={deleteTarget?.id ?? ""} />
-      </form>
-      <ConfirmDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
-        title="Eliminar evaluación"
-        description="Esta acción eliminará la evaluación SST y sus respuestas, seguimientos y plan de acción."
-        confirmLabel="Eliminar"
-        variant="destructive"
-        loading={deletePending}
-        onConfirm={() => deleteFormRef.current?.requestSubmit()}
-      />
     </TableRoot>
   )
 }
+

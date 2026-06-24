@@ -10,13 +10,17 @@ import { NextRequest } from "next/server"
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockCanFn = vi.hoisted(() => vi.fn())
+const mockCanAnyFn = vi.hoisted(() => vi.fn())
 const mockGetReportData = vi.hoisted(() => vi.fn())
 const mockBuildXlsxBuffer = vi.hoisted(() => vi.fn())
 const mockLogger = vi.hoisted(() => ({ error: vi.fn() }))
 const mockEncodeContentDisposition = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
-vi.mock("@/lib/auth/can", () => ({ can: mockCanFn }))
+vi.mock("@/lib/auth/can", () => ({
+  can: mockCanFn,
+  canAny: mockCanAnyFn,
+}))
 vi.mock("@/lib/reports/export", () => ({
   getReportData: mockGetReportData,
   buildXlsxBuffer: mockBuildXlsxBuffer,
@@ -69,6 +73,7 @@ describe("GET /api/reportes/export", () => {
     vi.clearAllMocks()
     mockAuthFn.mockResolvedValue(makeSession())
     mockCanFn.mockReturnValue(true)
+    mockCanAnyFn.mockReturnValue(true)
     mockGetReportData.mockResolvedValue(MOCK_REPORT)
     mockBuildXlsxBuffer.mockResolvedValue(MOCK_XLSX_BUFFER)
     mockEncodeContentDisposition.mockReturnValue(
@@ -94,7 +99,7 @@ describe("GET /api/reportes/export", () => {
 
   describe("authorization", () => {
     it("returns 403 when user lacks reports:view permission", async () => {
-      mockCanFn.mockReturnValueOnce(false)
+      mockCanAnyFn.mockReturnValueOnce(false)
 
       const res = await GET(makeRequest("/api/reportes/export?tipo=gasto_faena"))
 
@@ -133,6 +138,7 @@ describe("GET /api/reportes/export", () => {
         vi.clearAllMocks()
         mockAuthFn.mockResolvedValue(makeSession())
         mockCanFn.mockReturnValue(true)
+        mockCanAnyFn.mockReturnValue(true)
         mockGetReportData.mockResolvedValue(MOCK_REPORT)
         mockBuildXlsxBuffer.mockResolvedValue(MOCK_XLSX_BUFFER)
 

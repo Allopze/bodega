@@ -54,6 +54,7 @@ export interface ChecklistSection {
   countsForCompliance?: boolean   // whether items count toward % calculation
   hasActionCorrectiva?: boolean   // adds "Acción correctiva" column
   requiresPermission?: string     // gate: only users with this permission can view/edit this section
+  weekNumber?: 1 | 2 | 3 | 4     // set for acompanamiento_terreno_sN weekly sections (conductor_lider)
 }
 
 export type Cargo = string
@@ -87,6 +88,18 @@ export interface ClosingActDefinition {
 
 export type TipoEvaluacion = 'nuevo' | 'seguimiento'
 export type EstadoEvaluacion = 'borrador' | 'cerrado'
+
+/**
+ * Rol del evaluador que crea la evaluación.
+ * - 'prevencionista_faena': evalúa secciones 1-2 de trabajador nuevo y todas de trabajador antiguo
+ * - 'admin_contrato': idem prevencionista_faena (ambas definiciones, mismas secciones)
+ * - 'conductor_lider': evalúa SOLO secciones 3.x de acompañamiento en terreno
+ * - null: legado (evaluaciones creadas antes de la separación por rol)
+ */
+export type EvaluatorRole = 'prevencionista_faena' | 'admin_contrato' | 'conductor_lider'
+
+/** Estado de una sub-evaluación semanal del conductor líder */
+export type WeeklyEvalState = 'bloqueada' | 'pendiente' | 'completada'
 
 export type MotivoSeguimiento =
   | 'control_periodico'

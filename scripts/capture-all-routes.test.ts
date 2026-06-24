@@ -10,6 +10,7 @@ const dynamicSamples: Record<string, string> = {
   "/compras/[id]": "/compras/po-audit-1",
   "/compras/[id]/print": "/compras/po-audit-1/print",
   "/prevencion/[id]": "/prevencion/sst-audit-1",
+  "/prevencion/trabajador/[workerId]": "/prevencion/trabajador/worker-audit-1",
   "/prevencion/ppa/[id]": "/prevencion/ppa/ppa-audit-1",
   "/recepcion/[id]": "/recepcion/rec-audit-1",
   "/recuperar/[token]": "/recuperar/capture-reset-token",

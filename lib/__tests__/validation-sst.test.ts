@@ -12,7 +12,7 @@ const validEvaluation = {
   workerId: "worker-1",
   worksiteId: "ws-1",
   fechaEvaluacion: "2026-06-30",
-  cargos: ["conductor_general"],
+  cargos: ["conductor_ampliroll"],
 }
 
 describe("sstEvaluationCreateSchema", () => {

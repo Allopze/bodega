@@ -1,7 +1,6 @@
 export const CARGO_KEYS = {
   conductor_ampliroll: 'Conductor Ampliroll',
   conductor_batea: 'Conductor Batea',
-  conductor_general: 'Conductor General',
   operador_maquinaria_pesada: 'Operador Maquinaria Pesada',
 } as const
 

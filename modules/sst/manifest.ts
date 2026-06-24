@@ -35,5 +35,8 @@ export const sstModule = {
     { roleSlug: "administrador", permission: "sst:manage" },
     { roleSlug: "administrador", permission: "sst:evaluate_acompanamiento" },
     { roleSlug: "conductor_lider", permission: "sst:evaluate_acompanamiento" },
+    { roleSlug: "admin_contrato", permission: "sst:view" },
+    { roleSlug: "admin_contrato", permission: "sst:create" },
+    { roleSlug: "admin_contrato", permission: "sst:close" },
   ],
 } as const satisfies ModuleManifest

@@ -12,7 +12,9 @@ import {
   sstResponses,
   sstScheduledFollowups,
   sstActionPlan,
+  sstWeeklyEvaluations,
   type SstEvaluation,
+  type SstWeeklyEvaluation,
 } from '@/db/schema/sst'
 import { workers, worksites } from '@/db/schema/worksites'
 import { nanoid } from '@/lib/id'
@@ -31,7 +33,7 @@ import {
   sstFollowupMarkSchema,
   sstActionPlanItemSchema,
 } from '@/lib/validation/sst'
-import type { StatusValue } from '@/lib/sst/types'
+import type { StatusValue, EvaluatorRole } from '@/lib/sst/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -72,7 +74,8 @@ async function assertEditable(evaluationId: string, tx?: Tx): Promise<void> {
 
 export async function createEvaluation(
   input: z.infer<typeof sstEvaluationCreateSchema>,
-  userId: string
+  userId: string,
+  evaluatorRole?: EvaluatorRole
 ): Promise<SstEvaluation> {
   const data = sstEvaluationCreateSchema.parse(input)
 
@@ -84,6 +87,9 @@ export async function createEvaluation(
   // version it was filled against. getDefinition throws on an unknown code.
   const definition = getDefinition(data.definicionCode)
 
+  // Determine effective evaluatorRole: prefer explicit parameter, then field from input
+  const resolvedRole: EvaluatorRole | null = evaluatorRole ?? data.evaluatorRole ?? null
+
   const newRow: typeof sstEvaluations.$inferInsert = {
     id,
     worksiteId:             data.worksiteId,
@@ -92,6 +98,7 @@ export async function createEvaluation(
     definicionCode:         data.definicionCode,
     definicionVersion:      definition.version,
     tipo:                   data.tipo,
+    evaluatorRole:          resolvedRole,
     motivo:                 data.motivo ?? null,
     motivoOtro:             data.motivoOtro ?? null,
     descripcionEvento:      data.descripcionEvento ?? null,
@@ -128,6 +135,28 @@ export async function createEvaluation(
           cumple:          null,
           observaciones:   null,
           realizado:       false,
+        })
+      }
+    }
+
+    // Conductor líder evaluating trabajador_nuevo → create 4 weekly tracking records.
+    // Semana 1 unlocks immediately (day 0), semana 2 at day 7, semana 3 at day 14, semana 4 at day 21.
+    if (resolvedRole === 'conductor_lider' && data.definicionCode === 'trabajador_nuevo') {
+      const semanas: Array<{ semana: number; days: number }> = [
+        { semana: 1, days: 0  },
+        { semana: 2, days: 7  },
+        { semana: 3, days: 14 },
+        { semana: 4, days: 21 },
+      ]
+      for (const { semana, days } of semanas) {
+        await tx.insert(sstWeeklyEvaluations).values({
+          id:              nanoid(),
+          evaluationId:    id,
+          semana,
+          fechaDesbloqueo: addDays(data.fechaEvaluacion, days),
+          estado:          'pendiente',
+          fechaCompletada: null,
+          alertSentAt:     null,
         })
       }
     }
@@ -202,6 +231,7 @@ export async function listEvaluations(
       definicionCode:         sstEvaluations.definicionCode,
       definicionVersion:      sstEvaluations.definicionVersion,
       tipo:                   sstEvaluations.tipo,
+      evaluatorRole:          sstEvaluations.evaluatorRole,
       motivo:                 sstEvaluations.motivo,
       motivoOtro:             sstEvaluations.motivoOtro,
       descripcionEvento:      sstEvaluations.descripcionEvento,
@@ -238,6 +268,7 @@ export async function listEvaluations(
     definicionCode:         r.definicionCode,
     definicionVersion:      r.definicionVersion,
     tipo:                   r.tipo,
+    evaluatorRole:          r.evaluatorRole,
     motivo:                 r.motivo,
     motivoOtro:             r.motivoOtro,
     descripcionEvento:      r.descripcionEvento,
@@ -256,6 +287,167 @@ export async function listEvaluations(
     workerName:    `${r.workerFirstName ?? ''} ${r.workerLastName ?? ''}`.trim(),
     worksiteName:  r.worksiteName ?? '',
   }))
+}
+
+// ── listEvaluationsGroupedByWorker ──────────────────────────────────────────
+
+export interface WorkerEvaluationGroup {
+  workerId:    string
+  workerName:  string
+  workerRut:   string
+  worksiteId:  string
+  worksiteName: string
+  evaluations: (SstEvaluation & { workerName: string; worksiteName: string; workerRut: string })[]
+}
+
+/**
+ * Devuelve las evaluaciones agrupadas por trabajador.
+ * Cada grupo incluye todas las evaluaciones del trabajador (de distintos roles).
+ * Útil para la vista por trabajador en la UI.
+ */
+export async function listEvaluationsGroupedByWorker(
+  worksiteIds: string[] | 'all',
+  limit = 50,
+  offset = 0
+): Promise<WorkerEvaluationGroup[]> {
+  if (worksiteIds !== 'all' && worksiteIds.length === 0) return []
+
+  const scopeCond = worksiteIds !== 'all'
+    ? inArray(sstEvaluations.worksiteId, worksiteIds)
+    : undefined
+
+  const rows = await db
+    .select({
+      id:                     sstEvaluations.id,
+      worksiteId:             sstEvaluations.worksiteId,
+      workerId:               sstEvaluations.workerId,
+      createdBy:              sstEvaluations.createdBy,
+      definicionCode:         sstEvaluations.definicionCode,
+      definicionVersion:      sstEvaluations.definicionVersion,
+      tipo:                   sstEvaluations.tipo,
+      evaluatorRole:          sstEvaluations.evaluatorRole,
+      motivo:                 sstEvaluations.motivo,
+      motivoOtro:             sstEvaluations.motivoOtro,
+      descripcionEvento:      sstEvaluations.descripcionEvento,
+      equipoPatente:          sstEvaluations.equipoPatente,
+      fechaEvaluacion:        sstEvaluations.fechaEvaluacion,
+      estado:                 sstEvaluations.estado,
+      cargosJson:             sstEvaluations.cargosJson,
+      resultadoFinal:         sstEvaluations.resultadoFinal,
+      porcentajeCumplimiento: sstEvaluations.porcentajeCumplimiento,
+      resultadoEficacia:      sstEvaluations.resultadoEficacia,
+      restricciones:          sstEvaluations.restricciones,
+      observacionesGenerales: sstEvaluations.observacionesGenerales,
+      schemaJson:             sstEvaluations.schemaJson,
+      createdAt:              sstEvaluations.createdAt,
+      updatedAt:              sstEvaluations.updatedAt,
+      workerFirstName:        workers.firstName,
+      workerLastName:         workers.lastName,
+      workerRut:              workers.rut,
+      worksiteName:           worksites.name,
+    })
+    .from(sstEvaluations)
+    .leftJoin(workers,   eq(sstEvaluations.workerId,   workers.id))
+    .leftJoin(worksites, eq(sstEvaluations.worksiteId, worksites.id))
+    .where(scopeCond)
+    .orderBy(desc(sstEvaluations.createdAt))
+
+  // Group by workerId
+  const groupMap = new Map<string, WorkerEvaluationGroup>()
+
+  for (const r of rows) {
+    const existing = groupMap.get(r.workerId)
+    const ev: SstEvaluation & { workerName: string; worksiteName: string; workerRut: string } = {
+      id:                     r.id,
+      worksiteId:             r.worksiteId,
+      workerId:               r.workerId,
+      createdBy:              r.createdBy,
+      definicionCode:         r.definicionCode,
+      definicionVersion:      r.definicionVersion,
+      tipo:                   r.tipo,
+      evaluatorRole:          r.evaluatorRole,
+      motivo:                 r.motivo,
+      motivoOtro:             r.motivoOtro,
+      descripcionEvento:      r.descripcionEvento,
+      equipoPatente:          r.equipoPatente,
+      fechaEvaluacion:        r.fechaEvaluacion,
+      estado:                 r.estado,
+      cargosJson:             r.cargosJson,
+      resultadoFinal:         r.resultadoFinal,
+      porcentajeCumplimiento: r.porcentajeCumplimiento,
+      resultadoEficacia:      r.resultadoEficacia,
+      restricciones:          r.restricciones,
+      observacionesGenerales: r.observacionesGenerales,
+      schemaJson:             r.schemaJson,
+      createdAt:              r.createdAt,
+      updatedAt:              r.updatedAt,
+      workerName:  `${r.workerFirstName ?? ''} ${r.workerLastName ?? ''}`.trim(),
+      worksiteName: r.worksiteName ?? '',
+      workerRut:   r.workerRut ?? '',
+    }
+
+    if (existing) {
+      existing.evaluations.push(ev)
+    } else {
+      groupMap.set(r.workerId, {
+        workerId:    r.workerId,
+        workerName:  `${r.workerFirstName ?? ''} ${r.workerLastName ?? ''}`.trim(),
+        workerRut:   r.workerRut ?? '',
+        worksiteId:  r.worksiteId,
+        worksiteName: r.worksiteName ?? '',
+        evaluations: [ev],
+      })
+    }
+  }
+
+  // Paginate by unique workers
+  const allGroups = [...groupMap.values()]
+  return allGroups.slice(offset, offset + limit)
+}
+
+// ── getWeeklyEvaluations ─────────────────────────────────────────────────────
+
+export async function getWeeklyEvaluations(
+  evaluationId: string,
+  worksiteIds: string[] | 'all'
+): Promise<SstWeeklyEvaluation[]> {
+  const evaluation = await getEvaluation(evaluationId, worksiteIds)
+  if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
+
+  return db
+    .select()
+    .from(sstWeeklyEvaluations)
+    .where(eq(sstWeeklyEvaluations.evaluationId, evaluationId))
+    .orderBy(sstWeeklyEvaluations.semana)
+}
+
+// ── markWeekCompleted ────────────────────────────────────────────────────────
+
+export async function markWeekCompleted(
+  weeklyEvalId: string,
+  worksiteIds: string[] | 'all'
+): Promise<void> {
+  const [weekly] = await db
+    .select()
+    .from(sstWeeklyEvaluations)
+    .where(eq(sstWeeklyEvaluations.id, weeklyEvalId))
+    .limit(1)
+
+  if (!weekly) throw new Error('Semana de evaluación no encontrada.')
+
+  // Scope check
+  const evaluation = await getEvaluation(weekly.evaluationId, worksiteIds)
+  if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
+
+  const today = new Date().toISOString().slice(0, 10)
+
+  await db
+    .update(sstWeeklyEvaluations)
+    .set({
+      estado:          'completada',
+      fechaCompletada: today,
+    })
+    .where(eq(sstWeeklyEvaluations.id, weeklyEvalId))
 }
 
 // ── saveResponses ─────────────────────────────────────────────────────────────

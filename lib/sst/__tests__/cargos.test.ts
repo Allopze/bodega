@@ -5,9 +5,9 @@ import type { CargoKey } from '../cargos'
 // ── CARGO_KEYS ──────────────────────────────────────────────────────────────
 
 describe('CARGO_KEYS', () => {
-  it('has 4 cargo keys', () => {
+  it('has 3 cargo keys', () => {
     const keys = Object.keys(CARGO_KEYS)
-    expect(keys).toHaveLength(4)
+    expect(keys).toHaveLength(3)
   })
 
   it('has conductor_ampliroll', () => {
@@ -16,10 +16,6 @@ describe('CARGO_KEYS', () => {
 
   it('has conductor_batea', () => {
     expect(CARGO_KEYS.conductor_batea).toBe('Conductor Batea')
-  })
-
-  it('has conductor_general', () => {
-    expect(CARGO_KEYS.conductor_general).toBe('Conductor General')
   })
 
   it('has operador_maquinaria_pesada', () => {
@@ -37,8 +33,8 @@ describe('CARGO_KEYS', () => {
 // ── CARGO_OPTIONS ───────────────────────────────────────────────────────────
 
 describe('CARGO_OPTIONS', () => {
-  it('has 4 options (one per cargo)', () => {
-    expect(CARGO_OPTIONS).toHaveLength(4)
+  it('has 3 options (one per cargo)', () => {
+    expect(CARGO_OPTIONS).toHaveLength(3)
   })
 
   it('each option has value and label', () => {

@@ -1,0 +1,43 @@
+/**
+ * GET /api/cron/sst-weekly-alerts
+ *
+ * Endpoint protegido por CRON_SECRET para ejecutar el job de alertas
+ * de evaluaciones semanales vencidas del conductor líder.
+ *
+ * Llamar diariamente via cron externo (vercel cron, GitHub Actions, etc.):
+ *   curl -H "Authorization: Bearer $CRON_SECRET" https://yourdomain/api/cron/sst-weekly-alerts
+ */
+
+import { type NextRequest, NextResponse } from 'next/server'
+import { checkOverdueWeeklyAlerts } from '@/lib/services/sst-alerts'
+import { logger } from '@/lib/logger'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  // Validate CRON_SECRET to prevent unauthorized invocations
+  const secret = process.env.CRON_SECRET
+  const authHeader = req.headers.get('authorization')
+
+  if (!secret) {
+    logger.error('[cron/sst-weekly-alerts] CRON_SECRET is not configured')
+    return NextResponse.json({ error: 'Cron secret not configured' }, { status: 500 })
+  }
+
+  if (authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const result = await checkOverdueWeeklyAlerts()
+    logger.info('[cron/sst-weekly-alerts] Completed', result)
+    return NextResponse.json({ ok: true, ...result })
+  } catch (err) {
+    logger.error('[cron/sst-weekly-alerts] Fatal error', err)
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Unknown error' },
+      { status: 500 }
+    )
+  }
+}

@@ -62,6 +62,7 @@ export type NotificationType =
   | "ppa_authorized"
   | "ppa_rejected"
   | "feedback_submitted"
+  | "system_alert"
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),
