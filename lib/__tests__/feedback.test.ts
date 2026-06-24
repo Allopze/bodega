@@ -62,7 +62,7 @@ describe("feedback service", () => {
 
   it("throws validation error for invalid report input", async () => {
     const input = {
-      tipo: "invalid-type" as any,
+      tipo: "invalid-type" as unknown as "bug" | "propuesta" | "consulta",
       titulo: "",
       descripcion: "",
     }
@@ -89,7 +89,7 @@ describe("feedback service", () => {
 
   it("lists reports with filters, limit, and offset", async () => {
     const report1 = await createReport({ tipo: "bug", titulo: "T1", descripcion: "D1" }, "user-1")
-    const report2 = await createReport({ tipo: "consulta", titulo: "T2", descripcion: "D2" }, "user-2")
+    await createReport({ tipo: "consulta", titulo: "T2", descripcion: "D2" }, "user-2")
 
     // Filter own
     const own = await listReports({ mode: "own", userId: "user-1" })
