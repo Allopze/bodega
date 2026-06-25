@@ -32,6 +32,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         },
         worksite: true,
         supplier: true,
+        issuedByUser: { columns: { name: true } },
       },
     }),
     getCompanyProfile(),
@@ -50,6 +51,10 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
   const productMap = Object.fromEntries(products.map((p) => [p.id, p]))
 
   const issuedDate = order.issuedAt ? formatDate(order.issuedAt) : formatDate(order.createdAt)
+  // Simple electronic signature: the name of the person who issued (authorized)
+  // the order. Only present once the order has actually been issued.
+  const authorizedByName = order.issuedAt ? order.issuedByUser?.name ?? null : null
+  const authorizedDate   = order.issuedAt ? formatDate(order.issuedAt) : null
   const suggestedFilename = ocPdfFilename(order.code)
   const requestCodes = unique(
     order.items
@@ -463,23 +468,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           letter-spacing: 0.05em;
           text-transform: uppercase;
           color: #5f6b63;
-          margin-bottom: 6mm;
-        }
-
-        .auth-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          column-gap: 10mm;
-          row-gap: 8mm;
-        }
-
-        .auth-field {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .auth-field-wide {
-          grid-column: 1 / -1;
+          margin-bottom: 0;
         }
 
         .auth-line {
@@ -487,20 +476,25 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           border-bottom: 1px solid #9aa8a0;
         }
 
-        .auth-label {
-          margin-top: 1.4mm;
-          font-size: 6.8pt;
-          letter-spacing: 0.03em;
-          text-transform: uppercase;
-          color: #5f6b63;
-        }
-
         .auth-signature {
-          margin-top: 12mm;
+          margin-top: 14mm;
           display: flex;
           flex-direction: column;
           align-items: center;
           gap: 1.6mm;
+        }
+
+        .auth-name {
+          font-size: 11pt;
+          font-weight: 720;
+          color: #232522;
+          line-height: 1.1;
+          text-align: center;
+        }
+
+        /* Reserve the name's vertical space when the order is not yet issued. */
+        .auth-name-empty {
+          min-height: 12pt;
         }
 
         .auth-signature .auth-line {
@@ -691,18 +685,26 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
 
         <section className="authorization" aria-label="Autorización">
           <div className="auth-title">Autorización de emisión</div>
-          <div className="auth-grid">
-            <SignatureLine label="Nombre" wide />
-            <SignatureLine label="R.U.T." />
-            <SignatureLine label="Fecha" />
-            <SignatureLine label="Recinto" wide />
-          </div>
           <div className="auth-signature">
+            {authorizedByName ? (
+              <span className="auth-name">{authorizedByName}</span>
+            ) : (
+              <span className="auth-name auth-name-empty" aria-hidden="true" />
+            )}
             <span className="auth-line" />
-            <span className="auth-caption">
-              Nombre y firma autorizada de la persona responsable
-              de la emisión de esta Orden de Compra
-            </span>
+            {authorizedByName ? (
+              <span className="auth-caption">
+                Firma electrónica simple{authorizedDate ? ` · ${authorizedDate}` : ""}
+                <br />
+                Persona responsable de la emisión de esta Orden de Compra
+              </span>
+            ) : (
+              <span className="auth-caption">
+                Pendiente de emisión
+                <br />
+                Nombre y firma de la persona responsable de la emisión de esta Orden de Compra
+              </span>
+            )}
           </div>
         </section>
 
@@ -729,15 +731,6 @@ function TotalLine({ label, value, final = false }: { label: string; value: stri
     <div className={final ? "total-line total-line-final" : "total-line"}>
       <span className="total-label">{label}</span>
       <span className="total-value mono">$ {value}</span>
-    </div>
-  )
-}
-
-function SignatureLine({ label, wide = false }: { label: string; wide?: boolean }) {
-  return (
-    <div className={wide ? "auth-field auth-field-wide" : "auth-field"}>
-      <span className="auth-line" />
-      <span className="auth-label">{label}</span>
     </div>
   )
 }

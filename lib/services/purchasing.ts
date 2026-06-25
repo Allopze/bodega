@@ -176,7 +176,7 @@ export async function issueOrder(
     const now = new Date().toISOString()
     await tx
       .update(purchaseOrders)
-      .set({ status: "issued", issuedAt: now, updatedAt: now })
+      .set({ status: "issued", issuedAt: now, issuedBy: userId, updatedAt: now })
       .where(eq(purchaseOrders.id, orderId))
 
     await recordStatusChange({

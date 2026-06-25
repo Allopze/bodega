@@ -19,6 +19,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   createdBy:         text("created_by").notNull().references(() => users.id),
   status:            text("status").notNull().default("draft"),
   issuedAt:          text("issued_at"),
+  issuedBy:          text("issued_by").references(() => users.id),
   sentAt:            text("sent_at"),
   confirmedAt:       text("confirmed_at"),
   estimatedDelivery: text("estimated_delivery"),
@@ -123,7 +124,8 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
   worksite:   one(worksites, { fields: [purchaseOrders.worksiteId], references: [worksites.id] }),
   supplier:   one(suppliers, { fields: [purchaseOrders.supplierId], references: [suppliers.id] }),
-  createdBy:  one(users, { fields: [purchaseOrders.createdBy], references: [users.id] }),
+  createdBy:    one(users, { fields: [purchaseOrders.createdBy], references: [users.id], relationName: "po_created_by" }),
+  issuedByUser: one(users, { fields: [purchaseOrders.issuedBy],  references: [users.id], relationName: "po_issued_by" }),
   items:      many(purchaseOrderItems),
   quotations: many(quotations),
   invoices:   many(purchaseOrderInvoices),
