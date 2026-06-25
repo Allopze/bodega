@@ -237,7 +237,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                 {state.fieldErrors?.roleIds?.[0] && (
                   <p className="mb-2 text-xs text-(--color-danger)">{state.fieldErrors.roleIds[0]}</p>
                 )}
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   {allRoles.map((role) => {
                     const checked = selectedRoles.includes(role.id)
                     return (
@@ -246,14 +246,17 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
                         type="button"
                         onClick={() => toggleRole(role.id)}
                         className={[
-                          "rounded-(--radius) border px-3 py-1.5 text-xs font-sans",
+                          "inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-left text-xs font-medium",
                           "transition-all duration-(--duration-fast) ease-[var(--ease-out)] cursor-pointer select-none",
                           checked
-                            ? "border-(--color-primary) bg-(--color-primary-tint) font-semibold text-(--color-primary-ink) shadow-(--shadow-xs)"
+                            ? "border-(--color-primary) bg-(--color-primary) text-white font-semibold shadow-(--shadow-xs) hover:opacity-90"
                             : "border-(--color-border) bg-surface text-(--color-text-muted) hover:bg-surface-2 hover:border-(--color-border-strong) hover:text-(--color-text)",
                         ].join(" ")}
                       >
-                        {role.label}
+                        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden="true">
+                          {checked && <Check size={11} weight="bold" />}
+                        </span>
+                        <span className="truncate">{role.label}</span>
                       </button>
                     )
                   })}

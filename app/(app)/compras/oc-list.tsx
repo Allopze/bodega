@@ -9,6 +9,7 @@ import { CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge, OC_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/operaciones/list-filters"
+import { OnboardingHint } from "@/components/operaciones/onboarding-hint"
 import { Button } from "@/components/ui/button"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -237,6 +238,11 @@ export function OcList({
 
   return (
     <div className="flex flex-col gap-4">
+      <OnboardingHint
+        storageKey="hint_compras_v1"
+        title="Órdenes de compra"
+        body="Aquí se generan las OC a partir de los ítems aprobados. El sistema las agrupa automáticamente por proveedor. Una vez emitida, márcala como enviada para que pase a Recepción."
+      />
       {createdCount > 1 && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-tint)] border border-[var(--color-success-line)]">
           <CheckCircle size={16} className="text-[var(--color-success-ink)] shrink-0" />
@@ -267,7 +273,7 @@ export function OcList({
 
       {/* Filtros server-side (URL-synced) */}
       <ListFilters
-        searchPlaceholder="Buscar por código de OC..."
+        searchPlaceholder="Buscar por código o proveedor..."
         statusOptions={OC_STATUS_OPTIONS}
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}

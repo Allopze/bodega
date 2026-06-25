@@ -23,6 +23,8 @@ export interface ListParams {
   faena:     string
   /** Selected supplier id (empty = all). */
   proveedor: string
+  /** Selected urgency value (empty = all). Used by Aprobaciones. */
+  urgencia:  string
 }
 
 function firstStr(value: string | string[] | undefined): string {
@@ -41,7 +43,8 @@ export function parseListParams(
     : []
   const faena = firstStr(sp.faena).trim()
   const proveedor = firstStr(sp.proveedor).trim()
-  return { q, estados, faena, proveedor }
+  const urgencia = firstStr(sp.urgencia).trim()
+  return { q, estados, faena, proveedor, urgencia }
 }
 
 /** Escape LIKE wildcards so user input is matched literally. */

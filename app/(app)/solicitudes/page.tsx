@@ -1,14 +1,14 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
-import { desc, count, inArray, eq, and, sql } from "drizzle-orm"
+import { purchaseRequests, purchaseRequestItems, products, worksites } from "@/db/schema"
+import { desc, count, inArray, eq, and, or, ilike, sql } from "drizzle-orm"
 import { requirePermission, can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { parseListParams, buildListWhere } from "@/lib/operaciones/list-query"
+import { parseListParams, statusSql, worksiteEqSql } from "@/lib/operaciones/list-query"
 import { RequestList } from "./request-list"
 
 export const metadata: Metadata = { title: "Solicitudes de compra" }
@@ -41,15 +41,33 @@ export default async function SolicitudesPage({
 
   // URL-synced search & filters (server-side, so search finds records on any page)
   const listParams = parseListParams(sp)
-  const where = buildListWhere({
-    base:           filterConditions,
-    textColumns:    [purchaseRequests.code],
-    query:          listParams.q,
-    statusColumn:   purchaseRequests.status,
-    estados:        listParams.estados,
-    worksiteColumn: purchaseRequests.worksiteId,
-    faena:          listParams.faena,
-  })
+
+  // Extended text search: match the request code OR any item's product name
+  // (free-text or catalogue). Uses EXISTS to avoid row duplication without JOIN.
+  function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
+  const q = listParams.q.trim()
+  const likePattern = q ? `%${escapeLikeLocal(q)}%` : null
+  const textCondition = likePattern
+    ? or(
+        ilike(purchaseRequests.code, likePattern),
+        sql`EXISTS (
+          SELECT 1 FROM purchase_request_items pri
+          LEFT JOIN products p ON p.id = pri.product_id
+          WHERE pri.request_id = ${purchaseRequests.id}
+            AND (
+              pri.product_name_free ILIKE ${likePattern}
+              OR p.name ILIKE ${likePattern}
+            )
+        )`,
+      )
+    : undefined
+
+  const where = and(
+    filterConditions,
+    textCondition,
+    statusSql(purchaseRequests.status, listParams.estados),
+    worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
+  )
 
   // Count total matching requests for pagination
   const [totalRow] = await db

@@ -16,4 +16,7 @@ export * from "./sst"
 export * from "./ppa"
 export * from "./email-templates"
 export * from "./feedback"
+export * from "./fuel-vehicles"
+export * from "./fuel-suppliers"
+export * from "./fuel-invoices"
 

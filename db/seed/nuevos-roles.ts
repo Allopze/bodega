@@ -147,7 +147,7 @@ export async function seedNuevosRoles(db: Db, schema: Schema) {
       })
     })
 
-    const baseUrl = (process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000").replace(/\/$/, "")
+    const baseUrl = (process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3001").replace(/\/$/, "")
     const inviteUrl = `${baseUrl}/registro?token=${encodeURIComponent(token)}`
     console.log(`  ✓ ${user.name} (${user.email}) → ${user.roleId}${user.worksiteId ? ` · faena: ${user.worksiteId}` : ""}`)
     console.log(`    Invitación: ${inviteUrl}`)

@@ -18,6 +18,8 @@ interface ListFiltersProps {
   searchPlaceholder?: string
   /** When provided, renders the status (estado) select. */
   statusOptions?: FilterOption[]
+  /** When provided, renders the urgency (urgencia) select. */
+  urgencyOptions?: FilterOption[]
   /** When provided, renders the worksite (faena) select. */
   worksiteOptions?: FilterOption[]
   /** When provided, renders the supplier (proveedor) select. */
@@ -41,6 +43,7 @@ const DEBOUNCE_MS = 350
 export function ListFilters({
   searchPlaceholder = "Buscar por código...",
   statusOptions,
+  urgencyOptions,
   worksiteOptions,
   supplierOptions,
   exportTipo,
@@ -52,6 +55,7 @@ export function ListFilters({
 
   const currentQ = searchParams.get("q") ?? ""
   const currentEstado = searchParams.get("estado") ?? ""
+  const currentUrgencia = searchParams.get("urgencia") ?? ""
   const currentFaena = searchParams.get("faena") ?? ""
   const currentProveedor = searchParams.get("proveedor") ?? ""
 
@@ -79,7 +83,7 @@ export function ListFilters({
     return () => clearTimeout(id)
   }, [q, currentQ, setParam])
 
-  const hasActiveFilters = Boolean(currentQ || currentEstado || currentFaena || currentProveedor)
+  const hasActiveFilters = Boolean(currentQ || currentEstado || currentUrgencia || currentFaena || currentProveedor)
 
   // Export URL respects the active filters (estado→status, q/faena/proveedor passthrough).
   const exportHref = React.useMemo(() => {
@@ -96,6 +100,7 @@ export function ListFilters({
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     params.delete("q")
     params.delete("estado")
+    params.delete("urgencia")
     params.delete("faena")
     params.delete("proveedor")
     params.delete("page")
@@ -132,6 +137,23 @@ export function ListFilters({
             <SelectContent>
               <SelectItem value={ALL}>Todos los estados</SelectItem>
               {statusOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {urgencyOptions && urgencyOptions.length > 0 && (
+          <Select
+            value={currentUrgencia || ALL}
+            onValueChange={(v) => setParam("urgencia", v === ALL ? "" : v)}
+          >
+            <SelectTrigger className="h-8 w-auto min-w-[9rem] text-xs" aria-label="Filtrar por urgencia">
+              <SelectValue placeholder="Toda urgencia" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Toda urgencia</SelectItem>
+              {urgencyOptions.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
               ))}
             </SelectContent>

@@ -50,7 +50,7 @@ interface UserListProps {
 
 const COLUMNS = [
   { key: "name",      label: "Usuario",   sortable: true  },
-  { key: "roleLabels",label: "Roles",     sortable: false },
+  { key: "roleLabels",label: "Roles",     sortable: false, width: "max-w-[280px]" },
   { key: "worksiteCount", label: "Faenas",sortable: true, numeric: true, width: "w-20" },
   { key: "isActive",  label: "Estado",    sortable: true  },
   { key: "createdAt", label: "Alta",      sortable: true  },
@@ -110,10 +110,15 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
               </TableCell>
               {/* Roles */}
               <TableCell>
-                <div className="flex flex-wrap gap-1">
-                  {u.roleLabels.map((label) => (
+                <div className="flex flex-wrap items-center gap-1 max-w-[280px]">
+                  {u.roleLabels.slice(0, 3).map((label) => (
                     <Badge key={label} variant="default" size="sm">{label}</Badge>
                   ))}
+                  {u.roleLabels.length > 3 && (
+                    <span className="text-[10px] font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
+                      +{u.roleLabels.length - 3} más
+                    </span>
+                  )}
                 </div>
               </TableCell>
               {/* Faenas count */}
@@ -180,10 +185,15 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
                 </Badge>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-1">
-                {u.roleLabels.map((label) => (
+              <div className="mt-3 flex flex-wrap items-center gap-1">
+                {u.roleLabels.slice(0, 3).map((label) => (
                   <Badge key={label} variant="default" size="sm">{label}</Badge>
                 ))}
+                {u.roleLabels.length > 3 && (
+                  <span className="text-[10px] font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
+                    +{u.roleLabels.length - 3} más
+                  </span>
+                )}
               </div>
 
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">

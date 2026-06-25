@@ -4,7 +4,7 @@ import {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
   ChartLineUp, ChartBar, Package, Path, User, Stack, GearSix,
-  Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText,
+  Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText, GasPump,
 } from "@phosphor-icons/react"
 
 export type IconCmp = React.ComponentType<{ size?: number; weight?: IconWeight; className?: string }>
@@ -14,7 +14,7 @@ export const NAV_ICONS: Record<string, IconCmp> = {
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
   ChartLineUp, ChartBar, Package, Path, User, Stack, GearSix,
-  Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText,
+  Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText, GasPump,
 }
 
 export function navIcon(name: string): IconCmp | undefined {

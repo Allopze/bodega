@@ -7,6 +7,7 @@ import { Plus, Warning, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge, REQUEST_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/operaciones/list-filters"
+import { OnboardingHint } from "@/components/operaciones/onboarding-hint"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -165,9 +166,14 @@ export function RequestList({
   ) : undefined
 
   return (
-    <>
+    <div className="flex flex-col gap-4">
+      <OnboardingHint
+        storageKey="hint_solicitudes_v1"
+        title="Solicitudes de EPPs, Servicios, repuestos u otros"
+        body="Crea solicitudes de EPPs, Servicios, repuestos u otros para tus faenas. Agrega los ítems, guarda el borrador y envíala a revisión. Puedes seguir el estado de cada solicitud desde aquí."
+      />
       <ListFilters
-        searchPlaceholder="Buscar por código..."
+        searchPlaceholder="Buscar por código o producto..."
         statusOptions={STATUS_OPTIONS}
         worksiteOptions={worksiteOptions}
         exportTipo="solicitudes"
@@ -296,6 +302,6 @@ export function RequestList({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   )
 }

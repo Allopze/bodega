@@ -12,6 +12,8 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { parseListParams, textSearchSql, eqFilter, worksiteEqSql } from "@/lib/operaciones/list-query"
+import type { FilterOption } from "@/components/operaciones/list-filters"
 import { ApprovalPanel } from "./approval-panel"
 import type { ApprovalItem, ApprovalRequest } from "./approval-panel"
 
@@ -28,6 +30,7 @@ export default async function AprobacionesPage({
   try { session = await requirePermission("approvals:approve") }
   catch { redirect("/forbidden") }
   const sp = await searchParams
+  const listParams = parseListParams(sp)
   const selectedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
   const visibleWsIds = visibleWorksiteIds(session)
   const worksiteScope = isGlobalRole(session)
@@ -47,6 +50,10 @@ export default async function AprobacionesPage({
       where pending_items.request_id = ${purchaseRequests.id}
         and pending_items.status = 'requested'
     )`,
+    // URL-synced filters
+    textSearchSql(listParams.q, [purchaseRequests.code]),
+    worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
+    eqFilter(purchaseRequests.urgency, listParams.urgencia),
   )
 
   const [totalRequestsRow] = await db
@@ -59,6 +66,19 @@ export default async function AprobacionesPage({
     pageSize: APPROVAL_REQUESTS_PAGE_SIZE,
   })
   const pageHref = (page: number) => buildPaginationHref("/aprobaciones", sp, page)
+
+  // Worksite options for the faena filter (active, scoped)
+  const worksiteOptionRows = await db
+    .select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(
+      eq(worksites.isActive, true),
+      isGlobalRole(session)
+        ? undefined
+        : visibleWsIds.length > 0 ? inArray(worksites.id, visibleWsIds) : sql`false`,
+    ))
+    .orderBy(worksites.name)
+  const worksiteOptions: FilterOption[] = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
 
   // Load only submitted/in-review requests in the approver's worksite scope.
   const visible = await db
@@ -91,7 +111,7 @@ export default async function AprobacionesPage({
             ]} />
           }
         />
-        <ApprovalPanel requests={[]} canApproveEpp={false} />
+        <ApprovalPanel requests={[]} canApproveEpp={false} worksiteOptions={worksiteOptions} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -224,16 +244,21 @@ export default async function AprobacionesPage({
 
   const displayedRows = rows
   const totalPending = displayedRows.reduce((n, r) => n + r.pendingCount, 0)
+  const uniqueFaenas = new Set(displayedRows.map((r) => r.worksiteName)).size
+
+  function buildDescription() {
+    if (displayedRows.length === 0) return "Revisión y aprobación de ítems solicitados por faena."
+    const items = `${totalPending} ítem${totalPending !== 1 ? "s" : ""}`
+    const reqs  = `${displayedRows.length} solicitud${displayedRows.length !== 1 ? "es" : ""}`
+    const faenas = uniqueFaenas > 1 ? ` de ${uniqueFaenas} faenas` : ""
+    return `${items} en ${reqs}${faenas}`
+  }
 
   return (
     <PageContainer>
       <PageHeader
         title="Aprobaciones"
-        description={
-          displayedRows.length > 0
-            ? `${totalPending} ítem${totalPending !== 1 ? "s" : ""} pendiente${totalPending !== 1 ? "s" : ""} de revisión`
-            : "Revisión y aprobación de ítems solicitados por faena."
-        }
+        description={buildDescription()}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard",    href: "/dashboard" },
@@ -244,6 +269,7 @@ export default async function AprobacionesPage({
       <ApprovalPanel
         requests={displayedRows}
         canApproveEpp={session.user.roles.some((r) => ["administrador", "jefa_chome", "secretaria"].includes(r))}
+        worksiteOptions={worksiteOptions}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>

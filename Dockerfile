@@ -11,10 +11,10 @@ RUN npm ci
 
 COPY . .
 
-# Expose dev server port (Next.js default)
-EXPOSE 3000
+# Expose dev server port
+EXPOSE 3001
 
-CMD ["npm", "run", "dev", "--", "-p", "3000"]
+CMD ["npm", "run", "dev"]
 
 
 # ── Production build helper ──

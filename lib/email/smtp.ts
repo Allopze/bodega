@@ -15,7 +15,7 @@ export function getAppBaseUrl() {
     process.env.APP_URL ??
     process.env.AUTH_URL ??
     process.env.NEXTAUTH_URL ??
-    "http://localhost:3000"
+    "http://localhost:3001"
   ).replace(/\/$/, "")
 }
 

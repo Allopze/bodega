@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { DataTable } from "@/components/admin/data-table"
 import { ListFilters, type FilterOption } from "@/components/operaciones/list-filters"
+import { OnboardingHint } from "@/components/operaciones/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Badge } from "@/components/ui/badge"
@@ -43,9 +44,14 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
   const router = useRouter()
 
   return (
-    <>
+    <div className="flex flex-col gap-4">
+    <OnboardingHint
+      storageKey="hint_recepcion_v1"
+      title="Recepción de repuestos, servicios y otros"
+      body="Registra la llegada de repuestos, servicios y otros en dos pasos: primero en oficina Chome (botón 'Recibir'), luego el despacho a la faena. El badge 'pend. faena' indica ítems que ya llegaron a oficina pero aún no se enviaron."
+    />
     <ListFilters
-      searchPlaceholder="Buscar por código de OC..."
+      searchPlaceholder="Buscar por código o proveedor..."
       worksiteOptions={worksiteOptions}
       supplierOptions={supplierOptions}
       exportTipo="recepcion"
@@ -107,6 +113,6 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
         )
       }}
     />
-    </>
+    </div>
   )
 }

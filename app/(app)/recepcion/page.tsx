@@ -4,7 +4,7 @@ import { db } from "@/db"
 import {
   purchaseOrders, purchaseOrderItems, worksites, suppliers,
 } from "@/db/schema"
-import { and, eq, inArray, desc, count } from "drizzle-orm"
+import { and, or, ilike, eq, inArray, desc, count, sql } from "drizzle-orm"
 import { requirePermission, canAny } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -12,7 +12,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { parseListParams, buildListWhere } from "@/lib/operaciones/list-query"
+import { parseListParams, eqFilter, worksiteEqSql } from "@/lib/operaciones/list-query"
 import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
@@ -36,16 +36,24 @@ export default async function RecepcionPage({
 
   // URL-synced search & filters (server-side, so search finds records on any page)
   const listParams = parseListParams(sp)
-  const where = buildListWhere({
-    base:           scopeFilter,
-    textColumns:    [purchaseOrders.code],
-    query:          listParams.q,
-    estados:        [],
-    worksiteColumn: purchaseOrders.worksiteId,
-    faena:          listParams.faena,
-    supplierColumn: purchaseOrders.supplierId,
-    proveedor:      listParams.proveedor,
-  })
+
+  // Extended text search: match OC code OR supplier name via EXISTS subquery.
+  function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
+  const q = listParams.q.trim()
+  const likePattern = q ? `%${escapeLikeLocal(q)}%` : null
+  const textCondition = likePattern
+    ? or(
+        ilike(purchaseOrders.code, likePattern),
+        sql`EXISTS (SELECT 1 FROM suppliers s WHERE s.id = ${purchaseOrders.supplierId} AND s.name ILIKE ${likePattern})`,
+      )
+    : undefined
+
+  const where = and(
+    scopeFilter,
+    textCondition,
+    worksiteEqSql(purchaseOrders.worksiteId, listParams.faena),
+    eqFilter(purchaseOrders.supplierId, listParams.proveedor),
+  )
 
   const [totalRow] = await db
     .select({ total: count() })

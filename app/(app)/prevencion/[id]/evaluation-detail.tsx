@@ -488,7 +488,7 @@ export function EvaluationDetail({
             </p>
           </div>
 
-          <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="mt-3">
             <Select value={activeSection} onValueChange={setActiveSection}>
               <SelectTrigger aria-label="Seleccionar sección de evaluación" className="h-10">
                 <SelectValue placeholder="Selecciona una sección" />
@@ -501,27 +501,6 @@ export function EvaluationDetail({
                 ))}
               </SelectContent>
             </Select>
-
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => moveActiveSection(-1)}
-                disabled={activeNavigationIndex === 0}
-              >
-                <CaretLeft size={14} weight="bold" aria-hidden="true" />
-                Anterior
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => moveActiveSection(1)}
-                disabled={activeNavigationIndex >= navigationItems.length - 1}
-              >
-                Siguiente
-                <CaretRight size={14} weight="bold" aria-hidden="true" />
-              </Button>
-            </div>
           </div>
         </div>
 
@@ -556,8 +535,28 @@ export function EvaluationDetail({
                   onChange={handleResponseChange}
                 />
 
-                {canMarkComplete && (
-                  <div className="pt-4 border-t border-[var(--color-border)] flex justify-end">
+                <div className="pt-4 border-t border-[var(--color-border)] flex items-center justify-between gap-2">
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => moveActiveSection(-1)}
+                      disabled={activeNavigationIndex === 0}
+                    >
+                      <CaretLeft size={14} weight="bold" aria-hidden="true" />
+                      Anterior
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => moveActiveSection(1)}
+                      disabled={activeNavigationIndex >= navigationItems.length - 1}
+                    >
+                      Siguiente
+                      <CaretRight size={14} weight="bold" aria-hidden="true" />
+                    </Button>
+                  </div>
+                  {canMarkComplete && (
                     <Button
                       type="button"
                       variant="signal"
@@ -567,8 +566,8 @@ export function EvaluationDetail({
                       <Check size={14} className="mr-1.5" />
                       Marcar Semana {sec.weekNumber} como Completada
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </TabsContent>
           )
@@ -639,32 +638,93 @@ export function EvaluationDetail({
                 </div>
               </div>
             )}
+
+            <div className="pt-4 border-t border-[var(--color-border)] flex justify-between gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => moveActiveSection(-1)}
+                disabled={activeNavigationIndex === 0}
+              >
+                <CaretLeft size={14} weight="bold" aria-hidden="true" />
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => moveActiveSection(1)}
+                disabled={activeNavigationIndex >= navigationItems.length - 1}
+              >
+                Siguiente
+                <CaretRight size={14} weight="bold" aria-hidden="true" />
+              </Button>
+            </div>
           </div>
         </TabsContent>
 
         {/* Seguimientos */}
         {evaluation.tipo === "seguimiento" && (
           <TabsContent value="seguimientos">
-            <div className="border border-(--color-border) bg-(--color-surface) p-5">
-              <h3 className="text-base font-semibold text-(--color-text) mb-4">Seguimientos programados</h3>
+            <div className="border border-(--color-border) bg-(--color-surface) p-5 space-y-4">
+              <h3 className="text-base font-semibold text-(--color-text)">Seguimientos programados</h3>
               <FollowupsPanel
                 followups={followups}
                 canManage={canManage}
                 onUpdate={setFollowups}
               />
+              <div className="pt-4 border-t border-[var(--color-border)] flex justify-between gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => moveActiveSection(-1)}
+                  disabled={activeNavigationIndex === 0}
+                >
+                  <CaretLeft size={14} weight="bold" aria-hidden="true" />
+                  Anterior
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => moveActiveSection(1)}
+                  disabled={activeNavigationIndex >= navigationItems.length - 1}
+                >
+                  Siguiente
+                  <CaretRight size={14} weight="bold" aria-hidden="true" />
+                </Button>
+              </div>
             </div>
           </TabsContent>
         )}
 
         {/* Plan de acción */}
         <TabsContent value="plan">
-          <div className="border border-(--color-border) bg-(--color-surface) p-5">
+          <div className="border border-(--color-border) bg-(--color-surface) p-5 space-y-4">
             <ActionPlanPanel
               evaluationId={evaluation.id}
               items={actionPlan}
               readOnly={fullReadOnly}
               onUpdate={setActionPlan}
             />
+            <div className="pt-4 border-t border-[var(--color-border)] flex justify-between gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => moveActiveSection(-1)}
+                disabled={activeNavigationIndex === 0}
+              >
+                <CaretLeft size={14} weight="bold" aria-hidden="true" />
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => moveActiveSection(1)}
+                disabled={activeNavigationIndex >= navigationItems.length - 1}
+              >
+                Siguiente
+                <CaretRight size={14} weight="bold" aria-hidden="true" />
+              </Button>
+            </div>
           </div>
         </TabsContent>
         </>}

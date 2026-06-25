@@ -2,13 +2,13 @@
  * Standalone script to generate test PDFs for visual inspection.
  * Run with: npx tsx scripts/generate-test-pdfs.ts
  *
- * Requires the dev server to be running on http://localhost:3000.
+ * Requires the dev server to be running on http://localhost:3001.
  */
 import { chromium } from "playwright"
 import fs from "node:fs"
 import path from "node:path"
 
-const BASE = process.env.APP_URL ?? "http://localhost:3000"
+const BASE = process.env.APP_URL ?? "http://localhost:3001"
 const OUT_DIR = "/tmp/pdf-exports"
 
 async function main() {

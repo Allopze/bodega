@@ -10,7 +10,7 @@ const mockUpdate = vi.hoisted(() => vi.fn())
 const mockDelete = vi.hoisted(() => vi.fn())
 const mockTransaction = vi.hoisted(() => vi.fn())
 const mockSendEmail = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
-const mockGetAppBaseUrl = vi.hoisted(() => vi.fn(() => "http://localhost:3000"))
+const mockGetAppBaseUrl = vi.hoisted(() => vi.fn(() => "http://localhost:3001"))
 
 vi.mock("@/db", () => ({
   db: {

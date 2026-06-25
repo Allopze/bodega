@@ -18,6 +18,14 @@ import {
 } from "./actions"
 import { formatQty, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
+import { ListFilters, type FilterOption } from "@/components/operaciones/list-filters"
+import { OnboardingHint } from "@/components/operaciones/onboarding-hint"
+
+const URGENCY_OPTIONS: FilterOption[] = [
+  { value: "normal",   label: "Normal"   },
+  { value: "high",     label: "Urgente"  },
+  { value: "critical", label: "Crítico"  },
+]
 
 const REQUEST_TYPE_LABELS: Record<string, string> = {
   epp:        "EPP",
@@ -488,24 +496,41 @@ function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequest; ca
 
 /* ── Main panel ──────────────────────────────────────────────────────────────── */
 
-export function ApprovalPanel({ requests, canApproveEpp }: { requests: ApprovalRequest[]; canApproveEpp: boolean }) {
-  if (requests.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <CheckCircle size={36} weight="light" className="text-[var(--color-success)] mb-3" />
-        <p className="text-sm font-medium text-[var(--color-text)]">Sin ítems pendientes</p>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1 max-w-xs">
-          Todas las solicitudes enviadas han sido revisadas. Bien hecho.
-        </p>
-      </div>
-    )
-  }
-
+export function ApprovalPanel({
+  requests,
+  canApproveEpp,
+  worksiteOptions = [],
+}: {
+  requests:        ApprovalRequest[]
+  canApproveEpp:   boolean
+  worksiteOptions?: FilterOption[]
+}) {
   return (
     <div className="flex flex-col gap-4">
-      {requests.map((req) => (
-        <RequestGroup key={req.id} request={req} canApproveEpp={canApproveEpp} />
-      ))}
+      <OnboardingHint
+        storageKey="hint_aprobaciones_v1"
+        title="Revisión y aprobación"
+        body="Aquí aparecen los ítems que esperan tu aprobación. Puedes aprobar o rechazar ítem por ítem, o usar 'Aprobar todos' en una solicitud completa. Los ítems aprobados pasan a Compras automáticamente."
+      />
+      <ListFilters
+        searchPlaceholder="Buscar por código..."
+        urgencyOptions={URGENCY_OPTIONS}
+        worksiteOptions={worksiteOptions}
+      />
+
+      {requests.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <CheckCircle size={36} weight="light" className="text-[var(--color-success)] mb-3" />
+          <p className="text-sm font-medium text-[var(--color-text)]">Sin ítems pendientes</p>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1 max-w-xs">
+            Todas las solicitudes enviadas han sido revisadas. Bien hecho.
+          </p>
+        </div>
+      ) : (
+        requests.map((req) => (
+          <RequestGroup key={req.id} request={req} canApproveEpp={canApproveEpp} />
+        ))
+      )}
     </div>
   )
 }

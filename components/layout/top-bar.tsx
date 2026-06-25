@@ -54,6 +54,12 @@ export function TopBar({
   const activeSection = activeNav?.areaLabel ?? null
   const activeLabel   = activeNav?.itemLabel ?? null
 
+  // Operaciones routes have their own per-screen search bar (URL-synced,
+  // server-side). The top-bar in-memory search is inert there — hide it so
+  // users don't see two search inputs with different behaviours.
+  const OPERACIONES_PREFIXES = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion"]
+  const hideSearch = OPERACIONES_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+
   async function handleSignOut() {
     setIsSigningOut(true)
     await signOut({ redirect: false })
@@ -135,33 +141,34 @@ export function TopBar({
       <div className="flex-1 lg:hidden" aria-hidden />
 
       <div className="flex items-center gap-1.5">
-        <div className="relative hidden sm:flex items-center">
-          <MagnifyingGlass size={14} className="absolute left-2.5 text-(--color-text-subtle) pointer-events-none shrink-0" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filtrar en esta página..."
-            className={cn(
-              "h-7 w-36 lg:w-52 rounded-(--radius-lg) border bg-surface-2 pl-8 text-xs text-(--color-text) placeholder:text-(--color-text-subtle) outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line) transition-[border-color,box-shadow] duration-(--duration-fast)",
-              // Borde primario = filtro activo; deja espacio para el botón de limpiar
-              searchQuery
-                ? "border-(--color-primary-line) pr-7"
-                : "border-(--color-border) pr-3",
+        {!hideSearch && (
+          <div className="relative hidden sm:flex items-center">
+            <MagnifyingGlass size={14} className="absolute left-2.5 text-(--color-text-subtle) pointer-events-none shrink-0" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filtrar en esta página..."
+              className={cn(
+                "h-7 w-36 lg:w-52 rounded-(--radius-lg) border bg-surface-2 pl-8 text-xs text-(--color-text) placeholder:text-(--color-text-subtle) outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line) transition-[border-color,box-shadow] duration-(--duration-fast)",
+                searchQuery
+                  ? "border-(--color-primary-line) pr-7"
+                  : "border-(--color-border) pr-3",
+              )}
+              aria-label="Filtrar en esta página"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-(--color-text-subtle) hover:bg-surface-3 hover:text-(--color-text) transition-colors duration-(--duration-fast)"
+                aria-label="Limpiar filtro"
+              >
+                <X size={11} weight="bold" />
+              </button>
             )}
-            aria-label="Filtrar en esta página"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-(--color-text-subtle) hover:bg-surface-3 hover:text-(--color-text) transition-colors duration-(--duration-fast)"
-              aria-label="Limpiar filtro"
-            >
-              <X size={11} weight="bold" />
-            </button>
-          )}
-        </div>
+          </div>
+        )}
         <NotificationBell />
 
         <DropdownMenu>

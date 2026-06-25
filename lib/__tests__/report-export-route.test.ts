@@ -54,7 +54,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
 }
 
 function makeRequest(url: string): NextRequest {
-  return new NextRequest(new URL(url, "http://localhost:3000"))
+  return new NextRequest(new URL(url, "http://localhost:3001"))
 }
 
 const MOCK_REPORT = {

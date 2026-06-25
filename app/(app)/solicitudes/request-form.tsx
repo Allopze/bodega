@@ -4,7 +4,7 @@ import * as React from "react"
 import { useActionState, useEffect, useRef, useState, useCallback, startTransition, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
-import { ArrowLeft, Plus, Warning } from "@phosphor-icons/react"
+import { ArrowLeft, Info, Plus, Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
@@ -559,6 +559,22 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
           </Field>
         </section>
 
+        {/* ── Quotation flow callout — shown when the selected type requires
+             attaching a cotización per item before submitting ───────────── */}
+        {QUOTATION_TYPES.has(requestType) && !readOnly && (
+          <div className="flex items-start gap-2.5 rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-4 py-3">
+            <Info size={14} weight="fill" className="mt-0.5 shrink-0 text-[var(--color-signal-ink)]" />
+            <div>
+              <p className="text-xs font-medium text-[var(--color-signal-ink)]">
+                Flujo para {requestTypeLabel}
+              </p>
+              <p className="mt-0.5 text-xs text-[var(--color-signal-ink)] opacity-80">
+                Agrega los ítems → Guarda el borrador → Adjunta cotización por ítem → Envía a revisión.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ── Items ──────────────────────────────────────────────────────── */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
@@ -583,9 +599,9 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
           )}
 
           {QUOTATION_TYPES.has(requestType) && !savedId && (
-            <p className="flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-              <Warning size={13} className="shrink-0" />
-              Guarda el borrador primero para poder adjuntar cotizaciones.
+            <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-signal-ink)] rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-3 py-2.5">
+              <Warning size={14} weight="fill" className="shrink-0" />
+              Guarda el borrador primero — la cotización se adjunta por ítem después de guardar.
             </p>
           )}
 

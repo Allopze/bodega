@@ -16,6 +16,25 @@ function normalize(s: string) {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 }
 
+// When the user types a record code prefix, inject a direct "jump to list filtered"
+// result so they can land on that record without knowing which page to go to.
+const CODE_SHORTCUTS: { pattern: RegExp; href: (q: string) => string; label: (q: string) => string; areaLabel: string; iconName: string }[] = [
+  {
+    pattern:   /^sol/i,
+    href:      (q) => `/solicitudes?q=${encodeURIComponent(q.trim().toUpperCase())}`,
+    label:     (q) => `Buscar "${q.trim().toUpperCase()}" en Solicitudes`,
+    areaLabel: "Operaciones",
+    iconName:  "ClipboardText",
+  },
+  {
+    pattern:   /^oc/i,
+    href:      (q) => `/compras?q=${encodeURIComponent(q.trim().toUpperCase())}`,
+    label:     (q) => `Buscar "${q.trim().toUpperCase()}" en Compras`,
+    areaLabel: "Operaciones",
+    iconName:  "ShoppingCart",
+  },
+]
+
 export function CommandPalette({ session }: { session: Session }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
@@ -26,9 +45,20 @@ export function CommandPalette({ session }: { session: Session }) {
   const targets = React.useMemo(() => flattenNavTargets(session), [session])
 
   const results = React.useMemo(() => {
-    const q = normalize(query.trim())
-    if (!q) return targets
-    return targets.filter((t) => normalize(t.label).includes(q) || normalize(t.areaLabel).includes(q))
+    const raw = query.trim()
+    const q = normalize(raw)
+    const navResults = q
+      ? targets.filter((t) => normalize(t.label).includes(q) || normalize(t.areaLabel).includes(q))
+      : targets
+
+    if (!raw) return navResults
+
+    // Prepend direct-jump shortcuts for record code prefixes (SOL-/OC-)
+    const shortcuts: NavTarget[] = CODE_SHORTCUTS
+      .filter((s) => s.pattern.test(raw))
+      .map((s) => ({ href: s.href(raw), label: s.label(raw), areaLabel: s.areaLabel, iconName: s.iconName }))
+
+    return [...shortcuts, ...navResults]
   }, [targets, query])
 
   // Global hotkey + imperative open
@@ -89,7 +119,7 @@ export function CommandPalette({ session }: { session: Session }) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onInputKey}
-              placeholder="Ir a..."
+              placeholder="Ir a... o escribe SOL-/OC- para buscar registros"
               aria-label="Buscar páginas"
               className="h-12 flex-1 bg-transparent text-[15px] text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
             />

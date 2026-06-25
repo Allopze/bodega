@@ -16,7 +16,7 @@ import {
 
 describe("parseListParams", () => {
   it("returns empty defaults when no params are present", () => {
-    expect(parseListParams({})).toEqual({ q: "", estados: [], faena: "", proveedor: "" })
+    expect(parseListParams({})).toEqual({ q: "", estados: [], faena: "", proveedor: "", urgencia: "" })
   })
 
   it("trims the free-text query", () => {
