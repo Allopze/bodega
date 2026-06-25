@@ -1,9 +1,81 @@
 {
-  "id": "4b39d0c7-c579-4d14-9293-a2ba6f11ea98",
+  "id": "dd05aec3-c6c2-4d7d-9b56-611ee99f94ee",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.password_reset_tokens": {
+      "name": "password_reset_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "password_reset_tokens_user_id_users_id_fk": {
+          "name": "password_reset_tokens_user_id_users_id_fk",
+          "tableFrom": "password_reset_tokens",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "password_reset_tokens_token_hash_unique": {
+          "name": "password_reset_tokens_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.permissions": {
       "name": "permissions",
       "schema": "",
@@ -150,6 +222,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "is_global": {
+          "name": "is_global",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},
@@ -262,6 +341,80 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user_permissions": {
+      "name": "user_permissions",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission_id": {
+          "name": "permission_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "user_permissions_user_permission_unique": {
+          "name": "user_permissions_user_permission_unique",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "permission_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_permissions_user_id_users_id_fk": {
+          "name": "user_permissions_user_id_users_id_fk",
+          "tableFrom": "user_permissions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "user_permissions_permission_id_permissions_id_fk": {
+          "name": "user_permissions_permission_id_permissions_id_fk",
+          "tableFrom": "user_permissions",
+          "tableTo": "permissions",
+          "columnsFrom": [
+            "permission_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -381,6 +534,13 @@
           "notNull": true,
           "default": true
         },
+        "email_notifications": {
+          "name": "email_notifications",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -466,6 +626,19 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "worksite_users_worksite_id_worksites_id_fk": {
+          "name": "worksite_users_worksite_id_worksites_id_fk",
+          "tableFrom": "worksite_users",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
           ],
           "columnsTo": [
             "id"
@@ -624,6 +797,18 @@
         },
         "position": {
           "name": "position",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supervisor": {
+          "name": "supervisor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prevencionista": {
+          "name": "prevencionista",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -1231,7 +1416,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "approval_decisions_modified_qty_positive": {
+          "name": "approval_decisions_modified_qty_positive",
+          "value": "\"approval_decisions\".\"modified_qty\" IS NULL OR \"approval_decisions\".\"modified_qty\" > 0"
+        },
+        "approval_decisions_type_valid": {
+          "name": "approval_decisions_type_valid",
+          "value": "\"approval_decisions\".\"type\" IN ('approve', 'reject', 'return', 'modify')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.purchase_request_items": {
@@ -1420,7 +1614,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "purchase_request_items_quantity_positive": {
+          "name": "purchase_request_items_quantity_positive",
+          "value": "\"purchase_request_items\".\"quantity\" > 0"
+        },
+        "purchase_request_items_state_valid": {
+          "name": "purchase_request_items_state_valid",
+          "value": "\n    \"purchase_request_items\".\"status\" IN (\n      'draft', 'requested', 'approved', 'rejected', 'returned', 'postponed',\n      'pending_purchase', 'in_purchase_order', 'purchased',\n      'partially_received', 'received', 'partially_delivered', 'delivered'\n    )\n    AND (\"purchase_request_items\".\"urgency\" IS NULL OR \"purchase_request_items\".\"urgency\" IN ('normal', 'high', 'critical'))\n  "
+        }
+      },
       "isRLSEnabled": false
     },
     "public.purchase_requests": {
@@ -1594,7 +1797,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "purchase_requests_type_urgency_status_valid": {
+          "name": "purchase_requests_type_urgency_status_valid",
+          "value": "\n    \"purchase_requests\".\"request_type\" IN ('epp', 'stock', 'mantencion', 'otro', 'repuestos', 'servicios')\n    AND \"purchase_requests\".\"urgency\" IN ('normal', 'high', 'critical')\n    AND \"purchase_requests\".\"status\" IN (\n      'draft', 'submitted', 'in_review', 'partially_approved', 'approved',\n      'rejected', 'returned', 'in_purchasing', 'closed', 'cancelled'\n    )\n  "
+        }
+      },
       "isRLSEnabled": false
     },
     "public.request_item_attributes": {
@@ -1665,6 +1873,447 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.repuesto_quotations": {
+      "name": "repuesto_quotations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "supplier_id": {
+          "name": "supplier_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supplier_name_free": {
+          "name": "supplier_name_free",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "file_name": {
+          "name": "file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_path": {
+          "name": "file_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_size": {
+          "name": "file_size",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_amount": {
+          "name": "total_amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "selected_at": {
+          "name": "selected_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "repuesto_quotations_request_id_purchase_requests_id_fk": {
+          "name": "repuesto_quotations_request_id_purchase_requests_id_fk",
+          "tableFrom": "repuesto_quotations",
+          "tableTo": "purchase_requests",
+          "columnsFrom": [
+            "request_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "repuesto_quotations_supplier_id_suppliers_id_fk": {
+          "name": "repuesto_quotations_supplier_id_suppliers_id_fk",
+          "tableFrom": "repuesto_quotations",
+          "tableTo": "suppliers",
+          "columnsFrom": [
+            "supplier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "repuesto_quotations_uploaded_by_users_id_fk": {
+          "name": "repuesto_quotations_uploaded_by_users_id_fk",
+          "tableFrom": "repuesto_quotations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "uploaded_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "repuesto_quotations_decided_by_users_id_fk": {
+          "name": "repuesto_quotations_decided_by_users_id_fk",
+          "tableFrom": "repuesto_quotations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "repuesto_quotations_status_valid": {
+          "name": "repuesto_quotations_status_valid",
+          "value": "\n    \"repuesto_quotations\".\"status\" IN ('pending', 'selected', 'rejected')\n  "
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.service_quotations": {
+      "name": "service_quotations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "supplier_id": {
+          "name": "supplier_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supplier_name_free": {
+          "name": "supplier_name_free",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "file_name": {
+          "name": "file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_path": {
+          "name": "file_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_size": {
+          "name": "file_size",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_amount": {
+          "name": "total_amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "selected_at": {
+          "name": "selected_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "service_quotations_request_id_purchase_requests_id_fk": {
+          "name": "service_quotations_request_id_purchase_requests_id_fk",
+          "tableFrom": "service_quotations",
+          "tableTo": "purchase_requests",
+          "columnsFrom": [
+            "request_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "service_quotations_supplier_id_suppliers_id_fk": {
+          "name": "service_quotations_supplier_id_suppliers_id_fk",
+          "tableFrom": "service_quotations",
+          "tableTo": "suppliers",
+          "columnsFrom": [
+            "supplier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "service_quotations_uploaded_by_users_id_fk": {
+          "name": "service_quotations_uploaded_by_users_id_fk",
+          "tableFrom": "service_quotations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "uploaded_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "service_quotations_decided_by_users_id_fk": {
+          "name": "service_quotations_decided_by_users_id_fk",
+          "tableFrom": "service_quotations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "service_quotations_status_valid": {
+          "name": "service_quotations_status_valid",
+          "value": "\n    \"service_quotations\".\"status\" IN ('pending', 'selected', 'rejected')\n  "
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.purchase_order_invoices": {
+      "name": "purchase_order_invoices",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "purchase_order_id": {
+          "name": "purchase_order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invoice_number": {
+          "name": "invoice_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "issue_date": {
+          "name": "issue_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "file_name": {
+          "name": "file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_path": {
+          "name": "file_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_size": {
+          "name": "file_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "purchase_order_invoices_purchase_order_id_purchase_orders_id_fk": {
+          "name": "purchase_order_invoices_purchase_order_id_purchase_orders_id_fk",
+          "tableFrom": "purchase_order_invoices",
+          "tableTo": "purchase_orders",
+          "columnsFrom": [
+            "purchase_order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "purchase_order_invoices_uploaded_by_users_id_fk": {
+          "name": "purchase_order_invoices_uploaded_by_users_id_fk",
+          "tableFrom": "purchase_order_invoices",
+          "tableTo": "users",
+          "columnsFrom": [
+            "uploaded_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "purchase_order_invoices_amount_non_negative": {
+          "name": "purchase_order_invoices_amount_non_negative",
+          "value": "\"purchase_order_invoices\".\"amount\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.purchase_order_items": {
@@ -1815,7 +2464,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "purchase_order_items_status_valid": {
+          "name": "purchase_order_items_status_valid",
+          "value": "\n    \"purchase_order_items\".\"status\" IN ('issued', 'partially_received', 'received', 'cancelled')\n  "
+        },
+        "purchase_order_items_numeric_integrity": {
+          "name": "purchase_order_items_numeric_integrity",
+          "value": "\n    \"purchase_order_items\".\"quantity\" > 0\n    AND \"purchase_order_items\".\"unit_price\" >= 0\n    AND \"purchase_order_items\".\"discount\" >= 0\n    AND \"purchase_order_items\".\"discount\" <= 100\n    AND \"purchase_order_items\".\"subtotal\" >= 0\n    AND \"purchase_order_items\".\"quantity_office_received\" >= 0\n    AND \"purchase_order_items\".\"quantity_received\" >= 0\n    AND \"purchase_order_items\".\"quantity_office_received\" <= \"purchase_order_items\".\"quantity\"\n    AND \"purchase_order_items\".\"quantity_received\" <= \"purchase_order_items\".\"quantity_office_received\"\n  "
+        }
+      },
       "isRLSEnabled": false
     },
     "public.purchase_orders": {
@@ -1861,6 +2519,12 @@
         },
         "issued_at": {
           "name": "issued_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "issued_by": {
+          "name": "issued_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -1943,7 +2607,56 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "purchase_orders_worksite_status_idx": {
+          "name": "purchase_orders_worksite_status_idx",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "purchase_orders_status_sent_idx": {
+          "name": "purchase_orders_status_sent_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sent_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "purchase_orders_worksite_id_worksites_id_fk": {
           "name": "purchase_orders_worksite_id_worksites_id_fk",
@@ -1983,6 +2696,19 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "purchase_orders_issued_by_users_id_fk": {
+          "name": "purchase_orders_issued_by_users_id_fk",
+          "tableFrom": "purchase_orders",
+          "tableTo": "users",
+          "columnsFrom": [
+            "issued_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1996,7 +2722,16 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "purchase_orders_status_valid": {
+          "name": "purchase_orders_status_valid",
+          "value": "\n    \"purchase_orders\".\"status\" IN (\n      'draft', 'issued', 'sent', 'supplier_confirmed',\n      'partially_office_received', 'office_received',\n      'partially_received', 'received', 'closed', 'cancelled'\n    )\n  "
+        },
+        "purchase_orders_amounts_non_negative": {
+          "name": "purchase_orders_amounts_non_negative",
+          "value": "\n    \"purchase_orders\".\"net_amount\" >= 0\n    AND \"purchase_orders\".\"tax_amount\" >= 0\n    AND \"purchase_orders\".\"total_amount\" >= 0\n  "
+        }
+      },
       "isRLSEnabled": false
     },
     "public.quotations": {
@@ -2239,7 +2974,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "deliveries_destination_type_valid": {
+          "name": "deliveries_destination_type_valid",
+          "value": "\"deliveries\".\"destination_type\" IN ('faena', 'worker')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.delivery_items": {
@@ -2294,6 +3034,36 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "return_quantity": {
+          "name": "return_quantity",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "return_product_id": {
+          "name": "return_product_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "return_product_name_free": {
+          "name": "return_product_name_free",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "return_reason": {
+          "name": "return_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "return_notes": {
+          "name": "return_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -2336,12 +3106,30 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "delivery_items_return_product_id_products_id_fk": {
+          "name": "delivery_items_return_product_id_products_id_fk",
+          "tableFrom": "delivery_items",
+          "tableTo": "products",
+          "columnsFrom": [
+            "return_product_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "delivery_items_quantity_positive": {
+          "name": "delivery_items_quantity_positive",
+          "value": "\"delivery_items\".\"quantity\" > 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.receipt_items": {
@@ -2433,7 +3221,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "receipt_items_status_valid": {
+          "name": "receipt_items_status_valid",
+          "value": "\n    \"receipt_items\".\"status\" IN ('received', 'partially_received', 'rejected', 'damaged', 'pending')\n  "
+        },
+        "receipt_items_quantities_valid": {
+          "name": "receipt_items_quantities_valid",
+          "value": "\n    \"receipt_items\".\"quantity_received\" > 0\n    AND \"receipt_items\".\"quantity_rejected\" >= 0\n    AND \"receipt_items\".\"quantity_damaged\" >= 0\n  "
+        }
+      },
       "isRLSEnabled": false
     },
     "public.receipts": {
@@ -2564,7 +3361,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "receipts_location_status_valid": {
+          "name": "receipts_location_status_valid",
+          "value": "\n    \"receipts\".\"location_type\" IN ('office', 'faena')\n    AND \"receipts\".\"status\" IN ('open', 'closed')\n  "
+        }
+      },
       "isRLSEnabled": false
     },
     "public.inventory_movements": {
@@ -2741,7 +3543,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "inventory_movements_type_valid": {
+          "name": "inventory_movements_type_valid",
+          "value": "\n    \"inventory_movements\".\"type\" IN ('ingreso_oc', 'egreso_entrega', 'ingreso_devolucion', 'egreso_desecho', 'ajuste')\n  "
+        },
+        "inventory_movements_stock_non_negative": {
+          "name": "inventory_movements_stock_non_negative",
+          "value": "\n    \"inventory_movements\".\"stock_before\" >= 0\n    AND \"inventory_movements\".\"stock_after\" >= 0\n  "
+        }
+      },
       "isRLSEnabled": false
     },
     "public.worksite_stock": {
@@ -2848,7 +3659,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "worksite_stock_quantity_non_negative": {
+          "name": "worksite_stock_quantity_non_negative",
+          "value": "\"worksite_stock\".\"quantity\" >= 0"
+        },
+        "worksite_stock_min_stock_non_negative": {
+          "name": "worksite_stock_min_stock_non_negative",
+          "value": "\"worksite_stock\".\"min_stock\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.attachments": {
@@ -3011,7 +3831,44 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "audit_log_created_at_idx": {
+          "name": "audit_log_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_log_entity_idx": {
+          "name": "audit_log_entity_idx",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "audit_log_user_id_users_id_fk": {
           "name": "audit_log_user_id_users_id_fk",
@@ -3100,7 +3957,35 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "notifications_user_read_idx": {
+          "name": "notifications_user_read_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_read",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "notifications_user_id_users_id_fk": {
           "name": "notifications_user_id_users_id_fk",
@@ -3176,7 +4061,35 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "status_history_entity_idx": {
+          "name": "status_history_entity_idx",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "changed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "status_history_changed_by_users_id_fk": {
           "name": "status_history_changed_by_users_id_fk",
@@ -3315,6 +4228,1737 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sst_action_plan": {
+      "name": "sst_action_plan",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "evaluation_id": {
+          "name": "evaluation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "n": {
+          "name": "n",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hallazgo": {
+          "name": "hallazgo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accion": {
+          "name": "accion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "responsable": {
+          "name": "responsable",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "plazo": {
+          "name": "plazo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sst_action_plan_evaluation_id_sst_evaluations_id_fk": {
+          "name": "sst_action_plan_evaluation_id_sst_evaluations_id_fk",
+          "tableFrom": "sst_action_plan",
+          "tableTo": "sst_evaluations",
+          "columnsFrom": [
+            "evaluation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sst_evaluations": {
+      "name": "sst_evaluations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "worker_id": {
+          "name": "worker_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "definicion_code": {
+          "name": "definicion_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "definicion_version": {
+          "name": "definicion_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evaluator_role": {
+          "name": "evaluator_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo": {
+          "name": "motivo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo_otro": {
+          "name": "motivo_otro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "descripcion_evento": {
+          "name": "descripcion_evento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "equipo_patente": {
+          "name": "equipo_patente",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fecha_evaluacion": {
+          "name": "fecha_evaluacion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'borrador'"
+        },
+        "cargos_json": {
+          "name": "cargos_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resultado_final": {
+          "name": "resultado_final",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "porcentaje_cumplimiento": {
+          "name": "porcentaje_cumplimiento",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resultado_eficacia": {
+          "name": "resultado_eficacia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "restricciones": {
+          "name": "restricciones",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observaciones_generales": {
+          "name": "observaciones_generales",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "schema_json": {
+          "name": "schema_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sst_evaluations_worksite_id_worksites_id_fk": {
+          "name": "sst_evaluations_worksite_id_worksites_id_fk",
+          "tableFrom": "sst_evaluations",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "sst_evaluations_worker_id_workers_id_fk": {
+          "name": "sst_evaluations_worker_id_workers_id_fk",
+          "tableFrom": "sst_evaluations",
+          "tableTo": "workers",
+          "columnsFrom": [
+            "worker_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "sst_evaluations_created_by_users_id_fk": {
+          "name": "sst_evaluations_created_by_users_id_fk",
+          "tableFrom": "sst_evaluations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sst_responses": {
+      "name": "sst_responses",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "evaluation_id": {
+          "name": "evaluation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seccion_id": {
+          "name": "seccion_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observacion": {
+          "name": "observacion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accion_correctiva": {
+          "name": "accion_correctiva",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sst_responses_evaluation_id_sst_evaluations_id_fk": {
+          "name": "sst_responses_evaluation_id_sst_evaluations_id_fk",
+          "tableFrom": "sst_responses",
+          "tableTo": "sst_evaluations",
+          "columnsFrom": [
+            "evaluation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sst_scheduled_followups": {
+      "name": "sst_scheduled_followups",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "evaluation_id": {
+          "name": "evaluation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instancia": {
+          "name": "instancia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fecha_programada": {
+          "name": "fecha_programada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cumple": {
+          "name": "cumple",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observaciones": {
+          "name": "observaciones",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "realizado": {
+          "name": "realizado",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sst_scheduled_followups_evaluation_id_sst_evaluations_id_fk": {
+          "name": "sst_scheduled_followups_evaluation_id_sst_evaluations_id_fk",
+          "tableFrom": "sst_scheduled_followups",
+          "tableTo": "sst_evaluations",
+          "columnsFrom": [
+            "evaluation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sst_weekly_evaluations": {
+      "name": "sst_weekly_evaluations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "evaluation_id": {
+          "name": "evaluation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "semana": {
+          "name": "semana",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fecha_desbloqueo": {
+          "name": "fecha_desbloqueo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pendiente'"
+        },
+        "fecha_completada": {
+          "name": "fecha_completada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "alert_sent_at": {
+          "name": "alert_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sst_weekly_evaluations_evaluation_id_sst_evaluations_id_fk": {
+          "name": "sst_weekly_evaluations_evaluation_id_sst_evaluations_id_fk",
+          "tableFrom": "sst_weekly_evaluations",
+          "tableTo": "sst_evaluations",
+          "columnsFrom": [
+            "evaluation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ppa_submissions": {
+      "name": "ppa_submissions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "worker_id": {
+          "name": "worker_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "worker_name": {
+          "name": "worker_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "worker_rut": {
+          "name": "worker_rut",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "worker_company": {
+          "name": "worker_company",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manual_identificacion": {
+          "name": "manual_identificacion",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "tipo_trabajo": {
+          "name": "tipo_trabajo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "es_critica": {
+          "name": "es_critica",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "answers_json": {
+          "name": "answers_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resultado": {
+          "name": "resultado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "triggered_reasons": {
+          "name": "triggered_reasons",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_token": {
+          "name": "public_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_by": {
+          "name": "reviewed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fui_al_lugar": {
+          "name": "fui_al_lugar",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accion_correctiva": {
+          "name": "accion_correctiva",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "review_nota": {
+          "name": "review_nota",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "ppa_submissions_worksite_id_worksites_id_fk": {
+          "name": "ppa_submissions_worksite_id_worksites_id_fk",
+          "tableFrom": "ppa_submissions",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "ppa_submissions_worker_id_workers_id_fk": {
+          "name": "ppa_submissions_worker_id_workers_id_fk",
+          "tableFrom": "ppa_submissions",
+          "tableTo": "workers",
+          "columnsFrom": [
+            "worker_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "ppa_submissions_reviewed_by_users_id_fk": {
+          "name": "ppa_submissions_reviewed_by_users_id_fk",
+          "tableFrom": "ppa_submissions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "reviewed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "ppa_submissions_public_token_unique": {
+          "name": "ppa_submissions_public_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_token"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_templates": {
+      "name": "email_templates",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body_html": {
+          "name": "body_html",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "email_templates_key_unique": {
+          "name": "email_templates_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.feedback_reports": {
+      "name": "feedback_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "titulo": {
+          "name": "titulo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descripcion": {
+          "name": "descripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pagina": {
+          "name": "pagina",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'abierto'"
+        },
+        "nota_interna": {
+          "name": "nota_interna",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "feedback_reports_created_by_idx": {
+          "name": "feedback_reports_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "feedback_reports_estado_idx": {
+          "name": "feedback_reports_estado_idx",
+          "columns": [
+            {
+              "expression": "estado",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "feedback_reports_tipo_idx": {
+          "name": "feedback_reports_tipo_idx",
+          "columns": [
+            {
+              "expression": "tipo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "feedback_reports_created_by_users_id_fk": {
+          "name": "feedback_reports_created_by_users_id_fk",
+          "tableFrom": "feedback_reports",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "feedback_reports_resolved_by_users_id_fk": {
+          "name": "feedback_reports_resolved_by_users_id_fk",
+          "tableFrom": "feedback_reports",
+          "tableTo": "users",
+          "columnsFrom": [
+            "resolved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "feedback_reports_tipo_valid": {
+          "name": "feedback_reports_tipo_valid",
+          "value": "\"feedback_reports\".\"tipo\" IN ('bug', 'consulta', 'sugerencia')"
+        },
+        "feedback_reports_estado_valid": {
+          "name": "feedback_reports_estado_valid",
+          "value": "\"feedback_reports\".\"estado\" IN ('abierto', 'en_progreso', 'resuelto', 'descartado')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.fuel_vehicles": {
+      "name": "fuel_vehicles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "plate": {
+          "name": "plate",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brand": {
+          "name": "brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "fuel_vehicles_worksite_idx": {
+          "name": "fuel_vehicles_worksite_idx",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_vehicles_type_idx": {
+          "name": "fuel_vehicles_type_idx",
+          "columns": [
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fuel_vehicles_worksite_id_worksites_id_fk": {
+          "name": "fuel_vehicles_worksite_id_worksites_id_fk",
+          "tableFrom": "fuel_vehicles",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "fuel_vehicles_plate_unique": {
+          "name": "fuel_vehicles_plate_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "plate"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.fuel_suppliers": {
+      "name": "fuel_suppliers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rut": {
+          "name": "rut",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_name": {
+          "name": "contact_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "fuel_suppliers_rut_unique": {
+          "name": "fuel_suppliers_rut_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "rut"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.fuel_loads": {
+      "name": "fuel_loads",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "statement_id": {
+          "name": "statement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "load_date": {
+          "name": "load_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "month": {
+          "name": "month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "service_type": {
+          "name": "service_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fuel_supplier_id": {
+          "name": "fuel_supplier_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product": {
+          "name": "product",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receipt_number": {
+          "name": "receipt_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "liters": {
+          "name": "liters",
+          "type": "numeric(12, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "iec_fixed": {
+          "name": "iec_fixed",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "iec_variable": {
+          "name": "iec_variable",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "base_amount": {
+          "name": "base_amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "iec_total": {
+          "name": "iec_total",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "iva_amount": {
+          "name": "iva_amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_amount": {
+          "name": "total_amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "fuel_loads_month_idx": {
+          "name": "fuel_loads_month_idx",
+          "columns": [
+            {
+              "expression": "month",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_loads_vehicle_idx": {
+          "name": "fuel_loads_vehicle_idx",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_loads_worksite_idx": {
+          "name": "fuel_loads_worksite_idx",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_loads_supplier_idx": {
+          "name": "fuel_loads_supplier_idx",
+          "columns": [
+            {
+              "expression": "fuel_supplier_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_loads_statement_idx": {
+          "name": "fuel_loads_statement_idx",
+          "columns": [
+            {
+              "expression": "statement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_loads_status_idx": {
+          "name": "fuel_loads_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fuel_loads_vehicle_id_fuel_vehicles_id_fk": {
+          "name": "fuel_loads_vehicle_id_fuel_vehicles_id_fk",
+          "tableFrom": "fuel_loads",
+          "tableTo": "fuel_vehicles",
+          "columnsFrom": [
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fuel_loads_fuel_supplier_id_fuel_suppliers_id_fk": {
+          "name": "fuel_loads_fuel_supplier_id_fuel_suppliers_id_fk",
+          "tableFrom": "fuel_loads",
+          "tableTo": "fuel_suppliers",
+          "columnsFrom": [
+            "fuel_supplier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fuel_loads_worksite_id_worksites_id_fk": {
+          "name": "fuel_loads_worksite_id_worksites_id_fk",
+          "tableFrom": "fuel_loads",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fuel_loads_created_by_users_id_fk": {
+          "name": "fuel_loads_created_by_users_id_fk",
+          "tableFrom": "fuel_loads",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "fuel_loads_status_valid": {
+          "name": "fuel_loads_status_valid",
+          "value": "\n    \"fuel_loads\".\"status\" IN ('draft', 'registered', 'reconciled', 'cancelled')\n  "
+        },
+        "fuel_loads_service_type_valid": {
+          "name": "fuel_loads_service_type_valid",
+          "value": "\n    \"fuel_loads\".\"service_type\" IN ('TCT', 'TAE')\n  "
+        },
+        "fuel_loads_liters_positive": {
+          "name": "fuel_loads_liters_positive",
+          "value": "\"fuel_loads\".\"liters\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.fuel_monthly_statements": {
+      "name": "fuel_monthly_statements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "month": {
+          "name": "month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fuel_supplier_id": {
+          "name": "fuel_supplier_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_liters": {
+          "name": "total_liters",
+          "type": "numeric(14, 4)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_base_amount": {
+          "name": "total_base_amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_iec": {
+          "name": "total_iec",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_iva": {
+          "name": "total_iva",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_amount": {
+          "name": "total_amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "paid_amount": {
+          "name": "paid_amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "due_date": {
+          "name": "due_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "fuel_statements_month_supplier_idx": {
+          "name": "fuel_statements_month_supplier_idx",
+          "columns": [
+            {
+              "expression": "month",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "fuel_supplier_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_statements_status_idx": {
+          "name": "fuel_statements_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fuel_monthly_statements_fuel_supplier_id_fuel_suppliers_id_fk": {
+          "name": "fuel_monthly_statements_fuel_supplier_id_fuel_suppliers_id_fk",
+          "tableFrom": "fuel_monthly_statements",
+          "tableTo": "fuel_suppliers",
+          "columnsFrom": [
+            "fuel_supplier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fuel_monthly_statements_created_by_users_id_fk": {
+          "name": "fuel_monthly_statements_created_by_users_id_fk",
+          "tableFrom": "fuel_monthly_statements",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "fuel_statements_status_valid": {
+          "name": "fuel_statements_status_valid",
+          "value": "\n    \"fuel_monthly_statements\".\"status\" IN ('open', 'partial', 'paid', 'overdue', 'cancelled')\n  "
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.fuel_payments": {
+      "name": "fuel_payments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "statement_id": {
+          "name": "statement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_date": {
+          "name": "payment_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reference": {
+          "name": "reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "fuel_payments_statement_idx": {
+          "name": "fuel_payments_statement_idx",
+          "columns": [
+            {
+              "expression": "statement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fuel_payments_statement_id_fuel_monthly_statements_id_fk": {
+          "name": "fuel_payments_statement_id_fuel_monthly_statements_id_fk",
+          "tableFrom": "fuel_payments",
+          "tableTo": "fuel_monthly_statements",
+          "columnsFrom": [
+            "statement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fuel_payments_created_by_users_id_fk": {
+          "name": "fuel_payments_created_by_users_id_fk",
+          "tableFrom": "fuel_payments",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "fuel_payments_amount_positive": {
+          "name": "fuel_payments_amount_positive",
+          "value": "\"fuel_payments\".\"amount\" > 0"
+        }
+      },
       "isRLSEnabled": false
     }
   },
