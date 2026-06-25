@@ -9,6 +9,14 @@ export const repuestosModule = {
     "repuestos:submit",
     "repuestos:approve",
   ] as const,
+
+  permissionMeta: {
+    "repuestos:create":    { id: "p-rep-create",  description: "Crear solicitudes de repuestos" },
+    "repuestos:view_own":  { id: "p-rep-own",     description: "Ver solicitudes de repuestos propias" },
+    "repuestos:view_all":  { id: "p-rep-all",     description: "Ver todas las solicitudes de repuestos" },
+    "repuestos:submit":    { id: "p-rep-submit",  description: "Enviar solicitudes de repuestos a aprobación" },
+    "repuestos:approve":   { id: "p-rep-approve", description: "Aprobar cotizaciones de repuestos" },
+  },
   nav: [],
   defaultGrants: [
     // Administrador: acceso total

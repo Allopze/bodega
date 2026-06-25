@@ -5,6 +5,10 @@ export const traceabilityModule = {
   permissions: [
     "traceability:view",
   ] as const,
+
+  permissionMeta: {
+    "traceability:view": { id: "p-trace-view", description: "Ver trazabilidad de ítems" },
+  },
   nav: [
     {
       areaId: "reportes",

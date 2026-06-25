@@ -14,7 +14,7 @@ import { encodeContentDisposition } from "@/lib/utils"
 
 /**
  * Each export type requires one of the listed permissions. Report types
- * stay behind reports:view; the on-screen Operaciones list exports are
+ * stay behind reports:view; the on-screen Adquisiciones list exports are
  * gated by the same permission needed to see the list ("si lo ves, lo
  * puedes exportar").
  */

@@ -54,11 +54,11 @@ export function TopBar({
   const activeSection = activeNav?.areaLabel ?? null
   const activeLabel   = activeNav?.itemLabel ?? null
 
-  // Operaciones routes have their own per-screen search bar (URL-synced,
+  // Adquisiciones routes have their own per-screen search bar (URL-synced,
   // server-side). The top-bar in-memory search is inert there — hide it so
   // users don't see two search inputs with different behaviours.
-  const OPERACIONES_PREFIXES = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion"]
-  const hideSearch = OPERACIONES_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  const ADQUISICIONES_PREFIXES = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion"]
+  const hideSearch = ADQUISICIONES_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 
   async function handleSignOut() {
     setIsSigningOut(true)

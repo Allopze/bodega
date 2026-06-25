@@ -9,9 +9,17 @@ export const requestsModule = {
     "requests:submit",
     "requests:delete",
   ] as const,
+
+  permissionMeta: {
+    "requests:create":    { id: "p-req-create", description: "Crear solicitudes" },
+    "requests:view_own":  { id: "p-req-own",    description: "Ver solicitudes propias" },
+    "requests:view_all":  { id: "p-req-all",    description: "Ver todas las solicitudes" },
+    "requests:submit":    { id: "p-req-submit", description: "Enviar solicitudes a aprobación" },
+    "requests:delete":    { id: "p-req-delete", description: "Eliminar solicitudes no aprobadas" },
+  },
   nav: [
     {
-      areaId: "operaciones",
+      areaId: "adquisiciones",
       items: [
         {
           label:       "Solicitudes",

@@ -30,6 +30,19 @@ export const adminModule = {
     "admin:audit_log",
   ] as const,
 
+  permissionMeta: {
+    "admin:users":           { id: "p-adm-usr",   description: "Gestionar usuarios" },
+    "admin:manage_admins":   { id: "p-adm-mgt",   description: "Asignar roles y permisos de administración" },
+    "admin:worksites":       { id: "p-adm-ws",    description: "Gestionar faenas" },
+    "admin:workers":         { id: "p-adm-wrk",   description: "Gestionar trabajadores" },
+    "admin:products":        { id: "p-adm-prod",  description: "Gestionar catálogo" },
+    "admin:suppliers":       { id: "p-adm-sup",   description: "Gestionar proveedores" },
+    "admin:config":          { id: "p-adm-cfg",   description: "Configuración del sistema" },
+    "admin:smtp":            { id: "p-adm-smtp",  description: "Configurar servidor SMTP" },
+    "admin:email_templates": { id: "p-adm-tpl",   description: "Gestionar plantillas de correo" },
+    "admin:audit_log":       { id: "p-adm-audit", description: "Ver log de auditoría" },
+  },
+
   // No aparece en el sidebar principal; el TopBar lo descubre dinámicamente
   nav: [],
 

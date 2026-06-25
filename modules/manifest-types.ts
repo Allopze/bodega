@@ -1,5 +1,11 @@
 import type { DB } from "@/db"
 
+/** Metadata for a single permission — id is the short DB key, description is human-readable. */
+export interface PermissionMeta {
+  id:          string
+  description: string
+}
+
 export interface NavChild {
   label: string
   href: string
@@ -30,6 +36,8 @@ export interface RolePermissionGrant {
 export interface ModuleManifest {
   id: string
   permissions: readonly string[]
+  /** Maps each permission name (e.g. "combustibles:view") to its DB id and description. */
+  permissionMeta?: Record<string, PermissionMeta>
   nav?: NavSection[]
   seed?: (db: DB) => Promise<void>
   defaultGrants?: RolePermissionGrant[]

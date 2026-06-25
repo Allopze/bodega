@@ -6,6 +6,11 @@ export const deliveriesModule = {
     "deliveries:view",
     "deliveries:create",
   ] as const,
+
+  permissionMeta: {
+    "deliveries:view":   { id: "p-del-view",   description: "Ver historial de entregas" },
+    "deliveries:create": { id: "p-del-create", description: "Registrar entregas a trabajadores" },
+  },
   nav: [
     {
       areaId: "bodega",

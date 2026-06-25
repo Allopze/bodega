@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
-import { fuelLoads, fuelVehicles, fuelSuppliers } from "@/db/schema"
+import { fuelLoads, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import type { ParsedFuelLoad } from "@/lib/combustibles/import"
+
+const CREATE_FAENA = "__create__"
+const SKIP_FAENA = "__skip__"
+
+/** Genera un código de faena único (esquema "FN-XXXX") a partir del nombre. */
+function makeWorksiteCode(name: string, taken: Set<string>): string {
+  const slug = name.normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(0, 8) || "FAENA"
+  let code = `FN-${slug}`
+  let i = 1
+  while (taken.has(code)) code = `FN-${slug}-${i++}`
+  taken.add(code)
+  return code
+}
 
 export async function POST(req: NextRequest) {
   let session
@@ -15,6 +29,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const loads: ParsedFuelLoad[] = body.loads
     const createMissing: boolean = body.createMissing ?? false
+    // Mapeo faena-del-Excel → worksiteId | CREATE_FAENA | SKIP_FAENA
+    const faenaMapping: Record<string, string> = body.faenaMapping ?? {}
     if (!Array.isArray(loads) || loads.length === 0) {
       return NextResponse.json({ ok: false, message: "No hay cargas para importar" }, { status: 400 })
     }
@@ -33,10 +49,34 @@ export async function POST(req: NextRequest) {
     const importErrors: Array<{ rowIndex: number; field: string; message: string }> = []
     const created: Array<{ type: string; name: string }> = []
 
+    // Resolver el mapeo de faenas una vez: crea las faenas marcadas para crear
+    // y produce fileFaena → worksiteId, o null cuando el usuario eligió omitir.
+    const takenCodes = new Set(allWorksites.map(w => w.code))
+    const resolvedFaena = new Map<string, string | null>()
+    for (const [fileFaena, target] of Object.entries(faenaMapping)) {
+      if (target === SKIP_FAENA) { resolvedFaena.set(fileFaena, null); continue }
+      if (target === CREATE_FAENA) {
+        const id = nanoid()
+        await db.insert(worksites).values({ id, name: fileFaena, code: makeWorksiteCode(fileFaena, takenCodes), isActive: true })
+        resolvedFaena.set(fileFaena, id)
+        worksiteMap.set(fileFaena.toUpperCase(), id)
+        created.push({ type: "faena", name: fileFaena })
+      } else {
+        resolvedFaena.set(fileFaena, target)  // worksiteId existente
+      }
+    }
+
     for (const load of loads) {
       let vehicleId = vehicleMap.get(load.vehicle.toUpperCase())
       let supplierId = supplierMap.get(load.supplier.toUpperCase())
-      const worksiteId = worksiteMap.get(load.worksite.toUpperCase())
+      // Faena: primero el mapeo explícito del usuario (incl. "omitir" = null),
+      // si no, match por nombre como respaldo.
+      const mapped = resolvedFaena.has(load.worksite) ? resolvedFaena.get(load.worksite) : undefined
+      if (mapped === null) {
+        importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `"${load.worksite}" omitida` })
+        continue
+      }
+      const worksiteId = mapped ?? worksiteMap.get(load.worksite.toUpperCase())
 
       // Auto-create missing entities if enabled
       if (!vehicleId && createMissing) {

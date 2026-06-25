@@ -1,5 +1,5 @@
 /**
- * Shared helpers for the Operaciones list screens (Solicitudes, Compras,
+ * Shared helpers for the Adquisiciones list screens (Solicitudes, Compras,
  * Recepción).
  *
  * These power the URL-synced, server-side search & filters that replace the

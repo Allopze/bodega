@@ -35,7 +35,7 @@ const ALL = "_all"
 const DEBOUNCE_MS = 350
 
 /**
- * URL-synced filter bar for the Operaciones list screens. Writes `q`,
+ * URL-synced filter bar for the Adquisiciones list screens. Writes `q`,
  * `estado` and `faena` to the URL (resetting `page`) so the server query
  * applies the filters. The free-text input is debounced; selects update
  * immediately.

@@ -11,9 +11,19 @@ export const combustiblesModule = {
     "combustibles:manage_vehicles",
     "combustibles:manage_suppliers",
   ] as const,
+
+  permissionMeta: {
+    "combustibles:view":             { id: "p-fuel-view",  description: "Ver registros de combustible" },
+    "combustibles:create":           { id: "p-fuel-create", description: "Crear registros de combustible" },
+    "combustibles:delete":           { id: "p-fuel-delete", description: "Eliminar registros de combustible" },
+    "combustibles:import":           { id: "p-fuel-import", description: "Importar datos de combustible" },
+    "combustibles:export":           { id: "p-fuel-export", description: "Exportar datos de combustible" },
+    "combustibles:manage_vehicles":  { id: "p-fuel-veh",   description: "Gestionar vehículos de combustible" },
+    "combustibles:manage_suppliers": { id: "p-fuel-sup",  description: "Gestionar proveedores de combustible" },
+  },
   nav: [
     {
-      areaId: "operaciones",
+      areaId: "vehiculos",
       items: [
         {
           label: "Combustibles",

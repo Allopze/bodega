@@ -5,9 +5,13 @@ export const approvalsModule = {
   permissions: [
     "approvals:approve",
   ] as const,
+
+  permissionMeta: {
+    "approvals:approve": { id: "p-apr", description: "Revisar y aprobar solicitudes" },
+  },
   nav: [
     {
-      areaId: "operaciones",
+      areaId: "adquisiciones",
       items: [
         {
           label:       "Aprobaciones",

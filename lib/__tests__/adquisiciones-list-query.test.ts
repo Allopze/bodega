@@ -1,7 +1,7 @@
 /**
- * lib/__tests__/operaciones-list-query.test.ts
+ * lib/__tests__/adquisiciones-list-query.test.ts
  *
- * Tests for the Operaciones list filter helpers that power the URL-synced,
+ * Tests for the Adquisiciones list filter helpers that power the URL-synced,
  * server-side search & filters.
  */
 
@@ -12,7 +12,7 @@ import {
   textSearchSql,
   statusSql,
   worksiteEqSql,
-} from "@/lib/operaciones/list-query"
+} from "@/lib/adquisiciones/list-query"
 
 describe("parseListParams", () => {
   it("returns empty defaults when no params are present", () => {

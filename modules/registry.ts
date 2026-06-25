@@ -25,6 +25,8 @@ import { sstModule }         from "@/modules/sst/manifest"
 import { ppaModule }         from "@/modules/ppa/manifest"
 import { feedbackModule }    from "@/modules/feedback/manifest"
 import { combustiblesModule } from "@/modules/combustibles/manifest"
+import { flotaModule }         from "@/modules/flota/manifest"
+import { mantencionesModule }  from "@/modules/mantenciones/manifest"
 
 /**
  * Registry central — array `as const` de todos los módulos registrados.
@@ -51,6 +53,9 @@ export const registry = [
   feedbackModule,
   // ── Combustibles ────────────────────────────────────────────────────────
   combustiblesModule,
+  // ── Vehículos ───────────────────────────────────────────────────────────
+  flotaModule,
+  mantencionesModule,
   // incidentesModule,
   // inspeccionesModule,
   // iperModule,

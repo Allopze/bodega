@@ -62,11 +62,18 @@ export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
     const row = rows[i]!
     const rowNum = i + 2  // +2 porque fila 1 es header, índice parte en 0
 
+    // Acceso por nombre de columna normalizado: tolera mayúsculas, tildes,
+    // espacios sobrantes y saltos de línea (\r\n) dentro de los encabezados
+    // del Excel (p.ej. " TOTAL FACTURA A PAGAR " o "IMPUESTO IEC\n(FIJO...)").
+    const norm = new Map<string, unknown>()
+    for (const [k, v] of Object.entries(row)) norm.set(normKey(k), v)
+    const get = (name: string): unknown => norm.get(normKey(name)) ?? null
+
     // Saltar filas completamente vacías
-    if (!row["MES-AÑO"] && !row["SERVICIO"] && !row["FACTURA"]) continue
+    if (!get("MES-AÑO") && !get("SERVICIO") && !get("FACTURA")) continue
 
     // Parsear fecha
-    const rawDate = row["MES-AÑO"]
+    const rawDate = get("MES-AÑO")
     let loadDate = ""
     let month = ""
     if (rawDate instanceof Date) {
@@ -88,17 +95,17 @@ export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
     }
 
     // Campos texto
-    const serviceType = String(row["SERVICIO"] ?? "").trim().toUpperCase()
+    const serviceType = String(get("SERVICIO") ?? "").trim().toUpperCase()
     if (!["TCT", "TAE"].includes(serviceType)) {
       errors.push({ rowIndex: rowNum, field: "SERVICIO", message: `Servicio inválido: ${serviceType}` })
       continue
     }
 
-    const vehicle = String(row["VEHICULO"] ?? "").trim()
-    const supplier = String(row["PROVEEDOR"] ?? "").trim()
-    const worksite = String(row["FAENA"] ?? "").trim()
-    const product = String(row["PRODUCTO"] ?? "").trim().toUpperCase()
-    const receiptNumber = String(row["FACTURA"] ?? "").trim()
+    const vehicle = String(get("VEHICULO") ?? "").trim()
+    const supplier = String(get("PROVEEDOR") ?? "").trim()
+    const worksite = String(get("FAENA") ?? "").trim()
+    const product = String(get("PRODUCTO") ?? "").trim().toUpperCase()
+    const receiptNumber = String(get("FACTURA") ?? "").trim()
 
     // Validar campos requeridos
     if (!vehicle) { errors.push({ rowIndex: rowNum, field: "VEHICULO", message: "Requerido" }); continue }
@@ -113,13 +120,13 @@ export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
     if (receiptNumber) seenReceipts.add(receiptNumber)
 
     // Campos numéricos
-    const liters = toNumber(row["LITROS"])
-    const iecFixed = toNumber(row[" IEC Fijo"] ?? row["IEC Fijo"])
-    const iecVariable = toNumber(row[" IEC Variable"] ?? row["IEC Variable"])
-    const baseAmount = toNumber(row["Base Afecta"])
-    const iecTotal = toNumber(row["IMPUESTO IEC\n(FIJO + VARIIABLE)"] ?? row["IMPUESTO IEC"])
-    const ivaAmount = toNumber(row["IVA (19%)"] ?? row["IVA"])
-    const totalAmount = toNumber(row["TOTAL FACTURA A PAGAR"] ?? row["TOTAL FACTURA"])
+    const liters = toNumber(get("LITROS"))
+    const iecFixed = toNumber(get("IEC Fijo"))
+    const iecVariable = toNumber(get("IEC Variable"))
+    const baseAmount = toNumber(get("Base Afecta"))
+    const iecTotal = toNumber(get("IMPUESTO IEC (FIJO + VARIIABLE)") ?? get("IMPUESTO IEC"))
+    const ivaAmount = toNumber(get("IVA (19%)") ?? get("IVA"))
+    const totalAmount = toNumber(get("TOTAL FACTURA A PAGAR") ?? get("TOTAL FACTURA"))
 
     if (liters < 0) { errors.push({ rowIndex: rowNum, field: "LITROS", message: "Debe ser ≥ 0" }); continue }
     if (baseAmount <= 0) { errors.push({ rowIndex: rowNum, field: "Base Afecta", message: "Debe ser > 0" }); continue }
@@ -145,6 +152,12 @@ export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
   }
 
   return { loads, errors, duplicates }
+}
+
+/** Normaliza un encabezado de columna: colapsa espacios/saltos de línea,
+ *  recorta y pasa a minúsculas, para comparar de forma tolerante. */
+function normKey(key: string): string {
+  return key.replace(/\s+/g, " ").trim().toLowerCase()
 }
 
 function toNumber(value: unknown): number {

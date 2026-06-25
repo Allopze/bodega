@@ -7,7 +7,7 @@ import {
   purchaseOrderInvoices, products, worksites, suppliers,
 } from "@/db/schema"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
-import { textSearchSql } from "@/lib/operaciones/list-query"
+import { textSearchSql } from "@/lib/adquisiciones/list-query"
 import { REQUEST_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
 import { formatDate } from "@/lib/utils"
 
@@ -95,7 +95,7 @@ export async function getReportData(tipo: string, session: Session | null, filte
   }
 }
 
-/* ── List exports (mirror the on-screen Operaciones lists) ─────────────────── */
+/* ── List exports (mirror the on-screen Adquisiciones lists) ────────────────── */
 
 const RECEIVABLE_OC_STATUSES = ["sent", "partially_office_received", "office_received", "partially_received"]
 

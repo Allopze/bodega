@@ -7,6 +7,12 @@ export const warehouseModule = {
     "warehouse:register_movement",
     "warehouse:adjust_stock",
   ] as const,
+
+  permissionMeta: {
+    "warehouse:view_stock":         { id: "p-wh-stock", description: "Ver stock" },
+    "warehouse:register_movement":  { id: "p-wh-mov",   description: "Registrar movimientos" },
+    "warehouse:adjust_stock":       { id: "p-wh-adj",   description: "Ajustar stock" },
+  },
   nav: [
     {
       areaId: "bodega",

@@ -9,6 +9,14 @@ export const serviciosModule = {
     "servicios:submit",
     "servicios:approve",
   ] as const,
+
+  permissionMeta: {
+    "servicios:create":    { id: "p-srv-create",  description: "Crear solicitudes de servicios" },
+    "servicios:view_own":  { id: "p-srv-own",     description: "Ver solicitudes de servicios propias" },
+    "servicios:view_all":  { id: "p-srv-all",     description: "Ver todas las solicitudes de servicios" },
+    "servicios:submit":    { id: "p-srv-submit",  description: "Enviar solicitudes de servicios a aprobación" },
+    "servicios:approve":   { id: "p-srv-approve", description: "Aprobar cotizaciones de servicios" },
+  },
   nav: [],
   defaultGrants: [
     // Administrador: acceso total

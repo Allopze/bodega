@@ -8,6 +8,13 @@ export const feedbackModule = {
     "feedback:view_all",
     "feedback:manage",
   ] as const,
+
+  permissionMeta: {
+    "feedback:create":   { id: "p-fb-create", description: "Enviar reportes de soporte (bug, consulta, sugerencia)" },
+    "feedback:view_own": { id: "p-fb-own",    description: "Ver los propios reportes de soporte" },
+    "feedback:view_all": { id: "p-fb-all",    description: "Ver todos los reportes de soporte" },
+    "feedback:manage":   { id: "p-fb-manage", description: "Gestionar reportes de soporte (cambiar estado, nota interna)" },
+  },
   nav: [
     {
       areaId: "soporte",

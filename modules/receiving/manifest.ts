@@ -7,9 +7,15 @@ export const receivingModule = {
     "receiving:register_faena",
     "receiving:view",
   ] as const,
+
+  permissionMeta: {
+    "receiving:register_office": { id: "p-rec-reg-office", description: "Registrar llegada a oficina" },
+    "receiving:register_faena":  { id: "p-rec-reg-faena",  description: "Registrar recepción en faena" },
+    "receiving:view":            { id: "p-rec-view",        description: "Ver recepciones" },
+  },
   nav: [
     {
-      areaId: "operaciones",
+      areaId: "adquisiciones",
       items: [
         {
           label:       "Recepción",

@@ -8,7 +8,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { parseListParams, statusSql, worksiteEqSql } from "@/lib/operaciones/list-query"
+import { parseListParams, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import { RequestList } from "./request-list"
 
 export const metadata: Metadata = { title: "Solicitudes de compra" }

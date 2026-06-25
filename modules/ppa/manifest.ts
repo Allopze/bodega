@@ -7,6 +7,12 @@ export const ppaModule = {
     "ppa:review",  // revisar y autorizar/rechazar PPA detenidos
     "ppa:manage",  // gestión avanzada (export, administración)
   ] as const,
+
+  permissionMeta: {
+    "ppa:view":   { id: "p-ppa-view",   description: "Ver PPA Digital e indicadores" },
+    "ppa:review": { id: "p-ppa-review", description: "Revisar y autorizar/rechazar PPA detenidos" },
+    "ppa:manage": { id: "p-ppa-manage", description: "Gestionar y exportar PPA Digital" },
+  },
   nav: [
     {
       areaId: "prevencion",

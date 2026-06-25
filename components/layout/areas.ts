@@ -3,7 +3,7 @@
  *
  * Cada área es un icono del rail. Los módulos NO definen áreas: solo declaran a
  * qué `areaId` pertenecen sus ítems (en su manifest). Esto garantiza icono y
- * orden consistentes cuando varios módulos comparten un área (ej: Operaciones),
+ * orden consistentes cuando varios módulos comparten un área (ej: Adquisiciones),
  * y mantiene "agregar un módulo" como una sola línea + su manifest.
  *
  * Para sumar un área nueva: agrega una entrada aquí y apunta el `areaId` del
@@ -21,7 +21,8 @@ export interface AreaDef {
 }
 
 export const AREAS: AreaDef[] = [
-  { id: "operaciones", label: "Operaciones", iconName: "Stack",     order: 10 },
+  { id: "adquisiciones", label: "Adquisiciones", iconName: "Stack",     order: 10 },
+  { id: "vehiculos",  label: "Vehículos",   iconName: "Car",       order: 15 },
   { id: "bodega",      label: "Bodega",      iconName: "Warehouse", order: 20 },
   { id: "reportes",    label: "Reportes",    iconName: "ChartBar",  order: 30 },
   // ── Próximas áreas (descomenta al registrar sus módulos) ──────────────────

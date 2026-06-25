@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { FuelLoadTable } from "./fuel-load-table"
+import { ImportFuelLoadsModal } from "./import-fuel-modal"
 import { FuelDashboardKpis } from "./fuel-kpis"
 import { FuelFilters } from "./fuel-filters"
 import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "./fuel-charts"
@@ -106,16 +107,14 @@ export default async function CombustiblesPage({
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Operaciones", href: "/" }, { label: "Combustibles" }]} />
+      <Breadcrumbs items={[{ label: "Adquisiciones", href: "/" }, { label: "Combustibles" }]} />
       <PageHeader
         title="Combustibles"
         description="Control de cargas de combustible por faena y vehículo"
         actions={
           <div className="flex gap-2">
             <ExportXlsxButton filters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, status }} />
-            <Button asChild variant="secondary" size="sm">
-              <Link href="/combustibles/importar">⬆ Importar Excel</Link>
-            </Button>
+            <ImportFuelLoadsModal worksites={worksitesList} />
             <Button asChild size="sm">
               <Link href="/combustibles/nueva">+ Nueva carga</Link>
             </Button>

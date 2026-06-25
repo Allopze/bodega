@@ -5,6 +5,10 @@ export const reportsModule = {
   permissions: [
     "reports:view",
   ] as const,
+
+  permissionMeta: {
+    "reports:view": { id: "p-rep-view", description: "Ver reportes y matriz de trazabilidad" },
+  },
   nav: [
     {
       areaId: "reportes",

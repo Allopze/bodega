@@ -18,8 +18,8 @@ import {
 } from "./actions"
 import { formatQty, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
-import { ListFilters, type FilterOption } from "@/components/operaciones/list-filters"
-import { OnboardingHint } from "@/components/operaciones/onboarding-hint"
+import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
+import { OnboardingHint } from "@/components/adquisiciones/onboarding-hint"
 
 const URGENCY_OPTIONS: FilterOption[] = [
   { value: "normal",   label: "Normal"   },

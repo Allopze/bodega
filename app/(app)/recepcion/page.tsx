@@ -12,7 +12,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { parseListParams, eqFilter, worksiteEqSql } from "@/lib/operaciones/list-query"
+import { parseListParams, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }

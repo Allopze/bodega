@@ -23,14 +23,14 @@ const CODE_SHORTCUTS: { pattern: RegExp; href: (q: string) => string; label: (q:
     pattern:   /^sol/i,
     href:      (q) => `/solicitudes?q=${encodeURIComponent(q.trim().toUpperCase())}`,
     label:     (q) => `Buscar "${q.trim().toUpperCase()}" en Solicitudes`,
-    areaLabel: "Operaciones",
+    areaLabel: "Adquisiciones",
     iconName:  "ClipboardText",
   },
   {
     pattern:   /^oc/i,
     href:      (q) => `/compras?q=${encodeURIComponent(q.trim().toUpperCase())}`,
     label:     (q) => `Buscar "${q.trim().toUpperCase()}" en Compras`,
-    areaLabel: "Operaciones",
+    areaLabel: "Adquisiciones",
     iconName:  "ShoppingCart",
   },
 ]

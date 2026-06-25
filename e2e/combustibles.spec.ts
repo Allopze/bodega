@@ -77,11 +77,14 @@ test.describe("Combustibles module", () => {
     await expect(page.getByText("Mensual")).toBeVisible()
   })
 
-  test("import page loads with wizard", async ({ page }) => {
-    await page.goto("/combustibles/importar")
-    await expect(page.locator("h1")).toContainText("Importar")
-    await expect(page.getByText("Subir archivo")).toBeVisible()
-    await expect(page.getByText("Revisar datos")).toBeVisible()
-    await expect(page.getByText("Completado")).toBeVisible()
+  test("import modal opens from dashboard", async ({ page }) => {
+    await page.goto("/combustibles")
+    await page.getByRole("button", { name: "Importar Excel" }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText("Importar cargas desde Excel")).toBeVisible()
+    await expect(dialog.getByText("Subir archivo")).toBeVisible()
+    await expect(dialog.getByText("Revisar datos")).toBeVisible()
+    await expect(dialog.getByText("Completado")).toBeVisible()
   })
 })

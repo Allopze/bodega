@@ -9,9 +9,17 @@ export const purchasingModule = {
     "purchasing:manage_suppliers",
     "purchasing:delete_order",
   ] as const,
+
+  permissionMeta: {
+    "purchasing:view":            { id: "p-pur-view",  description: "Ver módulo de órdenes de compra" },
+    "purchasing:create_order":    { id: "p-pur-create", description: "Crear órdenes de compra" },
+    "purchasing:send_order":      { id: "p-pur-send",  description: "Enviar OC a proveedor" },
+    "purchasing:manage_suppliers": { id: "p-pur-sup",  description: "Administrar proveedores" },
+    "purchasing:delete_order":    { id: "p-pur-delete", description: "Eliminar órdenes de compra no recibidas" },
+  },
   nav: [
     {
-      areaId: "operaciones",
+      areaId: "adquisiciones",
       items: [
         {
           label:       "Compras",

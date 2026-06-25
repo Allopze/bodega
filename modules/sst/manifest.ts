@@ -9,6 +9,14 @@ export const sstModule = {
     "sst:manage",
     "sst:evaluate_acompanamiento",
   ] as const,
+
+  permissionMeta: {
+    "sst:view":                    { id: "p-sst-view",  description: "Ver evaluaciones SST" },
+    "sst:create":                  { id: "p-sst-create", description: "Crear evaluaciones SST" },
+    "sst:close":                   { id: "p-sst-close", description: "Cerrar evaluaciones SST" },
+    "sst:manage":                  { id: "p-sst-manage", description: "Gestionar plan de acción SST" },
+    "sst:evaluate_acompanamiento": { id: "p-sst-acomp", description: "Evaluar acompañamiento en terreno (Punto 3) de evaluación de trabajador nuevo" },
+  },
   nav: [
     {
       areaId: "prevencion",
