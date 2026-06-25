@@ -190,6 +190,13 @@
       "when": 1782319573834,
       "tag": "0026_sst_evaluator_role_weekly",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1782364613876,
+      "tag": "0027_new_dagger",
+      "breakpoints": true
     }
   ]
 }

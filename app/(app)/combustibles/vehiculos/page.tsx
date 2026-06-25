@@ -28,7 +28,7 @@ export default async function VehiculosPage() {
         description="Catálogo de vehículos que cargan combustible"
         actions={<NewVehicleDialog worksites={worksitesList.map(w => ({ id: w.id, name: w.name }))} />}
       />
-      <VehicleCatalogTable vehicles={vehicles} />
+      <VehicleCatalogTable vehicles={vehicles} worksites={worksitesList.map(w => ({ id: w.id, name: w.name }))} />
     </PageContainer>
   )
 }

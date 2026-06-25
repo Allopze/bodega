@@ -130,8 +130,8 @@ export function StatementDetail({ statement }: { statement: StatementData }) {
       <Card>
         <CardHeader><CardTitle>Cargas asociadas ({statement.loads?.length ?? 0})</CardTitle></CardHeader>
         <CardContent>
-          <div className="border rounded-lg overflow-x-auto">
-            <Table>
+          <div className="border rounded-lg overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Fecha</TableHead>

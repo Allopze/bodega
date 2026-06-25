@@ -1,7 +1,13 @@
 "use client"
 
+import { useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Pencil, Trash } from "@phosphor-icons/react"
+import { deleteFuelVehicleAction } from "../actions"
+import { EditVehicleDialog } from "./edit-vehicle-dialog"
+import { toast } from "@/lib/toast"
 
 interface VehicleRow {
   id: string
@@ -10,14 +16,29 @@ interface VehicleRow {
   brand: string | null
   model: string | null
   year: number | null
+  worksiteId: string | null
   isActive: boolean
   worksite: { name: string } | null
 }
 
-export function VehicleCatalogTable({ vehicles }: { vehicles: VehicleRow[] }) {
+export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: VehicleRow[]; worksites: Array<{ id: string; name: string }> }) {
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  async function handleDelete(id: string) {
+    if (!confirm("¿Desactivar este vehículo?")) return
+    setDeleting(id)
+    const result = await deleteFuelVehicleAction(id)
+    if (result.ok) {
+      toast.success(result.message)
+    } else {
+      toast.error(result.message)
+    }
+    setDeleting(null)
+  }
+
   return (
-    <div className="border rounded-lg overflow-x-auto">
-      <Table>
+    <div className="border rounded-lg overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <Table className="min-w-[600px]">
         <TableHeader>
           <TableRow>
             <TableHead>Patente</TableHead>
@@ -27,12 +48,13 @@ export function VehicleCatalogTable({ vehicles }: { vehicles: VehicleRow[] }) {
             <TableHead>Año</TableHead>
             <TableHead>Faena asignada</TableHead>
             <TableHead>Estado</TableHead>
+            <TableHead className="w-20"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {vehicles.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                 No hay vehículos registrados
               </TableCell>
             </TableRow>
@@ -49,6 +71,19 @@ export function VehicleCatalogTable({ vehicles }: { vehicles: VehicleRow[] }) {
                   <Badge variant={v.isActive ? "success" : "default"}>
                     {v.isActive ? "Activo" : "Inactivo"}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-1">
+                    <EditVehicleDialog vehicle={v} worksites={worksites} />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(v.id)}
+                      disabled={deleting === v.id || !v.isActive}
+                    >
+                      <Trash className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))

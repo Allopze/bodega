@@ -555,6 +555,19 @@ export async function getFuelSuppliersAction() {
   return { ok: true as const, data: rows }
 }
 
+export async function deleteFuelSupplierAction(id: string): Promise<ActionState> {
+  try { await requirePermission("combustibles:manage_suppliers") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  try {
+    await db.update(fuelSuppliers).set({ isActive: false, updatedAt: new Date().toISOString() }).where(eq(fuelSuppliers.id, id))
+    revalidatePath("/combustibles/proveedores-combustible")
+    return { ok: true, message: "Proveedor desactivado" }
+  } catch (e) {
+    return { ok: false, message: dbErrMsg(e, "Error al desactivar") }
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    MONTHLY STATEMENTS (Cuenta corriente mensual)
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -758,4 +771,122 @@ export async function getFuelReportAction(filters: {
     .orderBy(desc(sql`sum(${fuelLoads.totalAmount})`))
 
   return { ok: true as const, data: rows }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EXPORT XLSX
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export async function exportFuelLoadsXlsxAction(filters?: {
+  month?: string
+  serviceType?: string
+  vehicleId?: string
+  worksiteId?: string
+  fuelSupplierId?: string
+  product?: string
+  status?: string
+}) {
+  try { await requirePermission("combustibles:export") }
+  catch { return { ok: false as const, message: "Sin permisos" } }
+
+  const conditions = []
+  if (filters?.month) conditions.push(eq(fuelLoads.month, filters.month))
+  if (filters?.serviceType) conditions.push(eq(fuelLoads.serviceType, filters.serviceType))
+  if (filters?.vehicleId) conditions.push(eq(fuelLoads.vehicleId, filters.vehicleId))
+  if (filters?.worksiteId) conditions.push(eq(fuelLoads.worksiteId, filters.worksiteId))
+  if (filters?.fuelSupplierId) conditions.push(eq(fuelLoads.fuelSupplierId, filters.fuelSupplierId))
+  if (filters?.product) conditions.push(eq(fuelLoads.product, filters.product))
+  if (filters?.status) conditions.push(eq(fuelLoads.status, filters.status))
+  const where = conditions.length > 0 ? and(...conditions) : undefined
+
+  const rows = await db.query.fuelLoads.findMany({
+    where,
+    with: { vehicle: true, supplier: true, worksite: true },
+    orderBy: [desc(fuelLoads.loadDate)],
+  })
+
+  const ExcelJS = await import("exceljs")
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet("Cargas Combustible")
+
+  ws.columns = [
+    { header: "Fecha", key: "loadDate", width: 12 },
+    { header: "Mes", key: "month", width: 10 },
+    { header: "Servicio", key: "serviceType", width: 10 },
+    { header: "Vehículo", key: "vehicle", width: 15 },
+    { header: "Proveedor", key: "supplier", width: 15 },
+    { header: "Faena", key: "worksite", width: 25 },
+    { header: "Producto", key: "product", width: 18 },
+    { header: "Nro Factura", key: "receiptNumber", width: 15 },
+    { header: "Litros", key: "liters", width: 12 },
+    { header: "IEC Fijo", key: "iecFixed", width: 14 },
+    { header: "IEC Variable", key: "iecVariable", width: 14 },
+    { header: "Base Afecta", key: "baseAmount", width: 16 },
+    { header: "IEC Total", key: "iecTotal", width: 14 },
+    { header: "IVA", key: "ivaAmount", width: 14 },
+    { header: "Total", key: "totalAmount", width: 16 },
+    { header: "Estado", key: "status", width: 12 },
+  ]
+
+  ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
+  ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
+
+  for (const row of rows) {
+    ws.addRow({
+      loadDate: row.loadDate, month: row.month, serviceType: row.serviceType,
+      vehicle: row.vehicle?.plate ?? "", supplier: row.supplier?.name ?? "",
+      worksite: row.worksite?.name ?? "", product: row.product,
+      receiptNumber: row.receiptNumber ?? "", liters: row.liters,
+      iecFixed: row.iecFixed, iecVariable: row.iecVariable, baseAmount: row.baseAmount,
+      iecTotal: row.iecTotal, ivaAmount: row.ivaAmount, totalAmount: row.totalAmount,
+      status: row.status,
+    })
+  }
+
+  const totalsRow = ws.addRow({
+    loadDate: "", month: "", serviceType: "", vehicle: "", supplier: "",
+    worksite: "TOTALES", product: "", receiptNumber: "",
+    liters: rows.reduce((s, r) => s + r.liters, 0),
+    iecFixed: rows.reduce((s, r) => s + r.iecFixed, 0),
+    iecVariable: rows.reduce((s, r) => s + r.iecVariable, 0),
+    baseAmount: rows.reduce((s, r) => s + r.baseAmount, 0),
+    iecTotal: rows.reduce((s, r) => s + r.iecTotal, 0),
+    ivaAmount: rows.reduce((s, r) => s + r.ivaAmount, 0),
+    totalAmount: rows.reduce((s, r) => s + r.totalAmount, 0),
+    status: "",
+  })
+  totalsRow.font = { bold: true }
+
+  for (const col of ["iecFixed", "iecVariable", "baseAmount", "iecTotal", "ivaAmount", "totalAmount"]) {
+    ws.getColumn(col).numFmt = "#,##0"
+  }
+  ws.getColumn("liters").numFmt = "#,##0.00"
+
+  const buffer = await wb.xlsx.writeBuffer()
+  const base64 = Buffer.from(buffer).toString("base64")
+  return { ok: true as const, data: { base64, filename: `combustibles_${new Date().toISOString().split("T")[0]}.xlsx` } }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DASHBOARD CHART DATA
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export async function getFuelChartDataAction(filters?: { startDate?: string; endDate?: string }) {
+  try { await requirePermission("combustibles:view") }
+  catch { return { ok: false as const, data: null } }
+
+  const conditions = []
+  if (filters?.startDate) conditions.push(gte(fuelLoads.loadDate, filters.startDate))
+  if (filters?.endDate) conditions.push(lte(fuelLoads.loadDate, filters.endDate))
+  const where = conditions.length > 0 ? and(...conditions) : undefined
+
+  const [byMonth, byWorksite, byVehicle, bySupplier, byProduct] = await Promise.all([
+    db.select({ group: fuelLoads.month, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`, count: sql<number>`count(*)` }).from(fuelLoads).where(where).groupBy(fuelLoads.month).orderBy(fuelLoads.month),
+    db.select({ group: worksites.name, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).leftJoin(worksites, eq(fuelLoads.worksiteId, worksites.id)).where(where).groupBy(worksites.name).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+    db.select({ group: fuelVehicles.plate, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).leftJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id)).where(where).groupBy(fuelVehicles.plate).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+    db.select({ group: fuelSuppliers.name, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).leftJoin(fuelSuppliers, eq(fuelLoads.fuelSupplierId, fuelSuppliers.id)).where(where).groupBy(fuelSuppliers.name).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+    db.select({ group: fuelLoads.product, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).where(where).groupBy(fuelLoads.product).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+  ])
+
+  return { ok: true as const, data: { byMonth, byWorksite, byVehicle, bySupplier, byProduct } }
 }

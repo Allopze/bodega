@@ -63,6 +63,9 @@ export type NotificationType =
   | "ppa_rejected"
   | "feedback_submitted"
   | "system_alert"
+  | "fuel_statement_due_soon"
+  | "fuel_statement_overdue"
+  | "fuel_loads_unassigned"
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

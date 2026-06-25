@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { updateFuelLoadAction, deleteFuelLoadAction, registerFuelLoadAction, type ActionState } from "../actions"
+import { updateFuelLoadAction, type ActionState } from "../actions"
 import { calculateFuelAmounts } from "@/lib/combustibles/calculations"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/lib/toast"
+import { deleteFuelLoadAction, registerFuelLoadAction } from "../actions"
 
 interface LoadData {
   id: string

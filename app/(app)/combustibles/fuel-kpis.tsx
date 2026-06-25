@@ -15,7 +15,7 @@ export function FuelDashboardKpis({ totalLiters, totalAmount, loadCount, current
   const formatLiters = (n: number) => new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(n)
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center gap-3">

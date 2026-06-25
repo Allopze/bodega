@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface FuelFiltersProps {
@@ -17,6 +18,8 @@ interface FuelFiltersProps {
     supplierId?: string
     product?: string
     status?: string
+    startDate?: string
+    endDate?: string
   }
 }
 
@@ -31,7 +34,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
     } else {
       params.delete(key)
     }
-    params.delete("page") // Reset page on filter change
+    params.delete("page")
     router.push(`?${params.toString()}`)
   }
 
@@ -40,19 +43,24 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
   }
 
   return (
-    <div className="flex flex-wrap gap-3 mb-6 p-4 bg-muted/50 rounded-lg">
+    <div className="flex flex-wrap gap-3 mb-6 p-4 bg-[var(--color-surface-2)] rounded-lg">
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Mes</label>
-        <Input
-          type="month"
-          className="w-44"
-          defaultValue={currentFilters.month ?? ""}
-          onChange={(e) => setFilter("month", e.target.value)}
-        />
+        <Label className="text-xs">Mes</Label>
+        <Input type="month" className="w-44" defaultValue={currentFilters.month ?? ""} onChange={(e) => setFilter("month", e.target.value)} />
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Servicio</label>
+        <Label className="text-xs">Desde</Label>
+        <Input type="date" className="w-40" defaultValue={currentFilters.startDate ?? ""} onChange={(e) => setFilter("startDate", e.target.value)} />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Label className="text-xs">Hasta</Label>
+        <Input type="date" className="w-40" defaultValue={currentFilters.endDate ?? ""} onChange={(e) => setFilter("endDate", e.target.value)} />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Label className="text-xs">Servicio</Label>
         <Select defaultValue={currentFilters.serviceType ?? "all"} onValueChange={(v) => setFilter("service", v === "all" ? "" : v)}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -64,7 +72,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Vehículo</label>
+        <Label className="text-xs">Vehículo</Label>
         <Select defaultValue={currentFilters.vehicleId ?? "all"} onValueChange={(v) => setFilter("vehicle", v === "all" ? "" : v)}>
           <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -75,7 +83,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Faena</label>
+        <Label className="text-xs">Faena</Label>
         <Select defaultValue={currentFilters.worksiteId ?? "all"} onValueChange={(v) => setFilter("faena", v === "all" ? "" : v)}>
           <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -86,7 +94,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Proveedor</label>
+        <Label className="text-xs">Proveedor</Label>
         <Select defaultValue={currentFilters.supplierId ?? "all"} onValueChange={(v) => setFilter("proveedor", v === "all" ? "" : v)}>
           <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -97,7 +105,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Producto</label>
+        <Label className="text-xs">Producto</Label>
         <Select defaultValue={currentFilters.product ?? "all"} onValueChange={(v) => setFilter("producto", v === "all" ? "" : v)}>
           <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -109,7 +117,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Estado</label>
+        <Label className="text-xs">Estado</Label>
         <Select defaultValue={currentFilters.status ?? "all"} onValueChange={(v) => setFilter("status", v === "all" ? "" : v)}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
           <SelectContent>

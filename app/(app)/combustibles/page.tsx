@@ -2,15 +2,19 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
-import { desc, eq, and, sql } from "drizzle-orm"
+import { desc, eq, and, sql, gte, lte } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { FuelLoadTable } from "./fuel-load-table"
 import { FuelDashboardKpis } from "./fuel-kpis"
 import { FuelFilters } from "./fuel-filters"
+import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "./fuel-charts"
+import { ExportXlsxButton } from "./export-button"
+import { checkFuelStatementNotifications } from "@/lib/combustibles/notifications"
 
 export const metadata: Metadata = { title: "Combustibles" }
 
@@ -25,6 +29,9 @@ export default async function CombustiblesPage({
   try { session = await requirePermission("combustibles:view") }
   catch { redirect("/forbidden") }
 
+  // Check for overdue/soon-due fuel statement notifications (fire-and-forget)
+  checkFuelStatementNotifications().catch(() => {})
+
   const sp = await searchParams
   const month = typeof sp.month === "string" ? sp.month : undefined
   const serviceType = typeof sp.service === "string" ? sp.service : undefined
@@ -35,9 +42,14 @@ export default async function CombustiblesPage({
   const status = typeof sp.status === "string" ? sp.status : undefined
   const page = typeof sp.page === "string" ? Math.max(1, Number(sp.page)) : 1
 
+  const startDate = typeof sp.startDate === "string" ? sp.startDate : undefined
+  const endDate = typeof sp.endDate === "string" ? sp.endDate : undefined
+
   // Build filter conditions
   const conditions = []
   if (month) conditions.push(eq(fuelLoads.month, month))
+  if (startDate) conditions.push(gte(fuelLoads.loadDate, startDate))
+  if (endDate) conditions.push(lte(fuelLoads.loadDate, endDate))
   if (serviceType) conditions.push(eq(fuelLoads.serviceType, serviceType))
   if (vehicleId) conditions.push(eq(fuelLoads.vehicleId, vehicleId))
   if (worksiteId) conditions.push(eq(fuelLoads.worksiteId, worksiteId))
@@ -72,6 +84,26 @@ export default async function CombustiblesPage({
     count: sql<number>`count(*)`,
   }).from(fuelLoads).where(eq(fuelLoads.month, currentMonth))
 
+  // Chart data
+  const [chartByMonth, chartByWorksite, chartByProduct] = await Promise.all([
+    db.select({
+      group: fuelLoads.month,
+      totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
+      totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+      count: sql<number>`count(*)`,
+    }).from(fuelLoads).where(where).groupBy(fuelLoads.month).orderBy(fuelLoads.month),
+    db.select({
+      group: worksites.name,
+      totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
+      totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+    }).from(fuelLoads).leftJoin(worksites, eq(fuelLoads.worksiteId, worksites.id)).where(where).groupBy(worksites.name).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+    db.select({
+      group: fuelLoads.product,
+      totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
+      totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+    }).from(fuelLoads).where(where).groupBy(fuelLoads.product).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+  ])
+
   return (
     <PageContainer>
       <Breadcrumbs items={[{ label: "Operaciones", href: "/" }, { label: "Combustibles" }]} />
@@ -80,6 +112,7 @@ export default async function CombustiblesPage({
         description="Control de cargas de combustible por faena y vehículo"
         actions={
           <div className="flex gap-2">
+            <ExportXlsxButton filters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, status }} />
             <Button asChild variant="secondary" size="sm">
               <Link href="/combustibles/importar">⬆ Importar Excel</Link>
             </Button>
@@ -101,8 +134,39 @@ export default async function CombustiblesPage({
         vehicles={vehicles}
         suppliers={suppliersList}
         worksites={worksitesList}
-        currentFilters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, status }}
+        currentFilters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, status, startDate, endDate }}
       />
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle className="text-base">Evolución mensual</CardTitle></CardHeader>
+          <CardContent>
+            <MonthlyEvolutionChart data={chartByMonth} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Por producto</CardTitle></CardHeader>
+          <CardContent>
+            <ProductPieChart data={chartByProduct} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Top faenas por gasto</CardTitle></CardHeader>
+          <CardContent>
+            <CategoryBarChart data={chartByWorksite} title="Faenas" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Top vehículos por gasto</CardTitle></CardHeader>
+          <CardContent>
+            <CategoryBarChart data={chartByMonth} title="Vehículos" />
+          </CardContent>
+        </Card>
+      </div>
 
       <FuelLoadTable
         rows={rows}

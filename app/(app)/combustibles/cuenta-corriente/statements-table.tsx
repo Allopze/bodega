@@ -30,8 +30,8 @@ const formatLiters = (n: number) => new Intl.NumberFormat("es-CL", { maximumFrac
 
 export function StatementsTable({ statements }: { statements: StatementRow[] }) {
   return (
-    <div className="border rounded-lg overflow-x-auto">
-      <Table>
+    <div className="border rounded-lg overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <Table className="min-w-[700px]">
         <TableHeader>
           <TableRow>
             <TableHead>Mes</TableHead>
