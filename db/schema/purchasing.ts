@@ -4,6 +4,7 @@ import { users } from "./users"
 import { worksites, suppliers } from "./worksites"
 import { products } from "./products"
 import { purchaseRequestItems } from "./requests"
+import { costCenters } from "./cost-centers"
 
 /* ── Purchase Order States ───────────────────────────────────────────────── */
 // draft | issued | sent | supplier_confirmed
@@ -15,6 +16,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   id:                text("id").primaryKey(),
   code:              text("code").notNull().unique(),   // "OC-2026-0017"
   worksiteId:        text("worksite_id").notNull().references(() => worksites.id),
+  costCenterId:      text("cost_center_id").references(() => costCenters.id),
   supplierId:        text("supplier_id").notNull().references(() => suppliers.id),
   createdBy:         text("created_by").notNull().references(() => users.id),
   status:            text("status").notNull().default("draft"),
@@ -22,6 +24,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   issuedBy:          text("issued_by").references(() => users.id),
   sentAt:            text("sent_at"),
   confirmedAt:       text("confirmed_at"),
+  closedAt:          timestamp("closed_at", { withTimezone: true, mode: "string" }),
   estimatedDelivery: text("estimated_delivery"),
   deliveryAddress:   text("delivery_address"),
   paymentTerms:      text("payment_terms"),
@@ -47,6 +50,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
     AND ${table.totalAmount} >= 0
   `),
   index("purchase_orders_worksite_status_idx").on(table.worksiteId, table.status, table.createdAt),
+  index("purchase_orders_cost_center_idx").on(table.costCenterId),
   index("purchase_orders_status_sent_idx").on(table.status, table.sentAt),
 ])
 
@@ -123,6 +127,7 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
   worksite:   one(worksites, { fields: [purchaseOrders.worksiteId], references: [worksites.id] }),
+  costCenter: one(costCenters, { fields: [purchaseOrders.costCenterId], references: [costCenters.id] }),
   supplier:   one(suppliers, { fields: [purchaseOrders.supplierId], references: [suppliers.id] }),
   createdBy:    one(users, { fields: [purchaseOrders.createdBy], references: [users.id], relationName: "po_created_by" }),
   issuedByUser: one(users, { fields: [purchaseOrders.issuedBy],  references: [users.id], relationName: "po_issued_by" }),

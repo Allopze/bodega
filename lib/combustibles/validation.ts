@@ -10,6 +10,8 @@ export const createFuelLoadSchema = z.object({
   worksiteId:     z.string().min(1, "Faena requerida"),
   product:        z.string().min(1, "Producto requerido"),
   receiptNumber:  z.string().optional(),
+  odometerReading: z.coerce.number().min(0, "Kilometraje debe ser ≥ 0").optional().nullable(),
+  hourMeterReading: z.coerce.number().min(0, "Horómetro debe ser ≥ 0").optional().nullable(),
   liters:         z.coerce.number().min(0, "Litros debe ser ≥ 0"),
   iecFixed:       z.coerce.number().default(0),
   iecVariable:    z.coerce.number().default(0),

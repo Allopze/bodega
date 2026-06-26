@@ -160,11 +160,68 @@ describe("getAnalyticsDashboard", () => {
         entityLabel: "Guante cabritilla",
       }),
       expect.objectContaining({
-        type: "trazabilidad_incompleta",
+        type: "proveedor_concentrado",
         severity: "medium",
-        module: "Vehículos",
+        module: "Proveedores",
       }),
     ]))
+  })
+
+  it("adds maintenance costs and meter readings to vehicle operational analytics", async () => {
+    selectResults.push(
+      { data: [{ totalAmount: 0, orderCount: 0, averageOrderAmount: 0 }] },
+      { data: [{ totalAmount: 0 }] },
+      { data: [{ totalAmount: 100_000, loadCount: 2, totalLiters: 80 }] },
+      { data: [{ totalAmount: 0 }] },
+      { data: [{ pendingApprovals: 0 }] },
+      { data: [{ criticalStockCount: 0 }] },
+      { data: [] },
+      { data: [{ month: "2026-06", module: "Combustible", totalAmount: 100_000 }] },
+      { data: [] },
+      { data: [{ module: "Combustible", totalAmount: 100_000 }] },
+      { data: [] },
+      { data: [] },
+      { data: [] },
+      { data: [] },
+      { data: [
+        {
+          id: "veh-1",
+          plate: "AA-BB-11",
+          type: "camioneta",
+          totalFuelAmount: 100_000,
+          totalLiters: 80,
+          loadCount: 2,
+          lastOdometerReading: 12_500,
+          lastHourMeterReading: 440,
+        },
+      ] },
+      { data: [] },
+      { data: [] },
+      { data: [] },
+      { data: [] },
+      { data: [{ vehicleId: "veh-1", totalMaintenanceAmount: 250_000, maintenanceCount: 1 }] },
+      { data: [{ vehicleId: "veh-1", totalPartsAmount: 75_000, allocationCount: 2 }] },
+    )
+
+    const data = await getAnalyticsDashboard(makeSession(), {
+      fromDate: "2026-06-01",
+      toDate: "2026-06-30",
+      vehicleId: "veh-1",
+    })
+
+    expect(data.vehicleCosts[0]).toMatchObject({
+      plate: "AA-BB-11",
+      totalFuelAmount: 100_000,
+      totalServiceAmount: 250_000,
+      totalPartsAmount: 75_000,
+      totalOperationalCost: 425_000,
+      totalLiters: 80,
+      loadCount: 2,
+      lastOdometerReading: 12_500,
+      lastHourMeterReading: 440,
+    })
+    expect(data.dataGaps.join(" ")).not.toContain("mantenciones no tienen tablas operativas")
+    expect(data.dataGaps.join(" ")).not.toContain("no registran kilometraje")
   })
 
   it("uses no-rows predicates for scoped users without visible worksites", async () => {

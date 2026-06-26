@@ -8,6 +8,7 @@ import {
   fuelSuppliers,
   fuelVehicles,
   inventoryMovements,
+  maintenanceRecords,
   products,
   productCategories,
   purchaseOrderItems,
@@ -15,6 +16,8 @@ import {
   purchaseRequestItems,
   purchaseRequests,
   suppliers,
+  systemSettings,
+  vehicleCostAllocations,
   worksiteStock,
   worksites,
   workers,
@@ -78,6 +81,10 @@ export interface VehicleCostRow {
   totalOperationalCost: number
   totalLiters: number
   loadCount: number
+  maintenanceCount: number
+  allocationCount: number
+  lastOdometerReading: number | null
+  lastHourMeterReading: number | null
 }
 
 export interface StockRiskRow {
@@ -161,6 +168,18 @@ const REQUEST_TYPE_LABELS: Record<string, string> = {
   servicios: "Servicios",
 }
 
+interface AnalyticsAlertThresholds {
+  vehicleMonthlyAnomalyAmount: number
+  supplierConcentrationPct: number
+  eppRecurringDeliveryCount: number
+}
+
+const DEFAULT_ALERT_THRESHOLDS: AnalyticsAlertThresholds = {
+  vehicleMonthlyAnomalyAmount: 5_000_000,
+  supplierConcentrationPct: 60,
+  eppRecurringDeliveryCount: 3,
+}
+
 export function normalizeAnalyticsFilters(
   input: AnalyticsFilters,
   now: Date = new Date(),
@@ -184,6 +203,7 @@ export async function getAnalyticsDashboard(
   const filters = normalizeAnalyticsFilters(rawFilters)
   const previous = previousPeriod(filters.fromDate, filters.toDate)
   const detectedAt = dateOnly(new Date())
+  const thresholds = await getAnalyticsAlertThresholds()
 
   const orderScope = worksiteFilter(session, purchaseOrders.worksiteId)
   const requestScope = worksiteFilter(session, purchaseRequests.worksiteId)
@@ -191,6 +211,8 @@ export async function getAnalyticsDashboard(
   const movementScope = worksiteFilter(session, inventoryMovements.worksiteId)
   const deliveryScope = worksiteFilter(session, deliveries.worksiteId)
   const fuelScope = worksiteFilter(session, fuelLoads.worksiteId)
+  const maintenanceScope = worksiteFilter(session, maintenanceRecords.worksiteId)
+  const allocationScope = worksiteFilter(session, vehicleCostAllocations.worksiteId)
 
   const orderWhere = and(
     orderScope,
@@ -221,6 +243,21 @@ export async function getAnalyticsDashboard(
     filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined,
     filters.vehicleId ? eq(fuelLoads.vehicleId, filters.vehicleId) : undefined,
   )
+  const maintenanceWhere = and(
+    maintenanceScope,
+    gte(maintenanceRecords.maintenanceDate, filters.fromDate),
+    lte(maintenanceRecords.maintenanceDate, filters.toDate),
+    filters.worksiteId ? eq(maintenanceRecords.worksiteId, filters.worksiteId) : undefined,
+    filters.vehicleId ? eq(maintenanceRecords.vehicleId, filters.vehicleId) : undefined,
+    sql`${maintenanceRecords.status} <> 'cancelled'`,
+  )
+  const allocationWhere = and(
+    allocationScope,
+    gte(vehicleCostAllocations.allocationDate, filters.fromDate),
+    lte(vehicleCostAllocations.allocationDate, filters.toDate),
+    filters.worksiteId ? eq(vehicleCostAllocations.worksiteId, filters.worksiteId) : undefined,
+    filters.vehicleId ? eq(vehicleCostAllocations.vehicleId, filters.vehicleId) : undefined,
+  )
 
   const [
     [purchaseSummary],
@@ -242,6 +279,8 @@ export async function getAnalyticsDashboard(
     rotationRows,
     eppRows,
     recentOrders,
+    maintenanceRows,
+    vehicleAllocationRows,
   ] = await Promise.all([
     db
       .select({
@@ -405,6 +444,8 @@ export async function getAnalyticsDashboard(
         totalFuelAmount: sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)`,
         totalLiters: sql<number>`COALESCE(SUM(${fuelLoads.liters}), 0)`,
         loadCount: sql<number>`COUNT(*)`,
+        lastOdometerReading: sql<number>`MAX(${fuelLoads.odometerReading}) FILTER (WHERE ${fuelLoads.odometerReading} IS NOT NULL)`,
+        lastHourMeterReading: sql<number>`MAX(${fuelLoads.hourMeterReading}) FILTER (WHERE ${fuelLoads.hourMeterReading} IS NOT NULL)`,
       })
       .from(fuelLoads)
       .innerJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id))
@@ -495,6 +536,26 @@ export async function getAnalyticsDashboard(
       .where(orderWhere)
       .orderBy(desc(purchaseOrders.createdAt))
       .limit(8),
+
+    db
+      .select({
+        vehicleId: maintenanceRecords.vehicleId,
+        totalMaintenanceAmount: sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)`,
+        maintenanceCount: sql<number>`COUNT(*)`,
+      })
+      .from(maintenanceRecords)
+      .where(maintenanceWhere)
+      .groupBy(maintenanceRecords.vehicleId),
+
+    db
+      .select({
+        vehicleId: vehicleCostAllocations.vehicleId,
+        totalPartsAmount: sql<number>`COALESCE(SUM(${vehicleCostAllocations.amount}) FILTER (WHERE ${vehicleCostAllocations.costCategory} IN ('parts', 'service', 'other')), 0)`,
+        allocationCount: sql<number>`COUNT(*)`,
+      })
+      .from(vehicleCostAllocations)
+      .where(allocationWhere)
+      .groupBy(vehicleCostAllocations.vehicleId),
   ])
 
   const purchaseTotal = Number(purchaseSummary?.totalAmount ?? 0)
@@ -541,18 +602,41 @@ export async function getAnalyticsDashboard(
 
   const topWorksites = mergeWorksiteSpend([...purchaseWorksites, ...fuelWorksites])
 
+  const maintenanceByVehicle = new Map(maintenanceRows.map((row) => [
+    row.vehicleId,
+    {
+      totalServiceAmount: Number(row.totalMaintenanceAmount ?? 0),
+      maintenanceCount: Number(row.maintenanceCount ?? 0),
+    },
+  ]))
+  const allocationsByVehicle = new Map(vehicleAllocationRows.map((row) => [
+    row.vehicleId,
+    {
+      totalPartsAmount: Number(row.totalPartsAmount ?? 0),
+      allocationCount: Number(row.allocationCount ?? 0),
+    },
+  ]))
+
   const vehicleCosts = vehicleRows.map((row) => {
     const totalFuelAmount = Number(row.totalFuelAmount ?? 0)
+    const maintenance = maintenanceByVehicle.get(row.id)
+    const allocations = allocationsByVehicle.get(row.id)
+    const totalServiceAmount = maintenance?.totalServiceAmount ?? 0
+    const totalPartsAmount = allocations?.totalPartsAmount ?? 0
     return {
       id: row.id,
       plate: row.plate,
       type: row.type,
       totalFuelAmount,
-      totalServiceAmount: 0,
-      totalPartsAmount: 0,
-      totalOperationalCost: totalFuelAmount,
+      totalServiceAmount,
+      totalPartsAmount,
+      totalOperationalCost: totalFuelAmount + totalServiceAmount + totalPartsAmount,
       totalLiters: Number(row.totalLiters ?? 0),
       loadCount: Number(row.loadCount ?? 0),
+      maintenanceCount: maintenance?.maintenanceCount ?? 0,
+      allocationCount: allocations?.allocationCount ?? 0,
+      lastOdometerReading: row.lastOdometerReading == null ? null : Number(row.lastOdometerReading),
+      lastHourMeterReading: row.lastHourMeterReading == null ? null : Number(row.lastHourMeterReading),
     }
   })
 
@@ -582,17 +666,15 @@ export async function getAnalyticsDashboard(
     deliveryCount: Number(row.deliveryCount ?? 0),
   }))
 
-  const dataGaps = [
-    "Flota y mantenciones no tienen tablas operativas propias; el costo por vehículo solo considera combustible registrado.",
-    "Las cargas de combustible no registran kilometraje u horómetro; no se puede calcular rendimiento por kilómetro u hora máquina.",
-    "Las órdenes de compra no tienen centro de costo, área ni vehículo asociado directo; esos cruces requieren nuevos campos o una tabla de imputación.",
-  ]
+  const dataGaps = buildDataGaps(vehicleCosts)
 
   const alerts = buildAlerts({
     stockRisks,
     vehicleCosts,
+    topSuppliers,
     eppDeliveries,
     totalSpend,
+    thresholds,
     detectedAt,
     noData: totalSpend === 0 && stockRisks.length === 0 && eppDeliveries.length === 0,
   })
@@ -634,8 +716,10 @@ export async function getAnalyticsDashboard(
 function buildAlerts(input: {
   stockRisks: StockRiskRow[]
   vehicleCosts: VehicleCostRow[]
+  topSuppliers: RankingRow[]
   eppDeliveries: EppDeliveryRow[]
   totalSpend: number
+  thresholds: AnalyticsAlertThresholds
   detectedAt: string
   noData: boolean
 }): AnalyticsAlert[] {
@@ -653,19 +737,31 @@ function buildAlerts(input: {
     })
   }
 
-  for (const row of input.vehicleCosts.filter((v) => v.totalOperationalCost > 0).slice(0, 3)) {
+  for (const row of input.vehicleCosts.filter((v) => v.totalOperationalCost >= input.thresholds.vehicleMonthlyAnomalyAmount).slice(0, 3)) {
     alerts.push({
-      type: "trazabilidad_incompleta",
-      severity: "medium",
+      type: "gasto_vehiculo_anomalo",
+      severity: "high",
       module: "Vehículos",
       entityLabel: row.plate,
-      reason: "Existe gasto de combustible, pero el modelo aún no permite cruzarlo con mantenciones, repuestos, kilometraje u horómetro.",
-      action: "Agregar relación de OC/servicio/repuesto con vehículo y lectura de kilometraje u horómetro.",
+      reason: `Costo operacional ${row.totalOperationalCost} supera el umbral configurado ${input.thresholds.vehicleMonthlyAnomalyAmount}.`,
+      action: "Revisar combustible, mantenciones e imputaciones asociadas al vehículo.",
       detectedAt: input.detectedAt,
     })
   }
 
-  for (const row of input.eppDeliveries.filter((d) => d.deliveryCount >= 3).slice(0, 3)) {
+  for (const row of input.topSuppliers.filter((s) => input.totalSpend > 0 && (s.totalAmount / input.totalSpend) * 100 >= input.thresholds.supplierConcentrationPct).slice(0, 3)) {
+    alerts.push({
+      type: "proveedor_concentrado",
+      severity: "medium",
+      module: "Proveedores",
+      entityLabel: row.name,
+      reason: `Concentra ${Math.round((row.totalAmount / input.totalSpend) * 100)}% del gasto del período.`,
+      action: "Validar dependencia operativa, alternativas y condiciones comerciales.",
+      detectedAt: input.detectedAt,
+    })
+  }
+
+  for (const row of input.eppDeliveries.filter((d) => d.deliveryCount >= input.thresholds.eppRecurringDeliveryCount).slice(0, 3)) {
     alerts.push({
       type: "epp_recurrente",
       severity: "medium",
@@ -690,6 +786,39 @@ function buildAlerts(input: {
   }
 
   return alerts
+}
+
+function buildDataGaps(vehicleCosts: VehicleCostRow[]) {
+  const gaps: string[] = []
+  if (vehicleCosts.length > 0 && vehicleCosts.every((row) => row.totalServiceAmount === 0 && row.totalPartsAmount === 0)) {
+    gaps.push("No hay imputaciones de repuestos, servicios o mantenciones para los vehículos del período.")
+  }
+  if (vehicleCosts.length > 0 && vehicleCosts.every((row) => row.lastOdometerReading == null && row.lastHourMeterReading == null)) {
+    gaps.push("No hay lecturas de kilometraje u horómetro en las cargas de combustible del período.")
+  }
+  return gaps
+}
+
+async function getAnalyticsAlertThresholds(): Promise<AnalyticsAlertThresholds> {
+  try {
+    const rows = await Promise.all([
+      db.query.systemSettings.findFirst({ where: eq(systemSettings.key, "analytics:vehicle_monthly_anomaly_amount") }),
+      db.query.systemSettings.findFirst({ where: eq(systemSettings.key, "analytics:supplier_concentration_pct") }),
+      db.query.systemSettings.findFirst({ where: eq(systemSettings.key, "analytics:epp_recurring_delivery_count") }),
+    ])
+    return {
+      vehicleMonthlyAnomalyAmount: positiveNumber(rows[0]?.value, DEFAULT_ALERT_THRESHOLDS.vehicleMonthlyAnomalyAmount),
+      supplierConcentrationPct: positiveNumber(rows[1]?.value, DEFAULT_ALERT_THRESHOLDS.supplierConcentrationPct),
+      eppRecurringDeliveryCount: positiveNumber(rows[2]?.value, DEFAULT_ALERT_THRESHOLDS.eppRecurringDeliveryCount),
+    }
+  } catch {
+    return DEFAULT_ALERT_THRESHOLDS
+  }
+}
+
+function positiveNumber(value: string | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
 function mergeSpendByMonth(rows: Array<{ month: string; module: string; totalAmount: number }>): SpendByMonthRow[] {

@@ -102,6 +102,8 @@ export async function createFuelLoadAction(
     worksiteId: formData.get("worksiteId"),
     product: formData.get("product"),
     receiptNumber: formData.get("receiptNumber") || undefined,
+    odometerReading: optionalNumber(formData.get("odometerReading")),
+    hourMeterReading: optionalNumber(formData.get("hourMeterReading")),
     liters,
     iecFixed,
     iecVariable,
@@ -163,6 +165,8 @@ export async function updateFuelLoadAction(
     worksiteId: formData.get("worksiteId") ?? existing.worksiteId,
     product: formData.get("product") ?? existing.product,
     receiptNumber: formData.get("receiptNumber") ?? existing.receiptNumber,
+    odometerReading: optionalNumber(formData.get("odometerReading")),
+    hourMeterReading: optionalNumber(formData.get("hourMeterReading")),
     liters,
     baseAmount,
     iecFixed: Number(formData.get("iecFixed") ?? existing.iecFixed),
@@ -184,6 +188,12 @@ export async function updateFuelLoadAction(
   } catch (e) {
     return { ok: false, message: dbErrMsg(e, "Error al actualizar") }
   }
+}
+
+function optionalNumber(value: FormDataEntryValue | null): number | null {
+  if (value === null || value === "") return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export async function deleteFuelLoadAction(id: string): Promise<ActionState> {

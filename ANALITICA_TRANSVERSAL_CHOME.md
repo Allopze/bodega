@@ -201,3 +201,28 @@ La exportación usa XLSX con `exceljs`, consistente con la regla del proyecto. N
 - `npm run lint`
 
 `npm run build` pasó e incluyó `/analitica` como ruta dinámica. `npm run lint` pasó con 19 warnings existentes en archivos de combustibles, solicitudes y schema. `npx tsc --noEmit` aún falla por errores existentes en tests no relacionados (`change-password-action`, `feedback`, `requests-delete`, `sst-alerts`, `stock-export`, `trazabilidad-item`, entre otros).
+
+## Actualización segunda etapa
+
+Esta sección deja sin efecto las brechas del documento inicial que ya fueron implementadas.
+
+- Se creó schema y migración Drizzle para `cost_centers`, `maintenance_records` y `vehicle_cost_allocations`.
+- Se agregaron relaciones opcionales de centro de costo en solicitudes, OCs, combustible y entregas.
+- Se agregaron `odometerReading` y `hourMeterReading` en `fuel_loads`.
+- Se agregó `closedAt` en `purchase_orders`.
+- `/flota` dejó de ser placeholder y ahora muestra catálogo operativo basado en `fuel_vehicles`, con combustible, mantenciones, imputaciones, últimas lecturas y drill-down a combustible/mantenciones.
+- `/mantenciones` dejó de ser placeholder y ahora permite listar y registrar mantenciones con vehículo, proveedor, fecha, tipo, costo, km/horómetro, estado y datos documentales.
+- La analítica de vehículos ahora suma combustible + mantenciones + imputaciones de vehículo.
+- Las alertas configurables usan valores `analytics:*` en `system_settings`, con defaults seguros si no existen.
+- `analitica_resumen` ahora exporta XLSX multihoja: KPIs, gasto mensual, proveedores, faenas, vehículos, stock, EPP, alertas y brechas.
+- Se agregaron `/analitica`, `/flota` y `/mantenciones` al inventario de captura/auditoría.
+
+Validación adicional ejecutada:
+
+- `npx tsc --noEmit`
+- `npm run db:generate`; segunda corrida: `No schema changes, nothing to migrate`.
+- `npm run db:migrate`
+- `npm run build`
+- `npm run lint` pasó con 19 warnings preexistentes.
+- `npx vitest run lib/__tests__/analytics-service.test.ts lib/__tests__/report-export.test.ts lib/combustibles/__tests__/import.test.ts lib/__tests__/auth-bootstrap-permissions.test.ts lib/__tests__/navigation.test.ts lib/__tests__/frozen-modular-migration.test.ts`
+- Capturas autenticadas en `screenshots/analytics-transversal/` para `/analitica`, `/flota` y `/mantenciones` en desktop/mobile.

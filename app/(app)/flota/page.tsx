@@ -1,31 +1,139 @@
 import type { Metadata } from "next"
+import Link from "next/link"
+import { redirect } from "next/navigation"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Truck } from "@phosphor-icons/react/dist/ssr"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { requirePermission } from "@/lib/auth/can"
+import { getFleetOverview } from "@/lib/services/fleet"
 
 export const metadata: Metadata = { title: "Flota" }
 
-export default function FlotaPage() {
+const formatCLP = (value: number) =>
+  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(value)
+
+const formatNumber = (value: number) =>
+  new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(value)
+
+export default async function FlotaPage() {
+  let session
+  try { session = await requirePermission("flota:view") }
+  catch { redirect("/forbidden") }
+
+  const vehicles = await getFleetOverview(session)
+  const active = vehicles.filter((vehicle) => vehicle.isActive).length
+  const totalCost = vehicles.reduce((sum, vehicle) => sum + vehicle.totalOperationalCost, 0)
+  const totalLiters = vehicles.reduce((sum, vehicle) => sum + vehicle.totalLiters, 0)
+  const maintenanceCount = vehicles.reduce((sum, vehicle) => sum + vehicle.maintenanceCount, 0)
+
   return (
     <PageContainer>
       <PageHeader
         title="Flota"
-        description="Gestión del parque vehicular de la empresa."
+        description="Catálogo operativo de vehículos con costo de combustible, mantenciones e imputaciones."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Vehículos", href: "/" },
             { label: "Flota" },
           ]} />
         }
+        actions={
+          <Button asChild size="sm" variant="secondary">
+            <Link href="/combustibles/vehiculos">Gestionar vehículos</Link>
+          </Button>
+        }
       />
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-muted-foreground/25 bg-muted/20 py-24 text-center">
-        <Truck className="mb-4 h-12 w-12 text-muted-foreground/40" />
-        <h2 className="text-lg font-semibold text-muted-foreground">Próximamente…</h2>
-        <p className="mt-1 max-w-sm text-sm text-muted-foreground/70">
-          El módulo de flota vehicular está en desarrollo. Aquí podrás administrar
-          el registro completo de vehículos, documentación y estados.
-        </p>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Metric title="Vehículos activos" value={active} />
+        <Metric title="Costo operacional" value={formatCLP(totalCost)} />
+        <Metric title="Litros registrados" value={formatNumber(totalLiters)} />
+        <Metric title="Mantenciones" value={maintenanceCount} />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Vehículos</CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table className="min-w-[980px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Vehículo</TableHead>
+                <TableHead>Faena</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Combustible</TableHead>
+                <TableHead className="text-right">Mantenciones</TableHead>
+                <TableHead className="text-right">Imputaciones</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Km/Hr</TableHead>
+                <TableHead>Última mantención</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {vehicles.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                    No hay vehículos visibles para tu alcance.
+                  </TableCell>
+                </TableRow>
+              ) : vehicles.map((vehicle) => (
+                <TableRow key={vehicle.id}>
+                  <TableCell>
+                    <div className="font-medium">{vehicle.plate}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
+                    </div>
+                  </TableCell>
+                  <TableCell>{vehicle.worksiteName}</TableCell>
+                  <TableCell>
+                    <Badge variant={vehicle.isActive ? "success" : "outline"}>
+                      {vehicle.isActive ? "Activo" : "Inactivo"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCLP(vehicle.totalAllocatedAmount)}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost)}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    {vehicle.lastOdometerReading != null
+                      ? formatNumber(vehicle.lastOdometerReading)
+                      : vehicle.lastHourMeterReading != null
+                        ? `${formatNumber(vehicle.lastHourMeterReading)} h`
+                        : "—"}
+                  </TableCell>
+                  <TableCell>{vehicle.lastMaintenanceDate ?? "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button asChild size="sm" variant="ghost">
+                        <Link href={`/combustibles?vehicle=${vehicle.id}`}>Combustible</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="ghost">
+                        <Link href={`/mantenciones?vehicle=${vehicle.id}`}>Mantenciones</Link>
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </PageContainer>
+  )
+}
+
+function Metric({ title, value }: { title: string; value: string | number }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
+        <div className="mt-1 text-2xl font-semibold">{value}</div>
+      </CardContent>
+    </Card>
   )
 }

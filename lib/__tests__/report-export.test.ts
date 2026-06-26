@@ -242,6 +242,38 @@ describe("report export helpers", () => {
     ]))
   })
 
+  it("analitica_resumen returns separate sheets for operational sections", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("analitica_resumen", session, {})
+
+    expect(data.sheets?.map((sheet) => sheet.worksheetName)).toEqual([
+      "KPIs",
+      "Gasto mensual",
+      "Proveedores",
+      "Faenas",
+      "Vehículos",
+      "Stock",
+      "EPP",
+      "Alertas",
+      "Brechas",
+    ])
+
+    const buffer = await buildXlsxBuffer(data)
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(buffer) as never)
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "KPIs",
+      "Gasto mensual",
+      "Proveedores",
+      "Faenas",
+      "Vehículos",
+      "Stock",
+      "EPP",
+      "Alertas",
+      "Brechas",
+    ])
+  })
+
   // ── buildXlsxBuffer edge cases ───────────────────────────────────────
 
   it("builds XLSX with empty rows", async () => {

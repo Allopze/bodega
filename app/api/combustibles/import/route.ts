@@ -123,6 +123,8 @@ export async function POST(req: NextRequest) {
         loadDate: load.loadDate, month: load.month, serviceType: load.serviceType,
         vehicleId, fuelSupplierId: supplierId, worksiteId,
         product: load.product, receiptNumber: load.receiptNumber || null,
+        odometerReading: load.odometerReading ?? null,
+        hourMeterReading: load.hourMeterReading ?? null,
         liters: load.liters, iecFixed: load.iecFixed, iecVariable: load.iecVariable,
         baseAmount: load.baseAmount, iecTotal: load.iecTotal, ivaAmount: load.ivaAmount,
         totalAmount: load.totalAmount, status: "registered", createdBy: session.user.id,

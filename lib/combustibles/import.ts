@@ -16,6 +16,8 @@ export interface ParsedFuelLoad {
   worksite: string            // Nombre de la faena (para matching)
   product: string             // PETROLEO DIESEL | BLUEMAX
   receiptNumber: string       // Nro factura/boleta
+  odometerReading?: number | null
+  hourMeterReading?: number | null
   liters: number
   iecFixed: number
   iecVariable: number
@@ -106,6 +108,8 @@ export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
     const worksite = String(get("FAENA") ?? "").trim()
     const product = String(get("PRODUCTO") ?? "").trim().toUpperCase()
     const receiptNumber = String(get("FACTURA") ?? "").trim()
+    const odometerReading = nullableNumber(get("KILOMETRAJE") ?? get("KM") ?? get("ODOMETRO"))
+    const hourMeterReading = nullableNumber(get("HOROMETRO") ?? get("HORÓMETRO") ?? get("HRS") ?? get("HORAS"))
 
     // Validar campos requeridos
     if (!vehicle) { errors.push({ rowIndex: rowNum, field: "VEHICULO", message: "Requerido" }); continue }
@@ -141,6 +145,8 @@ export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
       worksite,
       product,
       receiptNumber,
+      odometerReading,
+      hourMeterReading,
       liters,
       iecFixed,
       iecVariable,
@@ -167,4 +173,10 @@ function toNumber(value: unknown): number {
     return isNaN(n) ? 0 : n
   }
   return 0
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null
+  const parsed = toNumber(value)
+  return Number.isFinite(parsed) ? parsed : null
 }

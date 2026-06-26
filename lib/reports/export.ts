@@ -43,36 +43,28 @@ export interface ReportData {
   worksheetName: string
   headers: string[]
   rows: ReportCell[][]
+  sheets?: ReportSheet[]
   rowLimitApplied?: boolean
 }
 
+export interface ReportSheet {
+  worksheetName: string
+  headers: string[]
+  rows: ReportCell[][]
+}
 
 export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = "Chome Solicitudes y Bodega"
   workbook.created = new Date()
 
-  const worksheet = workbook.addWorksheet(report.worksheetName)
-  worksheet.addRow(report.headers)
-  for (const row of report.rows) worksheet.addRow(row.map((cell) => cell ?? ""))
+  const sheets = report.sheets?.length ? report.sheets : [{
+    worksheetName: report.worksheetName,
+    headers: report.headers,
+    rows: report.rows,
+  }]
 
-  const headerRow = worksheet.getRow(1)
-  headerRow.font = { bold: true }
-  headerRow.alignment = { vertical: "middle" }
-
-  worksheet.columns.forEach((column, index) => {
-    const header = report.headers[index] ?? ""
-    let width = Math.max(12, header.length + 2)
-    column.eachCell?.({ includeEmpty: true }, (cell) => {
-      width = Math.max(width, String(cell.value ?? "").length + 2)
-    })
-    column.width = Math.min(width, 42)
-  })
-  worksheet.views = [{ state: "frozen", ySplit: 1 }]
-  worksheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: report.headers.length },
-  }
+  for (const sheet of sheets) addWorksheet(workbook, sheet)
 
   const data = await workbook.xlsx.writeBuffer()
   const bytes = new Uint8Array(data as ArrayBufferLike)
@@ -180,11 +172,111 @@ async function analiticaResumen(session: Session | null, filters: ExportFilters)
     ]),
   ]
 
+  const sheets: ReportSheet[] = [
+    {
+      worksheetName: "KPIs",
+      headers: ["Indicador", "Detalle", "Valor"],
+      rows: [
+        ["Gasto total", `${data.filters.fromDate} a ${data.filters.toDate}`, data.kpis.totalSpend],
+        ["Gasto período anterior", `${data.kpis.spendVariationPct ?? "sin base"}% variación`, data.kpis.previousTotalSpend],
+        ["Órdenes de compra", "Cantidad del período", data.kpis.purchaseOrderCount],
+        ["Aprobaciones pendientes", "Ítems solicitados pendientes", data.kpis.pendingApprovals],
+        ["Stock crítico", "Productos bajo mínimo", data.kpis.criticalStockCount],
+        ["Litros combustible", `${data.kpis.fuelLoadCount} cargas`, data.kpis.fuelLiters],
+        ["Promedio OC", "Monto promedio de OC", data.kpis.averageOrderAmount],
+      ],
+    },
+    {
+      worksheetName: "Gasto mensual",
+      headers: ["Mes", "Compras", "Combustible", "Total"],
+      rows: data.spendByMonth.map((row) => [row.month, row.purchasingAmount, row.fuelAmount, row.totalAmount]),
+    },
+    {
+      worksheetName: "Proveedores",
+      headers: ["Proveedor", "Módulo", "Eventos", "Monto"],
+      rows: data.topSuppliers.map((row) => [row.name, row.module ?? "Compras", row.count, row.totalAmount]),
+    },
+    {
+      worksheetName: "Faenas",
+      headers: ["Faena", "Monto"],
+      rows: data.topWorksites.map((row) => [row.name, row.totalAmount]),
+    },
+    {
+      worksheetName: "Vehículos",
+      headers: ["Patente", "Tipo", "Combustible", "Servicios/Mantenciones", "Repuestos/Servicios", "Total", "Litros", "Cargas", "Km", "Horómetro"],
+      rows: data.vehicleCosts.map((row) => [
+        row.plate,
+        row.type,
+        row.totalFuelAmount,
+        row.totalServiceAmount,
+        row.totalPartsAmount,
+        row.totalOperationalCost,
+        row.totalLiters,
+        row.loadCount,
+        row.lastOdometerReading,
+        row.lastHourMeterReading,
+      ]),
+    },
+    {
+      worksheetName: "Stock",
+      headers: ["Producto", "SKU", "Faena", "Stock", "Mínimo"],
+      rows: data.stockRisks.map((row) => [row.productName, row.sku, row.worksiteName, row.currentQty, row.minStock]),
+    },
+    {
+      worksheetName: "EPP",
+      headers: ["Producto", "Trabajador", "Faena", "Cantidad", "Entregas"],
+      rows: data.eppDeliveries.map((row) => [row.productName, row.workerName, row.worksiteName, row.totalQty, row.deliveryCount]),
+    },
+    {
+      worksheetName: "Alertas",
+      headers: ["Tipo", "Severidad", "Módulo", "Entidad", "Motivo", "Acción", "Detectada"],
+      rows: data.alerts.map((alert) => [
+        alert.type,
+        alert.severity,
+        alert.module,
+        alert.entityLabel,
+        alert.reason,
+        alert.action,
+        alert.detectedAt,
+      ]),
+    },
+    {
+      worksheetName: "Brechas",
+      headers: ["Brecha"],
+      rows: data.dataGaps.map((gap) => [gap]),
+    },
+  ]
+
   return {
     filenameBase: "analitica-transversal",
     worksheetName: "Analítica",
     headers: ["Sección", "Indicador", "Detalle", "Monto/Cantidad"],
     rows,
+    sheets,
+  }
+}
+
+function addWorksheet(workbook: ExcelJS.Workbook, sheet: ReportSheet) {
+  const worksheet = workbook.addWorksheet(sheet.worksheetName)
+  worksheet.addRow(sheet.headers)
+  for (const row of sheet.rows) worksheet.addRow(row.map((cell) => cell ?? ""))
+
+  const headerRow = worksheet.getRow(1)
+  headerRow.font = { bold: true }
+  headerRow.alignment = { vertical: "middle" }
+
+  worksheet.columns.forEach((column, index) => {
+    const header = sheet.headers[index] ?? ""
+    let width = Math.max(12, header.length + 2)
+    column.eachCell?.({ includeEmpty: true }, (cell) => {
+      width = Math.max(width, String(cell.value ?? "").length + 2)
+    })
+    column.width = Math.min(width, 42)
+  })
+  worksheet.views = [{ state: "frozen", ySplit: 1 }]
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: sheet.headers.length },
   }
 }
 

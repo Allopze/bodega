@@ -88,6 +88,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "trazabilidad", path: "/trazabilidad", auth: true },
   { slug: "trazabilidad-detalle", path: "/trazabilidad/req-item-audit-1", auth: true },
   { slug: "reportes", path: "/reportes", auth: true },
+  { slug: "analitica", path: "/analitica", auth: true },
+  { slug: "flota", path: "/flota", auth: true },
+  { slug: "mantenciones", path: "/mantenciones", auth: true },
   { slug: "repuestos", path: "/repuestos", auth: true },
   { slug: "repuestos-nueva", path: "/repuestos/nueva", auth: true },
   { slug: "repuestos-detalle", path: "/repuestos/rep-audit-1", auth: true },
@@ -131,6 +134,9 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "entregas", fixtures: ["trabajadores activos", "EPP recibido pendiente de entrega", "historial de entregas"] },
   { section: "trazabilidad", fixtures: ["ítems aprobados", "ítems en OC", "ítems recibidos", "alerta sin OC"] },
   { section: "reportes", fixtures: ["solicitudes", "ítems", "OC", "recepciones", "estados variados"] },
+  { section: "analitica", fixtures: ["compras", "combustible", "flota", "stock crítico", "EPP"] },
+  { section: "flota", fixtures: ["vehículos activos", "cargas de combustible", "mantenciones"] },
+  { section: "mantenciones", fixtures: ["vehículos", "proveedores", "mantenciones registradas"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
   { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción"] },
@@ -276,6 +282,11 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "p-wh-mov", name: "warehouse:register_movement", module: "warehouse", description: "Registrar movimientos" },
     { id: "p-wh-adj", name: "warehouse:adjust_stock", module: "warehouse", description: "Ajustar stock" },
     { id: "p-rep-view", name: "reports:view", module: "reports", description: "Ver reportes" },
+    { id: "p-ana-view", name: "analytics:view", module: "analytics", description: "Ver analítica transversal" },
+    { id: "p-ana-export", name: "analytics:export", module: "analytics", description: "Exportar analítica transversal" },
+    { id: "p-flot-view", name: "flota:view", module: "flota", description: "Ver flota de vehículos" },
+    { id: "p-mant-view", name: "mantenciones:view", module: "mantenciones", description: "Ver mantenciones de vehículos" },
+    { id: "p-mant-create", name: "mantenciones:create", module: "mantenciones", description: "Registrar mantenciones de vehículos" },
     { id: "p-adm-usr", name: "admin:users", module: "admin", description: "Gestionar usuarios" },
     { id: "p-adm-ws", name: "admin:worksites", module: "admin", description: "Gestionar faenas" },
     { id: "p-adm-wrk", name: "admin:workers", module: "admin", description: "Gestionar trabajadores" },
@@ -312,10 +323,10 @@ async function prepareDatabase(captureDbUrl: string) {
   const permissionIdByName = Object.fromEntries(permissions.map((permission) => [permission.name, permission.id]))
   const rolePermissionNames: Record<string, string[]> = {
     "rol-admin": permissions.map((permission) => permission.name),
-    "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "purchasing:create_order", "purchasing:send_order", "receiving:view", "reports:view", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
+    "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "purchasing:create_order", "purchasing:send_order", "receiving:view", "reports:view", "analytics:view", "analytics:export", "flota:view", "mantenciones:view", "mantenciones:create", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
     "rol-prevencion": ["requests:create", "requests:view_own", "requests:submit", "repuestos:create", "repuestos:view_own", "repuestos:submit", "servicios:create", "servicios:view_own", "servicios:submit", "sst:view", "sst:create", "sst:close", "sst:manage"],
     "rol-bodega": ["receiving:view", "receiving:register", "receiving:register_office", "receiving:register_faena", "warehouse:view_stock", "warehouse:register_movement", "warehouse:adjust_stock", "reports:view"],
-    "rol-secretaria": ["purchasing:view", "purchasing:create_order", "purchasing:send_order", "purchasing:manage_suppliers", "reports:view"],
+    "rol-secretaria": ["purchasing:view", "purchasing:create_order", "purchasing:send_order", "purchasing:manage_suppliers", "reports:view", "analytics:view", "analytics:export"],
   }
 
   await db.insert(schema.rolePermissions).values(Object.entries(rolePermissionNames).flatMap(([roleId, names]) =>

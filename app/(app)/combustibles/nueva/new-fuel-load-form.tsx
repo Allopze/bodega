@@ -143,6 +143,18 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
               <Label htmlFor="receiptNumber">Nro Factura/Boleta</Label>
               <Input id="receiptNumber" name="receiptNumber" />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="odometerReading">Kilometraje</Label>
+              <Input id="odometerReading" name="odometerReading" type="number" step="0.01" min="0" inputMode="decimal" />
+              {state.fieldErrors?.odometerReading && <p className="text-sm text-destructive">{state.fieldErrors.odometerReading[0]}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="hourMeterReading">Horómetro</Label>
+              <Input id="hourMeterReading" name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" />
+              {state.fieldErrors?.hourMeterReading && <p className="text-sm text-destructive">{state.fieldErrors.hourMeterReading[0]}</p>}
+            </div>
           </CardContent>
         </Card>
 

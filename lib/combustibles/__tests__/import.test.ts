@@ -40,6 +40,15 @@ describe("parseFuelExcel", () => {
     expect(result.loads[0]!.totalAmount).toBe(8953889.44)
   })
 
+  it("parses optional odometer and hour meter readings", () => {
+    const row = { ...validRow, "KILOMETRAJE": 12500, "HOROMETRO": 440.5 }
+    const buffer = createTestExcel([row])
+    const result = parseFuelExcel(buffer)
+    expect(result.loads).toHaveLength(1)
+    expect(result.loads[0]!.odometerReading).toBe(12500)
+    expect(result.loads[0]!.hourMeterReading).toBe(440.5)
+  })
+
   it("detects missing required fields", () => {
     const invalidRow = { ...validRow, "VEHICULO": "" }
     const buffer = createTestExcel([invalidRow])

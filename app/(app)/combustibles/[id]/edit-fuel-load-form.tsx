@@ -24,6 +24,8 @@ interface LoadData {
   worksiteId: string
   product: string
   receiptNumber: string | null
+  odometerReading: number | null
+  hourMeterReading: number | null
   liters: number
   iecFixed: number
   iecVariable: number
@@ -172,6 +174,14 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
             <div className="space-y-2">
               <Label>Nro Factura/Boleta</Label>
               <Input name="receiptNumber" defaultValue={load.receiptNumber ?? ""} disabled={!isEditable} />
+            </div>
+            <div className="space-y-2">
+              <Label>Kilometraje</Label>
+              <Input name="odometerReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.odometerReading ?? ""} disabled={!isEditable} />
+            </div>
+            <div className="space-y-2">
+              <Label>Horómetro</Label>
+              <Input name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.hourMeterReading ?? ""} disabled={!isEditable} />
             </div>
           </CardContent>
         </Card>

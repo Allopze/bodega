@@ -123,7 +123,7 @@ export default async function AnaliticaPage({
             icon={<Truck size={18} />}
             label="Vehículos"
             value={formatQty(data.vehicleCosts.length)}
-            detail="Costo operacional parcial: combustible disponible"
+            detail="Combustible, mantenciones e imputaciones"
           />
         </section>
 
@@ -218,7 +218,9 @@ export default async function AnaliticaPage({
             title="Top proveedores"
             headers={["Proveedor", "Módulo", "Eventos", "Monto"]}
             rows={data.topSuppliers.map((row) => [
-              row.name,
+              <Link key={row.id} href={row.module === "Combustible" ? `/combustibles?proveedor=${row.id}` : `/compras?proveedor=${row.id}`} className="font-medium text-[var(--color-primary)] hover:underline">
+                {row.name}
+              </Link>,
               row.module ?? "Compras",
               formatQty(row.count),
               formatCLP(row.totalAmount),
@@ -230,7 +232,9 @@ export default async function AnaliticaPage({
             headers={["Producto", "Faena", "Stock", "Mínimo"]}
             rows={data.stockRisks.map((row) => [
               row.productName,
-              row.worksiteName,
+              <Link key={`${row.productId}-${row.worksiteName}`} href={`/bodega?producto=${row.productId}`} className="text-[var(--color-primary)] hover:underline">
+                {row.worksiteName}
+              </Link>,
               formatQty(row.currentQty),
               formatQty(row.minStock),
             ])}
@@ -256,7 +260,9 @@ export default async function AnaliticaPage({
             rows={data.eppDeliveries.map((row) => [
               row.productName,
               row.workerName,
-              row.worksiteName,
+              <Link key={`${row.productId}-${row.workerName}`} href="/entregas" className="text-[var(--color-primary)] hover:underline">
+                {row.worksiteName}
+              </Link>,
               formatQty(row.totalQty),
             ])}
             empty="Sin entregas de EPP para el período."
@@ -267,7 +273,9 @@ export default async function AnaliticaPage({
           title="Órdenes recientes consideradas"
           headers={["OC", "Faena", "Proveedor", "Fecha", "Monto"]}
           rows={data.recentOrders.map((row) => [
-            row.code,
+            <Link key={row.id} href={`/compras/${row.id}`} className="font-medium text-[var(--color-primary)] hover:underline">
+              {row.code}
+            </Link>,
             row.worksiteName,
             row.supplierName,
             formatDate(row.createdAt),
@@ -325,7 +333,7 @@ function RankingTable({
 }: {
   title: string
   headers: string[]
-  rows: string[][]
+  rows: ReactNode[][]
   empty: string
 }) {
   return (
@@ -350,7 +358,7 @@ function RankingTable({
                     {row.map((cell, cellIndex) => {
                       const isLast = cellIndex === row.length - 1
                       const Cell = isLast ? TableCellNum : TableCell
-                      return <Cell key={`${cell}-${cellIndex}`}>{cell}</Cell>
+                      return <Cell key={cellIndex}>{cell}</Cell>
                     })}
                   </TableRow>
                 ))}

@@ -8,6 +8,13 @@
       "when": 1782407383402,
       "tag": "0000_vengeful_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782504520990,
+      "tag": "0001_brown_silver_fox",
+      "breakpoints": true
     }
   ]
 }

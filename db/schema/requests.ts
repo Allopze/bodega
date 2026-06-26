@@ -3,6 +3,7 @@ import { pgTable, text, integer, real, timestamp, index, check } from "drizzle-o
 import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
+import { costCenters } from "./cost-centers"
 
 /* ── Purchase Request States ─────────────────────────────────────────────── */
 // draft | submitted | in_review | partially_approved | approved
@@ -18,6 +19,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
   id:           text("id").primaryKey(),
   code:         text("code").notNull().unique(),    // e.g. "SOL-0042"
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
+  costCenterId: text("cost_center_id").references(() => costCenters.id),
   requesterId:  text("requester_id").notNull().references(() => users.id),
 
   requestType:  text("request_type").notNull().default("epp"), // epp | otro | repuestos | servicios
@@ -40,6 +42,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
     )
   `),
   index("purchase_requests_worksite_id_status_idx").on(table.worksiteId, table.status),
+  index("purchase_requests_cost_center_idx").on(table.costCenterId),
   index("purchase_requests_requester_id_created_at_idx").on(table.requesterId, table.createdAt),
 ])
 
@@ -107,6 +110,7 @@ export const approvalDecisions = pgTable("approval_decisions", {
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const purchaseRequestsRelations = relations(purchaseRequests, ({ one, many }) => ({
   worksite:   one(worksites, { fields: [purchaseRequests.worksiteId], references: [worksites.id] }),
+  costCenter: one(costCenters, { fields: [purchaseRequests.costCenterId], references: [costCenters.id] }),
   requester:  one(users, { fields: [purchaseRequests.requesterId], references: [users.id] }),
   items:      many(purchaseRequestItems),
 }))

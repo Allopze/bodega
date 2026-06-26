@@ -5,6 +5,7 @@ import { worksites, workers } from "./worksites"
 import { products } from "./products"
 import { purchaseOrders, purchaseOrderItems } from "./purchasing"
 import { purchaseRequestItems } from "./requests"
+import { costCenters } from "./cost-centers"
 
 /* ── Receipts ─────────────────────────────────────────────────────────────── */
 export const receipts = pgTable("receipts", {
@@ -60,6 +61,7 @@ export const deliveries = pgTable("deliveries", {
   deliveredAt:     timestamp("delivered_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   destinationType: text("destination_type").notNull(),  // "faena" | "worker"
   worksiteId:      text("worksite_id").references(() => worksites.id),
+  costCenterId:    text("cost_center_id").references(() => costCenters.id),
   workerId:        text("worker_id").references(() => workers.id),
   receiverName:    text("receiver_name"),                // name of person who received
   signaturePath:   text("signature_path"),               // optional signature image
@@ -107,6 +109,7 @@ export const receiptItemsRelations = relations(receiptItems, ({ one }) => ({
 export const deliveriesRelations = relations(deliveries, ({ one, many }) => ({
   deliveredBy: one(users, { fields: [deliveries.deliveredBy], references: [users.id] }),
   worksite:    one(worksites, { fields: [deliveries.worksiteId], references: [worksites.id] }),
+  costCenter:  one(costCenters, { fields: [deliveries.costCenterId], references: [costCenters.id] }),
   worker:      one(workers, { fields: [deliveries.workerId], references: [workers.id] }),
   items:       many(deliveryItems),
 }))

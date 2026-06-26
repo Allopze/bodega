@@ -12,6 +12,8 @@ interface FuelLoadRow {
   serviceType: string
   product: string
   receiptNumber: string | null
+  odometerReading: number | null
+  hourMeterReading: number | null
   liters: number
   totalAmount: number
   status: string
@@ -64,6 +66,7 @@ export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTablePr
               <TableHead>Faena</TableHead>
               <TableHead>Producto</TableHead>
               <TableHead>Nro Factura</TableHead>
+              <TableHead className="text-right">Km/Hr</TableHead>
               <TableHead className="text-right">Litros</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead>Estado</TableHead>
@@ -73,7 +76,7 @@ export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTablePr
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                   No hay cargas de combustible registradas
                 </TableCell>
               </TableRow>
@@ -89,6 +92,9 @@ export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTablePr
                     <TableCell className="max-w-40 truncate">{row.worksite?.name ?? "—"}</TableCell>
                     <TableCell>{row.product}</TableCell>
                     <TableCell className="font-mono text-sm">{row.receiptNumber ?? "—"}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {row.odometerReading != null ? formatLiters(row.odometerReading) : row.hourMeterReading != null ? `${formatLiters(row.hourMeterReading)} h` : "—"}
+                    </TableCell>
                     <TableCell className="text-right font-mono">{formatLiters(row.liters)}</TableCell>
                     <TableCell className="text-right font-mono">{formatCLP(row.totalAmount)}</TableCell>
                     <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
