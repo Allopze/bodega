@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { fuelVehicles, worksites } from "@/db/schema"
-import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"

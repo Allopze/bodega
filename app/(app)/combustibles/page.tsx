@@ -26,8 +26,8 @@ export default async function CombustiblesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  let session
-  try { session = await requirePermission("combustibles:view") }
+  let _session
+  try { _session = await requirePermission("combustibles:view") }
   catch { redirect("/forbidden") }
 
   // Check for overdue/soon-due fuel statement notifications (fire-and-forget)

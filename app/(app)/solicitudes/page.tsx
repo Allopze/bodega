@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { purchaseRequests, purchaseRequestItems, products, worksites } from "@/db/schema"
+import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
 import { desc, count, inArray, eq, and, or, ilike, sql } from "drizzle-orm"
 import { requirePermission, can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"

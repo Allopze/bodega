@@ -1,6 +1,5 @@
 "use server"
 
-import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import {
@@ -11,7 +10,7 @@ import {
   fuelPayments,
   worksites,
 } from "@/db/schema"
-import { eq, and, desc, sql, ilike, gte, lte } from "drizzle-orm"
+import { eq, and, desc, sql, gte, lte } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { nanoid } from "@/lib/id"
 import {
@@ -23,9 +22,6 @@ import {
   updateFuelSupplierSchema,
   createMonthlyStatementSchema,
   addPaymentSchema,
-  type CreateFuelLoadInput,
-  type CreateFuelVehicleInput,
-  type CreateFuelSupplierInput,
 } from "@/lib/combustibles/validation"
 import { calculateFuelAmounts, calculateStatementTotals } from "@/lib/combustibles/calculations"
 import { parseFuelExcel, type ImportError } from "@/lib/combustibles/import"
@@ -138,8 +134,7 @@ export async function updateFuelLoadAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  let session
-  try { session = await requirePermission("combustibles:create") }
+  try { await requirePermission("combustibles:create") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")

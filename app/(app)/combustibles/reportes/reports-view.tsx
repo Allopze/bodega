@@ -112,7 +112,6 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
 
 function ReportCard({ title, icon, rows }: { title: string; icon: React.ReactNode; rows: ReportRow[] }) {
   const totalAmount = rows.reduce((s, r) => s + r.totalAmount, 0)
-  const totalLiters = rows.reduce((s, r) => s + r.totalLiters, 0)
 
   return (
     <Card>

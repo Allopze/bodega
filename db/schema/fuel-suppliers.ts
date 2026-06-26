@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, index } from "drizzle-orm/pg-core"
+import { pgTable, text, boolean, timestamp } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
 import { fuelLoads, fuelMonthlyStatements, fuelPayments } from "./fuel-invoices"
 

@@ -8,9 +8,9 @@
  */
 
 import { db } from "@/db"
-import { fuelMonthlyStatements, fuelLoads, fuelSuppliers } from "@/db/schema"
+import { fuelMonthlyStatements, fuelLoads } from "@/db/schema"
 import { eq, and, sql, lte } from "drizzle-orm"
-import { notifySafe, notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
+import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 
 /**
