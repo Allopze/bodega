@@ -120,7 +120,7 @@ export async function listReports(
 
 export async function updateReportStatus(
   id: string,
-  input: z.infer<typeof feedbackUpdateStatusSchema>,
+  input: Omit<z.infer<typeof feedbackUpdateStatusSchema>, "id">,
   userId: string
 ): Promise<FeedbackReport> {
   const data = feedbackUpdateStatusSchema.parse({ ...input, id })

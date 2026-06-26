@@ -1,0 +1,131 @@
+"use client"
+
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
+import type { SpendByModuleRow, SpendByMonthRow, VehicleCostRow, WorksiteSpendRow } from "@/lib/services/analytics"
+import { formatCLP } from "@/lib/utils"
+
+const COLORS = [
+  "var(--color-primary)",
+  "var(--color-signal)",
+  "var(--color-success)",
+  "var(--color-warning)",
+  "var(--color-info)",
+  "var(--color-danger)",
+]
+
+function compactCLP(value: number) {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}K`
+  return `$${Math.round(value)}`
+}
+
+function tooltipStyle() {
+  return {
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "8px",
+    color: "var(--color-text)",
+    fontSize: "12px",
+  }
+}
+
+export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
+  if (data.length === 0) return <EmptyChart label="Sin gasto mensual para el período filtrado." />
+
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+          <XAxis dataKey="month" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
+          <YAxis tickFormatter={compactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} width={58} />
+          <Tooltip
+            contentStyle={tooltipStyle()}
+            formatter={(value, name) => [formatCLP(Number(value)), name === "totalAmount" ? "Total" : String(name)]}
+          />
+          <Line type="monotone" dataKey="totalAmount" name="Total" stroke="var(--color-primary)" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+          <Line type="monotone" dataKey="purchasingAmount" name="Compras" stroke="var(--color-info)" strokeWidth={1.8} dot={false} />
+          <Line type="monotone" dataKey="fuelAmount" name="Combustible" stroke="var(--color-warning)" strokeWidth={1.8} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+export function ModuleSpendChart({ data }: { data: SpendByModuleRow[] }) {
+  if (data.length === 0) return <EmptyChart label="Sin distribución de gasto suficiente." />
+
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data.slice(0, 8)} layout="vertical" margin={{ top: 6, right: 16, left: 10, bottom: 6 }}>
+          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+          <XAxis type="number" tickFormatter={compactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
+          <YAxis type="category" dataKey="module" width={92} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
+          <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [formatCLP(Number(value)), "Monto"]} />
+          <Bar dataKey="totalAmount" name="Monto" radius={[0, 5, 5, 0]}>
+            {data.slice(0, 8).map((_, index) => (
+              <Cell key={index} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+export function RankingBarChart({
+  data,
+  labelKey,
+  valueKey,
+  emptyLabel,
+}: {
+  data: Array<WorksiteSpendRow | VehicleCostRow>
+  labelKey: "name" | "plate"
+  valueKey: "totalAmount" | "totalOperationalCost"
+  emptyLabel: string
+}) {
+  if (data.length === 0) return <EmptyChart label={emptyLabel} />
+
+  const chartData = data.slice(0, 8).map((row) => ({
+    name: labelKey === "plate" && "plate" in row ? row.plate : "name" in row ? row.name : "",
+    value: valueKey === "totalOperationalCost" && "totalOperationalCost" in row
+      ? row.totalOperationalCost
+      : "totalAmount" in row
+        ? row.totalAmount
+        : 0,
+  }))
+
+  return (
+    <div className="h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+          <XAxis type="number" tickFormatter={compactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
+          <YAxis type="category" dataKey="name" width={118} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
+          <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [formatCLP(Number(value)), "Costo"]} />
+          <Bar dataKey="value" radius={[0, 5, 5, 0]} fill="var(--color-primary)" />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function EmptyChart({ label }: { label: string }) {
+  return (
+    <div className="flex h-64 items-center justify-center rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 text-center text-sm text-[var(--color-text-muted)]">
+      {label}
+    </div>
+  )
+}

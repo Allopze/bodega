@@ -93,7 +93,7 @@ describe("requests-delete service", () => {
     await inMemoryDb.insert(schema.purchaseRequestItems).values({
       id: "item-rep-1",
       requestId: "req-rep",
-      description: "Perno cabeza hexagonal",
+      productNameFree: "Perno cabeza hexagonal",
       quantity: 10,
       unitOfMeasure: "unidades",
     })
@@ -116,7 +116,6 @@ describe("requests-delete service", () => {
       filePath: "storage/repuestos/q-rep-1.pdf",
       fileName: "cot1.pdf",
       uploadedBy: "u-1",
-      uploadedAt: new Date().toISOString(),
     })
 
     // 5. Delete request
@@ -137,7 +136,7 @@ describe("requests-delete service", () => {
 
     // Verify filesystem unlink was called (file path contains the mocked storage filename)
     expect(mockUnlink).toHaveBeenCalled()
-    const calledPath = mockUnlink.mock.calls[0][0] as string
+    const calledPath = mockUnlink.mock.calls[0]![0] as string
     expect(calledPath).toContain("q-rep-1.pdf")
   })
 
@@ -160,7 +159,7 @@ describe("requests-delete service", () => {
     await inMemoryDb.insert(schema.purchaseRequestItems).values({
       id: "item-srv-1",
       requestId: "req-srv",
-      description: "Mantención de bomba hidráulica",
+      productNameFree: "Mantención de bomba hidráulica",
       quantity: 1,
       unitOfMeasure: "servicio",
     })
@@ -173,7 +172,6 @@ describe("requests-delete service", () => {
       filePath: "storage/servicios/q-srv-1.pdf",
       fileName: "cot_srv.pdf",
       uploadedBy: "u-1",
-      uploadedAt: new Date().toISOString(),
     })
 
     // 5. Delete request
@@ -188,7 +186,7 @@ describe("requests-delete service", () => {
 
     // Verify filesystem unlink was called
     expect(mockUnlink).toHaveBeenCalled()
-    const calledPath = mockUnlink.mock.calls[0][0] as string
+    const calledPath = mockUnlink.mock.calls[0]![0] as string
     expect(calledPath).toContain("q-srv-1.pdf")
   })
 })

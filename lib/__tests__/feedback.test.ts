@@ -62,7 +62,7 @@ describe("feedback service", () => {
 
   it("throws validation error for invalid report input", async () => {
     const input = {
-      tipo: "invalid-type" as unknown as "bug" | "propuesta" | "consulta",
+      tipo: "invalid-type" as unknown as "bug" | "sugerencia" | "consulta",
       titulo: "",
       descripcion: "",
     }
@@ -94,7 +94,7 @@ describe("feedback service", () => {
     // Filter own
     const own = await listReports({ mode: "own", userId: "user-1" })
     expect(own).toHaveLength(1)
-    expect(own[0].id).toBe(report1.id)
+    expect(own[0]!.id).toBe(report1.id)
 
     // Filter all
     const all = await listReports({ mode: "all", userId: "user-1" })
@@ -103,7 +103,7 @@ describe("feedback service", () => {
     // Pagination
     const page = await listReports({ mode: "all", userId: "user-1" }, 1, 1)
     expect(page).toHaveLength(1)
-    expect(page[0].id).toBe(report1.id) // Ordered by desc createdAt
+    expect(page[0]!.id).toBe(report1.id) // Ordered by desc createdAt
   })
 
   it("updates report status and sets terminal resolution details", async () => {

@@ -19,6 +19,7 @@ import { encodeContentDisposition } from "@/lib/utils"
  * puedes exportar").
  */
 const TYPE_PERMISSIONS: Record<string, Permission[]> = {
+  analitica_resumen: ["analytics:export", "analytics:view"],
   gasto_faena:   ["reports:view"],
   items_sin_oc:  ["reports:view"],
   oc_por_estado: ["reports:view"],
@@ -49,12 +50,14 @@ export async function GET(req: NextRequest) {
   const to = req.nextUrl.searchParams.get("to")
   const faena = req.nextUrl.searchParams.get("faena")
   const proveedor = req.nextUrl.searchParams.get("proveedor")
+  const vehiculo = req.nextUrl.searchParams.get("vehiculo")
   const status = req.nextUrl.searchParams.get("status")
   const q = req.nextUrl.searchParams.get("q")
   if (from) filters.fromDate = from
   if (to) filters.toDate = to
   if (faena) filters.worksiteId = faena
   if (proveedor) filters.supplierId = proveedor
+  if (vehiculo) filters.vehicleId = vehiculo
   if (status) filters.status = status
   if (q) filters.q = q
 

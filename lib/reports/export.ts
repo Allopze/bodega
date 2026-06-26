@@ -10,6 +10,7 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { textSearchSql } from "@/lib/adquisiciones/list-query"
 import { REQUEST_STATE_META, OC_STATE_META } from "@/components/states/state-badge"
 import { formatDate } from "@/lib/utils"
+import { getAnalyticsDashboard, normalizeAnalyticsFilters } from "@/lib/services/analytics"
 
 export type ReportCell = string | number | null | undefined
 
@@ -18,6 +19,7 @@ export interface ExportFilters {
   toDate?:    string
   worksiteId?: string
   supplierId?: string
+  vehicleId?: string
   status?:    string
   /** Free-text query (matched against code). */
   q?:         string
@@ -79,6 +81,8 @@ export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> 
 
 export async function getReportData(tipo: string, session: Session | null, filters: ExportFilters = {}, maxRows = 10_000): Promise<ReportData> {
   switch (tipo) {
+    case "analitica_resumen":
+      return analiticaResumen(session, filters)
     case "items_sin_oc":
       return itemsSinOc(session, filters, maxRows)
     case "oc_por_estado":
@@ -92,6 +96,95 @@ export async function getReportData(tipo: string, session: Session | null, filte
     case "gasto_faena":
     default:
       return gastoPorFaena(session, filters, maxRows)
+  }
+}
+
+async function analiticaResumen(session: Session | null, filters: ExportFilters): Promise<ReportData> {
+  if (!session) {
+    return {
+      filenameBase: "analitica-transversal",
+      worksheetName: "Analítica",
+      headers: ["Sección", "Indicador", "Detalle", "Monto/Cantidad"],
+      rows: [],
+    }
+  }
+
+  const data = await getAnalyticsDashboard(session, normalizeAnalyticsFilters({
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+    worksiteId: filters.worksiteId,
+    supplierId: filters.supplierId,
+    vehicleId: filters.vehicleId,
+  }))
+
+  const rows: ReportCell[][] = [
+    ["KPI", "Gasto total", `${data.filters.fromDate} a ${data.filters.toDate}`, data.kpis.totalSpend],
+    ["KPI", "Gasto período anterior", `${data.kpis.spendVariationPct ?? "sin base"}% variación`, data.kpis.previousTotalSpend],
+    ["KPI", "Órdenes de compra", "Cantidad del período", data.kpis.purchaseOrderCount],
+    ["KPI", "Aprobaciones pendientes", "Ítems solicitados pendientes", data.kpis.pendingApprovals],
+    ["KPI", "Stock crítico", "Productos bajo mínimo", data.kpis.criticalStockCount],
+    ["KPI", "Combustible", `${data.kpis.fuelLoadCount} cargas`, data.kpis.fuelLiters],
+    ...data.spendByMonth.map((row) => [
+      "Tendencia mensual",
+      row.month,
+      `Compras: ${row.purchasingAmount} · Combustible: ${row.fuelAmount}`,
+      row.totalAmount,
+    ]),
+    ...data.spendByModule.map((row) => [
+      "Gasto por tipo",
+      row.module,
+      "",
+      row.totalAmount,
+    ]),
+    ...data.topSuppliers.map((row) => [
+      "Proveedores",
+      row.name,
+      `${row.module ?? "Compras"} · ${row.count} eventos`,
+      row.totalAmount,
+    ]),
+    ...data.topWorksites.map((row) => [
+      "Faenas",
+      row.name,
+      "",
+      row.totalAmount,
+    ]),
+    ...data.vehicleCosts.map((row) => [
+      "Vehículos",
+      row.plate,
+      `${row.type} · ${row.totalLiters} L · ${row.loadCount} cargas`,
+      row.totalOperationalCost,
+    ]),
+    ...data.stockRisks.map((row) => [
+      "Stock crítico",
+      row.productName,
+      `${row.worksiteName} · stock ${row.currentQty} / mínimo ${row.minStock}`,
+      row.currentQty,
+    ]),
+    ...data.eppDeliveries.map((row) => [
+      "EPP",
+      row.productName,
+      `${row.workerName} · ${row.worksiteName} · ${row.deliveryCount} entregas`,
+      row.totalQty,
+    ]),
+    ...data.alerts.map((alert) => [
+      "Alertas",
+      `${alert.module} · ${alert.entityLabel}`,
+      `${alert.reason} · Acción: ${alert.action}`,
+      alert.severity,
+    ]),
+    ...data.dataGaps.map((gap) => [
+      "Brechas",
+      "Trazabilidad",
+      gap,
+      "",
+    ]),
+  ]
+
+  return {
+    filenameBase: "analitica-transversal",
+    worksheetName: "Analítica",
+    headers: ["Sección", "Indicador", "Detalle", "Monto/Cantidad"],
+    rows,
   }
 }
 

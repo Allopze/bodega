@@ -184,7 +184,7 @@ describe("changePasswordAction", () => {
     await changePasswordAction(prevState, form(DEFAULT_FIELDS))
 
     expect(mockRecordAudit).toHaveBeenCalledTimes(1)
-    const auditArg = mockRecordAudit.mock.calls[0][0]
+    const auditArg = mockRecordAudit.mock.calls[0]![0]
     expect(auditArg.userEmail).toBeUndefined()
   })
 
@@ -227,7 +227,7 @@ describe("changePasswordAction", () => {
 
     // DB was updated with the new hash
     expect(mockUpdate).toHaveBeenCalled()
-    const setFn = mockUpdate.mock.results[0].value.set
+    const setFn = mockUpdate.mock.results[0]!.value.set
     const setArg = setFn.mock.calls[0][0]
     expect(setArg.hashedPassword).toBe("new_hash_xyz")
 

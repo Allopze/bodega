@@ -19,6 +19,7 @@ import { warehouseModule }    from "@/modules/warehouse/manifest"
 import { deliveriesModule }   from "@/modules/deliveries/manifest"
 import { traceabilityModule } from "@/modules/traceability/manifest"
 import { reportsModule }      from "@/modules/reports/manifest"
+import { analyticsModule }    from "@/modules/analytics/manifest"
 import { repuestosModule }   from "@/modules/repuestos/manifest"
 import { serviciosModule }   from "@/modules/servicios/manifest"
 import { sstModule }         from "@/modules/sst/manifest"
@@ -44,6 +45,7 @@ export const registry = [
   deliveriesModule,
   traceabilityModule,
   reportsModule,
+  analyticsModule,
   repuestosModule,
   serviciosModule,
   // ── Prevención de riesgos (próximas entregas) ──────────────────────────

@@ -77,16 +77,15 @@ export default async function CombustiblesPage({
   const total = countResult[0]?.count ?? 0
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
-  // KPI data for current month
-  const currentMonth = month ?? new Date().toISOString().substring(0, 7)
+  // KPIs over the filtered set (all data when no filter), consistent with the charts.
   const [kpiRow] = await db.select({
     totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
     totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
     count: sql<number>`count(*)`,
-  }).from(fuelLoads).where(eq(fuelLoads.month, currentMonth))
+  }).from(fuelLoads).where(where)
 
   // Chart data
-  const [chartByMonth, chartByWorksite, chartByProduct] = await Promise.all([
+  const [chartByMonth, chartByWorksite, chartByProduct, chartByVehicle] = await Promise.all([
     db.select({
       group: fuelLoads.month,
       totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
@@ -103,7 +102,20 @@ export default async function CombustiblesPage({
       totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
       totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
     }).from(fuelLoads).where(where).groupBy(fuelLoads.product).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+    db.select({
+      group: fuelVehicles.plate,
+      totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
+      totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+    }).from(fuelLoads).leftJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id)).where(where).groupBy(fuelVehicles.plate).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
   ])
+
+  // Period label for the KPI header (range of months present in the filtered set).
+  const monthsPresent = chartByMonth.map((c) => c.group).filter((m): m is string => !!m)
+  const periodLabel = monthsPresent.length === 0
+    ? "Sin datos"
+    : monthsPresent[0] === monthsPresent[monthsPresent.length - 1]
+      ? monthsPresent[0]!
+      : `${monthsPresent[0]} — ${monthsPresent[monthsPresent.length - 1]}`
 
   return (
     <PageContainer>
@@ -126,7 +138,7 @@ export default async function CombustiblesPage({
         totalLiters={kpiRow?.totalLiters ?? 0}
         totalAmount={kpiRow?.totalAmount ?? 0}
         loadCount={kpiRow?.count ?? 0}
-        currentMonth={currentMonth}
+        periodLabel={periodLabel}
       />
 
       <FuelFilters
@@ -162,7 +174,7 @@ export default async function CombustiblesPage({
         <Card>
           <CardHeader><CardTitle className="text-base">Top vehículos por gasto</CardTitle></CardHeader>
           <CardContent>
-            <CategoryBarChart data={chartByMonth} title="Vehículos" />
+            <CategoryBarChart data={chartByVehicle} title="Vehículos" />
           </CardContent>
         </Card>
       </div>

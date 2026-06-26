@@ -165,7 +165,7 @@ describe("getStockExport", () => {
     const ws = workbook.getWorksheet("Stock")
     expect(ws).toBeDefined()
 
-    expect(ws?.getRow(1).values.slice(1)).toEqual([
+    expect((ws?.getRow(1).values as unknown[]).slice(1)).toEqual([
       "Faena", "Producto", "SKU", "U/M", "Cantidad", "Stock mínimo", "Último movimiento",
     ])
     expect(ws?.actualRowCount).toBe(3) // header + 2 data rows
@@ -303,7 +303,7 @@ describe("getKardexExport", () => {
     const ws = workbook.getWorksheet("Kardex")
     expect(ws).toBeDefined()
 
-    expect(ws?.getRow(1).values.slice(1)).toEqual([
+    expect((ws?.getRow(1).values as unknown[]).slice(1)).toEqual([
       "Fecha", "Faena", "Producto", "SKU", "Tipo de movimiento",
       "Cantidad", "Stock anterior", "Stock posterior",
       "Responsable", "Motivo", "Observaciones",

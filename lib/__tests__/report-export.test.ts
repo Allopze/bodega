@@ -7,10 +7,22 @@ import type { Session } from "next-auth"
 // Mock the Auth helpers
 const mockIsGlobalRole = vi.fn()
 const mockVisibleWorksiteIds = vi.fn()
+const mockGetAnalyticsDashboard = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   isGlobalRole: (s: unknown) => mockIsGlobalRole(s),
   visibleWorksiteIds: (s: unknown) => mockVisibleWorksiteIds(s),
+}))
+
+vi.mock("@/lib/services/analytics", () => ({
+  getAnalyticsDashboard: (...args: unknown[]) => mockGetAnalyticsDashboard(...args),
+  normalizeAnalyticsFilters: (filters: Record<string, string | undefined>) => ({
+    fromDate: filters.fromDate ?? "2026-06-01",
+    toDate: filters.toDate ?? "2026-06-30",
+    ...(filters.worksiteId ? { worksiteId: filters.worksiteId } : {}),
+    ...(filters.supplierId ? { supplierId: filters.supplierId } : {}),
+    ...(filters.vehicleId ? { vehicleId: filters.vehicleId } : {}),
+  }),
 }))
 
 // Mock the Database
@@ -77,6 +89,31 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockIsGlobalRole.mockReturnValue(true)
   mockVisibleWorksiteIds.mockReturnValue([])
+  mockGetAnalyticsDashboard.mockResolvedValue({
+    filters: { fromDate: "2026-06-01", toDate: "2026-06-30" },
+    kpis: {
+      totalSpend: 1_620_000,
+      previousTotalSpend: 1_200_000,
+      spendVariationPct: 35,
+      purchaseOrderCount: 4,
+      pendingApprovals: 2,
+      criticalStockCount: 3,
+      fuelLiters: 350,
+      fuelLoadCount: 7,
+      averageOrderAmount: 300_000,
+    },
+    spendByMonth: [{ month: "2026-06", purchasingAmount: 1_200_000, fuelAmount: 420_000, totalAmount: 1_620_000 }],
+    spendByModule: [{ module: "EPP", totalAmount: 700_000 }, { module: "Combustible", totalAmount: 420_000 }],
+    topSuppliers: [{ id: "sup-1", name: "Proveedor Uno", module: "Compras", totalAmount: 1_200_000, count: 4 }],
+    topWorksites: [{ id: "ws-1", name: "Faena Uno", totalAmount: 1_620_000 }],
+    vehicleCosts: [{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", totalFuelAmount: 420_000, totalServiceAmount: 0, totalPartsAmount: 0, totalOperationalCost: 420_000, totalLiters: 350, loadCount: 7 }],
+    stockRisks: [{ productId: "prod-1", productName: "Guante", sku: "EPP-001", worksiteName: "Faena Uno", currentQty: 2, minStock: 10 }],
+    productRotation: [],
+    eppDeliveries: [],
+    recentOrders: [],
+    alerts: [{ type: "stock_bajo", severity: "critical", module: "Bodega", entityLabel: "Guante", reason: "Stock bajo", action: "Reponer", detectedAt: "2026-06-26" }],
+    dataGaps: ["Sin kilometraje u horómetro en combustible."],
+  })
   
   mockSelect.mockImplementation(() => ({
     from: (table: unknown) => new MockQueryChain(table)
@@ -180,6 +217,31 @@ describe("report export helpers", () => {
     expect(data.filenameBase).toBe("gasto-por-faena")
   })
 
+  it("analitica_resumen report data uses the analytics dashboard DTO", async () => {
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("analitica_resumen", session, {
+      fromDate: "2026-06-01",
+      toDate: "2026-06-30",
+      worksiteId: "ws-1",
+      vehicleId: "veh-1",
+    })
+
+    expect(mockGetAnalyticsDashboard).toHaveBeenCalledWith(session, {
+      fromDate: "2026-06-01",
+      toDate: "2026-06-30",
+      worksiteId: "ws-1",
+      vehicleId: "veh-1",
+    })
+    expect(data.filenameBase).toBe("analitica-transversal")
+    expect(data.headers).toEqual(["Sección", "Indicador", "Detalle", "Monto/Cantidad"])
+    expect(data.rows).toEqual(expect.arrayContaining([
+      ["KPI", "Gasto total", "2026-06-01 a 2026-06-30", 1_620_000],
+      ["Gasto por tipo", "EPP", "", 700_000],
+      ["Vehículos", "AA-BB-11", "camioneta · 350 L · 7 cargas", 420_000],
+      ["Alertas", "Bodega · Guante", "Stock bajo · Acción: Reponer", "critical"],
+    ]))
+  })
+
   // ── buildXlsxBuffer edge cases ───────────────────────────────────────
 
   it("builds XLSX with empty rows", async () => {
@@ -195,7 +257,8 @@ describe("report export helpers", () => {
     const ws = workbook.getWorksheet("Empty")
     expect(ws).toBeDefined()
     expect(ws?.actualRowCount).toBe(1) // header only
-    expect(ws?.getRow(1).values.slice(1)).toEqual(["Col A", "Col B"])
+    const values = ws?.getRow(1).values
+    expect(Array.isArray(values) ? values.slice(1) : []).toEqual(["Col A", "Col B"])
   })
 
   it("builds XLSX with rowLimitApplied flag set", async () => {
@@ -334,8 +397,8 @@ describe("report export helpers", () => {
     const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
     const data = await getReportData("oc_por_estado", session, {})
     // PO-1 has confirmedAt: null, PO-2 has confirmedAt set
-    expect(data.rows[0][6]).toBe("") // confirmedAt empty for PO-1
-    expect(data.rows[1][6]).toBe("05-01-2026") // confirmedAt for PO-2
+    expect(data.rows[0]?.[6]).toBe("") // confirmedAt empty for PO-1
+    expect(data.rows[1]?.[6]).toBe("05-01-2026") // confirmedAt for PO-2
   })
 
   // ── Scoped session edge cases ────────────────────────────────────────

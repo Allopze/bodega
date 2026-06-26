@@ -66,4 +66,20 @@ describe("sidebar navigation", () => {
       "/servicios",
     ]))
   })
+
+  it("shows analytics under reportes when the user has analytics permission", () => {
+    const session = {
+      ...adminSession,
+      user: {
+        ...adminSession.user,
+        permissions: ["analytics:view"],
+      },
+    } satisfies Session
+
+    const reportArea = getVisibleAreas(session).find((area) => area.id === "reportes")
+    const commandTargets = flattenNavTargets(session)
+
+    expect(reportArea?.items.map((item) => item.href)).toContain("/analitica")
+    expect(commandTargets.map((target) => target.href)).toContain("/analitica")
+  })
 })

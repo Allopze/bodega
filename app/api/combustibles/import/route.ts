@@ -9,6 +9,16 @@ import type { ParsedFuelLoad } from "@/lib/combustibles/import"
 const CREATE_FAENA = "__create__"
 const SKIP_FAENA = "__skip__"
 
+// Conectores que se mantienen en minúscula en title-case (salvo al inicio).
+const TITLE_LOWER = new Set(["de", "del", "la", "las", "los", "el", "y", "e", "a"])
+
+/** "FAENA BIODIVERSA" → "Faena Biodiversa"; "FLOR DEL LAJA" → "Flor del Laja". */
+function toTitleCase(s: string): string {
+  return s.toLowerCase().replace(/\p{L}+/gu, (word, idx: number) =>
+    idx > 0 && TITLE_LOWER.has(word) ? word : word.charAt(0).toUpperCase() + word.slice(1),
+  )
+}
+
 /** Genera un código de faena único (esquema "FN-XXXX") a partir del nombre. */
 function makeWorksiteCode(name: string, taken: Set<string>): string {
   const slug = name.normalize("NFD").replace(/[̀-ͯ]/g, "")
@@ -57,10 +67,11 @@ export async function POST(req: NextRequest) {
       if (target === SKIP_FAENA) { resolvedFaena.set(fileFaena, null); continue }
       if (target === CREATE_FAENA) {
         const id = nanoid()
-        await db.insert(worksites).values({ id, name: fileFaena, code: makeWorksiteCode(fileFaena, takenCodes), isActive: true })
+        const name = toTitleCase(fileFaena)
+        await db.insert(worksites).values({ id, name, code: makeWorksiteCode(fileFaena, takenCodes), isActive: true })
         resolvedFaena.set(fileFaena, id)
         worksiteMap.set(fileFaena.toUpperCase(), id)
-        created.push({ type: "faena", name: fileFaena })
+        created.push({ type: "faena", name })
       } else {
         resolvedFaena.set(fileFaena, target)  // worksiteId existente
       }

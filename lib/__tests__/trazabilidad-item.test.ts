@@ -143,7 +143,7 @@ async function seedMasterData() {
   await inMemoryDb.insert(schema.workers).values({
     id: "wrk-tz-1", firstName: "Juan", lastName: "Pérez",
     rut: "12.345.678-9", worksiteId: WS_1, isActive: true,
-    createdAt: now, updatedAt: now,
+    createdAt: now,
   })
 
   await inMemoryDb.insert(schema.suppliers).values({
@@ -436,11 +436,11 @@ describe("getItemDetail", () => {
       expect(result).not.toBeNull()
       expect(result!.timeline).toHaveLength(2)
       // Ordered by changedAt DESC — most recent first
-      expect(result!.timeline[0].toStatus).toBe("approved")
-      expect(result!.timeline[0].userName).toBe("Aprobador")
-      expect(result!.timeline[0].reason).toBe("Aprobado por jefa")
-      expect(result!.timeline[1].toStatus).toBe("requested")
-      expect(result!.timeline[1].userName).toBe("Solicitante")
+      expect(result!.timeline[0]!.toStatus).toBe("approved")
+      expect(result!.timeline[0]!.userName).toBe("Aprobador")
+      expect(result!.timeline[0]!.reason).toBe("Aprobado por jefa")
+      expect(result!.timeline[1]!.toStatus).toBe("requested")
+      expect(result!.timeline[1]!.userName).toBe("Solicitante")
     })
   })
 

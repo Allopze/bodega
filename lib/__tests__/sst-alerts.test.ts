@@ -62,14 +62,14 @@ describe("sst-alerts service", () => {
 
     // Assign scoped roles
     await inMemoryDb.insert(schema.userRoles).values([
-      { id: "ur-1", userId: "u-prev-faena", roleId: "rol-prev-faena" },
-      { id: "ur-2", userId: "u-admin-contrato", roleId: "rol-admin-contrato" },
+      { userId: "u-prev-faena", roleId: "rol-prev-faena" },
+      { userId: "u-admin-contrato", roleId: "rol-admin-contrato" },
     ])
 
     // Map users to worksite
     await inMemoryDb.insert(schema.worksiteUsers).values([
-      { id: "wu-1", userId: "u-prev-faena", worksiteId: "ws-1" },
-      { id: "wu-2", userId: "u-admin-contrato", worksiteId: "ws-1" },
+      { userId: "u-prev-faena", worksiteId: "ws-1" },
+      { userId: "u-admin-contrato", worksiteId: "ws-1" },
     ])
 
     // Seed worker
@@ -95,8 +95,8 @@ describe("sst-alerts service", () => {
       tipo: "nuevo",
       estado: "borrador",
       fechaEvaluacion: "2026-06-01",
-      cargos: ["operador"],
-      resultado: "apto",
+      cargosJson: ["operador"],
+      resultadoFinal: "apto",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     })
@@ -147,19 +147,19 @@ describe("sst-alerts service", () => {
     // Verify notifications were sent to merged users:
     // Scoped (u-prev-faena, u-admin-contrato) + global (u-jefa-prev-1)
     expect(mockNotifyManyUser).toHaveBeenCalled()
-    const targetUserIds = mockNotifyManyUser.mock.calls[0][0] as string[]
+    const targetUserIds = mockNotifyManyUser.mock.calls[0]![0] as string[]
     expect(targetUserIds).toContain("u-prev-faena")
     expect(targetUserIds).toContain("u-admin-contrato")
     expect(targetUserIds).toContain("u-jefa-prev-1")
 
     // Verify alert body details
-    const notificationPayload = mockNotifyManyUser.mock.calls[0][1]
+    const notificationPayload = mockNotifyManyUser.mock.calls[0]![1]
     expect(notificationPayload.title).toContain("Semana 1 de acompañamiento sin evaluar")
     expect(notificationPayload.body).toContain("Faena Norte")
 
     // Verify DB update
     const [updatedWeek] = await inMemoryDb.select().from(schema.sstWeeklyEvaluations).where(eq(schema.sstWeeklyEvaluations.id, "week-overdue"))
-    expect(updatedWeek.alertSentAt).not.toBeNull()
+    expect(updatedWeek!.alertSentAt).not.toBeNull()
   })
 })
 
