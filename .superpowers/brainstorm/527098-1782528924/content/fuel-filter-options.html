@@ -1,0 +1,93 @@
+<h2>Selector de filtros de Combustibles</h2>
+<p class="subtitle">Tres formas de mejorar el bloque actual: menos barra vacia, mas claridad de estado y mejor uso de filtros largos.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="border:1px solid #d8d5cf;background:#f7f6f3;border-radius:10px;padding:14px;min-height:176px;font-family:Inter,system-ui,sans-serif;color:#24231f">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:700">Filtros</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span style="font-size:11px;background:#e8f1ec;color:#1d5b3a;border:1px solid #c8dfd2;border-radius:999px;padding:3px 8px">3 activos</span>
+            <button style="height:28px;border:1px solid #d8d5cf;border-radius:7px;background:#fff;padding:0 10px;font-size:12px">Limpiar</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Periodo</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">Junio 2026</div></div>
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Servicio</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">Todos</div></div>
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Vehiculo</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">Buscar patente...</div></div>
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Faena</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">Todas</div></div>
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Proveedor</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">Todos</div></div>
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Producto</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">Todos</div></div>
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Estado</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">Registrado</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Panel compacto con contador</h3>
+      <p>Reordena el bloque en una sola superficie limpia, agrega contador de filtros activos y usa buscador para listas largas.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="border:1px solid #d8d5cf;background:#fff;border-radius:10px;padding:14px;min-height:176px;font-family:Inter,system-ui,sans-serif;color:#24231f">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <button style="height:32px;border:1px solid #1d5b3a;background:#e8f1ec;color:#1d5b3a;border-radius:8px;padding:0 10px;font-size:12px;font-weight:700">Junio 2026</button>
+          <button style="height:32px;border:1px solid #d8d5cf;background:#f7f6f3;border-radius:8px;padding:0 10px;font-size:12px">Servicio: Todos</button>
+          <button style="height:32px;border:1px solid #d8d5cf;background:#f7f6f3;border-radius:8px;padding:0 10px;font-size:12px">Vehiculo</button>
+          <button style="height:32px;border:1px solid #d8d5cf;background:#f7f6f3;border-radius:8px;padding:0 10px;font-size:12px">Faena</button>
+          <button style="height:32px;border:1px solid #d8d5cf;background:#f7f6f3;border-radius:8px;padding:0 10px;font-size:12px">Proveedor</button>
+          <button style="height:32px;border:1px solid #d8d5cf;background:#f7f6f3;border-radius:8px;padding:0 10px;font-size:12px">Producto</button>
+          <button style="height:32px;border:1px solid #d8d5cf;background:#f7f6f3;border-radius:8px;padding:0 10px;font-size:12px">Estado</button>
+          <button style="height:32px;border:0;background:transparent;color:#6c6961;font-size:12px">Limpiar</button>
+        </div>
+        <div style="border-top:1px solid #ebe8e2;padding-top:12px;display:grid;grid-template-columns:1.2fr 1fr auto;gap:10px;align-items:end">
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Fecha exacta</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">26/06/2026 - 26/06/2026</div></div>
+          <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Buscar</div><div style="height:34px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:8px;font-size:12px">Patente, proveedor...</div></div>
+          <button style="height:34px;background:#24231f;color:white;border:0;border-radius:8px;padding:0 12px;font-size:12px">Aplicar</button>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Chips editables + detalle</h3>
+      <p>Convierte cada filtro en chip visible y deja fechas/busqueda en una segunda linea. Muy escaneable, algo mas custom.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="border:1px solid #d8d5cf;background:#f7f6f3;border-radius:10px;padding:14px;min-height:176px;font-family:Inter,system-ui,sans-serif;color:#24231f">
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:14px">
+          <div style="border-right:1px solid #dedad2;padding-right:12px">
+            <div style="font-size:11px;color:#6c6961;margin-bottom:5px">Rango rapido</div>
+            <div style="display:grid;gap:6px">
+              <button style="height:30px;text-align:left;border:1px solid #1d5b3a;background:#e8f1ec;color:#1d5b3a;border-radius:7px;padding:0 9px;font-size:12px">Este mes</button>
+              <button style="height:30px;text-align:left;border:1px solid #d8d5cf;background:#fff;border-radius:7px;padding:0 9px;font-size:12px">Ultimos 30 dias</button>
+              <button style="height:30px;text-align:left;border:1px solid #d8d5cf;background:#fff;border-radius:7px;padding:0 9px;font-size:12px">Personalizado</button>
+            </div>
+          </div>
+          <div>
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px">
+              <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Desde</div><div style="height:32px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:7px;font-size:12px">26/06/2026</div></div>
+              <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Hasta</div><div style="height:32px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:7px;font-size:12px">26/06/2026</div></div>
+              <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Estado</div><div style="height:32px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:7px;font-size:12px">Todos</div></div>
+              <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Vehiculo</div><div style="height:32px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:7px;font-size:12px">Todos</div></div>
+              <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Faena</div><div style="height:32px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:7px;font-size:12px">Todas</div></div>
+              <div><div style="font-size:10px;color:#6c6961;margin-bottom:4px">Producto</div><div style="height:32px;border:1px solid #d8d5cf;background:#fff;border-radius:8px;padding:7px;font-size:12px">Todos</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Periodo primero</h3>
+      <p>Da protagonismo a rangos rapidos y deja el resto como matriz. Bueno si fecha/mes es la decision mas usada.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Mi recomendacion inicial</h3>
+  <p>Partiria por A: mejora el bloque visible sin cambiar demasiado el flujo mental, permite incorporar selects buscables para Vehiculo, Faena y Proveedor, y evita que el boton Limpiar quede perdido en una segunda fila solitaria.</p>
+</div>

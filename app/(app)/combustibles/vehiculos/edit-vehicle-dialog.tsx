@@ -70,14 +70,14 @@ export function EditVehicleDialog({ vehicle, worksites }: { vehicle: Vehicle; wo
               <Input name="year" type="number" defaultValue={vehicle.year?.toString() ?? ""} />
             </div>
             <div className="space-y-2">
-              <Label>Faena</Label>
-              <Select name="worksiteId" defaultValue={vehicle.worksiteId ?? "none"}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Label>Faena *</Label>
+              <Select name="worksiteId" required defaultValue={vehicle.worksiteId ?? undefined}>
+                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Ninguna</SelectItem>
                   {worksites.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {state.fieldErrors?.worksiteId && <p className="text-sm text-destructive">{state.fieldErrors.worksiteId[0]}</p>}
             </div>
           </div>
           {state.message && !state.ok && <p className="text-sm text-[var(--color-danger)]">{state.message}</p>}

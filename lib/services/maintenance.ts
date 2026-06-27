@@ -116,3 +116,54 @@ export async function createMaintenanceRecord(session: Session, input: CreateMai
   })
   return id
 }
+
+export async function updateMaintenanceRecord(session: Session, id: string, input: CreateMaintenanceInput) {
+  const existing = await db.query.maintenanceRecords.findFirst({ where: eq(maintenanceRecords.id, id) })
+  if (!existing) throw new Error("Mantención no encontrada")
+
+  // Debe poder ver la faena actual del registro…
+  if (!isGlobalRole(session) && existing.worksiteId && !visibleWorksiteIds(session).includes(existing.worksiteId)) {
+    throw new Error("No puedes editar mantenciones de esta faena")
+  }
+
+  const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, input.vehicleId) })
+  if (!vehicle) throw new Error("Vehículo no encontrado")
+
+  // …y la faena destino tras la edición.
+  const worksiteId = input.worksiteId || vehicle.worksiteId || null
+  if (!isGlobalRole(session) && worksiteId && !visibleWorksiteIds(session).includes(worksiteId)) {
+    throw new Error("No puedes asignar mantenciones a esta faena")
+  }
+
+  await db.update(maintenanceRecords).set({
+    vehicleId: input.vehicleId,
+    supplierId: input.supplierId || null,
+    worksiteId,
+    costCenterId: input.costCenterId || null,
+    maintenanceDate: input.maintenanceDate,
+    maintenanceType: input.maintenanceType,
+    status: input.status,
+    odometerReading: input.odometerReading ?? null,
+    hourMeterReading: input.hourMeterReading ?? null,
+    netAmount: input.netAmount,
+    taxAmount: input.taxAmount,
+    totalAmount: input.totalAmount,
+    documentNumber: input.documentNumber || null,
+    documentName: input.documentName || null,
+    notes: input.notes || null,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(maintenanceRecords.id, id))
+}
+
+export async function cancelMaintenanceRecord(session: Session, id: string) {
+  const existing = await db.query.maintenanceRecords.findFirst({ where: eq(maintenanceRecords.id, id) })
+  if (!existing) throw new Error("Mantención no encontrada")
+  if (!isGlobalRole(session) && existing.worksiteId && !visibleWorksiteIds(session).includes(existing.worksiteId)) {
+    throw new Error("No puedes cancelar mantenciones de esta faena")
+  }
+  if (existing.status === "cancelled") throw new Error("La mantención ya está cancelada")
+
+  await db.update(maintenanceRecords)
+    .set({ status: "cancelled", updatedAt: new Date().toISOString() })
+    .where(eq(maintenanceRecords.id, id))
+}

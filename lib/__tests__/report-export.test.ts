@@ -106,7 +106,7 @@ beforeEach(() => {
     spendByModule: [{ module: "EPP", totalAmount: 700_000 }, { module: "Combustible", totalAmount: 420_000 }],
     topSuppliers: [{ id: "sup-1", name: "Proveedor Uno", module: "Compras", totalAmount: 1_200_000, count: 4 }],
     topWorksites: [{ id: "ws-1", name: "Faena Uno", totalAmount: 1_620_000 }],
-    vehicleCosts: [{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", totalFuelAmount: 420_000, totalServiceAmount: 0, totalPartsAmount: 0, totalOperationalCost: 420_000, totalLiters: 350, loadCount: 7 }],
+    vehicleCosts: [{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", totalFuelAmount: 420_000, totalServiceAmount: 0, totalOperationalCost: 420_000, totalLiters: 350, loadCount: 7 }],
     stockRisks: [{ productId: "prod-1", productName: "Guante", sku: "EPP-001", worksiteName: "Faena Uno", currentQty: 2, minStock: 10 }],
     productRotation: [],
     eppDeliveries: [],

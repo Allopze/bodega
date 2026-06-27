@@ -200,7 +200,6 @@ describe("getAnalyticsDashboard", () => {
       { data: [] },
       { data: [] },
       { data: [{ vehicleId: "veh-1", totalMaintenanceAmount: 250_000, maintenanceCount: 1 }] },
-      { data: [{ vehicleId: "veh-1", totalPartsAmount: 75_000, allocationCount: 2 }] },
     )
 
     const data = await getAnalyticsDashboard(makeSession(), {
@@ -213,8 +212,7 @@ describe("getAnalyticsDashboard", () => {
       plate: "AA-BB-11",
       totalFuelAmount: 100_000,
       totalServiceAmount: 250_000,
-      totalPartsAmount: 75_000,
-      totalOperationalCost: 425_000,
+      totalOperationalCost: 350_000,
       totalLiters: 80,
       loadCount: 2,
       lastOdometerReading: 12_500,

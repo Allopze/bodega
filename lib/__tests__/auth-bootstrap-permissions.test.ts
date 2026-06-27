@@ -100,6 +100,35 @@ describe("system role permission matrix", () => {
     expect(perms).not.toContain("admin:products")
   })
 
+  it("allows operational fuel vehicle management without exposing it to conductor lider", () => {
+    expect(rolePermissions("rol-jefa")).toEqual(expect.arrayContaining([
+      "combustibles:view",
+      "combustibles:create",
+      "combustibles:export",
+      "combustibles:manage_vehicles",
+    ]))
+    expect(rolePermissions("rol-jefe-mant")).toEqual(expect.arrayContaining([
+      "combustibles:view",
+      "combustibles:create",
+      "combustibles:export",
+      "combustibles:manage_vehicles",
+    ]))
+    expect(rolePermissions("rol-sol-faena")).toEqual(expect.arrayContaining([
+      "combustibles:view",
+      "combustibles:manage_vehicles",
+    ]))
+    expect(rolePermissions("rol-prev-faena")).toEqual(expect.arrayContaining([
+      "combustibles:view",
+      "combustibles:manage_vehicles",
+    ]))
+    expect(rolePermissions("rol-admin-contrato")).toEqual(expect.arrayContaining([
+      "combustibles:view",
+      "combustibles:manage_vehicles",
+    ]))
+    expect(rolePermissions("rol-cond-lider")).not.toContain("combustibles:view")
+    expect(rolePermissions("rol-cond-lider")).not.toContain("combustibles:manage_vehicles")
+  })
+
   it("grants conductor_lider only the acompanamiento (Punto 3) evaluation permission", () => {
     const perms = rolePermissions("rol-cond-lider")
 

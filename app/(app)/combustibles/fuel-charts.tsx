@@ -12,15 +12,16 @@ interface ChartDataPoint {
 const COLORS = [
   "var(--color-primary)",
   "var(--color-signal)",
-  "var(--color-success)",
+  "var(--color-info)",
   "var(--color-warning)",
   "var(--color-danger)",
-  "var(--color-info)",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
+  "var(--color-accent)",
+  "var(--color-primary-strong)",
+  "var(--color-signal-ink)",
 ]
+
+const AMOUNT_COLOR = "var(--color-info)"
+const LITERS_COLOR = "var(--color-signal)"
 
 const formatCLP = (n: number) => {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
@@ -33,6 +34,44 @@ const formatLiters = (n: number) => {
   return n.toFixed(0)
 }
 
+function tooltipStyle() {
+  return {
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "var(--radius)",
+    color: "var(--color-text)",
+    fontSize: "13px",
+  }
+}
+
+function groupSmallProductSlices(data: ChartDataPoint[]) {
+  const chartData = data
+    .map(d => ({
+      name: d.group ?? "Otro",
+      value: d.totalAmount,
+      liters: d.totalLiters,
+    }))
+    .sort((a, b) => b.value - a.value)
+  const total = chartData.reduce((sum, item) => sum + item.value, 0)
+  if (chartData.length <= 2 || total <= 0) return chartData
+
+  const visible = chartData.filter((item, index) => index < 5 && item.value / total >= 0.1)
+  const grouped = chartData.filter((item, index) => index >= 5 || item.value / total < 0.1)
+
+  if (grouped.length === 0) return visible
+
+  const others = grouped.reduce(
+    (acc, item) => ({
+      name: "Otros",
+      value: acc.value + item.value,
+      liters: acc.liters + item.liters,
+    }),
+    { name: "Otros", value: 0, liters: 0 },
+  )
+
+  return [...visible.slice(0, 5), others]
+}
+
 /* ── Monthly Evolution (Area Chart) ──────────────────────────────────────── */
 export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
   if (data.length === 0) return <EmptyChart label="Sin datos mensuales" />
@@ -42,9 +81,6 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
     litros: d.totalLiters,
     monto: d.totalAmount,
   }))
-
-  const LITERS_COLOR = "#f59e0b" // ámbar cálido — litros
-  const AMOUNT_COLOR = "#0ea5e9" // azul cielo — monto CLP
 
   return (
     <div className="h-72">
@@ -62,7 +98,7 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
           <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCLP} tick={{ fill: AMOUNT_COLOR }} width={60} />
           <YAxis yAxisId="liters" orientation="right" className="text-xs" tickFormatter={(v) => `${formatLiters(Number(v))} L`} tick={{ fill: LITERS_COLOR }} width={60} />
           <Tooltip
-            contentStyle={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "13px" }}
+            contentStyle={tooltipStyle()}
             formatter={(value, name) => {
               const n = String(name).toLowerCase()
               if (n === "litros") return [`${formatLiters(Number(value))} L`, "Litros"]
@@ -95,15 +131,16 @@ export function CategoryBarChart({ data, title }: { data: ChartDataPoint[]; titl
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis type="number" className="text-xs" tickFormatter={formatCLP} tick={{ fill: "var(--color-text-muted)" }} />
+          <XAxis xAxisId="amount" type="number" className="text-xs" tickFormatter={formatCLP} tick={{ fill: "var(--color-text-muted)" }} />
+          <XAxis xAxisId="liters" type="number" orientation="top" className="text-xs" tickFormatter={(v) => `${formatLiters(Number(v))} L`} tick={{ fill: "var(--color-text-muted)" }} />
           <YAxis type="category" dataKey="name" width={120} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <Tooltip
-            contentStyle={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "13px" }}
-            formatter={(value, name) => [name === "monto" ? formatCLP(Number(value)) : formatLiters(Number(value)), name === "monto" ? "Monto" : "Litros"]}
+            contentStyle={tooltipStyle()}
+            formatter={(value, name) => [name === "monto" ? formatCLP(Number(value)) : `${formatLiters(Number(value))} L`, name === "monto" ? "Monto" : "Litros"]}
           />
-          <Bar dataKey="monto" radius={[0, 4, 4, 0]} name="Monto">
-            {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-          </Bar>
+          <Legend iconType="plainline" />
+          <Bar xAxisId="amount" dataKey="monto" radius={[0, 3, 3, 0]} name="Monto" fill="var(--color-primary)" />
+          <Bar xAxisId="liters" dataKey="litros" radius={[0, 3, 3, 0]} name="Litros" fill="var(--color-signal)" opacity={0.65} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -114,11 +151,7 @@ export function CategoryBarChart({ data, title }: { data: ChartDataPoint[]; titl
 export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
   if (data.length === 0) return <EmptyChart label="Sin datos de producto" />
 
-  const chartData = data.map(d => ({
-    name: d.group ?? "Otro",
-    value: d.totalAmount,
-    liters: d.totalLiters,
-  }))
+  const chartData = groupSmallProductSlices(data)
 
   return (
     <div className="h-64">
@@ -139,7 +172,7 @@ export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
             {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />)}
           </Pie>
           <Tooltip
-            contentStyle={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "13px" }}
+            contentStyle={tooltipStyle()}
             formatter={(value, name) => [formatCLP(Number(value)), String(name)]}
           />
           <Legend
@@ -157,7 +190,7 @@ export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
 /* ── Empty State ─────────────────────────────────────────────────────────── */
 function EmptyChart({ label }: { label: string }) {
   return (
-    <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+    <div className="flex h-64 items-center justify-center border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 text-center text-sm text-[var(--color-text-muted)]">
       {label}
     </div>
   )

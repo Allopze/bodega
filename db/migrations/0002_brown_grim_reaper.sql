@@ -1,0 +1,1 @@
+DROP TABLE "vehicle_cost_allocations" CASCADE;

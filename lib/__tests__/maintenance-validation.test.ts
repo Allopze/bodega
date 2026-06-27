@@ -1,0 +1,57 @@
+import { describe, expect, it } from "vitest"
+import {
+  createMaintenanceRecordSchema,
+  updateMaintenanceRecordSchema,
+} from "@/lib/validation/maintenance"
+
+const base = {
+  vehicleId: "veh-1",
+  maintenanceDate: "2026-06-01",
+  maintenanceType: "preventiva",
+  status: "completed" as const,
+  netAmount: 100000,
+  taxAmount: 19000,
+  totalAmount: 119000,
+}
+
+describe("createMaintenanceRecordSchema", () => {
+  it("accepts a coherent total (neto + IVA)", () => {
+    const result = createMaintenanceRecordSchema.safeParse(base)
+    expect(result.success).toBe(true)
+  })
+
+  it("rejects a total that does not equal neto + IVA", () => {
+    const result = createMaintenanceRecordSchema.safeParse({ ...base, totalAmount: 500000 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.totalAmount).toBeDefined()
+    }
+  })
+
+  it("tolerates ±1 CLP of rounding", () => {
+    const result = createMaintenanceRecordSchema.safeParse({ ...base, totalAmount: 119001 })
+    expect(result.success).toBe(true)
+  })
+
+  it("requires a vehicle", () => {
+    const result = createMaintenanceRecordSchema.safeParse({ ...base, vehicleId: "" })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe("updateMaintenanceRecordSchema", () => {
+  it("requires an id", () => {
+    const result = updateMaintenanceRecordSchema.safeParse(base)
+    expect(result.success).toBe(false)
+  })
+
+  it("accepts a coherent update with id", () => {
+    const result = updateMaintenanceRecordSchema.safeParse({ id: "mr-1", ...base })
+    expect(result.success).toBe(true)
+  })
+
+  it("still enforces total = neto + IVA on update", () => {
+    const result = updateMaintenanceRecordSchema.safeParse({ id: "mr-1", ...base, totalAmount: 1 })
+    expect(result.success).toBe(false)
+  })
+})

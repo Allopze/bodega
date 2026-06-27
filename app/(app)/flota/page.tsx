@@ -67,7 +67,6 @@ export default async function FlotaPage() {
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Combustible</TableHead>
                 <TableHead className="text-right">Mantenciones</TableHead>
-                <TableHead className="text-right">Imputaciones</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Km/Hr</TableHead>
                 <TableHead>Última mantención</TableHead>
@@ -77,7 +76,7 @@ export default async function FlotaPage() {
             <TableBody>
               {vehicles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                     No hay vehículos visibles para tu alcance.
                   </TableCell>
                 </TableRow>
@@ -97,7 +96,6 @@ export default async function FlotaPage() {
                   </TableCell>
                   <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCLP(vehicle.totalAllocatedAmount)}</TableCell>
                   <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost)}</TableCell>
                   <TableCell className="text-right font-mono">
                     {vehicle.lastOdometerReading != null

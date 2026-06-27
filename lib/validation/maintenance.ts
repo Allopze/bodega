@@ -3,7 +3,7 @@ import { z } from "zod"
 const optionalText = z.string().trim().optional().transform((value) => value || null)
 const optionalNumber = z.coerce.number().min(0).optional().nullable()
 
-export const createMaintenanceRecordSchema = z.object({
+const maintenanceBaseShape = {
   vehicleId: z.string().min(1, "Vehículo requerido"),
   supplierId: optionalText,
   worksiteId: optionalText,
@@ -19,6 +19,19 @@ export const createMaintenanceRecordSchema = z.object({
   documentNumber: optionalText,
   documentName: optionalText,
   notes: optionalText,
-})
+}
+
+const totalMatchesNetPlusTax = (data: { totalAmount: number; netAmount: number; taxAmount: number }) =>
+  Math.abs(data.totalAmount - (data.netAmount + data.taxAmount)) <= 1
+const totalRefineOpts = { message: "El total debe ser igual a neto + IVA", path: ["totalAmount"] }
+
+export const createMaintenanceRecordSchema = z
+  .object(maintenanceBaseShape)
+  .refine(totalMatchesNetPlusTax, totalRefineOpts)
+
+export const updateMaintenanceRecordSchema = z
+  .object({ id: z.string().min(1, "ID requerido"), ...maintenanceBaseShape })
+  .refine(totalMatchesNetPlusTax, totalRefineOpts)
 
 export type CreateMaintenanceRecordInput = z.infer<typeof createMaintenanceRecordSchema>
+export type UpdateMaintenanceRecordInput = z.infer<typeof updateMaintenanceRecordSchema>

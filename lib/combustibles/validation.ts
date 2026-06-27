@@ -36,7 +36,7 @@ export const createFuelVehicleSchema = z.object({
   brand:     z.string().max(100).optional(),
   model:     z.string().max(100).optional(),
   year:      z.coerce.number().int().min(1990).max(2030).optional(),
-  worksiteId: z.string().optional(),
+  worksiteId: z.string().min(1, "Faena requerida"),
   notes:     z.string().optional(),
 })
 

@@ -5,7 +5,6 @@ import {
   fuelLoads,
   fuelVehicles,
   maintenanceRecords,
-  vehicleCostAllocations,
 } from "@/db/schema"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 
@@ -17,7 +16,7 @@ export async function getFleetOverview(session: Session) {
       ? inArray(fuelVehicles.worksiteId, scopedWorksites)
       : sql`false`
 
-  const [vehicles, fuelRows, maintenanceRows, allocationRows] = await Promise.all([
+  const [vehicles, fuelRows, maintenanceRows] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
       with: { worksite: true },
@@ -48,28 +47,16 @@ export async function getFleetOverview(session: Session) {
         scopedWorksites === null ? undefined : scopedWorksites.length > 0 ? inArray(maintenanceRecords.worksiteId, scopedWorksites) : sql`false`,
       ))
       .groupBy(maintenanceRecords.vehicleId),
-    db
-      .select({
-        vehicleId: vehicleCostAllocations.vehicleId,
-        totalAllocatedAmount: sql<number>`COALESCE(SUM(${vehicleCostAllocations.amount}), 0)`,
-        allocationCount: sql<number>`COUNT(*)`,
-      })
-      .from(vehicleCostAllocations)
-      .where(scopedWorksites === null ? undefined : scopedWorksites.length > 0 ? inArray(vehicleCostAllocations.worksiteId, scopedWorksites) : sql`false`)
-      .groupBy(vehicleCostAllocations.vehicleId),
   ])
 
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
   const maintenanceByVehicle = new Map(maintenanceRows.map((row) => [row.vehicleId, row]))
-  const allocationByVehicle = new Map(allocationRows.map((row) => [row.vehicleId, row]))
 
   return vehicles.map((vehicle) => {
     const fuel = fuelByVehicle.get(vehicle.id)
     const maintenance = maintenanceByVehicle.get(vehicle.id)
-    const allocation = allocationByVehicle.get(vehicle.id)
     const totalFuelAmount = Number(fuel?.totalFuelAmount ?? 0)
     const totalMaintenanceAmount = Number(maintenance?.totalMaintenanceAmount ?? 0)
-    const totalAllocatedAmount = Number(allocation?.totalAllocatedAmount ?? 0)
     return {
       id: vehicle.id,
       plate: vehicle.plate,
@@ -81,12 +68,10 @@ export async function getFleetOverview(session: Session) {
       worksiteName: vehicle.worksite?.name ?? "Sin faena",
       totalFuelAmount,
       totalMaintenanceAmount,
-      totalAllocatedAmount,
-      totalOperationalCost: totalFuelAmount + totalMaintenanceAmount + totalAllocatedAmount,
+      totalOperationalCost: totalFuelAmount + totalMaintenanceAmount,
       totalLiters: Number(fuel?.totalLiters ?? 0),
       loadCount: Number(fuel?.loadCount ?? 0),
       maintenanceCount: Number(maintenance?.maintenanceCount ?? 0),
-      allocationCount: Number(allocation?.allocationCount ?? 0),
       lastMaintenanceDate: maintenance?.lastMaintenanceDate ?? null,
       lastOdometerReading: fuel?.lastOdometerReading == null ? null : Number(fuel.lastOdometerReading),
       lastHourMeterReading: fuel?.lastHourMeterReading == null ? null : Number(fuel.lastHourMeterReading),

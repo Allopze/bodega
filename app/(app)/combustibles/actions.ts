@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
   fuelLoads,
@@ -10,8 +11,10 @@ import {
   fuelPayments,
   worksites,
 } from "@/db/schema"
-import { eq, and, desc, sql, gte, lte } from "drizzle-orm"
+import { eq, and, desc, sql, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite } from "@/lib/auth/scope"
+import { buildFuelLoadsWhere, buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { nanoid } from "@/lib/id"
 import {
   createFuelLoadSchema,
@@ -39,6 +42,11 @@ function dbErrMsg(e: unknown, fallback: string): string {
   const cause = (e as { cause?: unknown }).cause
   if (cause instanceof Error && cause.message) return cause.message
   return e.message
+}
+
+function canManageFuelVehicleWorksite(session: Session, worksiteId: string | null | undefined): boolean {
+  if (!worksiteId) return false
+  return canAccessWorksite(session, worksiteId)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -112,6 +120,10 @@ export async function createFuelLoadAction(
 
   if (!parsed.success) {
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
+  }
+
+  if (!canAccessWorksite(session, parsed.data.worksiteId)) {
+    return { ok: false, message: "No puedes registrar cargas para esta faena" }
   }
 
   try {
@@ -195,6 +207,15 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
   try { await requirePermission("combustibles:delete") }
   catch { return { ok: false, message: "Sin permisos para eliminar" } }
 
+  const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
+  if (!existing) return { ok: false, message: "Carga no encontrada" }
+  if (existing.statementId) {
+    return { ok: false, message: "No se puede eliminar una carga asignada a una cuenta corriente" }
+  }
+  if (existing.status === "reconciled") {
+    return { ok: false, message: "No se puede eliminar una carga conciliada" }
+  }
+
   try {
     await db.delete(fuelLoads).where(eq(fuelLoads.id, id))
     revalidatePath(REVALIDATE)
@@ -235,23 +256,15 @@ export async function getFuelLoadsAction(filters?: {
   page?: number
   pageSize?: number
 }) {
-  try { await requirePermission("combustibles:view") }
+  let session
+  try { session = await requirePermission("combustibles:view") }
   catch { return { ok: false as const, message: "Sin permisos", data: null } }
 
   const page = filters?.page ?? 1
   const pageSize = filters?.pageSize ?? 50
   const offset = (page - 1) * pageSize
 
-  const conditions = []
-  if (filters?.month) conditions.push(eq(fuelLoads.month, filters.month))
-  if (filters?.serviceType) conditions.push(eq(fuelLoads.serviceType, filters.serviceType))
-  if (filters?.vehicleId) conditions.push(eq(fuelLoads.vehicleId, filters.vehicleId))
-  if (filters?.worksiteId) conditions.push(eq(fuelLoads.worksiteId, filters.worksiteId))
-  if (filters?.fuelSupplierId) conditions.push(eq(fuelLoads.fuelSupplierId, filters.fuelSupplierId))
-  if (filters?.product) conditions.push(eq(fuelLoads.product, filters.product))
-  if (filters?.status) conditions.push(eq(fuelLoads.status, filters.status))
-
-  const where = conditions.length > 0 ? and(...conditions) : undefined
+  const where = buildFuelLoadsWhere(session, filters ?? {})
 
   const [rows, countResult] = await Promise.all([
     db.query.fuelLoads.findMany({
@@ -316,6 +329,28 @@ export async function importFuelLoadsAction(
     const supplierMap = new Map(allSuppliers.map(s => [s.name.toUpperCase(), s.id]))
     const worksiteMap = new Map(allWorksites.map(w => [w.name.toUpperCase(), w.id]))
 
+    // Dedupe contra la BD por CLAVE NATURAL de carga. Ojo: una misma factura puede
+    // cubrir varias cargas (distintos vehículos/fechas/litros), por lo que el número
+    // de factura por sí solo NO identifica una carga.
+    const monthsInFile = [...new Set(result.loads.map((load) => load.month))]
+    const existingLoads = monthsInFile.length > 0
+      ? await db
+          .select({
+            fuelSupplierId: fuelLoads.fuelSupplierId,
+            receiptNumber: fuelLoads.receiptNumber,
+            vehicleId: fuelLoads.vehicleId,
+            loadDate: fuelLoads.loadDate,
+            liters: fuelLoads.liters,
+          })
+          .from(fuelLoads)
+          .where(inArray(fuelLoads.month, monthsInFile))
+      : []
+    const loadKey = (supplierId: string, receipt: string | null, vehicleId: string, loadDate: string, liters: number) =>
+      `${supplierId}::${(receipt ?? "").toUpperCase()}::${vehicleId}::${loadDate}::${liters}`
+    const seenLoads = new Set(
+      existingLoads.map((l) => loadKey(l.fuelSupplierId, l.receiptNumber, l.vehicleId, l.loadDate, l.liters)),
+    )
+
     const toInsert: typeof fuelLoads.$inferInsert[] = []
     const importErrors: ImportError[] = []
 
@@ -336,6 +371,26 @@ export async function importFuelLoadsAction(
         importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `Faena "${load.worksite}" no encontrada` })
         continue
       }
+      if (!canAccessWorksite(session, worksiteId)) {
+        importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `Sin acceso a la faena "${load.worksite}"` })
+        continue
+      }
+
+      // Coherencia financiera: el total debe cuadrar con base + IEC + IVA (±1 CLP).
+      const expectedTotal = load.baseAmount + load.iecTotal + load.ivaAmount
+      if (Math.abs(load.totalAmount - expectedTotal) > 1) {
+        importErrors.push({ rowIndex: load.rowIndex, field: "TOTAL FACTURA", message: `Total ${load.totalAmount} no cuadra con base+IEC+IVA (${expectedTotal})` })
+        continue
+      }
+
+      // Dedupe por clave natural: cubre re-importaciones y filas idénticas repetidas,
+      // sin descartar cargas legítimas que comparten número de factura.
+      const key = loadKey(supplierId, load.receiptNumber || null, vehicleId, load.loadDate, load.liters)
+      if (seenLoads.has(key)) {
+        importErrors.push({ rowIndex: load.rowIndex, field: "FACTURA", message: `Carga duplicada (factura "${load.receiptNumber}", ${load.loadDate})` })
+        continue
+      }
+      seenLoads.add(key)
 
       toInsert.push({
         id: nanoid(),
@@ -396,7 +451,8 @@ export async function createFuelVehicleAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  try { await requirePermission("combustibles:manage_vehicles") }
+  let session
+  try { session = await requirePermission("combustibles:manage_vehicles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = createFuelVehicleSchema.safeParse({
@@ -413,6 +469,10 @@ export async function createFuelVehicleAction(
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
   }
 
+  if (!canManageFuelVehicleWorksite(session, parsed.data.worksiteId)) {
+    return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
+  }
+
   try {
     const id = nanoid()
     await db.insert(fuelVehicles).values({ id, ...parsed.data })
@@ -427,7 +487,8 @@ export async function updateFuelVehicleAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  try { await requirePermission("combustibles:manage_vehicles") }
+  let session
+  try { session = await requirePermission("combustibles:manage_vehicles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -448,6 +509,15 @@ export async function updateFuelVehicleAction(
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
   }
 
+  const existing = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, id) })
+  if (!existing) return { ok: false, message: "Vehículo no encontrado" }
+  if (!canManageFuelVehicleWorksite(session, existing.worksiteId)) {
+    return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
+  }
+  if (parsed.data.worksiteId && !canManageFuelVehicleWorksite(session, parsed.data.worksiteId)) {
+    return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
+  }
+
   try {
     const { id: _, ...data } = parsed.data
     await db.update(fuelVehicles).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, id))
@@ -459,8 +529,15 @@ export async function updateFuelVehicleAction(
 }
 
 export async function deleteFuelVehicleAction(id: string): Promise<ActionState> {
-  try { await requirePermission("combustibles:manage_vehicles") }
+  let session
+  try { session = await requirePermission("combustibles:manage_vehicles") }
   catch { return { ok: false, message: "Sin permisos" } }
+
+  const existing = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, id) })
+  if (!existing) return { ok: false, message: "Vehículo no encontrado" }
+  if (!canManageFuelVehicleWorksite(session, existing.worksiteId)) {
+    return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
+  }
 
   try {
     await db.update(fuelVehicles).set({ isActive: false, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, id))
@@ -472,10 +549,12 @@ export async function deleteFuelVehicleAction(id: string): Promise<ActionState> 
 }
 
 export async function getFuelVehiclesAction() {
-  try { await requirePermission("combustibles:view") }
+  let session
+  try { session = await requirePermission("combustibles:view") }
   catch { return { ok: false as const, data: [] } }
 
   const rows = await db.query.fuelVehicles.findMany({
+    where: buildFuelVehiclesWhere(session),
     with: { worksite: true },
     orderBy: [fuelVehicles.plate],
   })
@@ -597,47 +676,50 @@ export async function createMonthlyStatementAction(
   }
 
   try {
-    // Check if statement already exists for this month + supplier
-    const existing = await db.query.fuelMonthlyStatements.findFirst({
-      where: and(
-        eq(fuelMonthlyStatements.month, parsed.data.month),
-        eq(fuelMonthlyStatements.fuelSupplierId, parsed.data.fuelSupplierId),
-      ),
+    const result = await db.transaction(async (tx) => {
+      // Check if statement already exists for this month + supplier
+      const existing = await tx.query.fuelMonthlyStatements.findFirst({
+        where: and(
+          eq(fuelMonthlyStatements.month, parsed.data.month),
+          eq(fuelMonthlyStatements.fuelSupplierId, parsed.data.fuelSupplierId),
+        ),
+      })
+      if (existing) return { ok: false as const, message: "Ya existe un resumen para este mes y proveedor" }
+
+      // Lock the unassigned loads so a concurrent statement/import cannot change
+      // the set between totaling and assignment.
+      const loads = await tx
+        .select()
+        .from(fuelLoads)
+        .where(and(
+          eq(fuelLoads.month, parsed.data.month),
+          eq(fuelLoads.fuelSupplierId, parsed.data.fuelSupplierId),
+          sql`${fuelLoads.statementId} IS NULL`,
+        ))
+        .for("update")
+
+      if (loads.length === 0) return { ok: false as const, message: "No hay cargas sin asignar para este mes y proveedor" }
+
+      const totals = calculateStatementTotals(loads)
+
+      const id = nanoid()
+      await tx.insert(fuelMonthlyStatements).values({
+        id,
+        ...parsed.data,
+        ...totals,
+        createdBy: session.user.id,
+      })
+
+      // Assign exactly the locked set (by id) so membership and totals stay consistent.
+      await tx.update(fuelLoads)
+        .set({ statementId: id, updatedAt: new Date().toISOString() })
+        .where(inArray(fuelLoads.id, loads.map((load) => load.id)))
+
+      return { ok: true as const, message: `Resumen creado con ${loads.length} cargas`, data: { id } }
     })
-    if (existing) return { ok: false, message: "Ya existe un resumen para este mes y proveedor" }
 
-    // Get all unassigned loads for this month + supplier
-    const loads = await db.query.fuelLoads.findMany({
-      where: and(
-        eq(fuelLoads.month, parsed.data.month),
-        eq(fuelLoads.fuelSupplierId, parsed.data.fuelSupplierId),
-        sql`${fuelLoads.statementId} IS NULL`,
-      ),
-    })
-
-    if (loads.length === 0) return { ok: false, message: "No hay cargas sin asignar para este mes y proveedor" }
-
-    const totals = calculateStatementTotals(loads)
-
-    const id = nanoid()
-    await db.insert(fuelMonthlyStatements).values({
-      id,
-      ...parsed.data,
-      ...totals,
-      createdBy: session.user.id,
-    })
-
-    // Assign loads to statement
-    await db.update(fuelLoads)
-      .set({ statementId: id, updatedAt: new Date().toISOString() })
-      .where(and(
-        eq(fuelLoads.month, parsed.data.month),
-        eq(fuelLoads.fuelSupplierId, parsed.data.fuelSupplierId),
-        sql`${fuelLoads.statementId} IS NULL`,
-      ))
-
-    revalidatePath("/combustibles/cuenta-corriente")
-    return { ok: true, message: `Resumen creado con ${loads.length} cargas`, data: { id } }
+    if (result.ok) revalidatePath("/combustibles/cuenta-corriente")
+    return result
   } catch (e) {
     return { ok: false, message: dbErrMsg(e, "Error al crear resumen") }
   }
@@ -685,7 +767,8 @@ export async function addPaymentAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  try { await requirePermission("combustibles:create") }
+  let session
+  try { session = await requirePermission("combustibles:create") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = addPaymentSchema.safeParse({
@@ -702,33 +785,50 @@ export async function addPaymentAction(
   }
 
   try {
-    const statement = await db.query.fuelMonthlyStatements.findFirst({
-      where: eq(fuelMonthlyStatements.id, parsed.data.statementId),
+    const result = await db.transaction(async (tx) => {
+      // Lock the statement so concurrent payments don't race on paidAmount/status.
+      const [statement] = await tx
+        .select()
+        .from(fuelMonthlyStatements)
+        .where(eq(fuelMonthlyStatements.id, parsed.data.statementId))
+        .for("update")
+
+      if (!statement) return { ok: false as const, message: "Resumen no encontrado" }
+      if (statement.status === "paid" || statement.status === "cancelled") {
+        return { ok: false as const, message: "No se pueden agregar pagos a este resumen" }
+      }
+
+      const pending = (statement.totalAmount ?? 0) - (statement.paidAmount ?? 0)
+      if (parsed.data.amount > pending) {
+        return { ok: false as const, message: `El pago excede el saldo pendiente ($${pending.toLocaleString("es-CL")})` }
+      }
+
+      await tx.insert(fuelPayments).values({
+        id: nanoid(),
+        ...parsed.data,
+        createdBy: session.user.id,
+      })
+
+      // Recompute paidAmount from the source of truth (sum of payments).
+      const [paidRow] = await tx
+        .select({ paid: sql<number>`COALESCE(SUM(${fuelPayments.amount}), 0)` })
+        .from(fuelPayments)
+        .where(eq(fuelPayments.statementId, parsed.data.statementId))
+
+      const newPaidAmount = Number(paidRow?.paid ?? 0)
+      const newStatus = newPaidAmount >= (statement.totalAmount ?? 0) ? "paid" : "partial"
+
+      await tx.update(fuelMonthlyStatements).set({
+        paidAmount: newPaidAmount,
+        status: newStatus,
+        updatedAt: new Date().toISOString(),
+      }).where(eq(fuelMonthlyStatements.id, parsed.data.statementId))
+
+      return { ok: true as const, message: "Pago registrado" }
     })
-    if (!statement) return { ok: false, message: "Resumen no encontrado" }
-    if (statement.status === "paid" || statement.status === "cancelled") {
-      return { ok: false, message: "No se pueden agregar pagos a este resumen" }
-    }
 
-    const paymentId = nanoid()
-    await db.insert(fuelPayments).values({
-      id: paymentId,
-      ...parsed.data,
-      createdBy: (await requirePermission("combustibles:create")).user.id,
-    })
-
-    // Update statement paid amount and status
-    const newPaidAmount = (statement.paidAmount ?? 0) + parsed.data.amount
-    const newStatus = newPaidAmount >= (statement.totalAmount ?? 0) ? "paid" : "partial"
-
-    await db.update(fuelMonthlyStatements).set({
-      paidAmount: newPaidAmount,
-      status: newStatus,
-      updatedAt: new Date().toISOString(),
-    }).where(eq(fuelMonthlyStatements.id, parsed.data.statementId))
-
-    revalidatePath("/combustibles/cuenta-corriente")
-    return { ok: true, message: "Pago registrado" }
+    if (result.ok) revalidatePath("/combustibles/cuenta-corriente")
+    return result
   } catch (e) {
     return { ok: false, message: dbErrMsg(e, "Error al registrar pago") }
   }
@@ -743,13 +843,11 @@ export async function getFuelReportAction(filters: {
   endDate?: string
   groupBy: "month" | "worksite" | "vehicle" | "supplier" | "product"
 }) {
-  try { await requirePermission("combustibles:view") }
+  let session
+  try { session = await requirePermission("combustibles:view") }
   catch { return { ok: false as const, data: null } }
 
-  const conditions = []
-  if (filters.startDate) conditions.push(gte(fuelLoads.loadDate, filters.startDate))
-  if (filters.endDate) conditions.push(lte(fuelLoads.loadDate, filters.endDate))
-  const where = conditions.length > 0 ? and(...conditions) : undefined
+  const where = buildFuelLoadsWhere(session, { startDate: filters.startDate, endDate: filters.endDate })
 
   // Group by query
   let groupColumn
@@ -791,18 +889,11 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   product?: string
   status?: string
 }) {
-  try { await requirePermission("combustibles:export") }
+  let session
+  try { session = await requirePermission("combustibles:export") }
   catch { return { ok: false as const, message: "Sin permisos" } }
 
-  const conditions = []
-  if (filters?.month) conditions.push(eq(fuelLoads.month, filters.month))
-  if (filters?.serviceType) conditions.push(eq(fuelLoads.serviceType, filters.serviceType))
-  if (filters?.vehicleId) conditions.push(eq(fuelLoads.vehicleId, filters.vehicleId))
-  if (filters?.worksiteId) conditions.push(eq(fuelLoads.worksiteId, filters.worksiteId))
-  if (filters?.fuelSupplierId) conditions.push(eq(fuelLoads.fuelSupplierId, filters.fuelSupplierId))
-  if (filters?.product) conditions.push(eq(fuelLoads.product, filters.product))
-  if (filters?.status) conditions.push(eq(fuelLoads.status, filters.status))
-  const where = conditions.length > 0 ? and(...conditions) : undefined
+  const where = buildFuelLoadsWhere(session, filters ?? {})
 
   const rows = await db.query.fuelLoads.findMany({
     where,
@@ -877,13 +968,11 @@ export async function exportFuelLoadsXlsxAction(filters?: {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export async function getFuelChartDataAction(filters?: { startDate?: string; endDate?: string }) {
-  try { await requirePermission("combustibles:view") }
+  let session
+  try { session = await requirePermission("combustibles:view") }
   catch { return { ok: false as const, data: null } }
 
-  const conditions = []
-  if (filters?.startDate) conditions.push(gte(fuelLoads.loadDate, filters.startDate))
-  if (filters?.endDate) conditions.push(lte(fuelLoads.loadDate, filters.endDate))
-  const where = conditions.length > 0 ? and(...conditions) : undefined
+  const where = buildFuelLoadsWhere(session, { startDate: filters?.startDate, endDate: filters?.endDate })
 
   const [byMonth, byWorksite, byVehicle, bySupplier, byProduct] = await Promise.all([
     db.select({ group: fuelLoads.month, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`, count: sql<number>`count(*)` }).from(fuelLoads).where(where).groupBy(fuelLoads.month).orderBy(fuelLoads.month),

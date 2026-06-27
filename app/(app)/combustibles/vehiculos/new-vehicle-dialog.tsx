@@ -61,13 +61,14 @@ export function NewVehicleDialog({ worksites }: { worksites: Array<{ id: string;
               <Input name="year" type="number" min="1990" max="2030" />
             </div>
             <div className="space-y-2">
-              <Label>Faena asignada</Label>
-              <Select name="worksiteId">
-                <SelectTrigger><SelectValue placeholder="Ninguna" /></SelectTrigger>
+              <Label>Faena asignada *</Label>
+              <Select name="worksiteId" required>
+                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                 <SelectContent>
                   {worksites.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {state.fieldErrors?.worksiteId && <p className="text-sm text-destructive">{state.fieldErrors.worksiteId[0]}</p>}
             </div>
           </div>
           <div className="flex justify-end gap-3">

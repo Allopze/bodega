@@ -203,13 +203,12 @@ async function analiticaResumen(session: Session | null, filters: ExportFilters)
     },
     {
       worksheetName: "Vehículos",
-      headers: ["Patente", "Tipo", "Combustible", "Servicios/Mantenciones", "Repuestos/Servicios", "Total", "Litros", "Cargas", "Km", "Horómetro"],
+      headers: ["Patente", "Tipo", "Combustible", "Servicios/Mantenciones", "Total", "Litros", "Cargas", "Km", "Horómetro"],
       rows: data.vehicleCosts.map((row) => [
         row.plate,
         row.type,
         row.totalFuelAmount,
         row.totalServiceAmount,
-        row.totalPartsAmount,
         row.totalOperationalCost,
         row.totalLiters,
         row.loadCount,

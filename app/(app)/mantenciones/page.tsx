@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { can, requirePermission } from "@/lib/auth/can"
 import { getMaintenancePageData } from "@/lib/services/maintenance"
 import { MaintenanceForm } from "./maintenance-form"
+import { MaintenanceRowActions } from "./maintenance-row-actions"
 
 export const metadata: Metadata = { title: "Mantenciones" }
 
@@ -41,6 +42,13 @@ export default async function MantencionesPage({
   const status = typeof sp.status === "string" ? sp.status : undefined
   const data = await getMaintenancePageData(session, { vehicleId, worksiteId, status })
   const canCreate = can(session, "mantenciones:create")
+  const canEdit = can(session, "mantenciones:edit")
+
+  // Listas de opciones compartidas por el formulario de alta y la edición por fila.
+  const vehicleOptions = data.vehicles.map((vehicle) => ({ id: vehicle.id, plate: vehicle.plate, type: vehicle.type }))
+  const supplierOptions = data.suppliers.map((supplier) => ({ id: supplier.id, name: supplier.name }))
+  const worksiteOptions = data.worksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))
+  const costCenterOptions = data.costCenters.map((center) => ({ id: center.id, code: center.code, name: center.name }))
 
   return (
     <PageContainer>
@@ -101,10 +109,10 @@ export default async function MantencionesPage({
           </CardHeader>
           <CardContent>
             <MaintenanceForm
-              vehicles={data.vehicles.map((vehicle) => ({ id: vehicle.id, plate: vehicle.plate, type: vehicle.type }))}
-              suppliers={data.suppliers.map((supplier) => ({ id: supplier.id, name: supplier.name }))}
-              worksites={data.worksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))}
-              costCenters={data.costCenters.map((center) => ({ id: center.id, code: center.code, name: center.name }))}
+              vehicles={vehicleOptions}
+              suppliers={supplierOptions}
+              worksites={worksiteOptions}
+              costCenters={costCenterOptions}
             />
           </CardContent>
         </Card>
@@ -128,12 +136,13 @@ export default async function MantencionesPage({
                 <TableHead className="text-right">Hr</TableHead>
                 <TableHead>Documento</TableHead>
                 <TableHead className="text-right">Total</TableHead>
+                {canEdit && <TableHead className="text-right">Acciones</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.records.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={canEdit ? 11 : 10} className="py-8 text-center text-muted-foreground">
                     No hay mantenciones para los filtros actuales.
                   </TableCell>
                 </TableRow>
@@ -151,6 +160,32 @@ export default async function MantencionesPage({
                     <TableCell className="text-right font-mono">{formatNumber(record.hourMeterReading)}</TableCell>
                     <TableCell>{record.documentNumber ?? record.documentName ?? "—"}</TableCell>
                     <TableCell className="text-right font-mono">{formatCLP(record.totalAmount)}</TableCell>
+                    {canEdit && (
+                      <TableCell className="text-right">
+                        <MaintenanceRowActions
+                          record={{
+                            id: record.id,
+                            vehicleId: record.vehicleId,
+                            supplierId: record.supplierId,
+                            worksiteId: record.worksiteId,
+                            costCenterId: record.costCenterId,
+                            maintenanceDate: record.maintenanceDate,
+                            maintenanceType: record.maintenanceType,
+                            status: record.status,
+                            odometerReading: record.odometerReading,
+                            hourMeterReading: record.hourMeterReading,
+                            netAmount: record.netAmount,
+                            taxAmount: record.taxAmount,
+                            documentNumber: record.documentNumber,
+                            notes: record.notes,
+                          }}
+                          vehicles={vehicleOptions}
+                          suppliers={supplierOptions}
+                          worksites={worksiteOptions}
+                          costCenters={costCenterOptions}
+                        />
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}

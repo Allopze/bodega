@@ -9,7 +9,7 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import bcrypt from "bcryptjs"
 import { loadEnvConfig } from "@next/env"
 import * as schema from "./schema"
-import { eq, inArray, notInArray } from "drizzle-orm"
+import { eq, or, inArray, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../lib/auth/system-rbac"
 import { seedNuevosRoles } from "./seed/nuevos-roles"
@@ -233,8 +233,10 @@ async function main() {
   await db.insert(schema.rolePermissions).values(rolePermData)
 
   /* ── Initial administrator ───────────────────────────────────────────── */
+  // Idempotente: el admin puede existir por email configurado o por el id fijo
+  // "user-admin" (p. ej. si cambió SEED_ADMIN_EMAIL entre corridas).
   const existingAdmin = await db.query.users.findFirst({
-    where: eq(schema.users.email, adminEmail),
+    where: or(eq(schema.users.email, adminEmail), eq(schema.users.id, "user-admin")),
   })
   const adminId = existingAdmin?.id ?? "user-admin"
   const hashedPassword = await bcrypt.hash(adminPassword, 12)
@@ -242,6 +244,7 @@ async function main() {
   if (existingAdmin) {
     await db.update(schema.users).set({
       name: adminName,
+      email: adminEmail,
       hashedPassword,
       isActive: true,
       updatedAt: new Date().toISOString(),

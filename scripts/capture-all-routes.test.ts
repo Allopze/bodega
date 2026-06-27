@@ -21,6 +21,8 @@ const dynamicSamples: Record<string, string> = {
   "/ppa/result/[token]": "/ppa/result/capture-ppa-token",
   "/soporte/[id]": "/soporte/sop-audit-1",
   "/trazabilidad/[itemId]": "/trazabilidad/req-item-audit-1",
+  "/combustibles/[id]": "/combustibles/fuel-audit-1",
+  "/combustibles/cuenta-corriente/[id]": "/combustibles/cuenta-corriente/cc-audit-1",
 }
 
 describe("capture-all-routes route inventory", () => {
@@ -43,6 +45,9 @@ describe("capture-all-routes route inventory", () => {
       "entregas",
       "trazabilidad",
       "reportes",
+      "flota",
+      "mantenciones",
+      "combustibles",
       "repuestos",
       "servicios",
       "prevencion",

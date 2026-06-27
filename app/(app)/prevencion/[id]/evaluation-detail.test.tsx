@@ -218,14 +218,19 @@ describe("EvaluationDetail", () => {
     it("shows section navigation with first section selected", () => {
       render(<EvaluationDetail {...defaultProps} />)
       expect(screen.getByText("Sección activa")).toBeDefined()
-      expect(screen.getByText("Anterior")).toBeDefined()
-      expect(screen.getByText("Siguiente")).toBeDefined()
+      // Cada pestaña tiene su propio paginador (Anterior/Siguiente).
+      expect(screen.getAllByText("Anterior").length).toBeGreaterThan(0)
+      expect(screen.getAllByText("Siguiente").length).toBeGreaterThan(0)
     })
 
     it("disables Anterior button on first section", () => {
       render(<EvaluationDetail {...defaultProps} />)
-      const prevButton = screen.getByText("Anterior").closest("button")
-      expect(prevButton).toHaveAttribute("disabled")
+      const prevButtons = screen.getAllByText("Anterior").map((el) => el.closest("button"))
+      expect(prevButtons.length).toBeGreaterThan(0)
+      // En la primera sección, todos los paginadores tienen "Anterior" deshabilitado.
+      for (const button of prevButtons) {
+        expect(button).toHaveAttribute("disabled")
+      }
     })
   })
 

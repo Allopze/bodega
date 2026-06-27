@@ -26,5 +26,7 @@ export const flotaModule = {
 
   defaultGrants: [
     { roleSlug: "administrador", permission: "flota:view" },
+    { roleSlug: "jefe_mantencion", permission: "flota:view" },
+    { roleSlug: "jefa_chome", permission: "flota:view" },
   ],
 } as const satisfies ModuleManifest

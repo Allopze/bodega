@@ -2,8 +2,10 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
-import { desc, eq, and, sql, gte, lte } from "drizzle-orm"
+import { desc, eq, inArray, sql } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { buildFuelLoadsWhere, buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,7 +17,6 @@ import { FuelDashboardKpis } from "./fuel-kpis"
 import { FuelFilters } from "./fuel-filters"
 import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "./fuel-charts"
 import { ExportXlsxButton } from "./export-button"
-import { checkFuelStatementNotifications } from "@/lib/combustibles/notifications"
 
 export const metadata: Metadata = { title: "Combustibles" }
 
@@ -26,12 +27,9 @@ export default async function CombustiblesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  let _session
-  try { _session = await requirePermission("combustibles:view") }
+  let session
+  try { session = await requirePermission("combustibles:view") }
   catch { redirect("/forbidden") }
-
-  // Check for overdue/soon-due fuel statement notifications (fire-and-forget)
-  checkFuelStatementNotifications().catch(() => {})
 
   const sp = await searchParams
   const month = typeof sp.month === "string" ? sp.month : undefined
@@ -46,18 +44,12 @@ export default async function CombustiblesPage({
   const startDate = typeof sp.startDate === "string" ? sp.startDate : undefined
   const endDate = typeof sp.endDate === "string" ? sp.endDate : undefined
 
-  // Build filter conditions
-  const conditions = []
-  if (month) conditions.push(eq(fuelLoads.month, month))
-  if (startDate) conditions.push(gte(fuelLoads.loadDate, startDate))
-  if (endDate) conditions.push(lte(fuelLoads.loadDate, endDate))
-  if (serviceType) conditions.push(eq(fuelLoads.serviceType, serviceType))
-  if (vehicleId) conditions.push(eq(fuelLoads.vehicleId, vehicleId))
-  if (worksiteId) conditions.push(eq(fuelLoads.worksiteId, worksiteId))
-  if (supplierId) conditions.push(eq(fuelLoads.fuelSupplierId, supplierId))
-  if (product) conditions.push(eq(fuelLoads.product, product))
-  if (status) conditions.push(eq(fuelLoads.status, status))
-  const where = conditions.length > 0 ? and(...conditions) : undefined
+  // Filtros + aislamiento por faena (scope) en un solo lugar.
+  const where = buildFuelLoadsWhere(session, {
+    month, startDate, endDate, serviceType, vehicleId, worksiteId,
+    fuelSupplierId: supplierId, product, status,
+  })
+  const worksiteScope = resolveWorksiteScope(session)
 
   // Fetch data
   const [rows, countResult, vehicles, suppliersList, worksitesList] = await Promise.all([
@@ -69,9 +61,17 @@ export default async function CombustiblesPage({
       offset: (page - 1) * PAGE_SIZE,
     }),
     db.select({ count: sql<number>`count(*)` }).from(fuelLoads).where(where),
-    db.query.fuelVehicles.findMany({ orderBy: [fuelVehicles.plate] }),
+    db.query.fuelVehicles.findMany({
+      where: buildFuelVehiclesWhere(session),
+      orderBy: [fuelVehicles.plate],
+    }),
     db.query.fuelSuppliers.findMany({ orderBy: [fuelSuppliers.name] }),
-    db.query.worksites.findMany({ orderBy: [worksites.name] }),
+    worksiteScope.mode === "none"
+      ? Promise.resolve([])
+      : db.query.worksites.findMany({
+          where: worksiteScope.mode === "some" ? inArray(worksites.id, worksiteScope.ids) : undefined,
+          orderBy: [worksites.name],
+        }),
   ])
 
   const total = countResult[0]?.count ?? 0

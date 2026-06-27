@@ -82,13 +82,15 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
 
       {/* Weekly + Tables */}
       <Tabs defaultValue="weekly">
-        <TabsList>
-          <TabsTrigger value="weekly"><CalendarBlank className="h-4 w-4 mr-1" />Semanal</TabsTrigger>
-          <TabsTrigger value="monthly"><ChartBar className="h-4 w-4 mr-1" />Mensual</TabsTrigger>
-          <TabsTrigger value="worksite"><Buildings className="h-4 w-4 mr-1" />Por faena</TabsTrigger>
-          <TabsTrigger value="vehicle"><Truck className="h-4 w-4 mr-1" />Por vehículo</TabsTrigger>
-          <TabsTrigger value="supplier"><GasPump className="h-4 w-4 mr-1" />Por proveedor</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="min-w-max">
+            <TabsTrigger value="weekly"><CalendarBlank className="h-4 w-4 mr-1" />Semanal</TabsTrigger>
+            <TabsTrigger value="monthly"><ChartBar className="h-4 w-4 mr-1" />Mensual</TabsTrigger>
+            <TabsTrigger value="worksite"><Buildings className="h-4 w-4 mr-1" />Por faena</TabsTrigger>
+            <TabsTrigger value="vehicle"><Truck className="h-4 w-4 mr-1" />Por vehículo</TabsTrigger>
+            <TabsTrigger value="supplier"><GasPump className="h-4 w-4 mr-1" />Por proveedor</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="weekly"><ReportCard title="Consumo semanal" icon={<CalendarBlank className="h-5 w-5" />} rows={byWeek} /></TabsContent>
         <TabsContent value="monthly"><ReportCard title="Consumo mensual" icon={<ChartBar className="h-5 w-5" />} rows={byMonth} /></TabsContent>

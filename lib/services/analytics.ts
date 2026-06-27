@@ -17,7 +17,6 @@ import {
   purchaseRequests,
   suppliers,
   systemSettings,
-  vehicleCostAllocations,
   worksiteStock,
   worksites,
   workers,
@@ -77,12 +76,10 @@ export interface VehicleCostRow {
   type: string
   totalFuelAmount: number
   totalServiceAmount: number
-  totalPartsAmount: number
   totalOperationalCost: number
   totalLiters: number
   loadCount: number
   maintenanceCount: number
-  allocationCount: number
   lastOdometerReading: number | null
   lastHourMeterReading: number | null
 }
@@ -212,7 +209,6 @@ export async function getAnalyticsDashboard(
   const deliveryScope = worksiteFilter(session, deliveries.worksiteId)
   const fuelScope = worksiteFilter(session, fuelLoads.worksiteId)
   const maintenanceScope = worksiteFilter(session, maintenanceRecords.worksiteId)
-  const allocationScope = worksiteFilter(session, vehicleCostAllocations.worksiteId)
 
   const orderWhere = and(
     orderScope,
@@ -251,13 +247,6 @@ export async function getAnalyticsDashboard(
     filters.vehicleId ? eq(maintenanceRecords.vehicleId, filters.vehicleId) : undefined,
     sql`${maintenanceRecords.status} <> 'cancelled'`,
   )
-  const allocationWhere = and(
-    allocationScope,
-    gte(vehicleCostAllocations.allocationDate, filters.fromDate),
-    lte(vehicleCostAllocations.allocationDate, filters.toDate),
-    filters.worksiteId ? eq(vehicleCostAllocations.worksiteId, filters.worksiteId) : undefined,
-    filters.vehicleId ? eq(vehicleCostAllocations.vehicleId, filters.vehicleId) : undefined,
-  )
 
   const [
     [purchaseSummary],
@@ -280,7 +269,6 @@ export async function getAnalyticsDashboard(
     eppRows,
     recentOrders,
     maintenanceRows,
-    vehicleAllocationRows,
   ] = await Promise.all([
     db
       .select({
@@ -546,16 +534,6 @@ export async function getAnalyticsDashboard(
       .from(maintenanceRecords)
       .where(maintenanceWhere)
       .groupBy(maintenanceRecords.vehicleId),
-
-    db
-      .select({
-        vehicleId: vehicleCostAllocations.vehicleId,
-        totalPartsAmount: sql<number>`COALESCE(SUM(${vehicleCostAllocations.amount}) FILTER (WHERE ${vehicleCostAllocations.costCategory} IN ('parts', 'service', 'other')), 0)`,
-        allocationCount: sql<number>`COUNT(*)`,
-      })
-      .from(vehicleCostAllocations)
-      .where(allocationWhere)
-      .groupBy(vehicleCostAllocations.vehicleId),
   ])
 
   const purchaseTotal = Number(purchaseSummary?.totalAmount ?? 0)
@@ -609,32 +587,20 @@ export async function getAnalyticsDashboard(
       maintenanceCount: Number(row.maintenanceCount ?? 0),
     },
   ]))
-  const allocationsByVehicle = new Map(vehicleAllocationRows.map((row) => [
-    row.vehicleId,
-    {
-      totalPartsAmount: Number(row.totalPartsAmount ?? 0),
-      allocationCount: Number(row.allocationCount ?? 0),
-    },
-  ]))
-
   const vehicleCosts = vehicleRows.map((row) => {
     const totalFuelAmount = Number(row.totalFuelAmount ?? 0)
     const maintenance = maintenanceByVehicle.get(row.id)
-    const allocations = allocationsByVehicle.get(row.id)
     const totalServiceAmount = maintenance?.totalServiceAmount ?? 0
-    const totalPartsAmount = allocations?.totalPartsAmount ?? 0
     return {
       id: row.id,
       plate: row.plate,
       type: row.type,
       totalFuelAmount,
       totalServiceAmount,
-      totalPartsAmount,
-      totalOperationalCost: totalFuelAmount + totalServiceAmount + totalPartsAmount,
+      totalOperationalCost: totalFuelAmount + totalServiceAmount,
       totalLiters: Number(row.totalLiters ?? 0),
       loadCount: Number(row.loadCount ?? 0),
       maintenanceCount: maintenance?.maintenanceCount ?? 0,
-      allocationCount: allocations?.allocationCount ?? 0,
       lastOdometerReading: row.lastOdometerReading == null ? null : Number(row.lastOdometerReading),
       lastHourMeterReading: row.lastHourMeterReading == null ? null : Number(row.lastHourMeterReading),
     }
@@ -790,7 +756,7 @@ function buildAlerts(input: {
 
 function buildDataGaps(vehicleCosts: VehicleCostRow[]) {
   const gaps: string[] = []
-  if (vehicleCosts.length > 0 && vehicleCosts.every((row) => row.totalServiceAmount === 0 && row.totalPartsAmount === 0)) {
+  if (vehicleCosts.length > 0 && vehicleCosts.every((row) => row.totalServiceAmount === 0)) {
     gaps.push("No hay imputaciones de repuestos, servicios o mantenciones para los vehículos del período.")
   }
   if (vehicleCosts.length > 0 && vehicleCosts.every((row) => row.lastOdometerReading == null && row.lastHourMeterReading == null)) {
