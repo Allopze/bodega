@@ -9,12 +9,11 @@ import {
   fuelSuppliers,
   fuelMonthlyStatements,
   fuelPayments,
-  worksites,
 } from "@/db/schema"
 import { eq, and, desc, sql, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
-import { buildFuelLoadsWhere, buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
+import { buildFuelLoadsWhere } from "@/lib/combustibles/queries"
 import { nanoid } from "@/lib/id"
 import {
   createFuelLoadSchema,
@@ -27,7 +26,6 @@ import {
   addPaymentSchema,
 } from "@/lib/combustibles/validation"
 import { calculateFuelAmounts, calculateStatementTotals } from "@/lib/combustibles/calculations"
-import { parseFuelExcel, type ImportError } from "@/lib/combustibles/import"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
@@ -302,207 +300,6 @@ export async function registerFuelLoadAction(id: string): Promise<ActionState> {
   }
 }
 
-/* ── Get fuel loads with filters ──────────────────────────────────────────── */
-
-export async function getFuelLoadsAction(filters?: {
-  month?: string
-  serviceType?: string
-  vehicleId?: string
-  worksiteId?: string
-  fuelSupplierId?: string
-  product?: string
-  status?: string
-  search?: string
-  page?: number
-  pageSize?: number
-}) {
-  let session
-  try { session = await requirePermission("combustibles:view") }
-  catch { return { ok: false as const, message: "Sin permisos", data: null } }
-
-  const page = filters?.page ?? 1
-  const pageSize = filters?.pageSize ?? 50
-  const offset = (page - 1) * pageSize
-
-  const where = buildFuelLoadsWhere(session, filters ?? {})
-
-  const [rows, countResult] = await Promise.all([
-    db.query.fuelLoads.findMany({
-      where,
-      with: { vehicle: true, supplier: true, worksite: true },
-      orderBy: [desc(fuelLoads.loadDate), desc(fuelLoads.createdAt)],
-      limit: pageSize,
-      offset,
-    }),
-    db.select({ count: sql<number>`count(*)` }).from(fuelLoads).where(where),
-  ])
-
-  const total = countResult[0]?.count ?? 0
-
-  return {
-    ok: true as const,
-    data: {
-      rows,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    },
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   IMPORT
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-export async function importFuelLoadsAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  let session
-  try { session = await requirePermission("combustibles:import") }
-  catch { return { ok: false, message: "Sin permisos para importar" } }
-
-  const file = formData.get("file") as File | null
-  if (!file) return { ok: false, message: "Archivo requerido" }
-
-  try {
-    const buffer = await file.arrayBuffer()
-    const result = parseFuelExcel(buffer)
-
-    if (result.errors.length > 0 && result.loads.length === 0) {
-      return {
-        ok: false,
-        message: `${result.errors.length} errores encontrados`,
-        data: { errors: result.errors, duplicates: result.duplicates },
-      }
-    }
-
-    // Look up IDs for vehicles, suppliers, worksites
-    const [allVehicles, allSuppliers, allWorksites] = await Promise.all([
-      db.query.fuelVehicles.findMany(),
-      db.query.fuelSuppliers.findMany(),
-      db.query.worksites.findMany(),
-    ])
-
-    const vehicleMap = new Map(allVehicles.map(v => [v.plate.toUpperCase(), v.id]))
-    const supplierMap = new Map(allSuppliers.map(s => [s.name.toUpperCase(), s.id]))
-    const worksiteMap = new Map(allWorksites.map(w => [w.name.toUpperCase(), w.id]))
-
-    // Dedupe contra la BD por CLAVE NATURAL de carga. Ojo: una misma factura puede
-    // cubrir varias cargas (distintos vehículos/fechas/litros), por lo que el número
-    // de factura por sí solo NO identifica una carga.
-    const monthsInFile = [...new Set(result.loads.map((load) => load.month))]
-    const existingLoads = monthsInFile.length > 0
-      ? await db
-          .select({
-            fuelSupplierId: fuelLoads.fuelSupplierId,
-            receiptNumber: fuelLoads.receiptNumber,
-            vehicleId: fuelLoads.vehicleId,
-            loadDate: fuelLoads.loadDate,
-            liters: fuelLoads.liters,
-          })
-          .from(fuelLoads)
-          .where(inArray(fuelLoads.month, monthsInFile))
-      : []
-    const loadKey = (supplierId: string, receipt: string | null, vehicleId: string, loadDate: string, liters: number) =>
-      `${supplierId}::${(receipt ?? "").toUpperCase()}::${vehicleId}::${loadDate}::${liters}`
-    const seenLoads = new Set(
-      existingLoads.map((l) => loadKey(l.fuelSupplierId, l.receiptNumber, l.vehicleId, l.loadDate, l.liters)),
-    )
-
-    const toInsert: typeof fuelLoads.$inferInsert[] = []
-    const importErrors: ImportError[] = []
-
-    for (const load of result.loads) {
-      const vehicleId = vehicleMap.get(load.vehicle.toUpperCase())
-      const supplierId = supplierMap.get(load.supplier.toUpperCase())
-      const worksiteId = worksiteMap.get(load.worksite.toUpperCase())
-
-      if (!vehicleId) {
-        importErrors.push({ rowIndex: load.rowIndex, field: "VEHICULO", message: `Vehículo "${load.vehicle}" no encontrado` })
-        continue
-      }
-      if (!supplierId) {
-        importErrors.push({ rowIndex: load.rowIndex, field: "PROVEEDOR", message: `Proveedor "${load.supplier}" no encontrado` })
-        continue
-      }
-      if (!worksiteId) {
-        importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `Faena "${load.worksite}" no encontrada` })
-        continue
-      }
-      if (!canAccessWorksite(session, worksiteId)) {
-        importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `Sin acceso a la faena "${load.worksite}"` })
-        continue
-      }
-
-      // Coherencia financiera: el total debe cuadrar con base + IEC + IVA (±1 CLP).
-      const expectedTotal = load.baseAmount + load.iecTotal + load.ivaAmount
-      if (Math.abs(load.totalAmount - expectedTotal) > 1) {
-        importErrors.push({ rowIndex: load.rowIndex, field: "TOTAL FACTURA", message: `Total ${load.totalAmount} no cuadra con base+IEC+IVA (${expectedTotal})` })
-        continue
-      }
-
-      // Dedupe por clave natural: cubre re-importaciones y filas idénticas repetidas,
-      // sin descartar cargas legítimas que comparten número de factura.
-      const key = loadKey(supplierId, load.receiptNumber || null, vehicleId, load.loadDate, load.liters)
-      if (seenLoads.has(key)) {
-        importErrors.push({ rowIndex: load.rowIndex, field: "FACTURA", message: `Carga duplicada (factura "${load.receiptNumber}", ${load.loadDate})` })
-        continue
-      }
-      seenLoads.add(key)
-
-      toInsert.push({
-        id: nanoid(),
-        loadDate: load.loadDate,
-        month: load.month,
-        serviceType: load.serviceType,
-        vehicleId,
-        fuelSupplierId: supplierId,
-        worksiteId,
-        product: load.product,
-        receiptNumber: load.receiptNumber || null,
-        liters: load.liters,
-        iecFixed: load.iecFixed,
-        iecVariable: load.iecVariable,
-        baseAmount: load.baseAmount,
-        iecTotal: load.iecTotal,
-        ivaAmount: load.ivaAmount,
-        totalAmount: load.totalAmount,
-        status: "registered",
-        createdBy: session.user.id,
-      })
-    }
-
-    if (importErrors.length > 0 && toInsert.length === 0) {
-      return {
-        ok: false,
-        message: `${importErrors.length} errores de validación`,
-        data: { errors: importErrors, duplicates: result.duplicates },
-      }
-    }
-
-    // Bulk insert
-    if (toInsert.length > 0) {
-      await db.insert(fuelLoads).values(toInsert)
-    }
-
-    revalidatePath(REVALIDATE)
-    return {
-      ok: true,
-      message: `${toInsert.length} cargas importadas${importErrors.length > 0 ? `, ${importErrors.length} omitidas` : ""}`,
-      data: {
-        imported: toInsert.length,
-        errors: importErrors,
-        duplicates: result.duplicates,
-      },
-    }
-  } catch (e) {
-    logger.error("importFuelLoads error", { error: e })
-    return { ok: false, message: dbErrMsg(e, "Error al importar archivo") }
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    FUEL VEHICLES
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -608,19 +405,6 @@ export async function deleteFuelVehicleAction(id: string): Promise<ActionState> 
   }
 }
 
-export async function getFuelVehiclesAction() {
-  let session
-  try { session = await requirePermission("combustibles:view") }
-  catch { return { ok: false as const, data: [] } }
-
-  const rows = await db.query.fuelVehicles.findMany({
-    where: buildFuelVehiclesWhere(session),
-    with: { worksite: true },
-    orderBy: [fuelVehicles.plate],
-  })
-  return { ok: true as const, data: rows }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    FUEL SUPPLIERS
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -687,16 +471,6 @@ export async function updateFuelSupplierAction(
   } catch (e) {
     return { ok: false, message: dbErrMsg(e, "Error al actualizar") }
   }
-}
-
-export async function getFuelSuppliersAction() {
-  try { await requirePermission("combustibles:view") }
-  catch { return { ok: false as const, data: [] } }
-
-  const rows = await db.query.fuelSuppliers.findMany({
-    orderBy: [fuelSuppliers.name],
-  })
-  return { ok: true as const, data: rows }
 }
 
 export async function deleteFuelSupplierAction(id: string): Promise<ActionState> {
@@ -793,40 +567,6 @@ export async function createMonthlyStatementAction(
   }
 }
 
-export async function getMonthlyStatementsAction(filters?: { month?: string; status?: string }) {
-  try { await requirePermission("combustibles:view") }
-  catch { return { ok: false as const, data: [] } }
-
-  const conditions = []
-  if (filters?.month) conditions.push(eq(fuelMonthlyStatements.month, filters.month))
-  if (filters?.status) conditions.push(eq(fuelMonthlyStatements.status, filters.status))
-  const where = conditions.length > 0 ? and(...conditions) : undefined
-
-  const rows = await db.query.fuelMonthlyStatements.findMany({
-    where,
-    with: { supplier: true, payments: true },
-    orderBy: [desc(fuelMonthlyStatements.month)],
-  })
-
-  return { ok: true as const, data: rows }
-}
-
-export async function getMonthlyStatementByIdAction(id: string) {
-  try { await requirePermission("combustibles:view") }
-  catch { return { ok: false as const, data: null } }
-
-  const row = await db.query.fuelMonthlyStatements.findFirst({
-    where: eq(fuelMonthlyStatements.id, id),
-    with: {
-      supplier: true,
-      payments: true,
-      loads: { with: { vehicle: true, worksite: true } },
-    },
-  })
-
-  return { ok: true as const, data: row ?? null }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    PAYMENTS
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -915,44 +655,6 @@ export async function addPaymentAction(
    REPORTS
    ═══════════════════════════════════════════════════════════════════════════ */
 
-export async function getFuelReportAction(filters: {
-  startDate?: string
-  endDate?: string
-  groupBy: "month" | "worksite" | "vehicle" | "supplier" | "product"
-}) {
-  let session
-  try { session = await requirePermission("combustibles:view") }
-  catch { return { ok: false as const, data: null } }
-
-  const where = buildFuelLoadsWhere(session, { startDate: filters.startDate, endDate: filters.endDate })
-
-  // Group by query
-  let groupColumn
-  switch (filters.groupBy) {
-    case "month": groupColumn = fuelLoads.month; break
-    case "worksite": groupColumn = fuelLoads.worksiteId; break
-    case "vehicle": groupColumn = fuelLoads.vehicleId; break
-    case "supplier": groupColumn = fuelLoads.fuelSupplierId; break
-    case "product": groupColumn = fuelLoads.product; break
-  }
-
-  const rows = await db.select({
-    group: groupColumn,
-    totalLiters: sql<number>`sum(${fuelLoads.liters})`,
-    totalBaseAmount: sql<number>`sum(${fuelLoads.baseAmount})`,
-    totalIec: sql<number>`sum(${fuelLoads.iecTotal})`,
-    totalIva: sql<number>`sum(${fuelLoads.ivaAmount})`,
-    totalAmount: sql<number>`sum(${fuelLoads.totalAmount})`,
-    count: sql<number>`count(*)`,
-  })
-    .from(fuelLoads)
-    .where(where)
-    .groupBy(groupColumn)
-    .orderBy(desc(sql`sum(${fuelLoads.totalAmount})`))
-
-  return { ok: true as const, data: rows }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    EXPORT XLSX
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -1040,24 +742,3 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   return { ok: true as const, data: { base64, filename: `combustibles_${new Date().toISOString().split("T")[0]}.xlsx` } }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   DASHBOARD CHART DATA
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-export async function getFuelChartDataAction(filters?: { startDate?: string; endDate?: string }) {
-  let session
-  try { session = await requirePermission("combustibles:view") }
-  catch { return { ok: false as const, data: null } }
-
-  const where = buildFuelLoadsWhere(session, { startDate: filters?.startDate, endDate: filters?.endDate })
-
-  const [byMonth, byWorksite, byVehicle, bySupplier, byProduct] = await Promise.all([
-    db.select({ group: fuelLoads.month, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`, count: sql<number>`count(*)` }).from(fuelLoads).where(where).groupBy(fuelLoads.month).orderBy(fuelLoads.month),
-    db.select({ group: worksites.name, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).leftJoin(worksites, eq(fuelLoads.worksiteId, worksites.id)).where(where).groupBy(worksites.name).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
-    db.select({ group: fuelVehicles.plate, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).leftJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id)).where(where).groupBy(fuelVehicles.plate).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
-    db.select({ group: fuelSuppliers.name, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).leftJoin(fuelSuppliers, eq(fuelLoads.fuelSupplierId, fuelSuppliers.id)).where(where).groupBy(fuelSuppliers.name).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
-    db.select({ group: fuelLoads.product, totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).where(where).groupBy(fuelLoads.product).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
-  ])
-
-  return { ok: true as const, data: { byMonth, byWorksite, byVehicle, bySupplier, byProduct } }
-}
