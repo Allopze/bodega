@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
       // y produce fileFaena → worksiteId, o null cuando el usuario eligió omitir.
       const takenCodes = new Set(allWorksites.map((w: { code: string }) => w.code))
       const resolvedFaena = new Map<string, string | null>()
+      const created: Array<{ type: string; name: string }> = []
       for (const [fileFaena, target] of Object.entries(faenaMapping)) {
         if (target === SKIP_FAENA) { resolvedFaena.set(fileFaena, null); continue }
         if (target === CREATE_FAENA) {
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
           await tx.insert(worksites).values({ id, name, code: makeWorksiteCode(fileFaena, takenCodes), isActive: true })
           resolvedFaena.set(fileFaena, id)
           worksiteMap.set(fileFaena.toUpperCase(), id)
+          created.push({ type: "faena", name })
         } else {
           resolvedFaena.set(fileFaena, target) // worksiteId existente
         }
@@ -137,7 +139,6 @@ export async function POST(req: NextRequest) {
 
       const toInsert: typeof fuelLoads.$inferInsert[] = []
       const importErrors: Array<{ rowIndex: number; field: string; message: string }> = []
-      const created: Array<{ type: string; name: string }> = []
 
       for (const load of loads) {
         // Coherencia financiera (H2): totalAmount debe igualar base + IEC + IVA con tolerancia ±1 CLP
@@ -157,8 +158,13 @@ export async function POST(req: NextRequest) {
         }
         const worksiteId = mapped ?? worksiteMap.get(load.worksite.toUpperCase())
 
+        // Las faenas no se auto-crean aquí (se crean vía faenaMapping)
+        if (!worksiteId) {
+          importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `"${load.worksite}" no encontrada` })
+          continue
+        }
         // Verificación de alcance (H7): la sesión debe tener acceso a esta faena
-        if (worksiteId && !canAccessWorksite(session, worksiteId)) {
+        if (!canAccessWorksite(session, worksiteId)) {
           importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `Sin acceso a la faena "${load.worksite}"` })
           continue
         }
@@ -177,11 +183,6 @@ export async function POST(req: NextRequest) {
           supplierId = id
           supplierMap.set(load.supplier.toUpperCase(), id)
           created.push({ type: "proveedor", name: load.supplier })
-        }
-        // Las faenas no se auto-crean aquí (se crean vía faenaMapping)
-        if (!worksiteId) {
-          importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `"${load.worksite}" no encontrada` })
-          continue
         }
         if (!vehicleId) {
           importErrors.push({ rowIndex: load.rowIndex, field: "VEHICULO", message: `"${load.vehicle}" no encontrado` })
