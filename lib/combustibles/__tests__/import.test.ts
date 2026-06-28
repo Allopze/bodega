@@ -89,6 +89,19 @@ describe("parseFuelExcel", () => {
     expect(result.loads[0]!.month).toBe("2026-03")
   })
 
+  it("does not shift dates on servers with UTC offset (H11)", () => {
+    // A Date at midnight local time: toISOString would give previous day in UTC-X zones.
+    // We create the date directly as a JS Date object (as XLSX does with cellDates:true)
+    // and verify the parsed loadDate matches the original calendar date.
+    const dateWithMidnight = new Date(2026, 0, 15, 0, 0, 0, 0) // Jan 15 at local midnight
+    const buffer = createTestExcel([{ ...validRow, "MES-AÑO": dateWithMidnight }])
+    const result = parseFuelExcel(buffer)
+    expect(result.loads).toHaveLength(1)
+    // Should always be 2026-01-15 regardless of server timezone offset
+    expect(result.loads[0]!.loadDate).toBe("2026-01-15")
+    expect(result.loads[0]!.month).toBe("2026-01")
+  })
+
   it("returns empty for empty file", () => {
     const result = parseFuelExcel(new ArrayBuffer(0))
     expect(result.loads).toHaveLength(0)

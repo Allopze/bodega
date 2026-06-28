@@ -15,7 +15,7 @@ export const createFuelLoadSchema = z.object({
   liters:         z.coerce.number().min(0, "Litros debe ser ≥ 0"),
   iecFixed:       z.coerce.number().default(0),
   iecVariable:    z.coerce.number().default(0),
-  baseAmount:     z.coerce.number().min(0, "Base afecta requerida"),
+  baseAmount:     z.coerce.number().positive("Base afecta debe ser > 0"),
   iecTotal:       z.coerce.number().default(0),
   ivaAmount:      z.coerce.number().default(0),
   totalAmount:    z.coerce.number().min(0, "Total requerido"),

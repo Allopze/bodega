@@ -123,6 +123,12 @@ export async function createFuelLoadAction(
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
   }
 
+  // Financial coherence: total must equal base + IEC + IVA (±1 CLP)
+  const expectedTotal = parsed.data.baseAmount + parsed.data.iecTotal + parsed.data.ivaAmount
+  if (Math.abs(parsed.data.totalAmount - expectedTotal) > 1) {
+    return { ok: false, message: `Total (${parsed.data.totalAmount}) no cuadra con base + IEC + IVA (${expectedTotal})` }
+  }
+
   if (!canAccessWorksite(session, parsed.data.worksiteId)) {
     return { ok: false, message: "No puedes registrar cargas para esta faena" }
   }
@@ -205,6 +211,12 @@ export async function updateFuelLoadAction(
 
   if (!parsed.success) {
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
+  }
+
+  // Financial coherence: total must equal base + IEC + IVA (±1 CLP)
+  const expectedTotal = parsed.data.baseAmount! + parsed.data.iecTotal! + parsed.data.ivaAmount!
+  if (Math.abs(parsed.data.totalAmount! - expectedTotal) > 1) {
+    return { ok: false, message: `Total (${parsed.data.totalAmount}) no cuadra con base + IEC + IVA (${expectedTotal})` }
   }
 
   try {

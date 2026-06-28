@@ -79,14 +79,20 @@ export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
     let loadDate = ""
     let month = ""
     if (rawDate instanceof Date) {
-      loadDate = rawDate.toISOString().split("T")[0]!
-      month = loadDate.substring(0, 7)
+      const y = rawDate.getFullYear()
+      const m = String(rawDate.getMonth() + 1).padStart(2, "0")
+      const d = String(rawDate.getDate()).padStart(2, "0")
+      loadDate = `${y}-${m}-${d}`
+      month = `${y}-${m}`
     } else if (typeof rawDate === "string" && rawDate.trim()) {
       // Intentar parsear string
       const d = new Date(rawDate)
       if (!isNaN(d.getTime())) {
-        loadDate = d.toISOString().split("T")[0]!
-        month = loadDate.substring(0, 7)
+        const y = d.getFullYear()
+        const mo = String(d.getMonth() + 1).padStart(2, "0")
+        const da = String(d.getDate()).padStart(2, "0")
+        loadDate = `${y}-${mo}-${da}`
+        month = `${y}-${mo}`
       } else {
         errors.push({ rowIndex: rowNum, field: "MES-AÑO", message: `Fecha inválida: ${rawDate}` })
         continue
