@@ -146,7 +146,8 @@ export async function updateFuelLoadAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  try { await requirePermission("combustibles:create") }
+  let session
+  try { session = await requirePermission("combustibles:create") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -155,6 +156,15 @@ export async function updateFuelLoadAction(
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
   if (!existing) return { ok: false, message: "Carga no encontrada" }
   if (existing.status === "reconciled") return { ok: false, message: "No se puede editar una carga conciliada" }
+
+  // H5: block editing loads already assigned to a statement
+  if (existing.statementId) {
+    return { ok: false, message: "No se puede editar una carga asignada a una cuenta corriente" }
+  }
+  // H6: validate worksite access
+  if (!canAccessWorksite(session, existing.worksiteId)) {
+    return { ok: false, message: "Sin acceso a la faena de esta carga" }
+  }
 
   const loadDate = String(formData.get("loadDate") ?? existing.loadDate)
   const month = loadDate.substring(0, 7)
@@ -204,13 +214,18 @@ function optionalNumber(value: FormDataEntryValue | null): number | null {
 }
 
 export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
-  try { await requirePermission("combustibles:delete") }
+  let session
+  try { session = await requirePermission("combustibles:delete") }
   catch { return { ok: false, message: "Sin permisos para eliminar" } }
 
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
   if (!existing) return { ok: false, message: "Carga no encontrada" }
   if (existing.statementId) {
     return { ok: false, message: "No se puede eliminar una carga asignada a una cuenta corriente" }
+  }
+  // H6: validate worksite access
+  if (!canAccessWorksite(session, existing.worksiteId)) {
+    return { ok: false, message: "Sin acceso a la faena de esta carga" }
   }
   if (existing.status === "reconciled") {
     return { ok: false, message: "No se puede eliminar una carga conciliada" }
@@ -226,12 +241,17 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
 }
 
 export async function registerFuelLoadAction(id: string): Promise<ActionState> {
-  try { await requirePermission("combustibles:create") }
+  let session
+  try { session = await requirePermission("combustibles:create") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
   if (!existing) return { ok: false, message: "Carga no encontrada" }
   if (existing.status !== "draft") return { ok: false, message: "Solo se pueden registrar cargas en borrador" }
+  // H6: validate worksite access
+  if (!canAccessWorksite(session, existing.worksiteId)) {
+    return { ok: false, message: "Sin acceso a la faena de esta carga" }
+  }
 
   try {
     await db.update(fuelLoads).set({ status: "registered", updatedAt: new Date().toISOString() }).where(eq(fuelLoads.id, id))
