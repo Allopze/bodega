@@ -3,9 +3,6 @@ import { NextRequest } from "next/server"
 
 const mockRequirePermission = vi.fn()
 const mockCanAccessWorksite = vi.fn()
-const mockFindManyVehicles = vi.fn()
-const mockFindManySuppliers = vi.fn()
-const mockFindManyWorksites = vi.fn()
 const mockTransaction = vi.fn()
 
 vi.mock("@/lib/auth/can", () => ({
