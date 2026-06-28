@@ -28,6 +28,7 @@ import {
 } from "@/lib/combustibles/validation"
 import { calculateFuelAmounts, calculateStatementTotals } from "@/lib/combustibles/calculations"
 import { parseFuelExcel, type ImportError } from "@/lib/combustibles/import"
+import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
 
@@ -134,6 +135,14 @@ export async function createFuelLoadAction(
       createdBy: session.user.id,
     })
 
+    await recordAudit({
+      userId: session.user.id,
+      action: "create",
+      entityType: "fuel_load",
+      entityId: id,
+      newState: { ...parsed.data, worksiteId: parsed.data.worksiteId },
+    })
+
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carga registrada", data: { id } }
   } catch (e) {
@@ -200,6 +209,16 @@ export async function updateFuelLoadAction(
 
   try {
     await db.update(fuelLoads).set({ ...parsed.data, updatedAt: new Date().toISOString() }).where(eq(fuelLoads.id, id))
+
+    await recordAudit({
+      userId: session.user.id,
+      action: "update",
+      entityType: "fuel_load",
+      entityId: id,
+      oldState: { liters: existing.liters, baseAmount: existing.baseAmount, totalAmount: existing.totalAmount },
+      newState: { liters: parsed.data.liters, baseAmount: parsed.data.baseAmount, totalAmount: parsed.data.totalAmount },
+    })
+
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carga actualizada" }
   } catch (e) {
@@ -233,6 +252,15 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
 
   try {
     await db.delete(fuelLoads).where(eq(fuelLoads.id, id))
+
+    await recordAudit({
+      userId: session.user.id,
+      action: "delete",
+      entityType: "fuel_load",
+      entityId: id,
+      oldState: { worksiteId: existing.worksiteId, totalAmount: existing.totalAmount },
+    })
+
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carga eliminada" }
   } catch (e) {
@@ -735,6 +763,14 @@ export async function createMonthlyStatementAction(
         .set({ statementId: id, updatedAt: new Date().toISOString() })
         .where(inArray(fuelLoads.id, loads.map((load) => load.id)))
 
+      await recordAudit({
+        userId: session.user.id,
+        action: "create",
+        entityType: "fuel_statement",
+        entityId: id,
+        newState: { month: parsed.data.month, fuelSupplierId: parsed.data.fuelSupplierId, ...totals },
+      }, tx)
+
       return { ok: true as const, message: `Resumen creado con ${loads.length} cargas`, data: { id } }
     })
 
@@ -823,11 +859,20 @@ export async function addPaymentAction(
         return { ok: false as const, message: `El pago excede el saldo pendiente ($${pending.toLocaleString("es-CL")})` }
       }
 
+      const paymentId = nanoid()
       await tx.insert(fuelPayments).values({
-        id: nanoid(),
+        id: paymentId,
         ...parsed.data,
         createdBy: session.user.id,
       })
+
+      await recordAudit({
+        userId: session.user.id,
+        action: "create",
+        entityType: "fuel_payment",
+        entityId: paymentId,
+        newState: { statementId: parsed.data.statementId, amount: parsed.data.amount },
+      }, tx)
 
       // Recompute paidAmount from the source of truth (sum of payments).
       const [paidRow] = await tx

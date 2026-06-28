@@ -6,6 +6,8 @@ const mockFindLoad = vi.fn()
 const mockDeleteWhere = vi.fn(async () => undefined)
 const mockUpdateWhere = vi.fn(async () => undefined)
 const mockUpdateSet = vi.fn(() => ({ where: mockUpdateWhere }))
+const mockInsertValues = vi.fn(async () => undefined)
+const mockRecordAudit = vi.fn()
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/auth/can", () => ({
@@ -18,6 +20,7 @@ vi.mock("@/db", () => ({
   db: {
     delete: () => ({ where: mockDeleteWhere }),
     update: () => ({ set: mockUpdateSet }),
+    insert: () => ({ values: mockInsertValues }),
     query: {
       fuelLoads: {
         findFirst: (...args: unknown[]) => mockFindLoad(...args),
@@ -26,10 +29,12 @@ vi.mock("@/db", () => ({
     },
   },
 }))
+vi.mock("@/lib/audit", () => ({ recordAudit: (...args: unknown[]) => mockRecordAudit(...args) }))
 vi.mock("@/lib/id", () => ({ nanoid: () => "id-new" }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 
 import {
+  createFuelLoadAction,
   deleteFuelLoadAction,
   registerFuelLoadAction,
   updateFuelLoadAction,
@@ -127,5 +132,41 @@ describe("updateFuelLoadAction — statement guard (H5)", () => {
     expect(result.ok).toBe(false)
     expect(result.message).toMatch(/cuenta corriente|resumen/i)
     expect(mockUpdateWhere).not.toHaveBeenCalled()
+  })
+})
+
+// -- Audit logging (H8) --
+
+describe("createFuelLoadAction — audit logging", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(globalSession)
+    mockCanAccessWorksite.mockReturnValue(true)
+    mockInsertValues.mockResolvedValue(undefined)
+    mockRecordAudit.mockResolvedValue(undefined)
+  })
+
+  it("records an audit entry after successful create", async () => {
+    const fd = new FormData()
+    fd.set("loadDate", "2026-01-15")
+    fd.set("serviceType", "TCT")
+    fd.set("vehicleId", "v-1")
+    fd.set("fuelSupplierId", "s-1")
+    fd.set("worksiteId", "ws-1")
+    fd.set("product", "PETROLEO DIESEL")
+    fd.set("liters", "100")
+    fd.set("baseAmount", "1000")
+    fd.set("iecFixed", "10")
+    fd.set("iecVariable", "8")
+    fd.set("iecTotal", "18")
+    fd.set("ivaAmount", "190")
+    fd.set("totalAmount", "1208")
+
+    const result = await createFuelLoadAction({ ok: false, message: "" }, fd)
+
+    expect(result.ok).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "create", entityType: "fuel_load" }),
+    )
   })
 })
