@@ -1018,7 +1018,6 @@ async function prepareDatabase(captureDbUrl: string) {
       vehicleId: "fuel-veh-audit-1",
       fuelSupplierId: "fuel-sup-audit-1",
       worksiteId,
-      costCenterId: null,
       product: "PETROLEO DIESEL",
       receiptNumber: "B-88231",
       odometerReading: 45820,

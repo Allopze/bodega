@@ -4,7 +4,6 @@ import { users } from "./users"
 import { worksites } from "./worksites"
 import { fuelVehicles } from "./fuel-vehicles"
 import { fuelSuppliers } from "./fuel-suppliers"
-import { costCenters } from "./cost-centers"
 
 /* ── Fuel Load States ────────────────────────────────────────────────────── */
 // draft | registered | reconciled | cancelled
@@ -22,7 +21,6 @@ export const fuelLoads = pgTable("fuel_loads", {
   vehicleId:      text("vehicle_id").notNull().references(() => fuelVehicles.id),
   fuelSupplierId: text("fuel_supplier_id").notNull().references(() => fuelSuppliers.id),
   worksiteId:     text("worksite_id").notNull().references(() => worksites.id),
-  costCenterId:   text("cost_center_id").references(() => costCenters.id),
   product:        text("product").notNull(),                     // PETROLEO DIESEL | BLUEMAX
   receiptNumber:  text("receipt_number"),                        // Nro boleta/factura
   odometerReading:  numeric("odometer_reading", { precision: 12, scale: 2, mode: "number" }),
@@ -50,7 +48,6 @@ export const fuelLoads = pgTable("fuel_loads", {
   index("fuel_loads_month_idx").on(table.month),
   index("fuel_loads_vehicle_idx").on(table.vehicleId),
   index("fuel_loads_worksite_idx").on(table.worksiteId),
-  index("fuel_loads_cost_center_idx").on(table.costCenterId),
   index("fuel_loads_supplier_idx").on(table.fuelSupplierId),
   index("fuel_loads_statement_idx").on(table.statementId),
   index("fuel_loads_status_idx").on(table.status),
@@ -102,7 +99,6 @@ export const fuelLoadsRelations = relations(fuelLoads, ({ one }) => ({
   vehicle:  one(fuelVehicles, { fields: [fuelLoads.vehicleId], references: [fuelVehicles.id] }),
   supplier: one(fuelSuppliers, { fields: [fuelLoads.fuelSupplierId], references: [fuelSuppliers.id] }),
   worksite: one(worksites, { fields: [fuelLoads.worksiteId], references: [worksites.id] }),
-  costCenter: one(costCenters, { fields: [fuelLoads.costCenterId], references: [costCenters.id] }),
   statement: one(fuelMonthlyStatements, { fields: [fuelLoads.statementId], references: [fuelMonthlyStatements.id] }),
   creator:  one(users, { fields: [fuelLoads.createdBy], references: [users.id] }),
 }))

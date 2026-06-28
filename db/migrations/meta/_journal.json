@@ -22,6 +22,13 @@
       "when": 1782526808497,
       "tag": "0002_brown_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782687257378,
+      "tag": "0003_strange_titanium_man",
+      "breakpoints": true
     }
   ]
 }
