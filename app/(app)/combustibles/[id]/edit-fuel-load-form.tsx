@@ -49,9 +49,9 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
 
   const [liters, setLiters] = useState(load.liters)
   const [baseAmount, setBaseAmount] = useState(load.baseAmount)
-  const [iecFixed, setIecFixed] = useState(load.iecFixed)
-  const [iecVariable, setIecVariable] = useState(load.iecVariable)
-  const [iecTotal, setIecTotal] = useState(load.iecTotal)
+  const [iecFixed, _setIecFixed] = useState(load.iecFixed)
+  const [iecVariable, _setIecVariable] = useState(load.iecVariable)
+  const [iecTotal, _setIecTotal] = useState(load.iecTotal)
   const [ivaAmount, setIvaAmount] = useState(load.ivaAmount)
   const [totalAmount, setTotalAmount] = useState(load.totalAmount)
 
