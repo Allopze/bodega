@@ -119,10 +119,10 @@ export default async function CombustiblesPage({
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Adquisiciones", href: "/" }, { label: "Combustibles" }]} />
       <PageHeader
         title="Combustibles"
         description="Control de cargas de combustible por faena y vehículo"
+        breadcrumb={<Breadcrumbs items={[{ label: "Adquisiciones", href: "/" }, { label: "Combustibles" }]} />}
         actions={
           <div className="flex gap-2">
             <ExportXlsxButton filters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, status }} />

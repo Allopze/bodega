@@ -32,10 +32,10 @@ export default async function VehiculosPage() {
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Vehículos" }]} />
       <PageHeader
         title="Vehículos de combustible"
         description="Catálogo de vehículos que cargan combustible"
+        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Vehículos" }]} />}
         actions={<NewVehicleDialog worksites={worksitesList.map(w => ({ id: w.id, name: w.name }))} />}
       />
       <VehicleCatalogTable vehicles={vehicles} worksites={worksitesList.map(w => ({ id: w.id, name: w.name }))} />

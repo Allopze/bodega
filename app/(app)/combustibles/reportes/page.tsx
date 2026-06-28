@@ -23,10 +23,10 @@ export default async function ReportesPage({
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Reportes" }]} />
       <PageHeader
         title="Reportes de combustible"
         description="Análisis de consumo por período, faena, vehículo y proveedor"
+        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Reportes" }]} />}
       />
       <ReportsView
         byMonth={byMonth}

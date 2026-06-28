@@ -17,10 +17,10 @@ export default async function ProveedoresCombustiblePage() {
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Proveedores de combustible" }]} />
       <PageHeader
         title="Proveedores de combustible"
         description="Catálogo de proveedores de combustible (COPEC, ARAMCO, etc.)"
+        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Proveedores de combustible" }]} />}
         actions={<NewSupplierDialog />}
       />
       <SupplierCatalogTable suppliers={suppliers} />

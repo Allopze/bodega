@@ -56,8 +56,10 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Nueva carga" }]} />
-      <PageHeader title="Nueva carga de combustible" />
+      <PageHeader
+        title="Nueva carga de combustible"
+        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Nueva carga" }]} />}
+      />
 
       <form action={formAction} className="space-y-6">
         <input type="hidden" name="autoCalc" value="true" />
