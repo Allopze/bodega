@@ -3,7 +3,6 @@
 import { useActionState, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { updateFuelLoadAction, type ActionState } from "../actions"
-import { calculateFuelAmounts } from "@/lib/combustibles/calculations"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
@@ -57,13 +56,12 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
   const [totalAmount, setTotalAmount] = useState(load.totalAmount)
 
   useEffect(() => {
-    const calc = calculateFuelAmounts({ liters, baseAmount, iecFixedRate: null, iecVariableRate: null })
-    setIecFixed(calc.iecFixed)
-    setIecVariable(calc.iecVariable)
-    setIecTotal(calc.iecTotal)
-    setIvaAmount(calc.ivaAmount)
-    setTotalAmount(calc.totalAmount)
-  }, [liters, baseAmount])
+    // IEC components are preserved from the existing load (rates aren't available client-side).
+    // Only IVA (always 19%) and total are recalculated when baseAmount changes.
+    const iva = Math.round(baseAmount * 0.19 * 100) / 100
+    setIvaAmount(iva)
+    setTotalAmount(Math.round((baseAmount + iecTotal + iva) * 100) / 100)
+  }, [baseAmount, iecTotal])
 
   useEffect(() => {
     if (state.ok) {
