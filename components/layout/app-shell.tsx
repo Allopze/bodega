@@ -58,7 +58,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
   const headerHidden = useHideOnScroll(mainRef)
 
   return (
-    <div className="h-[100dvh] bg-[var(--color-bg)] p-0 lg:p-3 text-text">
+    <div className="h-[100dvh] bg-(--color-chrome) text-text overflow-hidden">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-100 focus:rounded-(--radius) focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:shadow-(--shadow-md) focus:outline-2 focus:outline-primary"
@@ -66,8 +66,8 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
         Saltar al contenido
       </a>
 
-      <div className="flex h-full min-h-0 lg:gap-3">
-        {/* Desktop: rail de áreas + panel contextual (cada uno con su propia tarjeta) */}
+      <div className="flex h-full min-h-0">
+        {/* Desktop: sidebar flush, parte izquierda de la L tintada */}
         <DesktopNav
           session={session}
           badgeCounts={badgeCounts}
@@ -91,7 +91,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
                   aria-hidden
                 />
                 <div className={cn(
-                  "fixed inset-y-0 left-0 z-50 w-64 lg:hidden bg-surface border-r border-[var(--color-border)]",
+                  "fixed inset-y-0 left-0 z-50 w-64 lg:hidden bg-(--color-chrome) border-r border-(--color-border)",
                   isClosing
                     ? "animate-out slide-out-to-left duration-(--duration-slow) ease-drawer"
                     : "animate-in slide-in-from-left duration-(--duration-slow) ease-drawer",
@@ -106,20 +106,23 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
               </>
             )}
 
+            {/* TopBar: franja del chrome, anclada arriba (sticky dentro del pozo) */}
+            <TopBar
+              session={session}
+              onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
+              worksiteName={worksiteName}
+              isMenuOpen={mobileOpen}
+              hidden={headerHidden}
+              className="sticky top-0 z-10"
+            />
+
+            {/* Pozo blanco: contenido al ras, esquina sup-izq redondeada en desktop */}
             <main
               ref={mainRef}
-              className="flex-1 min-w-0 overflow-y-auto bg-[var(--color-bg)]"
+              className="flex-1 min-w-0 overflow-y-auto bg-(--color-surface) lg:rounded-tl-(--radius-xl)"
               id="main-content"
               tabIndex={-1}
             >
-              <TopBar
-                session={session}
-                onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
-                worksiteName={worksiteName}
-                isMenuOpen={mobileOpen}
-                hidden={headerHidden}
-                className="sticky top-0 mx-4 md:mx-8 mb-2 z-10"
-              />
               {children}
             </main>
           </div>
