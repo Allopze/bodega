@@ -25,7 +25,7 @@ function itemRowClass(active: boolean) {
     "rounded-md px-3",
     active
       ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
-      : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+      : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
   )
 }
 
@@ -118,7 +118,7 @@ function BranchRow({
                     "flex h-8 items-center rounded-md px-2.5 text-xs transition-[color,background-color] duration-(--duration-fast) ease-out",
                     ca
                       ? "font-medium text-(--color-primary-ink)"
-                      : "text-text-subtle hover:bg-surface-2 hover:text-(--color-text)",
+                      : "text-text-subtle hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
                   )}
                 >
                   <span className="truncate">{child.label}</span>

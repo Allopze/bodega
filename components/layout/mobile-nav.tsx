@@ -52,7 +52,7 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
             "mb-1 flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
             dashActive
               ? "font-semibold text-(--color-primary-ink)"
-              : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+              : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
           )}
         >
           {DashIcon && <DashIcon size={19} weight={dashActive ? "bold" : "regular"} className={cn("shrink-0", dashActive && "text-(--color-primary)")} />}
@@ -85,7 +85,7 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
               "flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
               isHrefActive("/soporte", pathname)
                 ? "font-semibold text-(--color-primary-ink)"
-                : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
             )}
           >
             <Lifebuoy
