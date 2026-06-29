@@ -1,0 +1,1090 @@
+[
+  {
+    "patente": "BBVW32",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "320 CL",
+    "numero_motor": "7JK89666",
+    "anio": 2005
+  },
+  {
+    "patente": "BPDH67",
+    "tipo_vehiculo": "CAMION",
+    "marca": "FORD",
+    "modelo": "CARGO 2628E",
+    "numero_motor": "30924884",
+    "anio": 2008
+  },
+  {
+    "patente": "BPZV43",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "HYUNDAI",
+    "modelo": "PORTER DCAB HR STD TCI PS",
+    "numero_motor": "D4BH8021388",
+    "anio": 2008
+  },
+  {
+    "patente": "BSLH81",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "CASE",
+    "modelo": "821E",
+    "numero_motor": "520346",
+    "anio": 2009
+  },
+  {
+    "patente": "BWYJ11",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "HAFEI",
+    "modelo": "RUIYI 1.1",
+    "numero_motor": "8002150HC",
+    "anio": 2009
+  },
+  {
+    "patente": "CPSG36",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "FREIGHTLINER",
+    "modelo": "M2 106",
+    "numero_motor": "90698000851505",
+    "anio": 2011
+  },
+  {
+    "patente": "CXPT20",
+    "tipo_vehiculo": "MAQ. INDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "950H",
+    "numero_motor": "KHX24244",
+    "anio": 2011
+  },
+  {
+    "patente": "DCHR67",
+    "tipo_vehiculo": "CAMION",
+    "marca": "FORD",
+    "modelo": "CARGO 5032E",
+    "numero_motor": "36252654",
+    "anio": 2011
+  },
+  {
+    "patente": "DGDK73",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2726 K 36",
+    "numero_motor": "902938U0945055",
+    "anio": 2011
+  },
+  {
+    "patente": "DHBL44",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "320 DL",
+    "numero_motor": "GDC45213",
+    "anio": 2011
+  },
+  {
+    "patente": "DHBL45",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "320D FM",
+    "numero_motor": "GDC45997",
+    "anio": 2011
+  },
+  {
+    "patente": "DJZT25",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "CHEVROLET",
+    "modelo": "AVALANCHE LT 4WD 5.3 AUT",
+    "numero_motor": "CBG264072",
+    "anio": 2012
+  },
+  {
+    "patente": "DKLK26",
+    "tipo_vehiculo": "CAMION",
+    "marca": "FORD",
+    "modelo": "CARGO 2628",
+    "numero_motor": "36316325",
+    "anio": 2012
+  },
+  {
+    "patente": "DKPG54",
+    "tipo_vehiculo": "CAMION",
+    "marca": "FORD",
+    "modelo": "CARGO 2628",
+    "numero_motor": "36324868",
+    "anio": 2012
+  },
+  {
+    "patente": "DLSD55",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "HYSTER",
+    "modelo": "H60FT",
+    "numero_motor": "F2E820858",
+    "anio": 2012
+  },
+  {
+    "patente": "DLSD56",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "HYSTER",
+    "modelo": "H60FT",
+    "numero_motor": "F2E820859",
+    "anio": 2012
+  },
+  {
+    "patente": "DLSD58",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "HYSTER",
+    "modelo": "H155FT",
+    "numero_motor": "111540012",
+    "anio": 2012
+  },
+  {
+    "patente": "DLSD59",
+    "tipo_vehiculo": "MAQ. INDUSTRIAL",
+    "marca": "HYSTER",
+    "modelo": "H155FT",
+    "numero_motor": "110770183",
+    "anio": 2012
+  },
+  {
+    "patente": "DLSD65",
+    "tipo_vehiculo": "MAQ. INDUSTRIAL",
+    "marca": "HYSTER",
+    "modelo": "H155FT",
+    "numero_motor": "111530278",
+    "anio": 2012
+  },
+  {
+    "patente": "DPFG37",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2726 K 36",
+    "numero_motor": "902938U0979926",
+    "anio": 2012
+  },
+  {
+    "patente": "DPFK13",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2726 K 36",
+    "numero_motor": "902938U0968825",
+    "anio": 2012
+  },
+  {
+    "patente": "DRHY62",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2726 K 36",
+    "numero_motor": "902938U0904773",
+    "anio": 2012
+  },
+  {
+    "patente": "DRHY66",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2726 K 36",
+    "numero_motor": "902938U0949703",
+    "anio": 2012
+  },
+  {
+    "patente": "DRKP88",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "FREIGHTLINER",
+    "modelo": "M2 106",
+    "numero_motor": "90698000928153",
+    "anio": 2012
+  },
+  {
+    "patente": "DS6482",
+    "tipo_vehiculo": "CAMION",
+    "marca": "FORD",
+    "modelo": "F 11000",
+    "numero_motor": "113542",
+    "anio": 1991
+  },
+  {
+    "patente": "DVHP53",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "320D",
+    "numero_motor": "GDC50241",
+    "anio": 2012
+  },
+  {
+    "patente": "DWZD11",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "950H",
+    "numero_motor": "KHX30582",
+    "anio": 2012
+  },
+  {
+    "patente": "DZDZ72",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "SSANGYONG",
+    "modelo": "NEW ACTYON SPORT 2.0",
+    "numero_motor": "67196010502615",
+    "anio": 2012
+  },
+  {
+    "patente": "DZJY31",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAHINDRA",
+    "modelo": "NEW PIK UP XL D CAB 2.2",
+    "numero_motor": "HGB4M67056",
+    "anio": 2012
+  },
+  {
+    "patente": "DZTD52",
+    "tipo_vehiculo": "TRACTOR",
+    "marca": "JOHN DEERE",
+    "modelo": "6165J MFWD",
+    "numero_motor": "J06068H681177",
+    "anio": 2013
+  },
+  {
+    "patente": "DZTH66",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "ATRON 2729 K",
+    "numero_motor": "926989U0994416",
+    "anio": 2012
+  },
+  {
+    "patente": "FBKS63",
+    "tipo_vehiculo": "MINIBUS",
+    "marca": "PEUGEOT",
+    "modelo": "EXPERT CONFORT HDI FULL 1.6",
+    "numero_motor": "10JBBY0078714",
+    "anio": 2012
+  },
+  {
+    "patente": "FBKT14",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "HYSTER",
+    "modelo": "H2 5TX EG",
+    "numero_motor": "FE-E04621",
+    "anio": 2012
+  },
+  {
+    "patente": "FBWH42",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "ATEGO 1618",
+    "numero_motor": "90091300969642",
+    "anio": 2012
+  },
+  {
+    "patente": "FGBD67",
+    "tipo_vehiculo": "MAQUINARIA INDUSTRIAL",
+    "marca": "TCM",
+    "modelo": "FG20T3",
+    "numero_motor": "137148X",
+    "anio": 2012
+  },
+  {
+    "patente": "FZFS26",
+    "tipo_vehiculo": "TRACTOCAMION",
+    "marca": "FREIGHTLINER",
+    "modelo": "CL 120",
+    "numero_motor": "06R1057109",
+    "anio": 2014
+  },
+  {
+    "patente": "GBTX84",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAHINDRA",
+    "modelo": "PIK UP 2.2",
+    "numero_motor": "HGD4A12325",
+    "anio": 2014
+  },
+  {
+    "patente": "GKHJ99",
+    "tipo_vehiculo": "TRACTOR",
+    "marca": "MASSEY FERGUSON",
+    "modelo": "MF7618T 4K",
+    "numero_motor": "B53364",
+    "anio": 2015
+  },
+  {
+    "patente": "GRDW63",
+    "tipo_vehiculo": "SEMIREMOLQUE",
+    "marca": "MACHILE",
+    "modelo": "SRV 203E",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2016
+  },
+  {
+    "patente": "HGKG53",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "ROCONGU",
+    "modelo": "PLANO",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2017
+  },
+  {
+    "patente": "HGKG54",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "ROCONGU",
+    "modelo": "PLANO",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2017
+  },
+  {
+    "patente": "HGLD94",
+    "tipo_vehiculo": "SEMIREMOLQUE",
+    "marca": "GOOSNECK",
+    "modelo": "SR FLATBED",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2017
+  },
+  {
+    "patente": "HKPF56",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "M322D",
+    "numero_motor": "C6E43805",
+    "anio": 2015
+  },
+  {
+    "patente": "JA1225",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "ROBALME",
+    "modelo": "PLANO 2 EJES",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2004
+  },
+  {
+    "patente": "JC6212",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "HECHIZO",
+    "modelo": "HECHIZO",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 1988
+  },
+  {
+    "patente": "JC6804",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "ALUMGA",
+    "modelo": "NO REGISTRA",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 1988
+  },
+  {
+    "patente": "JCKB63",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "950 GC",
+    "numero_motor": "E7A01983",
+    "anio": 2016
+  },
+  {
+    "patente": "JD8980",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "CABURGA",
+    "modelo": "CC5MTS",
+    "numero_motor": "SIN NUMERO",
+    "anio": 1998
+  },
+  {
+    "patente": "JFCZ64",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "236D",
+    "numero_motor": "8FL04106",
+    "anio": 2017
+  },
+  {
+    "patente": "JFCZ65",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "950 GC",
+    "numero_motor": "E7A05039",
+    "anio": 2017
+  },
+  {
+    "patente": "JFCZ66",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "950 GC",
+    "numero_motor": "E7A04845",
+    "anio": 2017
+  },
+  {
+    "patente": "JFCZ67",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "416F2",
+    "numero_motor": "G4D56662",
+    "anio": 2017
+  },
+  {
+    "patente": "JFCZ68",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "416F2",
+    "numero_motor": "G4D56676",
+    "anio": 2017
+  },
+  {
+    "patente": "JFCZ69",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "312D2",
+    "numero_motor": "CST10588",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDB13",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "313D2",
+    "numero_motor": "CST10589",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDB72",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "930K",
+    "numero_motor": "45003646",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDB73",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "930K",
+    "numero_motor": "45003656",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDB87",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLKSWAGEN",
+    "modelo": "CONSTELLATION 31.330",
+    "numero_motor": "36546773",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDB88",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLKSWAGEN",
+    "modelo": "CONSTELLATION 31.330",
+    "numero_motor": "36545722",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDB89",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLKSWAGEN",
+    "modelo": "CONSTELLATION 31.330",
+    "numero_motor": "36545748",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDB90",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLKSWAGEN",
+    "modelo": "CONSTELLATION 31.330 DCAB",
+    "numero_motor": "36547356",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDR84",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLKSWAGEN",
+    "modelo": "CONSTELLATION 31.330",
+    "numero_motor": "36547348",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDR85",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLKSWAGEN",
+    "modelo": "CONSTELLATION 31.330",
+    "numero_motor": "36547350",
+    "anio": 2017
+  },
+  {
+    "patente": "JFDR86",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLKSWAGEN",
+    "modelo": "CONSTELLATION 31.330",
+    "numero_motor": "36548581",
+    "anio": 2017
+  },
+  {
+    "patente": "JGZH29",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "KIA MOTORS",
+    "modelo": "FRONTIER DELUXE 2.5",
+    "numero_motor": "D4CBG076778",
+    "anio": 2017
+  },
+  {
+    "patente": "JGZH30",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "KIA MOTORS",
+    "modelo": "FRONTIER DELUXE 2.5",
+    "numero_motor": "D4CBG077838",
+    "anio": 2017
+  },
+  {
+    "patente": "JGZT91",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAHINDRA",
+    "modelo": "NEW PIK UP DCAB CRDE 2.2",
+    "numero_motor": "MEG4F19928",
+    "anio": 2017
+  },
+  {
+    "patente": "JGZT92",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAHINDRA",
+    "modelo": "NEW PIK UP DCAB CRDE 2.2",
+    "numero_motor": "MEG4G25404",
+    "anio": 2017
+  },
+  {
+    "patente": "JJ5726",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "CABURGA",
+    "modelo": "RFC 7.2",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2008
+  },
+  {
+    "patente": "JK3057",
+    "tipo_vehiculo": "SEMIREMOLQUE",
+    "marca": "RANDON",
+    "modelo": "SR BA GR 03 40",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2009
+  },
+  {
+    "patente": "JN6770",
+    "tipo_vehiculo": "SEMIREMOLQUE",
+    "marca": "TREMAC",
+    "modelo": "SRTT 20 3 S",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2014
+  },
+  {
+    "patente": "JN9374",
+    "tipo_vehiculo": "SEMIREMOLQUE",
+    "marca": "TREMAC",
+    "modelo": "SRTT 20 3 S",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2014
+  },
+  {
+    "patente": "JN9376",
+    "tipo_vehiculo": "SEMIREMOLQUE",
+    "marca": "TREMAC",
+    "modelo": "SRTT 20 3 S",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2014
+  },
+  {
+    "patente": "JP3896",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "ROCONGU",
+    "modelo": "PLANO DE 2 EJES",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2015
+  },
+  {
+    "patente": "JTBP17",
+    "tipo_vehiculo": "CASA RODANTE",
+    "marca": "MERCEDES BENZ",
+    "modelo": "VARIO 818 4X4",
+    "numero_motor": "90091900954994",
+    "anio": 2013
+  },
+  {
+    "patente": "JWPF10",
+    "tipo_vehiculo": "SEMIREMOLQUE",
+    "marca": "LIBRELATO",
+    "modelo": "PT66 3200",
+    "numero_motor": "SM",
+    "anio": 2018
+  },
+  {
+    "patente": "JZVG10",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "TOYOTA",
+    "modelo": "NEW HILUX DCAB 4X4 2.8 AUT",
+    "numero_motor": "1GD4294802",
+    "anio": 2018
+  },
+  {
+    "patente": "KLHH93",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "TOYOTA",
+    "modelo": "NEW HILUX 2.4",
+    "numero_motor": "2GDC299085",
+    "anio": 2018
+  },
+  {
+    "patente": "KLJZ68",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLVO",
+    "modelo": "VM",
+    "numero_motor": "Y1A040425",
+    "anio": 2018
+  },
+  {
+    "patente": "KLJZ69",
+    "tipo_vehiculo": "CAMION",
+    "marca": "VOLVO",
+    "modelo": "VM",
+    "numero_motor": "Y1A039663",
+    "anio": 2018
+  },
+  {
+    "patente": "KLKR98",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "TOYOTA",
+    "modelo": "HILUX DCAB DX 2.4",
+    "numero_motor": "2GDC344826",
+    "anio": 2018
+  },
+  {
+    "patente": "KRJC75",
+    "tipo_vehiculo": "TRACTOCAMION",
+    "marca": "MAN",
+    "modelo": "TGS 26.440",
+    "numero_motor": "50549150844920",
+    "anio": 2018
+  },
+  {
+    "patente": "KSDV66",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAHINDRA",
+    "modelo": "NEW PIK UP CRDE 2.2",
+    "numero_motor": "MEH4J13326",
+    "anio": 2018
+  },
+  {
+    "patente": "KTGZ34",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAHINDRA",
+    "modelo": "NEW PIK UP 2.2",
+    "numero_motor": "MEH4J13851",
+    "anio": 2018
+  },
+  {
+    "patente": "KX2609",
+    "tipo_vehiculo": "CAMION",
+    "marca": "FREIGHTLINER",
+    "modelo": "MB 80",
+    "numero_motor": "376911507176048",
+    "anio": 1994
+  },
+  {
+    "patente": "KXWD95",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MERCEDES BENZ",
+    "modelo": "X250D POWER 4X4 2.3",
+    "numero_motor": "YS23A260C031141",
+    "anio": 2019
+  },
+  {
+    "patente": "KXZD19",
+    "tipo_vehiculo": "TRACTOCAMION",
+    "marca": "MERCEDES BENZ",
+    "modelo": "ACTROS 2641 LS",
+    "numero_motor": "541974C0998505",
+    "anio": 2018
+  },
+  {
+    "patente": "KXZD20",
+    "tipo_vehiculo": "TRACTOCAMION",
+    "marca": "MERCEDES BENZ",
+    "modelo": "ACTROS 2641 LS",
+    "numero_motor": "541974C0998364",
+    "anio": 2018
+  },
+  {
+    "patente": "LCCY14",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "TCM",
+    "modelo": "FG30T3C",
+    "numero_motor": "SIN NUMERO",
+    "anio": 2019
+  },
+  {
+    "patente": "LCTC21",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "VOLVO",
+    "modelo": "L110F",
+    "numero_motor": "12173314",
+    "anio": 2019
+  },
+  {
+    "patente": "LGHF46",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "938K",
+    "numero_motor": "45005747",
+    "anio": 2019
+  },
+  {
+    "patente": "LTGZ76",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "VOLKSWAGEN",
+    "modelo": "AMAROK TRENDLINE 2.0",
+    "numero_motor": "CNE120885",
+    "anio": 2020
+  },
+  {
+    "patente": "NS7081",
+    "tipo_vehiculo": "CAMION",
+    "marca": "FREIGHTLINER",
+    "modelo": "FL 80 4X2",
+    "numero_motor": "45188301",
+    "anio": 1996
+  },
+  {
+    "patente": "OR0167",
+    "tipo_vehiculo": "CUATRIMOTO",
+    "marca": "CF MOTO",
+    "modelo": "CF 625 C",
+    "numero_motor": "196SB3J250024",
+    "anio": 2014
+  },
+  {
+    "patente": "PFJL88",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "TCM",
+    "modelo": "FG25T3C",
+    "numero_motor": "32614",
+    "anio": 2021
+  },
+  {
+    "patente": "PFJL91",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "TCM",
+    "modelo": "FG25T3C",
+    "numero_motor": "32632",
+    "anio": 2021
+  },
+  {
+    "patente": "PFJL92",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "TCM",
+    "modelo": "FG25T3C",
+    "numero_motor": "32622",
+    "anio": 2021
+  },
+  {
+    "patente": "PFJX24",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "ATEGO 1726 48",
+    "numero_motor": "926991U1313785",
+    "anio": 2021
+  },
+  {
+    "patente": "PFVP52",
+    "tipo_vehiculo": "TRACTOCAMION",
+    "marca": "MERCEDES BENZ",
+    "modelo": "NEW ACTROS 2645 S33 STREAM 4",
+    "numero_motor": "471922C0506144",
+    "anio": 2020
+  },
+  {
+    "patente": "PGBK42",
+    "tipo_vehiculo": "TRACTOCAMION",
+    "marca": "MERCEDES BENZ",
+    "modelo": "NEW ACTROS 2645 S33 STREAM 4",
+    "numero_motor": "471922C0517547",
+    "anio": 2020
+  },
+  {
+    "patente": "PPYR75",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "FOTON",
+    "modelo": "MIDI 1.3",
+    "numero_motor": "SIN NUMERO",
+    "anio": 2021
+  },
+  {
+    "patente": "PSKL61",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "FREIGHTLINER",
+    "modelo": "M2 106",
+    "numero_motor": "74584301",
+    "anio": 2021
+  },
+  {
+    "patente": "PWTD82",
+    "tipo_vehiculo": "REMOLQUE",
+    "marca": "EMES",
+    "modelo": "PLANO 2 EJES",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2022
+  },
+  {
+    "patente": "PWTK77",
+    "tipo_vehiculo": "SEMIREMOLQUE",
+    "marca": "EMES",
+    "modelo": "BATEA",
+    "numero_motor": "E0018",
+    "anio": 2025
+  },
+  {
+    "patente": "RBYD98",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "FREIGHTLINER",
+    "modelo": "M2 106",
+    "numero_motor": "74588082",
+    "anio": 2021
+  },
+  {
+    "patente": "RWYH93",
+    "tipo_vehiculo": "FURGON",
+    "marca": "RAM",
+    "modelo": "VAN 700 CITY 5P 1.2",
+    "numero_motor": "7135619",
+    "anio": 2022
+  },
+  {
+    "patente": "SBRP15",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAXUS",
+    "modelo": "T60 GL 2.8",
+    "numero_motor": "R9221000854",
+    "anio": 2022
+  },
+  {
+    "patente": "STSF58",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAHINDRA",
+    "modelo": "PIK UP CRDE 2WD 2.2",
+    "numero_motor": "VGN4K12884",
+    "anio": 2023
+  },
+  {
+    "patente": "SZDT69",
+    "tipo_vehiculo": "MAQUINA INDUSTRIAL",
+    "marca": "HYSTER",
+    "modelo": "H3.0UT",
+    "numero_motor": "GK25-219911",
+    "anio": 2025
+  },
+  {
+    "patente": "SZGB72",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAXUS",
+    "modelo": "T60 DX 2.0",
+    "numero_motor": "M924A059788",
+    "anio": 2025
+  },
+  {
+    "patente": "TBZW37",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAZDA",
+    "modelo": "BT 50 4WD 3.0 AUT",
+    "numero_motor": "4JJ3 ZF7799",
+    "anio": 2024
+  },
+  {
+    "patente": "TDSJ73",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAXUS",
+    "modelo": "T60 DX 2.0",
+    "numero_motor": "M922C094175",
+    "anio": 2024
+  },
+  {
+    "patente": "TFJX48",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "TOYOTA",
+    "modelo": "HILUX DC 4X4 2.8 AUT",
+    "numero_motor": "1GD1422675",
+    "anio": 2024
+  },
+  {
+    "patente": "TFYJ62",
+    "tipo_vehiculo": "CAMION",
+    "marca": "SINOTRUK",
+    "modelo": "HOWO TX",
+    "numero_motor": "230807812617",
+    "anio": 2024
+  },
+  {
+    "patente": "TJ8507",
+    "tipo_vehiculo": "GRUA",
+    "marca": "CATERPILLAR",
+    "modelo": "924 F",
+    "numero_motor": "97Z03278",
+    "anio": 1996
+  },
+  {
+    "patente": "TVS028",
+    "tipo_vehiculo": "MOTO",
+    "marca": "HONDA",
+    "modelo": "XR190L",
+    "numero_motor": "MD43E2053820",
+    "anio": 2023
+  },
+  {
+    "patente": "UD1187",
+    "tipo_vehiculo": "CAMION",
+    "marca": "MERCEDES BENZ",
+    "modelo": "1720 48",
+    "numero_motor": "377.984-10-464621",
+    "anio": 2001
+  },
+  {
+    "patente": "UU5852",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "CHEVROLET",
+    "modelo": "CORSA PICK UP 1.7",
+    "numero_motor": "(NO INFORMADO)",
+    "anio": 2001
+  },
+  {
+    "patente": "VDGS52",
+    "tipo_vehiculo": "CAMION",
+    "marca": "SINOTRUK",
+    "modelo": "HOWO TX",
+    "numero_motor": "240907805297",
+    "anio": 2025
+  },
+  {
+    "patente": "VHVL38",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "CHEVROLET",
+    "modelo": "SILVERADO 4X4 3.0L AUT",
+    "numero_motor": "LZ0 TSG303862",
+    "anio": 2025
+  },
+  {
+    "patente": "VL9073",
+    "tipo_vehiculo": "CAMION",
+    "marca": "FORD",
+    "modelo": "CARGO 2631",
+    "numero_motor": "30476834",
+    "anio": 2003
+  },
+  {
+    "patente": "VPTR69",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MAXUS",
+    "modelo": "T60 4X2 DX MT E6",
+    "numero_motor": "M9249053329",
+    "anio": 2026
+  },
+  {
+    "patente": "VVJS38",
+    "tipo_vehiculo": "CAMION",
+    "marca": "SINOTRUK",
+    "modelo": "HOWO TX",
+    "numero_motor": "251107810227",
+    "anio": 2026
+  },
+  {
+    "patente": "WF1150",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "930 G",
+    "numero_motor": "CPT19999",
+    "anio": 2006
+  },
+  {
+    "patente": "WG2180",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "938 G",
+    "numero_motor": "BMA27282",
+    "anio": 2006
+  },
+  {
+    "patente": "WG2193",
+    "tipo_vehiculo": "CARGADOR FRONTAL",
+    "marca": "CATERPILLAR",
+    "modelo": "950 G",
+    "numero_motor": "BMA23417",
+    "anio": 2006
+  },
+  {
+    "patente": "WK5867",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "1720 K 36",
+    "numero_motor": "377984U0680859",
+    "anio": 2007
+  },
+  {
+    "patente": "YJ1939",
+    "tipo_vehiculo": "STATION WAGON",
+    "marca": "TOYOTA",
+    "modelo": "LAND CRUISER 4.0 AUT",
+    "numero_motor": "1GRO177296",
+    "anio": 2005
+  },
+  {
+    "patente": "YT2530",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "FORD",
+    "modelo": "CARGO 2631",
+    "numero_motor": "30530851",
+    "anio": 2005
+  },
+  {
+    "patente": "YZ5787",
+    "tipo_vehiculo": "MAQUINAINDUSTRIAL",
+    "marca": "CATERPILLAR",
+    "modelo": "312 C",
+    "numero_motor": "6LK37052",
+    "anio": 2005
+  },
+  {
+    "patente": "ZR7183",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2423 K 36",
+    "numero_motor": "906924U0649526",
+    "anio": 2006
+  },
+  {
+    "patente": "ZR7184",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2423 K 36",
+    "numero_motor": "906924U0649749",
+    "anio": 2006
+  },
+  {
+    "patente": "ZV6899",
+    "tipo_vehiculo": "CAMIONETA",
+    "marca": "MITSUBISHI",
+    "modelo": "L200 D CAB 2.5",
+    "numero_motor": "4D56 CD6107",
+    "anio": 2006
+  },
+  {
+    "patente": "ZV9054",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2423K",
+    "numero_motor": "906924U0677889",
+    "anio": 2006
+  },
+  {
+    "patente": "ZY3457",
+    "tipo_vehiculo": "FURGON",
+    "marca": "CITROEN",
+    "modelo": "BERLINGO 2 VU 1.9",
+    "numero_motor": "10DXFR6174248",
+    "anio": 2007
+  },
+  {
+    "patente": "ZY3970",
+    "tipo_vehiculo": "CHASIS CABINADO",
+    "marca": "MERCEDES BENZ",
+    "modelo": "2423K",
+    "numero_motor": "906924U0677685",
+    "anio": 2006
+  }
+]
