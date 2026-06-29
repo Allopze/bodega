@@ -53,15 +53,15 @@ describe("sidebar navigation", () => {
     expires: "2030-01-01T00:00:00.000Z",
   } satisfies Session
 
-  it("keeps repuestos and servicios out of sidebar-derived navigation", () => {
+  it("shows repuestos and servicios in sidebar-derived navigation", () => {
     const visibleItems = getVisibleAreas(adminSession).flatMap((area) => area.items)
     const commandTargets = flattenNavTargets(adminSession)
 
-    expect(visibleItems.map((item) => item.href)).not.toEqual(expect.arrayContaining([
+    expect(visibleItems.map((item) => item.href)).toEqual(expect.arrayContaining([
       "/repuestos",
       "/servicios",
     ]))
-    expect(commandTargets.map((target) => target.href)).not.toEqual(expect.arrayContaining([
+    expect(commandTargets.map((target) => target.href)).toEqual(expect.arrayContaining([
       "/repuestos",
       "/servicios",
     ]))

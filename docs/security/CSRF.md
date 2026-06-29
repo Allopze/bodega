@@ -134,4 +134,4 @@ Configurados en `next.config.ts`, aplicados a todas las rutas:
 ## Verificación pendiente
 
 - [ ] Test E2E (Playwright) que haga un `POST` cross-origin a una Server Action
-      y verifique el rechazo (403/400). Tracked en `AUDITORIA_INTEGRAL_CHOME.md` (T-01).
+      y verifique el rechazo (403/400). Tracked en `../auditoria/AUDITORIA_INTEGRAL_CHOME.md` (T-01).

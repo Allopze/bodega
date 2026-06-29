@@ -84,7 +84,7 @@ function PageLink({
 
   if (disabled) {
     return (
-      <span className={className} aria-label={ariaLabel} aria-disabled="true">
+      <span className={className} role="link" aria-label={ariaLabel} aria-disabled="true">
         {children}
       </span>
     )

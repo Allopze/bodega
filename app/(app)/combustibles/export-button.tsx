@@ -22,7 +22,11 @@ export function ExportXlsxButton({ filters }: ExportButtonProps) {
         link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${result.data.base64}`
         link.download = result.data.filename
         link.click()
-        toast.success("Archivo exportado")
+        if (result.data.truncated) {
+          toast.warning(`Archivo exportado con límite de ${result.data.rowLimit.toLocaleString("es-CL")} filas`)
+        } else {
+          toast.success("Archivo exportado")
+        }
       } else {
         toast.error(result.message ?? "Error al exportar")
       }

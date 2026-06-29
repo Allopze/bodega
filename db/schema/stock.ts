@@ -49,6 +49,34 @@ export const inventoryMovements = pgTable("inventory_movements", {
   index("inventory_movements_product_performed_at_idx").on(table.productId, table.performedAt),
 ])
 
+export const physicalInventoryCounts = pgTable("physical_inventory_counts", {
+  id:          text("id").primaryKey(),
+  code:        text("code").notNull().unique(),
+  worksiteId:  text("worksite_id").notNull().references(() => worksites.id),
+  status:      text("status").notNull().default("draft"),
+  countedBy:   text("counted_by").notNull().references(() => users.id),
+  closedBy:    text("closed_by").references(() => users.id),
+  closedAt:    timestamp("closed_at", { withTimezone: true, mode: "string" }),
+  notes:       text("notes"),
+  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("physical_inventory_counts_status_valid", sql`${table.status} IN ('draft', 'closed', 'cancelled')`),
+  index("physical_inventory_counts_worksite_status_idx").on(table.worksiteId, table.status),
+])
+
+export const physicalInventoryCountItems = pgTable("physical_inventory_count_items", {
+  id:               text("id").primaryKey(),
+  countId:          text("count_id").notNull().references(() => physicalInventoryCounts.id, { onDelete: "cascade" }),
+  productId:        text("product_id").notNull().references(() => products.id),
+  expectedQuantity: real("expected_quantity").notNull().default(0),
+  countedQuantity:  real("counted_quantity").notNull().default(0),
+  difference:       real("difference").notNull().default(0),
+  notes:            text("notes"),
+}, (table) => [
+  uniqueIndex("physical_inventory_count_items_unique").on(table.countId, table.productId),
+])
+
 /* ── Relations ──────────────────────────────────────────────────────────── */
 export const worksiteStockRelations = relations(worksiteStock, ({ one }) => ({
   worksite: one(worksites, { fields: [worksiteStock.worksiteId], references: [worksites.id] }),
@@ -59,4 +87,22 @@ export const inventoryMovementsRelations = relations(inventoryMovements, ({ one 
   worksite:    one(worksites, { fields: [inventoryMovements.worksiteId], references: [worksites.id] }),
   product:     one(products, { fields: [inventoryMovements.productId], references: [products.id] }),
   performedBy: one(users, { fields: [inventoryMovements.performedBy], references: [users.id] }),
+}))
+
+export const physicalInventoryCountsRelations = relations(physicalInventoryCounts, ({ one, many }) => ({
+  worksite: one(worksites, { fields: [physicalInventoryCounts.worksiteId], references: [worksites.id] }),
+  countedByUser: one(users, { fields: [physicalInventoryCounts.countedBy], references: [users.id] }),
+  closedByUser: one(users, { fields: [physicalInventoryCounts.closedBy], references: [users.id] }),
+  items: many(physicalInventoryCountItems),
+}))
+
+export const physicalInventoryCountItemsRelations = relations(physicalInventoryCountItems, ({ one }) => ({
+  count: one(physicalInventoryCounts, {
+    fields: [physicalInventoryCountItems.countId],
+    references: [physicalInventoryCounts.id],
+  }),
+  product: one(products, {
+    fields: [physicalInventoryCountItems.productId],
+    references: [products.id],
+  }),
 }))

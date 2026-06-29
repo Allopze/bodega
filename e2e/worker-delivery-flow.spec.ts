@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { clearRateLimits } from "./helpers"
 
 test("entregas: bloquea cantidad mayor al saldo pendiente", async ({ page }) => {
   await login(page)
@@ -8,7 +9,7 @@ test("entregas: bloquea cantidad mayor al saldo pendiente", async ({ page }) => 
 
   await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
   await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP · Casco EPP E2E/)
-  const quantity = page.getByLabel(/^Cantidad/)
+  const quantity = page.locator("#deliveryQuantity")
   await quantity.fill("5")
 
   await expect.poll(async () =>
@@ -33,7 +34,7 @@ test("entregas: rechaza comprobante con formato no permitido", async ({ page }) 
 
   await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
   await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP-BAD · Casco EPP E2E/)
-  await page.getByLabel(/^Cantidad/).fill("1")
+  await page.locator("#deliveryQuantity").fill("1")
   await page.getByLabel("Comprobante").setInputFiles({
     name: "comprobante-e2e.txt",
     mimeType: "text/plain",
@@ -54,7 +55,7 @@ test("entregas: registra comprobante y permite descargarlo", async ({ page }) =>
 
   await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
   await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP-ADJ · Casco EPP E2E/)
-  await page.getByLabel(/^Cantidad/).fill("1")
+  await page.locator("#deliveryQuantity").fill("1")
   await page.getByLabel("Recibido por").fill("Receptor adjunto E2E")
   await page.getByLabel("Comprobante").setInputFiles({
     name: "comprobante-e2e.pdf",
@@ -82,7 +83,7 @@ test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
 
   await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
   await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP · Casco EPP E2E/)
-  await page.getByLabel(/^Cantidad/).fill("2")
+  await page.locator("#deliveryQuantity").fill("2")
   await page.getByLabel("Recibido por").fill("Supervisor E2E")
   await page.getByRole("button", { name: "Registrar entrega" }).click()
 
@@ -92,6 +93,7 @@ test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
 })
 
 async function login(page: Page) {
+  await clearRateLimits()
   await page.goto("/login")
   await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
   await page.getByLabel("Contraseña").fill("chome2026")

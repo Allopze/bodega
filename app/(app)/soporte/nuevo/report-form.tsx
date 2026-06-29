@@ -11,12 +11,19 @@ import {
 } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import { createReportAction } from "@/app/(app)/soporte/actions"
-import type { FeedbackTipo } from "@/lib/validation/feedback"
+import type { FeedbackPrioridad, FeedbackTipo } from "@/lib/validation/feedback"
 
 const TIPO_OPTIONS: { value: FeedbackTipo; label: string; description: string }[] = [
   { value: "bug",        label: "🐛 Bug",        description: "Algo no funciona como debería" },
   { value: "consulta",   label: "❓ Consulta",   description: "Tengo una duda sobre la plataforma" },
   { value: "sugerencia", label: "💡 Sugerencia", description: "Tengo una idea para mejorar algo" },
+]
+
+const PRIORITY_OPTIONS: { value: FeedbackPrioridad; label: string }[] = [
+  { value: "baja", label: "Baja" },
+  { value: "normal", label: "Normal" },
+  { value: "alta", label: "Alta" },
+  { value: "critica", label: "Crítica" },
 ]
 
 export function ReportForm() {
@@ -27,6 +34,7 @@ export function ReportForm() {
   const [titulo, setTitulo]         = useState("")
   const [descripcion, setDesc]      = useState("")
   const [pagina, setPagina]         = useState("")
+  const [priority, setPriority]     = useState<FeedbackPrioridad>("normal")
   const [errors, setErrors]         = useState<Record<string, string>>({})
 
   function validate(): boolean {
@@ -50,6 +58,7 @@ export function ReportForm() {
         titulo:      titulo.trim(),
         descripcion: descripcion.trim(),
         pagina:      pagina.trim() || undefined,
+        priority,
       })
 
       if (!result.ok) {
@@ -88,6 +97,22 @@ export function ReportForm() {
                   <span className="font-medium">{opt.label}</span>
                   <span className="ml-2 text-sub text-xs">{opt.description}</span>
                 </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field
+          label="Prioridad"
+          htmlFor="priority"
+        >
+          <Select value={priority} onValueChange={(v) => setPriority(v as FeedbackPrioridad)}>
+            <SelectTrigger id="priority">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITY_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>

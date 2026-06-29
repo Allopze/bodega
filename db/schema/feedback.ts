@@ -11,6 +11,8 @@ export const feedbackReports = pgTable("feedback_reports", {
   titulo:       text("titulo").notNull(),
   descripcion:  text("descripcion").notNull(),
   pagina:       text("pagina"),                    // optional — URL/sección donde ocurrió
+  priority:     text("priority").notNull().default("normal"),
+  dueAt:        timestamp("due_at", { withTimezone: true, mode: "string" }),
   estado:       text("estado").notNull().default("abierto"),
   notaInterna:  text("nota_interna"),              // gestión interna, visible solo a admins
   createdBy:    text("created_by").notNull().references(() => users.id),
@@ -20,6 +22,7 @@ export const feedbackReports = pgTable("feedback_reports", {
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("feedback_reports_tipo_valid", sql`${table.tipo} IN ('bug', 'consulta', 'sugerencia')`),
+  check("feedback_reports_priority_valid", sql`${table.priority} IN ('baja', 'normal', 'alta', 'critica')`),
   check("feedback_reports_estado_valid", sql`${table.estado} IN ('abierto', 'en_progreso', 'resuelto', 'descartado')`),
   index("feedback_reports_created_by_idx").on(table.createdBy),
   index("feedback_reports_estado_idx").on(table.estado),

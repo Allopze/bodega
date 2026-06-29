@@ -1,7 +1,8 @@
 "use client"
 
 import { useActionState, useState } from "react"
-import { addPaymentAction, type ActionState } from "../../actions"
+import { addPaymentAction } from "../../actions"
+import type { ActionState } from "@/lib/validation/masters"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

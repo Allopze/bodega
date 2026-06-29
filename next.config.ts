@@ -21,10 +21,17 @@ const nextConfig: NextConfig = {
     ];
   },
   // playwright-core ships non-JS assets (browsers.json, etc.) that NFT
-  // doesn't trace automatically.  The key must be the URL path (route group
-  // parentheses are stripped), so /(print)/sst/... becomes /sst/...
+  // doesn't trace automatically. Both print/PDF routes import Playwright
+  // lazily through lib/pdf/browser-pool.ts, so keep the package assets in the
+  // standalone trace explicitly.
   outputFileTracingIncludes: {
-    "/sst/[id]/print/pdf": ["./node_modules/playwright-core/**/*"],
+    "/*": [
+      "./node_modules/playwright-core/browsers.json",
+      "./node_modules/playwright-core/lib/**/*",
+      "./node_modules/playwright-core/index.*",
+      "./node_modules/playwright-core/package.json",
+      "./node_modules/playwright/**/*",
+    ],
   },
 };
 

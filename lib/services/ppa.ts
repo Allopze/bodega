@@ -92,6 +92,7 @@ export async function createPpaSubmission(
     triggeredReasons:     evaluation.reasons,
     estado,
     publicToken:          token,
+    publicTokenRevokedAt: null,
     reviewedBy:           null,
     fuiAlLugar:           null,
     accionCorrectiva:     null,
@@ -154,6 +155,7 @@ export async function getPpaByToken(token: string): Promise<PpaTokenResult | nul
 
   if (rows.length === 0) return null
   const r = rows[0]!
+  if (r.submission.publicTokenRevokedAt) return null
   return {
     ...r.submission,
     worksiteName: r.worksiteName,

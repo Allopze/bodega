@@ -1,7 +1,8 @@
 "use client"
 
 import { useActionState, useState } from "react"
-import { createFuelVehicleAction, type ActionState } from "../actions"
+import { createFuelVehicleAction } from "../actions"
+import type { ActionState } from "@/lib/validation/masters"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"

@@ -5,7 +5,7 @@
 **Alcance:** Funcionamiento y lógica de los módulos del sistema, con foco especial en el **ecosistema de Vehículos** (`flota` + `combustibles` + `mantenciones` + imputaciones de costo).
 **Naturaleza:** Reporte de hallazgos (read-only). No se aplicaron cambios al código.
 
-> Nota: ya existen en la raíz varias auditorías previas (`AUDITORIA_CODIGO.md`,
+> Nota: ya existen varias auditorías previas (`AUDITORIA_CODIGO.md`,
 > `AUDITORIA_INTEGRAL_CHOME.md`, `AUDITORIA_LOGICA_BUGS_FUNCIONALIDADES.md`, etc.).
 > Este documento **no las reemplaza**; se enfoca en la lógica de los módulos y,
 > en particular, en el clúster de Vehículos, que es el código más reciente y el
@@ -324,7 +324,7 @@ Los flujos con mayor riesgo (V2, V3, V5) son precisamente los que no tienen prue
 La raíz acumula 6+ documentos de auditoría
 (`AUDITORIA_CODIGO.md`, `AUDITORIA_FUNCIONES_FALTANTES.md`,
 `AUDITORIA_INTEGRAL_CHOME.md`, `AUDITORIA_LOGICA_BUGS_FUNCIONALIDADES.md`,
-`AUDITORIA_VISUAL.md`, `ANALITICA_TRANSVERSAL_CHOME.md`, y este). Conviene
+`AUDITORIA_VISUAL.md`, `ANALITICA_TRANSVERSAL_CHOME.md`, y este). Están todos en `docs/auditoria/`. Conviene
 consolidarlos en `docs/auditorias/` con un índice y fecha, para no perder
 trazabilidad de qué hallazgo se cerró y cuándo.
 

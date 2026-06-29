@@ -37,6 +37,7 @@ export const ppaSubmissions = pgTable("ppa_submissions", {
 
   // Token público para que el trabajador consulte el resultado de su envío.
   publicToken:        text("public_token").notNull().unique(),
+  publicTokenRevokedAt: timestamp("public_token_revoked_at", { withTimezone: true, mode: "string" }),
 
   // Intervención del responsable de revisión.
   reviewedBy:         text("reviewed_by").references(() => users.id),

@@ -6,6 +6,7 @@ const findFirstRecord = vi.fn()
 const insertValues = vi.fn(() => Promise.resolve())
 const updateWhere = vi.fn(() => Promise.resolve())
 const updateSet = vi.fn(() => ({ where: updateWhere }))
+const mockRecordAudit = vi.fn(() => Promise.resolve())
 
 vi.mock("@/db", () => ({
   db: {
@@ -21,6 +22,11 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/auth/scope", () => ({
   isGlobalRole: vi.fn(),
   visibleWorksiteIds: vi.fn(),
+}))
+
+vi.mock("@/lib/audit", () => ({
+  recordAudit: (params: unknown, client?: unknown) =>
+    (mockRecordAudit as unknown as (params: unknown, client?: unknown) => Promise<void>)(params, client),
 }))
 
 import {
@@ -44,6 +50,10 @@ const input: CreateMaintenanceInput = {
   netAmount: 100,
   taxAmount: 19,
   totalAmount: 119,
+}
+
+function lastAuditPayload() {
+  return (mockRecordAudit.mock.calls as unknown as Array<[unknown, unknown?]>).at(-1)?.[0]
 }
 
 beforeEach(() => {
@@ -71,6 +81,18 @@ describe("createMaintenanceRecord", () => {
     expect(typeof id).toBe("string")
     expect(insertValues).toHaveBeenCalledOnce()
   })
+
+  it("records an audit entry on success", async () => {
+    findFirstVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1" })
+    const id = await createMaintenanceRecord(session, input)
+
+    expect(lastAuditPayload()).toEqual(expect.objectContaining({
+      userId: "user-1",
+      action: "create",
+      entityType: "maintenance_record",
+      entityId: id,
+    }))
+  })
 })
 
 describe("updateMaintenanceRecord", () => {
@@ -93,6 +115,21 @@ describe("updateMaintenanceRecord", () => {
     expect(updateSet).toHaveBeenCalledOnce()
     expect(updateWhere).toHaveBeenCalledOnce()
   })
+
+  it("records old and new state on update", async () => {
+    findFirstRecord.mockResolvedValue({ id: "mr-1", worksiteId: "ws-1", status: "scheduled", totalAmount: 10 })
+    findFirstVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1" })
+
+    await updateMaintenanceRecord(session, "mr-1", input)
+
+    expect(lastAuditPayload()).toEqual(expect.objectContaining({
+      action: "update",
+      entityType: "maintenance_record",
+      entityId: "mr-1",
+      oldState: expect.objectContaining({ status: "scheduled" }),
+      newState: expect.objectContaining({ status: "completed" }),
+    }))
+  })
 })
 
 describe("cancelMaintenanceRecord", () => {
@@ -110,5 +147,19 @@ describe("cancelMaintenanceRecord", () => {
     findFirstRecord.mockResolvedValue({ id: "mr-1", worksiteId: "ws-1", status: "completed" })
     await cancelMaintenanceRecord(session, "mr-1")
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "cancelled" }))
+  })
+
+  it("records old and new state on cancel", async () => {
+    findFirstRecord.mockResolvedValue({ id: "mr-1", worksiteId: "ws-1", status: "completed" })
+
+    await cancelMaintenanceRecord(session, "mr-1")
+
+    expect(lastAuditPayload()).toEqual(expect.objectContaining({
+      action: "cancel",
+      entityType: "maintenance_record",
+      entityId: "mr-1",
+      oldState: expect.objectContaining({ status: "completed" }),
+      newState: expect.objectContaining({ status: "cancelled" }),
+    }))
   })
 })

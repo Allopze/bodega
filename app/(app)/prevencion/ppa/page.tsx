@@ -75,7 +75,7 @@ export default async function PpaPanelPage() {
             { label: "PPA Digital" },
           ]} />
         }
-        headerActions={
+        actions={
           <>
             <PpaAccessPanel worksites={worksiteOptions} />
             <PpaExportButton worksites={worksiteOptions} canExport={canExport} />

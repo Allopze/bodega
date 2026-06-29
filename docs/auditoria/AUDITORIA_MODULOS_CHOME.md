@@ -3,7 +3,7 @@
 ## 1. Resumen ejecutivo
 
 ### Estado general
-No está listo para producción sin restricciones. El build, typecheck, lint, secrets y la suite Vitest pasan, pero la verificación E2E completa no pudo arrancar por credenciales Postgres locales (`28P01`) y no hay evidencia ejecutada de rendimiento porque `perf:queries` exige una base desechable con `PERF_ALLOW_DESTRUCTIVE_RESET=true`. El sistema tiene una base funcional amplia, con RBAC server-side, scoping por faena, transacciones en compras/recepción/stock/entregas y exportaciones XLSX, pero varios módulos críticos dependen de Server Actions con cobertura baja o nula.
+No está listo para producción sin restricciones. El build, typecheck, lint, secrets, Vitest, coverage y performance pasan con evidencia nueva; además `npm run test:e2e` ya arranca localmente sin credenciales manuales gracias a Postgres disposable. El E2E completo todavía no queda verde: 39 tests pasaron, 1 quedó skipped y se cortó tras fallas reales en PDF standalone, PPA y purchase-flow. El sistema mantiene una base funcional amplia, con RBAC server-side, scoping por faena, transacciones en compras/recepción/stock/entregas y exportaciones XLSX, pero aún quedan flujos browser y funcionalidades operativas incompletas.
 
 ### Nota global
 7/10.
@@ -11,14 +11,20 @@ No está listo para producción sin restricciones. El build, typecheck, lint, se
 ### Recomendación final
 Listo para producción con restricciones.
 
-Restricciones mínimas: CI/E2E debe correr contra Postgres disposable real; smoke de imagen productiva debe validarse con DB accesible; los módulos con 0% de cobertura de acciones (`admin/usuarios`, `repuestos`, `servicios`, `mantenciones`) deben tener pruebas de permisos, estados y scoping antes de liberar operación amplia.
+Restricciones mínimas: E2E completo debe quedar verde; smoke de imagen productiva debe validarse con DB accesible; PDF standalone debe incluir/ubicar correctamente Playwright; PPA y purchase-flow deben actualizar sus specs/fixtures a la UI actual; las actions críticas bajo 50% deben seguir subiendo cobertura antes de liberar operación amplia.
 
 ### Principales riesgos
-- `npm run test:e2e` falla antes de ejecutar flujos por `password authentication failed for user "allopze"` al consultar `select count(*) from "users"`.
-- `npm run perf:queries` no produce evidencia sin `PERF_ALLOW_DESTRUCTIVE_RESET=true`.
-- Cobertura global aceptable pero desigual: 72.38% statements, 62.83% branches; acciones críticas quedan en 0% o bajo 50%.
-- PPA público usa token aleatorio pero sin expiración observable en `db/schema/ppa.ts` y `lib/services/ppa.ts`; es defendible para consulta de resultado, pero falta política de retención/expiración del acceso público.
-- Mantenciones y Flota comparten la fuente `fuel_vehicles`; hay fuente única práctica, pero flota es principalmente lectura y no cubre documentos, vencimientos, seguros ni planificación preventiva completa.
+- `npm run test:e2e` ya no falla por credenciales locales: levanta/reusa `postgres:16` en `127.0.0.1:55432` y resetea `bodega_e2e`; el suite completo aún falla por problemas propios de PDF/PPA/purchase.
+- `npm run perf:queries` se ejecutó contra DB desechable y todas las consultas medidas quedaron bajo SLO 1000 ms.
+- Cobertura global aceptable pero desigual: 73.7% statements, 63.62% branches; `repuestos`, `servicios` y `mantenciones` ya no están en 0%, pero `admin/usuarios` sigue bajo.
+- PPA público queda definido por producto como enlace permanente sin expiración automática. Se mitiga con vista pública mínima y revocación manual (`publicTokenRevokedAt`), no con TTL.
+- Mantenciones y Flota avanzaron: auditoría create/update/cancel, campos documentales/vencimientos/responsable y detalle `/flota/[id]`; aún falta gestión completa de documentos y planificación preventiva.
+
+### Estado de remediación — 2026-06-29
+
+- Cerrado en código: E2E wrapper con Postgres disposable; preflight E2E contra DB de mantenimiento; perf ampliado con SLO 1000 ms; PPA permanente con revocación manual y vista pública reducida; `/api/trazabilidad/export` usa `traceability:view`; Repuestos/Servicios visibles en navegación; auditoría en mantenciones; export combustibles limitado a 10.000 filas con aviso; smoke Docker CI con Postgres real; cobertura directa inicial de actions críticas.
+- Cerrado parcialmente: Flota agrega campos, documentos y detalle; Soporte agrega prioridad/SLA; Bodega, entregas y comprobante firmado tienen base de esquema; E2E admin/combustibles/negative-flow pasan con fixtures actualizados.
+- Pendiente real: E2E completo no pasa por PDF standalone, PPA specs con Radix/export, y purchase-flow desactualizado; soporte adjuntos/ruta segura no quedó completo; conteo físico, comprobante firmado, analítica glossary/offline PPA/SST y conciliación OC-factura-recepción no quedaron implementados de punta a punta.
 
 ### Módulos más críticos
 - Repuestos.
@@ -34,15 +40,15 @@ Restricciones mínimas: CI/E2E debe correr contra Postgres disposable real; smok
 
 | Comando | Resultado | Observación | Módulos afectados |
 |---|---|---|---|
-| npm run typecheck | Pasa | `tsc --noEmit` terminó con código 0. | Global |
-| npm run lint | Pasa | `eslint` terminó con código 0. | Global |
-| npm test | Pasa | 145 archivos passed, 4 skipped; 1504 tests passed, 4 skipped; duración 242.89s. | Global |
-| npm run test:e2e | Falla | Timeout 180000ms del webServer. Error repetido: `Failed query: select count(*) from "users"`; causa `28P01 password authentication failed for user "allopze"`. | Todos los flujos UI/E2E |
-| npm run test:coverage | Pasa con brechas | 72.38% statements, 62.83% branches, 78.67% functions, 73.94% lines. 145 files passed, 4 skipped. | Acciones de módulos críticos |
+| npm run typecheck | Pasa | `tsc --noEmit` terminó con código 0 tras los cambios. | Global |
+| npm run lint | Pasa | `eslint` terminó con código 0 tras los cambios. | Global |
+| npm test | Pasa | 152 archivos passed, 4 skipped; 1517 tests passed, 4 skipped; duración 244.95s. | Global |
+| npm run test:e2e | Falla con progreso | Ya arranca con Postgres disposable; ejecución completa observada: 39 passed, 1 skipped, 12 failed, 1 interrupted, 12 did not run. Fallas: PDF standalone, PPA Radix/export, purchase-flow. | UI/E2E |
+| npm run test:coverage | Pasa con brechas | 73.7% statements, 63.62% branches, 79.97% functions, 75.36% lines. 152 files passed, 4 skipped. | Acciones de módulos críticos |
 | npm run check:secrets | Pasa | `Env files check passed.` | Producción/seguridad |
-| npm run perf:queries | No ejecuta medición | Falla por guarda: `PERF_ALLOW_DESTRUCTIVE_RESET=true is required before resetting a database for PERF.` | Reportes, dashboard, analítica, trazabilidad, listados |
+| npm run perf:queries | Pasa | Ejecutado con `PERF_ALLOW_DESTRUCTIVE_RESET=true` contra `bodega_perf_test`; máximo observado 48.5 ms, bajo SLO 1000 ms. | Reportes, dashboard, analítica, trazabilidad, combustibles |
 
-Verificación adicional ejecutada: `npm run build` pasa con Next.js 16.2.9; genera rutas dinámicas para todos los módulos principales y APIs.
+Verificación adicional ejecutada: `npm run db:generate` reporta `No schema changes, nothing to migrate`; `npm run build` pasa con Next.js 16.2.9 e incluye `/flota/[id]`.
 
 ---
 
@@ -50,24 +56,24 @@ Verificación adicional ejecutada: `npm run build` pasa con Next.js 16.2.9; gene
 
 | Módulo | Estado | Nota 1-10 | Listo para producción | Riesgo | Principales problemas |
 |---|---:|---:|---:|---:|---|
-| Administración | Completo con brechas de cobertura | 8 | Sí, con restricciones | Medio | `admin/usuarios/actions.ts` aparece con 0% en coverage; E2E no probado localmente. |
-| Solicitudes | Funcional | 7 | Sí, con restricciones | Medio | Server Action con cobertura baja; E2E bloqueado por DB local. |
-| Repuestos | Parcialmente completo | 6 | No | Alto | Acciones re-exportadas con 0% en coverage; flujo real existe pero necesita E2E y pruebas server-action directas. |
-| Servicios | Parcialmente completo | 6 | No | Alto | Igual que repuestos; modela servicios, pero no hay cobertura directa de actions. |
+| Administración | Completo con brechas de cobertura | 8 | Sí, con restricciones | Medio | `admin/usuarios/actions.ts` sube a 10.58%, pero sigue bajo; E2E admin pasa en subset. |
+| Solicitudes | Funcional | 7 | Sí, con restricciones | Medio | Server Action con cobertura baja; purchase-flow E2E sigue fallando por spec/flujo desactualizado. |
+| Repuestos | Parcialmente completo | 6 | No | Alto | Ya aparece en navegación y coverage actions sube a 88.88%, pero falta E2E real repuestos -> compras. |
+| Servicios | Parcialmente completo | 6 | No | Alto | Ya aparece en navegación y coverage actions sube a 88.88%, pero falta E2E real servicios -> compras. |
 | Aprobaciones | Funcional | 7 | Sí, con restricciones | Medio | Cobertura de actions 65%; requiere prueba E2E real y carrera concurrente de aprobación en CI. |
 | Compras | Funcional robusto | 8 | Sí, con restricciones | Medio | Cobertura actions 49%; eliminación dura de OC requiere vigilancia operativa. |
 | Recepción | Sólido | 8 | Sí, con restricciones | Medio | Buen control oficina/faena; depende de E2E real para prueba punta a punta. |
 | Bodega / Stock | Sólido | 8 | Sí, con restricciones | Medio | Mutación centralizada y transaccional; actions 53% coverage. |
 | Entregas | Sólido | 8 | Sí, con restricciones | Medio | Buen control de stock y trabajador; faltan firmas/comprobantes avanzados. |
 | Trazabilidad | Bueno | 8 | Sí, con restricciones | Medio | Export y detalle existen; no cubre todos los eventos periféricos como devoluciones/ajustes en narrativa completa. |
-| Reportes | Bueno | 7 | Sí, con restricciones | Medio | XLSX y filtros existen; prueba perf no ejecutada. |
-| Analítica | Bueno pero sensible a rendimiento | 7 | Sí, con restricciones | Medio | Muchas agregaciones; falta evidencia `perf:queries`. |
+| Reportes | Bueno | 7 | Sí, con restricciones | Medio | XLSX y filtros existen; perf inicial bajo SLO. |
+| Analítica | Bueno pero sensible a rendimiento | 7 | Sí, con restricciones | Medio | Muchas agregaciones; perf inicial bajo SLO, falta glosario visible. |
 | Evaluaciones SST | Funcional amplio | 7 | Sí, con restricciones | Medio | Cobertura del servicio decente, pero actions 25.82%; campo/UX debe validarse en terreno. |
-| PPA Digital | Funcional con riesgo público | 7 | Sí, con restricciones | Alto | Ruta pública rate-limited, pero token de resultado sin expiración observable. |
-| Combustibles | Funcional reciente | 7 | Sí, con restricciones | Medio | Buenas validaciones; actions 30.74%; import API no cubre todos los casos con DB real. |
-| Flota | Vista consolidada mínima | 5 | No | Alto | Solo lectura; faltan documentos, vencimientos, responsable, seguros y CRUD propio. |
-| Mantenciones | Parcial | 5 | No | Alto | CRUD básico; actions 0%; sin auditoría observable en servicio. |
-| Soporte / Feedback | Funcional | 8 | Sí, con restricciones | Bajo | Buen CRUD de tickets; faltan adjuntos/notificaciones más ricas. |
+| PPA Digital | Funcional con política pública permanente | 7 | Sí, con restricciones | Medio | Token público no expira por decisión de producto; tiene revocación manual y vista mínima, pero E2E PPA está desactualizado. |
+| Combustibles | Funcional reciente | 7 | Sí, con restricciones | Medio | Export limitado a 10.000 filas y E2E subset verde; actions 40.9%, import API aún requiere casos extremos. |
+| Flota | Vista consolidada ampliada | 6 | No | Alto | Agrega detalle, responsable, estado y vencimientos; faltan CRUD documental/alertas completas. |
+| Mantenciones | Parcial con auditoría | 6 | No | Alto | CRUD básico con `recordAudit`; actions 27.9%; falta planificación preventiva. |
+| Soporte / Feedback | Funcional | 8 | Sí, con restricciones | Bajo | Agrega prioridad/SLA; adjuntos/notificaciones ricas siguen pendientes. |
 
 ---
 
@@ -103,13 +109,13 @@ Es base de RBAC, catálogos y usuarios para todo el sistema.
 Panel administrativo por submódulos; navegación coherente desde `/admin`.
 
 #### Tests
-Existen tests de admin, scope, productos, trabajadores y RBAC. Brecha: coverage muestra `app/(app)/admin/usuarios/actions.ts` en 0%.
+Existen tests de admin, scope, productos, trabajadores y RBAC. Brecha: coverage muestra `app/(app)/admin/usuarios/actions.ts` en 10.58%, todavía bajo.
 
 #### Rendimiento
 Riesgo bajo; listados admin acotados, pero usuarios/faenas deben paginarse si crecen.
 
 #### Bugs encontrados
-- `app/(app)/admin/usuarios/actions.ts`: 0% en reporte de cobertura; no demuestra por coverage las mutaciones más sensibles de RBAC.
+- `app/(app)/admin/usuarios/actions.ts`: cobertura baja; no demuestra por coverage todas las mutaciones más sensibles de RBAC.
 
 #### Funcionalidades faltantes indispensables
 Auditoría visible de configuración SMTP/plantillas con diff completo; paginación/búsqueda robusta para catálogos grandes.
@@ -207,20 +213,20 @@ Zod cubre descripción, cantidad, unidad, parte, equipo, patente, marca, modelo 
 Requiere 3 cotizaciones salvo justificación; selección aprueba ítems y los deja disponibles para compra.
 
 #### Integraciones con otros módulos
-Se integra con compras por ítems aprobados; no aparece en sidebar (`nav: []`) aunque existe ruta.
+Se integra con compras por ítems aprobados y ahora aparece en la navegación de Adquisiciones.
 
 #### UI/UX
 Formulario propio y detalle con panel de cotizaciones. Falta discoverability en navegación principal.
 
 #### Tests
-Hay tests de factory, validación y permisos; coverage reporta `app/(app)/repuestos/actions.ts` en 0%.
+Hay tests de factory, validación y permisos; coverage reporta `app/(app)/repuestos/actions.ts` en 88.88%.
 
 #### Rendimiento
 Riesgo bajo/medio; usa queries directas y reutiliza flujo de solicitudes.
 
 #### Bugs encontrados
 - `modules/repuestos/manifest.ts`: `nav: []`; módulo registrado pero no visible por navegación principal.
-- `app/(app)/repuestos/actions.ts`: 0% coverage del wrapper de actions.
+- Pendiente: falta E2E repuestos -> compras con cotización seleccionada.
 
 #### Funcionalidades faltantes indispensables
 E2E real de solicitud de repuesto con cotización seleccionada y OC.
@@ -269,14 +275,14 @@ Compra ítems aprobados. No genera stock por sí mismo; correcto para servicios.
 Formulario y detalle propios; `nav: []` reduce descubribilidad.
 
 #### Tests
-Tests de validation y factory; `app/(app)/servicios/actions.ts` aparece 0%.
+Tests de validation y factory; `app/(app)/servicios/actions.ts` aparece en 88.88%.
 
 #### Rendimiento
 Riesgo bajo/medio.
 
 #### Bugs encontrados
 - `modules/servicios/manifest.ts`: `nav: []`, módulo registrado pero no navegable desde sidebar.
-- `app/(app)/servicios/actions.ts`: 0% coverage.
+- Pendiente: falta E2E servicios -> compras con cotización seleccionada.
 
 #### Funcionalidades faltantes indispensables
 E2E de servicio externo aprobado y convertido en compra.
@@ -386,7 +392,7 @@ Tests de create/cancel/order totals/purchasing service; coverage `app/(app)/comp
 Riesgo medio en listados y detalle con muchas facturas/ítems.
 
 #### Bugs encontrados
-- No se confirmó bug funcional. La brecha es cobertura insuficiente de actions críticas y E2E bloqueado.
+- No se confirmó bug funcional. La brecha es cobertura insuficiente de actions críticas y purchase-flow E2E desactualizado.
 
 #### Funcionalidades faltantes indispensables
 Evidencia de envío real por email; conciliación contable avanzada queda fuera.
@@ -582,7 +588,7 @@ Matriz y detalle por ítem desde solicitud hasta entrega, exportación XLSX.
 Deriva datos de solicitudes visibles, OCs, recepciones, entregas y status history.
 
 #### Permisos y seguridad
-Página usa `traceability:view`; export API usa `reports:view`, inconsistente con el manifest de trazabilidad.
+Página y export API usan `traceability:view`, consistente con el manifest de trazabilidad.
 
 #### Base de datos y persistencia
 Lee tablas operacionales; no inventa eventos.
@@ -606,7 +612,7 @@ Matriz y detalle navegable.
 Export limitado; `perf:queries` no ejecutado.
 
 #### Bugs encontrados
-- `app/api/trazabilidad/export/route.ts` protege con `reports:view` mientras el módulo declara `traceability:view`; puede impedir exportar a usuarios que ven trazabilidad pero no reportes.
+- Corregido: `app/api/trazabilidad/export/route.ts` protege con `traceability:view`.
 
 #### Funcionalidades faltantes indispensables
 Timeline que incluya explícitamente ajustes, devoluciones y desechos.
@@ -805,7 +811,7 @@ Formulario público identifica trabajador por RUT o manual, evalúa y crea token
 Público sin login con Zod y rate limit; interno con `ppa:view`, `ppa:review`, `ppa:manage` y faena scope.
 
 #### Base de datos y persistencia
-`ppa_submissions` almacena respuestas JSON, resultado, estado, public token y revisión.
+`ppa_submissions` almacena respuestas JSON, resultado, estado, public token, revocación manual de token y revisión.
 
 #### Validaciones
 Zod y evaluación pura; RUT validado para lookup.
@@ -820,16 +826,16 @@ Prevención, trabajadores, notificaciones, reportes.
 Formulario público simple y panel interno.
 
 #### Tests
-PPA actions/service/stats/evaluation. Coverage buena en actions públicas; `lib/services/ppa.ts` 22.75% por muchas ramas sin cubrir.
+PPA actions/service/stats/evaluation; se agregó prueba de token revocado. Coverage buena en actions públicas; `lib/services/ppa.ts` sigue bajo por muchas ramas sin cubrir. E2E PPA falla porque el spec usa `selectOption` sobre un Select Radix.
 
 #### Rendimiento
 Listados paginados; export sin límite explícito observado en route.
 
 #### Bugs encontrados
-- `db/schema/ppa.ts` y `lib/services/ppa.ts`: `publicToken` permite consultar resultado sin expiración observable. Riesgo de privacidad si un enlace se filtra.
+- Política aceptada: `publicToken` no expira automáticamente por decisión de producto. Mitigación aplicada: `publicTokenRevokedAt` revoca manualmente el acceso y la vista pública de resultado queda reducida a datos mínimos.
 
 #### Funcionalidades faltantes indispensables
-TTL/rotación de token público o política de retención; modo offline/de conexión mala.
+UI/operación para revocar tokens desde panel interno; modo offline/de conexión mala; actualizar E2E PPA a Select Radix y confirmar export XLSX.
 
 #### Severidad de hallazgos
 Alto.
@@ -841,7 +847,7 @@ Alto.
 Sí, con restricciones.
 
 #### Acciones recomendadas
-Agregar expiración o invalidación de token y límites de exportación.
+Agregar acción UI de revocación, mantener política pública permanente documentada y actualizar E2E PPA.
 
 ---
 
@@ -875,14 +881,14 @@ Flota y analítica.
 Listados, filtros, gráficos, import modal, reportes y subcatálogos.
 
 #### Tests
-Tests de cálculos/import/reportes/vehículos/actions; coverage `app/(app)/combustibles/actions.ts` 30.74%.
+Tests de cálculos/import/reportes/vehículos/actions/export; coverage `app/(app)/combustibles/actions.ts` 40.9%. E2E combustibles pasa en subset.
 
 #### Rendimiento
-Falta evidencia perf. Export de combustibles no muestra límite de filas como reportes generales.
+Perf ejecutado en DB disposable; consulta combustibles `cargas por mes` observada en 6.2 ms. Export de combustibles queda limitado a 10.000 filas y reporta truncado.
 
 #### Bugs encontrados
 - `app/(app)/combustibles/actions.ts`: cobertura baja en muchas mutaciones.
-- `exportFuelLoadsXlsxAction`: exporta todas las filas filtradas sin límite visible; riesgo con mucho volumen.
+- Corregido: `exportFuelLoadsXlsxAction` aplica límite 10.000 y la UI avisa si el XLSX fue truncado.
 
 #### Funcionalidades faltantes indispensables
 Prueba de importación con archivo Excel real extremo y límite de export.
@@ -897,7 +903,7 @@ Medio.
 Sí, con restricciones.
 
 #### Acciones recomendadas
-Subir tests de actions, agregar límite/paginación al export, ejecutar perf.
+Subir tests de actions restantes y ejecutar importación con archivo Excel real extremo.
 
 ---
 
@@ -907,16 +913,16 @@ Subir tests de actions, agregar límite/paginación al export, ejecutar perf.
 Vista consolidada y catálogo completo de vehículos con documentos, vencimientos, responsable e integración.
 
 #### Implementación encontrada
-`app/(app)/flota/page.tsx`, `lib/services/fleet.ts`, datos desde `fuel_vehicles`, `fuel_loads`, `maintenance_records`.
+`app/(app)/flota/page.tsx`, `app/(app)/flota/[id]/page.tsx`, `lib/services/fleet.ts`, datos desde `fuel_vehicles`, `fleet_vehicle_documents`, `fuel_loads`, `maintenance_records`.
 
 #### Flujo real detectado
-Vista de costos por vehículo, litros, cargas, mantenciones y faena.
+Vista de costos por vehículo, litros, cargas, mantenciones, faena, responsable, estado operacional y próximo vencimiento; detalle por vehículo.
 
 #### Permisos y seguridad
 `flota:view`; scoping por faena en servicio.
 
 #### Base de datos y persistencia
-No tiene tabla propia: usa `fuel_vehicles` como fuente única práctica.
+Usa `fuel_vehicles` como fuente única del vehículo y agrega `fleet_vehicle_documents` para documentos con vencimiento/archivo.
 
 #### Validaciones
 No aplica a CRUD porque es lectura.
@@ -928,10 +934,10 @@ Agregación simple y útil, pero no controla ciclo de vida documental.
 Combustibles y mantenciones.
 
 #### UI/UX
-Vista consolidada, no gestión integral.
+Vista consolidada y detalle por vehículo; todavía no hay flujo completo de carga/renovación documental.
 
 #### Tests
-`fleet-service.test.ts`.
+`fleet-service.test.ts` cubre responsable, estado operacional y próximo vencimiento.
 
 #### Rendimiento
 Agrupa por vehículo; riesgo medio si crecen cargas y mantenciones sin índices suficientes.
@@ -940,19 +946,19 @@ Agrupa por vehículo; riesgo medio si crecen cargas y mantenciones sin índices 
 - Módulo esperado como flota empresarial, pero implementación real es vista consolidada mínima.
 
 #### Funcionalidades faltantes indispensables
-CRUD/estado operacional, responsable, documentación, revisión técnica, permisos, seguros, vencimientos y alertas.
+CRUD documental, subida/descarga segura de documentos, alertas por vencimiento y filtros avanzados por vencimiento/responsable.
 
 #### Severidad de hallazgos
 Alto.
 
 #### Nota del módulo
-5/10.
+6/10.
 
 #### ¿Listo para producción?
 No como módulo de flota completo.
 
 #### Acciones recomendadas
-Definir si flota será solo lectura o dueño del catálogo; agregar documentos/vencimientos o documentar alcance limitado.
+Completar gestión documental y alertas; definir si flota será dueño del catálogo o seguirá delegando CRUD a combustibles.
 
 ---
 
@@ -977,7 +983,7 @@ Crea, actualiza y cancela registros vinculados a `fuel_vehicles`; valida montos 
 Zod de montos, estado, vehículo y fecha.
 
 #### Lógica de negocio
-CRUD básico; no hay planificación preventiva ni vencimientos próximos.
+CRUD básico con auditoría create/update/cancel; no hay planificación preventiva ni vencimientos próximos.
 
 #### Integraciones con otros módulos
 Flota y analítica.
@@ -986,14 +992,14 @@ Flota y analítica.
 Listado y formulario.
 
 #### Tests
-`maintenance-service` y `maintenance-validation`; coverage de `app/(app)/mantenciones/actions.ts` 0%.
+`maintenance-service`, `maintenance-validation` y wrapper actions; coverage de `app/(app)/mantenciones/actions.ts` 27.9%.
 
 #### Rendimiento
 Limit 100 en page data; adecuado como inicio, pero no paginación real.
 
 #### Bugs encontrados
-- `lib/services/maintenance.ts`: create/update/cancel no registran `recordAudit`.
-- `app/(app)/mantenciones/actions.ts`: 0% coverage.
+- Corregido: `lib/services/maintenance.ts` registra `recordAudit` en create/update/cancel con old/new state.
+- Parcial: `app/(app)/mantenciones/actions.ts` ya no está en 0%, pero sigue bajo.
 
 #### Funcionalidades faltantes indispensables
 Plan preventivo, alertas, documentación, auditoría de cambios, historial de ediciones.
@@ -1002,13 +1008,13 @@ Plan preventivo, alertas, documentación, auditoría de cambios, historial de ed
 Alto.
 
 #### Nota del módulo
-5/10.
+6/10.
 
 #### ¿Listo para producción?
 No.
 
 #### Acciones recomendadas
-Agregar auditoría, tests de actions y modelo de planificación preventiva.
+Subir tests de actions restantes y agregar modelo/vista de planificación preventiva.
 
 ---
 
@@ -1048,10 +1054,10 @@ Crear reporte, lista, detalle y panel de estado.
 Riesgo bajo.
 
 #### Bugs encontrados
-- Sin bug funcional confirmado.
+- Sin bug funcional confirmado; se agregó prioridad explícita y SLA calculado.
 
 #### Funcionalidades faltantes indispensables
-Adjuntos, prioridad explícita, SLA/notificaciones por estado.
+Adjuntos, ruta segura de descarga para adjuntos de feedback y notificaciones por estado.
 
 #### Severidad de hallazgos
 Bajo.
@@ -1063,60 +1069,60 @@ Bajo.
 Sí, con restricciones menores.
 
 #### Acciones recomendadas
-Agregar prioridad/SLA si soporte será canal formal.
+Completar adjuntos y notificaciones si soporte será canal formal.
 
 ---
 
 ## 5. Hallazgos críticos globales
 
-- Título: E2E local no ejecutable con entorno actual.
+- Título: E2E completo aún no queda verde.
   Severidad: Alto.
   Módulos afectados: Todos.
-  Evidencia técnica: `npm run test:e2e` termina en timeout webServer 180000ms; error `select count(*) from "users"` con `28P01 password authentication failed for user "allopze"`.
-  Riesgo operativo: no hay prueba browser real de flujos críticos en esta auditoría.
-  Recomendación concreta: ejecutar con `E2E_DATABASE_URL` válido o preparar `postgres:///bodega_e2e` por socket según `docs/pruebas/TESTING.md`.
+  Evidencia técnica: `npm run test:e2e` ya arranca con Postgres disposable local, pero el completo observado terminó con 39 passed, 1 skipped, 12 failed, 1 interrupted y 12 did not run.
+  Riesgo operativo: hay prueba browser real parcial, pero PDF/PPA/purchase siguen sin señal verde completa.
+  Recomendación concreta: corregir PDF standalone, actualizar PPA/purchase specs y volver a ejecutar el completo.
 
-- Título: Performance no medido.
-  Severidad: Medio.
+- Título: Performance medido con SLO inicial.
+  Severidad: Cerrado inicial.
   Módulos afectados: Reportes, Analítica, Dashboard, Trazabilidad, Combustibles.
-  Evidencia técnica: `npm run perf:queries` aborta por falta de `PERF_ALLOW_DESTRUCTIVE_RESET=true`.
-  Riesgo operativo: no hay latencia ni plan de consultas contra volumen.
-  Recomendación concreta: correr en DB disposable con flag explícito y archivar resultados.
+  Evidencia técnica: `PERF_ALLOW_DESTRUCTIVE_RESET=true npm run perf:queries` imprimió tabla completa; máximo observado 48.5 ms frente a SLO 1000 ms.
+  Riesgo operativo: bajo para el dataset sintético actual; se debe mantener en CI o runbook.
+  Recomendación concreta: archivar resultados por release y ampliar dataset si crece volumen real.
 
 - Título: Cobertura desigual en Server Actions críticas.
   Severidad: Alto.
   Módulos afectados: Admin usuarios, Repuestos, Servicios, Mantenciones, Combustibles, Solicitudes, Compras, Prevención.
-  Evidencia técnica: coverage reporta 0% en `app/(app)/admin/usuarios/actions.ts`, `app/(app)/repuestos/actions.ts`, `app/(app)/servicios/actions.ts`, `app/(app)/mantenciones/actions.ts`; 30.74% en combustibles, 36.61% solicitudes, 49.04% compras.
+  Evidencia técnica: coverage actual reporta 10.58% en `admin/usuarios`, 88.88% en `repuestos`, 88.88% en `servicios`, 27.9% en `mantenciones`, 40.9% en combustibles, 36.61% solicitudes, 49.04% compras.
   Riesgo operativo: permisos y transiciones pueden romperse sin que CI lo detecte.
   Recomendación concreta: tests directos de Server Actions con sesiones scoped/globales y estados inválidos.
 
-- Título: Permiso de export de trazabilidad no coincide con manifest.
-  Severidad: Medio.
+- Título: Permiso de export de trazabilidad alineado.
+  Severidad: Cerrado.
   Módulos afectados: Trazabilidad, Reportes.
-  Evidencia técnica: `/api/trazabilidad/export` exige `reports:view`; manifest declara `traceability:view`.
-  Riesgo operativo: usuarios con permiso de trazabilidad pueden no exportar lo que ven.
-  Recomendación concreta: alinear permiso o documentar explícitamente dependencia de reportes.
+  Evidencia técnica: `/api/trazabilidad/export` exige `traceability:view`, conserva XLSX y límite 10.000.
+  Riesgo operativo: bajo.
+  Recomendación concreta: mantener test de permiso de ruta.
 
-- Título: PPA público sin expiración de token observable.
-  Severidad: Alto.
+- Título: PPA público permanente por decisión de producto.
+  Severidad: Aceptado con mitigación.
   Módulos afectados: PPA Digital, Prevención.
-  Evidencia técnica: `ppa_submissions.publicToken` y `getPpaByToken(token)` consultan resultado público sin TTL visible.
-  Riesgo operativo: enlace filtrado expone resultado/identificación por tiempo indefinido.
-  Recomendación concreta: agregar expiración, rotación o vista pública de datos mínimos.
+  Evidencia técnica: `ppa_submissions.publicTokenRevokedAt` permite revocación manual; `getPpaByToken()` devuelve `null` solo si fue revocado; la vista pública muestra datos mínimos.
+  Riesgo operativo: enlace filtrado mantiene acceso mientras no se revoque.
+  Recomendación concreta: agregar acción UI de revocación y procedimiento operativo; no agregar expiración automática.
 
 ---
 
 ## 6. Funcionalidades indispensables faltantes
 
-- Seguridad: E2E reproducible con DB disposable, expiración de tokens públicos PPA, cobertura de actions críticas.
+- Seguridad: E2E completo verde, revocación UI de PPA permanente, cobertura de actions críticas.
 - Administración: cobertura completa de usuarios/permisos y auditoría detallada de configuración.
-- Compras: prueba real de email/PDF y conciliación contable avanzada si será alcance productivo.
-- Bodega: conteo físico/cierre de inventario y comprobantes firmados.
+- Compras: prueba real de email/PDF y conciliación básica OC-factura-recepción.
+- Bodega: UI/actions de conteo físico/cierre de inventario y comprobantes firmados.
 - Prevención: validación de terreno, modo degradado/offline para PPA/SST si se usará en faena.
 - Vehículos: documentación, vencimientos, seguros, responsable y estado operacional.
-- Reportes: evidencia perf y límites consistentes en todos los exports.
-- UX: navegación visible para Repuestos/Servicios si serán módulos operativos.
-- Operación: smoke E2E y smoke Docker contra DB accesible.
+- Reportes: mantener evidencia perf y límites consistentes en todos los exports.
+- UX: actualizar E2E PPA/purchase a componentes Radix actuales.
+- Operación: smoke Docker contra DB accesible y E2E completo sin fallas.
 - Producción: runbook de ejecución de perf/E2E y SLO de consultas.
 
 ---
@@ -1124,32 +1130,31 @@ Agregar prioridad/SLA si soporte será canal formal.
 ## 7. Riesgos de producción
 
 - Riesgos críticos: ninguno confirmado en lógica de stock/recepción/compras durante esta auditoría.
-- Riesgos altos: E2E no ejecutado por entorno; PPA token público sin expiración; mantenciones incompleto; repuestos/servicios sin cobertura actions y sin navegación.
-- Riesgos medios: performance sin medir; coverage desigual; export trazabilidad con permiso cruzado; flota limitada.
-- Riesgos bajos: soporte sin adjuntos/SLA; reportes contables avanzados fuera de alcance actual.
+- Riesgos altos: E2E completo falla en PDF/PPA/purchase; mantenciones/flota aún incompletos para operación integral.
+- Riesgos medios: coverage desigual; PPA permanente depende de revocación manual; flota limitada; soporte sin adjuntos.
+- Riesgos bajos: reportes contables avanzados fuera de alcance actual.
 
 ---
 
 ## 8. Plan de corrección recomendado
 
 ### Prioridad 1 — Bloqueante para producción
-- Reparar ejecución local/CI de `npm run test:e2e` con `E2E_DATABASE_URL` válido y DB desechable.
-- Agregar tests de Server Actions para `admin/usuarios`, `repuestos`, `servicios`, `mantenciones`.
-- Definir y aplicar expiración/retención para `ppa_submissions.publicToken`.
+- Dejar `npm run test:e2e` completo en verde: PDF standalone, PPA Radix/export y purchase-flow.
+- Subir tests de Server Actions para `admin/usuarios`, `mantenciones`, `combustibles`, `solicitudes`, `compras`, `bodega` y `prevencion`.
+- Agregar UI/proceso de revocación para PPA permanente.
 
 ### Prioridad 2 — Alta
-- Agregar auditoría a create/update/cancel de mantenciones.
-- Alinear permiso de `/api/trazabilidad/export`.
-- Añadir navegación o punto de entrada explícito para Repuestos y Servicios.
-- Ejecutar `perf:queries` con `PERF_ALLOW_DESTRUCTIVE_RESET=true` contra base disposable.
+- Completar gestión documental de flota y vista preventiva de mantenciones.
+- Completar adjuntos seguros en soporte y comprobante firmado en entregas.
+- Implementar conciliación básica OC-factura-recepción.
+- Mantener `perf:queries` en runbook/CI con DB disposable.
 
 ### Prioridad 3 — Media
 - Subir coverage de combustibles, solicitudes, compras, bodega y prevención actions.
-- Limitar export de combustibles igual que reportes/stock/kardex.
-- Completar flota con documentación, vencimientos y responsable.
+- Completar flota con carga/descarga de documentación, alertas de vencimiento y filtros.
 
 ### Prioridad 4 — Baja
-- Adjuntos y SLA en soporte.
+- Adjuntos en soporte.
 - Glosario visible de KPIs de analítica.
 - Mejoras UX de terreno para PPA/SST.
 
@@ -1157,8 +1162,8 @@ Agregar prioridad/SLA si soporte será canal formal.
 
 ## 9. Veredicto final
 
-- ¿Está listo para producción? No para despliegue amplio sin restricciones. Sí podría ir a marcha blanca controlada si se limita el alcance, se respalda la DB y se ejecutan E2E/perf en ambiente válido.
+- ¿Está listo para producción? No para despliegue amplio sin restricciones. Sí podría ir a marcha blanca controlada si se limita el alcance, se respalda la DB y se excluyen los flujos E2E aún fallando hasta corregirlos.
 - ¿Qué nota global obtiene del 1 al 10? 7/10.
-- ¿Cuáles son los 5 problemas más graves? E2E no ejecutable por DB local; actions críticas sin cobertura; PPA público sin TTL observable; Mantenciones/Flota incompletos para operación real; performance no medido.
-- ¿Cuáles son los 5 módulos más débiles? Mantenciones, Flota, Repuestos, Servicios, PPA Digital.
-- ¿Cuál es el mínimo necesario para poder desplegar con seguridad? E2E verde contra Postgres disposable, coverage de actions críticas, smoke build/imagen con DB real, token PPA con política de expiración, y plan operativo claro para módulos parcialmente completos.
+- ¿Cuáles son los 5 problemas más graves? E2E completo aún falla; PDF standalone no genera en producción E2E; PPA/purchase specs desactualizados; actions críticas siguen bajo 50%; Mantenciones/Flota incompletos para operación real.
+- ¿Cuáles son los 5 módulos más débiles? Mantenciones, Flota, PPA Digital por E2E, Compras por E2E/PDF, Admin usuarios por coverage.
+- ¿Cuál es el mínimo necesario para poder desplegar con seguridad? E2E verde contra Postgres disposable, coverage de actions críticas, smoke build/imagen con DB real, política operacional de revocación PPA permanente y plan operativo claro para módulos parcialmente completos.

@@ -60,7 +60,9 @@ export function ReportList({ reports, canCreate, canViewAll }: Props) {
             <TableHead>Tipo</TableHead>
             <TableHead>Título</TableHead>
             {canViewAll && <TableHead>Autor</TableHead>}
+            <TableHead>Prioridad</TableHead>
             <TableHead>Estado</TableHead>
+            <TableHead>SLA</TableHead>
             <TableHead>Fecha</TableHead>
           </TableRow>
         </TableHeader>
@@ -82,8 +84,12 @@ export function ReportList({ reports, canCreate, canViewAll }: Props) {
               {canViewAll && (
                 <TableCell className="text-sub">{r.authorName}</TableCell>
               )}
+              <TableCell className="capitalize">{r.priority}</TableCell>
               <TableCell>
                 <StateBadge state={r.estado as FeedbackEstado} entity="feedback" />
+              </TableCell>
+              <TableCell className="text-sub whitespace-nowrap">
+                {r.dueAt ? formatDate(r.dueAt) : "—"}
               </TableCell>
               <TableCell className="text-sub whitespace-nowrap">
                 {formatDate(r.createdAt)}

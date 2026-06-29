@@ -13,7 +13,7 @@
  * admin con permisos ppa:*).
  */
 import { expect, test, type Page } from "@playwright/test"
-import { login } from "./helpers"
+import { login, selectRadixById } from "./helpers"
 
 const FAENA = "Faena E2E"
 const RUT = "11111111-1"
@@ -32,7 +32,7 @@ async function startForm(page: Page) {
   await page.getByRole("button", { name: "Verificar" }).click()
   await expect(page.getByText(/Verificado:/)).toBeVisible()
   await expect(page.getByText(new RegExp(`Faena:.*${FAENA}`))).toBeVisible()
-  await page.locator("#tipo").selectOption("conductor_batea")
+  await selectRadixById(page, "tipo", "Conductor Batea")
 }
 
 async function checkRequiredControls(page: Page) {
@@ -155,8 +155,7 @@ test.describe("PPA Digital — exportación XLSX", () => {
     await expect(page.getByText("Exportar PPA Digital")).toBeVisible()
 
     // Seleccionar filtro de estado.
-    await page.locator("#ppa-export-estado").click()
-    await page.getByRole("option", { name: "Detenidos" }).click()
+    await selectRadixById(page, "ppa-export-estado", "Trabajo detenido")
 
     // Descargar y verificar que devuelve un XLSX.
     const [download] = await Promise.all([

@@ -49,7 +49,22 @@ beforeEach(() => {
 describe("getFleetOverview", () => {
   it("operational cost = fuel + maintenance (no allocations)", async () => {
     findManyVehicles.mockResolvedValue([
-      { id: "veh-1", plate: "AA-BB-11", type: "camioneta", brand: "Toyota", model: "Hilux", year: 2022, isActive: true, worksite: { name: "Faena Uno" } },
+      {
+        id: "veh-1",
+        plate: "AA-BB-11",
+        type: "camioneta",
+        brand: "Toyota",
+        model: "Hilux",
+        year: 2022,
+        isActive: true,
+        operationalStatus: "operativo",
+        soapExpiresAt: "2026-09-01",
+        technicalReviewExpiresAt: "2026-08-15",
+        circulationPermitExpiresAt: "2027-03-31",
+        insuranceExpiresAt: "2026-07-20",
+        worksite: { name: "Faena Uno" },
+        responsibleUser: { name: "Jefe Mantención", email: "mantencion@chome.cl" },
+      },
     ])
     selectResults.push(
       { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2, lastOdometerReading: 12_500, lastHourMeterReading: null }] },
@@ -63,6 +78,9 @@ describe("getFleetOverview", () => {
     expect(vehicle.totalFuelAmount).toBe(100_000)
     expect(vehicle.totalMaintenanceAmount).toBe(250_000)
     expect(vehicle.totalOperationalCost).toBe(350_000)
+    expect(vehicle.responsibleName).toBe("Jefe Mantención")
+    expect(vehicle.operationalStatus).toBe("operativo")
+    expect(vehicle.nextExpiryDate).toBe("2026-07-20")
     // La imputación de costos fue retirada: no debe existir ese campo.
     expect("totalAllocatedAmount" in vehicle).toBe(false)
     expect("allocationCount" in vehicle).toBe(false)

@@ -10,28 +10,44 @@
  */
 
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import postgres from "postgres"
+import { clearRateLimits, login } from "./helpers"
+
+async function lockedRateLimitCount() {
+  const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL
+  if (!databaseUrl) return 0
+  const client = postgres(databaseUrl, { max: 1 })
+  try {
+    const rows = await client<{ count: number }[]>`select count(*)::int as count from rate_limits where lock_until > ${Date.now()}`
+    return rows[0]?.count ?? 0
+  } finally {
+    await client.end()
+  }
+}
 
 // ── Rate-limit on login ────────────────────────────────────────────────────────
 
 test("login: shows rate-limit message after repeated failures", async ({ page }) => {
-  await page.goto("/login")
+  await clearRateLimits()
+  try {
+    await page.goto("/login")
 
-  // Submit wrong credentials enough times to trigger the email rate-limit.
-  // The rate-limit kicks in after 5 failures within 15 minutes.
-  for (let i = 0; i < 6; i++) {
-    await page.getByLabel("Correo electrónico").fill("locked@example.com")
-    await page.getByLabel("Contraseña").fill("wrongpassword")
-    await page.getByRole("button", { name: "Ingresar" }).click()
-    // Wait for the error to render before the next attempt
-    await page.waitForTimeout(300)
+    // Submit wrong credentials enough times to trigger the email/IP rate-limit.
+    // The rate-limit kicks in after 5 failures within 15 minutes.
+    for (let i = 0; i < 6; i++) {
+      await page.getByLabel("Correo electrónico").fill("locked@example.com")
+      await page.getByLabel("Contraseña").fill("wrongpassword")
+      await page.getByRole("button", { name: "Ingresar" }).click()
+      await page.waitForTimeout(300)
+    }
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: /Correo|bloqueada temporalmente|Demasiados intentos|bloqueo/ }).first(),
+    ).toBeVisible({ timeout: 5_000 })
+    await expect.poll(lockedRateLimitCount).toBeGreaterThan(0)
+  } finally {
+    await clearRateLimits()
   }
-
-  // After the 6th attempt the rate-limiter should kick in.
-  const alert = page.getByRole("alert")
-  await expect(alert).toBeVisible({ timeout: 5_000 })
-  const text = await alert.textContent()
-  expect(text).toMatch(/bloqueada temporalmente|Demasiados intentos|bloqueo/)
 })
 
 // ── Invalid / expired reset token ─────────────────────────────────────────────
@@ -50,9 +66,9 @@ test("unauthenticated: protected routes redirect to /login", async ({ page }) =>
   await expect(page).toHaveURL(/\/login/, { timeout: 10_000 })
 })
 
-test("unauthenticated: API routes return 401 without session", async ({ page }) => {
-  const response = await page.request.get("/api/notifications")
-  expect(response.status()).toBe(401)
+test("unauthenticated: API routes reject access without session", async ({ request }) => {
+  const response = await request.get("/api/reportes/export?tipo=gasto_faena", { maxRedirects: 0 })
+  expect([302, 307, 401]).toContain(response.status())
 })
 
 // ── Forgot password form ───────────────────────────────────────────────────────

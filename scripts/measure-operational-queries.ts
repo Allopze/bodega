@@ -18,6 +18,7 @@ loadEnvConfig(process.cwd())
 const databaseUrl = process.env.PERF_DATABASE_URL ?? "postgres:///bodega_perf_test"
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 const now = new Date("2026-06-14T12:00:00.000Z").toISOString()
+const DEFAULT_SLO_MS = 1_000
 
 async function main() {
   assertSafeDestructiveDatabase({
@@ -149,6 +150,66 @@ async function main() {
           .where(inArray(schema.purchaseOrders.worksiteId, scopedWorksiteIds)),
       ])
       return Number(requests[0]?.total ?? 0) + Number(items[0]?.total ?? 0) + Number(orders[0]?.total ?? 0)
+    })
+
+    await measure("dashboard: resumen operacional", async () => {
+      const [requests, orders, stock, movements] = await Promise.all([
+        db.select({ total: count() }).from(schema.purchaseRequests).where(inArray(schema.purchaseRequests.worksiteId, scopedWorksiteIds)),
+        db.select({ total: count() }).from(schema.purchaseOrders).where(inArray(schema.purchaseOrders.worksiteId, scopedWorksiteIds)),
+        db.select({ total: count() }).from(schema.worksiteStock).where(inArray(schema.worksiteStock.worksiteId, scopedWorksiteIds)),
+        db.select({ total: count() }).from(schema.inventoryMovements).where(inArray(schema.inventoryMovements.worksiteId, scopedWorksiteIds)),
+      ])
+      return Number(requests[0]?.total ?? 0) + Number(orders[0]?.total ?? 0) + Number(stock[0]?.total ?? 0) + Number(movements[0]?.total ?? 0)
+    })
+
+    await measure("trazabilidad: matriz scoped", async () => {
+      const rows = await db
+        .select({
+          requestItemId: schema.purchaseRequestItems.id,
+          requestCode: schema.purchaseRequests.code,
+          productId: schema.purchaseRequestItems.productId,
+          worksiteId: schema.purchaseRequests.worksiteId,
+          orderedQty: sql<number>`coalesce(sum(${schema.purchaseOrderItems.quantity}), 0)`,
+        })
+        .from(schema.purchaseRequestItems)
+        .innerJoin(schema.purchaseRequests, eq(schema.purchaseRequestItems.requestId, schema.purchaseRequests.id))
+        .leftJoin(schema.purchaseOrderItems, eq(schema.purchaseOrderItems.requestItemId, schema.purchaseRequestItems.id))
+        .where(inArray(schema.purchaseRequests.worksiteId, scopedWorksiteIds))
+        .groupBy(
+          schema.purchaseRequestItems.id,
+          schema.purchaseRequests.code,
+          schema.purchaseRequestItems.productId,
+          schema.purchaseRequests.worksiteId,
+        )
+        .limit(10_000)
+      return rows.length
+    })
+
+    await measure("analitica: gasto por faena", async () => {
+      const rows = await db
+        .select({
+          worksiteId: schema.purchaseOrders.worksiteId,
+          totalAmount: sql<number>`coalesce(${sum(schema.purchaseOrders.totalAmount)}, 0)`,
+        })
+        .from(schema.purchaseOrders)
+        .where(inArray(schema.purchaseOrders.worksiteId, scopedWorksiteIds))
+        .groupBy(schema.purchaseOrders.worksiteId)
+        .orderBy(desc(sql`coalesce(${sum(schema.purchaseOrders.totalAmount)}, 0)`))
+      return rows.length
+    })
+
+    await measure("combustibles: cargas por mes", async () => {
+      const rows = await db
+        .select({
+          month: schema.fuelLoads.month,
+          liters: sql<number>`coalesce(sum(${schema.fuelLoads.liters}), 0)`,
+          totalAmount: sql<number>`coalesce(sum(${schema.fuelLoads.totalAmount}), 0)`,
+        })
+        .from(schema.fuelLoads)
+        .where(inArray(schema.fuelLoads.worksiteId, scopedWorksiteIds))
+        .groupBy(schema.fuelLoads.month)
+        .orderBy(desc(schema.fuelLoads.month))
+      return rows.length
     })
   } finally {
     await client.end()
@@ -302,6 +363,51 @@ async function seedMediumDataset(db: ReturnType<typeof drizzle<typeof schema>>) 
     performedAt: now,
   })))
 
+  await insertChunks(db, schema.fuelSuppliers, supplierIds.map((id, index) => ({
+    id: `fuel-${id}`,
+    name: `Proveedor combustible ${index + 1}`,
+    rut: `PERF-FUEL-${index + 1}`,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })))
+
+  await insertChunks(db, schema.fuelVehicles, Array.from({ length: 60 }, (_, index) => ({
+    id: `perf-vehicle-${index + 1}`,
+    plate: `PERF-${index + 1}`,
+    type: index % 3 === 0 ? "camion" : "camioneta",
+    brand: "Marca",
+    model: `Modelo ${index + 1}`,
+    year: 2020 + (index % 5),
+    worksiteId: worksiteIds[index % worksiteIds.length],
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })))
+
+  await insertChunks(db, schema.fuelLoads, Array.from({ length: 2_000 }, (_, index) => ({
+    id: `perf-fuel-load-${index + 1}`,
+    loadDate: `2026-${String((index % 12) + 1).padStart(2, "0")}-15`,
+    month: `2026-${String((index % 12) + 1).padStart(2, "0")}`,
+    serviceType: index % 2 === 0 ? "TCT" : "TAE",
+    vehicleId: `perf-vehicle-${(index % 60) + 1}`,
+    fuelSupplierId: `fuel-${supplierIds[index % supplierIds.length]}`,
+    worksiteId: worksiteIds[index % worksiteIds.length],
+    product: "PETROLEO DIESEL",
+    receiptNumber: `PERF-FUEL-${index + 1}`,
+    liters: (index % 100) + 10,
+    iecFixed: 0,
+    iecVariable: 0,
+    baseAmount: 10_000 + index,
+    iecTotal: 0,
+    ivaAmount: 1_900,
+    totalAmount: 11_900 + index,
+    status: "registered",
+    createdBy: "perf-user",
+    createdAt: now,
+    updatedAt: now,
+  })))
+
   return {
     worksiteIds,
     requestCount,
@@ -326,6 +432,9 @@ async function measure(label: string, fn: () => Promise<number>) {
   const value = await fn()
   const elapsedMs = performance.now() - start
   console.log(`| ${label} | ${value.toLocaleString("es-CL")} | ${elapsedMs.toFixed(1)} |`)
+  if (elapsedMs > DEFAULT_SLO_MS) {
+    throw new Error(`PERF SLO exceeded for "${label}": ${elapsedMs.toFixed(1)}ms > ${DEFAULT_SLO_MS}ms`)
+  }
 }
 
 async function resetDatabase(url: string) {

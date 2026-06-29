@@ -64,7 +64,10 @@ export const deliveries = pgTable("deliveries", {
   costCenterId:    text("cost_center_id").references(() => costCenters.id),
   workerId:        text("worker_id").references(() => workers.id),
   receiverName:    text("receiver_name"),                // name of person who received
+  receiverRut:     text("receiver_rut"),
   signaturePath:   text("signature_path"),               // optional signature image
+  signedProofFileName: text("signed_proof_file_name"),
+  signedProofPath: text("signed_proof_path"),
   notes:           text("notes"),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [

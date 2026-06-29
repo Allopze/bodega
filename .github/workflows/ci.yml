@@ -86,6 +86,20 @@ jobs:
   docker-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bodega_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -113,17 +127,26 @@ jobs:
 
       - name: Smoke test — verify image starts and responds
         run: |
-          # Start container with minimal env
+          # Start container with a real disposable Postgres service.
           docker run -d --name bodega-smoke \
             -e NODE_ENV=production \
-            -e DATABASE_URL=postgres://p:px@nonexistent:5432/bodega \
+            -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/bodega_smoke \
             -e AUTH_SECRET=test-secret-do-not-use-in-prod \
             -e NEXTAUTH_URL=http://localhost:3000 \
-            -e STORAGE_PATH=/tmp/storage \
+            -e STORAGE_PATH=/tmp \
+            --add-host=host.docker.internal:host-gateway \
             -p 3000:3000 \
             bodega:ci-test
 
-          # Wait for boot then check /api/health (will fail DB check but should return 500, not crash)
-          sleep 5
-          curl -sf http://localhost:3000/api/health || echo "Health check exited $? (expected if DB unavailable)"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health | tee /tmp/bodega-health.json; then
+              grep -q '"db":"connected"' /tmp/bodega-health.json
+              docker stop bodega-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs bodega-smoke
           docker stop bodega-smoke
+          exit 1

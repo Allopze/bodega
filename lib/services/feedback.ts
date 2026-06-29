@@ -22,7 +22,7 @@ export type FeedbackRow = FeedbackReport & {
 // ── createReport ──────────────────────────────────────────────────────────────
 
 export async function createReport(
-  input: z.infer<typeof feedbackCreateSchema>,
+  input: z.input<typeof feedbackCreateSchema>,
   userId: string
 ): Promise<FeedbackReport> {
   const data = feedbackCreateSchema.parse(input)
@@ -34,9 +34,11 @@ export async function createReport(
     id,
     tipo:        data.tipo,
     titulo:      data.titulo,
-    descripcion: data.descripcion,
-    pagina:      data.pagina || null,
-    estado:      "abierto",
+      descripcion: data.descripcion,
+      pagina:      data.pagina || null,
+      priority:    data.priority,
+      dueAt:       computeDueAt(data.priority, now),
+      estado:      "abierto",
     notaInterna: null,
     createdBy:   userId,
     resolvedBy:  null,
@@ -59,6 +61,8 @@ export async function getReport(id: string): Promise<FeedbackRow | null> {
       titulo:      feedbackReports.titulo,
       descripcion: feedbackReports.descripcion,
       pagina:      feedbackReports.pagina,
+      priority:    feedbackReports.priority,
+      dueAt:       feedbackReports.dueAt,
       estado:      feedbackReports.estado,
       notaInterna: feedbackReports.notaInterna,
       createdBy:   feedbackReports.createdBy,
@@ -96,6 +100,8 @@ export async function listReports(
       titulo:      feedbackReports.titulo,
       descripcion: feedbackReports.descripcion,
       pagina:      feedbackReports.pagina,
+      priority:    feedbackReports.priority,
+      dueAt:       feedbackReports.dueAt,
       estado:      feedbackReports.estado,
       notaInterna: feedbackReports.notaInterna,
       createdBy:   feedbackReports.createdBy,
@@ -142,4 +148,16 @@ export async function updateReportStatus(
 
   if (!updated) throw new Error("Reporte no encontrado")
   return updated
+}
+
+function computeDueAt(priority: "baja" | "normal" | "alta" | "critica", fromIso: string) {
+  const hoursByPriority = {
+    baja: 10 * 24,
+    normal: 5 * 24,
+    alta: 48,
+    critica: 24,
+  } satisfies Record<typeof priority, number>
+  const due = new Date(fromIso)
+  due.setHours(due.getHours() + hoursByPriority[priority])
+  return due.toISOString()
 }

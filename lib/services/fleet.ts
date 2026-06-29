@@ -1,7 +1,8 @@
 import type { Session } from "next-auth"
-import { and, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
+  fleetVehicleDocuments,
   fuelLoads,
   fuelVehicles,
   maintenanceRecords,
@@ -19,7 +20,7 @@ export async function getFleetOverview(session: Session) {
   const [vehicles, fuelRows, maintenanceRows] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
-      with: { worksite: true },
+      with: { worksite: true, responsibleUser: true },
       orderBy: [fuelVehicles.plate],
     }),
     db
@@ -65,7 +66,20 @@ export async function getFleetOverview(session: Session) {
       model: vehicle.model,
       year: vehicle.year,
       isActive: vehicle.isActive,
+      operationalStatus: vehicle.operationalStatus,
       worksiteName: vehicle.worksite?.name ?? "Sin faena",
+      responsibleName: vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? null,
+      soapExpiresAt: vehicle.soapExpiresAt,
+      technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
+      circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
+      insurancePolicyNumber: vehicle.insurancePolicyNumber,
+      insuranceExpiresAt: vehicle.insuranceExpiresAt,
+      nextExpiryDate: getNextExpiryDate([
+        vehicle.soapExpiresAt,
+        vehicle.technicalReviewExpiresAt,
+        vehicle.circulationPermitExpiresAt,
+        vehicle.insuranceExpiresAt,
+      ]),
       totalFuelAmount,
       totalMaintenanceAmount,
       totalOperationalCost: totalFuelAmount + totalMaintenanceAmount,
@@ -77,4 +91,53 @@ export async function getFleetOverview(session: Session) {
       lastHourMeterReading: fuel?.lastHourMeterReading == null ? null : Number(fuel.lastHourMeterReading),
     }
   })
+}
+
+export async function getFleetVehicleDetail(session: Session, id: string) {
+  const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
+  const vehicle = await db.query.fuelVehicles.findFirst({
+    where: eq(fuelVehicles.id, id),
+    with: { worksite: true, responsibleUser: true },
+  })
+  if (!vehicle) return null
+  if (scopedWorksites !== null && (!vehicle.worksiteId || !scopedWorksites.includes(vehicle.worksiteId))) {
+    return null
+  }
+
+  const [documents, recentLoads, recentMaintenance] = await Promise.all([
+    db.query.fleetVehicleDocuments.findMany({
+      where: eq(fleetVehicleDocuments.vehicleId, id),
+      orderBy: [fleetVehicleDocuments.expiresAt],
+    }),
+    db.query.fuelLoads.findMany({
+      where: eq(fuelLoads.vehicleId, id),
+      orderBy: [fuelLoads.loadDate],
+      limit: 10,
+    }),
+    db.query.maintenanceRecords.findMany({
+      where: eq(maintenanceRecords.vehicleId, id),
+      orderBy: [maintenanceRecords.maintenanceDate],
+      limit: 10,
+    }),
+  ])
+
+  return {
+    vehicle,
+    documents,
+    recentLoads,
+    recentMaintenance,
+    nextExpiryDate: getNextExpiryDate([
+      vehicle.soapExpiresAt,
+      vehicle.technicalReviewExpiresAt,
+      vehicle.circulationPermitExpiresAt,
+      vehicle.insuranceExpiresAt,
+      ...documents.map((document) => document.expiresAt),
+    ]),
+  }
+}
+
+function getNextExpiryDate(values: Array<string | null | undefined>) {
+  return values
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => a.localeCompare(b))[0] ?? null
 }

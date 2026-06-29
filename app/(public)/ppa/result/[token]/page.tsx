@@ -103,14 +103,6 @@ export default async function PpaResultPage({
 
       <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
         <div>
-          <dt className="text-[var(--color-text-subtle)]">Trabajador</dt>
-          <dd className="font-medium">{ppa.workerName}</dd>
-        </div>
-        <div>
-          <dt className="text-[var(--color-text-subtle)]">Faena</dt>
-          <dd className="font-medium">{ppa.worksiteName ?? "—"}</dd>
-        </div>
-        <div>
           <dt className="text-[var(--color-text-subtle)]">Tarea</dt>
           <dd className="font-medium">{tipoTrabajoLabel(ppa.tipoTrabajo)}</dd>
         </div>

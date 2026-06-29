@@ -54,6 +54,7 @@ async function main() {
     name: "administrador",
     label: "Administrador",
     description: "Control total E2E",
+    isGlobal: true,
   })
 
   const permissions: (typeof schema.permissions.$inferInsert)[] = [
@@ -68,6 +69,9 @@ async function main() {
     { id: "p-rec-reg-office", name: "receiving:register_office", module: "receiving", description: "Registrar llegada a oficina" },
     { id: "p-rec-reg-faena", name: "receiving:register_faena", module: "receiving", description: "Registrar recepción en faena" },
     { id: "p-rec-view", name: "receiving:view", module: "receiving", description: "Ver recepción" },
+    { id: "p-trace-view", name: "traceability:view", module: "traceability", description: "Ver trazabilidad" },
+    { id: "p-del-view", name: "deliveries:view", module: "deliveries", description: "Ver entregas" },
+    { id: "p-del-create", name: "deliveries:create", module: "deliveries", description: "Registrar entregas" },
     { id: "p-wh-stock", name: "warehouse:view_stock", module: "warehouse", description: "Ver stock" },
     { id: "p-wh-mov", name: "warehouse:register_movement", module: "warehouse", description: "Movimientos" },
     { id: "p-wh-adj", name: "warehouse:adjust_stock", module: "warehouse", description: "Ajuste stock" },
@@ -82,6 +86,21 @@ async function main() {
     { id: "p-ppa-view", name: "ppa:view", module: "ppa", description: "Ver PPA Digital" },
     { id: "p-ppa-review", name: "ppa:review", module: "ppa", description: "Revisar PPA" },
     { id: "p-ppa-manage", name: "ppa:manage", module: "ppa", description: "Gestionar PPA" },
+    { id: "p-sst-view", name: "sst:view", module: "sst", description: "Ver evaluaciones SST" },
+    { id: "p-sst-create", name: "sst:create", module: "sst", description: "Crear evaluaciones SST" },
+    { id: "p-sst-close", name: "sst:close", module: "sst", description: "Cerrar evaluaciones SST" },
+    { id: "p-sst-manage", name: "sst:manage", module: "sst", description: "Gestionar evaluaciones SST" },
+    { id: "p-fuel-view", name: "combustibles:view", module: "combustibles", description: "Ver registros de combustible" },
+    { id: "p-fuel-create", name: "combustibles:create", module: "combustibles", description: "Crear registros de combustible" },
+    { id: "p-fuel-delete", name: "combustibles:delete", module: "combustibles", description: "Eliminar registros de combustible" },
+    { id: "p-fuel-import", name: "combustibles:import", module: "combustibles", description: "Importar datos de combustible" },
+    { id: "p-fuel-export", name: "combustibles:export", module: "combustibles", description: "Exportar datos de combustible" },
+    { id: "p-fuel-veh", name: "combustibles:manage_vehicles", module: "combustibles", description: "Gestionar vehículos de combustible" },
+    { id: "p-fuel-sup", name: "combustibles:manage_suppliers", module: "combustibles", description: "Gestionar proveedores de combustible" },
+    { id: "p-flot-view", name: "flota:view", module: "flota", description: "Ver flota de vehículos" },
+    { id: "p-mant-view", name: "mantenciones:view", module: "mantenciones", description: "Ver mantenciones de vehículos" },
+    { id: "p-mant-create", name: "mantenciones:create", module: "mantenciones", description: "Registrar mantenciones de vehículos" },
+    { id: "p-mant-edit", name: "mantenciones:edit", module: "mantenciones", description: "Editar y cancelar mantenciones de vehículos" },
   ]
 
   await db.insert(schema.permissions).values(permissions)
@@ -115,6 +134,30 @@ async function main() {
     userId: "user-admin-e2e",
     worksiteId: "ws-e2e",
     isPrimary: true,
+  })
+  await db.insert(schema.fuelSuppliers).values({
+    id: "fuel-sup-e2e",
+    name: "Proveedor Combustible E2E",
+    rut: "76.111.222-3",
+    contactName: "Proveedor E2E",
+    contactEmail: "combustible@e2e.cl",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.fuelVehicles).values({
+    id: "fuel-veh-e2e",
+    plate: "E2E-FUEL-1",
+    type: "camioneta",
+    brand: "Toyota",
+    model: "Hilux",
+    year: 2024,
+    worksiteId: "ws-e2e",
+    responsibleUserId: "user-admin-e2e",
+    operationalStatus: "operativo",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
   })
   // Second worksite for scope testing
   await db.insert(schema.worksites).values({

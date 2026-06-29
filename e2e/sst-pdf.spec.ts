@@ -5,11 +5,11 @@
  *   • Responds 200 with Content-Type: application/pdf
  *   • Returns a non-empty body (actual PDF bytes)
  *   • Does NOT crash with MODULE_NOT_FOUND for playwright-core/browsers.json
- *     (regression guard for DEVOPS-03 in AUDITORIA_INTEGRAL_CHOME.md)
+ *     (regression guard for DEVOPS-03 in docs/auditoria/AUDITORIA_INTEGRAL_CHOME.md)
  *
  * Relies on the "sst-eval-e2e" fixture seeded by e2e/setup-db.ts.
  */
-import { expect, test } from "@playwright/test"
+import { expect, request as playwrightRequest, test } from "@playwright/test"
 import { login } from "./helpers"
 
 test.describe("SST PDF generation", () => {
@@ -37,9 +37,17 @@ test.describe("SST PDF generation", () => {
     expect(body.byteLength).toBeGreaterThan(1000)
   })
 
-  test("GET /sst/[id]/print/pdf returns 403 when not authenticated", async ({ request }) => {
-    const response = await request.get("/sst/sst-eval-e2e/print/pdf")
-    expect(response.status()).toBe(403)
+  test("GET /sst/[id]/print/pdf returns 403 when not authenticated", async ({ baseURL }) => {
+    const unauthenticatedRequest = await playwrightRequest.newContext({
+      baseURL,
+      extraHTTPHeaders: { cookie: "" },
+    })
+    try {
+      const response = await unauthenticatedRequest.get("/sst/sst-eval-e2e/print/pdf")
+      expect(response.status()).toBe(403)
+    } finally {
+      await unauthenticatedRequest.dispose()
+    }
   })
 
   test("GET /sst/[id]/print/pdf returns 404 for unknown evaluation id", async ({

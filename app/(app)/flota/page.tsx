@@ -65,6 +65,8 @@ export default async function FlotaPage() {
                 <TableHead>Vehículo</TableHead>
                 <TableHead>Faena</TableHead>
                 <TableHead>Estado</TableHead>
+                <TableHead>Responsable</TableHead>
+                <TableHead>Próximo vencimiento</TableHead>
                 <TableHead className="text-right">Combustible</TableHead>
                 <TableHead className="text-right">Mantenciones</TableHead>
                 <TableHead className="text-right">Total</TableHead>
@@ -76,24 +78,28 @@ export default async function FlotaPage() {
             <TableBody>
               {vehicles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
                     No hay vehículos visibles para tu alcance.
                   </TableCell>
                 </TableRow>
               ) : vehicles.map((vehicle) => (
                 <TableRow key={vehicle.id}>
                   <TableCell>
-                    <div className="font-medium">{vehicle.plate}</div>
+                    <Link href={`/flota/${vehicle.id}`} className="font-medium text-[var(--color-primary)] underline-offset-2 hover:underline">
+                      {vehicle.plate}
+                    </Link>
                     <div className="text-xs text-muted-foreground">
                       {[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
                     </div>
                   </TableCell>
                   <TableCell>{vehicle.worksiteName}</TableCell>
                   <TableCell>
-                    <Badge variant={vehicle.isActive ? "success" : "outline"}>
-                      {vehicle.isActive ? "Activo" : "Inactivo"}
+                    <Badge variant={vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline"}>
+                      {vehicle.isActive ? vehicle.operationalStatus : "inactivo"}
                     </Badge>
                   </TableCell>
+                  <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
+                  <TableCell>{vehicle.nextExpiryDate ?? "—"}</TableCell>
                   <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount)}</TableCell>
                   <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost)}</TableCell>
@@ -112,6 +118,9 @@ export default async function FlotaPage() {
                       </Button>
                       <Button asChild size="sm" variant="ghost">
                         <Link href={`/mantenciones?vehicle=${vehicle.id}`}>Mantenciones</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="ghost">
+                        <Link href={`/flota/${vehicle.id}`}>Detalle</Link>
                       </Button>
                     </div>
                   </TableCell>

@@ -9,6 +9,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { visibleWorksiteIds, isGlobalRole } from "@/lib/auth/scope"
+import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 
 export interface MaintenanceFilters {
@@ -114,6 +115,13 @@ export async function createMaintenanceRecord(session: Session, input: CreateMai
     createdBy: session.user.id,
     updatedAt: now,
   })
+  await recordAudit({
+    userId: session.user.id,
+    action: "create",
+    entityType: "maintenance_record",
+    entityId: id,
+    newState: { ...input, worksiteId },
+  })
   return id
 }
 
@@ -135,7 +143,7 @@ export async function updateMaintenanceRecord(session: Session, id: string, inpu
     throw new Error("No puedes asignar mantenciones a esta faena")
   }
 
-  await db.update(maintenanceRecords).set({
+  const newState = {
     vehicleId: input.vehicleId,
     supplierId: input.supplierId || null,
     worksiteId,
@@ -152,7 +160,17 @@ export async function updateMaintenanceRecord(session: Session, id: string, inpu
     documentName: input.documentName || null,
     notes: input.notes || null,
     updatedAt: new Date().toISOString(),
-  }).where(eq(maintenanceRecords.id, id))
+  }
+
+  await db.update(maintenanceRecords).set(newState).where(eq(maintenanceRecords.id, id))
+  await recordAudit({
+    userId: session.user.id,
+    action: "update",
+    entityType: "maintenance_record",
+    entityId: id,
+    oldState: existing,
+    newState,
+  })
 }
 
 export async function cancelMaintenanceRecord(session: Session, id: string) {
@@ -163,7 +181,16 @@ export async function cancelMaintenanceRecord(session: Session, id: string) {
   }
   if (existing.status === "cancelled") throw new Error("La mantención ya está cancelada")
 
+  const newState = { status: "cancelled", updatedAt: new Date().toISOString() }
   await db.update(maintenanceRecords)
-    .set({ status: "cancelled", updatedAt: new Date().toISOString() })
+    .set(newState)
     .where(eq(maintenanceRecords.id, id))
+  await recordAudit({
+    userId: session.user.id,
+    action: "cancel",
+    entityType: "maintenance_record",
+    entityId: id,
+    oldState: existing,
+    newState,
+  })
 }

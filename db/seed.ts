@@ -407,9 +407,9 @@ async function main() {
     })
   }
 
-  /* ── Usuarios desde nuevos_roles.md ───────────────────────────────── */
+  /* ── Usuarios desde docs/planificacion/nuevos_roles.md ── */
   console.log("")
-  console.log("  Sembrando usuarios de nuevos_roles.md...")
+  console.log("  Sembrando usuarios de docs/planificacion/nuevos_roles.md...")
   const nuevosRolesResult = await seedNuevosRoles(db, schema)
   console.log(`  ${nuevosRolesResult.created} usuarios creados, ${nuevosRolesResult.assignedRoles} roles asignados, ${nuevosRolesResult.assignedWorksites} faenas asignadas, ${nuevosRolesResult.skipped} omitidos.`)
 

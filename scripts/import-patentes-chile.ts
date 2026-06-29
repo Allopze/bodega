@@ -44,7 +44,7 @@ function vehicleIdFromPlate(plate: string): string {
 }
 
 async function main() {
-  const filePath = path.join(process.cwd(), "patentes_chile.json")
+  const filePath = path.join(process.cwd(), "storage", "patentes_chile.json")
   const rows = JSON.parse(await readFile(filePath, "utf8")) as PatenteChileRow[]
   const client = postgres(process.env.DATABASE_URL!, { max: 1 })
   const db = drizzle(client, { schema })

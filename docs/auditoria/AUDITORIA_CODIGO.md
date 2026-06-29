@@ -153,7 +153,7 @@ Scripts disponibles relevantes (de `package.json`): `dev`, `build`, `start`, `li
 
 ### [Media] Binarios pesados y documentos con PII potencialmente versionados
 
-- **Evidencia:** `git ls-files` incluye `Lista Chequeo ... Post Incidente.docx`, `Listas Chequeo Trabajadores Nuevos OK.docx` y PDFs en `docs/` (`OC 674 ...pdf`, `OC 675 ...pdf`). En el `git status` actual se están **eliminando** los `OC 2026-0005*.pdf` de la raíz (correcto), pero los `.docx`/PDF de checklists siguen trackeados. El `.gitignore` ya excluye `trabajadores_por_faena_actualizado.md` por PII, evidenciando que el equipo es consciente del riesgo.
+- **Evidencia:** `git ls-files` incluye `docs/sst/Lista Chequeo ... Post Incidente.docx`, `docs/sst/Listas Chequeo Trabajadores Nuevos OK.docx` y PDFs en `docs/` (`OC 674 ...pdf`, `OC 675 ...pdf`). En el `git status` actual se están **eliminando** los `OC 2026-0005*.pdf` de la raíz (correcto), pero los `.docx`/PDF de checklists siguen trackeados. El `.gitignore` ya excluye `trabajadores_por_faena_actualizado.md` por PII, evidenciando que el equipo es consciente del riesgo.
 - **Impacto:** Aumenta el tamaño del repo y arrastra documentos operativos (potencial PII de trabajadores) al historial de git, difícil de purgar luego.
 - **Recomendación:** Mover binarios operativos fuera del repo (almacenamiento/objeto) o a Git LFS; revisar que ningún documento con PII quede versionado.
 
@@ -230,7 +230,7 @@ Pasos de reproducción de #1–#3 ya descritos en §5/§6 (`next build`, `npx vi
 - **`lib/sentry.ts` — ✅ ACTIVO (post-fix completo):** `logger.error` llama `sentry.captureException`. `sentry.server.config.ts` + `sentry.client.config.ts` + `withSentryConfig` en `next.config.ts` capturan errores no manejados. La inicialización lazy fue eliminada; el wrapper delega a Sentry ya inicializado por los config files.
 - **`0020_purchase_request_items_product_id_idx.sql` — migración huérfana** (ver §7).
 - **`modules/*` (scaffolding congelado)** — deuda estructural deliberada y documentada (ver §7).
-- **Documentos/planes en la raíz:** múltiples `.md` de planificación e ideas (`idea_sidebar_menus.md`, `prompt_implementacion_modulo_ppa_digital.md`, `INTEGRACION_SAAS.md`, etc.) y binarios (`.docx`, `.png`, PDFs) que conviene mover a `docs/` o fuera del repo.
+- **Documentos/planes:** múltiples `.md` de planificación e ideas (`idea_sidebar_menus.md`, `prompt_implementacion_modulo_ppa_digital.md`, `INTEGRACION_SAAS.md`, etc.) y binarios (`.docx`, `.png`, PDFs) que ya fueron movidos a `docs/` o fuera del repo.
 - **TODO/FIXME/HACK:** **0** marcadores reales en comentarios de código (excelente higiene; el conteo inicial alto era el español "todo/todos").
 - **`any` en código no-test:** **1** sola ocurrencia en todo `app`/`lib`/`components`/`modules`/`db` (disciplina de tipos sobresaliente).
 

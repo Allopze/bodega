@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   }
-  if (!can(session, "reports:view")) {
+  if (!can(session, "traceability:view")) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
+import { clearRateLimits } from "./helpers"
 
 let counter = 0
 function uniqueId(prefix: string): string {
@@ -24,6 +25,7 @@ function validChileanRut(): string {
 }
 
 async function login(page: Page) {
+  await clearRateLimits()
   await page.goto("/login")
   await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
   await page.getByLabel("Contraseña").fill("chome2026")
@@ -33,7 +35,7 @@ async function login(page: Page) {
 
 async function selectRadixById(page: Page, id: string, option: string | RegExp) {
   await page.locator(`#${id}`).click()
-  await page.getByRole("option", { name: option }).click()
+  await page.getByRole("option", { name: option }).first().click()
 }
 
 /**
@@ -131,8 +133,9 @@ test("admin: crear usuario con rol prevencionista faena, verificar login", async
   await dialog.getByRole("textbox", { name: "Nombre" }).fill("Trabajador E2E")
   await dialog.getByRole("textbox", { name: "Correo electrónico" }).fill(email)
 
-  // Roles are toggle chips — click "Administrador" to select it
-  await selectRole(dialog, "Administrador")
+  // Roles are toggle chips; the E2E fixture exposes the scoped role to invitations.
+  await selectRole(dialog, "Solicitante faena")
+  await dialog.getByRole("checkbox", { name: /Faena E2E/ }).check()
 
   // The invitation form does NOT close on submit when SMTP is disabled —
   // it transforms into a pending-invite panel with "Invitación pendiente".
@@ -179,7 +182,7 @@ test("admin: crear trabajador y verificarlo en listado", async ({ page }) => {
   await dialog.getByLabel("Apellido").fill("Playwright")
   await dialog.getByRole("textbox", { name: "RUT" }).fill(rut)
   await dialog.getByRole("textbox", { name: "Cargo" }).fill("Montajista E2E")
-  await dialog.locator("#wrk-ws").selectOption({ label: "Faena E2E" })
+  await selectRadixById(page, "wrk-ws", "Faena E2E")
 
   await submitFormAndWaitForClose(page, dialog)
   await expect(page.getByRole("row", { name: new RegExp(`${firstName} Playwright.*${rut}.*Montajista E2E.*Faena E2E`) })).toBeVisible({ timeout: 15_000 })

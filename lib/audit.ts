@@ -8,7 +8,7 @@ type AuditDb = Pick<DB, "insert">
 interface AuditParams {
   userId:     string | null
   userEmail?: string
-  action:     "create" | "update" | "status_change" | "delete" | "login"
+  action:     "create" | "update" | "status_change" | "delete" | "cancel" | "login"
   entityType: string
   entityId:   string
   entityCode?: string

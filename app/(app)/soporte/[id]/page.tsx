@@ -119,6 +119,14 @@ export default async function ReporteDetailPage({ params }: Props) {
                   <p>{formatDate(report.resolvedAt)}</p>
                 </div>
               )}
+              <div>
+                <p className="text-[var(--color-text-subtle)]">Prioridad</p>
+                <p className="capitalize">{report.priority}</p>
+              </div>
+              <div>
+                <p className="text-[var(--color-text-subtle)]">SLA</p>
+                <p>{report.dueAt ? formatDate(report.dueAt) : "—"}</p>
+              </div>
             </CardContent>
           </Card>
 

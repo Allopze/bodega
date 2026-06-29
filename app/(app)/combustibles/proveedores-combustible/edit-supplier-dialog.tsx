@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import { useActionState } from "react"
-import { updateFuelSupplierAction, type ActionState } from "../actions"
+import { updateFuelSupplierAction } from "../actions"
+import type { ActionState } from "@/lib/validation/masters"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"

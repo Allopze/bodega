@@ -1,5 +1,5 @@
 /**
- * Seed for users defined in nuevos_roles.md
+ * Seed for users defined in docs/planificacion/nuevos_roles.md
  * Crea 6 prevencionistas de faena + 1 jefe de mantención con
  * marcador de contraseña pendiente e invitaciones para que puedan
  * completar su registro al primer ingreso.

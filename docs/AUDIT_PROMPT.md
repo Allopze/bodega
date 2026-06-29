@@ -263,5 +263,5 @@ Un documento de auditoría completo con:
 - Este es un SaaS B2B interno con ~6-50 usuarios concurrentes, multi-faena, multi-rol, con datos PII (RUT chileno) y manejo de facturación (PDF/XML).
 - La BD es PostgreSQL, no SQLite ni mock. Los tests de integración usan PGlite (Postgres embebido en memoria).
 - El código está en TypeScript strict mode.
-- Ya existe una auditoría previa (ver `AUDITORIA_INTEGRAL_CHOME.md`). Puedes usarla como referencia, pero debes hacer tu propia revisión independiente y no asumir que los hallazgos anteriores siguen siendo válidos o fueron corregidos.
+- Ya existe una auditoría previa (ver `auditoria/AUDITORIA_INTEGRAL_CHOME.md`). Puedes usarla como referencia, pero debes hacer tu propia revisión independiente y no asumir que los hallazgos anteriores siguen siendo válidos o fueron corregidos.
 - Sé específico: nombra archivos exactos, líneas y fragmentos de código cuando sea posible.

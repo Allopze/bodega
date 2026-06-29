@@ -7,12 +7,13 @@ PORT="${E2E_PORT:-3100}"
 AUTH_SECRET_VALUE="e2e-auth-secret-for-playwright"
 APP_URL_VALUE="http://localhost:$PORT"
 
+MAINTENANCE_DB_URL="$(node -e 'const u = new URL(process.argv[1]); u.pathname = "/postgres"; console.log(u.toString())' "$DB_URL")"
+
 # Detect common local setup problems early so the E2E run fails fast with a
-# clear message instead of timing out with cryptic Postgres error codes.
-#
-# Test the connection before doing anything. psql exits 2 on auth failure (28P01)
-# and 2 on host-not-found; both produce a useful message on stderr.
-if ! psql "$DB_URL" -c "SELECT 1" >/dev/null 2>&1; then
+# clear message instead of timing out with cryptic Postgres error codes. The
+# target DB may not exist yet; e2e/setup-db.ts creates it after this check, so
+# validate the maintenance database instead.
+if ! psql "$MAINTENANCE_DB_URL" -c "SELECT 1" >/dev/null 2>&1; then
   echo ""
   echo "ERROR: Cannot connect to the E2E database."
   echo "  URL: $DB_URL"

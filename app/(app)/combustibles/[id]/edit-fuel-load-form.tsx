@@ -2,7 +2,8 @@
 
 import { useActionState, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { updateFuelLoadAction, type ActionState } from "../actions"
+import { updateFuelLoadAction } from "../actions"
+import type { ActionState } from "@/lib/validation/masters"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"

@@ -17,7 +17,19 @@ export const serviciosModule = {
     "servicios:submit":    { id: "p-srv-submit",  description: "Enviar solicitudes de servicios a aprobación" },
     "servicios:approve":   { id: "p-srv-approve", description: "Aprobar cotizaciones de servicios" },
   },
-  nav: [],
+  nav: [
+    {
+      areaId: "adquisiciones",
+      items: [
+        {
+          label:       "Servicios",
+          href:        "/servicios",
+          iconName:    "ClipboardText",
+          permissions: ["servicios:view_own", "servicios:view_all"],
+        },
+      ],
+    },
+  ],
   defaultGrants: [
     // Administrador: acceso total
     { roleSlug: "administrador", permission: "servicios:create" },

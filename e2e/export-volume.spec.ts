@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import ExcelJS from "exceljs"
+import { clearRateLimits } from "./helpers"
 
 test("exportes: genera XLSX parseable con volumen operativo alto", async ({ page }) => {
   await login(page)
@@ -30,6 +31,7 @@ test("exportes: genera XLSX parseable con volumen operativo alto", async ({ page
 })
 
 async function login(page: Page) {
+  await clearRateLimits()
   await page.goto("/login")
   await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
   await page.getByLabel("Contraseña").fill("chome2026")

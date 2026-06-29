@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix all 12 findings from the AUDITORIA-COMBUSTIBLES.md audit, eliminating data-leak between worksites, financial corruption vectors in the import API, and missing audit trail.
+**Goal:** Fix all 12 findings from the docs/auditoria/AUDITORIA-COMBUSTIBLES.md audit, eliminating data-leak between worksites, financial corruption vectors in the import API, and missing audit trail.
 
 **Architecture:** Each fix is surgical — no new files except the Drizzle migration for H10. All changes go in `lib/combustibles/`, `app/(app)/combustibles/`, and `app/api/combustibles/`. Tests follow the existing Vitest + vi.mock() pattern used in `actions-vehicles.test.ts` and `lib/combustibles/__tests__/`.
 

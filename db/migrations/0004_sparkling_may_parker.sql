@@ -1,0 +1,1 @@
+ALTER TABLE "ppa_submissions" ADD COLUMN "public_token_revoked_at" timestamp with time zone;

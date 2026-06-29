@@ -60,6 +60,18 @@ describe("feedback service", () => {
     expect(report.pagina).toBe("/reportes")
   })
 
+  it("stores priority and SLA due date for urgent support reports", async () => {
+    const report = await createReport({
+      tipo: "bug",
+      titulo: "Error bloqueante",
+      descripcion: "No puedo registrar una recepción",
+      priority: "alta",
+    }, "user-1")
+
+    expect(report.priority).toBe("alta")
+    expect(report.dueAt).not.toBeNull()
+  })
+
   it("throws validation error for invalid report input", async () => {
     const input = {
       tipo: "invalid-type" as unknown as "bug" | "sugerencia" | "consulta",

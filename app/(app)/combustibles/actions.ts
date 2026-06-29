@@ -30,9 +30,8 @@ import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
 
-export type { ActionState }
-
 const REVALIDATE = "/combustibles"
+const MAX_FUEL_EXPORT_ROWS = 10_000
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -678,7 +677,10 @@ export async function exportFuelLoadsXlsxAction(filters?: {
     where,
     with: { vehicle: true, supplier: true, worksite: true },
     orderBy: [desc(fuelLoads.loadDate)],
+    limit: MAX_FUEL_EXPORT_ROWS + 1,
   })
+  const truncated = rows.length > MAX_FUEL_EXPORT_ROWS
+  const exportRows = truncated ? rows.slice(0, MAX_FUEL_EXPORT_ROWS) : rows
 
   const ExcelJS = await import("exceljs")
   const wb = new ExcelJS.Workbook()
@@ -706,7 +708,7 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
   ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
 
-  for (const row of rows) {
+  for (const row of exportRows) {
     ws.addRow({
       loadDate: row.loadDate, month: row.month, serviceType: row.serviceType,
       vehicle: row.vehicle?.plate ?? "", supplier: row.supplier?.name ?? "",
@@ -721,13 +723,13 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   const totalsRow = ws.addRow({
     loadDate: "", month: "", serviceType: "", vehicle: "", supplier: "",
     worksite: "TOTALES", product: "", receiptNumber: "",
-    liters: rows.reduce((s, r) => s + r.liters, 0),
-    iecFixed: rows.reduce((s, r) => s + r.iecFixed, 0),
-    iecVariable: rows.reduce((s, r) => s + r.iecVariable, 0),
-    baseAmount: rows.reduce((s, r) => s + r.baseAmount, 0),
-    iecTotal: rows.reduce((s, r) => s + r.iecTotal, 0),
-    ivaAmount: rows.reduce((s, r) => s + r.ivaAmount, 0),
-    totalAmount: rows.reduce((s, r) => s + r.totalAmount, 0),
+    liters: exportRows.reduce((s, r) => s + r.liters, 0),
+    iecFixed: exportRows.reduce((s, r) => s + r.iecFixed, 0),
+    iecVariable: exportRows.reduce((s, r) => s + r.iecVariable, 0),
+    baseAmount: exportRows.reduce((s, r) => s + r.baseAmount, 0),
+    iecTotal: exportRows.reduce((s, r) => s + r.iecTotal, 0),
+    ivaAmount: exportRows.reduce((s, r) => s + r.ivaAmount, 0),
+    totalAmount: exportRows.reduce((s, r) => s + r.totalAmount, 0),
     status: "",
   })
   totalsRow.font = { bold: true }
@@ -739,6 +741,13 @@ export async function exportFuelLoadsXlsxAction(filters?: {
 
   const buffer = await wb.xlsx.writeBuffer()
   const base64 = Buffer.from(buffer).toString("base64")
-  return { ok: true as const, data: { base64, filename: `combustibles_${new Date().toISOString().split("T")[0]}.xlsx` } }
+  return {
+    ok: true as const,
+    data: {
+      base64,
+      filename: `combustibles_${new Date().toISOString().split("T")[0]}.xlsx`,
+      truncated,
+      rowLimit: MAX_FUEL_EXPORT_ROWS,
+    },
+  }
 }
-

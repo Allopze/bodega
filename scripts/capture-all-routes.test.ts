@@ -23,6 +23,7 @@ const dynamicSamples: Record<string, string> = {
   "/trazabilidad/[itemId]": "/trazabilidad/req-item-audit-1",
   "/combustibles/[id]": "/combustibles/fuel-audit-1",
   "/combustibles/cuenta-corriente/[id]": "/combustibles/cuenta-corriente/cc-audit-1",
+  "/flota/[id]": "/flota/fuel-veh-audit-1",
 }
 
 describe("capture-all-routes route inventory", () => {

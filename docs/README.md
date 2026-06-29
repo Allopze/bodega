@@ -19,7 +19,7 @@ docs/
 │   └── ARCHITECTURE.md                 ← Arquitectura técnica completa
 ├── auditoria/
 │   └── EPP_PROVEEDORES_ESTRUCTURADO.md ← Datos maestros de proveedores y catálogo
-│   (el reporte de auditoría vive en la raíz: ../AUDITORIA_INTEGRAL_CHOME.md)
+│   (el reporte de auditoría vive en: auditoria/AUDITORIA_INTEGRAL_CHOME.md)
 ├── deploy/
 │   └── RUNBOOK.md                      ← Backups, restore, monitoreo e incidentes
 ├── security/
@@ -62,7 +62,7 @@ docs/
 
 ## Auditoría
 
-**[AUDITORIA_INTEGRAL_CHOME.md](../AUDITORIA_INTEGRAL_CHOME.md)** — Análisis de seguridad, hallazgos, riesgos identificados, estado de remediación y recomendaciones de mejora.
+**[AUDITORIA_INTEGRAL_CHOME.md](auditoria/AUDITORIA_INTEGRAL_CHOME.md)** — Análisis de seguridad, hallazgos, riesgos identificados, estado de remediación y recomendaciones de mejora.
 
 **[EPP_PROVEEDORES_ESTRUCTURADO.md](auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md)** — Datos estructurados de proveedores (TRECK y APRO) con catálogo de productos, referencias y precios extraídos de documentos reales de Chome.
 
@@ -94,7 +94,7 @@ docs/
 | Conocer los roles y permisos | [PRODUCT.md](planificacion/PRODUCT.md) |
 | Ver todas las funcionalidades | [chome_feature_list.md](planificacion/chome_feature_list.md) |
 | Ejecutar pruebas | [TESTING.md](pruebas/TESTING.md) |
-| Revisar seguridad | [AUDITORIA_INTEGRAL_CHOME.md](../AUDITORIA_INTEGRAL_CHOME.md) · [security/CSRF.md](security/CSRF.md) |
+| Revisar seguridad | [AUDITORIA_INTEGRAL_CHOME.md](auditoria/AUDITORIA_INTEGRAL_CHOME.md) · [security/CSRF.md](security/CSRF.md) |
 | Ver catálogo de proveedores | [EPP_PROVEEDORES_ESTRUCTURADO.md](auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md) |
 
 ---

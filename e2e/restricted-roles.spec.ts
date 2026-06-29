@@ -9,10 +9,12 @@
  */
 
 import { test, expect } from "@playwright/test"
+import { clearRateLimits } from "./helpers"
 
 test.describe("Restricted roles — faena scope enforcement", () => {
   test("scoped user cannot see the ws-restricted worksite in dashboard or solicitudes", async ({ page }) => {
     // Log in as the scoped user
+    await clearRateLimits()
     await page.goto("/login")
     await page.getByLabel("Correo electrónico").fill("scoped@e2e.chome.cl")
     await page.getByLabel("Contraseña").fill("scoped2026")
@@ -32,6 +34,7 @@ test.describe("Restricted roles — faena scope enforcement", () => {
 
   test("scoped user cannot create a request for a worksite outside their scope", async ({ page }) => {
     // Log in as scoped user
+    await clearRateLimits()
     await page.goto("/login")
     await page.getByLabel("Correo electrónico").fill("scoped@e2e.chome.cl")
     await page.getByLabel("Contraseña").fill("scoped2026")
@@ -51,6 +54,7 @@ test.describe("Restricted roles — faena scope enforcement", () => {
 
   test("admin user can see all worksites across the system", async ({ page }) => {
     // Log in as admin
+    await clearRateLimits()
     await page.goto("/login")
     await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
     await page.getByLabel("Contraseña").fill("chome2026")

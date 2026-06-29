@@ -90,6 +90,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "reportes", path: "/reportes", auth: true },
   { slug: "analitica", path: "/analitica", auth: true },
   { slug: "flota", path: "/flota", auth: true },
+  { slug: "flota-detalle", path: "/flota/fuel-veh-audit-1", auth: true },
   { slug: "mantenciones", path: "/mantenciones", auth: true },
   // ── Combustibles ──────────────────────────────────────────────────────
   { slug: "combustibles", path: "/combustibles", auth: true },

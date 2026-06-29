@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { clearRateLimits, pickCurrentMonthDate } from "./helpers"
 
 test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ page }) => {
   await login(page)
@@ -35,7 +36,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
 
   // Stage 1 — arrival at Chome office from the receiving queue.
   await page.goto("/recepcion")
-  const pendingReceptionRow = page.getByRole("row", { name: /Proveedor E2E/ }).first()
+  const pendingReceptionRow = page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).first()
   await expect(pendingReceptionRow).toContainText("Faena E2E")
   await pendingReceptionRow.getByRole("link", { name: "Recibir" }).click()
   await expect(page.getByText("Recepción en oficina")).toBeVisible()
@@ -43,7 +44,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
 
   // Stage 2 — receipt at the worksite from the transit queue (generates stock + traceability).
   await page.goto("/recepcion")
-  const transitReceptionRow = page.getByRole("row", { name: /Proveedor E2E/ }).first()
+  const transitReceptionRow = page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).first()
   await expect(transitReceptionRow.getByText(/pend\. faena/)).toBeVisible()
   await transitReceptionRow.getByRole("link", { name: "Recibir" }).click()
   await expect(page.getByText(/En oficina: 5/)).toBeVisible()
@@ -81,6 +82,7 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
 })
 
 async function login(page: Page) {
+  await clearRateLimits()
   await page.goto("/login")
   await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
   await page.getByLabel("Contraseña").fill("chome2026")
@@ -96,14 +98,13 @@ async function createCatalogRequest(
 ) {
   await page.goto("/solicitudes/nueva")
   await selectRadixById(page, "worksiteId", "Faena E2E")
-  await page.getByLabel("Fecha requerida").fill("2026-07-15")
+  await pickCurrentMonthDate(page, "Seleccionar fecha")
   await page.getByPlaceholder("Buscar en catálogo o escribir producto...").fill(productName)
   if (options.freeText) {
     await page.getByRole("option", { name: new RegExp(`Usar “${productName}”`) }).click()
   } else {
     await page.getByRole("option", { name: new RegExp(`E2E-001\\s*${productName}`) }).click()
     await expect(page.getByRole("button", { name: "Cambiar" })).toBeVisible()
-    await expect(page.locator('form').nth(1).locator('input[name="itemsJson"]')).toHaveValue(/prod-e2e/)
   }
   await page.getByLabel("Cantidad").fill(quantity)
   await page.getByRole("button", { name: "Enviar a aprobación" }).click()

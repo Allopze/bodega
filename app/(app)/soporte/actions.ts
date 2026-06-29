@@ -17,6 +17,7 @@ export async function createReportAction(
     titulo: string
     descripcion: string
     pagina?: string
+    priority?: string
   }
 ): Promise<ActionState & { data?: { id: string } }> {
   const { session, error } = await guardPermission("feedback:create")
