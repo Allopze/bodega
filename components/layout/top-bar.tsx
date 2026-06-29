@@ -68,12 +68,13 @@ export function TopBar({
 
   return (
     <header className={cn(
-      "flex items-center h-16 px-4 md:px-5 gap-3",
-      "bg-surface border border-(--color-border) shadow-(--shadow-card)",
-      // Auto-hide: slide out above the container's overflow clip, fade to 0.
+      "flex items-center h-14 px-4 md:px-5 gap-3",
+      "bg-(--color-chrome) border-b border-(--color-border)",
+      // Auto-hide on mobile: slide out above the sticky clip, fade to 0.
+      // Desktop: always visible (lg: overrides hide regardless of scroll).
       "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",
       hidden
-        ? "-translate-y-[calc(100%+1rem)] opacity-0 pointer-events-none"
+        ? "-translate-y-full opacity-0 pointer-events-none lg:translate-y-0 lg:opacity-100 lg:pointer-events-auto"
         : "translate-y-0 opacity-100",
       className,
     )}>
@@ -84,7 +85,7 @@ export function TopBar({
             "lg:hidden flex items-center justify-center",
             "min-h-[44px] min-w-[44px] rounded-(--radius-lg)",
             "text-(--color-text-muted) hover:text-(--color-text)",
-            "hover:bg-surface-2",
+            "hover:bg-(--color-chrome-hover)",
             "transition-[color,background-color] duration-(--duration-fast)",
           )}
           aria-label={isMenuOpen ? "Cerrar menú" : "Abrir menú"}
@@ -124,7 +125,7 @@ export function TopBar({
           )}
         </div>
         {worksiteName && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-surface-2 border border-(--color-border)">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-(--color-surface) border border-(--color-border)">
             <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" />
             <span className="text-xs font-medium text-(--color-text-muted) truncate max-w-[16rem] 2xl:max-w-[20rem]">
               {worksiteName}
@@ -150,7 +151,7 @@ export function TopBar({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filtrar en esta página..."
               className={cn(
-                "h-7 w-36 lg:w-52 rounded-(--radius-lg) border bg-surface-2 pl-8 text-xs text-(--color-text) placeholder:text-(--color-text-subtle) outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line) transition-[border-color,box-shadow] duration-(--duration-fast)",
+                "h-7 w-36 lg:w-52 rounded-(--radius-lg) border bg-(--color-surface) pl-8 text-xs text-(--color-text) placeholder:text-(--color-text-subtle) outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line) transition-[border-color,box-shadow] duration-(--duration-fast)",
                 searchQuery
                   ? "border-(--color-primary-line) pr-7"
                   : "border-(--color-border) pr-3",
