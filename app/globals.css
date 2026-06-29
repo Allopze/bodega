@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 
 /* ─── Chome Solicitudes y Bodega — Design Tokens ──────────────────────────── */
-/* Direction: White canvas, square corners, soft elevation. Always light.     */
+/* Direction: White content well inside a tinted chrome (edge-to-edge shell), subtle radius. Always light. */
 /* Elevation carries hierarchy. Signal orange reserved for pending states.     */
 
 @theme {
@@ -77,6 +77,10 @@
   --color-border-strong:  oklch(0.848 0.005 90);   /* divider            */
   --color-rule:           oklch(0.225 0.005 90);   /* strong rule        */
 
+  /* ── Chrome — sidebar + header background (edge-to-edge shell) ── */
+  --color-chrome:         oklch(0.974 0.004 90);   /* L-shaped shell fill      */
+  --color-chrome-hover:   oklch(0.955 0.005 90);   /* hover inside the chrome  */
+
   --color-text:           oklch(0.180 0.004 90);   /* near black         */
   --color-text-muted:     oklch(0.430 0.005 90);
   --color-text-subtle:    oklch(0.500 0.005 90);   /* WCAG AA ≥ 4.5:1    */
@@ -97,15 +101,15 @@
   --duration-default: 180ms;
   --duration-slow:    280ms;
 
-  /* ── Radii — square corners; full reservado para pills/avatares ── */
-  --radius-xs:   0;
-  --radius-sm:   0;
-  --radius:      0;
-  --radius-md:   0;
-  --radius-lg:   0;
-  --radius-xl:   0;
-  --radius-2xl:  0;
-  --radius-full: 9999px;    /* pills */
+  /* ── Radii — subtle, intentional surfaces; full reservado para pills/avatares ── */
+  --radius-xs:   0.125rem;  /* 2px  — micro chips, badges                */
+  --radius-sm:   0.25rem;   /* 4px  — dense inputs, cells                */
+  --radius:      0.375rem;  /* 6px  — buttons, inputs, controls          */
+  --radius-md:   0.5rem;    /* 8px  — cards, popovers                    */
+  --radius-lg:   0.625rem;  /* 10px — large cards, dialogs               */
+  --radius-xl:   0.75rem;   /* 12px — content well corner, hero          */
+  --radius-2xl:  1rem;      /* 16px — major containers                   */
+  --radius-full: 9999px;    /* pills — unchanged                         */
 
   /* ── Shadows — soft elevation, cards float over canvas ── */
   --shadow-xs:   0 1px 2px oklch(0.180 0.004 90 / 0.06);
