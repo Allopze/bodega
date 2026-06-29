@@ -32,7 +32,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
     return (
       <nav
         aria-label="Áreas"
-        className="hidden lg:flex lg:w-16 lg:shrink-0 lg:flex-col overflow-hidden rounded-(--radius-2xl) border border-(--color-border) bg-surface shadow-(--shadow-card)"
+        className="hidden lg:flex lg:w-16 lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
       >
         <div className="flex items-center justify-center py-3">
           <BrandMark variant="light" size={30} hideText />
@@ -49,7 +49,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
                 "flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
                 dashActive
                   ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
-                  : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+                  : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
               )}
             >
               <SquaresFour size={19} weight={dashActive ? "bold" : "regular"} className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
@@ -75,7 +75,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
                 aria-label="Soporte"
                 data-pressable
                 className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-surface-2 hover:text-(--color-text)",
+                  "flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
                 )}
               >
                 <Lifebuoy size={17} />
@@ -87,7 +87,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
               type="button"
               onClick={() => onCollapsedChange(false)}
               aria-label="Mostrar panel"
-              className="flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-surface-2 hover:text-(--color-text)"
+              className="flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
             >
               <CaretRight size={16} weight="bold" />
             </button>
@@ -100,7 +100,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
   return (
     <nav
       aria-label="Navegación"
-      className="hidden lg:flex lg:w-60 lg:shrink-0 lg:flex-col overflow-hidden rounded-(--radius-2xl) border border-(--color-border) bg-surface shadow-(--shadow-card)"
+      className="hidden lg:flex lg:w-60 lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
     >
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
         <BrandMark variant="light" size={36} subtitle titleSize="sm" />
@@ -109,7 +109,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
             type="button"
             onClick={() => onCollapsedChange(true)}
             aria-label="Ocultar panel"
-            className="flex h-7 w-7 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-surface-2 hover:text-(--color-text)"
+            className="flex h-7 w-7 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
           >
             <CaretRight size={14} weight="bold" className="rotate-180" />
           </button>
@@ -125,7 +125,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
             "mb-1 flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
             dashActive
               ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
-              : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+              : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
           )}
         >
           {DashIcon && (
@@ -151,7 +151,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
               "flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
               isHrefActive("/soporte", pathname)
                 ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
-                : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
             )}
           >
             <Lifebuoy
@@ -273,7 +273,7 @@ function RailFlyout({
             "group relative flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
             inRoute
               ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
-              : "text-(--color-text-muted) hover:bg-surface-2 hover:text-(--color-text)",
+              : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
           )}
         >
           <Icon size={19} weight={inRoute ? "bold" : "regular"} className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
