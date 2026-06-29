@@ -106,23 +106,24 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
               </>
             )}
 
-            {/* TopBar: franja del chrome, anclada arriba (sticky dentro del pozo) */}
-            <TopBar
-              session={session}
-              onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
-              worksiteName={worksiteName}
-              isMenuOpen={mobileOpen}
-              hidden={headerHidden}
-              className="sticky top-0 z-10"
-            />
-
-            {/* Pozo blanco: contenido al ras, esquina sup-izq redondeada en desktop */}
+            {/* Pozo blanco: contenido al ras, esquina sup-izq redondeada en desktop.
+                overflow-y-auto crea el scroll container y el clip del radio. */}
             <main
               ref={mainRef}
               className="flex-1 min-w-0 overflow-y-auto bg-(--color-surface) lg:rounded-tl-(--radius-xl)"
               id="main-content"
               tabIndex={-1}
             >
+              {/* TopBar sticky dentro del pozo — se mantiene al top mientras el
+                  contenido scrollea. En desktop, lg: overrides bloquean el auto-hide. */}
+              <TopBar
+                session={session}
+                onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
+                worksiteName={worksiteName}
+                isMenuOpen={mobileOpen}
+                hidden={headerHidden}
+                className="sticky top-0 z-10"
+              />
               {children}
             </main>
           </div>
