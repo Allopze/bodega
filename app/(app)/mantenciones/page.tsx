@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { can, requirePermission } from "@/lib/auth/can"
-import { getMaintenancePageData } from "@/lib/services/maintenance"
+import { getMaintenancePageData, getUpcomingMaintenance } from "@/lib/services/maintenance"
 import { MaintenanceForm } from "./maintenance-form"
 import { MaintenanceRowActions } from "./maintenance-row-actions"
 
@@ -40,7 +40,10 @@ export default async function MantencionesPage({
   const vehicleId = typeof sp.vehicle === "string" ? sp.vehicle : undefined
   const worksiteId = typeof sp.faena === "string" ? sp.faena : undefined
   const status = typeof sp.status === "string" ? sp.status : undefined
-  const data = await getMaintenancePageData(session, { vehicleId, worksiteId, status })
+  const [data, upcomingData] = await Promise.all([
+    getMaintenancePageData(session, { vehicleId, worksiteId, status }),
+    getUpcomingMaintenance(session),
+  ])
   const canCreate = can(session, "mantenciones:create")
   const canEdit = can(session, "mantenciones:edit")
 
@@ -101,6 +104,41 @@ export default async function MantencionesPage({
           </form>
         </CardContent>
       </Card>
+
+      {(upcomingData.overdue.length > 0 || upcomingData.upcoming.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Planificación preventiva</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3">
+              {upcomingData.overdue.length > 0 && (
+                <div className="rounded-lg border border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-3 text-sm">
+                  <strong className="text-[var(--color-danger-ink)]">Mantenciones vencidas:</strong>
+                  {upcomingData.overdue.map((m) => (
+                    <span key={m.id} className="ml-2 text-[var(--color-danger-ink)]">
+                      {m.vehicle?.plate ?? m.vehicleId} ({m.maintenanceDate}) — {m.maintenanceType}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {upcomingData.upcoming.length > 0 && (
+                <div className="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3 text-sm">
+                  <strong className="text-[var(--color-warning-ink)]">Próximas (30 días):</strong>
+                  {upcomingData.upcoming.map((m) => (
+                    <span key={m.id} className="ml-2 text-[var(--color-warning-ink)]">
+                      {m.vehicle?.plate ?? m.vehicleId} ({m.maintenanceDate}) — {m.maintenanceType}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {upcomingData.overdue.length === 0 && upcomingData.upcoming.length > 0 && (
+                <p className="text-xs text-[var(--color-text-subtle)]">Sin mantenciones vencidas. Las programadas aparecen arriba.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {canCreate && (
         <Card>

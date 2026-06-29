@@ -164,6 +164,29 @@ export async function getPpaByToken(token: string): Promise<PpaTokenResult | nul
   }
 }
 
+/* ── revokePpaToken ──────────────────────────────────────────────────────────── */
+
+export async function revokePpaToken(
+  id: string,
+  userId: string,
+  worksiteIds: string[] | "all",
+): Promise<void> {
+  if (worksiteIds !== "all" && worksiteIds.length === 0) throw new Error("Sin acceso")
+  if (worksiteIds !== "all") {
+    const ppa = await db.query.ppaSubmissions.findFirst({ where: eq(ppaSubmissions.id, id) })
+    if (!ppa) throw new Error("PPA no encontrado")
+    if (!worksiteIds.includes(ppa.worksiteId)) throw new Error("Sin acceso a la faena de este PPA")
+  }
+  const existing = await db.query.ppaSubmissions.findFirst({ where: eq(ppaSubmissions.id, id) })
+  if (!existing) throw new Error("PPA no encontrado")
+  if (existing.publicTokenRevokedAt) throw new Error("El acceso público ya está revocado")
+
+  await db.update(ppaSubmissions).set({
+    publicTokenRevokedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }).where(eq(ppaSubmissions.id, id))
+}
+
 /* ── listPpa (panel del responsable / historial) ─────────────────────────────── */
 
 export interface PpaListFilters {

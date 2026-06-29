@@ -120,6 +120,7 @@ export const workerDeliverySchema = z.object({
   workerId:      z.string().min(1, "Selecciona un trabajador"),
   requestItemId: z.string().min(1, "Selecciona un EPP recibido"),
   quantity:      positiveQuantitySchema,
+  receiverName:  z.string().trim().max(120).nullable().optional().or(z.literal("")),
   notes:         z.string().trim().max(500).nullable().optional().or(z.literal("")),
   // Return of old/discarded EPP (opcional)
   returnProductId:       z.string().nullable().optional().or(z.literal("")),

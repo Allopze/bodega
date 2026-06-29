@@ -35,6 +35,7 @@ export function ReportForm() {
   const [descripcion, setDesc]      = useState("")
   const [pagina, setPagina]         = useState("")
   const [priority, setPriority]     = useState<FeedbackPrioridad>("normal")
+  const [attachment, setAttachment] = useState<File | null>(null)
   const [errors, setErrors]         = useState<Record<string, string>>({})
 
   function validate(): boolean {
@@ -59,6 +60,7 @@ export function ReportForm() {
         descripcion: descripcion.trim(),
         pagina:      pagina.trim() || undefined,
         priority,
+        attachment,
       })
 
       if (!result.ok) {
@@ -164,6 +166,19 @@ export function ReportForm() {
             onChange={(e) => setPagina(e.target.value)}
             placeholder="Ej: /compras/OC-2026-0012 o 'Módulo de bodega'"
             error={!!errors.pagina}
+          />
+        </Field>
+
+        <Field
+          label="Adjunto (opcional)"
+          htmlFor="attachment"
+          helper="PDF, JPG o PNG. Máx. 20 MB."
+        >
+          <Input
+            id="attachment"
+            type="file"
+            accept="application/pdf,image/jpeg,image/png"
+            onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
           />
         </Field>
       </FieldGroup>

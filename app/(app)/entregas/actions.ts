@@ -32,6 +32,7 @@ export async function registerWorkerDeliveryAction(
     workerId:             formData.get("workerId"),
     requestItemId:        formData.get("requestItemId"),
     quantity:             formData.get("quantity"),
+    receiverName:         formData.get("receiverName") || null,
     notes:                formData.get("notes"),
     returnProductId:      formData.get("returnProductId"),
     returnProductNameFree: formData.get("returnProductNameFree"),
@@ -49,7 +50,7 @@ export async function registerWorkerDeliveryAction(
   }
 
   const {
-    worksiteId, workerId, requestItemId, quantity, notes,
+    worksiteId, workerId, requestItemId, quantity, receiverName, notes,
     returnProductId, returnProductNameFree, returnQuantity, returnReason, returnNotes,
   } = parsed.data
   if (!canAccessWorksite(session, worksiteId)) {
@@ -67,6 +68,7 @@ export async function registerWorkerDeliveryAction(
       quantity,
       deliveredBy: session.user.id,
       userEmail: session.user.email ?? undefined,
+      receiverName: receiverName?.trim() || null,
       notes: notes || null,
       proofAttachment: proofResult.attachment,
       returnProductId: returnProductId || null,

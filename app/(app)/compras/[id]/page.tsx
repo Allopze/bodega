@@ -14,6 +14,7 @@ import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { Button } from "@/components/ui/button"
 import { OcReceptionCta } from "./oc-reception-cta"
+import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
 
 export const metadata: Metadata = { title: "Orden de compra" }
 
@@ -116,6 +117,9 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     (order.status === "supplier_confirmed" && canManage) ||
     (order.status === "partially_received" && canManage) ||
     (order.status === "received" && canManage)
+
+  const orderItemIds = order.items.map((i) => i.id)
+  const { totalReceived } = await getOcReconciliation(order.id, orderItemIds)
 
   return (
     <PageContainer width="workbench">
@@ -327,6 +331,30 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
               totalAmount={order.totalAmount}
               canManage={canInvoice}
             />
+          )}
+
+          {order.items.some((item) => (item.quantityOfficeReceived ?? 0) > 0 || (item.quantityReceived ?? 0) > 0) && (
+            <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-2">Conciliación OC-factura-recepción</h2>
+              <div className="rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+                <div className="flex justify-between gap-2">
+                  <span>Cantidad total pedida</span>
+                  <span className="font-mono tabular-nums">{order.items.reduce((sum, i) => sum + i.quantity, 0)}</span>
+                </div>
+                <div className="flex justify-between gap-2 mt-1 pt-1 border-t border-[var(--color-border)]">
+                  <span>Cantidad recibida en faena</span>
+                  <span className="font-mono tabular-nums">{totalReceived}</span>
+                </div>
+                <div className="flex justify-between gap-2 mt-1 pt-1 border-t border-[var(--color-border)]">
+                  <span>Facturas adjuntadas</span>
+                  <span className="font-mono tabular-nums">{orderInvoices.length}</span>
+                </div>
+                <div className="flex justify-between gap-2 mt-1 pt-1 border-t border-[var(--color-border)]">
+                  <span>Total facturado</span>
+                  <span className="font-mono tabular-nums">{formatCLP(orderInvoices.reduce((sum, inv) => sum + (inv.amount ?? 0), 0))}</span>
+                </div>
+              </div>
+            </section>
           )}
 
           <EntityTimeline entityType="oc" events={timelineEvents} />

@@ -7,6 +7,7 @@ import { and, eq, inArray } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
+import { closePhysicalInventoryCount } from "@/lib/services/physical-inventory"
 import { applyMovement } from "@/lib/services/stock"
 import { dispatchSchema, setMinStockSchema, returnStockSchema, adjustStockSchema, type ActionState }  from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
@@ -16,6 +17,10 @@ const REVALIDATE = "/bodega"
 function serviceWorksiteScope(session: Awaited<ReturnType<typeof requirePermission>>): string[] | "all" {
   const scope = resolveWorksiteScope(session)
   return scope.mode === "all" ? "all" : scope.ids
+}
+
+function formValues(formData: FormData, key: string) {
+  return formData.getAll(key).map((value) => String(value ?? ""))
 }
 
 // ── Dispatch from worksite stock to worker ───────────────────────────────────
@@ -277,5 +282,60 @@ export async function returnStockAction(
   } catch (e) {
     logger.error("[returnStockAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar devolución" }
+  }
+}
+
+// ── Close physical inventory count ──────────────────────────────────────────
+
+export async function closePhysicalInventoryCountAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("warehouse:adjust_stock") }
+  catch { return { ok: false, message: "Sin permisos para cerrar conteos fisicos" } }
+
+  const worksiteId = String(formData.get("worksiteId") ?? "")
+  const notes = String(formData.get("notes") ?? "")
+  const productIds = formValues(formData, "countProductId")
+  const expectedQuantities = formValues(formData, "expectedQuantity")
+  const countedQuantities = formValues(formData, "countedQuantity")
+  const itemNotes = formValues(formData, "itemNotes")
+
+  const items = productIds
+    .map((productId, index) => ({
+      productId,
+      expectedQuantity: Number(expectedQuantities[index] ?? "0"),
+      countedQuantity: Number(countedQuantities[index] ?? ""),
+      notes: itemNotes[index] ?? "",
+    }))
+    .filter((item) => item.productId)
+
+  if (!worksiteId) {
+    return { ok: false, message: "Selecciona una faena" }
+  }
+  if (items.length === 0) {
+    return { ok: false, message: "Agrega al menos un producto al conteo" }
+  }
+  if (items.some((item) => !Number.isFinite(item.expectedQuantity) || !Number.isFinite(item.countedQuantity) || item.countedQuantity < 0)) {
+    return { ok: false, message: "Revisa las cantidades contadas" }
+  }
+
+  try {
+    const result = await closePhysicalInventoryCount(
+      session,
+      { worksiteId, notes, items },
+      serviceWorksiteScope(session),
+    )
+
+    revalidatePath(REVALIDATE)
+    revalidatePath("/trazabilidad")
+    return {
+      ok: true,
+      message: `Conteo ${result.code} cerrado con ${result.adjustmentCount} ajuste${result.adjustmentCount === 1 ? "" : "s"}`,
+    }
+  } catch (e) {
+    logger.error("[closePhysicalInventoryCountAction]", e)
+    return { ok: false, message: e instanceof Error ? e.message : "Error al cerrar conteo fisico" }
   }
 }

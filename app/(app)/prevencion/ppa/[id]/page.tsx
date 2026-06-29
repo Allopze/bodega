@@ -14,6 +14,7 @@ import {
 } from "@/lib/ppa/types"
 import { ReviewPanel } from "./review-panel"
 import { CloseCaseButton } from "./close-case-button"
+import { RevokeTokenButton } from "./revoke-token-button"
 import { scopeToIds } from "@/lib/ppa/utils"
 
 export const metadata: Metadata = { title: "Detalle PPA" }
@@ -224,6 +225,18 @@ export default async function PpaDetailPage({ params }: { params: Promise<{ id: 
 
           {/* Trazabilidad */}
           <Timeline events={timeline} />
+
+          {/* Gestión del enlace público */}
+          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+            <h2 className="mb-2 text-sm font-semibold">Enlace público</h2>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              El trabajador accede al resultado vía QR o enlace sin iniciar sesión.
+              Puedes revocar el acceso si el enlace fue compartido indebidamente.
+            </p>
+            {can(session, "ppa:manage") && (
+              <RevokeTokenButton ppaId={ppa.id} revoked={!!ppa.publicTokenRevokedAt} />
+            )}
+          </section>
         </div>
       </div>
     </PageContainer>

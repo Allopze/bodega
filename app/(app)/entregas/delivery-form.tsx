@@ -217,20 +217,29 @@ export function DeliveryForm({
                 />
               </Field>
 
-              <Field label="Notas" htmlFor="deliveryNotes" error={state.fieldErrors?.notes?.[0]}>
-                <Textarea
-                  id="deliveryNotes"
-                  name="notes"
-                  ref={notesRef}
-                  rows={1}
-                  onInput={handleNotesInput}
-                  placeholder="Condición del EPP, observaciones..."
+              <Field label="Recibido por" htmlFor="deliveryReceiverName" helper="Persona que recibe el EPP. Si se omite, se usa el nombre del trabajador.">
+                <Input
+                  id="deliveryReceiverName"
+                  name="receiverName"
+                  placeholder="Ej: Supervisor de terreno"
                   disabled={!selectedItem}
-                  error={!!state.fieldErrors?.notes}
-                  className="h-9 min-h-9 resize-none overflow-hidden py-1.5"
                 />
               </Field>
             </div>
+
+            <Field label="Notas" htmlFor="deliveryNotes" error={state.fieldErrors?.notes?.[0]}>
+              <Textarea
+                id="deliveryNotes"
+                name="notes"
+                ref={notesRef}
+                rows={1}
+                onInput={handleNotesInput}
+                placeholder="Condición del EPP, observaciones..."
+                disabled={!selectedItem}
+                error={!!state.fieldErrors?.notes}
+                className="h-9 min-h-9 resize-none overflow-hidden py-1.5"
+              />
+            </Field>
 
             {/* ── Devolver EPP antiguo ── */}
             <button

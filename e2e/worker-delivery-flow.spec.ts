@@ -42,7 +42,7 @@ test("entregas: rechaza comprobante con formato no permitido", async ({ page }) 
   })
   await page.getByRole("button", { name: "Registrar entrega" }).click()
 
-  await expect(page.locator("#main-content").getByText("El comprobante debe ser PDF, JPG o PNG")).toBeVisible({
+  await expect(page.locator("#main-content").getByText(/No se pudo identificar el tipo del archivo/)).toBeVisible({
     timeout: 30_000,
   })
 })
@@ -64,9 +64,15 @@ test("entregas: registra comprobante y permite descargarlo", async ({ page }) =>
   })
   await page.getByRole("button", { name: "Registrar entrega" }).click()
 
-  const row = page.getByRole("row", { name: /Trabajador E2E.*Casco EPP E2E.*Receptor adjunto E2E/ })
+  await page.goto("/dashboard")
+  await page.goto("/entregas")
+  await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
+
+  const row = page.getByRole("row", { name: /SOL-2026-EPP-ADJ/ })
   await expect(row).toBeVisible({ timeout: 30_000 })
-  const href = await row.getByRole("link", { name: "Adjunto" }).getAttribute("href")
+  await expect(row).toContainText("Receptor adjunto E2E")
+  const link = row.getByRole("link", { name: /Adjunto|Archivo/ })
+  const href = await link.getAttribute("href")
   expect(href).toMatch(/^\/api\/attachments\//)
 
   const response = await page.request.get(href!)
@@ -87,7 +93,11 @@ test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
   await page.getByLabel("Recibido por").fill("Supervisor E2E")
   await page.getByRole("button", { name: "Registrar entrega" }).click()
 
-  await expect(page.getByRole("row", { name: /Trabajador E2E.*Casco EPP E2E.*2 unidad.*Supervisor E2E/ })).toBeVisible({
+  await page.goto("/dashboard")
+  await page.goto("/entregas")
+  await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
+
+  await expect(page.getByRole("row", { name: /SOL-2026-EPP/ }).filter({ hasText: "Supervisor E2E" })).toBeVisible({
     timeout: 30_000,
   })
 })

@@ -15,12 +15,16 @@ import type { Session } from "next-auth"
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockApplyMovement = vi.hoisted(() => vi.fn())
 const mockRegisterWorksiteDelivery = vi.hoisted(() => vi.fn())
+const mockClosePhysicalInventoryCount = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/services/stock", () => ({ applyMovement: mockApplyMovement }))
 vi.mock("@/lib/services/deliveries", () => ({
   registerWorksiteDelivery: mockRegisterWorksiteDelivery,
+}))
+vi.mock("@/lib/services/physical-inventory", () => ({
+  closePhysicalInventoryCount: mockClosePhysicalInventoryCount,
 }))
 
 const mockDb = {
@@ -51,6 +55,7 @@ describe("bodega actions", () => {
     vi.clearAllMocks()
     mockApplyMovement.mockResolvedValue(undefined)
     mockRegisterWorksiteDelivery.mockResolvedValue(undefined)
+    mockClosePhysicalInventoryCount.mockResolvedValue({ id: "count-1", code: "CON-2026-0001", adjustmentCount: 2 })
     mockDb.query.worksiteStock.findFirst.mockResolvedValue(null)
 
     // Default select chain for returnStock prior movements
@@ -274,6 +279,63 @@ describe("bodega actions", () => {
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(false)
       expect(result.message).toContain("Stock insuficiente")
+    })
+  })
+
+  // ── closePhysicalInventoryCountAction ──────────────────────────────────
+
+  describe("closePhysicalInventoryCountAction", () => {
+    it("denies without warehouse:adjust_stock", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement"))
+      const { closePhysicalInventoryCountAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      const result = await closePhysicalInventoryCountAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Sin permisos")
+    })
+
+    it("rejects when no counted products are submitted", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { closePhysicalInventoryCountAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      const result = await closePhysicalInventoryCountAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Agrega")
+    })
+
+    it("closes a physical inventory count on happy path", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { closePhysicalInventoryCountAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("notes", "Conteo mensual")
+      fd.append("countProductId", "prod-1")
+      fd.append("expectedQuantity", "10")
+      fd.append("countedQuantity", "8")
+      fd.append("itemNotes", "Faltan 2")
+      fd.append("countProductId", "prod-2")
+      fd.append("expectedQuantity", "3")
+      fd.append("countedQuantity", "5")
+      fd.append("itemNotes", "")
+
+      const result = await closePhysicalInventoryCountAction({ ok: false }, fd)
+
+      expect(result.ok).toBe(true)
+      expect(result.message).toContain("CON-2026-0001")
+      expect(mockClosePhysicalInventoryCount).toHaveBeenCalledWith(
+        expect.objectContaining({ user: expect.objectContaining({ id: "user-1" }) }),
+        {
+          worksiteId: "ws-1",
+          notes: "Conteo mensual",
+          items: [
+            { productId: "prod-1", expectedQuantity: 10, countedQuantity: 8, notes: "Faltan 2" },
+            { productId: "prod-2", expectedQuantity: 3, countedQuantity: 5, notes: "" },
+          ],
+        },
+        ["ws-1"],
+      )
     })
   })
 })

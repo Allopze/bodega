@@ -9,6 +9,7 @@ import {
   getPpa,
   reviewPpa,
   closePpa,
+  revokePpaToken,
   getPpaStats,
   type PpaRow,
   type PpaStats,
@@ -114,5 +115,25 @@ export async function getPpaStatsAction(): Promise<ActionState & { data?: { stat
     return { ok: true, data: { stats } }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al obtener indicadores" }
+  }
+}
+
+export async function revokePpaTokenAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardPermission("ppa:manage")
+  if (error) return error
+  const id = formData.get("id") as string
+  if (!id) return { ok: false, message: "Falta el identificador del PPA." }
+
+  const worksiteIds = scopeToIds(resolveWorksiteScope(session))
+  try {
+    await revokePpaToken(id, session.user.id, worksiteIds)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${id}`)
+    return { ok: true, message: "Acceso público revocado. El enlace ya no muestra el resultado." }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Error al revocar el acceso público" }
   }
 }

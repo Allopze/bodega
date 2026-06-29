@@ -84,6 +84,43 @@ export async function getMaintenancePageData(session: Session, filters: Maintena
   }
 }
 
+export async function getUpcomingMaintenance(session: Session) {
+  const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
+  const worksiteScope = scopedWorksites === null
+    ? undefined
+    : scopedWorksites.length > 0
+      ? inArray(maintenanceRecords.worksiteId, scopedWorksites)
+      : sql`false`
+
+  const today = new Date().toISOString().slice(0, 10)
+  const thirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+  const upcoming = await db.query.maintenanceRecords.findMany({
+    where: and(
+      worksiteScope,
+      eq(maintenanceRecords.status, "scheduled"),
+      sql`${maintenanceRecords.maintenanceDate} >= ${today}`,
+      sql`${maintenanceRecords.maintenanceDate} <= ${thirtyDays}`,
+    ),
+    with: { vehicle: true },
+    orderBy: [maintenanceRecords.maintenanceDate],
+    limit: 50,
+  })
+
+  const overdue = await db.query.maintenanceRecords.findMany({
+    where: and(
+      worksiteScope,
+      eq(maintenanceRecords.status, "scheduled"),
+      sql`${maintenanceRecords.maintenanceDate} < ${today}`,
+    ),
+    with: { vehicle: true },
+    orderBy: [maintenanceRecords.maintenanceDate],
+    limit: 50,
+  })
+
+  return { upcoming, overdue }
+}
+
 export async function createMaintenanceRecord(session: Session, input: CreateMaintenanceInput) {
   const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, input.vehicleId) })
   if (!vehicle) throw new Error("Vehículo no encontrado")

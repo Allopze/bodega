@@ -11,6 +11,7 @@ export interface DeliveryRow {
   code:         string
   worksiteName: string
   workerName:   string
+  receiverName: string | null
   itemSummary:  string
   requestCode:  string | null
   deliveredAt:  string
@@ -46,6 +47,9 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{delivery.code}</p>
                   <p className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                  {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
+                    <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
+                  )}
                   <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">{delivery.worksiteName}</p>
                 </div>
               </div>
@@ -89,6 +93,9 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
             <TableCell>
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
+                  <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
+                )}
                 {delivery.requestCode && (
                   <p className="font-mono text-[11px] text-[var(--color-text-subtle)]">{delivery.requestCode}</p>
                 )}

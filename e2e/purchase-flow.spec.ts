@@ -40,14 +40,14 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(pendingReceptionRow).toContainText("Faena E2E")
   await pendingReceptionRow.getByRole("link", { name: "Recibir" }).click()
   await expect(page.getByText("Recepción en oficina")).toBeVisible()
-  await submitReceiptForm(page, "5")
+  await submitReceiptForm(page, "10")
 
   // Stage 2 — receipt at the worksite from the transit queue (generates stock + traceability).
   await page.goto("/recepcion")
   const transitReceptionRow = page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).first()
   await expect(transitReceptionRow.getByText(/pend\. faena/)).toBeVisible()
   await transitReceptionRow.getByRole("link", { name: "Recibir" }).click()
-  await expect(page.getByText(/En oficina: 5/)).toBeVisible()
+  await expect(page.getByText(/En oficina: 10/)).toBeVisible()
   const worksiteReceiptButton = page.getByRole("button", { name: /Recepción en faena/ })
   await expect(worksiteReceiptButton).toBeEnabled()
   await worksiteReceiptButton.click()

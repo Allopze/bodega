@@ -4,6 +4,7 @@ const DELIVERY_ATTACHMENT_PREFIX = "storage/deliveries/"
 const INVOICE_ATTACHMENT_PREFIX = "storage/purchase-orders/"
 const QUOTATION_ATTACHMENT_PREFIX = "storage/repuestos/"
 const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
+const FLEET_DOCUMENT_PREFIX = "storage/flota/"
 
 /**
  * Resolves the base storage directory.
@@ -126,4 +127,26 @@ function isSafeStorageName(storageName: string): boolean {
     && storageName !== "."
     && storageName !== ".."
     && storageName === path.posix.basename(storageName)
+}
+
+export function resolveFleetDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "flota")
+}
+
+export function createFleetDocumentPath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid fleet document file name")
+  }
+  return `${FLEET_DOCUMENT_PREFIX}${storageName}`
+}
+
+export function resolveFleetDocumentFile(filePath: string): string | null {
+  if (!filePath.startsWith(FLEET_DOCUMENT_PREFIX)) {
+    return null
+  }
+  const storageName = filePath.slice(FLEET_DOCUMENT_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+  return path.join(/*turbopackIgnore: true*/ resolveFleetDir(), storageName)
 }

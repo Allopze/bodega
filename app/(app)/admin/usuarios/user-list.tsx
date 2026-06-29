@@ -46,6 +46,7 @@ interface UserListProps {
   allRoles:     Role[]
   allPermissions: Permission[]
   allWorksites: Worksite[]
+  pagination?:  { page: number; totalPages: number; totalItems: number }
 }
 
 const COLUMNS = [
@@ -57,7 +58,7 @@ const COLUMNS = [
   { key: "",          label: "",          sortable: false, width: "w-24" },
 ]
 
-export function UserList({ users, allRoles, allPermissions, allWorksites }: UserListProps) {
+export function UserList({ users, allRoles, allPermissions, allWorksites, pagination: _pagination }: UserListProps) {
   const [sheetOpen, setSheetOpen]   = React.useState(false)
   const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)

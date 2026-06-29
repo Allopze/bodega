@@ -29,6 +29,15 @@ export default async function FlotaPage() {
   const totalLiters = vehicles.reduce((sum, vehicle) => sum + vehicle.totalLiters, 0)
   const maintenanceCount = vehicles.reduce((sum, vehicle) => sum + vehicle.maintenanceCount, 0)
 
+  const now = new Date()
+  const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const expiredVehicles = vehicles.filter((vehicle) => vehicle.nextExpiryDate && vehicle.nextExpiryDate < now.toISOString().slice(0, 10))
+  const expiringSoon = vehicles.filter((vehicle) =>
+    vehicle.nextExpiryDate &&
+    vehicle.nextExpiryDate >= now.toISOString().slice(0, 10) &&
+    vehicle.nextExpiryDate <= thirtyDays,
+  )
+
   return (
     <PageContainer>
       <PageHeader
@@ -53,6 +62,23 @@ export default async function FlotaPage() {
         <Metric title="Litros registrados" value={formatNumber(totalLiters)} />
         <Metric title="Mantenciones" value={maintenanceCount} />
       </div>
+
+      {(expiredVehicles.length > 0 || expiringSoon.length > 0) && (
+        <div className="flex flex-col gap-2">
+          {expiredVehicles.length > 0 && (
+            <div className="rounded-lg border border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-3 text-sm text-[var(--color-danger-ink)]">
+              <strong>Documentos vencidos:</strong>{" "}
+              {expiredVehicles.map((v) => v.plate).join(", ")}
+            </div>
+          )}
+          {expiringSoon.length > 0 && (
+            <div className="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
+              <strong>Próximos a vencer (30 días):</strong>{" "}
+              {expiringSoon.map((v) => v.plate).join(", ")}
+            </div>
+          )}
+        </div>
+      )}
 
       <Card>
         <CardHeader>

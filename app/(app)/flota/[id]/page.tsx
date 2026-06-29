@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
+import { FleetDocumentsPanel } from "./fleet-documents-panel"
 
 export const metadata: Metadata = { title: "Detalle de vehículo" }
 
@@ -83,21 +84,17 @@ export default async function FlotaVehiclePage({
       <Card>
         <CardHeader><CardTitle className="text-base">Documentos</CardTitle></CardHeader>
         <CardContent>
-          {detail.documents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No hay documentos registrados para este vehículo.</p>
-          ) : (
-            <div className="space-y-2">
-              {detail.documents.map((document) => (
-                <div key={document.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0">
-                  <div>
-                    <div className="font-medium">{document.fileName}</div>
-                    <div className="text-muted-foreground">{document.documentType}</div>
-                  </div>
-                  <div className="text-right text-muted-foreground">{document.expiresAt ?? "Sin vencimiento"}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <FleetDocumentsPanel
+            vehicleId={vehicle.id}
+            documents={detail.documents.map((document) => ({
+              id: document.id,
+              documentType: document.documentType,
+              fileName: document.fileName,
+              mimeType: document.mimeType ?? null,
+              expiresAt: document.expiresAt ?? null,
+              createdAt: document.createdAt,
+            }))}
+          />
         </CardContent>
       </Card>
     </PageContainer>

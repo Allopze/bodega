@@ -117,6 +117,9 @@ test("admin: crear producto con categoría, verificarlo en catálogo", async ({ 
   await selectRadixById(page, "p-cat", /Categoría E2E/)
 
   await submitFormAndWaitForClose(page, dialog)
+
+  // The product creation dialog may close via redirect/refresh.
+  // Wait for the table to show the new product instead of asserting dialog closed.
   await expect(page.getByRole("row", { name: new RegExp(`${sku}.*Producto ${sku}`) })).toBeVisible({ timeout: 15_000 })
 })
 

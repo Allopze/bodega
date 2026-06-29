@@ -8,6 +8,7 @@ import { z } from "zod"
 import { eq, and, desc } from "drizzle-orm"
 import { db } from "@/db"
 import { feedbackReports, type FeedbackReport } from "@/db/schema/feedback"
+import { attachments } from "@/db/schema/audit"
 import { users } from "@/db/schema/users"
 import { nanoid } from "@/lib/id"
 import { feedbackCreateSchema, feedbackUpdateStatusSchema } from "@/lib/validation/feedback"
@@ -19,11 +20,19 @@ export type FeedbackRow = FeedbackReport & {
   authorEmail: string
 }
 
+export interface FeedbackAttachmentInput {
+  fileName: string
+  filePath: string
+  fileSize: number
+  mimeType: string
+}
+
 // ── createReport ──────────────────────────────────────────────────────────────
 
 export async function createReport(
   input: z.input<typeof feedbackCreateSchema>,
-  userId: string
+  userId: string,
+  proofAttachment?: FeedbackAttachmentInput | null,
 ): Promise<FeedbackReport> {
   const data = feedbackCreateSchema.parse(input)
 
@@ -48,6 +57,20 @@ export async function createReport(
   }).returning()
 
   if (!report) throw new Error("Error al crear el reporte")
+
+  if (proofAttachment) {
+    await db.insert(attachments).values({
+      id: nanoid(),
+      entityType: "feedback_report",
+      entityId: id,
+      fileName: proofAttachment.fileName,
+      filePath: proofAttachment.filePath,
+      fileSize: proofAttachment.fileSize,
+      mimeType: proofAttachment.mimeType,
+      uploadedBy: userId,
+    })
+  }
+
   return report
 }
 

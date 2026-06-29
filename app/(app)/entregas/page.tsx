@@ -111,6 +111,7 @@ export default async function Page({
         code: deliveries.code,
         worksiteId: deliveries.worksiteId,
         workerId: deliveries.workerId,
+        receiverName: deliveries.receiverName,
         deliveredAt: deliveries.deliveredAt,
       })
       .from(deliveries)
@@ -243,6 +244,7 @@ export default async function Page({
       code: delivery.code,
       worksiteName: delivery.worksiteId ? (worksiteNameById.get(delivery.worksiteId) ?? "Faena") : "Faena",
       workerName: delivery.workerId ? (workerNameById.get(delivery.workerId) ?? "Trabajador") : "Trabajador",
+      receiverName: delivery.receiverName ?? null,
       itemSummary,
       requestCode: firstItem?.requestCode ?? null,
       deliveredAt: delivery.deliveredAt,

@@ -36,6 +36,7 @@ export interface RegisterWorkerEppDeliveryInput {
   quantity: number
   deliveredBy: string
   userEmail?: string
+  receiverName?: string | null
   notes?: string | null
   proofAttachment?: DeliveryAttachmentInput | null
   // Return of old/discarded EPP (opcional)
@@ -244,6 +245,7 @@ export async function registerWorkerEppDelivery(
     }
 
     const workerName = `${worker.firstName} ${worker.lastName}`.trim()
+    const receiverName = input.receiverName?.trim() || workerName
     const notes = input.notes?.trim() || undefined
     const totalDelivered = alreadyDelivered + input.quantity
 
@@ -255,7 +257,7 @@ export async function registerWorkerEppDelivery(
       destinationType: "worker",
       worksiteId: input.worksiteId,
       workerId: input.workerId,
-      receiverName: workerName,
+      receiverName,
       signaturePath: null,
       notes,
       createdAt: now,

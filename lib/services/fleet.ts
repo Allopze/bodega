@@ -7,6 +7,8 @@ import {
   fuelVehicles,
   maintenanceRecords,
 } from "@/db/schema"
+import { nanoid } from "@/lib/id"
+import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 
 export async function getFleetOverview(session: Session) {
@@ -140,4 +142,90 @@ function getNextExpiryDate(values: Array<string | null | undefined>) {
   return values
     .filter((value): value is string => Boolean(value))
     .sort((a, b) => a.localeCompare(b))[0] ?? null
+}
+
+/* ── Document management ────────────────────────────────────────────────────── */
+
+export interface UploadFleetDocumentInput {
+  vehicleId: string
+  documentType: string
+  fileName: string
+  filePath: string
+  fileSize: number
+  mimeType: string
+  expiresAt?: string | null
+}
+
+export async function uploadFleetDocument(
+  input: UploadFleetDocumentInput,
+  session: Session,
+  worksiteIds: string[] | "all",
+): Promise<string> {
+  if (!input.vehicleId) throw new Error("Vehículo requerido")
+  if (!input.documentType) throw new Error("Tipo de documento requerido")
+  if (!input.fileName || !input.filePath) throw new Error("Archivo requerido")
+
+  const vehicle = await db.query.fuelVehicles.findFirst({
+    where: eq(fuelVehicles.id, input.vehicleId),
+    columns: { id: true, worksiteId: true },
+  })
+  if (!vehicle) throw new Error("Vehículo no encontrado")
+  if (worksiteIds !== "all" && (!vehicle.worksiteId || !worksiteIds.includes(vehicle.worksiteId))) {
+    throw new Error("Sin acceso a la faena de este vehículo")
+  }
+
+  const docId = nanoid()
+  await db.insert(fleetVehicleDocuments).values({
+    id: docId,
+    vehicleId: input.vehicleId,
+    documentType: input.documentType,
+    fileName: input.fileName,
+    filePath: input.filePath,
+    fileSize: input.fileSize,
+    mimeType: input.mimeType,
+    expiresAt: input.expiresAt ?? null,
+    uploadedBy: session.user.id,
+  })
+
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "create",
+    entityType: "fleet_document",
+    entityId: docId,
+    newState: { vehicleId: input.vehicleId, documentType: input.documentType, fileName: input.fileName },
+  })
+
+  return docId
+}
+
+export async function deleteFleetDocument(
+  documentId: string,
+  session: Session,
+  worksiteIds: string[] | "all",
+): Promise<void> {
+  const document = await db.query.fleetVehicleDocuments.findFirst({
+    where: eq(fleetVehicleDocuments.id, documentId),
+  })
+  if (!document) throw new Error("Documento no encontrado")
+
+  const vehicle = await db.query.fuelVehicles.findFirst({
+    where: eq(fuelVehicles.id, document.vehicleId),
+    columns: { id: true, worksiteId: true },
+  })
+  if (!vehicle) throw new Error("Vehículo no encontrado")
+  if (worksiteIds !== "all" && (!vehicle.worksiteId || !worksiteIds.includes(vehicle.worksiteId))) {
+    throw new Error("Sin acceso a la faena de este vehículo")
+  }
+
+  await db.delete(fleetVehicleDocuments).where(eq(fleetVehicleDocuments.id, documentId))
+
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "delete",
+    entityType: "fleet_document",
+    entityId: documentId,
+    oldState: { vehicleId: document.vehicleId, documentType: document.documentType, fileName: document.fileName },
+  })
 }
