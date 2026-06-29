@@ -18,8 +18,8 @@ import {
   TableRoot, Table, TableHeader, TableBody,
   TableRow, TableHead, TableCell, TableCellNum, TableCaption,
 } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Warning, ArrowSquareOut, Funnel, DownloadSimple } from "@phosphor-icons/react/dist/ssr"
+import { Warning, ArrowSquareOut, DownloadSimple } from "@phosphor-icons/react/dist/ssr"
+import { TrazabilidadFilters } from "./trazabilidad-filters"
 
 export const metadata: Metadata = { title: "Trazabilidad de ítems" }
 
@@ -249,11 +249,6 @@ export default async function TrazabilidadPage({
   const visibleRowWorksiteIds = new Set(rows.map((r) => r.worksiteId))
   const visibleWorksites      = allWorksites.filter((w) => visibleRowWorksiteIds.has(w.id))
 
-  const inputCls = [
-    "h-9 rounded-[var(--radius)] border border-[var(--color-border)]",
-    "bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]",
-    "focus:outline-none focus:border-[var(--color-primary)]",
-  ].join(" ")
   const baseParams = {
     ...(filterFaenaId ? { faena: filterFaenaId } : {}),
     ...(filterEstado ? { estado: filterEstado } : {}),
@@ -292,38 +287,11 @@ export default async function TrazabilidadPage({
       )}
 
       {/* ── Filters ───────────────────────────────────────────────────── */}
-      <form method="GET" className="mb-4 flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-[var(--color-text-muted)]">Faena</label>
-          <select name="faena" defaultValue={filterFaenaId} className={inputCls} aria-label="Filtrar por faena">
-            <option value="">Todas las faenas</option>
-            {visibleWorksites.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-[var(--color-text-muted)]">Estado</label>
-          <select name="estado" defaultValue={filterEstado} className={inputCls} aria-label="Filtrar por estado">
-            <option value="">Todos los estados</option>
-            <option value="alert">Alerta: aprobado sin OC</option>
-            <option value="pending">Pendiente de compra</option>
-            <option value="draft">Borrador</option>
-            <option value="requested">Solicitado</option>
-            <option value="approved">Aprobado</option>
-            <option value="pending_purchase">Pendiente compra</option>
-            <option value="in_purchase_order">En OC</option>
-            <option value="purchased">Comprado</option>
-            <option value="partially_received">Rec. parcial</option>
-            <option value="received">Recibido</option>
-            <option value="rejected">Rechazado</option>
-            <option value="postponed">Postergado</option>
-          </select>
-        </div>
-        <Button type="submit" variant="secondary">
-          <Funnel className="h-3.5 w-3.5" aria-hidden />
-          Filtrar
-        </Button>
+      <TrazabilidadFilters
+        worksites={visibleWorksites}
+        current={{ faena: filterFaenaId, estado: filterEstado }}
+      />
+      <div className="mb-4 flex flex-wrap items-end gap-3">
         <Link
           href={`/api/trazabilidad/export${filterFaenaId ? `?faena=${filterFaenaId}` : ""}`}
           prefetch={false}
@@ -346,7 +314,7 @@ export default async function TrazabilidadPage({
           {totalPages > 1 && ` · Pág. ${safePage} de ${totalPages}`}
           {isAlertFilter && (totalRow?.n ?? 0) > ALERT_SCAN_LIMIT && ` · primeras ${ALERT_SCAN_LIMIT} filas revisadas`}
         </span>
-      </form>
+      </div>
 
       {/* ── Matrix table ──────────────────────────────────────────────── */}
       {paginated.length === 0 ? (
