@@ -64,7 +64,7 @@ export default async function MantencionesPage({
             { label: "Mantenciones" },
           ]} />
         }
-        actions={
+        headerActions={
           <Button asChild size="sm" variant="secondary">
             <Link href="/flota">Ver flota</Link>
           </Button>

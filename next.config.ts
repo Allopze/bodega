@@ -20,6 +20,18 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Repuestos/servicios were folded into the unified Solicitudes flow. Detail
+  // links map 1:1 (same purchase_requests row); list/create land on Solicitudes.
+  async redirects() {
+    return [
+      { source: "/repuestos/nueva", destination: "/solicitudes/nueva?tipo=repuestos", permanent: false },
+      { source: "/servicios/nueva", destination: "/solicitudes/nueva?tipo=servicios", permanent: false },
+      { source: "/repuestos/:id", destination: "/solicitudes/:id", permanent: false },
+      { source: "/servicios/:id", destination: "/solicitudes/:id", permanent: false },
+      { source: "/repuestos", destination: "/solicitudes", permanent: false },
+      { source: "/servicios", destination: "/solicitudes", permanent: false },
+    ];
+  },
   // playwright-core ships non-JS assets (browsers.json, etc.) that NFT
   // doesn't trace automatically. Both print/PDF routes import Playwright
   // lazily through lib/pdf/browser-pool.ts, so keep the package assets in the

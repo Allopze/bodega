@@ -505,7 +505,10 @@ export async function buildPpaExport(
   worksiteIds: string[] | "all",
   filters: PpaExportFilters = {},
 ): Promise<ReportData> {
-  const rows = await listPpa({ worksiteIds, ...filters }, 10_000, 0)
+  const maxRows = 10_000
+  const rows = await listPpa({ worksiteIds, ...filters }, maxRows + 1, 0)
+  const rowLimitApplied = rows.length > maxRows
+  const exportRows = rowLimitApplied ? rows.slice(0, maxRows) : rows
   return {
     filenameBase: `ppa_digital_${new Date().toISOString().slice(0, 10)}`,
     worksheetName: "PPA Digital",
@@ -514,7 +517,7 @@ export async function buildPpaExport(
       "Crítica", "Resultado", "Estado", "Motivos detención", "Decisión",
       "Acción correctiva", "Revisado",
     ],
-    rows: rows.map((r) => [
+    rows: exportRows.map((r) => [
       new Date(r.createdAt).toLocaleString("es-CL"),
       r.workerName,
       r.workerRut ?? "",
@@ -530,6 +533,7 @@ export async function buildPpaExport(
       r.accionCorrectiva ?? "",
       r.reviewedAt ? new Date(r.reviewedAt).toLocaleString("es-CL") : "",
     ]),
+    rowLimitApplied,
   }
 }
 

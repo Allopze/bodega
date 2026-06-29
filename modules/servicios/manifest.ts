@@ -17,19 +17,9 @@ export const serviciosModule = {
     "servicios:submit":    { id: "p-srv-submit",  description: "Enviar solicitudes de servicios a aprobación" },
     "servicios:approve":   { id: "p-srv-approve", description: "Aprobar cotizaciones de servicios" },
   },
-  nav: [
-    {
-      areaId: "adquisiciones",
-      items: [
-        {
-          label:       "Servicios",
-          href:        "/servicios",
-          iconName:    "ClipboardText",
-          permissions: ["servicios:view_own", "servicios:view_all"],
-        },
-      ],
-    },
-  ],
+  // Servicios no longer has its own page; it is created and managed inside the
+  // unified Solicitudes flow (/solicitudes). No standalone nav entry.
+  nav: [],
   defaultGrants: [
     // Administrador: acceso total
     { roleSlug: "administrador", permission: "servicios:create" },

@@ -85,6 +85,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "recepcion-detalle", path: "/recepcion/rec-audit-1", auth: true },
   { slug: "bodega", path: "/bodega", auth: true },
   { slug: "entregas", path: "/entregas", auth: true },
+  { slug: "entregas-print", path: "/entregas/del-audit-1/print", auth: true },
   { slug: "trazabilidad", path: "/trazabilidad", auth: true },
   { slug: "trazabilidad-detalle", path: "/trazabilidad/req-item-audit-1", auth: true },
   { slug: "reportes", path: "/reportes", auth: true },

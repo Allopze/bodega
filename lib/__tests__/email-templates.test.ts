@@ -134,10 +134,13 @@ describe("updateTemplate", () => {
   beforeEach(() => { vi.clearAllMocks(); setupInsertMock() })
 
   it("inserts or updates a template", async () => {
-    mockFindFirst.mockResolvedValue({ id: "existing-1", subject: "Old" })
+    mockFindFirst.mockResolvedValue({ id: "existing-1", subject: "Old", bodyHtml: "<p>Old</p>" })
     await updateTemplate("invitation", { subject: "New", bodyHtml: "<p>New</p>" }, "user-1", "test@test.cl")
     expect(mockInsert).toHaveBeenCalled()
-    expect(mockRecordAudit).toHaveBeenCalled()
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      oldState: { subject: "Old", bodyHtml: "<p>Old</p>" },
+      newState: { subject: "New", bodyHtml: "<p>New</p>" },
+    }))
   })
 
   it("works when template does not exist yet", async () => {
@@ -151,10 +154,13 @@ describe("resetTemplate", () => {
   beforeEach(() => { vi.clearAllMocks(); setupInsertMock() })
 
   it("resets to default template", async () => {
-    mockFindFirst.mockResolvedValue({ id: "existing-1", subject: "Custom" })
+    mockFindFirst.mockResolvedValue({ id: "existing-1", subject: "Custom", bodyHtml: "<p>Custom</p>" })
     await resetTemplate("invitation", "user-1", "test@test.cl")
     expect(mockInsert).toHaveBeenCalled()
-    expect(mockRecordAudit).toHaveBeenCalled()
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      oldState: { subject: "Custom", bodyHtml: "<p>Custom</p>" },
+      newState: expect.objectContaining({ bodyHtml: expect.any(String), isDefault: true }),
+    }))
   })
 
   it("throws for unknown key", async () => {

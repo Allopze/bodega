@@ -21,7 +21,7 @@ const COLORS = [
 ]
 
 const AMOUNT_COLOR = "var(--color-info)"
-const LITERS_COLOR = "var(--color-signal)"
+const PRICE_COLOR = "var(--color-signal)"
 
 const formatCLP = (n: number) => {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
@@ -33,6 +33,9 @@ const formatLiters = (n: number) => {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return n.toFixed(0)
 }
+
+// Precio por litro: la métrica que explica el gasto (volumen vs. precio).
+const formatPricePerLiter = (n: number) => `$${Math.round(n).toLocaleString("es-CL")}/L`
 
 function tooltipStyle() {
   return {
@@ -80,6 +83,8 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
     month: d.group ?? "?",
     litros: d.totalLiters,
     monto: d.totalAmount,
+    // Precio promedio del período (CLP/L). 0 si no hubo litros cargados.
+    precio: d.totalLiters > 0 ? d.totalAmount / d.totalLiters : 0,
   }))
 
   return (
@@ -94,22 +99,22 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
           </defs>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
           <XAxis dataKey="month" className="text-xs" tick={{ fill: "var(--color-text-muted)" }} />
-          {/* Eje izquierdo = Monto (métrica principal); derecho = Litros. */}
+          {/* Eje izquierdo = Monto (cuánto se gastó); derecho = Precio $/L (por qué). */}
           <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCLP} tick={{ fill: AMOUNT_COLOR }} width={60} />
-          <YAxis yAxisId="liters" orientation="right" className="text-xs" tickFormatter={(v) => `${formatLiters(Number(v))} L`} tick={{ fill: LITERS_COLOR }} width={60} />
+          <YAxis yAxisId="price" orientation="right" className="text-xs" tickFormatter={(v) => formatPricePerLiter(Number(v))} tick={{ fill: PRICE_COLOR }} width={68} domain={[0, "auto"]} />
           <Tooltip
             contentStyle={tooltipStyle()}
             formatter={(value, name) => {
               const n = String(name).toLowerCase()
-              if (n === "litros") return [`${formatLiters(Number(value))} L`, "Litros"]
+              if (n === "precio") return [formatPricePerLiter(Number(value)), "Precio prom."]
               return [formatCLP(Number(value)), "Monto CLP"]
             }}
           />
           <Legend iconType="plainline" />
-          {/* Monto: área azul rellena (lo que más importa). */}
+          {/* Monto: área azul rellena (cuánto se gastó). */}
           <Area yAxisId="amount" type="monotone" dataKey="monto" stroke={AMOUNT_COLOR} fill="url(#gradAmount)" strokeWidth={2.5} name="Monto CLP" dot={false} activeDot={{ r: 4 }} />
-          {/* Litros: línea ámbar punteada, para distinguir de la métrica de dinero. */}
-          <Area yAxisId="liters" type="monotone" dataKey="litros" stroke={LITERS_COLOR} fill="none" strokeWidth={2} strokeDasharray="5 3" name="Litros" dot={false} activeDot={{ r: 4 }} />
+          {/* Precio promedio: línea punteada; revela si el gasto se mueve por volumen o por precio. */}
+          <Area yAxisId="price" type="monotone" dataKey="precio" stroke={PRICE_COLOR} fill="none" strokeWidth={2} strokeDasharray="5 3" name="Precio" dot={false} activeDot={{ r: 4 }} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -131,16 +136,17 @@ export function CategoryBarChart({ data, title }: { data: ChartDataPoint[]; titl
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis xAxisId="amount" type="number" className="text-xs" tickFormatter={formatCLP} tick={{ fill: "var(--color-text-muted)" }} />
-          <XAxis xAxisId="liters" type="number" orientation="top" className="text-xs" tickFormatter={(v) => `${formatLiters(Number(v))} L`} tick={{ fill: "var(--color-text-muted)" }} />
+          {/* Una sola métrica: gasto (CLP). Los litros viven en el tooltip, no como barra rival. */}
+          <XAxis type="number" className="text-xs" tickFormatter={formatCLP} tick={{ fill: "var(--color-text-muted)" }} />
           <YAxis type="category" dataKey="name" width={120} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <Tooltip
             contentStyle={tooltipStyle()}
-            formatter={(value, name) => [name === "monto" ? formatCLP(Number(value)) : `${formatLiters(Number(value))} L`, name === "monto" ? "Monto" : "Litros"]}
+            formatter={(value, _name, item) => {
+              const litros = (item?.payload as { litros?: number } | undefined)?.litros ?? 0
+              return [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, "Gasto"]
+            }}
           />
-          <Legend iconType="plainline" />
-          <Bar xAxisId="amount" dataKey="monto" radius={[0, 3, 3, 0]} name="Monto" fill="var(--color-primary)" />
-          <Bar xAxisId="liters" dataKey="litros" radius={[0, 3, 3, 0]} name="Litros" fill="var(--color-signal)" opacity={0.65} />
+          <Bar dataKey="monto" radius={[0, 3, 3, 0]} name="Gasto" fill="var(--color-primary)" />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -173,7 +179,10 @@ export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
           </Pie>
           <Tooltip
             contentStyle={tooltipStyle()}
-            formatter={(value, name) => [formatCLP(Number(value)), String(name)]}
+            formatter={(value, name, item) => {
+              const litros = (item?.payload as { liters?: number } | undefined)?.liters ?? 0
+              return [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, String(name)]
+            }}
           />
           <Legend
             verticalAlign="bottom"

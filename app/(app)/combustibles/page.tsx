@@ -123,7 +123,7 @@ export default async function CombustiblesPage({
         title="Combustibles"
         description="Control de cargas de combustible por faena y vehículo"
         breadcrumb={<Breadcrumbs items={[{ label: "Adquisiciones", href: "/" }, { label: "Combustibles" }]} />}
-        actions={
+        headerActions={
           <div className="flex gap-2">
             <ExportXlsxButton filters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, status }} />
             <ImportFuelLoadsModal worksites={worksitesList} />

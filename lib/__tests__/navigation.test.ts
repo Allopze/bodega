@@ -53,18 +53,14 @@ describe("sidebar navigation", () => {
     expires: "2030-01-01T00:00:00.000Z",
   } satisfies Session
 
-  it("shows repuestos and servicios in sidebar-derived navigation", () => {
+  it("no longer exposes standalone repuestos/servicios nav entries (folded into Solicitudes)", () => {
     const visibleItems = getVisibleAreas(adminSession).flatMap((area) => area.items)
     const commandTargets = flattenNavTargets(adminSession)
 
-    expect(visibleItems.map((item) => item.href)).toEqual(expect.arrayContaining([
-      "/repuestos",
-      "/servicios",
-    ]))
-    expect(commandTargets.map((target) => target.href)).toEqual(expect.arrayContaining([
-      "/repuestos",
-      "/servicios",
-    ]))
+    expect(visibleItems.map((item) => item.href)).not.toContain("/repuestos")
+    expect(visibleItems.map((item) => item.href)).not.toContain("/servicios")
+    expect(commandTargets.map((target) => target.href)).not.toContain("/repuestos")
+    expect(commandTargets.map((target) => target.href)).not.toContain("/servicios")
   })
 
   it("shows analytics under reportes when the user has analytics permission", () => {

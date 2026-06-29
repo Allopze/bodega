@@ -65,11 +65,19 @@ jobs:
         env:
           STOCK_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           RATE_LIMIT_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          APPROVALS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RATE_LIMIT_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          APPROVALS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --reporter=verbose lib/__tests__/*concurrency-postgres.test.ts 2>&1
+
+      - name: Performance queries (SLO 1000ms)
+        env:
+          PERF_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          PERF_ALLOW_DESTRUCTIVE_RESET: "true"
+        run: npm run perf:queries
 
       - name: Build
         run: npm run build
@@ -82,6 +90,9 @@ jobs:
 
       - name: E2E accessibility audit
         run: npm run test:e2e -- e2e/accessibility.spec.ts
+
+      - name: E2E extended (flota, mantenciones, soporte, bodega, entregas, combustibles, repuestos, negative, roles, export)
+        run: npm run test:e2e -- e2e/flota.spec.ts e2e/mantenciones.spec.ts e2e/soporte.spec.ts e2e/bodega-conteo-fisico.spec.ts e2e/delivery-print.spec.ts e2e/combustibles.spec.ts e2e/repuestos-servicios-flow.spec.ts e2e/negative-flows.spec.ts e2e/restricted-roles.spec.ts e2e/export-volume.spec.ts e2e/worker-delivery-flow.spec.ts e2e/ppa-flow.spec.ts e2e/sst-pdf.spec.ts e2e/pdf-exports.spec.ts
 
   docker-smoke:
     runs-on: ubuntu-latest

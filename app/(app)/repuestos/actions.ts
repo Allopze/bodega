@@ -24,7 +24,7 @@ const actions = createRequestActions({
     submit:  "repuestos:submit",
     approve: "repuestos:approve",
   },
-  routePrefix: "/repuestos",
+  routePrefix: "/solicitudes",
   schemas: {
     request:          repuestoRequestSchema,
     quotationUpload:  quotationUploadSchema,

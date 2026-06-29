@@ -17,19 +17,9 @@ export const repuestosModule = {
     "repuestos:submit":    { id: "p-rep-submit",  description: "Enviar solicitudes de repuestos a aprobación" },
     "repuestos:approve":   { id: "p-rep-approve", description: "Aprobar cotizaciones de repuestos" },
   },
-  nav: [
-    {
-      areaId: "adquisiciones",
-      items: [
-        {
-          label:       "Repuestos",
-          href:        "/repuestos",
-          iconName:    "Wrench",
-          permissions: ["repuestos:view_own", "repuestos:view_all"],
-        },
-      ],
-    },
-  ],
+  // Repuestos no longer has its own page; it is created and managed inside the
+  // unified Solicitudes flow (/solicitudes). No standalone nav entry.
+  nav: [],
   defaultGrants: [
     // Administrador: acceso total
     { roleSlug: "administrador", permission: "repuestos:create" },

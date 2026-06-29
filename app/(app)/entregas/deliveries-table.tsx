@@ -1,8 +1,7 @@
 "use client"
 
-import { CheckCircle, FileText, User } from "@phosphor-icons/react"
+import { FileText, User } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
-import { Badge } from "@/components/ui/badge"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils"
 
@@ -53,17 +52,29 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
                   <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">{delivery.worksiteName}</p>
                 </div>
               </div>
-              {delivery.attachmentId && (
+              <div className="flex items-center gap-1.5">
                 <a
-                  href={`/api/attachments/${delivery.attachmentId}`}
+                  href={`/entregas/${delivery.id}/print`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
+                  aria-label="Comprobante"
                 >
                   <FileText size={12} />
-                  Archivo
+                  Comprobante
                 </a>
-              )}
+                {delivery.attachmentId && (
+                  <a
+                    href={`/api/attachments/${delivery.attachmentId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
+                  >
+                    <FileText size={12} />
+                    Archivo
+                  </a>
+                )}
+              </div>
             </div>
 
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -111,19 +122,28 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
               {formatDate(delivery.deliveredAt)}
             </TableCell>
             <TableCell>
-              {delivery.attachmentId ? (
+              <div className="flex items-center gap-2">
                 <a
-                  href={`/api/attachments/${delivery.attachmentId}`}
+                  href={`/entregas/${delivery.id}/print`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
+                  aria-label="Comprobante"
                 >
                   <FileText size={12} />
-                  Adjunto
+                  Comprobante
                 </a>
-              ) : (
-                <Badge variant="default" size="sm"><CheckCircle size={12} />Registro</Badge>
-              )}
+                {delivery.attachmentId && (
+                  <a
+                    href={`/api/attachments/${delivery.attachmentId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
+                  >
+                    Adjunto
+                  </a>
+                )}
+              </div>
             </TableCell>
           </TableRow>
         )

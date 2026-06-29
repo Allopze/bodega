@@ -30,7 +30,7 @@ describe("repuestos Server Actions wrapper", () => {
     expect(actions.saveDraftAction).toBeTypeOf("function")
     expect(mockCreateRequestActions).toHaveBeenCalledWith(expect.objectContaining({
       moduleName: "repuestos",
-      routePrefix: "/repuestos",
+      routePrefix: "/solicitudes",
       permissions: {
         create: "repuestos:create",
         submit: "repuestos:submit",

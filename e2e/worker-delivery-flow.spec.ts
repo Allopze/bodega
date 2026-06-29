@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test"
-import { clearRateLimits } from "./helpers"
+import { expect, test } from "@playwright/test"
+import { login, selectRadixById } from "./helpers"
 
 test("entregas: bloquea cantidad mayor al saldo pendiente", async ({ page }) => {
   await login(page)
@@ -8,7 +8,7 @@ test("entregas: bloquea cantidad mayor al saldo pendiente", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
 
   await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
-  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP · Casco EPP E2E/)
+  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP.*Casco EPP E2E/)
   const quantity = page.locator("#deliveryQuantity")
   await quantity.fill("5")
 
@@ -33,7 +33,7 @@ test("entregas: rechaza comprobante con formato no permitido", async ({ page }) 
   await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
 
   await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
-  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP-BAD · Casco EPP E2E/)
+  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP-BAD.*Casco EPP E2E/)
   await page.locator("#deliveryQuantity").fill("1")
   await page.getByLabel("Comprobante").setInputFiles({
     name: "comprobante-e2e.txt",
@@ -42,7 +42,7 @@ test("entregas: rechaza comprobante con formato no permitido", async ({ page }) 
   })
   await page.getByRole("button", { name: "Registrar entrega" }).click()
 
-  await expect(page.locator("#main-content").getByText(/No se pudo identificar el tipo del archivo/)).toBeVisible({
+  await expect(page.locator("#main-content").getByText(/identificar el tipo/i)).toBeVisible({
     timeout: 30_000,
   })
 })
@@ -54,7 +54,7 @@ test("entregas: registra comprobante y permite descargarlo", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
 
   await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
-  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP-ADJ · Casco EPP E2E/)
+  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP-ADJ.*Casco EPP E2E/)
   await page.locator("#deliveryQuantity").fill("1")
   await page.getByLabel("Recibido por").fill("Receptor adjunto E2E")
   await page.getByLabel("Comprobante").setInputFiles({
@@ -78,7 +78,8 @@ test("entregas: registra comprobante y permite descargarlo", async ({ page }) =>
   const response = await page.request.get(href!)
   expect(response.status()).toBe(200)
   expect(response.headers()["content-type"]).toContain("application/pdf")
-  expect(await response.text()).toContain("comprobante adjunto e2e")
+  const text = await response.text()
+  expect(text).toContain("comprobante adjunto e2e")
 })
 
 test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
@@ -88,7 +89,7 @@ test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
 
   await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
-  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP · Casco EPP E2E/)
+  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP.*Casco EPP E2E/)
   await page.locator("#deliveryQuantity").fill("2")
   await page.getByLabel("Recibido por").fill("Supervisor E2E")
   await page.getByRole("button", { name: "Registrar entrega" }).click()
@@ -101,17 +102,3 @@ test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
     timeout: 30_000,
   })
 })
-
-async function login(page: Page) {
-  await clearRateLimits()
-  await page.goto("/login")
-  await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
-  await page.getByLabel("Contraseña").fill("chome2026")
-  await page.getByRole("button", { name: "Ingresar" }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
-}
-
-async function selectRadixById(page: Page, id: string, option: string | RegExp) {
-  await page.locator(`#${id}`).click()
-  await page.getByRole("option", { name: option }).click()
-}

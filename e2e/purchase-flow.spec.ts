@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { clearRateLimits, pickCurrentMonthDate } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate } from "./helpers"
 
 test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ page }) => {
   await login(page)
@@ -81,50 +81,6 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   await expect(page.getByText("Rechazo E2E")).toHaveCount(0)
 })
 
-async function login(page: Page) {
-  await clearRateLimits()
-  await page.goto("/login")
-  await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
-  await page.getByLabel("Contraseña").fill("chome2026")
-  await page.getByRole("button", { name: "Ingresar" }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
-}
-
-async function createCatalogRequest(
-  page: Page,
-  productName: string,
-  quantity: string,
-  options: { freeText?: boolean } = {},
-) {
-  await page.goto("/solicitudes/nueva")
-  await selectRadixById(page, "worksiteId", "Faena E2E")
-  await pickCurrentMonthDate(page, "Seleccionar fecha")
-  await page.getByPlaceholder("Buscar en catálogo o escribir producto...").fill(productName)
-  if (options.freeText) {
-    await page.getByRole("option", { name: new RegExp(`Usar “${productName}”`) }).click()
-  } else {
-    await page.getByRole("option", { name: new RegExp(`E2E-001\\s*${productName}`) }).click()
-    await expect(page.getByRole("button", { name: "Cambiar" })).toBeVisible()
-  }
-  await page.getByLabel("Cantidad").fill(quantity)
-  await page.getByRole("button", { name: "Enviar a aprobación" }).click()
-  await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
-  await expect(page.getByText(productName).first()).toBeVisible()
-}
-
-async function selectRadixById(page: Page, id: string, option: string | RegExp) {
-  await page.locator(`#${id}`).click()
-  await page.getByRole("option", { name: option }).first().click()
-}
-
-async function submitReceiptForm(page: Page, expectedQuantity: string) {
-  await expect(page.locator('input[id^="receiptQty-"]').first()).toHaveValue(expectedQuantity)
-  await page.getByRole("button", { name: "Marcar como recibido" }).click()
-  await expect(page).toHaveURL(/\/recepcion\/(?!nueva(?:\?|$))[^/?]+$/)
-}
-
-// ── Browser download: Excel export ──────────────────────────────────────────
-
 test("descarga real de Excel desde el navegador", async ({ page }) => {
   await login(page)
   await page.goto("/reportes")
@@ -156,3 +112,31 @@ test("cierra sesión y bloquea el acceso al dashboard", async ({ page }) => {
   await page.goto("/dashboard")
   await expect(page).toHaveURL(/\/login/)
 })
+
+async function createCatalogRequest(
+  page: Page,
+  productName: string,
+  quantity: string,
+  options: { freeText?: boolean } = {},
+) {
+  await page.goto("/solicitudes/nueva")
+  await selectRadixById(page, "worksiteId", "Faena E2E")
+  await pickCurrentMonthDate(page, "Seleccionar fecha")
+  await page.getByPlaceholder("Buscar en catálogo o escribir producto...").fill(productName)
+  if (options.freeText) {
+    await page.getByRole("option", { name: new RegExp(`Usar “${productName}”`) }).click()
+  } else {
+    await page.getByRole("option", { name: new RegExp(`E2E-001\\s*${productName}`) }).click()
+    await expect(page.getByRole("button", { name: "Cambiar" })).toBeVisible()
+  }
+  await page.getByLabel("Cantidad").fill(quantity)
+  await page.getByRole("button", { name: "Enviar a aprobación" }).click()
+  await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
+  await expect(page.getByText(productName).first()).toBeVisible()
+}
+
+async function submitReceiptForm(page: Page, expectedQuantity: string) {
+  await expect(page.locator('input[id^="receiptQty-"]').first()).toHaveValue(expectedQuantity)
+  await page.getByRole("button", { name: "Marcar como recibido" }).click()
+  await expect(page).toHaveURL(/\/recepcion\/(?!nueva(?:\?|$))[^/?]+$/)
+}

@@ -40,6 +40,7 @@ export async function GET(request: Request) {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": encodeContentDisposition(`${report.filenameBase}.xlsx`, "attachment"),
+        ...(report.rowLimitApplied ? { "X-Row-Limit-Applied": "true" } : {}),
       },
     })
   } catch (err) {

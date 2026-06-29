@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import bcrypt from "bcryptjs"
 import { loadEnvConfig } from "@next/env"
-import { sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import * as schema from "../db/schema"
 import {
   assertSafeDestructiveDatabase,
@@ -111,6 +111,10 @@ async function main() {
     { id: "p-mant-view", name: "mantenciones:view", module: "mantenciones", description: "Ver mantenciones de vehículos" },
     { id: "p-mant-create", name: "mantenciones:create", module: "mantenciones", description: "Registrar mantenciones de vehículos" },
     { id: "p-mant-edit", name: "mantenciones:edit", module: "mantenciones", description: "Editar y cancelar mantenciones de vehículos" },
+    { id: "p-feedback-create", name: "feedback:create", module: "feedback", description: "Crear reportes de soporte" },
+    { id: "p-feedback-own", name: "feedback:view_own", module: "feedback", description: "Ver reportes propios" },
+    { id: "p-feedback-all", name: "feedback:view_all", module: "feedback", description: "Ver todos los reportes" },
+    { id: "p-feedback-manage", name: "feedback:manage", module: "feedback", description: "Gestionar reportes" },
   ]
 
   await db.insert(schema.permissions).values(permissions)
@@ -565,6 +569,67 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+
+  // Delivery fixture — for worker-delivery and delivery-print E2E specs
+  await db.insert(schema.deliveries).values({
+    id: "del-e2e",
+    code: "ENT-2026-0001",
+    deliveredBy: "user-admin-e2e",
+    deliveredAt: now,
+    destinationType: "worker",
+    worksiteId: "ws-e2e",
+    workerId: "worker-e2e",
+    receiverName: "Trabajador E2E",
+    notes: "Fixture E2E para comprobante de entrega",
+    createdAt: now,
+  })
+  await db.insert(schema.deliveryItems).values({
+    id: "del-item-e2e",
+    deliveryId: "del-e2e",
+    requestItemId: "req-item-delivery-e2e",
+    productId: "prod-epp-e2e",
+    quantity: 2,
+    unitOfMeasure: "unidad",
+    notes: null,
+  })
+
+  // Maintenance fixture — for mantenciones E2E spec
+  await db.insert(schema.maintenanceRecords).values({
+    id: "mant-e2e",
+    vehicleId: "fuel-veh-e2e",
+    supplierId: "sup-e2e",
+    worksiteId: "ws-e2e",
+    maintenanceDate: "2026-07-15",
+    maintenanceType: "preventiva",
+    status: "scheduled",
+    odometerReading: 50000,
+    netAmount: 100000,
+    taxAmount: 19000,
+    totalAmount: 119000,
+    notes: "Fixture E2E para mantenciones",
+    createdBy: "user-admin-e2e",
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  // Fleet document fixture — for flota E2E spec
+  await db.insert(schema.fleetVehicleDocuments).values({
+    id: "fleet-doc-e2e",
+    vehicleId: "fuel-veh-e2e",
+    documentType: "seguro",
+    fileName: "seguro-e2e.pdf",
+    filePath: "storage/fleet/seguro-e2e-fixture.pdf",
+    fileSize: 1024,
+    mimeType: "application/pdf",
+    expiresAt: "2026-12-31",
+    uploadedBy: "user-admin-e2e",
+    createdAt: now,
+  })
+
+  // Add received quantities to the OC items so reconciliation panel has data
+  await db.update(schema.purchaseOrderItems)
+    .set({ quantityOfficeReceived: 10, quantityReceived: 5 })
+    .where(eq(schema.purchaseOrderItems.id, "oc-item-e2e-01"))
 
   // Advance the OC sequence past the fixture code (OC-2026-0001) so the
   // first real app call gets OC-2026-0002 and doesn't collide.

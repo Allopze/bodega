@@ -14,7 +14,7 @@ import {
   DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { uploadQuotationAction, deleteQuotationAction, selectQuotationAction } from "../actions"
+import { uploadQuotationAction, deleteQuotationAction, selectQuotationAction } from "./actions"
 import type { ActionState } from "@/lib/validation/servicios"
 import { toast } from "@/lib/toast"
 

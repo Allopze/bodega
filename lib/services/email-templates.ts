@@ -167,8 +167,8 @@ export async function updateTemplate(
     action:     "update",
     entityType: "email_template",
     entityId:   key,
-    oldState:   existing ? { subject: existing.subject } : undefined,
-    newState:   { subject: input.subject },
+    oldState:   existing ? { subject: existing.subject, bodyHtml: existing.bodyHtml } : undefined,
+    newState:   { subject: input.subject, bodyHtml: input.bodyHtml },
   })
 }
 
@@ -214,8 +214,8 @@ export async function resetTemplate(
     action:     "update",
     entityType: "email_template",
     entityId:   key,
-    oldState:   existing ? { subject: existing.subject } : undefined,
-    newState:   { subject: defaultTemplate.subject, isDefault: true },
+    oldState:   existing ? { subject: existing.subject, bodyHtml: existing.bodyHtml } : undefined,
+    newState:   { subject: defaultTemplate.subject, bodyHtml: defaultTemplate.bodyHtml, isDefault: true },
   })
 }
 

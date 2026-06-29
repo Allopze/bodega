@@ -7,8 +7,10 @@ import {
   statusHistory, users, suppliers, productSuppliers,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
-import { can, requirePermission } from "@/lib/auth/can"
+import { can, requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
+import { RepuestoDetailView } from "../../repuestos/detail-view"
+import { ServiceDetailView } from "../../servicios/detail-view"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -23,10 +25,23 @@ export const metadata: Metadata = { title: "Solicitud de compra" }
 
 export default async function SolicitudPage({ params }: { params: Promise<{ id: string }> }) {
   let session
-  try { session = await requirePermission("requests:view_own") }
+  try { session = await requireAuth() }
   catch { redirect("/forbidden") }
 
   const { id } = await params
+
+  // Quotation-based types (repuestos/servicios) render their specialized
+  // detail view inline; each enforces its own view permission.
+  const { requestType } = await db.query.purchaseRequests.findFirst({
+    where: eq(purchaseRequests.id, id),
+    columns: { requestType: true },
+  }) ?? {}
+  if (!requestType) notFound()
+  if (requestType === "repuestos") return <RepuestoDetailView id={id} />
+  if (requestType === "servicios") return <ServiceDetailView id={id} />
+
+  // Catalogue-based types (epp/otro) use the per-item approval flow below.
+  if (!can(session, "requests:view_own")) redirect("/forbidden")
 
   const request = await db.query.purchaseRequests.findFirst({
     where: eq(purchaseRequests.id, id),
@@ -41,10 +56,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   })
 
   if (!request) notFound()
-
-  // Repuestos and servicios have their own detail pages with quotation panels
-  if (request.requestType === "repuestos") redirect(`/repuestos/${id}`)
-  if (request.requestType === "servicios") redirect(`/servicios/${id}`)
 
   const isOwner    = request.requesterId === session.user.id
   const hasViewAll = session.user.permissions.includes("requests:view_all")

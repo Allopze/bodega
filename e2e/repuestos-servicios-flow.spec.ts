@@ -3,7 +3,7 @@ import { login, pickCurrentMonthDate } from "./helpers"
 
 test("repuestos: crea borrador y envia solicitud a aprobacion", async ({ page }) => {
   await login(page)
-  await page.goto("/repuestos/nueva")
+  await page.goto("/solicitudes/nueva?tipo=repuestos")
 
   await expect(page.getByRole("heading", { name: "Nueva solicitud de repuestos" })).toBeVisible()
   await pickCurrentMonthDate(page, "Seleccionar fecha")
@@ -17,14 +17,14 @@ test("repuestos: crea borrador y envia solicitud a aprobacion", async ({ page })
   await expect(page.locator("#main-content").getByText("Borrador guardado")).toBeVisible()
 
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
-  await expect(page).toHaveURL(/\/repuestos\/[^/]+$/)
+  await expect(page).toHaveURL(/\/solicitudes\/[^/]+$/)
   await expect(page.getByRole("heading", { name: /Solicitud/ })).toBeVisible()
   await expect(page.getByText("Filtro hidraulico E2E", { exact: true })).toBeVisible()
 })
 
 test("servicios: crea borrador y envia solicitud a aprobacion", async ({ page }) => {
   await login(page)
-  await page.goto("/servicios/nueva")
+  await page.goto("/solicitudes/nueva?tipo=servicios")
 
   await expect(page.getByRole("heading", { name: "Nueva solicitud de servicios" })).toBeVisible()
   await pickCurrentMonthDate(page, "Seleccionar fecha")
@@ -38,7 +38,7 @@ test("servicios: crea borrador y envia solicitud a aprobacion", async ({ page })
   await expect(page.locator("#main-content").getByText("Borrador guardado")).toBeVisible()
 
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
-  await expect(page).toHaveURL(/\/servicios\/[^/]+$/)
+  await expect(page).toHaveURL(/\/solicitudes\/[^/]+$/)
   await expect(page.getByRole("heading", { name: /Solicitud/ })).toBeVisible()
   await expect(page.getByText("Mantencion generador E2E", { exact: true })).toBeVisible()
 })

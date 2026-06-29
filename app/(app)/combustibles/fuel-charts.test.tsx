@@ -33,7 +33,7 @@ import { CategoryBarChart, ProductPieChart } from "./fuel-charts"
 afterEach(() => cleanup())
 
 describe("fuel charts", () => {
-  it("renders amount and liters bars for category charts", () => {
+  it("renders a single spend bar for category charts (liters live in the tooltip)", () => {
     render(
       <CategoryBarChart
         title="Faenas"
@@ -44,7 +44,7 @@ describe("fuel charts", () => {
     )
 
     expect(screen.getByTestId("bar-monto")).toBeInTheDocument()
-    expect(screen.getByTestId("bar-litros")).toBeInTheDocument()
+    expect(screen.queryByTestId("bar-litros")).not.toBeInTheDocument()
   })
 
   it("groups small product slices into Otros", () => {

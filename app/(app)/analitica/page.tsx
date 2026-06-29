@@ -9,6 +9,7 @@ import {
   ArrowUp,
   DownloadSimple,
   GasPump,
+  Info,
   Package,
   ShieldWarning,
   ShoppingCart,
@@ -99,18 +100,21 @@ export default async function AnaliticaPage({
             value={formatCLP(data.kpis.totalSpend)}
             detail={`Período ${data.filters.fromDate} a ${data.filters.toDate}`}
             trend={data.kpis.spendVariationPct}
+            glossary="Suma de los montos totales de todas las órdenes de compra emitidas más las cargas de combustible del período seleccionado. La variación porcentual compara contra el período anterior de igual duración."
           />
           <KpiCard
             icon={<Package size={18} />}
             label="Órdenes de compra"
             value={formatQty(data.kpis.purchaseOrderCount)}
             detail={`Promedio ${formatCLP(data.kpis.averageOrderAmount)}`}
+            glossary="Cantidad de órdenes de compra emitidas en el período. El promedio se calcula dividiendo el gasto total de compras entre el número de OC."
           />
           <KpiCard
             icon={<GasPump size={18} />}
             label="Combustible"
             value={formatCLP(data.vehicleCosts.reduce((sum, row) => sum + row.totalFuelAmount, 0))}
             detail={`${formatQty(data.kpis.fuelLiters, "L")} · ${data.kpis.fuelLoadCount} cargas`}
+            glossary="Gasto total en combustible durante el período. Incluye todas las cargas registradas de todos los vehículos visibles para tu alcance."
           />
           <KpiCard
             icon={<ShieldWarning size={18} />}
@@ -118,12 +122,14 @@ export default async function AnaliticaPage({
             value={formatQty(data.alerts.length)}
             detail={`${data.kpis.criticalStockCount} productos bajo mínimo`}
             tone={data.alerts.some((alert) => alert.severity === "critical") ? "signal" : "neutral"}
+            glossary="Alertas accionables detectadas por el sistema: documentos vencidos (flota), mantenciones vencidas, productos bajo stock mínimo, y órdenes pendientes sin avance."
           />
           <KpiCard
             icon={<Truck size={18} />}
             label="Vehículos"
             value={formatQty(data.vehicleCosts.length)}
             detail="Combustible, mantenciones e imputaciones"
+            glossary="Cantidad de vehículos activos en la flota. Cada vehículo acumula costos de combustible, mantenciones y otros cargos imputados durante el período."
           />
         </section>
 
@@ -295,6 +301,7 @@ function KpiCard({
   detail,
   trend,
   tone = "neutral",
+  glossary,
 }: {
   icon: ReactNode
   label: string
@@ -302,6 +309,7 @@ function KpiCard({
   detail: string
   trend?: number | null
   tone?: "neutral" | "signal"
+  glossary?: string
 }) {
   return (
     <Card className={tone === "signal" ? "ring-1 ring-[var(--color-signal-line)]" : undefined}>
@@ -314,6 +322,14 @@ function KpiCard({
             <span className={`inline-flex items-center gap-1 text-xs font-semibold ${trend >= 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-success)]"}`}>
               {trend >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
               {Math.abs(trend)}%
+            </span>
+          )}
+          {glossary && (
+            <span className="group relative">
+              <Info size={14} className="text-[var(--color-text-subtle)] cursor-help" />
+              <span className="pointer-events-none absolute bottom-full right-0 mb-1 w-56 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs leading-5 text-[var(--color-text-muted)] shadow-[var(--shadow-card)] opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                {glossary}
+              </span>
             </span>
           )}
         </div>

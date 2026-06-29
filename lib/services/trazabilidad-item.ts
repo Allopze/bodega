@@ -11,6 +11,7 @@ import {
   receipts, receiptItems,
   deliveries, deliveryItems,
   statusHistory, users, products, worksites, workers, suppliers,
+  inventoryMovements,
 } from "@/db/schema"
 import { and, asc, desc, eq, inArray } from "drizzle-orm"
 import { canAccessWorksite } from "@/lib/auth/scope"
@@ -92,6 +93,18 @@ export interface ItemDetailData {
     reason: string | null
     userName: string | null
     userEmail: string | null
+  }>
+  inventoryMovements: Array<{
+    id: string
+    type: string
+    quantity: number
+    referenceType: string | null
+    referenceId: string | null
+    performedByName: string | null
+    performedAt: string
+    reason: string | null
+    notes: string | null
+    stockAfter: number | null
   }>
 }
 
@@ -258,6 +271,35 @@ export async function getItemDetail(
     )
     .orderBy(desc(statusHistory.changedAt))
 
+  // 9. Fetch inventory movements linked to this product at this worksite
+  const prodId = item.productId
+  const wsId = item.worksiteId
+  const movementRows = prodId
+    ? await db
+        .select({
+          id:            inventoryMovements.id,
+          type:          inventoryMovements.type,
+          quantity:      inventoryMovements.quantity,
+          referenceType: inventoryMovements.referenceType,
+          referenceId:   inventoryMovements.referenceId,
+          performedByName: users.name,
+          performedAt:   inventoryMovements.performedAt,
+          reason:        inventoryMovements.reason,
+          notes:         inventoryMovements.notes,
+          stockAfter:    inventoryMovements.stockAfter,
+        })
+        .from(inventoryMovements)
+        .leftJoin(users, eq(inventoryMovements.performedBy, users.id))
+        .where(
+          and(
+            eq(inventoryMovements.productId, prodId),
+            eq(inventoryMovements.worksiteId, wsId),
+          ),
+        )
+        .orderBy(desc(inventoryMovements.performedAt))
+        .limit(50)
+    : []
+
   return {
     item: {
       id:              item.id,
@@ -336,6 +378,18 @@ export async function getItemDetail(
       reason:     h.reason,
       userName:   h.userName,
       userEmail:  h.userEmail,
+    })),
+    inventoryMovements: movementRows.map((m) => ({
+      id:              m.id,
+      type:            m.type,
+      quantity:        m.quantity,
+      referenceType:   m.referenceType,
+      referenceId:     m.referenceId,
+      performedByName: m.performedByName,
+      performedAt:     m.performedAt,
+      reason:          m.reason,
+      notes:           m.notes,
+      stockAfter:      m.stockAfter,
     })),
   }
 }

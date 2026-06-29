@@ -25,7 +25,27 @@ vi.mock("@/db/schema/worksites", () => ({
   },
 }))
 
-import { findWorkerByRut } from "@/lib/services/ppa"
+import { buildPpaExport, findWorkerByRut } from "@/lib/services/ppa"
+
+function ppaRow(id: string, worksiteId = "ws-1") {
+  return {
+    id,
+    worksiteId,
+    workerId: null,
+    workerName: `Trabajador ${id}`,
+    workerRut: "11111111-1",
+    manualIdentificacion: false,
+    tipoTrabajo: "conductor_batea",
+    esCritica: false,
+    resultado: "aprobado_auto",
+    estado: "aprobado_auto",
+    triggeredReasons: [],
+    decision: null,
+    accionCorrectiva: null,
+    reviewedAt: null,
+    createdAt: "2026-06-29T10:00:00.000Z",
+  }
+}
 
 describe("findWorkerByRut service", () => {
   beforeEach(() => {
@@ -80,5 +100,33 @@ describe("findWorkerByRut service", () => {
 
     const res = await findWorkerByRut("11111111-1")
     expect(res).toBeNull()
+  })
+})
+
+describe("buildPpaExport", () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it("lee una fila extra para reportar truncado en exportaciones grandes", async () => {
+    const submissions = Array.from({ length: 10_001 }, (_, index) => ppaRow(`ppa-${index}`))
+    const offsetMock = vi.fn().mockResolvedValue(submissions)
+    const limitMock = vi.fn().mockReturnValue({ offset: offsetMock })
+    const orderByMock = vi.fn().mockReturnValue({ limit: limitMock })
+    const whereSubmissionsMock = vi.fn().mockReturnValue({ orderBy: orderByMock })
+    const fromSubmissionsMock = vi.fn().mockReturnValue({ where: whereSubmissionsMock })
+
+    const whereWorksitesMock = vi.fn().mockResolvedValue([{ id: "ws-1", name: "Faena 1" }])
+    const fromWorksitesMock = vi.fn().mockReturnValue({ where: whereWorksitesMock })
+
+    mockSelect
+      .mockReturnValueOnce({ from: fromSubmissionsMock })
+      .mockReturnValueOnce({ from: fromWorksitesMock })
+
+    const report = await buildPpaExport("all")
+
+    expect(limitMock).toHaveBeenCalledWith(10_001)
+    expect(report.rows).toHaveLength(10_000)
+    expect(report.rowLimitApplied).toBe(true)
   })
 })

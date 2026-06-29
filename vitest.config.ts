@@ -48,10 +48,10 @@ export default defineConfig({
       // combined coverage (lib ~94% + uncovered actions files pull it down).
       // Run `pnpm test:coverage` after adding action tests to measure and tighten.
       thresholds: {
-        statements: 40,
-        branches:   30,
-        functions:  40,
-        lines:      40,
+        statements: 60,
+        branches:   50,
+        functions:  60,
+        lines:      60,
       },
     },
   },

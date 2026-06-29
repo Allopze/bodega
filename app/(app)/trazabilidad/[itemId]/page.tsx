@@ -38,7 +38,7 @@ export default async function TrazabilidadItemPage({
   const detail = await getItemDetail(session, itemId)
   if (!detail) notFound()
 
-  const { item, approvals, ocItems, receipts, deliveries, timeline } = detail
+  const { item, approvals, ocItems, receipts, deliveries, timeline, inventoryMovements } = detail
   const totalReceivedAtFaena = ocItems.reduce((sum, oi) => sum + oi.receivedAtFaena, 0)
   const totalOrdered = ocItems.reduce((sum, oi) => sum + oi.quantity, 0)
   const totalDelivered = deliveries.reduce((sum, d) => sum + d.quantity, 0)
@@ -351,6 +351,63 @@ export default async function TrazabilidadItemPage({
                           </span>
                         ) : "—"}
                       </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableRoot>
+          </section>
+        )}
+
+        {/* ── Inventory Movements (ajustes, devoluciones, desechos) ── */}
+        {inventoryMovements.length > 0 && (
+          <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)]">
+            <div className="border-b border-[var(--color-border)] px-5 py-3">
+              <h2 className="text-h2 text-[var(--color-text)]">Movimientos de inventario</h2>
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Ajustes, devoluciones y desechos registrados para este producto en la faena.</p>
+            </div>
+            <TableRoot>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Cantidad</TableHead>
+                    <TableHead>Referencia</TableHead>
+                    <TableHead>Realizado por</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead className="text-right">Stock final</TableHead>
+                    <TableHead>Notas</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {inventoryMovements.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell>
+                        <span className={[
+                          "inline-flex items-center rounded-[var(--radius-full)] px-2 py-0.5 text-xs font-medium",
+                          m.type === "ajuste"
+                            ? "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]"
+                            : m.type === "devolucion"
+                            ? "bg-[var(--color-primary-tint)] text-[var(--color-primary)]"
+                            : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
+                        ].join(" ")}>
+                          {m.type}
+                        </span>
+                      </TableCell>
+                      <TableCellNum className={m.quantity < 0 ? "text-[var(--color-danger-ink)] text-xs" : "text-xs"}>
+                        {m.quantity > 0 ? "+" : ""}{formatQty(m.quantity, item.unitOfMeasure)}
+                      </TableCellNum>
+                      <TableCell className="text-xs">
+                        {m.referenceType && m.referenceId
+                          ? `${m.referenceType.replace(/_/g, " ")} ${m.referenceId}`
+                          : m.reason
+                            ? m.reason
+                            : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs">{m.performedByName ?? "—"}</TableCell>
+                      <TableCell className="text-xs">{formatDate(m.performedAt)}</TableCell>
+                      <TableCellNum className="text-xs">{m.stockAfter != null ? formatQty(m.stockAfter, item.unitOfMeasure) : "—"}</TableCellNum>
+                      <TableCell className="text-xs text-[var(--color-text-muted)] max-w-48 truncate">{m.notes ?? "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

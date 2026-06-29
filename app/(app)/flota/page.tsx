@@ -18,19 +18,54 @@ const formatCLP = (value: number) =>
 const formatNumber = (value: number) =>
   new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(value)
 
-export default async function FlotaPage() {
+export default async function FlotaPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("flota:view") }
   catch { redirect("/forbidden") }
 
   const vehicles = await getFleetOverview(session)
+  const sp = await searchParams
+  const filterEstado = typeof sp.estado === "string" ? sp.estado : undefined
+  const filterResponsable = typeof sp.responsable === "string" ? sp.responsable : undefined
+  const filterVencimiento = typeof sp.vencimiento === "string" ? sp.vencimiento : undefined
+
+  const now = new Date()
+  const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+  // Client-side filtering after server fetch
+  let filteredVehicles = vehicles
+  if (filterEstado) {
+    filteredVehicles = filteredVehicles.filter((v) => v.operationalStatus === filterEstado)
+  }
+  if (filterResponsable) {
+    filteredVehicles = filteredVehicles.filter((v) => v.responsibleName === filterResponsable)
+  }
+  if (filterVencimiento) {
+    const nowStr = now.toISOString().slice(0, 10)
+    if (filterVencimiento === "vencidos") {
+      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate < nowStr)
+    } else if (filterVencimiento === "proximos") {
+      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate >= nowStr && v.nextExpiryDate <= thirtyDays)
+    } else if (filterVencimiento === "al-dia") {
+      filteredVehicles = filteredVehicles.filter((v) => !v.nextExpiryDate || v.nextExpiryDate >= thirtyDays)
+    }
+  }
+
+  // Extract unique filter options from vehicles
+  const operationalStatuses = [...new Set(vehicles.map((v) => v.operationalStatus).filter(Boolean))] as string[]
+  const responsibleUsers = [...new Map(
+    vehicles.filter((v) => v.responsibleName).map((v) => [v.responsibleName, { id: v.responsibleName!, name: v.responsibleName! }])
+  ).values()]
+
   const active = vehicles.filter((vehicle) => vehicle.isActive).length
   const totalCost = vehicles.reduce((sum, vehicle) => sum + vehicle.totalOperationalCost, 0)
   const totalLiters = vehicles.reduce((sum, vehicle) => sum + vehicle.totalLiters, 0)
   const maintenanceCount = vehicles.reduce((sum, vehicle) => sum + vehicle.maintenanceCount, 0)
 
-  const now = new Date()
-  const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const expiredVehicles = vehicles.filter((vehicle) => vehicle.nextExpiryDate && vehicle.nextExpiryDate < now.toISOString().slice(0, 10))
   const expiringSoon = vehicles.filter((vehicle) =>
     vehicle.nextExpiryDate &&
@@ -49,7 +84,7 @@ export default async function FlotaPage() {
             { label: "Flota" },
           ]} />
         }
-        actions={
+        headerActions={
           <Button asChild size="sm" variant="secondary">
             <Link href="/combustibles/vehiculos">Gestionar vehículos</Link>
           </Button>
@@ -82,6 +117,40 @@ export default async function FlotaPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Filtros avanzados</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form method="GET" className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <select name="estado" defaultValue="" className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">Todos los estados</option>
+              {operationalStatuses.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <select name="responsable" defaultValue="" className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">Todos los responsables</option>
+              {responsibleUsers.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+            <select name="vencimiento" defaultValue="" className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">Sin filtro de vencimiento</option>
+              <option value="vencidos">Documentos vencidos</option>
+              <option value="proximos">Próximos a vencer (30 días)</option>
+              <option value="al-dia">Al día</option>
+            </select>
+            <div className="flex justify-end gap-2">
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/flota">Limpiar filtros</Link>
+              </Button>
+              <Button type="submit" size="sm">Filtrar</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Vehículos</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -108,7 +177,13 @@ export default async function FlotaPage() {
                     No hay vehículos visibles para tu alcance.
                   </TableCell>
                 </TableRow>
-              ) : vehicles.map((vehicle) => (
+              ) : filteredVehicles.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
+                    No hay vehículos que coincidan con los filtros.
+                  </TableCell>
+                </TableRow>
+              ) : filteredVehicles.map((vehicle) => (
                 <TableRow key={vehicle.id}>
                   <TableCell>
                     <Link href={`/flota/${vehicle.id}`} className="font-medium text-[var(--color-primary)] underline-offset-2 hover:underline">
