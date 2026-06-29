@@ -119,7 +119,6 @@ const defaultProps = {
   worksiteName: "Faena Norte",
   cargoLabels: ["Conductor General"],
   canClose: true,
-  canEdit: true,
   canManage: false,
   canViewFullEvaluation: true,
   sectionAccess: getSectionAccess(

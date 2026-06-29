@@ -6,7 +6,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockGuardAuth = vi.hoisted(() => vi.fn())
 const mockGuardPermission = vi.hoisted(() => vi.fn())
-const mockCan = vi.hoisted(() => vi.fn(() => true))
+const mockCan = vi.hoisted(() =>
+  vi.fn((_session?: { user?: { permissions?: string[] } }, _permission?: string) => true),
+)
 const mockCanAny = vi.hoisted(() => vi.fn(() => true))
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as const, ids: [] })))
 const mockGetEvaluation = vi.hoisted(() => vi.fn())
@@ -15,7 +17,17 @@ const mockCloseEvaluation = vi.hoisted(() => vi.fn())
 const mockMarkFollowup = vi.hoisted(() => vi.fn())
 const mockDeleteEvaluation = vi.hoisted(() => vi.fn())
 const mockMarkWeekCompleted = vi.hoisted(() => vi.fn())
+const mockCreateEvaluation = vi.hoisted(() => vi.fn(() => ({ id: "eval-1" })))
 const mockDashboardStats = vi.hoisted(() => vi.fn(() => ({ total: 5, borrador: 1, cerrado: 2, habilitados: 3, noHabilitados: 0, pendingFollowups: 1 })))
+const mockDbSelect = vi.hoisted(() =>
+  vi.fn(() => ({
+    from: vi.fn(() => ({
+      where: vi.fn(() => ({
+        then: vi.fn((cb: (rows: unknown[]) => unknown) => cb([{ worksiteId: "ws-1" }])),
+      })),
+    })),
+  })),
+)
 
 vi.mock("@/lib/auth/can", () => ({
   guardAuth: mockGuardAuth,
@@ -36,7 +48,7 @@ vi.mock("@/lib/services/sst", () => ({
   getDashboardStats: mockDashboardStats,
   listEvaluations: vi.fn(() => []),
   listEvaluationsGroupedByWorker: vi.fn(() => []),
-  createEvaluation: vi.fn(() => ({ id: "eval-1" })),
+  createEvaluation: mockCreateEvaluation,
   getFollowups: vi.fn(() => []),
   getWeeklyEvaluations: vi.fn(() => []),
   saveActionPlanItem: vi.fn(() => ({ id: "ap-1" })),
@@ -50,12 +62,13 @@ vi.mock("@/lib/sst/checklist", () => ({
 }))
 vi.mock("@/db", () => ({
   db: {
-    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ then: vi.fn((cb: (rows: unknown[]) => unknown) => cb([{ worksiteId: "ws-1" }])) })) })) })),
+    select: mockDbSelect,
   },
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 
 import {
+  createEvaluationAction,
   saveResponsesAction,
   closeEvaluationAction,
   markFollowupAction,
@@ -73,6 +86,17 @@ function makeSession() {
       permissions: ["sst:view", "sst:create", "sst:close", "sst:manage", "sst:evaluate_acompanamiento"],
       worksiteIds: ["ws-1"], primaryWorksiteId: "ws-1",
       avatarColor: "#000", isActive: true,
+    },
+  }
+}
+
+function makeConductorSession() {
+  return {
+    ...makeSession(),
+    user: {
+      ...makeSession().user,
+      roles: ["conductor_lider"],
+      permissions: ["sst:evaluate_acompanamiento"],
     },
   }
 }
@@ -112,6 +136,58 @@ describe("saveResponsesAction", () => {
   it("saves responses successfully", async () => {
     const res = await saveResponsesAction("eval-1", [])
     expect(res.ok).toBe(true)
+  })
+})
+
+describe("createEvaluationAction", () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockGuardAuth.mockResolvedValue({ session: makeConductorSession(), error: null })
+    mockCanAny.mockReturnValue(true)
+    mockCan.mockImplementation((session, permission) =>
+      Boolean(session?.user?.permissions?.includes(String(permission)))
+    )
+    mockDbSelect.mockReturnValue({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          then: vi.fn((cb: (rows: unknown[]) => unknown) => cb([{ worksiteId: "ws-1" }])),
+        })),
+      })),
+    } as never)
+  })
+
+  it("allows conductor_lider to create a trabajador_nuevo accompaniment evaluation", async () => {
+    const res = await createEvaluationAction({
+      tipo: "nuevo",
+      definicionCode: "trabajador_nuevo",
+      workerId: "worker-1",
+      worksiteId: "ws-1",
+      fechaEvaluacion: "2026-06-29",
+      cargos: ["conductor_ampliroll"],
+    })
+
+    expect(res.ok).toBe(true)
+    expect(mockCreateEvaluation).toHaveBeenCalledWith(
+      expect.objectContaining({ definicionCode: "trabajador_nuevo", tipo: "nuevo" }),
+      "user-1",
+      "conductor_lider",
+    )
+  })
+
+  it("blocks conductor_lider from creating seguimiento evaluations", async () => {
+    const res = await createEvaluationAction({
+      tipo: "seguimiento",
+      definicionCode: "trabajador_antiguo",
+      workerId: "worker-1",
+      worksiteId: "ws-1",
+      fechaEvaluacion: "2026-06-29",
+      cargos: ["conductor_ampliroll"],
+      motivo: "control_periodico",
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("conductor líder solo puede")
+    expect(mockCreateEvaluation).not.toHaveBeenCalled()
   })
 })
 

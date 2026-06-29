@@ -5,17 +5,19 @@ import {
   purchaseRequests,
   worksites, products, productAttributes,
   statusHistory, users, suppliers, productSuppliers,
+  repuestoQuotations, serviceQuotations,
 } from "@/db/schema"
 import { and, asc, desc, eq } from "drizzle-orm"
 import { can, requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
-import { RepuestoDetailView } from "../../repuestos/detail-view"
-import { ServiceDetailView } from "../../servicios/detail-view"
+import { QUOTATION_TYPES } from "@/lib/request-types"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
 import { RequestForm } from "../request-form"
+import { QuotationPanel } from "../../repuestos/quotation-panel"
+import { ServiceQuotationPanel } from "../../servicios/quotation-panel"
 import { DuplicateButton } from "./duplicate-button"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
@@ -29,19 +31,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   catch { redirect("/forbidden") }
 
   const { id } = await params
-
-  // Quotation-based types (repuestos/servicios) render their specialized
-  // detail view inline; each enforces its own view permission.
-  const { requestType } = await db.query.purchaseRequests.findFirst({
-    where: eq(purchaseRequests.id, id),
-    columns: { requestType: true },
-  }) ?? {}
-  if (!requestType) notFound()
-  if (requestType === "repuestos") return <RepuestoDetailView id={id} />
-  if (requestType === "servicios") return <ServiceDetailView id={id} />
-
-  // Catalogue-based types (epp/otro) use the per-item approval flow below.
-  if (!can(session, "requests:view_own")) redirect("/forbidden")
 
   const request = await db.query.purchaseRequests.findFirst({
     where: eq(purchaseRequests.id, id),
@@ -57,10 +46,53 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
 
   if (!request) notFound()
 
+  const isQuotation = QUOTATION_TYPES.has(request.requestType)
+
+  // View permission is per request type: repuestos/servicios carry their own
+  // namespaces, epp/otro use requests:*. All quotation-type viewers also hold
+  // requests:view_own, so the unified list/detail remain reachable for them.
+  const typeViewAll =
+    request.requestType === "repuestos" ? can(session, "repuestos:view_all")
+    : request.requestType === "servicios" ? can(session, "servicios:view_all")
+    : false
   const isOwner    = request.requesterId === session.user.id
-  const hasViewAll = session.user.permissions.includes("requests:view_all")
+  const hasViewAll = can(session, "requests:view_all") || typeViewAll
   const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))
   if (!hasAccess) notFound()
+
+  // ── Quotation panel data (repuestos/servicios) ─────────────────────────────
+  const isEditable = ["draft", "returned"].includes(request.status)
+  const canUploadQuotation = isOwner && isEditable
+  const canApproveQuotation =
+    request.requestType === "repuestos" ? can(session, "repuestos:approve")
+    : request.requestType === "servicios" ? can(session, "servicios:approve")
+    : false
+
+  const quotationsRaw = !isQuotation
+    ? []
+    : request.requestType === "repuestos"
+      ? await db.query.repuestoQuotations.findMany({
+          where: eq(repuestoQuotations.requestId, request.id),
+          with: { supplier: { columns: { id: true, name: true } } },
+          orderBy: (q, { asc }) => asc(q.createdAt),
+        })
+      : await db.query.serviceQuotations.findMany({
+          where: eq(serviceQuotations.requestId, request.id),
+          with: { supplier: { columns: { id: true, name: true } } },
+          orderBy: (q, { asc }) => asc(q.createdAt),
+        })
+
+  const quotations = quotationsRaw.map((q) => ({
+    id:               q.id,
+    supplierId:       q.supplierId,
+    supplierNameFree: q.supplierNameFree,
+    supplierName:     q.supplier?.name ?? null,
+    fileName:         q.fileName,
+    totalAmount:      Number(q.totalAmount),
+    status:           q.status as "pending" | "selected" | "rejected",
+    notes:            q.notes,
+    createdAt:        q.createdAt,
+  }))
 
   const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
@@ -194,6 +226,24 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       />
       <div className="space-y-6">
         <RequestProgressPanel progress={progress} />
+        {isQuotation && request.requestType === "repuestos" && (
+          <QuotationPanel
+            requestId={request.id}
+            requestStatus={request.status}
+            quotations={quotations}
+            canUpload={canUploadQuotation}
+            canApprove={canApproveQuotation}
+          />
+        )}
+        {isQuotation && request.requestType === "servicios" && (
+          <ServiceQuotationPanel
+            requestId={request.id}
+            requestStatus={request.status}
+            quotations={quotations}
+            canUpload={canUploadQuotation}
+            canApprove={canApproveQuotation}
+          />
+        )}
         <RequestForm
           worksites={worksiteOptions}
           products={productOptions}

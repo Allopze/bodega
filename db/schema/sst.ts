@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm"
-import { pgTable, text, timestamp, real, boolean, integer, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, real, boolean, integer, jsonb, uniqueIndex } from "drizzle-orm/pg-core"
 import { worksites, workers } from "./worksites"
 import { users } from "./users"
 
@@ -47,7 +47,9 @@ export const sstResponses = pgTable("sst_responses", {
   estado:           text("estado"),   // StatusValue
   observacion:      text("observacion"),
   accionCorrectiva: text("accion_correctiva"),
-})
+}, (table) => [
+  uniqueIndex("sst_responses_evaluation_section_item_unique").on(table.evaluationId, table.seccionId, table.itemId),
+])
 
 /* ── SST Scheduled Followups ─────────────────────────────────────────────── */
 // 4 hitos created when tipo === 'seguimiento': dia_0 / dia_7 / dia_15 / dia_30
@@ -72,7 +74,9 @@ export const sstActionPlan = pgTable("sst_action_plan", {
   responsable:  text("responsable").notNull(),
   plazo:        text("plazo").notNull(),
   estado:       text("estado").notNull(),
-})
+}, (table) => [
+  uniqueIndex("sst_action_plan_evaluation_n_unique").on(table.evaluationId, table.n),
+])
 
 /* ── SST Weekly Evaluations ──────────────────────────────────────────────── */
 // 4 hitos semanales creados cuando conductor_lider inicia evaluación de trabajador_nuevo.

@@ -92,12 +92,12 @@ async function persistDraft(
       unitOfMeasure: item.unitOfMeasure,
       sortOrder:     i,
       notes:         item.notes || null,
-      partNumber:    null,
-      location:      null,
-      equipmentName: null,
-      patent:        null,
-      brand:         null,
-      model:         null,
+      partNumber:    item.partNumber || null,
+      location:      item.location || null,
+      equipmentName: item.equipmentName || null,
+      patent:        item.patent || null,
+      brand:         item.brand || null,
+      model:         item.model || null,
     }))
     const requestInput = {
       id:            d.id,

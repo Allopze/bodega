@@ -11,6 +11,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { getMaintenancePageData, getUpcomingMaintenance } from "@/lib/services/maintenance"
 import { MaintenanceForm } from "./maintenance-form"
 import { MaintenanceRowActions } from "./maintenance-row-actions"
+import { MaintenanceFilters } from "./maintenance-filters"
 
 export const metadata: Metadata = { title: "Mantenciones" }
 
@@ -76,32 +77,12 @@ export default async function MantencionesPage({
           <CardTitle className="text-base">Filtros</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <select name="vehicle" defaultValue={vehicleId ?? ""} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Todos los vehículos</option>
-              {data.vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>{vehicle.plate}</option>
-              ))}
-            </select>
-            <select name="faena" defaultValue={worksiteId ?? ""} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Todas las faenas</option>
-              {data.worksites.map((worksite) => (
-                <option key={worksite.id} value={worksite.id}>{worksite.name}</option>
-              ))}
-            </select>
-            <select name="status" defaultValue={status ?? ""} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Todos los estados</option>
-              {Object.entries(statusLabels).map(([value, meta]) => (
-                <option key={value} value={value}>{meta.label}</option>
-              ))}
-            </select>
-            <div className="flex justify-end gap-2">
-              <Button asChild variant="ghost">
-                <Link href="/mantenciones">Limpiar</Link>
-              </Button>
-              <Button type="submit">Filtrar</Button>
-            </div>
-          </form>
+          <MaintenanceFilters
+            vehicles={data.vehicles}
+            worksites={data.worksites}
+            statusLabels={statusLabels}
+            current={{ vehicle: vehicleId, faena: worksiteId, status }}
+          />
         </CardContent>
       </Card>
 

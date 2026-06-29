@@ -6,6 +6,7 @@ import { UploadSimple, Trash, FileText } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import { formatDate } from "@/lib/utils"
 import { uploadFleetDocumentAction, deleteFleetDocumentAction } from "../actions"
@@ -105,17 +106,13 @@ export function FleetDocumentsPanel({
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Field label="Tipo" htmlFor="fleetDocumentType" required>
-            <select
-              id="fleetDocumentType"
-              name="documentType"
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              required
-              className="flex h-9 w-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]"
-            >
-              <option value="" disabled>Selecciona tipo</option>
-              {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <input type="hidden" name="documentType" value={selectedType} />
+            <Select value={selectedType || undefined} onValueChange={setSelectedType}>
+              <SelectTrigger id="fleetDocumentType" className="w-full"><SelectValue placeholder="Selecciona tipo" /></SelectTrigger>
+              <SelectContent>
+                {DOC_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field label="Vencimiento" htmlFor="fleetDocExpiresAt" helper="Opcional">

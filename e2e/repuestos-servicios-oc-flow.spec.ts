@@ -1,28 +1,34 @@
 import { expect, test, type Page } from "@playwright/test"
-import { login, pickCurrentMonthDate } from "./helpers"
+import { login, pickCurrentMonthDate, selectRadixById } from "./helpers"
 
 async function createAndSubmitRepuesto(page: Page) {
-  await page.goto("/solicitudes/nueva?tipo=repuestos")
+  await page.goto("/solicitudes/nueva")
+  await selectRadixById(page, "worksiteId", "Faena E2E")
+  await selectRadixById(page, "requestType", "Repuestos")
   await pickCurrentMonthDate(page, "Seleccionar fecha")
-  await page.getByPlaceholder("Proveedor único, urgencia, mercado limitado...").fill("Repuesto urgente E2E")
-  await page.getByPlaceholder("Ej: Filtro de aceite, Correa de distribución...").fill("Filtro de aire E2E")
+  await page.getByPlaceholder("Describe el ítem requerido...").fill("Filtro de aire E2E")
   await page.getByPlaceholder("OEM o fabricante").fill("OEM-FLOW-001")
   await page.getByPlaceholder("Ej: Retroexcavadora, Camión grúa...").fill("Retroexcavadora E2E")
   await page.getByPlaceholder("Ej: ABCD-12").fill("FLOW-REP")
+  await page.getByRole("button", { name: /Guardar borrador/ }).click()
+  await expect(page.getByText("Borrador guardado")).toBeVisible()
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
-  await expect(page).toHaveURL(/\/solicitudes\/[^/]+$/)
+  await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
 }
 
 async function createAndSubmitServicio(page: Page) {
-  await page.goto("/solicitudes/nueva?tipo=servicios")
+  await page.goto("/solicitudes/nueva")
+  await selectRadixById(page, "worksiteId", "Faena E2E")
+  await selectRadixById(page, "requestType", "Servicios")
   await pickCurrentMonthDate(page, "Seleccionar fecha")
-  await page.getByPlaceholder("Proveedor único, urgencia, mercado limitado...").fill("Servicio urgente E2E")
-  await page.getByPlaceholder("Ej: Mantención preventiva bomba hidráulica...").fill("Mantencion compresor E2E")
+  await page.getByPlaceholder("Describe el ítem requerido...").fill("Mantencion compresor E2E")
   await page.getByPlaceholder("Ej: Sector norte, sala de máquinas...").fill("Sala compresores E2E")
   await page.getByPlaceholder("Ej: Retroexcavadora, Generador...").fill("Compresor E2E")
   await page.getByPlaceholder("Ej: ABCD-12").fill("FLOW-SRV")
+  await page.getByRole("button", { name: /Guardar borrador/ }).click()
+  await expect(page.getByText("Borrador guardado")).toBeVisible()
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
-  await expect(page).toHaveURL(/\/solicitudes\/[^/]+$/)
+  await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
 }
 
 test.describe("Repuestos/Servicios — aprobación y visibilidad en compras", () => {

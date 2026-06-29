@@ -70,10 +70,32 @@ function chainResultFirst(row: unknown) {
   return chainResult(row ? [row] : [])
 }
 
+function upsertReturning(row: unknown) {
+  const returning = vi.fn().mockResolvedValue([row])
+  const onConflictDoUpdate = vi.fn().mockReturnValue({ returning })
+  const values = vi.fn().mockReturnValue({ onConflictDoUpdate })
+  return { values, onConflictDoUpdate, returning }
+}
+
+function upsertNoReturn() {
+  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
+  const values = vi.fn().mockReturnValue({ onConflictDoUpdate })
+  return { values, onConflictDoUpdate }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+function resetDbMocks() {
+  vi.clearAllMocks()
+  mockSelectFn.mockReset()
+  mockInsertFn.mockReset()
+  mockUpdateFn.mockReset()
+  mockDeleteFn.mockReset()
+  mockTransactionFn.mockReset()
+}
+
 describe("getEvaluation", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("returns null for empty worksiteIds", async () => {
     const result = await getEvaluation("e1", [])
@@ -100,7 +122,7 @@ describe("getEvaluation", () => {
 })
 
 describe("listEvaluations", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("returns empty for empty worksiteIds", async () => {
     const result = await listEvaluations({ worksiteIds: [] })
@@ -140,7 +162,7 @@ describe("listEvaluations", () => {
 })
 
 describe("getDashboardStats", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("returns zero stats for empty worksiteIds", async () => {
     const result = await getDashboardStats([])
@@ -171,7 +193,7 @@ describe("getDashboardStats", () => {
 })
 
 describe("deleteEvaluation", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("throws if evaluation not found", async () => {
     mockSelectFn.mockReturnValue(chainResultFirst(null))
@@ -189,7 +211,7 @@ describe("deleteEvaluation", () => {
 })
 
 describe("markFollowup", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("throws if followup not found", async () => {
     mockSelectFn.mockReturnValue(chainResultFirst(null))
@@ -198,7 +220,7 @@ describe("markFollowup", () => {
 })
 
 describe("getFollowups", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("throws if evaluation not found", async () => {
     mockSelectFn.mockReturnValue(chainResultFirst(null))
@@ -218,27 +240,26 @@ describe("getFollowups", () => {
 })
 
 describe("saveActionPlanItem", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
-  it("throws if evaluation is cerrado", async () => {
-    mockSelectFn.mockReturnValue(chainResultFirst({ estado: "cerrado" }))
-    await expect(saveActionPlanItem({
+  it("allows adding an action-plan item when evaluation is cerrado", async () => {
+    mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "cerrado" }))
+    const upsert = upsertReturning({ id: "plan-1", evaluationId: "e1", n: 1 })
+    mockInsertFn.mockReturnValue({ values: upsert.values })
+
+    const result = await saveActionPlanItem({
       evaluationId: "e1", n: 1, hallazgo: "h", accion: "a",
       responsable: "admin", plazo: "2026-06-01", estado: "pendiente",
-    }, "all")).rejects.toThrow("cerrada")
+    }, "all")
+
+    expect(result.id).toBe("plan-1")
   })
 
   it("inserts new item when not existing", async () => {
-    // assertEditable → evaluation is borrador
-    mockSelectFn.mockReturnValueOnce(chainResultFirst({ estado: "borrador" }))
     // getEvaluation → evaluation exists
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
-    // existing plan item → none
-    mockSelectFn.mockReturnValueOnce(chainResultFirst(null))
-    // insert
-    mockInsertFn.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
-    // select after insert
-    mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "plan-1", evaluationId: "e1", n: 1 }))
+    const upsert = upsertReturning({ id: "plan-1", evaluationId: "e1", n: 1 })
+    mockInsertFn.mockReturnValue({ values: upsert.values })
 
     const result = await saveActionPlanItem({
       evaluationId: "e1", n: 1, hallazgo: "Hallazgo", accion: "Acción",
@@ -247,17 +268,32 @@ describe("saveActionPlanItem", () => {
     expect(result.id).toBe("plan-1")
   })
 
+  it("uses database upsert for action-plan items", async () => {
+    mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
+
+    const returning = vi.fn().mockResolvedValue([{ id: "plan-1", evaluationId: "e1", n: 1 }])
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning })
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate })
+    mockInsertFn.mockReturnValue({ values })
+
+    const result = await saveActionPlanItem({
+      evaluationId: "e1", n: 1, hallazgo: "Hallazgo", accion: "Acción",
+      responsable: "Admin", plazo: "2026-06-01", estado: "pendiente",
+    }, "all")
+
+    expect(onConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      target: expect.any(Array),
+      set: expect.objectContaining({ hallazgo: "Hallazgo" }),
+    }))
+    expect(returning).toHaveBeenCalled()
+    expect(result.id).toBe("plan-1")
+  })
+
   it("updates existing item when it exists", async () => {
-    // assertEditable -> borrador
-    mockSelectFn.mockReturnValueOnce(chainResultFirst({ estado: "borrador" }))
     // getEvaluation -> found
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
-    // existing check -> found
-    mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "plan-1", evaluationId: "e1", n: 1 }))
-    // update
-    mockUpdateFn.mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
-    // select after update
-    mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "plan-1", evaluationId: "e1", n: 1, hallazgo: "New hallazgo" }))
+    const upsert = upsertReturning({ id: "plan-1", evaluationId: "e1", n: 1, hallazgo: "New hallazgo" })
+    mockInsertFn.mockReturnValue({ values: upsert.values })
 
     const result = await saveActionPlanItem({
       evaluationId: "e1", n: 1, hallazgo: "New hallazgo", accion: "Acción",
@@ -266,8 +302,7 @@ describe("saveActionPlanItem", () => {
     expect(result.hallazgo).toBe("New hallazgo")
   })
 
-  it("throws if evaluation not found inside assertEditable", async () => {
-    // assertEditable select returns null
+  it("throws if evaluation not found or out of scope", async () => {
     mockSelectFn.mockReturnValueOnce(chainResultFirst(null))
     await expect(saveActionPlanItem({
       evaluationId: "nonexistent", n: 1, hallazgo: "h", accion: "a",
@@ -277,7 +312,7 @@ describe("saveActionPlanItem", () => {
 })
 
 describe("deleteActionPlanItem", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("throws if item not found", async () => {
     mockSelectFn.mockReturnValue(chainResultFirst(null))
@@ -287,8 +322,6 @@ describe("deleteActionPlanItem", () => {
   it("deletes when item found", async () => {
     // select item → found
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ evaluationId: "e1" }))
-    // assertEditable → borrador
-    mockSelectFn.mockReturnValueOnce(chainResultFirst({ estado: "borrador" }))
     // getEvaluation → found
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
     // delete
@@ -300,7 +333,7 @@ describe("deleteActionPlanItem", () => {
 })
 
 describe("createEvaluation", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("creates a new draft evaluation", async () => {
     const mockTx = {
@@ -345,11 +378,19 @@ describe("createEvaluation", () => {
 })
 
 describe("saveResponses", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("throws if worksiteIds has no access to worksite", async () => {
     mockSelectFn.mockReturnValue(chainResultFirst({ id: "eval-1", worksiteId: "ws-2" }))
     await expect(saveResponses("eval-1", [], ["ws-1"])).rejects.toThrow("sin acceso")
+  })
+
+  it("rejects responses that target a different evaluation", async () => {
+    mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "eval-1", worksiteId: "ws-1", estado: "borrador" }))
+
+    await expect(saveResponses("eval-1", [{
+      evaluationId: "eval-2", seccionId: "sec1", itemId: "item1", estado: "cumple",
+    }], "all")).rejects.toThrow("no corresponde")
   })
 
   it("inserts new response inside transaction", async () => {
@@ -357,7 +398,8 @@ describe("saveResponses", () => {
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "eval-1", worksiteId: "ws-1", estado: "borrador" }))
 
     const mockTxSelect = vi.fn()
-    const mockTxInsert = vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
+    const upsert = upsertNoReturn()
+    const mockTxInsert = vi.fn().mockReturnValue({ values: upsert.values })
     const mockTx = {
       select: mockTxSelect,
       insert: mockTxInsert,
@@ -366,8 +408,6 @@ describe("saveResponses", () => {
 
     // inside tx: assertEditable select -> [{ estado: "borrador" }]
     mockTxSelect.mockReturnValueOnce(chainResultFirst({ estado: "borrador" }))
-    // inside tx loop: select existing response -> empty []
-    mockTxSelect.mockReturnValueOnce(chainResultFirst(null))
 
     await saveResponses("eval-1", [{
       evaluationId: "eval-1", seccionId: "sec1", itemId: "item1", estado: "cumple",
@@ -377,33 +417,56 @@ describe("saveResponses", () => {
     expect(mockTxInsert).toHaveBeenCalled()
   })
 
+  it("uses database upsert for response saves", async () => {
+    mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "eval-1", worksiteId: "ws-1", estado: "borrador" }))
+
+    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate })
+    const mockTxSelect = vi.fn()
+    const mockTxInsert = vi.fn().mockReturnValue({ values })
+    const mockTx = {
+      select: mockTxSelect,
+      insert: mockTxInsert,
+    }
+    mockTransactionFn.mockImplementation(async (fn) => fn(mockTx))
+    mockTxSelect.mockReturnValueOnce(chainResultFirst({ estado: "borrador" }))
+
+    await saveResponses("eval-1", [{
+      evaluationId: "eval-1", seccionId: "sec1", itemId: "item1", estado: "cumple",
+    }], "all")
+
+    expect(onConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      target: expect.any(Array),
+      set: expect.objectContaining({ estado: "cumple" }),
+    }))
+  })
+
   it("updates existing response inside transaction", async () => {
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "eval-1", worksiteId: "ws-1", estado: "borrador" }))
 
     const mockTxSelect = vi.fn()
-    const mockTxUpdate = vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
+    const upsert = upsertNoReturn()
+    const mockTxInsert = vi.fn().mockReturnValue({ values: upsert.values })
     const mockTx = {
       select: mockTxSelect,
-      update: mockTxUpdate,
+      insert: mockTxInsert,
     }
     mockTransactionFn.mockImplementation(async (fn) => fn(mockTx))
 
     // assertEditable select
     mockTxSelect.mockReturnValueOnce(chainResultFirst({ estado: "borrador" }))
-    // select existing response -> returns existing response row
-    mockTxSelect.mockReturnValueOnce(chainResultFirst({ id: "resp-123" }))
 
     await saveResponses("eval-1", [{
       evaluationId: "eval-1", seccionId: "sec1", itemId: "item1", estado: "cumple",
     }], "all")
 
     expect(mockTransactionFn).toHaveBeenCalled()
-    expect(mockTxUpdate).toHaveBeenCalled()
+    expect(mockTxInsert).toHaveBeenCalled()
   })
 })
 
 describe("closeEvaluation", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(resetDbMocks)
 
   it("returns evaluation as-is if already cerrado", async () => {
     // getEvaluation returns closed eval

@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { requirePermission } from "@/lib/auth/can"
+import { can, canAny, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { workers, worksites } from "@/db/schema/worksites"
@@ -15,8 +15,11 @@ export const metadata: Metadata = { title: "Nueva Evaluación SST" }
 
 export default async function NuevaEvaluacionPage() {
   let session
-  try { session = await requirePermission("sst:create") }
+  try { session = await requireAuth() }
   catch { redirect("/prevencion") }
+  if (!canAny(session, "sst:create", "sst:evaluate_acompanamiento")) redirect("/prevencion")
+
+  const canCreateFullEvaluation = can(session, "sst:create")
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
@@ -58,11 +61,13 @@ export default async function NuevaEvaluacionPage() {
 
   const worksiteOptions = allWorksites.map((w) => ({ id: w.id, name: w.name }))
 
-  const definicionOptions = Object.values(CHECKLIST_DEFINITIONS).map((d) => ({
-    code: d.code,
-    title: d.title,
-    tipo: d.tipo,
-  }))
+  const definicionOptions = Object.values(CHECKLIST_DEFINITIONS)
+    .filter((d) => canCreateFullEvaluation || d.code === "trabajador_nuevo")
+    .map((d) => ({
+      code: d.code,
+      title: d.title,
+      tipo: d.tipo,
+    }))
 
   return (
     <PageContainer width="workbench">

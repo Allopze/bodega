@@ -26,6 +26,14 @@ export const requestItemSchema = z.object({
   sortOrder:           z.coerce.number().int().default(0),
   notes:               z.string().max(300).nullable().optional().or(z.literal("")),
   attributes:          z.array(requestItemAttributeSchema).default([]),
+  // Equipment fields — only used by quotation types (repuestos/servicios);
+  // persisted as item attributes by the request-service factory.
+  partNumber:          z.string().max(80).nullable().optional().or(z.literal("")),
+  location:            z.string().max(150).nullable().optional().or(z.literal("")),
+  equipmentName:       z.string().max(150).nullable().optional().or(z.literal("")),
+  patent:              z.string().max(20).nullable().optional().or(z.literal("")),
+  brand:               z.string().max(80).nullable().optional().or(z.literal("")),
+  model:               z.string().max(80).nullable().optional().or(z.literal("")),
 }).refine(
   (d) => !!d.productId || !!d.productNameFree?.trim(),
   { message: "Selecciona un producto del catálogo o describe el ítem", path: ["productId"] },
@@ -40,7 +48,10 @@ export const requestSchema = z.object({
   requiredDate: z.string().min(1, "Indica la fecha requerida"),
   notes:        z.string().max(500).optional().or(z.literal("")),
   items:        z.array(requestItemSchema).min(1, "Agrega al menos un ítem").max(50, "Máximo 50 ítems por solicitud"),
-})
+}).refine(
+  (d) => d.requestType !== "servicios" || d.items.every((item) => !!item.location?.trim()),
+  { message: "Ubicación requerida para cada servicio", path: ["items"] },
+)
 
 export type RequestFormData = z.infer<typeof requestSchema>
 export type RequestItemFormData = z.infer<typeof requestItemSchema>

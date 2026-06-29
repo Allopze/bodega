@@ -23,7 +23,7 @@ import {
 import { estadoPpaLabel, decisionPpaLabel } from "@/lib/ppa/badges"
 import type { ReportData } from "@/lib/reports/export"
 import {
-  getUserIdsWithPermission,
+  getUserIdsWithPermissionForWorksite,
   notifyManyUser,
   notifyAfterCommit,
 } from "@/lib/services/notifications"
@@ -109,7 +109,7 @@ export async function createPpaSubmission(
   if (evaluation.stop) {
     notifyAfterCommit(async () => {
       try {
-        const reviewerIds = await getUserIdsWithPermission("ppa:review")
+        const reviewerIds = await getUserIdsWithPermissionForWorksite("ppa:review", data.worksiteId)
         if (reviewerIds.length > 0) {
           await notifyManyUser(reviewerIds, {
             type:       "ppa_stopped",

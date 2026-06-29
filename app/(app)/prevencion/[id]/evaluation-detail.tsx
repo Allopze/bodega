@@ -72,7 +72,6 @@ interface Props {
   worksiteName: string
   cargoLabels: string[]
   canClose: boolean
-  canEdit: boolean
   canManage: boolean
   canViewFullEvaluation: boolean
   sectionAccess: Record<string, SectionAccess>
@@ -96,7 +95,6 @@ export function EvaluationDetail({
   worksiteName,
   cargoLabels,
   canClose,
-  canEdit,
   canManage,
   canViewFullEvaluation,
   sectionAccess,
@@ -105,7 +103,7 @@ export function EvaluationDetail({
   const router = useRouter()
   const isCerrado = evaluation.estado === "cerrado"
 
-  const fullReadOnly = isCerrado || !canEdit
+  const actionPlanReadOnly = !canManage
   const cargos = (evaluation.cargosJson as string[]) ?? []
   // applicableSections (filtrado por cargo) se usa solo para el cálculo de
   // compliance; visibleSections además filtra por permiso de sección.
@@ -702,7 +700,7 @@ export function EvaluationDetail({
             <ActionPlanPanel
               evaluationId={evaluation.id}
               items={actionPlan}
-              readOnly={fullReadOnly}
+              readOnly={actionPlanReadOnly}
               onUpdate={setActionPlan}
             />
             <div className="pt-4 border-t border-[var(--color-border)] flex justify-between gap-2">

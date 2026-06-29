@@ -252,19 +252,27 @@ describe("getFollowups", () => {
 describe("saveActionPlanItem", () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it("throws if evaluation is closed (assertEditable)", async () => {
-    // assertEditable finds evaluation with estado='cerrado'
+  it("allows adding an action-plan item if evaluation is closed", async () => {
+    // getEvaluation finds a closed evaluation in scope
     mockSelect.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([{ estado: "cerrado" }]),
+          limit: vi.fn().mockResolvedValue([{ id: "eval-1", worksiteId: "ws-1", estado: "cerrado" }]),
         }),
       }),
     })
-    await expect(saveActionPlanItem({
+    const returning = vi.fn().mockResolvedValue([{ id: "plan-1", evaluationId: "eval-1", n: 1 }])
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning })
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockReturnValue({ onConflictDoUpdate }),
+    })
+
+    const result = await saveActionPlanItem({
       evaluationId: "eval-1", n: 1, hallazgo: "test", accion: "fix",
       responsable: "admin", plazo: "2026-01-01", estado: "pendiente",
-    }, "all")).rejects.toThrow("cerrada")
+    }, "all")
+
+    expect(result.id).toBe("plan-1")
   })
 })
 

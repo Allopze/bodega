@@ -70,6 +70,22 @@ async function assertEditable(evaluationId: string, tx?: Tx): Promise<void> {
   }
 }
 
+function getEvaluationApplicableItems(
+  definition: ReturnType<typeof getDefinition>,
+  cargoKeys: string[],
+  evaluatorRole: string | null
+) {
+  const sectionById = new Map(definition.sections.map((section) => [section.id, section]))
+  return getApplicableItems(definition, cargoKeys).filter(({ seccionId }) => {
+    const section = sectionById.get(seccionId)
+    if (!section) return false
+    if (evaluatorRole === 'conductor_lider') {
+      return section.requiresPermission === 'sst:evaluate_acompanamiento'
+    }
+    return !section.requiresPermission
+  })
+}
+
 // ── createEvaluation ──────────────────────────────────────────────────────────
 
 export async function createEvaluation(
@@ -438,8 +454,17 @@ export async function markWeekCompleted(
   // Scope check
   const evaluation = await getEvaluation(weekly.evaluationId, worksiteIds)
   if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
+  if (evaluation.estado === 'cerrado') {
+    throw new Error('Esta evaluación está cerrada y sus semanas no pueden modificarse.')
+  }
 
   const today = new Date().toISOString().slice(0, 10)
+  if (today < weekly.fechaDesbloqueo) {
+    throw new Error(`La semana ${weekly.semana} está bloqueada hasta ${weekly.fechaDesbloqueo}.`)
+  }
+  if (weekly.estado === 'completada') {
+    throw new Error(`La semana ${weekly.semana} ya está completada.`)
+  }
 
   await db
     .update(sstWeeklyEvaluations)
@@ -464,35 +489,17 @@ export async function saveResponses(
   if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
 
   const data = sstResponsesBatchSchema.parse(responses)
+  if (data.some((resp) => resp.evaluationId !== evaluationId)) {
+    throw new Error('La respuesta no corresponde a la evaluación indicada.')
+  }
 
   await db.transaction(async (tx) => {
     await assertEditable(evaluationId, tx)
 
     for (const resp of data) {
-      // Check if a response already exists for this (evaluationId, seccionId, itemId)
-      const existing = await tx
-        .select({ id: sstResponses.id })
-        .from(sstResponses)
-        .where(
-          and(
-            eq(sstResponses.evaluationId, resp.evaluationId),
-            eq(sstResponses.seccionId,    resp.seccionId),
-            eq(sstResponses.itemId,       resp.itemId)
-          )
-        )
-        .limit(1)
-
-      if (existing[0]) {
-        await tx
-          .update(sstResponses)
-          .set({
-            estado:           resp.estado ?? null,
-            observacion:      resp.observacion ?? null,
-            accionCorrectiva: resp.accionCorrectiva ?? null,
-          })
-          .where(eq(sstResponses.id, existing[0].id))
-      } else {
-        await tx.insert(sstResponses).values({
+      await tx
+        .insert(sstResponses)
+        .values({
           id:               nanoid(),
           evaluationId:     resp.evaluationId,
           seccionId:        resp.seccionId,
@@ -501,7 +508,14 @@ export async function saveResponses(
           observacion:      resp.observacion ?? null,
           accionCorrectiva: resp.accionCorrectiva ?? null,
         })
-      }
+        .onConflictDoUpdate({
+          target: [sstResponses.evaluationId, sstResponses.seccionId, sstResponses.itemId],
+          set: {
+            estado:           resp.estado ?? null,
+            observacion:      resp.observacion ?? null,
+            accionCorrectiva: resp.accionCorrectiva ?? null,
+          },
+        })
     }
   })
 }
@@ -524,7 +538,7 @@ export async function closeEvaluation(
   // Get definition and applicable items (outside tx — read-only, no race risk)
   const definition = getDefinition(evaluation.definicionCode, evaluation.definicionVersion)
   const cargos = (evaluation.cargosJson as string[]) ?? []
-  const applicableItems = getApplicableItems(definition, cargos)
+  const applicableItems = getEvaluationApplicableItems(definition, cargos, evaluation.evaluatorRole)
   const applicableSet = new Set(
     applicableItems.map((ai) => `${ai.seccionId}::${ai.item.id}`)
   )
@@ -547,6 +561,20 @@ export async function closeEvaluation(
     const applicableResponses = allResponses.filter((r) =>
       applicableSet.has(`${r.seccionId}::${r.itemId}`)
     )
+
+    const responseByItem = new Map(
+      applicableResponses.map((r) => [`${r.seccionId}::${r.itemId}`, r])
+    )
+    const unanswered = applicableItems.filter(({ seccionId, item }) => {
+      const response = responseByItem.get(`${seccionId}::${item.id}`)
+      return !response || response.estado === null
+    })
+    if (unanswered.length > 0) {
+      const first = unanswered[0]!
+      throw new Error(
+        `No se puede cerrar la evaluación: hay ${unanswered.length} ítem(s) aplicable(s) sin responder. Primer pendiente: ${first.seccionId} / ${first.item.label}.`
+      )
+    }
 
     const excludedSections = SECTIONS_EXCLUDED_FROM_PERCENTAGE[evaluation.definicionCode] ?? []
 
@@ -682,48 +710,15 @@ export async function saveActionPlanItem(
 ): Promise<typeof sstActionPlan.$inferSelect> {
   const data = sstActionPlanItemSchema.parse(input)
 
-  await assertEditable(data.evaluationId)
-
-  // Scope check
+  // Scope check. El plan de acción puede seguir vivo después del cierre; el
+  // acta y sus respuestas permanecen inmutables, pero las correcciones avanzan.
   const evaluation = await getEvaluation(data.evaluationId, worksiteIds)
   if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
 
-  // Upsert by (evaluationId, n)
-  const existing = await db
-    .select({ id: sstActionPlan.id })
-    .from(sstActionPlan)
-    .where(
-      and(
-        eq(sstActionPlan.evaluationId, data.evaluationId),
-        eq(sstActionPlan.n, data.n)
-      )
-    )
-    .limit(1)
-
-  if (existing[0]) {
-    const existingId = existing[0].id
-    await db
-      .update(sstActionPlan)
-      .set({
-        hallazgo:    data.hallazgo,
-        accion:      data.accion,
-        responsable: data.responsable,
-        plazo:       data.plazo,
-        estado:      data.estado,
-      })
-      .where(eq(sstActionPlan.id, existingId))
-
-    const [updated] = await db
-      .select()
-      .from(sstActionPlan)
-      .where(eq(sstActionPlan.id, existingId))
-      .limit(1)
-    if (!updated) throw new Error('No se pudo actualizar el plan de acción.')
-    return updated
-  } else {
-    const newId = nanoid()
-    await db.insert(sstActionPlan).values({
-      id:           newId,
+  const [upserted] = await db
+    .insert(sstActionPlan)
+    .values({
+      id:           nanoid(),
       evaluationId: data.evaluationId,
       n:            data.n,
       hallazgo:     data.hallazgo,
@@ -732,15 +727,20 @@ export async function saveActionPlanItem(
       plazo:        data.plazo,
       estado:       data.estado,
     })
+    .onConflictDoUpdate({
+      target: [sstActionPlan.evaluationId, sstActionPlan.n],
+      set: {
+        hallazgo:    data.hallazgo,
+        accion:      data.accion,
+        responsable: data.responsable,
+        plazo:       data.plazo,
+        estado:      data.estado,
+      },
+    })
+    .returning()
 
-    const [inserted] = await db
-      .select()
-      .from(sstActionPlan)
-      .where(eq(sstActionPlan.id, newId))
-      .limit(1)
-    if (!inserted) throw new Error('No se pudo crear el plan de acción.')
-    return inserted
-  }
+  if (!upserted) throw new Error('No se pudo guardar el plan de acción.')
+  return upserted
 }
 
 // ── deleteActionPlanItem ──────────────────────────────────────────────────────
@@ -757,9 +757,7 @@ export async function deleteActionPlanItem(
 
   if (!item) throw new Error('Ítem del plan de acción no encontrado.')
 
-  await assertEditable(item.evaluationId)
-
-  // Scope check
+  // Scope check. El plan de acción se gestiona incluso con evaluación cerrada.
   const evaluation = await getEvaluation(item.evaluationId, worksiteIds)
   if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
 
@@ -774,6 +772,9 @@ export async function deleteEvaluation(
 ): Promise<void> {
   const evaluation = await getEvaluation(id, worksiteIds)
   if (!evaluation) throw new Error('Evaluación no encontrada o sin acceso.')
+  if (evaluation.estado === 'cerrado') {
+    throw new Error('Esta evaluación está cerrada y no puede eliminarse. Usa un flujo de anulación auditada si necesitas invalidarla.')
+  }
 
   await db.transaction(async (tx) => {
     await tx.delete(sstActionPlan).where(eq(sstActionPlan.evaluationId, id))

@@ -27,6 +27,26 @@ import type { ActionState } from "@/lib/validation/operations"
 import { formatDate } from "@/lib/utils"
 import type { ItemRow, AttrRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
+import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
+import { SERVICE_ATTRIBUTE_NAMES } from "@/lib/validation/servicios"
+
+/** Pull equipment fields out of an item's attribute list (quotation types). */
+function equipmentFromAttributes(
+  requestType: string,
+  attributes: { attributeName: string; value: string }[],
+): { partNumber: string; location: string; equipmentName: string; patent: string; brand: string; model: string } {
+  const m = Object.fromEntries(attributes.map((a) => [a.attributeName, a.value]))
+  const R = REPUESTO_ATTRIBUTE_NAMES
+  const S = SERVICE_ATTRIBUTE_NAMES
+  return {
+    partNumber:    requestType === "repuestos" ? (m[R.partNumber] ?? "") : "",
+    location:      requestType === "servicios" ? (m[S.location] ?? "") : "",
+    equipmentName: m[R.equipmentName] ?? m[S.equipmentName] ?? "",
+    patent:        m[R.patent] ?? m[S.patent] ?? "",
+    brand:         m[R.brand] ?? m[S.brand] ?? "",
+    model:         m[R.model] ?? m[S.model] ?? "",
+  }
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -61,6 +81,12 @@ function blankItem(key = "new-0"): ItemRow {
     productName:         "",
     showAttrs:           false,
     cotizaciones:        [],
+    partNumber:          "",
+    location:            "",
+    equipmentName:       "",
+    patent:              "",
+    brand:               "",
+    model:               "",
   }
 }
 
@@ -187,6 +213,7 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
   // ── Items
   const [items, setItems] = useState<ItemRow[]>(() => {
     if (editRequest && editRequest.items.length > 0) {
+      const isQuotation = QUOTATION_TYPES.has(editRequest.requestType)
       return editRequest.items.map((item) => {
         const prod = item.productId ? products.find((p) => p.id === item.productId) : null
         return {
@@ -203,9 +230,12 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
           status:              item.status,
           isEpp:               prod?.isEpp ?? false,
           productName:         prod?.name ?? item.productNameFree ?? "",
-          showAttrs:           item.attributes.length > 0,
+          showAttrs:           !isQuotation && item.attributes.length > 0,
           cotizaciones:        [],
-          attributes:          item.attributes.map((a) => {
+          // Equipment fields are stored as attributes; surface them as dedicated
+          // inputs for quotation types and keep the generic attribute list empty.
+          ...equipmentFromAttributes(editRequest.requestType, item.attributes),
+          attributes:          isQuotation ? [] : item.attributes.map((a) => {
             const prodAttr = prod?.attributes.find((pa) => pa.id === a.attributeId)
             return {
               attributeId:   a.attributeId,
@@ -369,6 +399,13 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
     suggestedSupplierId: item.suggestedSupplierId || null,
     supplierHint:        item.supplierHint || null,
     notes:               item.notes || null,
+    // Equipment fields (quotation types) — ignored by epp/otro on the server.
+    partNumber:          item.partNumber || null,
+    location:            item.location || null,
+    equipmentName:       item.equipmentName || null,
+    patent:              item.patent || null,
+    brand:               item.brand || null,
+    model:               item.model || null,
     attributes:          item.attributes.map((a) => ({
       attributeId:   a.attributeId,
       attributeName: a.attributeName,

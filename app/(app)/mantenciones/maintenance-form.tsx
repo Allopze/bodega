@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createMaintenanceRecordAction } from "./actions"
 import type { ActionState } from "@/lib/validation/masters"
 import { toast } from "@/lib/toast"
@@ -68,6 +69,13 @@ export function MaintenanceForm({
   const [taxAmount, setTaxAmount] = useState(defaults?.taxAmount ?? 0)
   const totalAmount = netAmount + taxAmount
 
+  const [vehicleId, setVehicleId] = useState(defaults?.vehicleId ?? "")
+  const [maintenanceType, setMaintenanceType] = useState(defaults?.maintenanceType ?? "")
+  const [status, setStatus] = useState(defaults?.status ?? "completed")
+  const [supplierId, setSupplierId] = useState(defaults?.supplierId ?? "")
+  const [worksiteId, setWorksiteId] = useState(defaults?.worksiteId ?? "")
+  const [costCenterId, setCostCenterId] = useState(defaults?.costCenterId ?? "")
+
   useEffect(() => {
     if (!state.message) return
     if (state.ok) {
@@ -85,12 +93,15 @@ export function MaintenanceForm({
       {defaults?.id && <input type="hidden" name="id" value={defaults.id} />}
       <div>
         <Label htmlFor="vehicleId" required>Vehículo</Label>
-        <select id="vehicleId" name="vehicleId" required defaultValue={defaults?.vehicleId ?? ""} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-          <option value="">Seleccionar</option>
-          {vehicles.map((vehicle) => (
-            <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} ({vehicle.type})</option>
-          ))}
-        </select>
+        <input type="hidden" name="vehicleId" value={vehicleId} />
+        <Select value={vehicleId || undefined} onValueChange={setVehicleId}>
+          <SelectTrigger id="vehicleId" className="w-full"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+          <SelectContent>
+            {vehicles.map((vehicle) => (
+              <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.plate} ({vehicle.type})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {state.fieldErrors?.vehicleId && <p className="mt-1 text-xs text-destructive">{state.fieldErrors.vehicleId[0]}</p>}
       </div>
 
@@ -101,54 +112,70 @@ export function MaintenanceForm({
 
       <div>
         <Label htmlFor="maintenanceType" required>Tipo</Label>
-        <select id="maintenanceType" name="maintenanceType" required defaultValue={defaults?.maintenanceType ?? ""} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-          <option value="">Seleccionar</option>
-          <option value="preventiva">Preventiva</option>
-          <option value="correctiva">Correctiva</option>
-          <option value="neumaticos">Neumáticos</option>
-          <option value="lubricacion">Lubricación</option>
-          <option value="revision_tecnica">Revisión técnica</option>
-        </select>
+        <input type="hidden" name="maintenanceType" value={maintenanceType} />
+        <Select value={maintenanceType || undefined} onValueChange={setMaintenanceType}>
+          <SelectTrigger id="maintenanceType" className="w-full"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="preventiva">Preventiva</SelectItem>
+            <SelectItem value="correctiva">Correctiva</SelectItem>
+            <SelectItem value="neumaticos">Neumáticos</SelectItem>
+            <SelectItem value="lubricacion">Lubricación</SelectItem>
+            <SelectItem value="revision_tecnica">Revisión técnica</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div>
         <Label htmlFor="status">Estado</Label>
-        <select id="status" name="status" defaultValue={defaults?.status ?? "completed"} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-          <option value="scheduled">Programada</option>
-          <option value="in_progress">En curso</option>
-          <option value="completed">Completada</option>
-          <option value="cancelled">Cancelada</option>
-        </select>
+        <input type="hidden" name="status" value={status} />
+        <Select value={status || undefined} onValueChange={setStatus}>
+          <SelectTrigger id="status" className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="scheduled">Programada</SelectItem>
+            <SelectItem value="in_progress">En curso</SelectItem>
+            <SelectItem value="completed">Completada</SelectItem>
+            <SelectItem value="cancelled">Cancelada</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div>
         <Label htmlFor="supplierId">Proveedor</Label>
-        <select id="supplierId" name="supplierId" defaultValue={defaults?.supplierId ?? ""} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-          <option value="">Sin proveedor</option>
-          {suppliers.map((supplier) => (
-            <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
-          ))}
-        </select>
+        <input type="hidden" name="supplierId" value={supplierId} />
+        <Select value={supplierId || undefined} onValueChange={setSupplierId}>
+          <SelectTrigger id="supplierId" className="w-full"><SelectValue placeholder="Sin proveedor" /></SelectTrigger>
+          <SelectContent>
+            {suppliers.map((supplier) => (
+              <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div>
         <Label htmlFor="worksiteId">Faena</Label>
-        <select id="worksiteId" name="worksiteId" defaultValue={defaults?.worksiteId ?? ""} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-          <option value="">Usar faena del vehículo</option>
-          {worksites.map((worksite) => (
-            <option key={worksite.id} value={worksite.id}>{worksite.name}</option>
-          ))}
-        </select>
+        <input type="hidden" name="worksiteId" value={worksiteId} />
+        <Select value={worksiteId || undefined} onValueChange={setWorksiteId}>
+          <SelectTrigger id="worksiteId" className="w-full"><SelectValue placeholder="Usar faena del vehículo" /></SelectTrigger>
+          <SelectContent>
+            {worksites.map((worksite) => (
+              <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div>
         <Label htmlFor="costCenterId">Centro de costo</Label>
-        <select id="costCenterId" name="costCenterId" defaultValue={defaults?.costCenterId ?? ""} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-          <option value="">Sin centro</option>
-          {costCenters.map((center) => (
-            <option key={center.id} value={center.id}>{center.code} - {center.name}</option>
-          ))}
-        </select>
+        <input type="hidden" name="costCenterId" value={costCenterId} />
+        <Select value={costCenterId || undefined} onValueChange={setCostCenterId}>
+          <SelectTrigger id="costCenterId" className="w-full"><SelectValue placeholder="Sin centro" /></SelectTrigger>
+          <SelectContent>
+            {costCenters.map((center) => (
+              <SelectItem key={center.id} value={center.id}>{center.code} - {center.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div>

@@ -192,6 +192,11 @@ export function WorkerEvaluations({
   ) => {
     const canUserCreateThis = userEvaluatorRole === role
     const isConductorLider = role === 'conductor_lider'
+    const canStartThisEvaluation = canUserCreateThis && (
+      role === 'conductor_lider'
+        ? permissions.canEvaluateAcompanamiento
+        : permissions.canCreate
+    )
 
     return (
       <Card className="flex flex-col h-full border border-(--color-border) bg-(--color-surface) hover:shadow-md transition-shadow">
@@ -308,7 +313,7 @@ export function WorkerEvaluations({
                   }
                 </p>
               </div>
-              {canUserCreateThis && permissions.canCreate ? (
+              {canStartThisEvaluation ? (
                 <Button
                   variant="secondary"
                   size="sm"

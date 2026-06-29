@@ -1,7 +1,7 @@
 # SST Module — Domain Documentation
 
 **Module:** Prevención / Seguridad y Salud en el Trabajo (SST)  
-**Last updated:** 2026-06-18  
+**Last updated:** 2026-06-29
 **Owner:** Prevention team (Chome)
 
 ---
@@ -13,8 +13,8 @@ The SST module manages occupational safety evaluations for workers at each works
 1. Defines checklist templates (checklists) as JSON/TypeScript definitions per evaluation type.
 2. Creates evaluations (`evaluaciones`) linking a worker, a worksite, and a checklist definition.
 3. Records per-item responses (`sst_responses`) during the inspection.
-4. Tracks follow-up items (`sst_followup_items`) and corrective action plans (`sst_action_plan_items`).
-5. Closes evaluations with a final result, efficacy score, and optional restrictions.
+4. Tracks scheduled follow-ups (`sst_scheduled_followups`), weekly accompaniment milestones (`sst_weekly_evaluations`) and corrective action plans (`sst_action_plan`).
+5. Closes evaluations only after every applicable checklist item has been answered, with a final result, efficacy score, and optional restrictions.
 
 ---
 
@@ -30,7 +30,7 @@ The SST module manages occupational safety evaluations for workers at each works
                    └─────────────┘
 ```
 
-A `borrador` evaluation can receive any number of `saveResponses()` calls. Once closed, the record is immutable — responses and the closing act are locked. Follow-up items and action plan entries can still be created/updated after closing.
+A `borrador` evaluation can receive any number of `saveResponses()` calls. Once closed, the record is immutable — responses and the closing act are locked. Corrective action plan entries can still be created/updated after closing.
 
 ---
 
@@ -97,9 +97,9 @@ When a follow-up evaluation (`tipo = "seguimiento"`) is closed, `computeEfficacy
 
 | Classification | Condition |
 |---|---|
-| `eficaz` | ≥ 80% of previously non-compliant items now comply |
-| `parcialmente_eficaz` | 50–79% resolved |
-| `no_eficaz` | < 50% resolved |
+| `eficaz` | ≥ 90% applicable compliance and no critical deviation/reincidence/blocker |
+| `parcialmente_eficaz` | 70–89% applicable compliance and no critical deviation/reincidence/blocker |
+| `no_eficaz` | < 70%, or any critical deviation/reincidence/blocker |
 
 Critical deviations (items with `kind = "cumple_nocumple_obs"` still non-compliant) always downgrade the result.
 
@@ -111,10 +111,11 @@ Critical deviations (items with `kind = "cumple_nocumple_obs"` still non-complia
 |---|---|
 | `sst_evaluations` | Evaluation header (worker, worksite, checklist code, status, dates) |
 | `sst_responses` | Per-item responses (itemId, status, observation) |
-| `sst_followup_items` | Specific items flagged for follow-up with a due date |
-| `sst_action_plan_items` | Corrective action tasks (description, responsible, due date, completed) |
+| `sst_scheduled_followups` | Scheduled follow-up milestones for follow-up evaluations |
+| `sst_weekly_evaluations` | Weekly accompaniment milestones for conductor leader evaluations |
+| `sst_action_plan` | Corrective action tasks (finding, action, responsible, due date, status) |
 
-Relations: `sst_evaluations` 1→N `sst_responses`, `sst_evaluations` 1→N `sst_followup_items`, `sst_evaluations` 1→N `sst_action_plan_items`.
+Relations: `sst_evaluations` 1→N `sst_responses`, `sst_evaluations` 1→N `sst_scheduled_followups`, `sst_evaluations` 1→N `sst_weekly_evaluations`, `sst_evaluations` 1→N `sst_action_plan`.
 
 ---
 
@@ -123,8 +124,10 @@ Relations: `sst_evaluations` 1→N `sst_responses`, `sst_evaluations` 1→N `sst
 | Permission | Grants |
 |---|---|
 | `sst:view` | Read evaluations, responses, dashboard stats |
-| `sst:manage` | Create, edit, and close evaluations |
-| `admin:sst` | Delete evaluations, manage checklist definitions |
+| `sst:create` | Create evaluations and edit draft responses |
+| `sst:close` | Close evaluations after all applicable items are answered |
+| `sst:manage` | Manage corrective action plans and delete draft evaluations |
+| `sst:evaluate_acompanamiento` | Evaluate conductor-leader accompaniment sections for new-worker evaluations |
 
 Scope: evaluations are scoped to the user's `worksiteIds`. Global-role users see all worksites.
 
@@ -138,7 +141,7 @@ Scope: evaluations are scoped to the user's `worksiteIds`. Global-role users see
 | `getEvaluation(id)` | Returns evaluation header + responses + action plan items |
 | `listEvaluations(filters)` | Paginated list with optional worksite/checklist/status filters |
 | `saveResponses(id, responses)` | Upserts item responses; guards against closed evaluations |
-| `closeEvaluation(id, closingAct)` | Locks evaluation; records final result + efficacy |
+| `closeEvaluation(id, closingAct)` | Validates all applicable items are answered, then locks evaluation; records final result + efficacy |
 | `markFollowup(id, itemIds, dueDate)` | Flags items for follow-up |
 | `saveActionPlanItem(input)` | Creates or updates a corrective action task |
 | `deleteActionPlanItem(id)` | Removes an action plan entry |
@@ -162,8 +165,8 @@ closeEvaluation() ──▶ sst_evaluations (cerrado)
                             │
               ┌─────────────┤
               ▼             ▼
-   computeEfficacy()   sst_followup_items
-   (seguimiento only)  sst_action_plan_items
+   computeEfficacy()   sst_scheduled_followups
+   (seguimiento only)  sst_action_plan
 ```
 
 ---

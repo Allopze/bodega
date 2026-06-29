@@ -73,7 +73,7 @@ async function seedEvaluation(evaluationId = "sst-1") {
     tipo: "nuevo",
     fechaEvaluacion: "2026-06-19",
     estado: "borrador",
-    cargosJson: ["conductor"],
+    cargosJson: ["conductor_ampliroll"],
     createdAt: "2026-06-19T00:00:00.000Z",
     updatedAt: "2026-06-19T00:00:00.000Z",
   })
@@ -129,5 +129,92 @@ describe("deleteEvaluation", () => {
       .where(eq(schema.sstEvaluations.id, "sst-1"))
       .limit(1)
     expect(evaluation).toBeTruthy()
+  })
+
+  it("rejects deleting a closed evaluation and preserves its evidence", async () => {
+    await seedEvaluation()
+    await inMemoryDb
+      .update(schema.sstEvaluations)
+      .set({ estado: "cerrado" })
+      .where(eq(schema.sstEvaluations.id, "sst-1"))
+    const { deleteEvaluation } = await import("@/lib/services/sst")
+
+    await expect(deleteEvaluation("sst-1", ["ws-1"]))
+      .rejects.toThrow("cerrada")
+
+    expect(await inMemoryDb.select().from(schema.sstEvaluations)).toHaveLength(1)
+    expect(await inMemoryDb.select().from(schema.sstResponses)).toHaveLength(1)
+    expect(await inMemoryDb.select().from(schema.sstScheduledFollowups)).toHaveLength(1)
+    expect(await inMemoryDb.select().from(schema.sstActionPlan)).toHaveLength(1)
+  })
+})
+
+describe("closeEvaluation", () => {
+  it("rejects closing when applicable checklist items are unanswered", async () => {
+    await seedEvaluation()
+    const { closeEvaluation } = await import("@/lib/services/sst")
+
+    await expect(closeEvaluation("sst-1", { evaluationId: "sst-1" }, ["ws-1"]))
+      .rejects.toThrow("sin responder")
+
+    const [evaluation] = await inMemoryDb
+      .select()
+      .from(schema.sstEvaluations)
+      .where(eq(schema.sstEvaluations.id, "sst-1"))
+      .limit(1)
+    expect(evaluation?.estado).toBe("borrador")
+  })
+})
+
+describe("markWeekCompleted", () => {
+  it("rejects completing a weekly evaluation before its unlock date", async () => {
+    await seedEvaluation()
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    await inMemoryDb.insert(schema.sstWeeklyEvaluations).values({
+      id: "week-1",
+      evaluationId: "sst-1",
+      semana: 1,
+      fechaDesbloqueo: tomorrow,
+      estado: "pendiente",
+      fechaCompletada: null,
+      alertSentAt: null,
+    })
+    const { markWeekCompleted } = await import("@/lib/services/sst")
+
+    await expect(markWeekCompleted("week-1", ["ws-1"]))
+      .rejects.toThrow("bloqueada")
+
+    const [week] = await inMemoryDb
+      .select()
+      .from(schema.sstWeeklyEvaluations)
+      .where(eq(schema.sstWeeklyEvaluations.id, "week-1"))
+      .limit(1)
+    expect(week?.estado).toBe("pendiente")
+    expect(week?.fechaCompletada).toBeNull()
+  })
+})
+
+describe("saveActionPlanItem", () => {
+  it("allows continuing the corrective action plan after the evaluation is closed", async () => {
+    await seedEvaluation()
+    await inMemoryDb
+      .update(schema.sstEvaluations)
+      .set({ estado: "cerrado" })
+      .where(eq(schema.sstEvaluations.id, "sst-1"))
+    const { saveActionPlanItem } = await import("@/lib/services/sst")
+
+    const item = await saveActionPlanItem({
+      evaluationId: "sst-1",
+      n: 2,
+      hallazgo: "Hallazgo posterior",
+      accion: "Revisar control",
+      responsable: "Prevencionista",
+      plazo: "2026-07-05",
+      estado: "pendiente",
+    }, ["ws-1"])
+
+    expect(item.id).toBeTruthy()
+    const rows = await inMemoryDb.select().from(schema.sstActionPlan)
+    expect(rows).toHaveLength(2)
   })
 })

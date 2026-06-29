@@ -71,6 +71,14 @@ export interface ItemRow {
   productName:         string
   showAttrs:           boolean
   cotizaciones:        PendingCotizacion[]
+  // Equipment data — only used by quotation types (repuestos/servicios).
+  // Persisted as request item attributes via {REPUESTO,SERVICE}_ATTRIBUTE_NAMES.
+  partNumber:          string
+  location:            string
+  equipmentName:       string
+  patent:              string
+  brand:               string
+  model:               string
 }
 
 export interface PendingCotizacion {

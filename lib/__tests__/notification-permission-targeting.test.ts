@@ -19,14 +19,16 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-import { getUserIdsWithPermission } from "@/lib/services/notifications"
+import { getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 
 describe("getUserIdsWithPermission", () => {
   beforeEach(async () => {
     await inMemoryDb.delete(schema.userPermissions)
     await inMemoryDb.delete(schema.userRoles)
+    await inMemoryDb.delete(schema.worksiteUsers)
     await inMemoryDb.delete(schema.rolePermissions)
     await inMemoryDb.delete(schema.users)
+    await inMemoryDb.delete(schema.worksites)
     await inMemoryDb.delete(schema.roles)
     await inMemoryDb.delete(schema.permissions)
   })
@@ -160,6 +162,7 @@ describe("getUserIdsWithPermission", () => {
 
     await inMemoryDb.insert(schema.userRoles).values({ userId: "u-role", roleId: "rol-jefa" })
     await inMemoryDb.insert(schema.userRoles).values({ userId: "u-both", roleId: "rol-jefa" })
+    await inMemoryDb.insert(schema.userRoles).values({ userId: "u-inactive", roleId: "rol-jefa" })
     await inMemoryDb.insert(schema.userPermissions).values({ userId: "u-direct", permissionId: "perm-oc" })
     await inMemoryDb.insert(schema.userPermissions).values({ userId: "u-both", permissionId: "perm-oc" })
     await inMemoryDb.insert(schema.userPermissions).values({ userId: "u-inactive", permissionId: "perm-oc" })
@@ -169,6 +172,100 @@ describe("getUserIdsWithPermission", () => {
     expect(ids).toContain("u-role")
     expect(ids).toContain("u-direct")
     expect(ids).toContain("u-both")
+    expect(ids).not.toContain("u-inactive")
+  })
+
+  it("filters permission recipients to global users and users assigned to the target worksite", async () => {
+    const now = new Date().toISOString()
+
+    await inMemoryDb.insert(schema.permissions).values({
+      id: "perm-ppa-review",
+      name: "ppa:review",
+      description: null,
+      module: "ppa",
+    })
+    await inMemoryDb.insert(schema.roles).values([
+      {
+        id: "rol-reviewer-global",
+        name: "prevencionista_global",
+        label: "Prevencionista global",
+        isGlobal: true,
+      },
+      {
+        id: "rol-reviewer-faena",
+        name: "prevencionista_faena",
+        label: "Prevencionista faena",
+        isGlobal: false,
+      },
+    ])
+    await inMemoryDb.insert(schema.rolePermissions).values([
+      {
+        roleId: "rol-reviewer-global",
+        permissionId: "perm-ppa-review",
+      },
+      {
+        roleId: "rol-reviewer-faena",
+        permissionId: "perm-ppa-review",
+      },
+    ])
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: "ws-1", name: "Faena Uno", code: "F1", isActive: true },
+      { id: "ws-2", name: "Faena Dos", code: "F2", isActive: true },
+    ])
+    await inMemoryDb.insert(schema.users).values([
+      {
+        id: "u-global",
+        name: "Global",
+        email: "global@chome.cl",
+        hashedPassword: "$2a$12$test",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "u-ws1",
+        name: "Faena 1",
+        email: "ws1@chome.cl",
+        hashedPassword: "$2a$12$test",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "u-ws2",
+        name: "Faena 2",
+        email: "ws2@chome.cl",
+        hashedPassword: "$2a$12$test",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "u-inactive",
+        name: "Inactive",
+        email: "inactive-review@chome.cl",
+        hashedPassword: "$2a$12$test",
+        isActive: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
+    await inMemoryDb.insert(schema.userRoles).values([
+      { userId: "u-global", roleId: "rol-reviewer-global" },
+      { userId: "u-ws1", roleId: "rol-reviewer-faena" },
+      { userId: "u-ws2", roleId: "rol-reviewer-faena" },
+      { userId: "u-inactive", roleId: "rol-reviewer-faena" },
+    ])
+    await inMemoryDb.insert(schema.worksiteUsers).values([
+      { userId: "u-ws1", worksiteId: "ws-1", isPrimary: true },
+      { userId: "u-ws2", worksiteId: "ws-2", isPrimary: true },
+      { userId: "u-inactive", worksiteId: "ws-1", isPrimary: true },
+    ])
+
+    const ids = await getUserIdsWithPermissionForWorksite("ppa:review", "ws-1")
+
+    expect(ids).toEqual(expect.arrayContaining(["u-global", "u-ws1"]))
+    expect(ids).not.toContain("u-ws2")
     expect(ids).not.toContain("u-inactive")
   })
 })

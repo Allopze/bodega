@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { requirePermission } from "@/lib/auth/can"
 import { getFleetOverview } from "@/lib/services/fleet"
+import { FleetFilters } from "./fleet-filters"
 
 export const metadata: Metadata = { title: "Flota" }
 
@@ -120,32 +121,11 @@ export default async function FlotaPage({
           <CardTitle className="text-base">Filtros avanzados</CardTitle>
         </CardHeader>
         <CardContent>
-          <form method="GET" className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <select name="estado" defaultValue="" className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Todos los estados</option>
-              {operationalStatuses.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <select name="responsable" defaultValue="" className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Todos los responsables</option>
-              {responsibleUsers.map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
-            <select name="vencimiento" defaultValue="" className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Sin filtro de vencimiento</option>
-              <option value="vencidos">Documentos vencidos</option>
-              <option value="proximos">Próximos a vencer (30 días)</option>
-              <option value="al-dia">Al día</option>
-            </select>
-            <div className="flex justify-end gap-2">
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/flota">Limpiar filtros</Link>
-              </Button>
-              <Button type="submit" size="sm">Filtrar</Button>
-            </div>
-          </form>
+          <FleetFilters
+            operationalStatuses={operationalStatuses}
+            responsibleUsers={responsibleUsers}
+            current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento }}
+          />
         </CardContent>
       </Card>
 

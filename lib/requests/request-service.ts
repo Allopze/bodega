@@ -92,6 +92,13 @@ export function createRequestService(config: RequestModuleConfig) {
           updatedAt:    now,
         }).where(eq(purchaseRequests.id, requestId))
 
+        // A-08: clean up approval_decisions before deleting items.
+        // approval_decisions does NOT cascade on item delete, so leaving
+        // orphaned rows would break referential integrity.
+        await tx.delete(approvalDecisions).where(
+          eq(approvalDecisions.requestId, requestId),
+        )
+
         await tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, requestId))
       } else {
         const code = await nextCodeTx(tx, codePrefix, year)

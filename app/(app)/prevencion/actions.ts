@@ -84,6 +84,17 @@ export async function createEvaluationAction(
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds = scopeToIds(scope)
+  const canCreateFullEvaluation = can(session, "sst:create")
+  const canEvaluateAcompanamiento = can(session, "sst:evaluate_acompanamiento")
+
+  if (!canCreateFullEvaluation && canEvaluateAcompanamiento) {
+    if (input.definicionCode !== "trabajador_nuevo" || input.tipo !== "nuevo") {
+      return {
+        ok: false,
+        message: "El conductor líder solo puede iniciar evaluaciones de trabajador nuevo para acompañamiento.",
+      }
+    }
+  }
 
   // Scope guard: user must have access to the target worksite
   if (worksiteIds !== 'all' && !worksiteIds.includes(input.worksiteId)) {
@@ -258,7 +269,7 @@ export async function getFollowupsAction(
 export async function saveActionPlanItemAction(
   input: z.infer<typeof sstActionPlanItemSchema>
 ): Promise<ActionState & { data?: { id: string } }> {
-  const { session, error } = await guardPermission("sst:create")
+  const { session, error } = await guardPermission("sst:manage")
   if (error) return error
 
   const scope = resolveWorksiteScope(session)

@@ -101,7 +101,6 @@ export default async function EvaluacionDetailPage({ params }: Props) {
         worksiteName={worksiteName}
         cargoLabels={cargoLabels}
         canClose={canClose}
-        canEdit={canEdit}
         canManage={canManage}
         canViewFullEvaluation={canViewFullEvaluation}
         sectionAccess={sectionAccess}

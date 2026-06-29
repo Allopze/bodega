@@ -10,7 +10,16 @@
 
 import { eq, and, desc, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { notifications, rolePermissions, userPermissions, permissions, users } from "@/db/schema"
+import {
+  notifications,
+  permissions,
+  rolePermissions,
+  roles,
+  userPermissions,
+  userRoles,
+  users,
+  worksiteUsers,
+} from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { NotificationType } from "@/db/schema/audit"
 import { sendEmail, sendBatchEmails, getAppBaseUrl } from "@/lib/email/smtp"
@@ -237,7 +246,17 @@ export async function getUserIdsWithPermission(permissionName: string): Promise<
     const userRole = await db.query.userRoles.findMany({
       where: (ur, { inArray }) => inArray(ur.roleId, roleIds),
     })
-    for (const ur of userRole) userIds.add(ur.userId)
+    const roleUserIds = [...new Set(userRole.map((ur) => ur.userId))]
+    if (roleUserIds.length > 0) {
+      const activeRoleUsers = await db.query.users.findMany({
+        where: (u, { and, inArray }) => and(
+          inArray(u.id, roleUserIds),
+          eq(u.isActive, true),
+        ),
+        columns: { id: true },
+      })
+      for (const u of activeRoleUsers) userIds.add(u.id)
+    }
   }
 
   // Users with direct permission grants (userPermissions table)
@@ -258,6 +277,51 @@ export async function getUserIdsWithPermission(permissionName: string): Promise<
   }
 
   return [...userIds]
+}
+
+export async function getUserIdsWithPermissionForWorksite(
+  permissionName: string,
+  worksiteId: string,
+): Promise<string[]> {
+  if (!worksiteId) return []
+
+  const candidateIds = await getUserIdsWithPermission(permissionName)
+  if (candidateIds.length === 0) return []
+
+  const activeScopeRows = await db
+    .select({
+      userId: users.id,
+      assignedWorksiteId: worksiteUsers.worksiteId,
+    })
+    .from(users)
+    .leftJoin(
+      worksiteUsers,
+      and(
+        eq(worksiteUsers.userId, users.id),
+        eq(worksiteUsers.worksiteId, worksiteId),
+      ),
+    )
+    .where(and(
+      inArray(users.id, candidateIds),
+      eq(users.isActive, true),
+    ))
+
+  const globalRoleRows = await db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(
+      inArray(userRoles.userId, candidateIds),
+      eq(roles.isGlobal, true),
+    ))
+
+  const globalUserIds = new Set(globalRoleRows.map((row) => row.userId))
+
+  return [...new Set(
+    activeScopeRows
+      .filter((row) => globalUserIds.has(row.userId) || row.assignedWorksiteId === worksiteId)
+      .map((row) => row.userId)
+  )]
 }
 
 /* ── Read/mark read ──────────────────────────────────────────────────────────── */
