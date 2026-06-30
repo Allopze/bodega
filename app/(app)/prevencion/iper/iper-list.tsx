@@ -15,6 +15,8 @@ interface Props {
   matrices: IperMatrix[]
   worksites: { id: string; name: string }[]
   canManage: boolean
+  showForm: boolean
+  onShowFormChange: (show: boolean) => void
 }
 
 const RISK_BADGE: Record<string, "default" | "warning" | "danger" | "success"> = {
@@ -29,8 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
   closed: "Cerrada",
 }
 
-export function IperList({ matrices, worksites, canManage }: Props) {
-  const [showForm, setShowForm] = React.useState(false)
+export function IperList({ matrices, worksites, canManage, showForm, onShowFormChange }: Props) {
   const worksiteName = React.useCallback(
     (id: string) => worksites.find((w) => w.id === id)?.name ?? id,
     [worksites],
@@ -41,19 +42,19 @@ export function IperList({ matrices, worksites, canManage }: Props) {
       <div className="flex flex-col gap-4">
         <EmptyState
           icon={<WarningDiamond size={28} />}
-          title="Sin matrices IPER"
-          description="No hay matrices IPER registradas para tu alcance."
+          title="Sin matrices de riesgos"
+          description="No hay matrices de identificación de peligros y evaluación de riesgos registradas para tu alcance."
           action={
             canManage ? (
-              <Button onClick={() => setShowForm(true)}>
+              <Button onClick={() => onShowFormChange(true)}>
                 <Plus size={16} className="mr-1" />
-                Nueva matriz IPER
+                Nueva matriz de riesgos
               </Button>
             ) : undefined
           }
         />
         {canManage && showForm ? (
-          <IperForm worksites={worksites} onDone={() => setShowForm(false)} />
+          <IperForm worksites={worksites} onDone={() => onShowFormChange(false)} />
         ) : null}
       </div>
     )
@@ -61,17 +62,8 @@ export function IperList({ matrices, worksites, canManage }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {canManage ? (
-        <div className="flex justify-end">
-          <Button onClick={() => setShowForm((s) => !s)}>
-            <Plus size={16} className="mr-1" />
-            {showForm ? "Cancelar" : "Nueva matriz IPER"}
-          </Button>
-        </div>
-      ) : null}
-
       {canManage && showForm ? (
-        <IperForm worksites={worksites} onDone={() => setShowForm(false)} />
+        <IperForm worksites={worksites} onDone={() => onShowFormChange(false)} />
       ) : null}
 
       <TableRoot>

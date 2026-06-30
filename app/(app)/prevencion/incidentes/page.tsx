@@ -7,10 +7,8 @@ import { listScopedWorksites } from "@/lib/services/ppa"
 import { db } from "@/db"
 import { workers } from "@/db/schema/worksites"
 import { inArray } from "drizzle-orm"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { PreventionExportButton } from "@/components/prevention/export-button"
-import { IncidentList } from "./incident-list"
+import { IncidentPanel } from "./incident-panel"
 
 export const metadata: Metadata = { title: "Incidentes" }
 
@@ -47,19 +45,7 @@ export default async function IncidentesPage() {
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Incidentes"
-        description="Registro e investigación de accidentes, incidentes, cuasi accidentes y enfermedad profesional."
-        breadcrumb={
-          <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Prevención", href: "/prevencion" },
-            { label: "Incidentes" },
-          ]} />
-        }
-        actions={<PreventionExportButton href="/api/prevencion/incidentes/export" label="Exportar Incidentes" />}
-      />
-      <IncidentList
+      <IncidentPanel
         incidents={incidentsWithWorker}
         worksites={worksites}
         canManage={canManage}

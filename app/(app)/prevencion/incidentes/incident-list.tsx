@@ -28,6 +28,8 @@ interface Props {
   worksites: { id: string; name: string }[]
   canManage: boolean
   canClose: boolean
+  showForm: boolean
+  onShowFormChange: (show: boolean) => void
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -50,9 +52,8 @@ const STATUS_LABEL: Record<string, string> = {
   closed: "Cerrado",
 }
 
-export function IncidentList({ incidents, worksites, canManage }: Props) {
+export function IncidentList({ incidents, worksites, canManage, showForm, onShowFormChange }: Props) {
   const router = useRouter()
-  const [showForm, setShowForm] = React.useState(false)
 
   const worksiteName = React.useCallback(
     (id: string) => worksites.find((w) => w.id === id)?.name ?? id,
@@ -73,7 +74,7 @@ export function IncidentList({ incidents, worksites, canManage }: Props) {
           description="No hay eventos de seguridad registrados para tu alcance."
           action={
             canManage ? (
-              <Button onClick={() => setShowForm(true)}>
+              <Button onClick={() => onShowFormChange(true)}>
                 <Plus size={16} className="mr-1" />
                 Registrar incidente
               </Button>
@@ -81,7 +82,7 @@ export function IncidentList({ incidents, worksites, canManage }: Props) {
           }
         />
         {canManage && showForm ? (
-          <IncidentForm worksites={worksites} onDone={() => setShowForm(false)} />
+          <IncidentForm worksites={worksites} onDone={() => onShowFormChange(false)} />
         ) : null}
       </div>
     )
@@ -89,17 +90,8 @@ export function IncidentList({ incidents, worksites, canManage }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {canManage ? (
-        <div className="flex justify-end">
-          <Button onClick={() => setShowForm((s) => !s)}>
-            <Plus size={16} className="mr-1" />
-            {showForm ? "Cancelar" : "Registrar incidente"}
-          </Button>
-        </div>
-      ) : null}
-
       {canManage && showForm ? (
-        <IncidentForm worksites={worksites} onDone={() => setShowForm(false)} />
+        <IncidentForm worksites={worksites} onDone={() => onShowFormChange(false)} />
       ) : null}
 
       <TableRoot>

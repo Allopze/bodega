@@ -5,9 +5,8 @@ import {
   TableRoot, Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Certificate, Plus } from "@phosphor-icons/react"
+import { Certificate } from "@phosphor-icons/react"
 import type { WorkerTrainingAssignment, TrainingCourse } from "@/db/schema"
 import { TrainingForm } from "./training-form"
 
@@ -26,10 +25,11 @@ interface Props {
   expired: EnrichedExpired[]
   courses: TrainingCourse[]
   canManage: boolean
+  showForm: boolean
+  onShowFormChange: (show: boolean) => void
 }
 
-export function TrainingList({ expired, courses, canManage }: Props) {
-  const [showForm, setShowForm] = React.useState(false)
+export function TrainingList({ expired, courses, canManage, showForm, onShowFormChange }: Props) {
   const [filter] = React.useState<"" | "vencidas">(expired.length > 0 ? "vencidas" : "")
 
   const rows = React.useMemo(() => {
@@ -49,17 +49,8 @@ export function TrainingList({ expired, courses, canManage }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {canManage ? (
-        <div className="flex justify-end">
-          <Button onClick={() => setShowForm((s) => !s)}>
-            <Plus size={16} className="mr-1" />
-            {showForm ? "Cancelar" : "Asignar capacitación"}
-          </Button>
-        </div>
-      ) : null}
-
       {canManage && showForm ? (
-        <TrainingForm courses={courses} onDone={() => setShowForm(false)} />
+        <TrainingForm courses={courses} onDone={() => onShowFormChange(false)} />
       ) : null}
 
       <section>

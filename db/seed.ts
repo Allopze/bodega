@@ -13,6 +13,8 @@ import { eq, or, inArray, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../lib/auth/system-rbac"
 import { seedNuevosRoles } from "./seed/nuevos-roles"
+import { loadPdtpCatalog } from "../lib/services/prevention-pdtp"
+import pdtpCatalog2026 from "./seed/pdtp-catalog-2026.json"
 
 loadEnvConfig(process.cwd())
 
@@ -186,6 +188,7 @@ async function main() {
     console.log(`  Admin: ${adminEmail} (password ${process.env.SEED_ADMIN_PASSWORD ? "definido" : "default chome2026"})`)
     console.log(`  Faenas: ${workerData.worksites.length} · Trabajadores: ${workerData.workers.length} (${workerData.skippedDuplicateRuts} RUT duplicado omitido)`)
     console.log(`  Catálogo EPP: ${EPP_CATALOG_ITEMS.length} productos · ${EPP_SUPPLIERS.length} proveedores`)
+    console.log(`  Catálogo PDTP 2026: ${pdtpCatalog2026.activities.length} actividades · ${pdtpCatalog2026.objectives.length} objetivos`)
     console.log("\n[DRY RUN] Validación completada sin errores.")
     return
   }
@@ -420,6 +423,18 @@ async function main() {
   await seedDefaultTemplates()
   console.log("  Plantillas de correo cargadas.")
 
+  /* ── PDTP SG-SST 2026 ──────────────────────────────────────────────── */
+  console.log("")
+  console.log("  Sembrando catalogo PDTP SG-SST 2026...")
+  await loadPdtpCatalog({
+    year: 2026,
+    version: 1,
+    title: "Programa de Trabajo Preventivo SG-SST 2026",
+    catalog: pdtpCatalog2026,
+    userId: adminId,
+  }, db)
+  console.log(`  Catálogo PDTP cargado: ${pdtpCatalog2026.activities.length} actividades, ${pdtpCatalog2026.objectives.length} objetivos.`)
+
   console.log("")
   console.log("Seed base completado.")
   console.log("")
@@ -431,6 +446,7 @@ async function main() {
   console.log(`  Trabajadores cargados: ${seedWorkerData.workers.length} (${seedWorkerData.skippedDuplicateRuts} RUT duplicado omitido).`)
   console.log(`  Nuevos roles: ${nuevosRolesResult.created} usuarios creados, ${nuevosRolesResult.assignedRoles} roles asignados, ${nuevosRolesResult.assignedWorksites} faenas asignadas.`)
   console.log(`  Catálogo EPP cargado: ${EPP_CATALOG_ITEMS.length} productos, ${EPP_SUPPLIERS.length} proveedores.`)
+  console.log(`  Catálogo PDTP 2026 cargado: ${pdtpCatalog2026.activities.length} actividades.`)
   console.log("  No se cargaron stock ni solicitudes demo.")
 }
 

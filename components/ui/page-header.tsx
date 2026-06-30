@@ -20,14 +20,15 @@ interface PageHeaderProps {
 export function PageHeader({ title, description, actions, headerActions, breadcrumb, className, eyebrow }: PageHeaderProps) {
   const pathname = usePathname()
   const { setHeader } = useShellHeader()
+  const desktopActions = headerActions ?? actions
 
   React.useEffect(() => {
-    setHeader({ title, description, breadcrumb, actions: headerActions })
+    setHeader({ title, description, breadcrumb, actions: desktopActions })
 
     return () => {
       setHeader({})
     }
-  }, [breadcrumb, description, headerActions, pathname, setHeader, title])
+  }, [breadcrumb, description, desktopActions, pathname, setHeader, title])
 
   return (
     <div className={cn(actions ? "pb-2 mb-3" : "sr-only", className)}>
@@ -46,7 +47,7 @@ export function PageHeader({ title, description, actions, headerActions, breadcr
           )}
         </div>
         {actions && (
-          <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
+          <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0 lg:hidden">
             {actions}
           </div>
         )}

@@ -72,3 +72,15 @@ export const trainingAssignSchema = z.object({
   score:       z.coerce.number().int().min(0).max(100).optional(),
   evidenceUrl: z.string().optional().or(z.literal("")),
 })
+
+export const pdtpExecutionSchema = z.object({
+  activityId:       z.string().min(1, "Actividad requerida"),
+  worksiteId:       z.string().min(1, "Faena requerida"),
+  year:             z.coerce.number().int().min(2026).max(2100),
+  month:            z.coerce.number().int().min(1).max(12),
+  week:             z.coerce.number().int().min(1).max(4),
+  executedQuantity: z.coerce.number().min(0),
+  evidenceText:     z.string().max(2000).optional().or(z.literal("")),
+  evidenceUrl:      z.string().max(500).optional().or(z.literal("")),
+  evidencePhotos:   z.array(z.string().max(500)).default([]),
+})

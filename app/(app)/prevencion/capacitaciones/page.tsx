@@ -9,10 +9,8 @@ import {
 import { db } from "@/db"
 import { workers, trainingCourses } from "@/db/schema"
 import { inArray } from "drizzle-orm"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { PreventionExportButton } from "@/components/prevention/export-button"
-import { TrainingList } from "./training-list"
+import { TrainingPanel } from "./training-panel"
 
 export const metadata: Metadata = { title: "Capacitaciones" }
 
@@ -59,19 +57,7 @@ export default async function CapacitacionesPage() {
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Capacitaciones"
-        description="Cursos, asignaciones, vencimientos y competencias vencidas por faena."
-        breadcrumb={
-          <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Prevención", href: "/prevencion" },
-            { label: "Capacitaciones" },
-          ]} />
-        }
-        actions={<PreventionExportButton href="/api/prevencion/capacitaciones/export" label="Exportar Capacitaciones" />}
-      />
-      <TrainingList
+      <TrainingPanel
         expired={enriched}
         courses={courses}
         canManage={canManage}

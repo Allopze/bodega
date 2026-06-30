@@ -28,3 +28,7 @@ export type RoleSlug =
   | "prevencionista_faena"
   | "jefe_mantencion"
   | "conductor_lider"
+  | "admin_contrato"
+  | "supervisor_faena"
+  | "jefe_terreno"
+  | "cphs"

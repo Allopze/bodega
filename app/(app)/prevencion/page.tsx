@@ -38,7 +38,7 @@ export default async function PrevencionPage() {
             { label: "Evaluaciones SST" },
           ]} />
         }
-        headerActions={
+        actions={
           canCreate ? (
             <Button asChild>
               <Link href="/prevencion/nueva">Nueva Evaluación</Link>

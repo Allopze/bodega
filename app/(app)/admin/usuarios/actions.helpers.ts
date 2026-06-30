@@ -58,7 +58,15 @@ export async function validateRoleWorksiteRules(
       },
     }
   }
-  const FAENA_SCOPED_ROLES = ["solicitante_faena", "prevencionista_faena", "conductor_lider"]
+  const FAENA_SCOPED_ROLES = [
+    "solicitante_faena",
+    "prevencionista_faena",
+    "conductor_lider",
+    "admin_contrato",
+    "supervisor_faena",
+    "jefe_terreno",
+    "cphs",
+  ]
   const isFaenaScoped = selected.some((role) => FAENA_SCOPED_ROLES.includes(role.name))
   if (isFaenaScoped && worksiteAssignments.length === 0) {
     return {

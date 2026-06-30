@@ -1,6 +1,6 @@
 /**
  * lib/services/prevention-iper.ts
- * IPER/MIPER — lógica de negocio (sin Server Actions ni UI).
+ * Matriz de riesgos — lógica de negocio (sin Server Actions ni UI).
  *
  * Convención de scope en este módulo: `string[] | "all"`.
  *   - "all"      → rol global, ve todas las faenas.

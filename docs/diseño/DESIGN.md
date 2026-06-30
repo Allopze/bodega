@@ -148,7 +148,15 @@ Toda página usa `PageHeader` consistente:
 - Opcional: eyebrow (`text-eyebrow`)
 - Título: `text-h1`, 22px semibold
 - Descripción: `text-sub`, max 68 caracteres de ancho
-- Acciones: alineadas a la derecha en desktop, full-width abajo en mobile
+- Acciones primarias de página (`Crear`, `Nueva`, `Exportar`, `Importar`, `Aprobar`, etc.):
+  declarar en `PageHeader actions`. En desktop se muestran en el TopBar/header superior;
+  en mobile se muestran bajo el título como fila full-width. No dupliques esas acciones
+  dentro de filtros, tablas o paneles de contenido salvo estados vacíos donde el CTA
+  contextual sea la única forma de avanzar.
+- Nombres de módulos, navegación y botones: evitar etiquetas compuestas exclusivamente
+  por siglas. Cuando una sigla sea necesaria por dominio, acompañarla con un nombre
+  descriptivo: `Matriz de riesgos` en vez de `IPER/MIPER`, `Programa preventivo SG-SST`
+  en vez de `PDTP SG-SST`, `Comité Paritario de Higiene y Seguridad` en vez de `CPHS`.
 - Borde inferior: `border-[var(--color-rule)]`
 
 ### Grupos de layout

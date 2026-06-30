@@ -133,7 +133,7 @@ export function TopBar({
           </div>
         )}
         {header.actions && (
-          <div className="hidden shrink-0 items-center gap-1.5 2xl:flex">
+          <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
             {header.actions}
           </div>
         )}
