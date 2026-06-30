@@ -3,7 +3,7 @@
  * Programa de Trabajo Preventivo SG-SST: carga de catálogo y base del cronograma.
  */
 
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, ne } from "drizzle-orm"
 import { db, type DB } from "@/db"
 import {
   pdtpActivities,
@@ -552,11 +552,12 @@ export async function getPdtpComplianceIndicators(
   year: number,
   worksiteId?: string,
 ): Promise<PdtpComplianceIndicators | null> {
-  // 1. Find the program for this year (latest version, prefer active)
-  const [program] = await db.select().from(pdtpPrograms)
+  // 1. Find the program for this year (prefer active over latest version)
+  const programs = await db.select().from(pdtpPrograms)
     .where(eq(pdtpPrograms.year, year))
     .orderBy(desc(pdtpPrograms.version))
-    .limit(1)
+    .limit(10)  // get a few to check for active
+  const program = programs.find((p) => p.status === "active") ?? programs[0]
   if (!program) return null
 
   // 2. Get ALL activity IDs for this program (across all sheets = pdtp_general)
@@ -578,6 +579,11 @@ export async function getPdtpComplianceIndicators(
   const allActivityIds = activityRows.map((row) => row.id)
   const { scheduleRows, executionRows } = await loadProgramScheduleAndExecutions(allActivityIds, year, worksiteId)
 
+  // Only count executions that are submitted or approved (not draft)
+  const validExecutionRows = executionRows.filter(
+    (row) => row.status === "submitted" || row.status === "approved"
+  )
+
   // 3. Count planned activities per month (distinct activityId where plannedQuantity > 0)
   const plannedByMonth = new Array<Set<string>>(12).fill(null as unknown as Set<string>)
     .map(() => new Set<string>())
@@ -587,10 +593,10 @@ export async function getPdtpComplianceIndicators(
     }
   }
 
-  // 4. Count executed activities per month (distinct activityId where executedQuantity > 0)
+  // 4. Count executed activities per month (distinct activityId where executedQuantity > 0, status submitted or approved)
   const executedByMonth = new Array<Set<string>>(12).fill(null as unknown as Set<string>)
     .map(() => new Set<string>())
-  for (const row of executionRows) {
+  for (const row of validExecutionRows) {
     if (row.executedQuantity > 0) {
       executedByMonth[row.month - 1]!.add(row.activityId)
     }
@@ -677,10 +683,14 @@ export async function activatePdtpProgram(programId: string, userId: string) {
 
   const now = new Date().toISOString()
 
-  // Degrade any other active version for the same year to draft
+  // Degrade any other active version for the same year to draft (exclude the program being activated)
   await db.update(pdtpPrograms)
     .set({ status: "draft", updatedAt: now })
-    .where(and(eq(pdtpPrograms.year, program.year), eq(pdtpPrograms.status, "active")))
+    .where(and(
+      eq(pdtpPrograms.year, program.year),
+      eq(pdtpPrograms.status, "active"),
+      ne(pdtpPrograms.id, programId),
+    ))
 
   const [updated] = await db.update(pdtpPrograms)
     .set({ status: "active", updatedAt: now })
