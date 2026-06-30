@@ -2,13 +2,18 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getPdtpSheetView } from "@/lib/services/prevention-pdtp"
+import {
+  getPdtpSheetView,
+  getPdtpComplianceIndicators,
+} from "@/lib/services/prevention-pdtp"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PreventionExportButton } from "@/components/prevention/export-button"
 import { PdtpSheetPicker, PdtpSheetTable, PdtpWorksitePicker } from "./pdtp-sheet-table"
+import { PdtpIndicatorsPanel } from "./pdtp-indicators-panel"
+import { approvePdtpProgramJdprAction, signPdtpProgramLegalAction, activatePdtpProgramAction } from "./actions"
 
 export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
 
@@ -45,6 +50,9 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
     ? requestedWorksite
     : worksites[0]?.id
   const view = await getPdtpSheetView(2026, sheetCode, selectedWorksiteId)
+  const indicators = await getPdtpComplianceIndicators(2026, selectedWorksiteId)
+  const canApprove = can(session, "prevention:pdtp:approve")
+  const canSignLegal = can(session, "prevention:pdtp:sign_legal")
   const canManage = can(session, "prevention:pdtp:manage")
   const exportHref = `/api/prevencion/pdtp/export?hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}`
 
@@ -64,6 +72,18 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
       />
 
       <div className="space-y-4">
+        {/* Program lifecycle status block */}
+        {view?.program && (
+          <PdtpProgramStatusBlock
+            program={view.program}
+            canApprove={canApprove}
+            canSignLegal={canSignLegal}
+          />
+        )}
+
+        {/* Compliance indicators */}
+        {indicators && <PdtpIndicatorsPanel data={indicators} />}
+
         <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} />
         <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} />
 
@@ -79,6 +99,73 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
         )}
       </div>
     </PageContainer>
+  )
+}
+
+type PdtpProgramStatusBlockProps = {
+  program: {
+    id: string
+    status: string
+    elaboratedByName: string
+    elaboratedByTitle: string
+    approvedByJdprAt: string | null
+    approvedByLegalAt: string | null
+  }
+  canApprove: boolean
+  canSignLegal: boolean
+}
+
+function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgramStatusBlockProps) {
+  const isActive = program.status === "active"
+  const hasJdpr = !!program.approvedByJdprAt
+  const hasLegal = !!program.approvedByLegalAt
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm">
+      <span className="text-[var(--color-text-subtle)]">Elaborado por:</span>
+      <span className="font-medium">{program.elaboratedByName}</span>
+      <span className="text-[var(--color-text-faint)]">·</span>
+
+      {hasJdpr ? (
+        <span className="text-[var(--color-success)]">✓ Aprobado JDPR</span>
+      ) : canApprove && !isActive ? (
+        <form action={approvePdtpProgramJdprAction.bind(null, program.id)}>
+          <button type="submit" className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]">
+            Aprobar (JDPR)
+          </button>
+        </form>
+      ) : (
+        <span className="text-[var(--color-text-faint)]">Pendiente aprobación JDPR</span>
+      )}
+
+      <span className="text-[var(--color-text-faint)]">·</span>
+
+      {hasLegal ? (
+        <span className="text-[var(--color-success)]">✓ Firmado Legal</span>
+      ) : canSignLegal && !isActive ? (
+        <form action={signPdtpProgramLegalAction.bind(null, program.id)}>
+          <button type="submit" className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]">
+            Firmar (Legal)
+          </button>
+        </form>
+      ) : (
+        <span className="text-[var(--color-text-faint)]">Pendiente firma Legal</span>
+      )}
+
+      <span className="text-[var(--color-text-faint)]">·</span>
+
+      {isActive ? (
+        <span className="font-semibold text-[var(--color-success)]">● Activo</span>
+      ) : hasJdpr && hasLegal && canApprove ? (
+        <form action={activatePdtpProgramAction.bind(null, program.id)}>
+          <button type="submit" className="rounded border border-[var(--color-primary)] bg-[var(--color-primary-tint)] px-2 py-1 text-xs font-medium text-[var(--color-text)]">
+            Activar programa
+          </button>
+        </form>
+      ) : (
+        <span className="text-[var(--color-text-faint)]">Borrador</span>
+      )}
+    </div>
   )
 }
 
