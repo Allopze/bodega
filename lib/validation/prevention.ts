@@ -1,0 +1,74 @@
+import { z } from "zod"
+
+export type { ActionState } from "./masters"
+
+const riskScore = z.coerce.number().int().min(1).max(5)
+
+export const iperMatrixCreateSchema = z.object({
+  worksiteId:    z.string().min(1, "Faena requerida"),
+  code:          z.string().trim().min(1, "Codigo requerido").max(40),
+  version:       z.coerce.number().int().positive("Version requerida"),
+  title:         z.string().trim().min(1, "Titulo requerido").max(160),
+  effectiveFrom: z.string().min(1, "Fecha de vigencia requerida"),
+  effectiveTo:   z.string().optional().or(z.literal("")),
+})
+
+export const iperRiskItemSchema = z.object({
+  matrixId:            z.string().min(1, "Matriz requerida"),
+  process:             z.string().trim().min(1).max(120),
+  task:                z.string().trim().min(1).max(160),
+  hazard:              z.string().trim().min(1).max(200),
+  consequence:         z.string().trim().min(1).max(200),
+  initialProbability:  riskScore,
+  initialSeverity:     riskScore,
+  controls:            z.array(z.string().trim().min(1)).min(1, "Indica al menos un control"),
+  residualProbability: riskScore,
+  residualSeverity:    riskScore,
+  responsible:         z.string().trim().min(1).max(160),
+  requiresTraining:    z.boolean().optional(),
+  requiresPpa:         z.boolean().optional(),
+})
+
+const incidentTypeEnum = z.enum([
+  "accidente",
+  "incidente",
+  "cuasi_accidente",
+  "enfermedad_profesional",
+])
+
+export const preventionIncidentCreateSchema = z.object({
+  worksiteId:     z.string().min(1, "Faena requerida"),
+  workerId:       z.string().optional().or(z.literal("")),
+  type:           incidentTypeEnum,
+  severity:       z.enum(["leve", "moderado", "grave", "fatal"]).default("leve"),
+  occurredAt:     z.string().min(1, "Fecha del evento requerida"),
+  title:          z.string().trim().min(1, "Titulo requerido").max(160),
+  description:    z.string().trim().min(1).max(2000),
+  immediateCause: z.string().max(1000).optional().or(z.literal("")),
+  rootCause:      z.string().max(1000).optional().or(z.literal("")),
+  location:       z.string().max(160).optional().or(z.literal("")),
+})
+
+export const preventionIncidentActionSchema = z.object({
+  incidentId:  z.string().min(1, "Incidente requerido"),
+  description: z.string().trim().min(1).max(1000),
+  responsible: z.string().trim().min(1).max(160),
+  dueDate:     z.string().min(1, "Plazo requerido"),
+})
+
+export const trainingCourseCreateSchema = z.object({
+  code:             z.string().trim().min(1).max(40),
+  name:             z.string().trim().min(1).max(160),
+  validityMonths:   z.coerce.number().int().positive().optional(),
+  requiredForCargo: z.array(z.string().min(1)).default([]),
+})
+
+export const trainingAssignSchema = z.object({
+  courseId:    z.string().min(1, "Curso requerido"),
+  workerId:    z.string().min(1, "Trabajador requerido"),
+  worksiteId:  z.string().min(1, "Faena requerida"),
+  completedAt: z.string().min(1, "Fecha de realizacion requerida"),
+  expiresAt:   z.string().optional().or(z.literal("")),
+  score:       z.coerce.number().int().min(0).max(100).optional(),
+  evidenceUrl: z.string().optional().or(z.literal("")),
+})

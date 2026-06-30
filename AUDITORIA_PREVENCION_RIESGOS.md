@@ -1,7 +1,7 @@
 # Auditoria del modulo de Prevencion de Riesgos
 
-Fecha: 2026-06-29  
-Alcance revisado: `app/(app)/prevencion`, `lib/sst`, `lib/services/sst.ts`, `db/schema/sst.ts`, PPA Digital y piezas EPP relacionadas.
+Fecha: 2026-06-30 (ola IPER/Incidentes/Capacitaciones)
+Alcance revisado: `app/(app)/prevencion`, `lib/sst`, `lib/services/sst.ts`, `db/schema/sst.ts`, PPA Digital, piezas EPP relacionadas y nueva sub-área `modules/prevention` (IPER, incidentes, capacitaciones).
 
 ## Resumen ejecutivo
 
@@ -117,10 +117,7 @@ Estado fix:
 
 ## Faltantes para un modulo completo de prevencion de riesgos
 
-- Matriz IPER/MIPER por faena, proceso, tarea, peligro, riesgo, controles, riesgo residual y responsable.
-- Registro e investigacion de accidentes, incidentes, cuasi accidentes y enfermedades profesionales, con causa raiz, DIAT/DIEP, evidencias y acciones.
 - Inspecciones de seguridad, observaciones conductuales y auditorias SST independientes del onboarding de trabajadores.
-- Gestion de capacitaciones: ODI, RIOHS, charlas, cursos, evaluaciones, vencimientos, asistencia y certificados.
 - Gestion preventiva de EPP mas alla de entrega: matriz EPP por cargo/riesgo, vida util, recambio, evidencia, stock critico por faena.
 - Permisos de trabajo, AST/ART/JSA para tareas criticas.
 - Gestion documental legal: DS 44, DS 594, Ley 16.744, protocolos, versiones, vencimientos y responsables.
@@ -130,6 +127,10 @@ Estado fix:
 - CPHS/comites, reuniones, acuerdos y seguimiento.
 - KPIs preventivos: tasa de frecuencia, gravedad, siniestralidad, dias perdidos, cierres vencidos, reincidencia y cumplimiento por faena.
 - Adjuntos/evidencia y firmas digitales reales para evaluaciones, acciones, inspecciones y capacitaciones.
+
+> Los tres primeros faltantes historicos (matriz IPER/MIPER, registro e investigacion de
+> incidentes, gestion de capacitaciones) fueron atacados en la ola 2026-06-30. Ver
+> "Ola 2026-06-30: IPER + Incidentes + Capacitaciones" mas abajo.
 
 ## Plan de fixes de esta pasada
 
@@ -162,6 +163,112 @@ Estado fix:
 ## Pendientes no cerrados en esta pasada
 
 - No quedan pendientes tecnicos de los hallazgos corregibles listados en esta auditoria. Quedan como alcance funcional futuro los faltantes de modulo completo listados arriba.
+
+## Verificacion
+
+- `npm test -- lib/__tests__/sst-integrity-constraints.test.ts lib/__tests__/sst-delete-evaluation.test.ts lib/__tests__/sst-service-full.test.ts lib/__tests__/sst-service.test.ts lib/__tests__/prevencion-actions-extra.test.ts lib/__tests__/notification-permission-targeting.test.ts app/(app)/prevencion/[id]/evaluation-detail.test.tsx lib/sst/__tests__/checklist.test.ts lib/sst/__tests__/section-access.test.ts` -> 9 archivos, 126 tests passing.
+- `npx eslint ...` sobre archivos tocados de Prevencion/SST/notificaciones/PPA/tests/schema -> sin errores.
+- `npm run typecheck` -> passing.
+- `npm run db:generate` -> "No schema changes, nothing to migrate".
+- `PGHOST=/var/run/postgresql npm run db:migrate` -> migraciones aplicadas correctamente en `postgres:///bodega`.
+- `git diff --check` -> sin errores.
+- `npm test` completo -> 160 archivos passing, 5 skipped, 1 fallo fuera del alcance Prevencion/SST: `lib/__tests__/request-type-actions-rejection.test.ts` espera error RBAC de `servicios:create`, pero recibe validacion de item "Ubicacion requerida para cada servicio".
+
+---
+
+## Ola 2026-06-30: IPER + Incidentes + Capacitaciones
+
+**Objetivo:** cerrar los 3 primeros faltantes historicos del modulo de Prevencion,
+convirtiendolo en un modulo preventivo operacional (no solo evaluaciones SST + PPA).
+
+### Alcance implementado
+
+1. **Matriz IPER/MIPER**
+   - `db/schema/prevention.ts`: tablas `iper_matrices` y `iper_risk_items` con calculo
+     de riesgo inicial/residual (probabilidad x severidad, escala 1..5) y campos
+     `initialRiskLevel` / `residualRiskLevel` (`bajo` / `medio` / `alto` / `critico`).
+   - `lib/services/prevention-iper.ts`: `classifyRisk`, `createIperMatrix`,
+     `addIperRiskItem`, `listIperMatrices`, `listIperRiskItems`, `closeIperMatrix`,
+     `buildIperExport`, con scoping por faena.
+   - UI Server: `/prevencion/iper` (lista, breadcrumb, export, form de creacion).
+   - Export XLSX: `/api/prevencion/iper/export` con una fila por item de riesgo.
+
+2. **Accidentes, incidentes y cuasi accidentes**
+   - `db/schema/prevention.ts`: tablas `prevention_incidents` y `prevention_incident_actions`
+     con tipos `accidente|incidente|cuasi_accidente|enfermedad_profesional` y estados
+     terminales `cerrada|cancelada` para acciones.
+   - Regla de negocio: **el cierre del incidente exige que TODAS las acciones esten
+     en estado terminal** (`cerrada` o `cancelada`); de lo contrario se rechaza con
+     mensaje "No se puede cerrar el incidente: existen acciones pendientes."
+   - `lib/services/prevention-incidents.ts`: `createIncident`, `addIncidentAction`,
+     `closeIncidentAction`, `closeIncident`, `listIncidents`, `listIncidentActions`,
+     `buildIncidentExport`.
+   - UI Server: `/prevencion/incidentes` (lista) y `/prevencion/incidentes/[id]`
+     (detalle con causa raiz, acciones correctivas, cierre final).
+   - Export XLSX: `/api/prevencion/incidentes/export` con 2 hojas (Incidentes +
+     Acciones).
+
+3. **Capacitaciones, competencias y vencimientos**
+   - `db/schema/prevention.ts`: tablas `training_courses` y
+     `worker_training_assignments` con upsert idempotente sobre
+     `(worker_id, course_id)`, `validityMonths` opcional y campos `score` /
+     `evidence_url`.
+   - `lib/services/prevention-training.ts`: `createTrainingCourse`,
+     `assignTrainingToWorker` (con `onConflictDoUpdate`), `listExpiredTrainings`,
+     `listTrainingCourses`, `buildTrainingExport`.
+   - UI Server: `/prevencion/capacitaciones` (vista de vencidas + catalogo).
+   - Export XLSX: `/api/prevencion/capacitaciones/export` con 2 hojas (Cursos +
+     Asignaciones).
+
+### RBAC
+
+`modules/prevention/manifest.ts` declara 7 permisos con sus `permissionMeta` y
+`defaultGrants` para los roles `prevencionista`, `prevencionista_faena` y
+`administrador`. `modules/registry.ts` registra el modulo dentro del area de
+navegacion `prevencion`, sumando 3 entradas (`IPER/MIPER`, `Incidentes`,
+`Capacitaciones`) con sus iconos.
+
+### Convenciones de fuente de verdad respetadas
+
+- Logica de negocio en `lib/services/prevention-*.ts` (servicios puros, sin UI ni
+  Server Actions).
+- `app/(app)/prevencion/<area>/actions.ts` contiene solo Server Actions con
+  `guardAuth()` + verificacion de permiso + revalidacion.
+- `db/schema/prevention.ts` adicionado y exportado desde `db/schema/index.ts`.
+- `modules/prevention/manifest.ts` unico archivo del modulo (cumple
+  `frozen-modular-migration.test.ts`).
+- Sin edicion manual del journal; una sola migracion generada con
+  `drizzle-kit generate` cubriendo las 6 tablas (regla de AGENTS.md).
+
+### Migracion
+
+- `npm run db:generate` produjo `db/migrations/0007_striped_mantis.sql` con las 6
+  tablas nuevas (`iper_matrices`, `iper_risk_items`, `prevention_incidents`,
+  `prevention_incident_actions`, `training_courses`, `worker_training_assignments`)
+  + sus uniqueIndex y relations.
+- `PGHOST=/var/run/postgresql npm run db:migrate` aplico la migracion en
+  `postgres:///bodega`.
+- Re-ejecucion de `npm run db:generate` retorno "No schema changes".
+
+### Verificacion de esta ola
+
+- `npx vitest run lib/__tests__/prevention-iper.test.ts lib/__tests__/prevention-incidents.test.ts lib/__tests__/prevention-training.test.ts lib/__tests__/prevention-rbac.test.ts db/schema-consistency.test.ts lib/__tests__/frozen-modular-migration.test.ts` -> 6 archivos, 17 tests passing.
+- `npx eslint <archivos tocados>` -> 0 errores, 0 warnings.
+- `npx tsc --noEmit` -> 0 errores.
+- `npm run db:generate` final -> "No schema changes, nothing to migrate".
+- `git diff --check` -> sin errores.
+
+### Pendientes derivados / trabajo futuro
+
+- Estandarizar la subida de `evidenceUrl` para asignaciones (hoy es texto libre).
+  Ideal: integrarlo con `lib/storage` para adjuntos PDF/imagen.
+- Auto-crear item en IPER cuando un incidente supera cierta gravedad, cerrando
+  el ciclo con `requires_training` / `requires_ppa` ya presente en el schema.
+- Permitir DIAT/DIEP como subtipo de documento legal ligado al incidente.
+- UI de busqueda por RUT/nombre en la tabla de capacitaciones (hoy solo lista).
+- Bloqueo automatico de inicio de turno cuando `listExpiredTrainings` cubre una
+  competencia requerida por cargo (hoy `training_courses.requiredForCargo` existe
+  en el schema pero no se cruza contra `workers.position`).
 
 ## Verificacion
 
