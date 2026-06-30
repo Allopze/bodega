@@ -155,3 +155,26 @@ export async function addPdtpActivityAction(input: unknown): Promise<ActionState
     return { ok: false, message: (e as Error).message }
   }
 }
+
+export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
+  const { session, error } = await guardAuth()
+  if (error) return
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) return
+  try {
+    const parsed = pdtpActivityAddSchema.parse({
+      programId: fd.get("programId"),
+      objectiveOrder: fd.get("objectiveOrder"),
+      objective: fd.get("objective"),
+      activity: fd.get("activity"),
+      program: fd.get("program"),
+      responsibleDisplay: fd.get("responsibleDisplay"),
+      responsibleSlugs: [fd.get("responsibleSlugs[0]")],
+      sheetCodes: [fd.get("sheetCodes[0]")],
+      notes: fd.get("notes") ?? undefined,
+    })
+    await addPdtpActivity(parsed, session.user.id)
+    revalidatePath(REVALIDATE)
+  } catch {
+    // ponytail: silent on error — page re-renders without the entry; wire toasts when client components allowed
+  }
+}

@@ -85,11 +85,6 @@ export const pdtpExecutionSchema = z.object({
   evidencePhotos:   z.array(z.string().max(500)).default([]),
 })
 
-export const pdtpProgramTransitionSchema = z.object({
-  programId: z.string().min(1, "Programa requerido"),
-  action: z.enum(["approve_jdpr", "sign_legal", "activate"]),
-})
-
 export const pdtpExecutionApprovalSchema = z.object({
   executionId: z.string().min(1, "Ejecución requerida"),
 })
