@@ -13,7 +13,12 @@ import { eq, or, inArray, notInArray } from "drizzle-orm"
 import { loadSeedWorkerData } from "./seed/workers"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../lib/auth/system-rbac"
 import { seedNuevosRoles } from "./seed/nuevos-roles"
-import { loadPdtpCatalog } from "../lib/services/prevention-pdtp"
+import {
+  loadPdtpCatalog,
+  approvePdtpProgramJdpr,
+  signPdtpProgramLegal,
+  activatePdtpProgram,
+} from "../lib/services/prevention-pdtp"
 import pdtpCatalog2026 from "./seed/pdtp-catalog-2026.json"
 
 loadEnvConfig(process.cwd())
@@ -434,6 +439,18 @@ async function main() {
     userId: adminId,
   }, db)
   console.log(`  Catálogo PDTP cargado: ${pdtpCatalog2026.activities.length} actividades, ${pdtpCatalog2026.objectives.length} objetivos.`)
+
+  // Activate the 2026 PDTP program (it was approved 2026-01-27 and signed 2026-02-04)
+  try {
+    const programId = "pdtp-2026-v1"
+    await approvePdtpProgramJdpr(programId, adminId)
+    await signPdtpProgramLegal(programId, adminId)
+    await activatePdtpProgram(programId, adminId)
+    console.log("  Programa PDTP 2026 activado (aprobado JDPR + firmado Legal).")
+  } catch (e) {
+    // Idempotent: if already approved/signed/activated, skip
+    console.log(`  Programa PDTP 2026: ya activo o aprobado. (${(e as Error).message})`)
+  }
 
   console.log("")
   console.log("Seed base completado.")
