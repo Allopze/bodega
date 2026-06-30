@@ -8,12 +8,14 @@ import { db, type DB } from "@/db"
 import {
   pdtpActivities,
   pdtpActivitySchedule,
+  pdtpChangeLog,
   pdtpExecutions,
   pdtpPrograms,
   pdtpResponsibleCatalog,
   pdtpSheetActivities,
   pdtpSheets,
 } from "@/db/schema"
+import { nanoid } from "@/lib/id"
 import type { PdtpCatalog, PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import type { ReportData, ReportCell } from "@/lib/reports/export"
 import { pdtpExecutionSchema } from "@/lib/validation/prevention"
@@ -257,18 +259,9 @@ export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, w
   }
 
   const activityIds = memberships.map((membership) => membership.activityId)
-  const [activityRows, scheduleRows, executionRows] = await Promise.all([
+  const [activityRows, { scheduleRows, executionRows }] = await Promise.all([
     db.select().from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)),
-    db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds)),
-    worksiteId
-      ? db.select().from(pdtpExecutions).where(
-          and(
-            inArray(pdtpExecutions.activityId, activityIds),
-            eq(pdtpExecutions.worksiteId, worksiteId),
-            eq(pdtpExecutions.year, year),
-          ),
-        )
-      : Promise.resolve([] as Array<typeof pdtpExecutions.$inferSelect>),
+    loadProgramScheduleAndExecutions(activityIds, year, worksiteId),
   ])
 
   const activityById = new Map(activityRows.map((activity) => [activity.id, activity]))
@@ -486,4 +479,240 @@ function pdtpSheetActivityId(programId: string, sheetCode: PdtpSheetCode, activi
 
 function pdtpExecutionId(activityId: string, worksiteId: string, year: number, month: number, week: number) {
   return `${activityId}-e-${worksiteId}-${year}-${String(month).padStart(2, "0")}-${week}`
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+async function addPdtpChangeLogEntry(
+  programId: string,
+  version: number,
+  userId: string | null,
+  section: string,
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null,
+  note: string,
+) {
+  const now = new Date().toISOString()
+  await db.insert(pdtpChangeLog).values({
+    id: nanoid(),
+    programId,
+    version,
+    changedByUserId: userId,
+    changedAt: now,
+    section,
+    before,
+    after,
+    note,
+  })
+}
+
+async function loadProgramScheduleAndExecutions(
+  activityIds: string[],
+  year: number,
+  worksiteId?: string,
+) {
+  const [scheduleRows, executionRows] = await Promise.all([
+    db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds)),
+    worksiteId
+      ? db.select().from(pdtpExecutions).where(
+          and(
+            inArray(pdtpExecutions.activityId, activityIds),
+            eq(pdtpExecutions.worksiteId, worksiteId),
+            eq(pdtpExecutions.year, year),
+          ),
+        )
+      : Promise.resolve([] as Array<typeof pdtpExecutions.$inferSelect>),
+  ])
+  return { scheduleRows, executionRows }
+}
+
+// ---------------------------------------------------------------------------
+// WS1 — Compliance indicators
+// ---------------------------------------------------------------------------
+
+export type PdtpComplianceMonth = {
+  month: number    // 1..12
+  planned: number  // count of distinct activities with plannedQuantity > 0 in this month
+  executed: number // count of distinct activities with executedQuantity > 0 (status submitted OR approved) in this month
+  percent: number | null
+}
+
+export type PdtpComplianceIndicators = {
+  programId: string
+  year: number
+  target: number          // complianceTarget from pdtp_programs (default 0.9)
+  monthly: PdtpComplianceMonth[]   // length 12
+  quarterly: Array<{ quarter: number; planned: number; executed: number; percent: number | null }>  // length 4
+  annual: { planned: number; executed: number; percent: number | null }
+}
+
+export async function getPdtpComplianceIndicators(
+  year: number,
+  worksiteId?: string,
+): Promise<PdtpComplianceIndicators | null> {
+  // 1. Find the program for this year (latest version, prefer active)
+  const [program] = await db.select().from(pdtpPrograms)
+    .where(eq(pdtpPrograms.year, year))
+    .orderBy(desc(pdtpPrograms.version))
+    .limit(1)
+  if (!program) return null
+
+  // 2. Get ALL activity IDs for this program (across all sheets = pdtp_general)
+  const activityRows = await db.select({ id: pdtpActivities.id })
+    .from(pdtpActivities)
+    .where(eq(pdtpActivities.programId, program.id))
+
+  if (activityRows.length === 0) {
+    return {
+      programId: program.id,
+      year,
+      target: program.complianceTarget,
+      monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null })),
+      quarterly: Array.from({ length: 4 }, (_, i) => ({ quarter: i + 1, planned: 0, executed: 0, percent: null })),
+      annual: { planned: 0, executed: 0, percent: null },
+    }
+  }
+
+  const allActivityIds = activityRows.map((row) => row.id)
+  const { scheduleRows, executionRows } = await loadProgramScheduleAndExecutions(allActivityIds, year, worksiteId)
+
+  // 3. Count planned activities per month (distinct activityId where plannedQuantity > 0)
+  const plannedByMonth = new Array<Set<string>>(12).fill(null as unknown as Set<string>)
+    .map(() => new Set<string>())
+  for (const row of scheduleRows) {
+    if (row.plannedQuantity > 0) {
+      plannedByMonth[row.month - 1]!.add(row.activityId)
+    }
+  }
+
+  // 4. Count executed activities per month (distinct activityId where executedQuantity > 0)
+  const executedByMonth = new Array<Set<string>>(12).fill(null as unknown as Set<string>)
+    .map(() => new Set<string>())
+  for (const row of executionRows) {
+    if (row.executedQuantity > 0) {
+      executedByMonth[row.month - 1]!.add(row.activityId)
+    }
+  }
+
+  // 5. Build monthly array
+  const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
+    const planned = plannedByMonth[i]!.size
+    const executed = executedByMonth[i]!.size
+    const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null  // 0..1 ratio
+    return { month: i + 1, planned, executed, percent }
+  })
+
+  // 6. Build quarterly
+  const quarterly = Array.from({ length: 4 }, (_, q) => {
+    const months = monthly.slice(q * 3, q * 3 + 3)
+    const planned = months.reduce((s, m) => s + m.planned, 0)
+    const executed = months.reduce((s, m) => s + m.executed, 0)
+    const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
+    return { quarter: q + 1, planned, executed, percent }
+  })
+
+  // 7. Annual
+  const annualPlanned = monthly.reduce((s, m) => s + m.planned, 0)
+  const annualExecuted = monthly.reduce((s, m) => s + m.executed, 0)
+  const annual = {
+    planned: annualPlanned,
+    executed: annualExecuted,
+    percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null,
+  }
+
+  return {
+    programId: program.id,
+    year,
+    target: program.complianceTarget,
+    monthly,
+    quarterly,
+    annual,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WS2 — Lifecycle transitions
+// ---------------------------------------------------------------------------
+
+export async function approvePdtpProgramJdpr(programId: string, userId: string) {
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.approvedByJdprUserId) throw new Error("El programa ya fue aprobado por JDPR.")
+
+  const now = new Date().toISOString()
+  const [updated] = await db.update(pdtpPrograms)
+    .set({ approvedByJdprUserId: userId, approvedByJdprAt: now, updatedAt: now })
+    .where(eq(pdtpPrograms.id, programId))
+    .returning()
+  if (!updated) throw new Error("No se pudo registrar la aprobación JDPR.")
+
+  await addPdtpChangeLogEntry(programId, program.version, userId, "lifecycle", { approvedByJdprUserId: null }, { approvedByJdprUserId: userId }, "Aprobado por JDPR.")
+  return updated
+}
+
+export async function signPdtpProgramLegal(programId: string, userId: string) {
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.approvedByLegalUserId) throw new Error("El programa ya fue firmado por Gerencia Legal.")
+
+  const now = new Date().toISOString()
+  const [updated] = await db.update(pdtpPrograms)
+    .set({ approvedByLegalUserId: userId, approvedByLegalAt: now, updatedAt: now })
+    .where(eq(pdtpPrograms.id, programId))
+    .returning()
+  if (!updated) throw new Error("No se pudo registrar la firma de Gerencia Legal.")
+
+  await addPdtpChangeLogEntry(programId, program.version, userId, "lifecycle", { approvedByLegalUserId: null }, { approvedByLegalUserId: userId }, "Firmado por Gerencia Legal y RRHH.")
+  return updated
+}
+
+export async function activatePdtpProgram(programId: string, userId: string) {
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status === "active") throw new Error("El programa ya está activo.")
+  if (!program.approvedByJdprUserId) throw new Error("El programa debe ser aprobado por JDPR antes de activarse.")
+  if (!program.approvedByLegalUserId) throw new Error("El programa debe ser firmado por Gerencia Legal antes de activarse.")
+
+  const now = new Date().toISOString()
+
+  // Degrade any other active version for the same year to draft
+  await db.update(pdtpPrograms)
+    .set({ status: "draft", updatedAt: now })
+    .where(and(eq(pdtpPrograms.year, program.year), eq(pdtpPrograms.status, "active")))
+
+  const [updated] = await db.update(pdtpPrograms)
+    .set({ status: "active", updatedAt: now })
+    .where(eq(pdtpPrograms.id, programId))
+    .returning()
+  if (!updated) throw new Error("No se pudo activar el programa PDTP.")
+
+  await addPdtpChangeLogEntry(programId, program.version, userId, "lifecycle", { status: "draft" }, { status: "active" }, "Programa activado.")
+  return updated
+}
+
+// ---------------------------------------------------------------------------
+// WS3 — Execution approval
+// ---------------------------------------------------------------------------
+
+export async function approvePdtpExecution(
+  executionId: string,
+  userId: string,
+  scope: WorksiteScope,
+) {
+  const [execution] = await db.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
+  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
+  if (execution.status === "approved") throw new Error("La ejecución ya fue aprobada.")
+  if (execution.status !== "submitted") throw new Error("Solo se pueden aprobar ejecuciones en estado 'submitted'.")
+
+  assertWorksiteAccess(execution.worksiteId, scope)
+
+  const now = new Date().toISOString()
+  const [updated] = await db.update(pdtpExecutions)
+    .set({ status: "approved", approvedByUserId: userId, approvedAt: now, updatedAt: now })
+    .where(eq(pdtpExecutions.id, executionId))
+    .returning()
+  if (!updated) throw new Error("No se pudo aprobar la ejecución PDTP.")
+  return updated
 }
