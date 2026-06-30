@@ -716,3 +716,220 @@ export async function approvePdtpExecution(
   if (!updated) throw new Error("No se pudo aprobar la ejecución PDTP.")
   return updated
 }
+
+// ---------------------------------------------------------------------------
+// WS4 — Activity edit and add
+// ---------------------------------------------------------------------------
+
+export type PdtpActivityUpdateInput = {
+  activityId: string
+  // Fields are all optional; only truthy values are applied
+  activity?: string     // max 200
+  program?: string      // max 200 (the "Programa"/método column)
+  notes?: string        // max 2000
+  responsibleSlugs?: string[]
+  responsibleDisplay?: string  // max 160
+  // Schedule overrides: replace specific cells (month 1-12, week 1-4)
+  scheduleOverrides?: Array<{
+    month: number   // 1..12
+    week: number    // 1..4
+    plannedQuantity: number  // >=0
+  }>
+}
+
+export async function updatePdtpActivity(
+  input: PdtpActivityUpdateInput,
+  userId: string,
+): Promise<typeof pdtpActivities.$inferSelect> {
+  const [activity] = await db.select().from(pdtpActivities)
+    .where(eq(pdtpActivities.id, input.activityId))
+    .limit(1)
+  if (!activity) throw new Error("Actividad PDTP no encontrada.")
+
+  const [program] = await db.select().from(pdtpPrograms)
+    .where(eq(pdtpPrograms.id, activity.programId))
+    .limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "draft") throw new Error("Solo se pueden editar actividades de programas en estado borrador (draft).")
+
+  const now = new Date().toISOString()
+  const before: Record<string, unknown> = {}
+  const after: Record<string, unknown> = {}
+
+  const updates: Partial<typeof pdtpActivities.$inferInsert> = { updatedAt: now }
+
+  if (input.activity !== undefined && input.activity !== activity.activity) {
+    before.activity = activity.activity
+    after.activity = input.activity
+    updates.activity = input.activity
+  }
+  if (input.program !== undefined && input.program !== activity.program) {
+    before.program = activity.program
+    after.program = input.program
+    updates.program = input.program
+  }
+  if (input.notes !== undefined && input.notes !== activity.notes) {
+    before.notes = activity.notes
+    after.notes = input.notes
+    updates.notes = input.notes
+  }
+  if (input.responsibleSlugs !== undefined) {
+    before.responsibleSlugs = activity.responsibleSlugs
+    after.responsibleSlugs = input.responsibleSlugs
+    updates.responsibleSlugs = input.responsibleSlugs
+  }
+  if (input.responsibleDisplay !== undefined && input.responsibleDisplay !== activity.responsibleDisplay) {
+    before.responsibleDisplay = activity.responsibleDisplay
+    after.responsibleDisplay = input.responsibleDisplay
+    updates.responsibleDisplay = input.responsibleDisplay
+  }
+
+  const [updated] = await db.update(pdtpActivities)
+    .set(updates)
+    .where(eq(pdtpActivities.id, input.activityId))
+    .returning()
+  if (!updated) throw new Error("No se pudo actualizar la actividad PDTP.")
+
+  // Apply schedule overrides
+  if (input.scheduleOverrides && input.scheduleOverrides.length > 0) {
+    before.scheduleOverrides = "see after"
+    after.scheduleOverrides = input.scheduleOverrides
+
+    for (const cell of input.scheduleOverrides) {
+      const schedId = pdtpScheduleId(input.activityId, program.year, cell.month, cell.week)
+      // Use the pdtpActivitySchedule year from the program
+      await db.insert(pdtpActivitySchedule)
+        .values({
+          id: schedId,
+          activityId: input.activityId,
+          year: program.year,
+          month: cell.month,
+          week: cell.week,
+          plannedQuantity: cell.plannedQuantity,
+          sourceColumn: "manual",
+        })
+        .onConflictDoUpdate({
+          target: [
+            pdtpActivitySchedule.activityId,
+            pdtpActivitySchedule.year,
+            pdtpActivitySchedule.month,
+            pdtpActivitySchedule.week,
+          ],
+          set: { plannedQuantity: cell.plannedQuantity, sourceColumn: "manual" },
+        })
+    }
+  }
+
+  if (Object.keys(after).length > 0) {
+    await addPdtpChangeLogEntry(
+      activity.programId,
+      program.version,
+      userId,
+      `activity:${activity.n}`,
+      before,
+      after,
+      `Actividad ${activity.n} actualizada.`,
+    )
+  }
+
+  return updated
+}
+
+export type PdtpActivityAddInput = {
+  programId: string
+  objectiveOrder: number  // must match an existing objective (1..8)
+  objective: string       // text of the objective
+  activity: string        // max 200
+  program: string         // max 200
+  responsibleSlugs: string[]
+  responsibleDisplay: string  // max 160
+  notes?: string
+  // Which sheet codes this activity belongs to
+  sheetCodes: string[]   // at least 1; must be valid PdtpSheetCode values
+  // Initial planned schedule (optional)
+  schedule?: Array<{
+    month: number   // 1..12
+    week: number    // 1..4
+    plannedQuantity: number  // >=0
+  }>
+}
+
+export async function addPdtpActivity(
+  input: PdtpActivityAddInput,
+  userId: string,
+): Promise<typeof pdtpActivities.$inferSelect> {
+  const [program] = await db.select().from(pdtpPrograms)
+    .where(eq(pdtpPrograms.id, input.programId))
+    .limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "draft") throw new Error("Solo se pueden agregar actividades a programas en estado borrador (draft).")
+
+  // Get the current max n for this program
+  const existingActivities = await db.select({ n: pdtpActivities.n })
+    .from(pdtpActivities)
+    .where(eq(pdtpActivities.programId, input.programId))
+  const maxN = existingActivities.reduce((m, row) => Math.max(m, row.n), 0)
+  const newN = maxN + 1
+
+  const now = new Date().toISOString()
+  const activityId = pdtpActivityId(input.programId, newN)
+
+  const [created] = await db.insert(pdtpActivities)
+    .values({
+      id: activityId,
+      programId: input.programId,
+      n: newN,
+      objectiveOrder: input.objectiveOrder,
+      objective: input.objective,
+      activity: input.activity,
+      program: input.program,
+      responsibleSlugs: input.responsibleSlugs,
+      responsibleDisplay: input.responsibleDisplay,
+      sourceSheetRow: 0,  // manual entry
+      notes: input.notes ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning()
+  if (!created) throw new Error("No se pudo crear la actividad PDTP.")
+
+  // Add schedule cells
+  if (input.schedule && input.schedule.length > 0) {
+    for (const cell of input.schedule) {
+      await db.insert(pdtpActivitySchedule).values({
+        id: pdtpScheduleId(activityId, program.year, cell.month, cell.week),
+        activityId,
+        year: program.year,
+        month: cell.month,
+        week: cell.week,
+        plannedQuantity: cell.plannedQuantity,
+        sourceColumn: "manual",
+      })
+    }
+  }
+
+  // Add sheet memberships
+  for (const sheetCode of input.sheetCodes) {
+    await db.insert(pdtpSheetActivities)
+      .values({
+        id: pdtpSheetActivityId(input.programId, sheetCode as PdtpSheetCode, newN),
+        sheetCode,
+        activityId,
+        sheetRow: 0,
+        displayOrder: newN,
+      })
+      .onConflictDoNothing()
+  }
+
+  await addPdtpChangeLogEntry(
+    input.programId,
+    program.version,
+    userId,
+    `activity:${newN}`,
+    null,
+    { n: newN, activity: input.activity, sheetCodes: input.sheetCodes },
+    `Actividad ${newN} agregada manualmente.`,
+  )
+
+  return created
+}
