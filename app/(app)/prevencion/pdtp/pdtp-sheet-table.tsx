@@ -11,17 +11,21 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { PdtpSheetView } from "@/lib/services/prevention-pdtp"
-import { markPdtpExecutionFormAction } from "./actions"
+import { markPdtpExecutionFormAction, approvePdtpExecutionAction } from "./actions"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+type PendingApproval = { id: string; activityId: string; month: number; week: number }
 
 type PdtpSheetTableProps = {
   view: PdtpSheetView
   worksiteId?: string
   canManage?: boolean
+  canApprove?: boolean
+  pendingApprovals?: PendingApproval[]
 }
 
-export function PdtpSheetTable({ view, worksiteId, canManage = false }: PdtpSheetTableProps) {
+export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove = false, pendingApprovals = [] }: PdtpSheetTableProps) {
   const annualPlanned = view.monthlyTotals.reduce((sum, month) => sum + month.planned, 0)
   const annualExecuted = view.monthlyTotals.reduce((sum, month) => sum + month.executed, 0)
   const annualPercent = annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) : null
@@ -49,6 +53,7 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false }: PdtpShee
               <TableHead className="text-right">Plan</TableHead>
               <TableHead className="text-right">Ejecutado</TableHead>
               {canManage && worksiteId && <TableHead className="min-w-[20rem]">Registrar</TableHead>}
+              {canApprove && worksiteId && pendingApprovals.length > 0 && <TableHead className="min-w-[10rem]">Aprobar</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -80,6 +85,11 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false }: PdtpShee
                 {canManage && worksiteId && (
                   <TableCell>
                     <ExecutionForm activityId={activity.id} worksiteId={worksiteId} />
+                  </TableCell>
+                )}
+                {canApprove && worksiteId && pendingApprovals.length > 0 && (
+                  <TableCell>
+                    <ApprovalButtons activityId={activity.id} pendingApprovals={pendingApprovals} />
                   </TableCell>
                 )}
               </TableRow>
@@ -198,4 +208,30 @@ function Metric({ label, value }: { label: string; value: number | string }) {
 function formatQuantity(value: number) {
   if (value === 0) return "-"
   return Number.isInteger(value) ? String(value) : value.toFixed(2)
+}
+
+function ApprovalButtons({
+  activityId,
+  pendingApprovals,
+}: {
+  activityId: string
+  pendingApprovals: PendingApproval[]
+}) {
+  const pending = pendingApprovals.filter((e) => e.activityId === activityId)
+  if (pending.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {pending.map((exec) => (
+        <form key={exec.id} action={approvePdtpExecutionAction.bind(null, exec.id)}>
+          <button
+            type="submit"
+            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]"
+          >
+            ✓ M{exec.month}S{exec.week}
+          </button>
+        </form>
+      ))}
+    </div>
+  )
 }

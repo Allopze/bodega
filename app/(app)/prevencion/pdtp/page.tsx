@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
@@ -14,6 +15,8 @@ import { PreventionExportButton } from "@/components/prevention/export-button"
 import { PdtpSheetPicker, PdtpSheetTable, PdtpWorksitePicker } from "./pdtp-sheet-table"
 import { PdtpIndicatorsPanel } from "./pdtp-indicators-panel"
 import { approvePdtpProgramJdprAction, signPdtpProgramLegalAction, activatePdtpProgramAction } from "./actions"
+import { db } from "@/db"
+import { pdtpExecutions, pdtpChangeLog } from "@/db/schema"
 
 export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
 
@@ -52,6 +55,21 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
   const view = await getPdtpSheetView(2026, sheetCode, selectedWorksiteId)
   const indicators = await getPdtpComplianceIndicators(2026, selectedWorksiteId)
   const canApprove = can(session, "prevention:pdtp:approve")
+
+  // Fetch submitted executions pending approval for the selected worksite
+  let pendingApprovals: Array<{ id: string; activityId: string; month: number; week: number }> = []
+  if (canApprove && selectedWorksiteId && view && view.activities.length > 0) {
+    const activityIds = view.activities.map((a) => a.id)
+    pendingApprovals = await db
+      .select({ id: pdtpExecutions.id, activityId: pdtpExecutions.activityId, month: pdtpExecutions.month, week: pdtpExecutions.week })
+      .from(pdtpExecutions)
+      .where(and(
+        eq(pdtpExecutions.worksiteId, selectedWorksiteId),
+        eq(pdtpExecutions.status, "submitted"),
+        eq(pdtpExecutions.year, 2026),
+        inArray(pdtpExecutions.activityId, activityIds),
+      ))
+  }
   const canSignLegal = can(session, "prevention:pdtp:sign_legal")
   const canManage = can(session, "prevention:pdtp:manage")
   const exportHref = `/api/prevencion/pdtp/export?hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}`
@@ -88,7 +106,7 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
         <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} />
 
         {view ? (
-          <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canManage={canManage} />
+          <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canManage={canManage} canApprove={canApprove} pendingApprovals={pendingApprovals} />
         ) : (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5">
             <p className="font-medium text-[var(--color-text)]">Catálogo PDTP no cargado</p>
@@ -97,6 +115,9 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
             </p>
           </div>
         )}
+
+        {/* Change log */}
+        {view?.program && <PdtpChangeLogSection programId={view.program.id} />}
       </div>
     </PageContainer>
   )
@@ -165,6 +186,34 @@ function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgr
       ) : (
         <span className="text-[var(--color-text-faint)]">Borrador</span>
       )}
+    </div>
+  )
+}
+
+async function PdtpChangeLogSection({ programId }: { programId: string }) {
+  const entries = await db
+    .select()
+    .from(pdtpChangeLog)
+    .where(eq(pdtpChangeLog.programId, programId))
+    .orderBy(desc(pdtpChangeLog.changedAt))
+    .limit(20)
+
+  if (entries.length === 0) return null
+
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="border-b border-[var(--color-border)] px-4 py-3">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Control de cambios</h3>
+      </div>
+      <div className="divide-y divide-[var(--color-border)]">
+        {entries.map((entry) => (
+          <div key={entry.id} className="flex items-start gap-3 px-4 py-2.5 text-xs">
+            <span className="mt-0.5 shrink-0 text-[var(--color-text-faint)]">{entry.changedAt.slice(0, 10)}</span>
+            <span className="font-medium text-[var(--color-text-subtle)]">{entry.section}</span>
+            <span className="text-[var(--color-text-muted)]">{entry.note}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
