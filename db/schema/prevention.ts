@@ -149,6 +149,7 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
   approvedByLegalAt:     timestamp("approved_by_legal_at", { withTimezone: true, mode: "string" }),
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+  complianceTarget:      numeric("compliance_target", { precision: 5, scale: 2, mode: "number" }).notNull().default(0.9),
 }, (table) => [
   uniqueIndex("pdtp_programs_year_version_unique").on(table.year, table.version),
   index("pdtp_programs_status_idx").on(table.status),

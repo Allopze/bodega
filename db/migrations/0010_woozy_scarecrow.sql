@@ -1,0 +1,1 @@
+ALTER TABLE "pdtp_programs" ADD COLUMN "compliance_target" numeric(5, 2) DEFAULT 0.9 NOT NULL;
