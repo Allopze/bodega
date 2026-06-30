@@ -78,6 +78,20 @@
       "when": 1782795291030,
       "tag": "0010_woozy_scarecrow",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782799914309,
+      "tag": "0011_late_madrox",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782801577677,
+      "tag": "0012_nosy_wolfpack",
+      "breakpoints": true
     }
   ]
 }

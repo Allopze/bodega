@@ -62,7 +62,7 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
       .from(pdtpPrograms)
       .where(and(eq(pdtpPrograms.year, 2026), eq(pdtpPrograms.status, "active")))
       .limit(1)
-    if (active.length > 0) statusProgram = active[0]
+    if (active.length > 0) statusProgram = active[0]!
   }
 
   const canApprove = can(session, "prevention:pdtp:approve")
@@ -212,7 +212,7 @@ function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgr
       {hasJdpr ? (
         <span className="text-[var(--color-success)]">✓ Aprobado JDPR</span>
       ) : canApprove && !isActive ? (
-        <form action={approvePdtpProgramJdprAction.bind(null, program.id)}>
+        <form action={async () => { await approvePdtpProgramJdprAction(program.id) }}>
           <button type="submit" className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]">
             Aprobar (JDPR)
           </button>
@@ -226,7 +226,7 @@ function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgr
       {hasLegal ? (
         <span className="text-[var(--color-success)]">✓ Firmado Legal</span>
       ) : canSignLegal && !isActive ? (
-        <form action={signPdtpProgramLegalAction.bind(null, program.id)}>
+        <form action={async () => { await signPdtpProgramLegalAction(program.id) }}>
           <button type="submit" className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]">
             Firmar (Legal)
           </button>
@@ -240,7 +240,7 @@ function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgr
       {isActive ? (
         <span className="font-semibold text-[var(--color-success)]">● Activo</span>
       ) : hasJdpr && hasLegal && canApprove ? (
-        <form action={activatePdtpProgramAction.bind(null, program.id)}>
+        <form action={async () => { await activatePdtpProgramAction(program.id) }}>
           <button type="submit" className="rounded border border-[var(--color-primary)] bg-[var(--color-primary-tint)] px-2 py-1 text-xs font-medium text-[var(--color-text)]">
             Activar programa
           </button>

@@ -117,3 +117,129 @@ export const pdtpActivityAddSchema = z.object({
   sheetCodes: z.array(z.string().min(1)).min(1, "Al menos una hoja"),
   schedule: z.array(pdtpScheduleCellSchema).optional(),
 })
+
+/* ── Inspecciones y observaciones ───────────────────────────────────────── */
+const inspectionStatusEnum = z.enum(["ok", "no_conforme", "critico", "na"])
+const runStatusEnum = z.enum(["open", "in_review", "closed"])
+
+export const inspectionTemplateCreateSchema = z.object({
+  code:          z.string().trim().min(1).max(40),
+  title:         z.string().trim().min(1).max(160),
+  scope:         z.string().trim().min(1).max(100),
+  items:         z.array(z.object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    expected: z.string().min(1),
+  })).min(1),
+  frequency:     z.enum(["diaria", "semanal", "quincenal", "mensual", "trimestral", "semestral", "anual", "evento"]),
+  requiresPhoto: z.boolean().default(false),
+})
+
+export const inspectionRunCreateSchema = z.object({
+  templateId: z.string().min(1),
+  worksiteId: z.string().min(1),
+})
+
+export const inspectionItemUpdateSchema = z.object({
+  itemId:   z.string().min(1),
+  observed: z.string().max(1000).optional().or(z.literal("")),
+  status:   inspectionStatusEnum,
+  note:     z.string().max(2000).optional().or(z.literal("")),
+  photoUrl: z.string().max(500).optional().or(z.literal("")),
+})
+
+export const inspectionRunCloseSchema = z.object({
+  runId:     z.string().min(1),
+  signature: z.string().min(1).optional(),
+})
+
+export const behavioralObservationCreateSchema = z.object({
+  worksiteId:  z.string().min(1),
+  workerId:    z.string().optional().or(z.literal("")),
+  antecedent:  z.string().trim().min(1).max(500),
+  behavior:    z.string().trim().min(1).max(500),
+  consequence: z.string().trim().min(1).max(500),
+  severity:    z.enum(["bajo", "medio", "alto", "critico"]),
+  runId:       z.string().optional().or(z.literal("")),
+})
+
+/* ── Reportes operacionales ──────────────────────────────────────────────── */
+export const equipmentDailyReportSchema = z.object({
+  worksiteId:       z.string().min(1),
+  equipmentId:      z.string().min(1),
+  operatorWorkerId: z.string().min(1),
+  shift:            z.string().min(1),
+  status:           z.enum(["ok", "observado", "fuera_servicio"]).default("ok"),
+  odometer:         z.coerce.number().int().positive().optional(),
+  hourmeter:        z.coerce.number().int().positive().optional(),
+  checklist:        z.record(z.string(), z.unknown()).default({}),
+})
+
+export const equipmentReportReviewSchema = z.object({
+  reportId:         z.string().min(1),
+  status:           z.enum(["aprobado", "observado", "requiere_cierre"]),
+  findings:         z.record(z.string(), z.unknown()).default({}),
+})
+
+export const equipmentChecklistSchema = z.object({
+  worksiteId:  z.string().min(1),
+  kind:        z.enum(["contenedor", "camion", "equipo", "carro", "batea", "taller_respel"]),
+  assetCode:   z.string().min(1),
+  items:       z.record(z.string(), z.unknown()).default({}),
+  status:      z.enum(["ok", "observado", "fuera_servicio"]).default("ok"),
+  closeRequired: z.boolean().default(false),
+})
+
+/* ── Alcotest ────────────────────────────────────────────────────────────── */
+export const alcoholTestSchema = z.object({
+  worksiteId:    z.string().min(1),
+  testedWorkerId: z.string().optional().or(z.literal("")),
+  shift:         z.string().min(1),
+  result:        z.enum(["negativo", "positivo", "rechazado", "no_concluyente"]),
+  evidenceUrl:   z.string().max(500).optional().or(z.literal("")),
+  sentAt:        z.string().optional().or(z.literal("")),
+})
+
+/* ── Matriz EPP ──────────────────────────────────────────────────────────── */
+export const eppPositionEntrySchema = z.object({
+  worksiteId:    z.string().min(1),
+  position:      z.string().trim().min(1).max(120),
+  eppProductId:  z.string().min(1),
+  riskId:        z.string().optional().or(z.literal("")),
+  requiredSince: z.string().min(1),
+  notes:         z.string().max(500).optional().or(z.literal("")),
+})
+
+export const eppLifecyclePolicySchema = z.object({
+  eppProductId:       z.string().min(1),
+  lifespanDays:       z.coerce.number().int().positive(),
+  maxReuses:          z.coerce.number().int().positive().optional(),
+  inspectionChecklist: z.record(z.string(), z.unknown()).default({}),
+})
+
+export const eppStockThresholdSchema = z.object({
+  worksiteId:    z.string().min(1),
+  eppProductId:  z.string().min(1),
+  minStock:      z.coerce.number().int().min(0),
+  criticalStock: z.coerce.number().int().min(0),
+})
+
+/* ── Permisos de trabajo ─────────────────────────────────────────────────── */
+export const permitTemplateCreateSchema = z.object({
+  code:            z.string().trim().min(1).max(40),
+  title:           z.string().trim().min(1).max(160),
+  riskType:        z.enum(["altura", "confinado", "caliente", "excavacion", "izaje", "electrico", "otro"]),
+  astFields:       z.record(z.string(), z.unknown()).default({}),
+  validityHours:   z.coerce.number().int().positive().optional(),
+  requiresSignoff: z.record(z.string(), z.unknown()).default({}),
+})
+
+export const permitRequestSchema = z.object({
+  templateId:   z.string().min(1),
+  worksiteId:   z.string().min(1),
+  task:         z.string().trim().min(1).max(500),
+  location:     z.string().trim().min(1).max(200),
+  plannedStart: z.string().min(1),
+  plannedEnd:   z.string().min(1),
+  ast:          z.record(z.string(), z.unknown()).default({}),
+})

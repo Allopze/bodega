@@ -223,7 +223,7 @@ function ApprovalButtons({
   return (
     <div className="flex flex-wrap gap-1">
       {pending.map((exec) => (
-        <form key={exec.id} action={approvePdtpExecutionAction.bind(null, exec.id)}>
+        <form key={exec.id} action={async () => { await approvePdtpExecutionAction(exec.id) }}>
           <button
             type="submit"
             className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]"

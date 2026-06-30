@@ -454,10 +454,6 @@ async function main() {
 
   console.log("")
   console.log("Seed base completado.")
-  console.log("")
-  console.log("  Usuario administrador:")
-  console.log(`    ${adminEmail}`)
-  console.log("")
   console.log("  La contraseña viene de SEED_ADMIN_PASSWORD; si no se define, usa chome2026.")
   console.log(`  Faenas cargadas: ${seedWorkerData.worksites.length}.`)
   console.log(`  Trabajadores cargados: ${seedWorkerData.workers.length} (${seedWorkerData.skippedDuplicateRuts} RUT duplicado omitido).`)
@@ -465,6 +461,17 @@ async function main() {
   console.log(`  Catálogo EPP cargado: ${EPP_CATALOG_ITEMS.length} productos, ${EPP_SUPPLIERS.length} proveedores.`)
   console.log(`  Catálogo PDTP 2026 cargado: ${pdtpCatalog2026.activities.length} actividades.`)
   console.log("  No se cargaron stock ni solicitudes demo.")
+
+  /* ── MINSAL Protocols seed ─────────────────────────────────────────── */
+  console.log("")
+  console.log("  Sembrando protocolos MINSAL...")
+  try {
+    const { seedMinsalProtocols } = await import("@/lib/services/prevention-health")
+    await seedMinsalProtocols()
+    console.log("  Protocolos MINSAL cargados (PREXOR, TMERT, psicosocial, UV, sílice, hiperbaria, estrés térmico).")
+  } catch (e) {
+    console.log(`  Protocolos MINSAL: ya cargados. (${(e as Error).message})`)
+  }
 }
 
 main()
