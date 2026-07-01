@@ -165,8 +165,8 @@ export type TrainingMatrixRow = {
 // Cruce cargo × curso. Un trabajador "cumple" si tiene una asignación al curso
 // cuya expiresAt es null (sin vencimiento) o >= today.
 export async function getTrainingMatrix(scope: WorksiteScope, today: string): Promise<TrainingMatrixRow[]> {
-  const courses = await listTrainingCourses() // solo activos
-  const withCargo = courses.filter((c) => Array.isArray(c.requiredForCargo) && (c.requiredForCargo as string[]).length > 0)
+  const courses = await listTrainingCourses()
+  const withCargo = courses.filter((c) => c.isActive && Array.isArray(c.requiredForCargo) && (c.requiredForCargo as string[]).length > 0)
   if (withCargo.length === 0) return []
 
   const activeWhere = scope === "all"

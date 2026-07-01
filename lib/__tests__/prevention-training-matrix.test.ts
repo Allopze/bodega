@@ -109,4 +109,28 @@ describe("getTrainingMatrix (Feature A)", () => {
     const row = matrix.find((r) => r.courseId === course.id && r.cargo === "operador")
     expect(row!.compliantCount).toBe(0)
   })
+
+  it("un curso inactivo no aparece en la matriz aunque tenga requiredForCargo y asignaciones vigentes", async () => {
+    const { createTrainingCourse, assignTrainingToWorker, getTrainingMatrix } = await import("@/lib/services/prevention-training")
+    const { eq } = await import("drizzle-orm")
+
+    const course = await createTrainingCourse({
+      code: "ALT-03", name: "Altura 3 (deprecated)", validityMonths: 12, requiredForCargo: ["operador"],
+    }, "user-1")
+
+    // Marcar curso como inactivo
+    await inMemoryDb.update(schema.trainingCourses)
+      .set({ isActive: false })
+      .where(eq(schema.trainingCourses.id, course.id))
+
+    // Asignar a un trabajador con vigencia válida
+    await assignTrainingToWorker({
+      courseId: course.id, workerId: "w-op1", worksiteId: "ws-1",
+      completedAt: "2026-01-01", expiresAt: "2027-01-01",
+    }, "user-1", ["ws-1"])
+
+    const matrix = await getTrainingMatrix(["ws-1"], "2026-07-01")
+    const row = matrix.find((r) => r.courseId === course.id && r.cargo === "operador")
+    expect(row).toBeUndefined()
+  })
 })
