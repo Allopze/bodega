@@ -126,6 +126,9 @@ export const preventionModule = {
           href: "/prevencion/capacitaciones",
           iconName: "Certificate",
           permissions: ["prevention:training:view"],
+          children: [
+            { label: "Matriz por cargo", href: "/prevencion/capacitaciones/matriz", permissions: ["prevention:training:view"] },
+          ],
         },
         {
           label: "Inspecciones",
