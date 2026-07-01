@@ -14,6 +14,7 @@ import type { PreventionIncident } from "@/db/schema"
 import { IncidentForm } from "./incident-form"
 import { formatDateDisplay } from "@/lib/sst/date"
 import { INCIDENT_TYPE_LABELS, INCIDENT_SEVERITY_VARIANTS, INCIDENT_STATUS_LABELS, incidentStatusVariant } from "@/lib/prevention/badges"
+import { incidentSlaBreached } from "@/lib/prevention/incident-sla"
 
 interface WorkerSummary {
   firstName: string
@@ -106,7 +107,12 @@ export function IncidentList({ incidents, worksites, canManage, showForm, onShow
                   }
                 }}
               >
-                <TableCell className="font-mono text-xs">{formatDateDisplay(i.occurredAt.slice(0, 10))}</TableCell>
+                <TableCell className="font-mono text-xs">
+                  <span className="flex items-center gap-2">
+                    {formatDateDisplay(i.occurredAt.slice(0, 10))}
+                    {incidentSlaBreached(i) ? <Badge variant="danger">SLA excedido</Badge> : null}
+                  </span>
+                </TableCell>
                 <TableCell>{INCIDENT_TYPE_LABELS[i.type] ?? i.type}</TableCell>
                 <TableCell className="font-medium">{i.title}</TableCell>
                 <TableCell>
