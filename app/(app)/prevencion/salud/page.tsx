@@ -1,9 +1,14 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
+import { and, asc, eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { scopeToIds } from "@/lib/ppa/utils"
+import { db } from "@/db"
+import { workers } from "@/db/schema/worksites"
 import { listMinsalProtocols } from "@/lib/services/prevention-health"
 import { PageContainer } from "@/components/ui/page-container"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { SaludPanel } from "./salud-panel"
 
 export const metadata: Metadata = { title: "Salud ocupacional" }
 
@@ -13,43 +18,35 @@ export default async function SaludPage() {
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:health:view")) redirect("/forbidden")
 
-  const protocols = await listMinsalProtocols()
+  const scope = scopeToIds(resolveWorksiteScope(session))
+
+  const [protocols, workerRows] = await Promise.all([
+    listMinsalProtocols(),
+    db
+      .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut })
+      .from(workers)
+      .where(
+        scope === "all"
+          ? eq(workers.isActive, true)
+          : scope.length > 0
+            ? and(eq(workers.isActive, true), inArray(workers.worksiteId, scope))
+            : undefined,
+      )
+      .orderBy(asc(workers.firstName), asc(workers.lastName)),
+  ])
+
+  const workerOptions = scope !== "all" && scope.length === 0
+    ? []
+    : workerRows.map((w) => ({ id: w.id, name: `${w.firstName} ${w.lastName}`.trim(), rut: w.rut ?? "" }))
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Salud ocupacional" }]} />
-      <PageHeader title="Salud ocupacional" description="Exámenes, aptitudes, restricciones y protocolos MINSAL (N° 44-50 PDTP)" />
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded border p-4">
-          <h3 className="text-sm font-medium mb-3">Protocolos MINSAL</h3>
-          {protocols.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin protocolos cargados. Ejecutar seed.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground">
-                  <th className="pb-2">Código</th>
-                  <th className="pb-2">Nombre</th>
-                  <th className="pb-2">Marco legal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {protocols.map((p) => (
-                  <tr key={p.id} className="border-t">
-                    <td className="py-1.5">{p.code}</td>
-                    <td className="py-1.5">{p.name}</td>
-                    <td className="py-1.5 text-xs text-muted-foreground">{p.legalFramework}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-        <div className="rounded border p-4">
-          <h3 className="text-sm font-medium mb-3">Acciones</h3>
-          <p className="text-sm text-muted-foreground">Seleccione un trabajador para ver su ficha de salud, exámenes, aptitudes y restricciones vigentes.</p>
-        </div>
-      </div>
+      <SaludPanel
+        protocols={protocols}
+        workers={workerOptions}
+        canManage={can(session, "prevention:health:manage")}
+        canRestrict={can(session, "prevention:health:restrict")}
+      />
     </PageContainer>
   )
 }

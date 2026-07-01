@@ -3,13 +3,14 @@
  * Matriz EPP por cargo/riesgo, ciclo de vida, recambio, stock crítico (PDTP N° 61-65).
  */
 
-import { and, eq, inArray, isNull, lte } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, lte } from "drizzle-orm"
 import { db } from "@/db"
 import {
   eppPositionMatrix,
   eppLifecyclePolicies,
   eppRecambioLog,
   eppStockThresholds,
+  workers,
 } from "@/db/schema"
 import type { ReportData } from "@/lib/reports/export"
 import { nanoid } from "@/lib/id"
@@ -17,6 +18,7 @@ import {
   eppPositionEntrySchema,
   eppLifecyclePolicySchema,
   eppStockThresholdSchema,
+  eppDeliveryLogSchema,
 } from "@/lib/validation/prevention"
 
 type WorksiteScope = string[] | "all"
@@ -24,6 +26,13 @@ type WorksiteScope = string[] | "all"
 function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
   if (scope === "all") return
   if (!scope.includes(worksiteId)) throw new Error("Sin acceso a esta faena.")
+}
+
+async function assertWorkerAccess(workerId: string, scope: WorksiteScope): Promise<void> {
+  if (scope === "all") return
+  const [worker] = await db.select({ worksiteId: workers.worksiteId }).from(workers).where(eq(workers.id, workerId)).limit(1)
+  if (!worker) throw new Error("Trabajador no encontrado.")
+  if (!scope.includes(worker.worksiteId)) throw new Error("Sin acceso a esta faena.")
 }
 
 /* ── Position matrix ────────────────────────────────────────────────────── */
@@ -104,14 +113,12 @@ export async function getEppLifecyclePolicy(eppProductId: string) {
 
 /* ── Recambio log ───────────────────────────────────────────────────────── */
 
-export async function logEppDelivery(input: {
-  workerId: string
-  eppProductId: string
-  deliveredAt?: string
-}) {
-  const policy = await getEppLifecyclePolicy(input.eppProductId)
+export async function logEppDelivery(input: unknown, scope: WorksiteScope = "all") {
+  const data = eppDeliveryLogSchema.parse(input)
+  await assertWorkerAccess(data.workerId, scope)
+  const policy = await getEppLifecyclePolicy(data.eppProductId)
   const now = new Date().toISOString()
-  const deliveredAt = input.deliveredAt ?? now
+  const deliveredAt = data.deliveredAt || now
 
   let expiresAt: string | null = null
   if (policy) {
@@ -122,14 +129,40 @@ export async function logEppDelivery(input: {
 
   const [row] = await db.insert(eppRecambioLog).values({
     id: `ercl-${nanoid()}`,
-    workerId: input.workerId,
-    eppProductId: input.eppProductId,
+    workerId: data.workerId,
+    eppProductId: data.eppProductId,
     deliveredAt,
     expiresAt,
+    evidenceUrl: data.evidenceUrl,
     createdAt: now,
     updatedAt: now,
   }).returning()
   return row
+}
+
+export async function acknowledgeEppDelivery(recambioLogId: string, scope: WorksiteScope = "all") {
+  const [existing] = await db.select().from(eppRecambioLog).where(eq(eppRecambioLog.id, recambioLogId)).limit(1)
+  if (!existing) throw new Error("Entrega de EPP no encontrada.")
+  await assertWorkerAccess(existing.workerId, scope)
+
+  const now = new Date().toISOString()
+  const [row] = await db.update(eppRecambioLog)
+    .set({ acknowledgedAt: now, updatedAt: now })
+    .where(eq(eppRecambioLog.id, recambioLogId))
+    .returning()
+  if (!row) throw new Error("Entrega de EPP no encontrada.")
+  return row
+}
+
+export async function listEppDeliveries(worksiteId: string, scope: WorksiteScope, limit = 50) {
+  assertWorksiteAccess(worksiteId, scope)
+  const worksiteWorkers = await db.select({ id: workers.id }).from(workers).where(eq(workers.worksiteId, worksiteId))
+  const workerIds = worksiteWorkers.map((w) => w.id)
+  if (workerIds.length === 0) return []
+  return db.select().from(eppRecambioLog)
+    .where(inArray(eppRecambioLog.workerId, workerIds))
+    .orderBy(desc(eppRecambioLog.deliveredAt))
+    .limit(limit)
 }
 
 export async function getWorkerActiveEpp(workerId: string) {
@@ -145,8 +178,13 @@ export async function getWorkerActiveEpp(workerId: string) {
 export async function getExpiredEpp(worksiteId: string, scope: WorksiteScope, today?: string) {
   assertWorksiteAccess(worksiteId, scope)
   const now = today ?? new Date().toISOString()
+  // eppRecambioLog no tiene worksiteId propio; se resuelve via la faena del trabajador.
+  const worksiteWorkers = await db.select({ id: workers.id }).from(workers).where(eq(workers.worksiteId, worksiteId))
+  const workerIds = worksiteWorkers.map((w) => w.id)
+  if (workerIds.length === 0) return []
   return db.select().from(eppRecambioLog)
     .where(and(
+      inArray(eppRecambioLog.workerId, workerIds),
       isNull(eppRecambioLog.returnedAt),
       lte(eppRecambioLog.expiresAt, now),
     ))

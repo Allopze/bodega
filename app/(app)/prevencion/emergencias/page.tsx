@@ -6,7 +6,10 @@ import { listDrills, getOverdueEquipmentInspections } from "@/lib/services/preve
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import { EmptyState } from "@/components/ui/empty-state"
 import { PreventionExportButton } from "@/components/prevention/export-button"
+import { formatDateSafe } from "@/lib/sst/date"
 
 export const metadata: Metadata = { title: "Emergencias y CGRD" }
 
@@ -48,37 +51,41 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
         <div className="rounded border p-4">
           <p className="text-xs text-muted-foreground">Último simulacro</p>
           <p className="text-h1 font-semibold text-sm">
-            {drills.find((d) => d.executedAt)?.executedAt?.slice(0, 10) ?? "Sin registro"}
+            {drills.find((d) => d.executedAt)?.executedAt ? formatDateSafe(drills.find((d) => d.executedAt)!.executedAt) : "Sin registro"}
           </p>
         </div>
       </div>
 
-      <div className="rounded border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-3 py-2 text-left">Tipo</th>
-              <th className="px-3 py-2 text-left">Programado</th>
-              <th className="px-3 py-2 text-left">Ejecutado</th>
-              <th className="px-3 py-2 text-left">Asistentes</th>
-              <th className="px-3 py-2 text-left">Efectividad</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableRoot>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Programado</TableHead>
+              <TableHead>Ejecutado</TableHead>
+              <TableHead>Asistentes</TableHead>
+              <TableHead>Efectividad</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {drills.length === 0 ? (
-              <tr><td colSpan={5} className="px-3 py-4 text-center text-muted-foreground">Sin simulacros.</td></tr>
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <EmptyState compact title="Sin simulacros" description="Aún no se han registrado simulacros para esta faena." />
+                </TableCell>
+              </TableRow>
             ) : drills.map((d) => (
-              <tr key={d.id} className="border-t">
-                <td className="px-3 py-2">{d.type}</td>
-                <td className="px-3 py-2">{d.scheduledAt?.slice(0, 10)}</td>
-                <td className="px-3 py-2">{d.executedAt?.slice(0, 10) ?? "Pendiente"}</td>
-                <td className="px-3 py-2">{d.attendees ?? "-"}</td>
-                <td className="px-3 py-2">{d.effectiveness ?? "-"}</td>
-              </tr>
+              <TableRow key={d.id}>
+                <TableCell>{d.type}</TableCell>
+                <TableCell>{formatDateSafe(d.scheduledAt)}</TableCell>
+                <TableCell>{d.executedAt ? formatDateSafe(d.executedAt) : "Pendiente"}</TableCell>
+                <TableCell>{d.attendees ?? "-"}</TableCell>
+                <TableCell>{d.effectiveness ?? "-"}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableRoot>
     </PageContainer>
   )
 }

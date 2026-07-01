@@ -10,6 +10,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { WarningDiamond, Plus } from "@phosphor-icons/react"
 import type { IperMatrix } from "@/db/schema"
 import { IperForm } from "./iper-form"
+import { formatDateDisplay } from "@/lib/sst/date"
+import { IPER_STATUS_LABELS, IPER_STATUS_VARIANTS } from "@/lib/prevention/badges"
 
 interface Props {
   matrices: IperMatrix[]
@@ -17,18 +19,6 @@ interface Props {
   canManage: boolean
   showForm: boolean
   onShowFormChange: (show: boolean) => void
-}
-
-const RISK_BADGE: Record<string, "default" | "warning" | "danger" | "success"> = {
-  draft:   "default",
-  active:  "warning",
-  closed:  "success",
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  draft:  "Borrador",
-  active: "Vigente",
-  closed: "Cerrada",
 }
 
 export function IperList({ matrices, worksites, canManage, showForm, onShowFormChange }: Props) {
@@ -85,10 +75,10 @@ export function IperList({ matrices, worksites, canManage, showForm, onShowFormC
                 <TableCell className="font-medium">{m.title}</TableCell>
                 <TableCell>{worksiteName(m.worksiteId)}</TableCell>
                 <TableCell className="font-mono">v{m.version}</TableCell>
-                <TableCell>{m.effectiveFrom}</TableCell>
+                <TableCell>{formatDateDisplay(m.effectiveFrom.slice(0, 10))}</TableCell>
                 <TableCell>
-                  <Badge variant={RISK_BADGE[m.status] ?? "default"}>
-                    {STATUS_LABEL[m.status] ?? m.status}
+                  <Badge variant={IPER_STATUS_VARIANTS[m.status] ?? "default"}>
+                    {IPER_STATUS_LABELS[m.status] ?? m.status}
                   </Badge>
                 </TableCell>
               </TableRow>

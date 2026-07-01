@@ -86,7 +86,7 @@ export async function createInspectionRun(input: unknown, userId: string, scope:
       runId,
       itemKey: item.key,
       expected: item.expected,
-      status: "ok",
+      status: "pendiente",
       createdAt: now,
       updatedAt: now,
     })
@@ -167,14 +167,10 @@ export async function closeInspectionRun(input: unknown, userId: string, scope: 
   if (run.status === "closed") throw new Error("La inspección ya está cerrada.")
   assertWorksiteAccess(run.worksiteId, scope)
 
-  const pendingItems = await db.select().from(inspectionItems)
-    .where(and(eq(inspectionItems.runId, data.runId), eq(inspectionItems.status, "ok")))
-  if (pendingItems.length > 0) {
-    const updated = await db.select().from(inspectionItems)
-      .where(and(eq(inspectionItems.runId, data.runId), eq(inspectionItems.status, "na")))
-    if (updated.length < pendingItems.length) {
-      throw new Error("Hay ítems sin evaluar. Todos los ítems deben tener estado ok, no_conforme, critico o na.")
-    }
+  const unevaluated = await db.select({ id: inspectionItems.id }).from(inspectionItems)
+    .where(and(eq(inspectionItems.runId, data.runId), eq(inspectionItems.status, "pendiente")))
+  if (unevaluated.length > 0) {
+    throw new Error("Hay ítems sin evaluar. Todos los ítems deben tener estado ok, no_conforme, critico o na.")
   }
 
   const now = new Date().toISOString()

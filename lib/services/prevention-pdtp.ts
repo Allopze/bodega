@@ -323,6 +323,21 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   const data = pdtpExecutionSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
 
+  const [activity] = await db.select({ programId: pdtpActivities.programId })
+    .from(pdtpActivities)
+    .where(eq(pdtpActivities.id, data.activityId))
+    .limit(1)
+  if (!activity) throw new Error("Actividad PDTP no encontrada.")
+
+  const [program] = await db.select({ status: pdtpPrograms.status })
+    .from(pdtpPrograms)
+    .where(eq(pdtpPrograms.id, activity.programId))
+    .limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "active") {
+    throw new Error("Solo se pueden registrar ejecuciones contra programas PDTP en estado activo.")
+  }
+
   const now = new Date().toISOString()
   const id = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
 

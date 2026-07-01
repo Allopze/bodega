@@ -1,6 +1,15 @@
 /**
  * lib/services/prevention-health.ts
  * Salud ocupacional y protocolos MINSAL (PDTP N° 44-50).
+ *
+ * Confidencialidad:
+ *   `assertWorkerAccess` (línea siguiente) resuelve worker→worksite vía DB y
+ *   rechaza el acceso si la faena no está en `scope`. Es el único gate de
+ *   confidencialidad para datos médicos mientras las acciones de `salud/`
+ *   no existan (Fase P3). **Las actions que se creen para este servicio
+ *   DEBEN** usar `guardPermission("prevention:health:view")` (o equivalente)
+ *   **y pasar el `scope` resuelto al servicio** — no basta con un `guardAuth()`
+ *   plano. Cualquier action expuesta sin `assertWorkerAccess` reintroduce B3.
  */
 
 import { and, desc, eq, inArray, lte } from "drizzle-orm"
@@ -11,44 +20,48 @@ import {
   healthRestrictions,
   minsalProtocols,
   protocolApplications,
+  workers,
 } from "@/db/schema"
-import type { ReportData } from "@/lib/reports/export"
 import { nanoid } from "@/lib/id"
+import {
+  healthExamCreateSchema,
+  healthAptitudeSchema,
+  healthRestrictionCreateSchema,
+} from "@/lib/validation/prevention"
 
 type WorksiteScope = string[] | "all"
 
-function assertWorksiteAccess(_worksiteId: string, _scope: WorksiteScope): void {
-  // Health data accessed via worker, scope enforced by worker's worksite
+async function assertWorkerAccess(workerId: string, scope: WorksiteScope): Promise<void> {
+  if (scope === "all") return
+  const [worker] = await db.select({ worksiteId: workers.worksiteId }).from(workers).where(eq(workers.id, workerId)).limit(1)
+  if (!worker) throw new Error("Trabajador no encontrado.")
+  if (!scope.includes(worker.worksiteId)) throw new Error("Sin acceso a esta faena.")
 }
 
 /* ── Health exams ───────────────────────────────────────────────────────── */
 
-export async function registerHealthExam(input: {
-  workerId: string
-  type: string
-  protocolId?: string
-  performedAt: string
-  result: string
-  expiresAt?: string
-  evidenceUrl?: string
-}) {
+export async function registerHealthExam(input: unknown, scope: WorksiteScope) {
+  const data = healthExamCreateSchema.parse(input)
+  await assertWorkerAccess(data.workerId, scope)
+
   const now = new Date().toISOString()
   const [row] = await db.insert(healthExams).values({
     id: `hexm-${nanoid()}`,
-    workerId: input.workerId,
-    type: input.type,
-    protocolId: input.protocolId ?? null,
-    performedAt: input.performedAt,
-    result: input.result,
-    expiresAt: input.expiresAt ?? null,
-    evidenceUrl: input.evidenceUrl ?? null,
+    workerId: data.workerId,
+    type: data.type,
+    protocolId: data.protocolId || null,
+    performedAt: data.performedAt,
+    result: data.result,
+    expiresAt: data.expiresAt || null,
+    evidenceUrl: data.evidenceUrl || null,
     createdAt: now,
     updatedAt: now,
   }).returning()
   return row
 }
 
-export async function getWorkerHealthExams(workerId: string) {
+export async function getWorkerHealthExams(workerId: string, scope: WorksiteScope) {
+  await assertWorkerAccess(workerId, scope)
   return db.select().from(healthExams)
     .where(eq(healthExams.workerId, workerId))
     .orderBy(desc(healthExams.performedAt))
@@ -56,30 +69,27 @@ export async function getWorkerHealthExams(workerId: string) {
 
 /* ── Aptitudes ──────────────────────────────────────────────────────────── */
 
-export async function setHealthAptitude(input: {
-  workerId: string
-  examId?: string
-  position: string
-  aptitude: string
-  restrictions?: Record<string, unknown>
-  validUntil?: string
-}) {
+export async function setHealthAptitude(input: unknown, scope: WorksiteScope) {
+  const data = healthAptitudeSchema.parse(input)
+  await assertWorkerAccess(data.workerId, scope)
+
   const now = new Date().toISOString()
   const [row] = await db.insert(healthAptitudes).values({
     id: `hapt-${nanoid()}`,
-    workerId: input.workerId,
-    examId: input.examId ?? null,
-    position: input.position,
-    aptitude: input.aptitude,
-    restrictions: input.restrictions ?? {},
-    validUntil: input.validUntil ?? null,
+    workerId: data.workerId,
+    examId: data.examId || null,
+    position: data.position,
+    aptitude: data.aptitude,
+    restrictions: data.restrictions,
+    validUntil: data.validUntil || null,
     createdAt: now,
     updatedAt: now,
   }).returning()
   return row
 }
 
-export async function getActiveAptitude(workerId: string, position: string) {
+export async function getActiveAptitude(workerId: string, position: string, scope: WorksiteScope) {
+  await assertWorkerAccess(workerId, scope)
   const rows = await db.select().from(healthAptitudes)
     .where(and(
       eq(healthAptitudes.workerId, workerId),
@@ -92,28 +102,26 @@ export async function getActiveAptitude(workerId: string, position: string) {
 
 /* ── Restrictions ───────────────────────────────────────────────────────── */
 
-export async function addHealthRestriction(input: {
-  workerId: string
-  kind: string
-  description: string
-  effectiveFrom: string
-  effectiveTo?: string
-}) {
+export async function addHealthRestriction(input: unknown, scope: WorksiteScope) {
+  const data = healthRestrictionCreateSchema.parse(input)
+  await assertWorkerAccess(data.workerId, scope)
+
   const now = new Date().toISOString()
   const [row] = await db.insert(healthRestrictions).values({
     id: `hrest-${nanoid()}`,
-    workerId: input.workerId,
-    kind: input.kind,
-    description: input.description,
-    effectiveFrom: input.effectiveFrom,
-    effectiveTo: input.effectiveTo ?? null,
+    workerId: data.workerId,
+    kind: data.kind,
+    description: data.description,
+    effectiveFrom: data.effectiveFrom,
+    effectiveTo: data.effectiveTo || null,
     createdAt: now,
     updatedAt: now,
   }).returning()
   return row
 }
 
-export async function isRestricted(workerId: string, today?: string) {
+export async function isRestricted(workerId: string, scope: WorksiteScope, today?: string) {
+  await assertWorkerAccess(workerId, scope)
   const now = today ?? new Date().toISOString()
   const rows = await db.select().from(healthRestrictions)
     .where(and(
@@ -121,6 +129,18 @@ export async function isRestricted(workerId: string, today?: string) {
       lte(healthRestrictions.effectiveFrom, now),
     ))
   return rows.filter((r) => !r.effectiveTo || r.effectiveTo >= now)
+}
+
+/**
+ * Aviso de restricciones activas para otros módulos (P3.22): sin un mapeo
+ * curso/tarea→kind de restricción no hay base para bloquear automáticamente,
+ * así que esto solo hace visible la restricción (no rechaza) en capacitaciones,
+ * equipos e incidentes.
+ */
+export async function describeActiveRestrictions(workerId: string, scope: WorksiteScope, today?: string): Promise<string | null> {
+  const restrictions = await isRestricted(workerId, scope, today)
+  if (restrictions.length === 0) return null
+  return `Trabajador con restricción médica activa: ${restrictions.map((r) => r.kind).join(", ")}.`
 }
 
 /* ── MINSAL protocols ───────────────────────────────────────────────────── */
@@ -152,7 +172,8 @@ export async function listMinsalProtocols() {
   return db.select().from(minsalProtocols).orderBy(minsalProtocols.code)
 }
 
-export async function getDueProtocols(workerId: string, today?: string) {
+export async function getDueProtocols(workerId: string, scope: WorksiteScope, today?: string) {
+  await assertWorkerAccess(workerId, scope)
   const now = today ?? new Date().toISOString()
   return db.select().from(protocolApplications)
     .where(and(
@@ -162,13 +183,3 @@ export async function getDueProtocols(workerId: string, today?: string) {
     ))
 }
 
-/* ── Export ─────────────────────────────────────────────────────────────── */
-
-export async function buildHealthExport(scope: WorksiteScope): Promise<ReportData> {
-  return {
-    filenameBase: "salud-ocupacional",
-    worksheetName: "Salud",
-    headers: ["Tipo", "Código", "Valor"],
-    rows: [],
-  }
-}

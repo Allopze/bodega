@@ -1,5 +1,5 @@
-import { relations } from "drizzle-orm"
-import { boolean, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { relations, sql } from "drizzle-orm"
+import { boolean, check, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers } from "./worksites"
 
@@ -23,6 +23,7 @@ export const iperMatrices = pgTable("iper_matrices", {
 }, (table) => [
   uniqueIndex("iper_matrices_code_version_unique").on(table.code, table.version),
   index("iper_matrices_worksite_status_idx").on(table.worksiteId, table.status),
+  check("iper_matrices_status_valid", sql`${table.status} IN ('draft', 'active', 'closed')`),
 ])
 
 // Ítems de riesgo asociados a una matriz. Cada fila representa un peligro evaluado
@@ -53,6 +54,12 @@ export const iperRiskItems = pgTable("iper_risk_items", {
 }, (table) => [
   index("iper_risk_items_matrix_idx").on(table.matrixId),
   index("iper_risk_items_residual_level_idx").on(table.residualRiskLevel),
+  check("iper_risk_items_initial_level_valid", sql`${table.initialRiskLevel} IN ('bajo', 'medio', 'alto', 'critico')`),
+  check("iper_risk_items_residual_level_valid", sql`${table.residualRiskLevel} IN ('bajo', 'medio', 'alto', 'critico')`),
+  check("iper_risk_items_initial_probability_range", sql`${table.initialProbability} BETWEEN 1 AND 5`),
+  check("iper_risk_items_initial_severity_range", sql`${table.initialSeverity} BETWEEN 1 AND 5`),
+  check("iper_risk_items_residual_probability_range", sql`${table.residualProbability} BETWEEN 1 AND 5`),
+  check("iper_risk_items_residual_severity_range", sql`${table.residualSeverity} BETWEEN 1 AND 5`),
 ])
 
 /* ── Accidentes, incidentes y cuasi accidentes ───────────────────────────── */
@@ -61,7 +68,7 @@ export const iperRiskItems = pgTable("iper_risk_items", {
 export const preventionIncidents = pgTable("prevention_incidents", {
   id:             text("id").primaryKey(),
   worksiteId:     text("worksite_id").notNull().references(() => worksites.id),
-  workerId:       text("worker_id"),
+  workerId:       text("worker_id").references(() => workers.id),
   type:           text("type").notNull(),
   status:         text("status").notNull().default("open"),
   severity:       text("severity").notNull().default("leve"),
@@ -79,6 +86,9 @@ export const preventionIncidents = pgTable("prevention_incidents", {
 }, (table) => [
   index("prevention_incidents_worksite_status_idx").on(table.worksiteId, table.status),
   index("prevention_incidents_type_occurred_idx").on(table.type, table.occurredAt),
+  check("prevention_incidents_type_valid", sql`${table.type} IN ('accidente', 'incidente', 'cuasi_accidente', 'enfermedad_profesional')`),
+  check("prevention_incidents_status_valid", sql`${table.status} IN ('open', 'investigating', 'closed')`),
+  check("prevention_incidents_severity_valid", sql`${table.severity} IN ('leve', 'moderado', 'grave', 'fatal')`),
 ])
 
 // Acciones correctivas derivadas de la investigación de un incidente.
@@ -95,6 +105,7 @@ export const preventionIncidentActions = pgTable("prevention_incident_actions", 
   updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   index("prevention_incident_actions_incident_status_idx").on(table.incidentId, table.status),
+  check("prevention_incident_actions_status_valid", sql`${table.status} IN ('pendiente', 'en_curso', 'cerrada', 'cancelada')`),
 ])
 
 /* ── Capacitaciones, competencias y vencimientos ─────────────────────────── */
@@ -118,7 +129,7 @@ export const trainingCourses = pgTable("training_courses", {
 export const workerTrainingAssignments = pgTable("worker_training_assignments", {
   id:          text("id").primaryKey(),
   courseId:    text("course_id").notNull().references(() => trainingCourses.id),
-  workerId:    text("worker_id").notNull(),
+  workerId:    text("worker_id").notNull().references(() => workers.id),
   worksiteId:  text("worksite_id").notNull().references(() => worksites.id),
   completedAt: text("completed_at").notNull(),
   expiresAt:   text("expires_at"),
@@ -368,7 +379,7 @@ export const inspectionItems = pgTable("inspection_items", {
   itemKey:   text("item_key").notNull(),
   expected:  text("expected").notNull(),
   observed:  text("observed"),
-  status:    text("status").notNull().default("ok"),
+  status:    text("status").notNull().default("pendiente"),
   note:      text("note"),
   photoUrl:  text("photo_url"),
   closedAt:  timestamp("closed_at", { withTimezone: true, mode: "string" }),
@@ -383,7 +394,7 @@ export const behavioralObservations = pgTable("behavioral_observations", {
   id:                 text("id").primaryKey(),
   worksiteId:         text("worksite_id").notNull().references(() => worksites.id),
   observerId:         text("observer_id").notNull().references(() => users.id),
-  workerId:           text("worker_id"),
+  workerId:           text("worker_id").references(() => workers.id),
   antecedent:         text("antecedent").notNull(),
   behavior:           text("behavior").notNull(),
   consequence:        text("consequence").notNull(),
@@ -507,15 +518,19 @@ export const eppLifecyclePolicies = pgTable("epp_lifecycle_policies", {
 })
 
 export const eppRecambioLog = pgTable("epp_recambio_log", {
-  id:           text("id").primaryKey(),
-  workerId:     text("worker_id").notNull().references(() => workers.id),
-  eppProductId: text("epp_product_id").notNull().references(() => eppLifecyclePolicies.eppProductId),
-  deliveredAt:  timestamp("delivered_at", { withTimezone: true, mode: "string" }).notNull(),
-  expiresAt:    timestamp("expires_at", { withTimezone: true, mode: "string" }),
-  returnedAt:   timestamp("returned_at", { withTimezone: true, mode: "string" }),
-  disposition:  text("disposition"),
-  createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
-  updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+  id:             text("id").primaryKey(),
+  workerId:       text("worker_id").notNull().references(() => workers.id),
+  eppProductId:   text("epp_product_id").notNull().references(() => eppLifecyclePolicies.eppProductId),
+  deliveredAt:    timestamp("delivered_at", { withTimezone: true, mode: "string" }).notNull(),
+  expiresAt:      timestamp("expires_at", { withTimezone: true, mode: "string" }),
+  returnedAt:     timestamp("returned_at", { withTimezone: true, mode: "string" }),
+  disposition:    text("disposition"),
+  // Acta de entrega firmada (requisito legal CL): comprobante subido al entregar
+  // y acuse de recibo del trabajador.
+  evidenceUrl:    text("evidence_url"),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: "string" }),
+  createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   index("epp_recambio_log_worker_expires_idx").on(table.workerId, table.expiresAt),
 ])
@@ -755,6 +770,7 @@ export const healthExams = pgTable("health_exams", {
   updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   index("health_exams_worker_type_expires_idx").on(table.workerId, table.type, table.expiresAt),
+  check("health_exams_result_non_empty", sql`length(${table.result}) > 0`),
 ])
 
 export const healthAptitudes = pgTable("health_aptitudes", {
@@ -769,6 +785,7 @@ export const healthAptitudes = pgTable("health_aptitudes", {
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   index("health_aptitudes_worker_position_valid_idx").on(table.workerId, table.position, table.validUntil),
+  check("health_aptitudes_aptitude_valid", sql`${table.aptitude} IN ('apto', 'apto_con_restricciones', 'no_apto')`),
 ])
 
 export const healthRestrictions = pgTable("health_restrictions", {

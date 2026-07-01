@@ -24,6 +24,15 @@ export function IperForm({ worksites, onDone }: Props) {
     title: "",
     effectiveFrom: new Date().toISOString().slice(0, 10),
   })
+  const [errors, setErrors] = React.useState<Record<string, string[] | undefined>>({})
+
+  function resetError(field: string) {
+    setErrors((prev) => {
+      if (!prev[field]) return prev
+      const { [field]: _drop, ...rest } = prev
+      return rest
+    })
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -32,6 +41,7 @@ export function IperForm({ worksites, onDone }: Props) {
       return
     }
     setSubmitting(true)
+    setErrors({})
     const result = await createIperMatrixAction({
       worksiteId: form.worksiteId,
       code: form.code,
@@ -41,7 +51,14 @@ export function IperForm({ worksites, onDone }: Props) {
     })
     setSubmitting(false)
     if (!result.ok) {
-      toast.error(result.message)
+      if (result.fieldErrors) {
+        setErrors(result.fieldErrors)
+        const firstField = Object.keys(result.fieldErrors)[0]
+        const firstMsg = firstField ? result.fieldErrors[firstField]?.[0] : undefined
+        toast.error(firstMsg ? `${firstField}: ${firstMsg}` : (result.message ?? "Revisa los campos del formulario."))
+      } else {
+        toast.error(result.message ?? "Error al crear matriz IPER.")
+      }
       return
     }
     toast.success("Matriz IPER creada.")
@@ -49,13 +66,15 @@ export function IperForm({ worksites, onDone }: Props) {
     router.refresh()
   }
 
+  const fe = (k: string) => errors[k]?.[0]
+
   return (
     <form onSubmit={onSubmit} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4">
       <FieldGroup>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Field label="Faena" htmlFor="iper-worksite" required>
-            <Select value={form.worksiteId} onValueChange={(v) => setForm((f) => ({ ...f, worksiteId: v }))}>
-              <SelectTrigger id="iper-worksite">
+          <Field label="Faena" htmlFor="iper-worksite" required error={fe("worksiteId")}>
+            <Select value={form.worksiteId} onValueChange={(v) => { resetError("worksiteId"); setForm((f) => ({ ...f, worksiteId: v })) }}>
+              <SelectTrigger id="iper-worksite" aria-invalid={!!fe("worksiteId")}>
                 <SelectValue placeholder="Selecciona faena" />
               </SelectTrigger>
               <SelectContent>
@@ -66,44 +85,48 @@ export function IperForm({ worksites, onDone }: Props) {
             </Select>
           </Field>
 
-          <Field label="Código" htmlFor="iper-code" required>
+          <Field label="Código" htmlFor="iper-code" required error={fe("code")}>
             <Input
               id="iper-code"
               value={form.code}
-              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+              onChange={(e) => { resetError("code"); setForm((f) => ({ ...f, code: e.target.value })) }}
               placeholder="IPER-FA-2026"
+              aria-invalid={!!fe("code")}
               required
             />
           </Field>
 
-          <Field label="Versión" htmlFor="iper-version" required>
+          <Field label="Versión" htmlFor="iper-version" required error={fe("version")}>
             <Input
               id="iper-version"
               type="number"
               min={1}
               value={form.version}
-              onChange={(e) => setForm((f) => ({ ...f, version: e.target.value }))}
+              onChange={(e) => { resetError("version"); setForm((f) => ({ ...f, version: e.target.value })) }}
+              aria-invalid={!!fe("version")}
               required
             />
           </Field>
 
-          <Field label="Vigente desde" htmlFor="iper-from" required>
+          <Field label="Vigente desde" htmlFor="iper-from" required error={fe("effectiveFrom")}>
             <Input
               id="iper-from"
               type="date"
               value={form.effectiveFrom}
-              onChange={(e) => setForm((f) => ({ ...f, effectiveFrom: e.target.value }))}
+              onChange={(e) => { resetError("effectiveFrom"); setForm((f) => ({ ...f, effectiveFrom: e.target.value })) }}
+              aria-invalid={!!fe("effectiveFrom")}
               required
             />
           </Field>
         </div>
 
-        <Field label="Título" htmlFor="iper-title" required>
+        <Field label="Título" htmlFor="iper-title" required error={fe("title")}>
           <Input
             id="iper-title"
             value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            onChange={(e) => { resetError("title"); setForm((f) => ({ ...f, title: e.target.value })) }}
             placeholder="Matriz IPER Faena Norte 2026"
+            aria-invalid={!!fe("title")}
             required
           />
         </Field>

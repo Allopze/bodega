@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { guardAuth } from "@/lib/auth/can"
+import { guardAuth, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   createIperMatrix,
@@ -10,7 +10,7 @@ import {
   listIperRiskItems,
   closeIperMatrix,
 } from "@/lib/services/prevention-iper"
-import type { ActionState } from "@/lib/validation/prevention"
+import { iperMatrixCreateSchema, iperRiskItemSchema, type ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/iper"
 
@@ -21,7 +21,7 @@ function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | 
 }
 
 export async function listIperMatricesAction(): Promise<ActionState & { data?: { items: unknown[] } }> {
-  const { session, error } = await guardAuth()
+  const { session, error } = await guardPermission("prevention:iper:view")
   if (error) return error
   try {
     const items = await listIperMatrices(scopeToIds(resolveWorksiteScope(session)))
@@ -34,7 +34,7 @@ export async function listIperMatricesAction(): Promise<ActionState & { data?: {
 export async function listIperRiskItemsAction(
   matrixId: string,
 ): Promise<ActionState & { data?: { items: unknown[] } }> {
-  const { session, error } = await guardAuth()
+  const { session, error } = await guardPermission("prevention:iper:view")
   if (error) return error
   try {
     const items = await listIperRiskItems(matrixId, scopeToIds(resolveWorksiteScope(session)))
@@ -52,8 +52,12 @@ export async function createIperMatrixAction(
   if (!session.user.permissions?.includes("prevention:iper:manage")) {
     return { ok: false, message: "No tienes permisos para crear matrices IPER." }
   }
+  const parsed = iperMatrixCreateSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
   try {
-    const row = await createIperMatrix(input, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    const row = await createIperMatrix(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true, data: { id: row.id } }
   } catch (e) {
@@ -69,8 +73,12 @@ export async function addIperRiskItemAction(
   if (!session.user.permissions?.includes("prevention:iper:manage")) {
     return { ok: false, message: "No tienes permisos para registrar riesgos IPER." }
   }
+  const parsed = iperRiskItemSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
   try {
-    await addIperRiskItem(input, scopeToIds(resolveWorksiteScope(session)))
+    await addIperRiskItem(parsed.data, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {

@@ -11,11 +11,11 @@ interface Props {
 
 export function PreventionExportButton({ href, label = "Exportar XLSX" }: Props) {
   return (
-    <a href={href} download>
-      <Button variant="secondary" size="sm" type="button">
+    <Button asChild variant="secondary" size="sm">
+      <a href={href} download>
         <DownloadSimple size={14} className="mr-1" />
         {label}
-      </Button>
-    </a>
+      </a>
+    </Button>
   )
 }

@@ -1,0 +1,13 @@
+ALTER TABLE "health_aptitudes" ADD CONSTRAINT "health_aptitudes_aptitude_valid" CHECK ("health_aptitudes"."aptitude" IN ('apto', 'apto_con_restricciones', 'no_apto'));--> statement-breakpoint
+ALTER TABLE "health_exams" ADD CONSTRAINT "health_exams_result_non_empty" CHECK (length("health_exams"."result") > 0);--> statement-breakpoint
+ALTER TABLE "iper_matrices" ADD CONSTRAINT "iper_matrices_status_valid" CHECK ("iper_matrices"."status" IN ('draft', 'active', 'closed'));--> statement-breakpoint
+ALTER TABLE "iper_risk_items" ADD CONSTRAINT "iper_risk_items_initial_level_valid" CHECK ("iper_risk_items"."initial_risk_level" IN ('bajo', 'medio', 'alto', 'critico'));--> statement-breakpoint
+ALTER TABLE "iper_risk_items" ADD CONSTRAINT "iper_risk_items_residual_level_valid" CHECK ("iper_risk_items"."residual_risk_level" IN ('bajo', 'medio', 'alto', 'critico'));--> statement-breakpoint
+ALTER TABLE "iper_risk_items" ADD CONSTRAINT "iper_risk_items_initial_probability_range" CHECK ("iper_risk_items"."initial_probability" BETWEEN 1 AND 5);--> statement-breakpoint
+ALTER TABLE "iper_risk_items" ADD CONSTRAINT "iper_risk_items_initial_severity_range" CHECK ("iper_risk_items"."initial_severity" BETWEEN 1 AND 5);--> statement-breakpoint
+ALTER TABLE "iper_risk_items" ADD CONSTRAINT "iper_risk_items_residual_probability_range" CHECK ("iper_risk_items"."residual_probability" BETWEEN 1 AND 5);--> statement-breakpoint
+ALTER TABLE "iper_risk_items" ADD CONSTRAINT "iper_risk_items_residual_severity_range" CHECK ("iper_risk_items"."residual_severity" BETWEEN 1 AND 5);--> statement-breakpoint
+ALTER TABLE "prevention_incident_actions" ADD CONSTRAINT "prevention_incident_actions_status_valid" CHECK ("prevention_incident_actions"."status" IN ('pendiente', 'en_curso', 'cerrada', 'cancelada'));--> statement-breakpoint
+ALTER TABLE "prevention_incidents" ADD CONSTRAINT "prevention_incidents_type_valid" CHECK ("prevention_incidents"."type" IN ('accidente', 'incidente', 'cuasi_accidente', 'enfermedad_profesional'));--> statement-breakpoint
+ALTER TABLE "prevention_incidents" ADD CONSTRAINT "prevention_incidents_status_valid" CHECK ("prevention_incidents"."status" IN ('open', 'investigating', 'closed'));--> statement-breakpoint
+ALTER TABLE "prevention_incidents" ADD CONSTRAINT "prevention_incidents_severity_valid" CHECK ("prevention_incidents"."severity" IN ('leve', 'moderado', 'grave', 'fatal'));

@@ -14,6 +14,13 @@ import {
 } from "@/db/schema"
 import type { ReportData } from "@/lib/reports/export"
 import { nanoid } from "@/lib/id"
+import {
+  emergencyPlanCreateSchema,
+  emergencyDrillScheduleSchema,
+  emergencyDrillExecutionSchema,
+  emergencyEquipmentCreateSchema,
+  equipmentInspectionCreateSchema,
+} from "@/lib/validation/prevention"
 
 type WorksiteScope = string[] | "all"
 
@@ -24,27 +31,43 @@ function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
 
 /* ── Plans ──────────────────────────────────────────────────────────────── */
 
-export async function createEmergencyPlan(input: {
-  worksiteId: string
-  threats: Record<string, unknown>
-  roles: Record<string, unknown>
-  routes: Record<string, unknown>
-}, userId: string, scope: WorksiteScope) {
-  assertWorksiteAccess(input.worksiteId, scope)
+export async function createEmergencyPlan(input: unknown, _userId: string, scope: WorksiteScope) {
+  const data = emergencyPlanCreateSchema.parse(input)
+  assertWorksiteAccess(data.worksiteId, scope)
   const now = new Date().toISOString()
+  // FIX P3.13 (audit §2.3): un plan nace en `borrador` con approvedBy/At nulos.
+  // Antes se auto-aprobaba al crear, lo cual volvía decorativas las columnas
+  // de aprobación. La aprobación ahora es una acción separada (ver
+  // `approveEmergencyPlan`) que exige un permiso dedicado.
   const [row] = await db.insert(emergencyPlans).values({
     id: `empl-${nanoid()}`,
-    worksiteId: input.worksiteId,
+    worksiteId: data.worksiteId,
     version: 1,
-    threats: input.threats,
-    roles: input.roles,
-    routes: input.routes,
-    approvedBy: userId,
-    approvedAt: now,
+    threats: data.threats,
+    roles: data.roles,
+    routes: data.routes,
+    approvedBy: null,
+    approvedAt: null,
     createdAt: now,
     updatedAt: now,
   }).returning()
+  if (!row) throw new Error("No se pudo crear el plan de emergencia.")
   return row
+}
+
+export async function approveEmergencyPlan(planId: string, userId: string, scope: WorksiteScope) {
+  const [plan] = await db.select().from(emergencyPlans).where(eq(emergencyPlans.id, planId)).limit(1)
+  if (!plan) throw new Error("Plan de emergencia no encontrado.")
+  assertWorksiteAccess(plan.worksiteId, scope)
+  if (plan.approvedAt) throw new Error("El plan ya está aprobado.")
+
+  const now = new Date().toISOString()
+  const [updated] = await db.update(emergencyPlans)
+    .set({ approvedBy: userId, approvedAt: now, updatedAt: now })
+    .where(eq(emergencyPlans.id, planId))
+    .returning()
+  if (!updated) throw new Error("No se pudo aprobar el plan.")
+  return updated
 }
 
 export async function getActiveEmergencyPlan(worksiteId: string, scope: WorksiteScope) {
@@ -58,21 +81,18 @@ export async function getActiveEmergencyPlan(worksiteId: string, scope: Worksite
 
 /* ── Drills ─────────────────────────────────────────────────────────────── */
 
-export async function scheduleDrill(input: {
-  planId: string
-  type: string
-  scheduledAt: string
-}, scope: WorksiteScope) {
-  const [plan] = await db.select().from(emergencyPlans).where(eq(emergencyPlans.id, input.planId)).limit(1)
+export async function scheduleDrill(input: unknown, scope: WorksiteScope) {
+  const data = emergencyDrillScheduleSchema.parse(input)
+  const [plan] = await db.select().from(emergencyPlans).where(eq(emergencyPlans.id, data.planId)).limit(1)
   if (!plan) throw new Error("Plan no encontrado.")
   assertWorksiteAccess(plan.worksiteId, scope)
 
   const now = new Date().toISOString()
   const [row] = await db.insert(emergencyDrills).values({
     id: `edrl-${nanoid()}`,
-    planId: input.planId,
-    type: input.type,
-    scheduledAt: input.scheduledAt,
+    planId: data.planId,
+    type: data.type,
+    scheduledAt: data.scheduledAt,
     findings: {},
     createdAt: now,
     updatedAt: now,
@@ -80,11 +100,8 @@ export async function scheduleDrill(input: {
   return row
 }
 
-export async function recordDrillExecution(drillId: string, input: {
-  attendees?: number
-  findings?: Record<string, unknown>
-  effectiveness?: string
-}, scope: WorksiteScope) {
+export async function recordDrillExecution(drillId: string, input: unknown, scope: WorksiteScope) {
+  const data = emergencyDrillExecutionSchema.parse(input)
   const [drill] = await db.select().from(emergencyDrills).where(eq(emergencyDrills.id, drillId)).limit(1)
   if (!drill) throw new Error("Simulacro no encontrado.")
   const [plan] = await db.select().from(emergencyPlans).where(eq(emergencyPlans.id, drill.planId)).limit(1)
@@ -94,9 +111,9 @@ export async function recordDrillExecution(drillId: string, input: {
   const now = new Date().toISOString()
   const [updated] = await db.update(emergencyDrills).set({
     executedAt: now,
-    attendees: input.attendees ?? null,
-    findings: input.findings ?? {},
-    effectiveness: input.effectiveness ?? null,
+    attendees: data.attendees ?? null,
+    findings: data.findings,
+    effectiveness: data.effectiveness || null,
     updatedAt: now,
   }).where(eq(emergencyDrills.id, drillId)).returning()
   return updated
@@ -115,22 +132,17 @@ export async function listDrills(scope: WorksiteScope) {
 
 /* ── Equipment ──────────────────────────────────────────────────────────── */
 
-export async function registerEmergencyEquipment(input: {
-  worksiteId: string
-  kind: string
-  code: string
-  location: string
-  nextInspectionAt?: string
-}, scope: WorksiteScope) {
-  assertWorksiteAccess(input.worksiteId, scope)
+export async function registerEmergencyEquipment(input: unknown, scope: WorksiteScope) {
+  const data = emergencyEquipmentCreateSchema.parse(input)
+  assertWorksiteAccess(data.worksiteId, scope)
   const now = new Date().toISOString()
   const [row] = await db.insert(emergencyEquipment).values({
     id: `eeqp-${nanoid()}`,
-    worksiteId: input.worksiteId,
-    kind: input.kind,
-    code: input.code,
-    location: input.location,
-    nextInspectionAt: input.nextInspectionAt ?? null,
+    worksiteId: data.worksiteId,
+    kind: data.kind,
+    code: data.code,
+    location: data.location,
+    nextInspectionAt: data.nextInspectionAt || null,
     createdAt: now,
     updatedAt: now,
   }).returning()
@@ -147,23 +159,20 @@ export async function getOverdueEquipmentInspections(worksiteId: string, scope: 
     ))
 }
 
-export async function recordEquipmentInspection(input: {
-  equipmentId: string
-  status: string
-  findings: Record<string, unknown>
-}, userId: string, scope: WorksiteScope) {
-  const [eqp] = await db.select().from(emergencyEquipment).where(eq(emergencyEquipment.id, input.equipmentId)).limit(1)
+export async function recordEquipmentInspection(input: unknown, userId: string, scope: WorksiteScope) {
+  const data = equipmentInspectionCreateSchema.parse(input)
+  const [eqp] = await db.select().from(emergencyEquipment).where(eq(emergencyEquipment.id, data.equipmentId)).limit(1)
   if (!eqp) throw new Error("Equipo no encontrado.")
   assertWorksiteAccess(eqp.worksiteId, scope)
 
   const now = new Date().toISOString()
   const [row] = await db.insert(equipmentInspections).values({
     id: `eins-${nanoid()}`,
-    equipmentId: input.equipmentId,
+    equipmentId: data.equipmentId,
     performedAt: now,
     performedBy: userId,
-    status: input.status,
-    findings: input.findings,
+    status: data.status,
+    findings: data.findings,
     createdAt: now,
     updatedAt: now,
   }).returning()

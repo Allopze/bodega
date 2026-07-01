@@ -5,29 +5,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Plus } from "@phosphor-icons/react"
+import { formatDateDisplay } from "@/lib/sst/date"
+import { INSPECTION_RUN_STATUS_LABELS, inspectionRunStatusVariant, BEHAVIORAL_SEVERITY_LABELS, behavioralSeverityVariant } from "@/lib/prevention/badges"
 
 type InspectionListProps = {
   templates: Array<{ id: string; code: string; title: string; frequency: string }>
-  runs: Array<{ id: string; templateId: string; worksiteId: string; startedAt: string; completedAt: string | null; status: string }>
-  observations: Array<{ id: string; worksiteId: string; antecedent: string; behavior: string; consequence: string; severity: string }>
+  runs: Array<{ id: string; templateId: string; templateTitle: string; worksiteId: string; worksiteName: string; startedAt: string; completedAt: string | null; status: string }>
+  observations: Array<{ id: string; worksiteId: string; worksiteName: string; antecedent: string; behavior: string; consequence: string; severity: string }>
   canManage: boolean
-}
-
-const STATUS_MAP: Record<string, string> = {
-  open: "Abierta",
-  in_review: "En revisión",
-  closed: "Cerrada",
-}
-
-const SEVERITY_MAP: Record<string, string> = {
-  bajo: "Bajo",
-  medio: "Medio",
-  alto: "Alto",
-  critico: "Crítico",
 }
 
 export function InspectionList({ templates, runs, observations, canManage }: InspectionListProps) {
   const router = useRouter()
+  const PAGE_SIZE = 10
+  const visibleRuns = runs.slice(0, PAGE_SIZE)
+  const hiddenRuns = runs.length - visibleRuns.length
+  const visibleObs = observations.slice(0, PAGE_SIZE)
+  const hiddenObs = observations.length - visibleObs.length
 
   return (
     <div className="space-y-6">
@@ -46,21 +40,26 @@ export function InspectionList({ templates, runs, observations, canManage }: Ins
               <p className="text-muted-foreground text-sm">Sin inspecciones registradas.</p>
             ) : (
               <div className="space-y-2">
-                {runs.slice(0, 10).map((run) => (
+                {visibleRuns.map((run) => (
                   <div
                     key={run.id}
                     className="flex items-center justify-between rounded border p-2 cursor-pointer hover:bg-muted/50"
                     onClick={() => router.push(`/prevencion/inspecciones/${run.id}`)}
                   >
                     <div>
-                      <p className="text-sm font-medium truncate max-w-[300px]">{run.id}</p>
-                      <p className="text-xs text-muted-foreground">{run.worksiteId} · {run.startedAt?.slice(0, 10)}</p>
+                      <p className="text-sm font-medium truncate max-w-[300px]">{run.templateTitle}</p>
+                      <p className="text-xs text-muted-foreground">{run.worksiteName} · {formatDateDisplay(run.startedAt)}</p>
                     </div>
-                    <Badge variant={run.status === "open" ? "primary" : run.status === "closed" ? "outline" : "warning"}>
-                      {STATUS_MAP[run.status] ?? run.status}
+                    <Badge variant={inspectionRunStatusVariant(run.status)}>
+                      {INSPECTION_RUN_STATUS_LABELS[run.status] ?? run.status}
                     </Badge>
                   </div>
                 ))}
+                {hiddenRuns > 0 ? (
+                  <p className="pt-1 text-xs text-muted-foreground">
+                    +{hiddenRuns} inspección{hiddenRuns === 1 ? "" : "es"} no mostradas. Usa los filtros para acotar.
+                  </p>
+                ) : null}
               </div>
             )}
           </CardContent>
@@ -75,15 +74,22 @@ export function InspectionList({ templates, runs, observations, canManage }: Ins
               <p className="text-muted-foreground text-sm">Sin observaciones registradas.</p>
             ) : (
               <div className="space-y-2">
-                {observations.slice(0, 10).map((obs) => (
+                {visibleObs.map((obs) => (
                   <div key={obs.id} className="rounded border p-2">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium truncate max-w-[250px]">{obs.antecedent}</p>
-                      <Badge variant={obs.severity === "critico" ? "danger" : "outline"}>{SEVERITY_MAP[obs.severity] ?? obs.severity}</Badge>
+                      <Badge variant={behavioralSeverityVariant(obs.severity)}>{BEHAVIORAL_SEVERITY_LABELS[obs.severity] ?? obs.severity}</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">{obs.behavior} → {obs.consequence}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      <span className="font-mono text-[10px]">{obs.worksiteName}</span> · {obs.behavior} → {obs.consequence}
+                    </p>
                   </div>
                 ))}
+                {hiddenObs > 0 ? (
+                  <p className="pt-1 text-xs text-muted-foreground">
+                    +{hiddenObs} observación{hiddenObs === 1 ? "" : "es"} no mostradas.
+                  </p>
+                ) : null}
               </div>
             )}
           </CardContent>

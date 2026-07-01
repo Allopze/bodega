@@ -110,6 +110,52 @@ describe("prevention inspections service", () => {
     }).rejects.toThrow("Sin acceso")
   })
 
+  it("closes a run where every item was legitimately evaluated as ok", async () => {
+    const { createInspectionTemplate, createInspectionRun, updateInspectionItem, closeInspectionRun } = await import("@/lib/services/prevention-inspections")
+
+    await createInspectionTemplate({
+      code: "ALL-OK-01",
+      title: "Todo conforme",
+      scope: "Test",
+      items: [
+        { key: "item1", label: "Item 1", expected: "OK" },
+        { key: "item2", label: "Item 2", expected: "OK" },
+      ],
+      frequency: "mensual",
+      requiresPhoto: false,
+    })
+    const templates = await inMemoryDb.select().from(schema.inspectionTemplates)
+      .where(eq(schema.inspectionTemplates.code, "ALL-OK-01"))
+    const run = await createInspectionRun({ templateId: templates[0]!.id, worksiteId: "ws-1" }, "user-1", ["ws-1"])
+
+    const items = await inMemoryDb.select().from(schema.inspectionItems).where(eq(schema.inspectionItems.runId, run.id))
+    for (const item of items) {
+      await updateInspectionItem({ itemId: item.id, status: "ok", observed: "Cumple" }, ["ws-1"])
+    }
+
+    const closed = await closeInspectionRun({ runId: run.id }, "user-1", ["ws-1"])
+    expect(closed!.status).toBe("closed")
+  })
+
+  it("blocks closing a run with unevaluated items", async () => {
+    const { createInspectionTemplate, createInspectionRun, closeInspectionRun } = await import("@/lib/services/prevention-inspections")
+
+    await createInspectionTemplate({
+      code: "PENDING-01",
+      title: "Pendiente",
+      scope: "Test",
+      items: [{ key: "item1", label: "Item 1", expected: "OK" }],
+      frequency: "mensual",
+      requiresPhoto: false,
+    })
+    const templates = await inMemoryDb.select().from(schema.inspectionTemplates)
+      .where(eq(schema.inspectionTemplates.code, "PENDING-01"))
+    const run = await createInspectionRun({ templateId: templates[0]!.id, worksiteId: "ws-1" }, "user-1", ["ws-1"])
+
+    await expect(closeInspectionRun({ runId: run.id }, "user-1", ["ws-1"]))
+      .rejects.toThrow(/sin evaluar/i)
+  })
+
   it("updates inspection items and closes run", async () => {
     const { createInspectionTemplate, createInspectionRun, updateInspectionItem, closeInspectionRun } = await import("@/lib/services/prevention-inspections")
 
@@ -274,5 +320,46 @@ describe("prevention EPP matrix service", () => {
     const thresholds = await getStockThresholds("ws-1", ["ws-1"])
     expect(thresholds).toHaveLength(1)
     expect(thresholds[0]!.minStock).toBe(50)
+  })
+
+  it("filters expired EPP deliveries by worksite via the worker's faena", async () => {
+    const { setEppLifecyclePolicy, logEppDelivery, getExpiredEpp } = await import("@/lib/services/prevention-epp-matrix")
+
+    await inMemoryDb.insert(schema.workers).values([
+      { id: "worker-ws1", firstName: "A", lastName: "B", rut: "1-9", worksiteId: "ws-1" },
+      { id: "worker-ws2", firstName: "C", lastName: "D", rut: "2-7", worksiteId: "ws-2" },
+    ])
+
+    await setEppLifecyclePolicy({ eppProductId: "epp-guantes", lifespanDays: 1, maxReuses: 1, inspectionChecklist: {} })
+
+    await logEppDelivery({ workerId: "worker-ws1", eppProductId: "epp-guantes", deliveredAt: "2020-01-01T00:00:00.000Z", evidenceUrl: "/actas/acta-1.pdf" })
+    await logEppDelivery({ workerId: "worker-ws2", eppProductId: "epp-guantes", deliveredAt: "2020-01-01T00:00:00.000Z", evidenceUrl: "/actas/acta-2.pdf" })
+
+    const expiredWs1 = await getExpiredEpp("ws-1", ["ws-1"])
+    expect(expiredWs1).toHaveLength(1)
+    expect(expiredWs1[0]!.workerId).toBe("worker-ws1")
+
+    const expiredWs2 = await getExpiredEpp("ws-2", ["ws-2"])
+    expect(expiredWs2).toHaveLength(1)
+    expect(expiredWs2[0]!.workerId).toBe("worker-ws2")
+  })
+
+  it("requires a signed acta (evidenceUrl) to log an EPP delivery and supports worker acknowledgement (P3.17)", async () => {
+    const { setEppLifecyclePolicy, logEppDelivery, acknowledgeEppDelivery, getWorkerActiveEpp } = await import("@/lib/services/prevention-epp-matrix")
+
+    await setEppLifecyclePolicy({ eppProductId: "epp-guantes", lifespanDays: 90, maxReuses: 1, inspectionChecklist: {} })
+    await inMemoryDb.insert(schema.workers).values({ id: "worker-acta", firstName: "E", lastName: "F", rut: "3-5", worksiteId: "ws-1" })
+
+    await expect(logEppDelivery({ workerId: "worker-acta", eppProductId: "epp-guantes" })).rejects.toThrow()
+
+    const delivery = await logEppDelivery({ workerId: "worker-acta", eppProductId: "epp-guantes", evidenceUrl: "/actas/acta-3.pdf" })
+    expect(delivery!.evidenceUrl).toBe("/actas/acta-3.pdf")
+    expect(delivery!.acknowledgedAt).toBeNull()
+
+    const acknowledged = await acknowledgeEppDelivery(delivery!.id)
+    expect(acknowledged.acknowledgedAt).not.toBeNull()
+
+    const active = await getWorkerActiveEpp("worker-acta")
+    expect(active[0]!.acknowledgedAt).not.toBeNull()
   })
 })

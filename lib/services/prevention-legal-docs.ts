@@ -3,58 +3,55 @@
  * Documentación legal: RIOHS, ODI, IRL, programas (PDTP N° 15, 18, 19).
  */
 
-import { desc, eq } from "drizzle-orm"
+import { desc, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { legalDocuments, legalDocumentVersions, documentDeliveries, documentSignatures } from "@/db/schema"
 import type { ReportData } from "@/lib/reports/export"
 import { nanoid } from "@/lib/id"
+import {
+  legalDocumentCreateSchema,
+  legalDocumentVersionAddSchema,
+  documentDeliveryCreateSchema,
+} from "@/lib/validation/prevention"
 
-export async function createLegalDocument(input: {
-  type: string
-  code: string
-  title: string
-  mandatory?: boolean
-}) {
+export async function createLegalDocument(input: unknown) {
+  const data = legalDocumentCreateSchema.parse(input)
   const now = new Date().toISOString()
   const [row] = await db.insert(legalDocuments).values({
     id: `ldoc-${nanoid()}`,
-    type: input.type,
-    code: input.code,
-    title: input.title,
-    mandatory: input.mandatory ?? true,
+    type: data.type,
+    code: data.code,
+    title: data.title,
+    mandatory: data.mandatory ?? true,
     createdAt: now,
     updatedAt: now,
   }).onConflictDoUpdate({
     target: [legalDocuments.type, legalDocuments.code],
-    set: { title: input.title, mandatory: input.mandatory ?? true, updatedAt: now },
+    set: { title: data.title, mandatory: data.mandatory ?? true, updatedAt: now },
   }).returning()
   return row
 }
 
-export async function addDocumentVersion(input: {
-  documentId: string
-  effectiveFrom: string
-  effectiveTo?: string
-  fileUrl?: string
-  changelog?: string
-}, userId: string) {
-  const [doc] = await db.select().from(legalDocuments).where(eq(legalDocuments.id, input.documentId)).limit(1)
+export async function addDocumentVersion(input: unknown, userId: string) {
+  const data = legalDocumentVersionAddSchema.parse(input)
+  const [doc] = await db.select().from(legalDocuments).where(eq(legalDocuments.id, data.documentId)).limit(1)
   if (!doc) throw new Error("Documento no encontrado.")
-
-  const versions = await db.select().from(legalDocumentVersions)
-    .where(eq(legalDocumentVersions.documentId, input.documentId))
-  const nextVersion = versions.length + 1
 
   const now = new Date().toISOString()
   const id = `ldv-${nanoid()}`
+
+  // Single-statement atomic insert: computes `MAX(version)+1` inside the DB
+  // so concurrent inserts produce consecutive versions instead of colliding on
+  // the unique `(document_id, version)` index. Avoids the read-then-insert race
+  // and the 23505 error it would raise under contention.
   const [row] = await db.insert(legalDocumentVersions).values({
     id,
-    documentId: input.documentId,
-    version: nextVersion,
-    effectiveFrom: input.effectiveFrom,
-    effectiveTo: input.effectiveTo ?? null,
-    fileUrl: input.fileUrl ?? null,
-    changelog: input.changelog ?? null,
+    documentId: data.documentId,
+    version: sql`(SELECT COALESCE(MAX(${legalDocumentVersions.version}), 0) + 1 FROM ${legalDocumentVersions} WHERE ${legalDocumentVersions.documentId} = ${data.documentId})`,
+    effectiveFrom: data.effectiveFrom,
+    effectiveTo: data.effectiveTo || null,
+    fileUrl: data.fileUrl || null,
+    changelog: data.changelog || null,
     signedBy: userId,
     createdAt: now,
     updatedAt: now,
@@ -62,25 +59,21 @@ export async function addDocumentVersion(input: {
   return row
 }
 
-export async function deliverDocument(input: {
-  versionId: string
-  workerId: string
-  method?: string
-  evidenceUrl?: string
-}) {
+export async function deliverDocument(input: unknown) {
+  const data = documentDeliveryCreateSchema.parse(input)
   const now = new Date().toISOString()
   const [row] = await db.insert(documentDeliveries).values({
     id: `ddel-${nanoid()}`,
-    versionId: input.versionId,
-    workerId: input.workerId,
+    versionId: data.versionId,
+    workerId: data.workerId,
     deliveredAt: now,
-    method: input.method ?? "digital",
-    evidenceUrl: input.evidenceUrl ?? null,
+    method: data.method ?? "digital",
+    evidenceUrl: data.evidenceUrl || null,
     createdAt: now,
     updatedAt: now,
   }).onConflictDoUpdate({
     target: [documentDeliveries.versionId, documentDeliveries.workerId],
-    set: { deliveredAt: now, method: input.method ?? "digital", evidenceUrl: input.evidenceUrl ?? null, updatedAt: now },
+    set: { deliveredAt: now, method: data.method ?? "digital", evidenceUrl: data.evidenceUrl || null, updatedAt: now },
   }).returning()
   return row
 }

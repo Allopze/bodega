@@ -1,6 +1,5 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
-import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -9,6 +8,7 @@ import * as schema from "@/db/schema"
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
+// @ts-expect-error PGlite is compatible with the app DB shape in tests.
 testGlobal.__db = inMemoryDb
 
 vi.mock("@/db", () => ({
@@ -18,6 +18,10 @@ vi.mock("@/db", () => ({
 }))
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
+
+function assertPresent<T>(value: T, message: string): asserts value is NonNullable<T> {
+  if (value == null) throw new Error(message)
+}
 
 afterAll(async () => {
   delete testGlobal.__db
@@ -93,9 +97,9 @@ describe("prevention health service", () => {
       type: "periodico",
       performedAt: "2026-03-15",
       result: "apto_con_restricciones",
-    })
+    }, ["ws-1"])
 
-    const exams = await getWorkerHealthExams("worker-1")
+    const exams = await getWorkerHealthExams("worker-1", ["ws-1"])
     expect(exams).toHaveLength(1)
     expect(exams[0]!.result).toBe("apto_con_restricciones")
 
@@ -104,9 +108,9 @@ describe("prevention health service", () => {
       position: "Operador",
       aptitude: "apto",
       restrictions: {},
-    })
+    }, ["ws-1"])
 
-    const apt = await getActiveAptitude("worker-1", "Operador")
+    const apt = await getActiveAptitude("worker-1", "Operador", ["ws-1"])
     expect(apt).not.toBeNull()
     expect(apt!.aptitude).toBe("apto")
 
@@ -116,10 +120,42 @@ describe("prevention health service", () => {
       description: "No puede trabajar en altura mayor a 1.8m",
       effectiveFrom: "2026-01-01",
       effectiveTo: "2026-12-31",
-    })
+    }, ["ws-1"])
 
-    const restrictions = await isRestricted("worker-1")
+    const restrictions = await isRestricted("worker-1", ["ws-1"])
     expect(restrictions).toHaveLength(1)
+  })
+
+  it("describeActiveRestrictions surfaces a warning only when a restriction is active (P3.22)", async () => {
+    const { addHealthRestriction, describeActiveRestrictions } = await import("@/lib/services/prevention-health")
+
+    expect(await describeActiveRestrictions("worker-1", ["ws-1"])).toBeNull()
+
+    await addHealthRestriction({
+      workerId: "worker-1",
+      kind: "no_altura",
+      description: "No puede trabajar en altura",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: "2026-12-31",
+    }, ["ws-1"])
+
+    const warning = await describeActiveRestrictions("worker-1", ["ws-1"], "2026-06-01")
+    expect(warning).toMatch(/restricción médica activa/i)
+    expect(warning).toMatch(/no_altura/)
+  })
+
+  it("denies reading or writing health data for a worker outside worksite scope", async () => {
+    const { registerHealthExam, getWorkerHealthExams, isRestricted } = await import("@/lib/services/prevention-health")
+
+    await expect(registerHealthExam({
+      workerId: "worker-1",
+      type: "periodico",
+      performedAt: "2026-03-15",
+      result: "apto",
+    }, ["ws-2"])).rejects.toThrow(/sin acceso/i)
+
+    await expect(getWorkerHealthExams("worker-1", ["ws-2"])).rejects.toThrow(/sin acceso/i)
+    await expect(isRestricted("worker-1", ["ws-2"])).rejects.toThrow(/sin acceso/i)
   })
 })
 
@@ -137,18 +173,21 @@ describe("prevention emergency service", () => {
 
     const plan = await getActiveEmergencyPlan("ws-1", ["ws-1"])
     expect(plan).not.toBeNull()
+    assertPresent(plan, "expected active emergency plan")
 
     const drill = await scheduleDrill({
-      planId: plan!.id,
+      planId: plan.id,
       type: "incendio",
       scheduledAt: "2026-06-15T10:00:00.000Z",
     }, ["ws-1"])
+    assertPresent(drill, "expected scheduled drill")
 
     const executed = await recordDrillExecution(drill.id, {
       attendees: 25,
       findings: { tiempo_evacuacion: "2min 15s" },
       effectiveness: "eficaz",
     }, ["ws-1"])
+    assertPresent(executed, "expected executed drill")
 
     expect(executed.attendees).toBe(25)
     expect(executed.effectiveness).toBe("eficaz")
@@ -168,18 +207,21 @@ describe("prevention legal docs service", () => {
       code: "RIOHS-2026",
       title: "Reglamento Interno de Orden, Higiene y Seguridad",
     })
+    assertPresent(doc, "expected legal document")
 
     const version = await addDocumentVersion({
       documentId: doc.id,
       effectiveFrom: "2026-01-01",
       changelog: "Versión inicial 2026",
     }, "user-1")
+    assertPresent(version, "expected document version")
 
     const delivery = await deliverDocument({
       versionId: version.id,
       workerId: "worker-1",
       method: "digital",
     })
+    assertPresent(delivery, "expected document delivery")
 
     const sig = await acknowledgeDelivery(delivery.id, "user-2", "firma-digital-hash")
     expect(sig).toBeDefined()
@@ -196,6 +238,7 @@ describe("prevention committees service", () => {
     const { createCommittee, addCommitteeMember, scheduleMeeting, recordMeetingAttendance, addAgreement, listCommittees } = await import("@/lib/services/prevention-committees")
 
     const comm = await createCommittee({ worksiteId: "ws-1", type: "cphs" }, ["ws-1"])
+    assertPresent(comm, "expected committee")
 
     await addCommitteeMember({
       committeeId: comm.id,
@@ -210,6 +253,7 @@ describe("prevention committees service", () => {
       agenda: "Revisión mensual de indicadores",
       attendeeIds: ["user-1", "user-2"],
     })
+    assertPresent(meeting, "expected committee meeting")
 
     await recordMeetingAttendance(meeting.id, ["user-1", "user-2"])
 

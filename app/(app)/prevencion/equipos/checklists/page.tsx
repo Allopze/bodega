@@ -5,7 +5,10 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { listEquipmentChecklists } from "@/lib/services/prevention-equipment"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import { EmptyState } from "@/components/ui/empty-state"
 import { PreventionExportButton } from "@/components/prevention/export-button"
+import { formatDateSafe } from "@/lib/sst/date"
 
 export const metadata: Metadata = { title: "Checklists de equipos" }
 
@@ -29,34 +32,38 @@ export default async function EquiposChecklistsPage({ searchParams }: { searchPa
     <PageContainer>
       <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Equipos", href: "/prevencion/equipos/reportes" }, { label: "Checklists" }]} />
       <PageHeader title="Checklists de equipos" description="Contenedores, maquinaria, carros, bateas, taller/RESPEL (N° 27-30 PDTP)" actions={<PreventionExportButton href="/api/prevencion/equipos/checklists/export" label="Exportar checklists" />} />
-      <div className="rounded border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-3 py-2 text-left">Activo</th>
-              <th className="px-3 py-2 text-left">Tipo</th>
-              <th className="px-3 py-2 text-left">Faena</th>
-              <th className="px-3 py-2 text-left">Estado</th>
-              <th className="px-3 py-2 text-left">Cierre requerido</th>
-              <th className="px-3 py-2 text-left">Fecha</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableRoot>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Activo</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Faena</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Cierre requerido</TableHead>
+              <TableHead>Fecha</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {items.length === 0 ? (
-              <tr><td colSpan={6} className="px-3 py-4 text-center text-muted-foreground">Sin checklists.</td></tr>
+              <TableRow>
+                <TableCell colSpan={6}>
+                  <EmptyState compact title="Sin checklists" description="Aún no se han registrado checklists para esta faena." />
+                </TableCell>
+              </TableRow>
             ) : items.map((c) => (
-              <tr key={c.id} className="border-t">
-                <td className="px-3 py-2">{c.assetCode}</td>
-                <td className="px-3 py-2">{c.kind}</td>
-                <td className="px-3 py-2">{c.worksiteId}</td>
-                <td className="px-3 py-2">{c.status}</td>
-                <td className="px-3 py-2">{c.closeRequired ? "Sí" : "No"}</td>
-                <td className="px-3 py-2">{c.performedAt?.slice(0, 10)}</td>
-              </tr>
+              <TableRow key={c.id}>
+                <TableCell>{c.assetCode}</TableCell>
+                <TableCell>{c.kind}</TableCell>
+                <TableCell className="font-mono text-xs text-[var(--color-text-subtle)]">{c.worksiteId}</TableCell>
+                <TableCell>{c.status}</TableCell>
+                <TableCell>{c.closeRequired ? "Sí" : "No"}</TableCell>
+                <TableCell>{formatDateSafe(c.performedAt)}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableRoot>
     </PageContainer>
   )
 }

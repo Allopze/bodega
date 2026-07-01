@@ -1,5 +1,6 @@
 import { CheckCircle, Target, CalendarBlank, ChartBar } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
+import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import type { PdtpComplianceIndicators } from "@/lib/services/prevention-pdtp"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -92,37 +93,37 @@ export function PdtpIndicatorsPanel({ data }: { data: PdtpComplianceIndicators }
       </div>
 
       {/* Monthly grid */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr>
-              <th className="py-1.5 pl-1 pr-3 text-left text-xs font-medium text-[var(--color-text-subtle)]">Mes</th>
-              <th className="px-2 py-1.5 text-right text-xs font-medium text-[var(--color-text-subtle)]">Prog.</th>
-              <th className="px-2 py-1.5 text-right text-xs font-medium text-[var(--color-text-subtle)]">Ejec.</th>
-              <th className="px-2 py-1.5 text-right text-xs font-medium text-[var(--color-text-subtle)]">%</th>
-              <th className="px-2 py-1.5 text-left text-xs font-medium text-[var(--color-text-subtle)]">Meta</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableRoot>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="pl-1 pr-3">Mes</TableHead>
+              <TableHead className="text-right">Prog.</TableHead>
+              <TableHead className="text-right">Ejec.</TableHead>
+              <TableHead className="text-right">%</TableHead>
+              <TableHead>Meta</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {monthly.map((m) => {
               const meetsTarget = m.percent !== null && m.percent >= target
               return (
-                <tr key={m.month} className="border-t border-[var(--color-border)]">
-                  <td className="py-1.5 pl-1 pr-3 text-xs font-medium text-[var(--color-text-subtle)]">{MONTH_LABELS[m.month - 1]}</td>
-                  <td className="px-2 py-1.5 text-right font-mono text-xs tabular-nums">{m.planned}</td>
-                  <td className="px-2 py-1.5 text-right font-mono text-xs tabular-nums">{m.executed}</td>
-                  <td className={cn("px-2 py-1.5 text-right font-mono text-xs tabular-nums font-semibold", meetsTarget ? "text-[var(--color-success)]" : m.executed > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]")}>
+                <TableRow key={m.month}>
+                  <TableCell className="py-1.5 pl-1 pr-3 text-xs font-medium text-[var(--color-text-subtle)]">{MONTH_LABELS[m.month - 1]}</TableCell>
+                  <TableCellNum className="px-2 py-1.5 text-xs">{m.planned}</TableCellNum>
+                  <TableCellNum className="px-2 py-1.5 text-xs">{m.executed}</TableCellNum>
+                  <TableCellNum className={cn("px-2 py-1.5 text-xs font-semibold", meetsTarget ? "text-[var(--color-success)]" : m.executed > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]")}>
                     {fmtPct(m.percent)}
-                  </td>
-                  <td className="px-2 py-1.5">
+                  </TableCellNum>
+                  <TableCell className="px-2 py-1.5">
                     {meetsTarget && <CheckCircle size={13} className="text-[var(--color-success)]" />}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )
             })}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableRoot>
     </div>
   )
 }

@@ -34,6 +34,7 @@ export function TrainingForm({ courses, onDone }: Props) {
   const [submitting, setSubmitting] = React.useState(false)
 
   const [course, setCourse] = React.useState({ code: "", name: "", validityMonths: "12", requiredForCargo: "" })
+  const [courseErrors, setCourseErrors] = React.useState<Record<string, string[] | undefined>>({})
   const [assign, setAssign] = React.useState({
     courseId: courses[0]?.id ?? "",
     workerId: "",
@@ -42,6 +43,23 @@ export function TrainingForm({ courses, onDone }: Props) {
     expiresAt: "",
     score: "",
   })
+  const [assignErrors, setAssignErrors] = React.useState<Record<string, string[] | undefined>>({})
+
+  function resetError(setter: React.Dispatch<React.SetStateAction<Record<string, string[] | undefined>>>, field: string) {
+    setter((prev) => {
+      if (!prev[field]) return prev
+      const { [field]: _drop, ...rest } = prev
+      return rest
+    })
+  }
+
+  function applyFieldErrors(setter: React.Dispatch<React.SetStateAction<Record<string, string[] | undefined>>>, fe: Record<string, string[] | undefined> | undefined) {
+    if (!fe) return
+    setter(fe)
+    const firstField = Object.keys(fe)[0]
+    const firstMsg = firstField ? fe[firstField]?.[0] : undefined
+    toast.error(firstMsg ? `${firstField}: ${firstMsg}` : "Revisa los campos del formulario.")
+  }
 
   async function onSubmitCourse(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -50,6 +68,7 @@ export function TrainingForm({ courses, onDone }: Props) {
       return
     }
     setSubmitting(true)
+    setCourseErrors({})
     const result = await createTrainingCourseAction({
       code: course.code,
       name: course.name,
@@ -60,7 +79,8 @@ export function TrainingForm({ courses, onDone }: Props) {
     })
     setSubmitting(false)
     if (!result.ok) {
-      toast.error(result.message)
+      applyFieldErrors(setCourseErrors, result.fieldErrors as Record<string, string[] | undefined> | undefined)
+      if (!result.fieldErrors) toast.error(result.message ?? "Error al crear curso.")
       return
     }
     toast.success("Curso creado.")
@@ -75,6 +95,7 @@ export function TrainingForm({ courses, onDone }: Props) {
       return
     }
     setSubmitting(true)
+    setAssignErrors({})
     const result = await assignTrainingAction({
       courseId: assign.courseId,
       workerId: assign.workerId,
@@ -85,13 +106,17 @@ export function TrainingForm({ courses, onDone }: Props) {
     })
     setSubmitting(false)
     if (!result.ok) {
-      toast.error(result.message)
+      applyFieldErrors(setAssignErrors, result.fieldErrors as Record<string, string[] | undefined> | undefined)
+      if (!result.fieldErrors) toast.error(result.message ?? "Error al asignar capacitación.")
       return
     }
     toast.success("Capacitación asignada.")
     onDone?.()
     router.refresh()
   }
+
+  const courseFe = (k: string) => courseErrors[k]?.[0]
+  const assignFe = (k: string) => assignErrors[k]?.[0]
 
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4">
@@ -117,36 +142,40 @@ export function TrainingForm({ courses, onDone }: Props) {
         <form onSubmit={onSubmitCourse}>
           <FieldGroup>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Field label="Código" htmlFor="tr-code" required>
+              <Field label="Código" htmlFor="tr-code" required error={courseFe("code")}>
                 <Input
                   id="tr-code"
                   value={course.code}
-                  onChange={(e) => setCourse((c) => ({ ...c, code: e.target.value }))}
+                  onChange={(e) => { resetError(setCourseErrors, "code"); setCourse((c) => ({ ...c, code: e.target.value })) }}
+                  aria-invalid={!!courseFe("code")}
                   required
                 />
               </Field>
-              <Field label="Nombre" htmlFor="tr-name" required>
+              <Field label="Nombre" htmlFor="tr-name" required error={courseFe("name")}>
                 <Input
                   id="tr-name"
                   value={course.name}
-                  onChange={(e) => setCourse((c) => ({ ...c, name: e.target.value }))}
+                  onChange={(e) => { resetError(setCourseErrors, "name"); setCourse((c) => ({ ...c, name: e.target.value })) }}
+                  aria-invalid={!!courseFe("name")}
                   required
                 />
               </Field>
-              <Field label="Vigencia (meses)" htmlFor="tr-validity">
+              <Field label="Vigencia (meses)" htmlFor="tr-validity" error={courseFe("validityMonths")}>
                 <Input
                   id="tr-validity"
                   type="number"
                   min={1}
                   value={course.validityMonths}
-                  onChange={(e) => setCourse((c) => ({ ...c, validityMonths: e.target.value }))}
+                  onChange={(e) => { resetError(setCourseErrors, "validityMonths"); setCourse((c) => ({ ...c, validityMonths: e.target.value })) }}
+                  aria-invalid={!!courseFe("validityMonths")}
                 />
               </Field>
-              <Field label="Cargos requeridos (coma)" htmlFor="tr-cargos" helper="operador,conductor_ampliroll">
+              <Field label="Cargos requeridos (coma)" htmlFor="tr-cargos" helper="operador,conductor_ampliroll" error={courseFe("requiredForCargo")}>
                 <Input
                   id="tr-cargos"
                   value={course.requiredForCargo}
-                  onChange={(e) => setCourse((c) => ({ ...c, requiredForCargo: e.target.value }))}
+                  onChange={(e) => { resetError(setCourseErrors, "requiredForCargo"); setCourse((c) => ({ ...c, requiredForCargo: e.target.value })) }}
+                  aria-invalid={!!courseFe("requiredForCargo")}
                 />
               </Field>
             </div>
@@ -161,9 +190,9 @@ export function TrainingForm({ courses, onDone }: Props) {
         <form onSubmit={onSubmitAssign}>
           <FieldGroup>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Field label="Curso" htmlFor="as-course" required>
-                <Select value={assign.courseId} onValueChange={(v) => setAssign((a) => ({ ...a, courseId: v }))}>
-                  <SelectTrigger id="as-course">
+              <Field label="Curso" htmlFor="as-course" required error={assignFe("courseId")}>
+                <Select value={assign.courseId} onValueChange={(v) => { resetError(setAssignErrors, "courseId"); setAssign((a) => ({ ...a, courseId: v })) }}>
+                  <SelectTrigger id="as-course" aria-invalid={!!assignFe("courseId")}>
                     <SelectValue placeholder="Selecciona curso" />
                   </SelectTrigger>
                   <SelectContent>
@@ -173,47 +202,52 @@ export function TrainingForm({ courses, onDone }: Props) {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="ID Trabajador" htmlFor="as-worker" required helper="Pega el ID del trabajador">
+              <Field label="ID Trabajador" htmlFor="as-worker" required helper="Pega el ID del trabajador" error={assignFe("workerId")}>
                 <Input
                   id="as-worker"
                   value={assign.workerId}
-                  onChange={(e) => setAssign((a) => ({ ...a, workerId: e.target.value }))}
+                  onChange={(e) => { resetError(setAssignErrors, "workerId"); setAssign((a) => ({ ...a, workerId: e.target.value })) }}
+                  aria-invalid={!!assignFe("workerId")}
                   required
                 />
               </Field>
-              <Field label="ID Faena" htmlFor="as-ws" required>
+              <Field label="ID Faena" htmlFor="as-ws" required error={assignFe("worksiteId")}>
                 <Input
                   id="as-ws"
                   value={assign.worksiteId}
-                  onChange={(e) => setAssign((a) => ({ ...a, worksiteId: e.target.value }))}
+                  onChange={(e) => { resetError(setAssignErrors, "worksiteId"); setAssign((a) => ({ ...a, worksiteId: e.target.value })) }}
+                  aria-invalid={!!assignFe("worksiteId")}
                   required
                 />
               </Field>
-              <Field label="Realizada" htmlFor="as-done" required>
+              <Field label="Realizada" htmlFor="as-done" required error={assignFe("completedAt")}>
                 <Input
                   id="as-done"
                   type="date"
                   value={assign.completedAt}
-                  onChange={(e) => setAssign((a) => ({ ...a, completedAt: e.target.value }))}
+                  onChange={(e) => { resetError(setAssignErrors, "completedAt"); setAssign((a) => ({ ...a, completedAt: e.target.value })) }}
+                  aria-invalid={!!assignFe("completedAt")}
                   required
                 />
               </Field>
-              <Field label="Vence" htmlFor="as-exp">
+              <Field label="Vence" htmlFor="as-exp" error={assignFe("expiresAt")}>
                 <Input
                   id="as-exp"
                   type="date"
                   value={assign.expiresAt}
-                  onChange={(e) => setAssign((a) => ({ ...a, expiresAt: e.target.value }))}
+                  onChange={(e) => { resetError(setAssignErrors, "expiresAt"); setAssign((a) => ({ ...a, expiresAt: e.target.value })) }}
+                  aria-invalid={!!assignFe("expiresAt")}
                 />
               </Field>
-              <Field label="Nota (0-100)" htmlFor="as-score">
+              <Field label="Nota (0-100)" htmlFor="as-score" error={assignFe("score")}>
                 <Input
                   id="as-score"
                   type="number"
                   min={0}
                   max={100}
                   value={assign.score}
-                  onChange={(e) => setAssign((a) => ({ ...a, score: e.target.value }))}
+                  onChange={(e) => { resetError(setAssignErrors, "score"); setAssign((a) => ({ ...a, score: e.target.value })) }}
+                  aria-invalid={!!assignFe("score")}
                 />
               </Field>
             </div>

@@ -1,9 +1,14 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { guardAuth } from "@/lib/auth/can"
+import { guardAuth, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import type { ActionState } from "@/lib/validation/prevention"
+import {
+  inspectionRunCreateSchema,
+  inspectionItemUpdateSchema,
+  behavioralObservationCreateSchema,
+  type ActionState,
+} from "@/lib/validation/prevention"
 import {
   createInspectionTemplate,
   listInspectionTemplates,
@@ -25,7 +30,7 @@ function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | 
 }
 
 export async function listInspectionRunsAction(): Promise<ActionState & { data?: { items: unknown[] } }> {
-  const { session, error } = await guardAuth()
+  const { session, error } = await guardPermission("prevention:inspections:view")
   if (error) return error
   try {
     const items = await listInspectionRuns(scopeToIds(resolveWorksiteScope(session)))
@@ -36,7 +41,7 @@ export async function listInspectionRunsAction(): Promise<ActionState & { data?:
 }
 
 export async function getInspectionRunAction(runId: string): Promise<ActionState & { data?: unknown }> {
-  const { session, error } = await guardAuth()
+  const { session, error } = await guardPermission("prevention:inspections:view")
   if (error) return error
   try {
     const data = await getInspectionRun(runId, scopeToIds(resolveWorksiteScope(session)))
@@ -53,11 +58,15 @@ export async function createInspectionRunAction(formData: FormData): Promise<Act
   if (!session.user.permissions?.includes("prevention:inspections:manage")) {
     return { ok: false, message: "Sin permisos." }
   }
+  const parsed = inspectionRunCreateSchema.safeParse({
+    templateId: formData.get("templateId"),
+    worksiteId: formData.get("worksiteId"),
+  })
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
   try {
-    await createInspectionRun({
-      templateId: formData.get("templateId") as string,
-      worksiteId: formData.get("worksiteId") as string,
-    }, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    await createInspectionRun(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
@@ -71,8 +80,12 @@ export async function updateInspectionItemAction(input: unknown): Promise<Action
   if (!session.user.permissions?.includes("prevention:inspections:manage")) {
     return { ok: false, message: "Sin permisos." }
   }
+  const parsed = inspectionItemUpdateSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
   try {
-    await updateInspectionItem(input, scopeToIds(resolveWorksiteScope(session)))
+    await updateInspectionItem(parsed.data, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
@@ -101,16 +114,20 @@ export async function addBehavioralObservationAction(formData: FormData): Promis
   if (!session.user.permissions?.includes("prevention:inspections:manage")) {
     return { ok: false, message: "Sin permisos." }
   }
+  const parsed = behavioralObservationCreateSchema.safeParse({
+    worksiteId: formData.get("worksiteId"),
+    workerId: formData.get("workerId") ?? undefined,
+    antecedent: formData.get("antecedent"),
+    behavior: formData.get("behavior"),
+    consequence: formData.get("consequence"),
+    severity: formData.get("severity") ?? "bajo",
+    runId: formData.get("runId") ?? undefined,
+  })
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
   try {
-    await addBehavioralObservation({
-      worksiteId: formData.get("worksiteId") as string,
-      workerId: formData.get("workerId") ?? undefined,
-      antecedent: formData.get("antecedent") as string,
-      behavior: formData.get("behavior") as string,
-      consequence: formData.get("consequence") as string,
-      severity: formData.get("severity") ?? "bajo",
-      runId: formData.get("runId") ?? undefined,
-    }, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    await addBehavioralObservation(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {

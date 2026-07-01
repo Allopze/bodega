@@ -4,6 +4,8 @@ import { requireAuth, can } from "@/lib/auth/can"
 import { listMinsalProtocols } from "@/lib/services/prevention-health"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import { EmptyState } from "@/components/ui/empty-state"
 
 export const metadata: Metadata = { title: "Protocolos MINSAL" }
 
@@ -19,30 +21,36 @@ export default async function ProtocolosPage() {
     <PageContainer>
       <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Salud", href: "/prevencion/salud" }, { label: "Protocolos" }]} />
       <PageHeader title="Protocolos MINSAL" description="Cumplimiento de protocolos por faena y trabajador" />
-      <div className="rounded border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-3 py-2 text-left">Código</th>
-              <th className="px-3 py-2 text-left">Nombre</th>
-              <th className="px-3 py-2 text-left">Marco legal</th>
-              <th className="px-3 py-2 text-left">Periodicidad</th>
-              <th className="px-3 py-2 text-left">Aplica a cargos</th>
-            </tr>
-          </thead>
-          <tbody>
-            {protocols.map((p) => (
-              <tr key={p.id} className="border-t">
-                <td className="px-3 py-2 font-mono text-xs">{p.code}</td>
-                <td className="px-3 py-2">{p.name}</td>
-                <td className="px-3 py-2 text-xs">{p.legalFramework}</td>
-                <td className="px-3 py-2">{p.periodicityMonths} meses</td>
-                <td className="px-3 py-2 text-xs">{JSON.stringify(p.appliesToPositions)}</td>
-              </tr>
+      <TableRoot>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Código</TableHead>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Marco legal</TableHead>
+              <TableHead>Periodicidad</TableHead>
+              <TableHead>Aplica a cargos</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {protocols.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <EmptyState compact title="Sin protocolos" description="No hay protocolos MINSAL registrados." />
+                </TableCell>
+              </TableRow>
+            ) : protocols.map((p) => (
+              <TableRow key={p.id}>
+                <TableCell className="font-mono text-xs">{p.code}</TableCell>
+                <TableCell>{p.name}</TableCell>
+                <TableCell className="text-xs text-[var(--color-text-subtle)]">{p.legalFramework}</TableCell>
+                <TableCell>{p.periodicityMonths} meses</TableCell>
+                <TableCell className="text-xs text-[var(--color-text-subtle)]">{JSON.stringify(p.appliesToPositions)}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableRoot>
     </PageContainer>
   )
 }

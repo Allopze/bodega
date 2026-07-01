@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { guardAuth } from "@/lib/auth/can"
+import { guardAuth, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   createIncident,
@@ -10,7 +10,12 @@ import {
   closeIncident,
   listIncidents,
 } from "@/lib/services/prevention-incidents"
-import type { ActionState } from "@/lib/validation/prevention"
+import { describeActiveRestrictions } from "@/lib/services/prevention-health"
+import {
+  preventionIncidentCreateSchema,
+  preventionIncidentActionSchema,
+  type ActionState,
+} from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/incidentes"
 
@@ -21,7 +26,7 @@ function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | 
 }
 
 export async function listIncidentsAction(): Promise<ActionState & { data?: { items: unknown[] } }> {
-  const { session, error } = await guardAuth()
+  const { session, error } = await guardPermission("prevention:incidents:view")
   if (error) return error
   try {
     const items = await listIncidents(scopeToIds(resolveWorksiteScope(session)))
@@ -39,10 +44,18 @@ export async function createIncidentAction(
   if (!session.user.permissions?.includes("prevention:incidents:manage")) {
     return { ok: false, message: "No tienes permisos para registrar incidentes." }
   }
+  const parsed = preventionIncidentCreateSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
   try {
-    const row = await createIncident(input, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    const scope = scopeToIds(resolveWorksiteScope(session))
+    const row = await createIncident(parsed.data, session.user.id, scope)
     revalidatePath(REVALIDATE)
-    return { ok: true, data: { id: row.id } }
+    const restrictionWarning = parsed.data.workerId
+      ? await describeActiveRestrictions(parsed.data.workerId, scope).catch(() => null)
+      : null
+    return { ok: true, data: { id: row.id }, message: restrictionWarning ?? undefined }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
   }
@@ -56,8 +69,12 @@ export async function addIncidentActionAction(
   if (!session.user.permissions?.includes("prevention:incidents:manage")) {
     return { ok: false, message: "No tienes permisos para gestionar acciones." }
   }
+  const parsed = preventionIncidentActionSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
   try {
-    await addIncidentAction(input, scopeToIds(resolveWorksiteScope(session)))
+    await addIncidentAction(parsed.data, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {

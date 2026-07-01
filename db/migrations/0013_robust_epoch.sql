@@ -1,0 +1,4 @@
+ALTER TABLE "inspection_items" ALTER COLUMN "status" SET DEFAULT 'pendiente';--> statement-breakpoint
+ALTER TABLE "behavioral_observations" ADD CONSTRAINT "behavioral_observations_worker_id_workers_id_fk" FOREIGN KEY ("worker_id") REFERENCES "public"."workers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prevention_incidents" ADD CONSTRAINT "prevention_incidents_worker_id_workers_id_fk" FOREIGN KEY ("worker_id") REFERENCES "public"."workers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "worker_training_assignments" ADD CONSTRAINT "worker_training_assignments_worker_id_workers_id_fk" FOREIGN KEY ("worker_id") REFERENCES "public"."workers"("id") ON DELETE no action ON UPDATE no action;

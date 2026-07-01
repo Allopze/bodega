@@ -109,6 +109,31 @@ describe("prevention incidents", () => {
     expect(closed.closedAt).toBeTruthy()
   })
 
+  it("closes the incident when the only non-closed action is cancelled", async () => {
+    const { createIncident, addIncidentAction, closeIncidentAction, closeIncident } =
+      await import("@/lib/services/prevention-incidents")
+
+    const incident = await createIncident({
+      worksiteId: "ws-1",
+      type: "incidente",
+      severity: "leve",
+      occurredAt: "2026-07-03T08:00:00.000Z",
+      title: "Accion cancelada",
+      description: "La accion correctiva ya no aplica",
+    }, "user-1", ["ws-1"])
+
+    const action = await addIncidentAction({
+      incidentId: incident.id,
+      description: "Reemplazar señaletica (ya no aplica)",
+      responsible: "Capataz",
+      dueDate: "2026-07-05",
+    }, ["ws-1"])
+
+    await closeIncidentAction(action.id, "cancelada", ["ws-1"])
+    const closed = await closeIncident(incident.id, "user-1", ["ws-1"])
+    expect(closed.status).toBe("closed")
+  })
+
   it("denies creating an incident outside worksite scope", async () => {
     const { createIncident } = await import("@/lib/services/prevention-incidents")
 

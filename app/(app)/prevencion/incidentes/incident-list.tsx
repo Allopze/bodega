@@ -12,6 +12,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Siren, Plus, CaretRight } from "@phosphor-icons/react"
 import type { PreventionIncident } from "@/db/schema"
 import { IncidentForm } from "./incident-form"
+import { formatDateDisplay } from "@/lib/sst/date"
+import { INCIDENT_TYPE_LABELS, INCIDENT_SEVERITY_VARIANTS, INCIDENT_STATUS_LABELS, incidentStatusVariant } from "@/lib/prevention/badges"
 
 interface WorkerSummary {
   firstName: string
@@ -30,26 +32,6 @@ interface Props {
   canClose: boolean
   showForm: boolean
   onShowFormChange: (show: boolean) => void
-}
-
-const TYPE_LABEL: Record<string, string> = {
-  accidente: "Accidente",
-  incidente: "Incidente",
-  cuasi_accidente: "Cuasi accidente",
-  enfermedad_profesional: "Enf. profesional",
-}
-
-const SEVERITY_VARIANT: Record<string, "default" | "warning" | "danger"> = {
-  leve: "default",
-  moderado: "warning",
-  grave: "danger",
-  fatal: "danger",
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  open: "Abierto",
-  investigating: "En investigación",
-  closed: "Cerrado",
 }
 
 export function IncidentList({ incidents, worksites, canManage, showForm, onShowFormChange }: Props) {
@@ -124,8 +106,8 @@ export function IncidentList({ incidents, worksites, canManage, showForm, onShow
                   }
                 }}
               >
-                <TableCell className="font-mono text-xs">{i.occurredAt.slice(0, 10)}</TableCell>
-                <TableCell>{TYPE_LABEL[i.type] ?? i.type}</TableCell>
+                <TableCell className="font-mono text-xs">{formatDateDisplay(i.occurredAt.slice(0, 10))}</TableCell>
+                <TableCell>{INCIDENT_TYPE_LABELS[i.type] ?? i.type}</TableCell>
                 <TableCell className="font-medium">{i.title}</TableCell>
                 <TableCell>
                   <div className="flex flex-col">
@@ -137,11 +119,11 @@ export function IncidentList({ incidents, worksites, canManage, showForm, onShow
                 </TableCell>
                 <TableCell>{worksiteName(i.worksiteId)}</TableCell>
                 <TableCell>
-                  <Badge variant={SEVERITY_VARIANT[i.severity] ?? "default"}>{i.severity}</Badge>
+                  <Badge variant={INCIDENT_SEVERITY_VARIANTS[i.severity] ?? "default"}>{i.severity}</Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={i.status === "closed" ? "success" : "default"}>
-                    {STATUS_LABEL[i.status] ?? i.status}
+                  <Badge variant={incidentStatusVariant(i.status)}>
+                    {INCIDENT_STATUS_LABELS[i.status] ?? i.status}
                   </Badge>
                 </TableCell>
                 <TableCell>

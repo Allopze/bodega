@@ -9,7 +9,7 @@
  *     ni ver incidentes de esa faena.
  */
 
-import { and, desc, eq, inArray, ne } from "drizzle-orm"
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm"
 import { db } from "@/db"
 import { preventionIncidentActions, preventionIncidents } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -127,9 +127,7 @@ export async function closeIncident(id: string, userId: string, scope: WorksiteS
     .from(preventionIncidentActions)
     .where(and(
       eq(preventionIncidentActions.incidentId, id),
-      // cualquier estado distinto de los terminales cuenta como pendiente
-      // (ne sirve porque Drizzle no soporta NOT IN directo en este adapter).
-      ne(preventionIncidentActions.status, TERMINAL_ACTION_STATUSES[0]),
+      notInArray(preventionIncidentActions.status, [...TERMINAL_ACTION_STATUSES]),
     ))
     .limit(1)
 

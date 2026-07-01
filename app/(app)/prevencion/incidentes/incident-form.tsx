@@ -44,6 +44,15 @@ export function IncidentForm({ worksites, onDone }: Props) {
     rootCause: "",
     location: "",
   })
+  const [errors, setErrors] = React.useState<Record<string, string[] | undefined>>({})
+
+  function resetError(field: string) {
+    setErrors((prev) => {
+      if (!prev[field]) return prev
+      const { [field]: _drop, ...rest } = prev
+      return rest
+    })
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -52,6 +61,7 @@ export function IncidentForm({ worksites, onDone }: Props) {
       return
     }
     setSubmitting(true)
+    setErrors({})
     const result = await createIncidentAction({
       worksiteId: form.worksiteId,
       workerId: form.workerId || undefined,
@@ -66,7 +76,14 @@ export function IncidentForm({ worksites, onDone }: Props) {
     })
     setSubmitting(false)
     if (!result.ok) {
-      toast.error(result.message)
+      if (result.fieldErrors) {
+        setErrors(result.fieldErrors)
+        const firstField = Object.keys(result.fieldErrors)[0]
+        const firstMsg = firstField ? result.fieldErrors[firstField]?.[0] : undefined
+        toast.error(firstMsg ? `${firstField}: ${firstMsg}` : (result.message ?? "Revisa los campos del formulario."))
+      } else {
+        toast.error(result.message ?? "Error al registrar incidente.")
+      }
       return
     }
     toast.success("Incidente registrado.")
@@ -74,13 +91,15 @@ export function IncidentForm({ worksites, onDone }: Props) {
     router.refresh()
   }
 
+  const fe = (k: string) => errors[k]?.[0]
+
   return (
     <form onSubmit={onSubmit} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4">
       <FieldGroup>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Field label="Faena" htmlFor="inc-ws" required>
-            <Select value={form.worksiteId} onValueChange={(v) => setForm((f) => ({ ...f, worksiteId: v }))}>
-              <SelectTrigger id="inc-ws">
+          <Field label="Faena" htmlFor="inc-ws" required error={fe("worksiteId")}>
+            <Select value={form.worksiteId} onValueChange={(v) => { resetError("worksiteId"); setForm((f) => ({ ...f, worksiteId: v })) }}>
+              <SelectTrigger id="inc-ws" aria-invalid={!!fe("worksiteId")}>
                 <SelectValue placeholder="Selecciona faena" />
               </SelectTrigger>
               <SelectContent>
@@ -91,9 +110,9 @@ export function IncidentForm({ worksites, onDone }: Props) {
             </Select>
           </Field>
 
-          <Field label="Tipo" htmlFor="inc-type" required>
-            <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v }))}>
-              <SelectTrigger id="inc-type">
+          <Field label="Tipo" htmlFor="inc-type" required error={fe("type")}>
+            <Select value={form.type} onValueChange={(v) => { resetError("type"); setForm((f) => ({ ...f, type: v })) }}>
+              <SelectTrigger id="inc-type" aria-invalid={!!fe("type")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -104,9 +123,9 @@ export function IncidentForm({ worksites, onDone }: Props) {
             </Select>
           </Field>
 
-          <Field label="Gravedad" htmlFor="inc-sev" required>
-            <Select value={form.severity} onValueChange={(v) => setForm((f) => ({ ...f, severity: v }))}>
-              <SelectTrigger id="inc-sev">
+          <Field label="Gravedad" htmlFor="inc-sev" required error={fe("severity")}>
+            <Select value={form.severity} onValueChange={(v) => { resetError("severity"); setForm((f) => ({ ...f, severity: v })) }}>
+              <SelectTrigger id="inc-sev" aria-invalid={!!fe("severity")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -117,51 +136,56 @@ export function IncidentForm({ worksites, onDone }: Props) {
             </Select>
           </Field>
 
-          <Field label="Fecha y hora" htmlFor="inc-when" required>
+          <Field label="Fecha y hora" htmlFor="inc-when" required error={fe("occurredAt")}>
             <Input
               id="inc-when"
               type="datetime-local"
               value={form.occurredAt}
-              onChange={(e) => setForm((f) => ({ ...f, occurredAt: e.target.value }))}
+              onChange={(e) => { resetError("occurredAt"); setForm((f) => ({ ...f, occurredAt: e.target.value })) }}
+              aria-invalid={!!fe("occurredAt")}
               required
             />
           </Field>
         </div>
 
-        <Field label="Título" htmlFor="inc-title" required>
+        <Field label="Título" htmlFor="inc-title" required error={fe("title")}>
           <Input
             id="inc-title"
             value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            onChange={(e) => { resetError("title"); setForm((f) => ({ ...f, title: e.target.value })) }}
+            aria-invalid={!!fe("title")}
             required
           />
         </Field>
 
-        <Field label="Descripción" htmlFor="inc-desc" required>
+        <Field label="Descripción" htmlFor="inc-desc" required error={fe("description")}>
           <Textarea
             id="inc-desc"
             rows={4}
             value={form.description}
-            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            onChange={(e) => { resetError("description"); setForm((f) => ({ ...f, description: e.target.value })) }}
+            aria-invalid={!!fe("description")}
             required
           />
         </Field>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Field label="Causa inmediata" htmlFor="inc-immediate">
+          <Field label="Causa inmediata" htmlFor="inc-immediate" error={fe("immediateCause")}>
             <Textarea
               id="inc-immediate"
               rows={3}
               value={form.immediateCause}
-              onChange={(e) => setForm((f) => ({ ...f, immediateCause: e.target.value }))}
+              onChange={(e) => { resetError("immediateCause"); setForm((f) => ({ ...f, immediateCause: e.target.value })) }}
+              aria-invalid={!!fe("immediateCause")}
             />
           </Field>
-          <Field label="Causa raíz" htmlFor="inc-root">
+          <Field label="Causa raíz" htmlFor="inc-root" error={fe("rootCause")}>
             <Textarea
               id="inc-root"
               rows={3}
               value={form.rootCause}
-              onChange={(e) => setForm((f) => ({ ...f, rootCause: e.target.value }))}
+              onChange={(e) => { resetError("rootCause"); setForm((f) => ({ ...f, rootCause: e.target.value })) }}
+              aria-invalid={!!fe("rootCause")}
             />
           </Field>
         </div>

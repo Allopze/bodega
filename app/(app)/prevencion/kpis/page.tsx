@@ -1,71 +1,48 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getPdtpComplianceIndicators } from "@/lib/services/prevention-pdtp"
+import { getIncidentFrequencyRate } from "@/lib/services/prevention-kpis"
+import { listScopedWorksites } from "@/lib/services/ppa"
 import { PageContainer } from "@/components/ui/page-container"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { PreventionExportButton } from "@/components/prevention/export-button"
+import { KpisPanel } from "./kpis-panel"
 
 export const metadata: Metadata = { title: "Indicadores preventivos" }
 
-export default async function KpisPage() {
+function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
+  if (scope.mode === "all") return "all"
+  if (scope.mode === "none") return []
+  return scope.ids
+}
+
+export default async function KpisPage({ searchParams }: { searchParams: Promise<{ anio?: string; faena?: string }> }) {
   let session
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:kpis:view")) redirect("/forbidden")
 
-  const indicators = await getPdtpComplianceIndicators(2026)
+  const query = await searchParams
+  const year = Number(query.anio) || 2026
+  const scope = scopeToIds(resolveWorksiteScope(session))
+  const worksites = await listScopedWorksites(scope)
+  const selectedWorksiteId = worksites.find((w) => w.id === query.faena)?.id ?? worksites[0]?.id
+
+  const [indicators, rate] = await Promise.all([
+    getPdtpComplianceIndicators(year, selectedWorksiteId),
+    selectedWorksiteId ? getIncidentFrequencyRate(selectedWorksiteId, year, scope) : Promise.resolve(null),
+  ])
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "KPIs" }]} />
-      <PageHeader title="Indicadores preventivos" description="Cumplimiento, tasa de frecuencia, gravedad y siniestralidad (N° 7 PDTP)" actions={<PreventionExportButton href="/api/prevencion/kpis/export" label="Exportar KPIs" />} />
-
-      {indicators && (
-        <>
-          <div className="grid gap-4 md:grid-cols-4 mb-6">
-            <div className="rounded border p-4">
-              <p className="text-xs text-muted-foreground">Cumplimiento anual</p>
-              <p className="text-h1 font-semibold">{indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}</p>
-            </div>
-            <div className="rounded border p-4">
-              <p className="text-xs text-muted-foreground">Meta</p>
-              <p className="text-h1 font-semibold">{Math.round(indicators.target * 100)}%</p>
-            </div>
-            <div className="rounded border p-4">
-              <p className="text-xs text-muted-foreground">Actividades planificadas</p>
-              <p className="text-h1 font-semibold">{indicators.annual.planned}</p>
-            </div>
-            <div className="rounded border p-4">
-              <p className="text-xs text-muted-foreground">Actividades ejecutadas</p>
-              <p className="text-h1 font-semibold">{indicators.annual.executed}</p>
-            </div>
-          </div>
-
-          <div className="rounded border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="px-3 py-2 text-left">Período</th>
-                  <th className="px-3 py-2 text-right">Planificadas</th>
-                  <th className="px-3 py-2 text-right">Ejecutadas</th>
-                  <th className="px-3 py-2 text-right">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {indicators.monthly.map((m) => (
-                  <tr key={m.month} className="border-t">
-                    <td className="px-3 py-2">Mes {m.month}</td>
-                    <td className="px-3 py-2 text-right">{m.planned}</td>
-                    <td className="px-3 py-2 text-right">{m.executed}</td>
-                    <td className="px-3 py-2 text-right">{m.percent !== null ? `${Math.round(m.percent * 100)}%` : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <KpisPanel
+        year={year}
+        worksiteId={selectedWorksiteId}
+        worksites={worksites}
+        indicators={indicators}
+        rate={rate}
+        canManage={can(session, "prevention:kpis:manage")}
+      />
     </PageContainer>
   )
 }

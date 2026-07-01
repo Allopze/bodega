@@ -1,8 +1,12 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
+import { eq, inArray } from "drizzle-orm"
+import { db } from "@/db"
+import { contractorWorkers, contractorDocuments, workers } from "@/db/schema"
 import { requireAuth, can } from "@/lib/auth/can"
+import { listContractors, getExpiringContractorDocuments } from "@/lib/services/prevention-contractors"
 import { PageContainer } from "@/components/ui/page-container"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { ContratistasPanel } from "./contratistas-panel"
 
 export const metadata: Metadata = { title: "Contratistas" }
 
@@ -12,13 +16,30 @@ export default async function ContratistasPage() {
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:contractors:view")) redirect("/forbidden")
 
+  const canManage = can(session, "prevention:contractors:manage")
+  const contractors = await listContractors()
+  const contractorIds = contractors.map((c) => c.id)
+
+  const [contractorWorkerRows, contractorDocumentRows, expiringDocuments, availableWorkers] = await Promise.all([
+    contractorIds.length ? db.select().from(contractorWorkers).where(inArray(contractorWorkers.contractorId, contractorIds)) : Promise.resolve([]),
+    contractorIds.length ? db.select().from(contractorDocuments).where(inArray(contractorDocuments.contractorId, contractorIds)) : Promise.resolve([]),
+    getExpiringContractorDocuments(30),
+    canManage
+      ? db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut })
+          .from(workers).where(eq(workers.isActive, true)).orderBy(workers.firstName)
+      : Promise.resolve([]),
+  ])
+
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Contratistas" }]} />
-      <PageHeader title="Contratistas" description="Padrón de contratistas, trabajadores y documentación (N° 20 PDTP, Ley 20.123)" />
-      <div className="flex items-center justify-center border rounded p-12">
-        <p className="text-muted-foreground text-sm">Padrón de contratistas — próximamente.</p>
-      </div>
+      <ContratistasPanel
+        contractors={contractors}
+        workers={contractorWorkerRows}
+        documents={contractorDocumentRows}
+        availableWorkers={availableWorkers}
+        expiringDocumentIds={new Set(expiringDocuments.map((d) => d.id))}
+        canManage={canManage}
+      />
     </PageContainer>
   )
 }

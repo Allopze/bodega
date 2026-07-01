@@ -32,7 +32,7 @@ const SHEET_OPTIONS: Array<{ code: PdtpSheetCode; label: string }> = [
 ]
 
 type PdtpPageProps = {
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; actividadError?: string | string[] }>
 }
 
 export default async function PdtpPage({ searchParams }: PdtpPageProps) {
@@ -44,6 +44,7 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
   const query = await searchParams
   const requestedSheet = Array.isArray(query.hoja) ? query.hoja[0] : query.hoja
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
+  const actividadError = Array.isArray(query.actividadError) ? query.actividadError[0] : query.actividadError
   const sheetCode = normalizeSheetCode(requestedSheet) ?? defaultSheetForRoles(session.user.roles)
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
@@ -134,8 +135,15 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
         {canManage && view?.program?.status === "draft" && (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <h3 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Agregar actividad</h3>
+            {actividadError && (
+              <p className="mb-3 rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
+                {actividadError}
+              </p>
+            )}
             <form action={addPdtpActivityFormAction} className="grid grid-cols-2 gap-3">
               <input type="hidden" name="programId" value={view.program.id} />
+              <input type="hidden" name="hoja" value={sheetCode} />
+              <input type="hidden" name="faena" value={selectedWorksiteId ?? ""} />
               <div>
                 <label className="text-xs text-[var(--color-text-subtle)]">Orden objetivo (1-8)</label>
                 <input name="objectiveOrder" type="number" min="1" max="8" required
@@ -203,6 +211,21 @@ function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgr
   const hasJdpr = !!program.approvedByJdprAt
   const hasLegal = !!program.approvedByLegalAt
 
+  async function approveJdprAction() {
+    "use server"
+    await approvePdtpProgramJdprAction(program.id)
+  }
+
+  async function signLegalAction() {
+    "use server"
+    await signPdtpProgramLegalAction(program.id)
+  }
+
+  async function activateProgramAction() {
+    "use server"
+    await activatePdtpProgramAction(program.id)
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm">
       <span className="text-[var(--color-text-subtle)]">Elaborado por:</span>
@@ -212,7 +235,7 @@ function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgr
       {hasJdpr ? (
         <span className="text-[var(--color-success)]">✓ Aprobado JDPR</span>
       ) : canApprove && !isActive ? (
-        <form action={async () => { await approvePdtpProgramJdprAction(program.id) }}>
+        <form action={approveJdprAction}>
           <button type="submit" className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]">
             Aprobar (JDPR)
           </button>
@@ -226,7 +249,7 @@ function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgr
       {hasLegal ? (
         <span className="text-[var(--color-success)]">✓ Firmado Legal</span>
       ) : canSignLegal && !isActive ? (
-        <form action={async () => { await signPdtpProgramLegalAction(program.id) }}>
+        <form action={signLegalAction}>
           <button type="submit" className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]">
             Firmar (Legal)
           </button>
@@ -240,7 +263,7 @@ function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgr
       {isActive ? (
         <span className="font-semibold text-[var(--color-success)]">● Activo</span>
       ) : hasJdpr && hasLegal && canApprove ? (
-        <form action={async () => { await activatePdtpProgramAction(program.id) }}>
+        <form action={activateProgramAction}>
           <button type="submit" className="rounded border border-[var(--color-primary)] bg-[var(--color-primary-tint)] px-2 py-1 text-xs font-medium text-[var(--color-text)]">
             Activar programa
           </button>

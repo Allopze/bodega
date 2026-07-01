@@ -65,6 +65,16 @@ describe("prevention PDTP service", () => {
     })
   }
 
+  const loadActiveCatalog = async () => {
+    const { approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } =
+      await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    await approvePdtpProgramJdpr(program.id, "user-1")
+    await signPdtpProgramLegal(program.id, "user-1")
+    await activatePdtpProgram(program.id, "user-1")
+    return program
+  }
+
   it("loads the XLSX catalog idempotently into the PDTP program tables", async () => {
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
     const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
@@ -124,17 +134,8 @@ describe("prevention PDTP service", () => {
   })
 
   it("marks weekly execution quantities idempotently inside worksite scope", async () => {
-    const { loadPdtpCatalog, markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
-    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
-    const catalog = extractPdtpCatalogFromWorkbook(workbook)
-
-    await loadPdtpCatalog({
-      year: 2026,
-      version: 1,
-      title: "Programa de Trabajo Preventivo SG-SST 2026",
-      catalog,
-      userId: "user-1",
-    })
+    const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
 
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 38))
 
@@ -175,18 +176,32 @@ describe("prevention PDTP service", () => {
     }, "user-1", [])).rejects.toThrow(/sin acceso/i)
   })
 
-  it("includes execution totals for the selected worksite in the sheet view", async () => {
-    const { loadPdtpCatalog, markPdtpExecution, getPdtpSheetView } = await import("@/lib/services/prevention-pdtp")
-    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
-    const catalog = extractPdtpCatalogFromWorkbook(workbook)
+  it("markPdtpExecution rejects execution against a draft program", async () => {
+    const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    // Program is created in `draft` by loadCatalog — no activation here.
+    const { program } = await loadCatalog()
+    const [activity] = await inMemoryDb.select()
+      .from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.programId, program.id))
+      .limit(1)
 
-    await loadPdtpCatalog({
+    await expect(markPdtpExecution({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
       year: 2026,
-      version: 1,
-      title: "Programa de Trabajo Preventivo SG-SST 2026",
-      catalog,
-      userId: "user-1",
-    })
+      month: 1,
+      week: 1,
+      executedQuantity: 1,
+    }, "user-1", ["ws-1"])).rejects.toThrow(/estado activo/i)
+
+    // No execution row should be persisted.
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(executions).toHaveLength(0)
+  })
+
+  it("includes execution totals for the selected worksite in the sheet view", async () => {
+    const { markPdtpExecution, getPdtpSheetView } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
 
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 38))
     await markPdtpExecution({
@@ -249,7 +264,7 @@ describe("prevention PDTP service", () => {
 
   it("getPdtpComplianceIndicators counts only submitted/approved executions, not draft", async () => {
     const { getPdtpComplianceIndicators, markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
-    await loadCatalog()
+    await loadActiveCatalog()
 
     const activities = await inMemoryDb.select().from(schema.pdtpActivities)
     const act1 = activities[0]!
@@ -362,7 +377,7 @@ describe("prevention PDTP service", () => {
 
   it("approvePdtpExecution: submitted→approved, rejects wrong scope", async () => {
     const { markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
-    await loadCatalog()
+    await loadActiveCatalog()
 
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
     const exec = await markPdtpExecution({

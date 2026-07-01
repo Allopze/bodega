@@ -11,7 +11,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { PdtpSheetView } from "@/lib/services/prevention-pdtp"
-import { markPdtpExecutionFormAction, approvePdtpExecutionAction } from "./actions"
+import { PdtpExecutionForm } from "./pdtp-execution-form"
+import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -84,12 +85,12 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove
                 <TableCellNum className="font-semibold">{worksiteId ? formatQuantity(activity.totalExecuted) : "-"}</TableCellNum>
                 {canManage && worksiteId && (
                   <TableCell>
-                    <ExecutionForm activityId={activity.id} worksiteId={worksiteId} />
+                    <PdtpExecutionForm activityId={activity.id} worksiteId={worksiteId} />
                   </TableCell>
                 )}
                 {canApprove && worksiteId && pendingApprovals.length > 0 && (
                   <TableCell>
-                    <ApprovalButtons activityId={activity.id} pendingApprovals={pendingApprovals} />
+                    <PdtpApprovalButtons activityId={activity.id} pendingApprovals={pendingApprovals} />
                   </TableCell>
                 )}
               </TableRow>
@@ -157,45 +158,6 @@ export function PdtpSheetPicker({
   )
 }
 
-function ExecutionForm({ activityId, worksiteId }: { activityId: string; worksiteId: string }) {
-  return (
-    <form action={markPdtpExecutionFormAction} className="flex flex-wrap items-end gap-2">
-      <input type="hidden" name="activityId" value={activityId} />
-      <input type="hidden" name="worksiteId" value={worksiteId} />
-      <input type="hidden" name="year" value="2026" />
-      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-        Mes
-        <select name="month" defaultValue="1" className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]">
-          {MONTH_LABELS.map((label, index) => (
-            <option key={label} value={index + 1}>{label}</option>
-          ))}
-        </select>
-      </label>
-      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-        Semana
-        <select name="week" defaultValue="1" className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]">
-          {[1, 2, 3, 4].map((week) => (
-            <option key={week} value={week}>{week}</option>
-          ))}
-        </select>
-      </label>
-      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-        Cantidad
-        <input
-          name="executedQuantity"
-          type="number"
-          min="0"
-          step="0.25"
-          defaultValue="1"
-          className="h-8 w-20 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-        />
-      </label>
-      <input name="evidenceText" type="hidden" value="Registro desde tabla PDTP" />
-      <Button type="submit" size="sm" variant="secondary">Guardar</Button>
-    </form>
-  )
-}
-
 function Metric({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
@@ -210,28 +172,3 @@ function formatQuantity(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2)
 }
 
-function ApprovalButtons({
-  activityId,
-  pendingApprovals,
-}: {
-  activityId: string
-  pendingApprovals: PendingApproval[]
-}) {
-  const pending = pendingApprovals.filter((e) => e.activityId === activityId)
-  if (pending.length === 0) return null
-
-  return (
-    <div className="flex flex-wrap gap-1">
-      {pending.map((exec) => (
-        <form key={exec.id} action={async () => { await approvePdtpExecutionAction(exec.id) }}>
-          <button
-            type="submit"
-            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]"
-          >
-            ✓ M{exec.month}S{exec.week}
-          </button>
-        </form>
-      ))}
-    </div>
-  )
-}

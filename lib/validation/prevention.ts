@@ -76,7 +76,7 @@ export const trainingAssignSchema = z.object({
 export const pdtpExecutionSchema = z.object({
   activityId:       z.string().min(1, "Actividad requerida"),
   worksiteId:       z.string().min(1, "Faena requerida"),
-  year:             z.coerce.number().int().min(2026).max(2100),
+  year:             z.coerce.number().int().min(2000).max(2100),
   month:            z.coerce.number().int().min(1).max(12),
   week:             z.coerce.number().int().min(1).max(4),
   executedQuantity: z.coerce.number().min(0),
@@ -224,6 +224,165 @@ export const eppStockThresholdSchema = z.object({
   criticalStock: z.coerce.number().int().min(0),
 })
 
+export const eppDeliveryLogSchema = z.object({
+  workerId:      z.string().min(1, "Trabajador requerido"),
+  eppProductId:  z.string().min(1, "EPP requerido"),
+  deliveredAt:   z.string().optional().or(z.literal("")),
+  evidenceUrl:   z.string().max(500).min(1, "El acta de entrega es requerida"),
+})
+
+/* ── Salud ocupacional ───────────────────────────────────────────────────── */
+export const healthExamCreateSchema = z.object({
+  workerId:    z.string().min(1, "Trabajador requerido"),
+  type:        z.string().trim().min(1).max(80),
+  protocolId:  z.string().optional().or(z.literal("")),
+  performedAt: z.string().min(1, "Fecha requerida"),
+  result:      z.string().trim().min(1).max(60),
+  expiresAt:   z.string().optional().or(z.literal("")),
+  evidenceUrl: z.string().max(500).optional().or(z.literal("")),
+})
+
+export const healthAptitudeSchema = z.object({
+  workerId:     z.string().min(1, "Trabajador requerido"),
+  examId:       z.string().optional().or(z.literal("")),
+  position:     z.string().trim().min(1).max(120),
+  aptitude:     z.string().trim().min(1).max(60),
+  restrictions: z.record(z.string(), z.unknown()).default({}),
+  validUntil:   z.string().optional().or(z.literal("")),
+})
+
+export const healthRestrictionCreateSchema = z.object({
+  workerId:      z.string().min(1, "Trabajador requerido"),
+  kind:          z.string().trim().min(1).max(80),
+  description:   z.string().trim().min(1).max(1000),
+  effectiveFrom: z.string().min(1, "Fecha requerida"),
+  effectiveTo:   z.string().optional().or(z.literal("")),
+})
+
+/* ── Emergencias ─────────────────────────────────────────────────────────── */
+export const emergencyPlanCreateSchema = z.object({
+  worksiteId: z.string().min(1, "Faena requerida"),
+  threats:    z.record(z.string(), z.unknown()).default({}),
+  roles:      z.record(z.string(), z.unknown()).default({}),
+  routes:     z.record(z.string(), z.unknown()).default({}),
+})
+
+export const emergencyDrillScheduleSchema = z.object({
+  planId:      z.string().min(1, "Plan requerido"),
+  type:        z.string().trim().min(1).max(60),
+  scheduledAt: z.string().min(1, "Fecha requerida"),
+})
+
+export const emergencyDrillExecutionSchema = z.object({
+  attendees:     z.coerce.number().int().min(0).optional(),
+  findings:      z.record(z.string(), z.unknown()).default({}),
+  effectiveness: z.string().trim().max(60).optional().or(z.literal("")),
+})
+
+export const emergencyEquipmentCreateSchema = z.object({
+  worksiteId:       z.string().min(1, "Faena requerida"),
+  kind:             z.string().trim().min(1).max(60),
+  code:             z.string().trim().min(1).max(60),
+  location:         z.string().trim().min(1).max(160),
+  nextInspectionAt: z.string().optional().or(z.literal("")),
+})
+
+export const equipmentInspectionCreateSchema = z.object({
+  equipmentId: z.string().min(1, "Equipo requerido"),
+  status:      z.string().trim().min(1).max(40),
+  findings:    z.record(z.string(), z.unknown()).default({}),
+})
+
+/* ── Comités ─────────────────────────────────────────────────────────────── */
+export const committeeCreateSchema = z.object({
+  worksiteId: z.string().min(1, "Faena requerida"),
+  type:       z.string().trim().min(1).max(40),
+})
+
+export const committeeMemberAddSchema = z.object({
+  committeeId: z.string().min(1, "Comité requerido"),
+  userId:      z.string().min(1, "Usuario requerido"),
+  role:        z.string().trim().min(1).max(60),
+  startDate:   z.string().min(1, "Fecha requerida"),
+})
+
+export const committeeMeetingScheduleSchema = z.object({
+  committeeId:  z.string().min(1, "Comité requerido"),
+  scheduledAt:  z.string().min(1, "Fecha requerida"),
+  agenda:       z.string().trim().min(1).max(2000),
+  attendeeIds:  z.array(z.string().min(1)).default([]),
+})
+
+export const committeeAgreementAddSchema = z.object({
+  meetingId:     z.string().min(1, "Reunión requerida"),
+  description:   z.string().trim().min(1).max(1000),
+  responsibleId: z.string().min(1, "Responsable requerido"),
+  dueDate:       z.string().min(1, "Plazo requerido"),
+})
+
+/* ── Documentación legal ─────────────────────────────────────────────────── */
+export const legalDocumentCreateSchema = z.object({
+  type:      z.string().trim().min(1).max(60),
+  code:      z.string().trim().min(1).max(40),
+  title:     z.string().trim().min(1).max(200),
+  mandatory: z.boolean().optional(),
+})
+
+export const legalDocumentVersionAddSchema = z.object({
+  documentId:    z.string().min(1, "Documento requerido"),
+  effectiveFrom: z.string().min(1, "Fecha requerida"),
+  effectiveTo:   z.string().optional().or(z.literal("")),
+  fileUrl:       z.string().max(500).optional().or(z.literal("")),
+  changelog:     z.string().max(2000).optional().or(z.literal("")),
+})
+
+export const documentDeliveryCreateSchema = z.object({
+  versionId:   z.string().min(1, "Versión requerida"),
+  workerId:    z.string().min(1, "Trabajador requerido"),
+  method:      z.string().trim().max(40).optional(),
+  evidenceUrl: z.string().max(500).optional().or(z.literal("")),
+})
+
+/* ── Contratistas ───────────────────────────────────────────────────────── */
+export const contractorCreateSchema = z.object({
+  rut:                 z.string().trim().min(1, "RUT requerido").max(20),
+  name:                z.string().trim().min(1, "Razón social requerida").max(200),
+  legalRepresentative:  z.string().trim().max(160).optional().or(z.literal("")),
+  contact:             z.string().trim().max(160).optional().or(z.literal("")),
+  status:              z.enum(["activo", "inactivo", "bloqueado"]).default("activo"),
+})
+
+export const contractorWorkerAddSchema = z.object({
+  contractorId: z.string().min(1, "Contratista requerido"),
+  workerId:     z.string().min(1, "Trabajador requerido"),
+  position:     z.string().trim().min(1, "Cargo requerido").max(120),
+  startDate:    z.string().min(1, "Fecha de inicio requerida"),
+  endDate:      z.string().optional().or(z.literal("")),
+})
+
+export const contractorDocumentAddSchema = z.object({
+  contractorId: z.string().min(1, "Contratista requerido"),
+  type:         z.enum([
+    "certificado_antecedentes",
+    "contrato_trabajo",
+    "epp_entregado",
+    "capacitacion_ods",
+    "examen_preocupacional",
+    "reglamento_interno",
+    "otro",
+  ]),
+  versionId: z.string().optional().or(z.literal("")),
+  status:    z.enum(["pendiente", "vigente", "vencido"]).default("pendiente"),
+  expiresAt: z.string().optional().or(z.literal("")),
+})
+
+/* ── KPIs / horas hombre ─────────────────────────────────────────────────── */
+export const laborHoursSetSchema = z.object({
+  worksiteId: z.string().min(1, "Faena requerida"),
+  period:     z.string().regex(/^\d{4}-\d{2}$/, "Formato de periodo inválido (YYYY-MM)"),
+  hours:      z.coerce.number().positive("Las horas hombre deben ser mayores a 0"),
+})
+
 /* ── Permisos de trabajo ─────────────────────────────────────────────────── */
 export const permitTemplateCreateSchema = z.object({
   code:            z.string().trim().min(1).max(40),
@@ -242,4 +401,10 @@ export const permitRequestSchema = z.object({
   plannedStart: z.string().min(1),
   plannedEnd:   z.string().min(1),
   ast:          z.record(z.string(), z.unknown()).default({}),
+})
+
+export const permitSignoffSchema = z.object({
+  permitId:  z.string().min(1),
+  role:      z.string().trim().min(1).max(60),
+  signature: z.string().trim().min(1).max(2000),
 })

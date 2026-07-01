@@ -1,12 +1,14 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
+import { asc, inArray } from "drizzle-orm"
+import { db } from "@/db"
+import { workers } from "@/db/schema"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getEppMatrix } from "@/lib/services/prevention-epp-matrix"
+import { getEppMatrix, listEppDeliveries } from "@/lib/services/prevention-epp-matrix"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { PageContainer } from "@/components/ui/page-container"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { PreventionExportButton } from "@/components/prevention/export-button"
+import { EppMatrizPanel } from "./epp-matriz-panel"
 
 export const metadata: Metadata = { title: "Matriz EPP por cargo" }
 
@@ -28,38 +30,32 @@ export default async function EppMatrizPage({ searchParams }: { searchParams: Pr
   const selectedWorksiteId = worksites.find((w) => w.id === query.faena)?.id ?? worksites[0]?.id
 
   let entries: Array<{ id: string; position: string; eppProductId: string; riskId: string | null; notes: string | null }> = []
+  let deliveries: Array<{ id: string; workerId: string; eppProductId: string; deliveredAt: string; evidenceUrl: string | null; acknowledgedAt: string | null }> = []
+  let worksiteWorkers: Array<{ id: string; firstName: string; lastName: string; rut: string | null }> = []
   if (selectedWorksiteId) {
-    entries = await getEppMatrix(selectedWorksiteId, scope)
+    [entries, deliveries, worksiteWorkers] = await Promise.all([
+      getEppMatrix(selectedWorksiteId, scope),
+      listEppDeliveries(selectedWorksiteId, scope),
+      db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut })
+        .from(workers)
+        .where(inArray(workers.worksiteId, [selectedWorksiteId]))
+        .orderBy(asc(workers.firstName), asc(workers.lastName)),
+    ])
   }
+
+  const canManage = can(session, "prevention:epp_matrix:manage")
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Matriz EPP" }]} />
-      <PageHeader title="Matriz EPP por cargo" description="Elementos de protección personal requeridos por cargo y faena (N° 61-62 PDTP)" actions={<PreventionExportButton href={`/api/prevencion/epp/matriz/export?faena=${selectedWorksiteId ?? ""}`} label="Exportar matriz" />} />
-      <div className="rounded border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-3 py-2 text-left">Cargo</th>
-              <th className="px-3 py-2 text-left">EPP</th>
-              <th className="px-3 py-2 text-left">Riesgo IPER</th>
-              <th className="px-3 py-2 text-left">Notas</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.length === 0 ? (
-              <tr><td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">Sin entradas en la matriz.</td></tr>
-            ) : entries.map((e) => (
-              <tr key={e.id} className="border-t">
-                <td className="px-3 py-2">{e.position}</td>
-                <td className="px-3 py-2">{e.eppProductId}</td>
-                <td className="px-3 py-2">{e.riskId ?? "-"}</td>
-                <td className="px-3 py-2">{e.notes ?? "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <EppMatrizPanel
+        entries={entries}
+        deliveries={deliveries}
+        worksites={worksites}
+        workers={worksiteWorkers}
+        selectedWorksiteId={selectedWorksiteId}
+        canManage={canManage}
+        exportHref={`/api/prevencion/epp/matriz/export?faena=${selectedWorksiteId ?? ""}`}
+      />
     </PageContainer>
   )
 }

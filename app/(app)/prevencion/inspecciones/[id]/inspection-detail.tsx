@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select } from "@/components/ui/select"
 import type { InspectionRun, InspectionItem, BehavioralObservation, InspectionTemplate } from "@/db/schema"
 import { updateInspectionItemAction, closeInspectionRunAction } from "../actions"
+import { INSPECTION_ITEM_STATUS_LABELS, inspectionItemStatusVariant } from "@/lib/prevention/badges"
 
 const STATUS_OPTIONS = [
   { value: "ok", label: "OK" },
@@ -66,9 +67,10 @@ export function InspectionDetail({ data, canManage, canClose }: InspectionDetail
                   </div>
                   <Badge variant={
                     item.status === "critico" ? "danger" :
-                    item.status === "no_conforme" ? "warning" : "success"
+                    item.status === "no_conforme" ? "warning" :
+                    item.status === "pendiente" ? "outline" : "success"
                   }>
-                    {item.status}
+                    {item.status === "pendiente" ? "Pendiente" : item.status}
                   </Badge>
                 </div>
                 {item.observed && <p className="text-sm mt-2">Observado: {item.observed}</p>}

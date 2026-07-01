@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { redirect } from "next/navigation"
 import { guardAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
@@ -53,8 +54,8 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
   }
 }
 
-export async function markPdtpExecutionFormAction(formData: FormData): Promise<void> {
-  await markPdtpExecutionAction(formData)
+export async function markPdtpExecutionFormAction(formData: FormData): Promise<ActionState> {
+  return markPdtpExecutionAction(formData)
 }
 
 // ── WS2: Program lifecycle ──────────────────────────────────────────────────
@@ -157,9 +158,25 @@ export async function addPdtpActivityAction(input: unknown): Promise<ActionState
 }
 
 export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
+  // Página 100% servidor (sin componentes cliente): el feedback de error se
+  // propaga por query param en vez de toast, preservando hoja/faena actuales.
+  const hoja = String(fd.get("hoja") ?? "")
+  const faena = String(fd.get("faena") ?? "")
+  const backTo = (errorMessage?: string): never => {
+    const params = new URLSearchParams()
+    if (hoja) params.set("hoja", hoja)
+    if (faena) params.set("faena", faena)
+    if (errorMessage) params.set("actividadError", errorMessage)
+    const qs = params.toString()
+    redirect(qs ? `${REVALIDATE}?${qs}` : REVALIDATE)
+  }
+
   const { session, error } = await guardAuth()
-  if (error) return
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) return
+  if (error) return backTo(error.message)
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return backTo("No tienes permisos para agregar actividades PDTP.")
+  }
+
   try {
     const parsed = pdtpActivityAddSchema.parse({
       programId: fd.get("programId"),
@@ -173,8 +190,9 @@ export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
       notes: fd.get("notes") ?? undefined,
     })
     await addPdtpActivity(parsed, session.user.id)
-    revalidatePath(REVALIDATE)
-  } catch {
-    // ponytail: silent on error — page re-renders without the entry; wire toasts when client components allowed
+  } catch (e) {
+    return backTo((e as Error).message)
   }
+  revalidatePath(REVALIDATE)
+  return backTo()
 }

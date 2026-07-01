@@ -60,3 +60,18 @@ export function formatDateDisplay(isoDate: string): string {
   const y = date.getFullYear()
   return `${d}/${m}/${y}`
 }
+
+/**
+ * Variante tolerante: acepta ISO 'YYYY-MM-DD', 'YYYY-MM-DDTHH:mm:ss' o
+ * `YYYY-MM-DDTHH:mm:ssZ`. Trunca al día local y formatea como dd/mm/aaaa.
+ * Si la cadena es vacía o no parseable, devuelve "—".
+ *
+ * Usar para unificar el render de fechas en toda el área de prevención
+ * (audit §3 — "4 estilos compitiendo").
+ */
+export function formatDateSafe(input: string | null | undefined): string {
+  if (!input) return "—"
+  const isoDay = input.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDay)) return "—"
+  return formatDateDisplay(isoDay)
+}

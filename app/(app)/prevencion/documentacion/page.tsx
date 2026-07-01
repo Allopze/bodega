@@ -1,10 +1,12 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
+import { eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
 import { listLegalDocuments } from "@/lib/services/prevention-legal-docs"
+import { db } from "@/db"
+import { legalDocumentVersions, documentDeliveries, workers } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { PreventionExportButton } from "@/components/prevention/export-button"
+import { DocumentacionPanel } from "./documentacion-panel"
 
 export const metadata: Metadata = { title: "Documentación legal" }
 
@@ -15,35 +17,49 @@ export default async function DocumentacionPage() {
   if (!can(session, "prevention:legal_docs:view")) redirect("/forbidden")
 
   const docs = await listLegalDocuments()
+  const docIds = docs.map((d) => d.id)
+
+  const versions = docIds.length
+    ? await db.select().from(legalDocumentVersions).where(inArray(legalDocumentVersions.documentId, docIds))
+    : []
+  const versionIds = versions.map((v) => v.id)
+
+  const deliveries = versionIds.length
+    ? await db.select().from(documentDeliveries).where(inArray(documentDeliveries.versionId, versionIds))
+    : []
+
+  const workerIds = Array.from(new Set(deliveries.map((d) => d.workerId)))
+  const workerRows = workerIds.length
+    ? await db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut })
+        .from(workers).where(inArray(workers.id, workerIds))
+    : []
+  const workerMap = Object.fromEntries(workerRows.map((w) => [w.id, w]))
+
+  const enrichedDeliveries = deliveries.map((d) => ({
+    ...d,
+    worker: workerMap[d.workerId] ?? null,
+  }))
+
+  const canManage = can(session, "prevention:legal_docs:manage")
+  const canSign = can(session, "prevention:legal_docs:sign")
+
+  // Solo se necesita el listado completo de trabajadores activos para el
+  // formulario de entrega, que únicamente ve quien puede gestionar.
+  const activeWorkers = canManage
+    ? await db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut })
+        .from(workers).where(eq(workers.isActive, true)).orderBy(workers.firstName)
+    : []
 
   return (
     <PageContainer>
-      <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]} />
-      <PageHeader title="Documentación legal" description="RIOHS, ODI, IRL, carpetas de arranque y programas (N° 15, 18, 19 PDTP)" actions={<PreventionExportButton href="/api/prevencion/documentacion/export" label="Exportar docs" />} />
-      <div className="rounded border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-3 py-2 text-left">Tipo</th>
-              <th className="px-3 py-2 text-left">Código</th>
-              <th className="px-3 py-2 text-left">Título</th>
-              <th className="px-3 py-2 text-left">Obligatorio</th>
-            </tr>
-          </thead>
-          <tbody>
-            {docs.length === 0 ? (
-              <tr><td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">Sin documentos registrados.</td></tr>
-            ) : docs.map((d) => (
-              <tr key={d.id} className="border-t">
-                <td className="px-3 py-2 font-mono text-xs">{d.type}</td>
-                <td className="px-3 py-2">{d.code}</td>
-                <td className="px-3 py-2">{d.title}</td>
-                <td className="px-3 py-2">{d.mandatory ? "Sí" : "No"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DocumentacionPanel
+        documents={docs}
+        versions={versions}
+        deliveries={enrichedDeliveries}
+        activeWorkers={activeWorkers}
+        canManage={canManage}
+        canSign={canSign}
+      />
     </PageContainer>
   )
 }

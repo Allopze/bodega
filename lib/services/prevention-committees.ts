@@ -8,6 +8,12 @@ import { db } from "@/db"
 import { committees, committeeMembers, committeeMeetings, committeeAgreements } from "@/db/schema"
 import type { ReportData } from "@/lib/reports/export"
 import { nanoid } from "@/lib/id"
+import {
+  committeeCreateSchema,
+  committeeMemberAddSchema,
+  committeeMeetingScheduleSchema,
+  committeeAgreementAddSchema,
+} from "@/lib/validation/prevention"
 
 type WorksiteScope = string[] | "all"
 
@@ -16,13 +22,14 @@ function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
   if (!scope.includes(worksiteId)) throw new Error("Sin acceso a esta faena.")
 }
 
-export async function createCommittee(input: { worksiteId: string; type: string }, scope: WorksiteScope) {
-  assertWorksiteAccess(input.worksiteId, scope)
+export async function createCommittee(input: unknown, scope: WorksiteScope) {
+  const data = committeeCreateSchema.parse(input)
+  assertWorksiteAccess(data.worksiteId, scope)
   const now = new Date().toISOString()
   const [row] = await db.insert(committees).values({
     id: `comm-${nanoid()}`,
-    worksiteId: input.worksiteId,
-    type: input.type,
+    worksiteId: data.worksiteId,
+    type: data.type,
     status: "activo",
     createdAt: now,
   }).onConflictDoUpdate({
@@ -32,37 +39,29 @@ export async function createCommittee(input: { worksiteId: string; type: string 
   return row
 }
 
-export async function addCommitteeMember(input: {
-  committeeId: string
-  userId: string
-  role: string
-  startDate: string
-}) {
+export async function addCommitteeMember(input: unknown) {
+  const data = committeeMemberAddSchema.parse(input)
   const now = new Date().toISOString()
   const [row] = await db.insert(committeeMembers).values({
     id: `cmmb-${nanoid()}`,
-    committeeId: input.committeeId,
-    userId: input.userId,
-    role: input.role,
-    startDate: input.startDate,
+    committeeId: data.committeeId,
+    userId: data.userId,
+    role: data.role,
+    startDate: data.startDate,
     createdAt: now,
   }).returning()
   return row
 }
 
-export async function scheduleMeeting(input: {
-  committeeId: string
-  scheduledAt: string
-  agenda: string
-  attendeeIds: string[]
-}) {
+export async function scheduleMeeting(input: unknown) {
+  const data = committeeMeetingScheduleSchema.parse(input)
   const now = new Date().toISOString()
   const [row] = await db.insert(committeeMeetings).values({
     id: `cmet-${nanoid()}`,
-    committeeId: input.committeeId,
-    scheduledAt: input.scheduledAt,
-    attendees: input.attendeeIds,
-    agenda: input.agenda,
+    committeeId: data.committeeId,
+    scheduledAt: data.scheduledAt,
+    attendees: data.attendeeIds,
+    agenda: data.agenda,
     createdAt: now,
     updatedAt: now,
   }).returning()
@@ -78,19 +77,15 @@ export async function recordMeetingAttendance(meetingId: string, attendeeIds: st
   return updated
 }
 
-export async function addAgreement(input: {
-  meetingId: string
-  description: string
-  responsibleId: string
-  dueDate: string
-}) {
+export async function addAgreement(input: unknown) {
+  const data = committeeAgreementAddSchema.parse(input)
   const now = new Date().toISOString()
   const [row] = await db.insert(committeeAgreements).values({
     id: `cagr-${nanoid()}`,
-    meetingId: input.meetingId,
-    description: input.description,
-    responsibleId: input.responsibleId,
-    dueDate: input.dueDate,
+    meetingId: data.meetingId,
+    description: data.description,
+    responsibleId: data.responsibleId,
+    dueDate: data.dueDate,
     status: "pendiente",
     createdAt: now,
     updatedAt: now,
