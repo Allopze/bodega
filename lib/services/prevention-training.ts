@@ -11,7 +11,7 @@
 
 import { and, desc, eq, inArray, lte } from "drizzle-orm"
 import { db } from "@/db"
-import { trainingCourses, workerTrainingAssignments } from "@/db/schema"
+import { trainingCourses, workerTrainingAssignments, workers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { trainingAssignSchema, trainingCourseCreateSchema } from "@/lib/validation/prevention"
 
@@ -152,4 +152,63 @@ export async function buildTrainingExport(scope: WorksiteScope): Promise<{
       { worksheetName: "Asignaciones", headers: ["Curso código", "Curso nombre", "Faena", "Trabajador", "Realizada", "Vence", "Estado", "Nota"], rows: assignmentRows },
     ],
   }
+}
+
+export type TrainingMatrixRow = {
+  courseId: string
+  courseName: string
+  cargo: string
+  requiredCount: number
+  compliantCount: number
+}
+
+// Cruce cargo × curso. Un trabajador "cumple" si tiene una asignación al curso
+// cuya expiresAt es null (sin vencimiento) o >= today.
+export async function getTrainingMatrix(scope: WorksiteScope, today: string): Promise<TrainingMatrixRow[]> {
+  const courses = await listTrainingCourses() // solo activos
+  const withCargo = courses.filter((c) => Array.isArray(c.requiredForCargo) && (c.requiredForCargo as string[]).length > 0)
+  if (withCargo.length === 0) return []
+
+  const activeWhere = scope === "all"
+    ? eq(workers.isActive, true)
+    : scope.length === 0
+      ? undefined
+      : and(eq(workers.isActive, true), inArray(workers.worksiteId, scope))
+  if (scope !== "all" && scope.length === 0) return []
+
+  const workerRows = await db.select({ id: workers.id, position: workers.position }).from(workers).where(activeWhere)
+
+  const assignmentWhere = scope === "all"
+    ? undefined
+    : inArray(workerTrainingAssignments.worksiteId, scope)
+  const assignments = await db.select({
+    courseId: workerTrainingAssignments.courseId,
+    workerId: workerTrainingAssignments.workerId,
+    expiresAt: workerTrainingAssignments.expiresAt,
+  }).from(workerTrainingAssignments).where(assignmentWhere)
+
+  const compliantByCourse = new Map<string, Set<string>>()
+  for (const a of assignments) {
+    if (a.expiresAt !== null && a.expiresAt < today) continue
+    if (!compliantByCourse.has(a.courseId)) compliantByCourse.set(a.courseId, new Set())
+    compliantByCourse.get(a.courseId)!.add(a.workerId)
+  }
+
+  const rows: TrainingMatrixRow[] = []
+  for (const course of withCargo) {
+    for (const cargo of course.requiredForCargo as string[]) {
+      const requiredWorkers = workerRows.filter((w) => w.position === cargo)
+      if (requiredWorkers.length === 0) continue
+      const compliantSet = compliantByCourse.get(course.id) ?? new Set()
+      const compliantCount = requiredWorkers.filter((w) => compliantSet.has(w.id)).length
+      rows.push({
+        courseId: course.id,
+        courseName: course.name,
+        cargo,
+        requiredCount: requiredWorkers.length,
+        compliantCount,
+      })
+    }
+  }
+  return rows
 }
