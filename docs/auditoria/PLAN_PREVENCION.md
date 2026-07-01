@@ -588,27 +588,39 @@ abierto** después de esta iteración:
    separada) antes de conectar.
 5. **DIAT automática desde incidente** (PDF con formato legal) — no
    intentado, requiere el formato exacto de la Dirección del Trabajo.
-6. **Matriz de capacitación por cargo** (`capacitaciones/matriz/page.tsx`)
-   — vista cruzada cargo × curso, no construida (el campo
-   `requiredForCargo` ya existe).
-7. **SLA de notificación de incidente** (badge por tiempo excedido desde
-   `occurredAt`) — no construido.
-8. **Alcotest**: escalamiento de resultado positivo es solo un toast, sin
-   notificación real ni registro de suspensión de turno; tablero de tasas
-   y programación de tests aleatorios no se construyeron.
-9. **Contratistas: control de acceso a faena** — el registro de un
-   contratista todavía no condiciona `resolveWorksiteScope` para limitar
-   sus workers a las faenas donde estén autorizados.
-10. **P4 completo** (motor de recordatorios/vencimientos transversal,
-    dashboard de prevención, bitácora/change-log reutilizable) — ningún
-    ítem se tocó.
-11. **2 fallos de test preexistentes, sin relación con prevención**
-    (confirmado con `git diff --stat`, cero archivos tocados en ambos
-    casos): `scripts/capture-all-routes.test.ts` (el inventario de
-    capturas de pantalla nunca incluyó ninguna ruta P3 — agregar ~20 con
-    su seed data es un esfuerzo aparte) y
-    `request-type-actions-rejection.test.ts` (módulo de
-    solicitudes/servicios, no prevención).
+6. **Alcotest: escalamiento de resultado positivo** sigue siendo solo un
+   toast, sin notificación real ni registro de suspensión de turno
+   (fuera de alcance — requiere decisión de canal de notificación).
+7. **P4 completo** (motor de recordatorios/vencimientos transversal,
+   dashboard de prevención, bitácora/change-log reutilizable) — ningún
+   ítem se tocó.
+8. **1 fallo de test preexistente, sin relación con prevención**
+   (confirmado con `git diff --stat`, cero archivos de prevención
+   tocados): `request-type-actions-rejection.test.ts` (módulo de
+   solicitudes/servicios).
+
+### Cerrado en la iteración 2026-07-01 (plan `docs/superpowers/plans/2026-07-01-prevencion-pendientes-accionables.md`, subagent-driven)
+
+- ✅ **Matriz de capacitación por cargo** — `getTrainingMatrix` (servicio,
+  con exclusión de cursos inactivos) + `capacitaciones/matriz/page.tsx`
+  + nav child.
+- ✅ **SLA de notificación de incidente** — `incidentSlaBreached` (helper
+  puro) + badge "SLA excedido" en `incident-list.tsx`.
+- ✅ **Alcotest: tablero de tasas + sugerencia de tests aleatorios** —
+  `getAlcoholTestStats` + `suggestRandomWorkersForTest` (servicio) +
+  tarjetas de tasas + `suggestRandomWorkersAction` en el panel (la
+  programación real de tests aleatorios y el botón de UI para la
+  sugerencia quedan fuera, marcados opcionales en el plan).
+- ✅ **Contratistas: control de acceso a faena** — `availableWorkers` en
+  `contratistas/page.tsx` ahora respeta `resolveWorksiteScope` en vez de
+  listar todos los workers activos de la empresa.
+- ✅ **`scripts/capture-all-routes.test.ts`** — las ~22 rutas P3 de
+  prevención (incluida la nueva `capacitaciones/matriz`) quedaron
+  registradas en el inventario; el test está en verde.
+
+Cada tarea pasó por implementador + revisor dedicados (spec compliance +
+calidad) antes de marcarse completa; ver
+`.superpowers/sdd/progress.md` para el detalle de commits por tarea.
 
 ## Criterio de cierre
 
