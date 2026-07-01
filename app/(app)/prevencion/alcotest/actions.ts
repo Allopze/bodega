@@ -7,6 +7,7 @@ import { alcoholTestSchema, type ActionState } from "@/lib/validation/prevention
 import {
   registerAlcoholTest,
   markAlcoholTestSent,
+  suggestRandomWorkersForTest,
 } from "@/lib/services/prevention-alcohol-tests"
 
 const REVALIDATE = "/prevencion/alcotest"
@@ -45,5 +46,19 @@ export async function markAlcoholTestSentAction(testId: string): Promise<ActionS
     return { ok: true }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function suggestRandomWorkersAction(
+  worksiteId: string,
+  n: number,
+): Promise<ActionState & { data?: { workers: { id: string; firstName: string; lastName: string; rut: string | null }[] } }> {
+  const { session, error } = await guardPermission("prevention:alcohol_tests:manage")
+  if (error) return error
+  try {
+    const workers = await suggestRandomWorkersForTest(worksiteId, scopeToIds(resolveWorksiteScope(session)), n)
+    return { ok: true, data: { workers } }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Error al sugerir trabajadores." }
   }
 }

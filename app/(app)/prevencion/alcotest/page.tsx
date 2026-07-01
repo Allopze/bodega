@@ -5,7 +5,7 @@ import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { workers } from "@/db/schema/worksites"
-import { listAlcoholTests } from "@/lib/services/prevention-alcohol-tests"
+import { listAlcoholTests, getAlcoholTestStats } from "@/lib/services/prevention-alcohol-tests"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { PageContainer } from "@/components/ui/page-container"
 import { AlcotestPanel } from "./alcotest-panel"
@@ -26,7 +26,7 @@ export default async function AlcotestPage() {
 
   const scope = scopeToIds(resolveWorksiteScope(session))
 
-  const [tests, worksites, workerRows] = await Promise.all([
+  const [tests, worksites, workerRows, stats] = await Promise.all([
     listAlcoholTests(scope),
     listScopedWorksites(scope),
     scope !== "all" && scope.length === 0
@@ -36,6 +36,7 @@ export default async function AlcotestPage() {
           .from(workers)
           .where(scope === "all" ? undefined : inArray(workers.worksiteId, scope))
           .orderBy(asc(workers.firstName), asc(workers.lastName)),
+    getAlcoholTestStats(scope),
   ])
 
   const canManage = can(session, "prevention:alcohol_tests:manage")
@@ -46,6 +47,7 @@ export default async function AlcotestPage() {
         tests={tests}
         worksites={worksites}
         workers={workerRows}
+        stats={stats}
         canManage={canManage}
       />
     </PageContainer>

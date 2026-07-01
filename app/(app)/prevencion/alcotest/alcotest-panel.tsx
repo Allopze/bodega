@@ -22,10 +22,18 @@ interface WorkerOption {
   lastName: string
 }
 
+interface Stats {
+  total: number
+  positive: number
+  negative: number
+  positiveRate: number | null
+}
+
 interface Props {
   tests: AlcoholTest[]
   worksites: { id: string; name: string }[]
   workers: WorkerOption[]
+  stats: Stats
   canManage: boolean
 }
 
@@ -56,7 +64,7 @@ const SHIFT_OPTIONS = [
   { value: "N", label: "Noche" },
 ] as const
 
-export function AlcotestPanel({ tests, worksites, workers, canManage }: Props) {
+export function AlcotestPanel({ tests, worksites, workers, stats, canManage }: Props) {
   const [open, setOpen] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
   const [form, setForm] = React.useState({
@@ -133,6 +141,21 @@ export function AlcotestPanel({ tests, worksites, workers, canManage }: Props) {
             {open ? "Cancelar" : "Registrar test"}
           </Button>
         ) : null}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3 mb-6">
+        <div className="rounded border p-4">
+          <p className="text-xs text-muted-foreground">Tests totales</p>
+          <p className="text-h1 font-semibold">{stats.total}</p>
+        </div>
+        <div className="rounded border p-4">
+          <p className="text-xs text-muted-foreground">Positivos</p>
+          <p className="text-h1 font-semibold">{stats.positive}</p>
+        </div>
+        <div className="rounded border p-4">
+          <p className="text-xs text-muted-foreground">Tasa de positivos</p>
+          <p className="text-h1 font-semibold">{stats.positiveRate !== null ? `${(stats.positiveRate * 100).toFixed(1)}%` : "—"}</p>
+        </div>
       </div>
 
       {open ? (
