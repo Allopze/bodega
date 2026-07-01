@@ -3,9 +3,9 @@
  * Control de alcotest DO-48 (PDTP N° 31).
  */
 
-import { desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { alcoholTests } from "@/db/schema"
+import { alcoholTests, workers } from "@/db/schema"
 import type { ReportData } from "@/lib/reports/export"
 import { nanoid } from "@/lib/id"
 import { alcoholTestSchema } from "@/lib/validation/prevention"
@@ -66,6 +66,50 @@ export async function markAlcoholTestSent(testId: string, scope: WorksiteScope) 
     .where(eq(alcoholTests.id, testId))
     .returning()
   return updated
+}
+
+export async function getAlcoholTestStats(scope: WorksiteScope) {
+  if (scope !== "all" && scope.length === 0) {
+    return { total: 0, positive: 0, negative: 0, positiveRate: null as number | null, byWorksite: [] }
+  }
+  const where = scope === "all" ? undefined : inArray(alcoholTests.worksiteId, scope)
+  const rows = await db.select({ worksiteId: alcoholTests.worksiteId, result: alcoholTests.result }).from(alcoholTests).where(where)
+
+  const total = rows.length
+  const positive = rows.filter((r) => r.result === "positivo").length
+  const negative = rows.filter((r) => r.result === "negativo").length
+
+  const byWorksiteMap = new Map<string, { total: number; positive: number }>()
+  for (const r of rows) {
+    const agg = byWorksiteMap.get(r.worksiteId) ?? { total: 0, positive: 0 }
+    agg.total += 1
+    if (r.result === "positivo") agg.positive += 1
+    byWorksiteMap.set(r.worksiteId, agg)
+  }
+
+  return {
+    total,
+    positive,
+    negative,
+    positiveRate: total > 0 ? positive / total : null,
+    byWorksite: [...byWorksiteMap.entries()].map(([worksiteId, agg]) => ({ worksiteId, ...agg })),
+  }
+}
+
+// ponytail: selección aleatoria en memoria (Fisher-Yates parcial). Suficiente para
+// una faena; si el padrón crece a decenas de miles, mover a ORDER BY random() LIMIT n.
+export async function suggestRandomWorkersForTest(worksiteId: string, scope: WorksiteScope, n: number) {
+  assertWorksiteAccess(worksiteId, scope)
+  const rows = await db.select({
+    id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut,
+  }).from(workers).where(and(eq(workers.worksiteId, worksiteId), eq(workers.isActive, true)))
+
+  const shuffled = [...rows]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!]
+  }
+  return shuffled.slice(0, Math.max(0, n))
 }
 
 export async function buildAlcoholTestsExport(scope: WorksiteScope): Promise<ReportData> {
