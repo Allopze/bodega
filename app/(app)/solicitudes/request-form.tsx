@@ -196,7 +196,7 @@ function SummarySidebar({
 }
 
 export function RequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userPermissions = [] }: RequestFormProps) {
-  const form = useRequestForm({ worksites, products, suppliers: suppliers as any, editRequest, maxFileSizeMb, userPermissions })
+  const form = useRequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userPermissions })
 
   return (
     <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">

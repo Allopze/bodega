@@ -216,7 +216,7 @@ export function useEvaluationDetail({
         toast.error(result.message ?? "Error al marcar la semana")
       }
     })
-  }, [router])
+  }, [router, startTransition])
 
   return {
     evaluation,

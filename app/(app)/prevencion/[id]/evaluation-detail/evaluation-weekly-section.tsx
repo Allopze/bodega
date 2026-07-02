@@ -8,6 +8,7 @@ import { ChecklistSectionPanel } from "../checklist-section"
 import { LockSimple, CaretLeft, CaretRight, Check } from "@phosphor-icons/react"
 import type { ChecklistSection } from "@/lib/sst/types"
 import type { SstWeeklyEvaluation } from "@/db/schema/sst"
+import type { ItemResponse } from "../checklist-section"
 import type { ResponseMap } from "./helpers"
 
 interface Props {
@@ -19,7 +20,7 @@ interface Props {
   isPending: boolean
   activeNavigationIndex: number
   navigationItems: { value: string; label: string }[]
-  handleResponseChange: (seccionId: string, itemId: string, patch: any) => void
+  handleResponseChange: (seccionId: string, itemId: string, patch: Partial<ItemResponse>) => void
   moveActiveSection: (offset: number) => void
   handleMarkWeekComplete: (weeklyId: string) => void
 }
