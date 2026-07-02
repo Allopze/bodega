@@ -1,0 +1,63 @@
+"use client"
+
+import type { FilterOption } from "@/components/adquisiciones/list-filters"
+
+export const URGENCY_OPTIONS: FilterOption[] = [
+  { value: "normal",   label: "Normal"   },
+  { value: "high",     label: "Urgente"  },
+  { value: "critical", label: "Crítico"  },
+]
+
+export const REQUEST_TYPE_LABELS: Record<string, string> = {
+  epp:  "EPP",
+  otro: "Otro",
+}
+
+export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
+  epp:  "info",
+  otro: "default",
+}
+
+export const URGENCY_LABEL: Record<string, string> = {
+  normal:   "Normal",
+  high:     "Urgente",
+  critical: "Crítico",
+}
+
+export const URGENCY_CLASS: Record<string, string> = {
+  normal:   "text-[var(--color-text-muted)]",
+  high:     "text-[var(--color-signal-ink)] font-medium",
+  critical: "text-[var(--color-danger)] font-semibold",
+}
+
+export interface ApprovalAttribute {
+  attributeName: string
+  value:         string
+}
+
+export interface ApprovalItem {
+  id:                    string
+  productName:           string
+  productSku:            string | null
+  quantity:              number
+  unitOfMeasure:         string
+  urgency:               string
+  requiredDate:          string | null
+  notes:                 string | null
+  status:                string
+  attributes:            ApprovalAttribute[]
+  suggestedSupplierName?: string | null
+  supplierHint?:         string | null
+}
+
+export interface ApprovalRequest {
+  id:              string
+  code:            string
+  requestType:     string
+  worksiteName:    string
+  requesterName:   string
+  requestUrgency:  string
+  submittedAt:     string | null
+  pendingItems:    ApprovalItem[]
+  pendingCount:    number
+}

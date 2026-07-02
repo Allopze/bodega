@@ -160,18 +160,18 @@ Estos son los principales candidatos a dividir en módulos más pequeños:
 
 ## Top 10 prioridad para dividir (producción, sin tests)
 
-| # | Archivo | Líneas | Razón |
-|---|---------|-------:|-------|
-| 1 | `db/schema/prevention.ts` | 1579 | Schema masivo; separar por dominio (evaluaciones, documentos, comités, etc.) |
-| 2 | `lib/services/prevention-documents-library.ts` | 1316 | Biblioteca de documentos monolítica; separar CRUD, versionado, búsqueda y notificaciones |
-| 3 | `lib/services/prevention-pdtp.ts` | 960 | Servicio monolítico; separar lógica de validación, cálculos y persistencia |
-| 4 | `app/(app)/solicitudes/request-form.tsx` | 878 | Componente UI masivo; extraer subcomponentes y lógica de negocio a hooks |
-| 5 | `lib/services/analytics.ts` | 873 | Servicio de analytics; dividir por tipo de reporte/métrica |
-| 6 | `lib/services/sst.ts` | 840 | Servicio SST monolítico; separar por dominio (evaluaciones, checklist, capacitaciones) |
-| 7 | `app/(app)/prevencion/biblioteca/[id]/document-detail-view.tsx` | 764 | Vista de detalle masiva; extraer subcomponentes y lógica de vista previa |
-| 8 | `app/(app)/combustibles/actions.ts` | 753 | Actions monolíticas; separar por entidad (carga, tanque, proveedor) |
-| 9 | `app/(app)/prevencion/[id]/evaluation-detail.tsx` | 732 | Componente + lógica; extraer subcomponentes y lógica de negocio |
-| 10 | `lib/services/purchasing.ts` | 701 | Servicio de compras; separar OC, recepción, facturación |
+| # | Archivo | Líneas | Estado |
+|---|---------|-------:|--------|
+| 1 | `db/schema/prevention.ts` | 1579 | ✅ Dividido en 16 archivos por dominio |
+| 2 | `lib/services/prevention-documents-library.ts` | 1316 | ✅ Dividido en 6 módulos (taxonomía, CRUD, linking, search, workflow) |
+| 3 | `lib/services/prevention-pdtp.ts` | 960 | ✅ Dividido en 9 módulos (catálogo, sheets, ejecuciones, lifecycle, etc.) |
+| 4 | `app/(app)/solicitudes/request-form.tsx` | 878 | ✅ Dividido en hook + helpers + subcomponentes |
+| 5 | `lib/services/analytics.ts` | 873 | ✅ Dividido en 4 módulos (types, queries, alerts, dashboard) |
+| 6 | `lib/services/sst.ts` | 840 | ✅ Dividido en 7 módulos por subdominio |
+| 7 | `app/(app)/combustibles/actions.ts` | 753 | ✅ Dividido en 5 archivos por entidad |
+| 8 | `app/(app)/prevencion/[id]/evaluation-detail.tsx` | 732 | ✅ Dividido en 8 archivos (hook + subcomponentes) |
+| 9 | `lib/services/item-state.ts` | 705 | ✅ Dividido en 7 módulos por fase de workflow |
+| 10 | `lib/services/purchasing.ts` | 701 | ✅ Dividido en 3 módulos (OC, recepción, facturación) |
 
 ---
 
@@ -180,5 +180,20 @@ Estos son los principales candidatos a dividir en módulos más pequeños:
 - Los archivos en `lib/__tests__/` no requieren acción (son tests, pueden ser largos).
 - `scripts/capture-all-routes.ts` (1653 lns) es un script de una sola ejecución — baja prioridad.
 - Los prints (`app/(print)/...`) son plantillas de impresión — pueden ser extensas por naturaleza.
-- Nuevos grandes archivos respecto al análisis anterior: `db/schema/prevention.ts` (+1579), `lib/services/prevention-documents-library.ts` (+1316), `app/(app)/prevencion/biblioteca/[id]/document-detail-view.tsx` (+764), `lib/validation/prevention.ts` (+597).
 - El criterio sugerido de 300 líneas como límite práctico para archivos de producción sigue la convención general de maintainability.
+- Los 10 archivos del top prioridad fueron particionados (julio 2026). Ningún caller requirió cambios; todos importan vía barrel.
+
+## Próximos candidatos (> 500 líneas aún sin dividir)
+
+| Archivo | Líneas |
+|---------|-------:|
+| `app/(app)/prevencion/biblioteca/[id]/document-detail-view.tsx` | 764 |
+| `lib/reports/export.ts` | 646 |
+| `lib/validation/prevention.ts` | 597 |
+| `lib/services/ppa.ts` | 598 |
+| `app/(app)/admin/usuarios/user-form.tsx` | 599 |
+| `app/(app)/compras/oc-form.tsx` | 556 |
+| `lib/requests/request-service.ts` | 553 |
+| `app/(app)/solicitudes/actions.ts` | 539 |
+| `app/(app)/aprobaciones/approval-panel.tsx` | 536 |
+| `app/(app)/trazabilidad/page.tsx` | 528 |

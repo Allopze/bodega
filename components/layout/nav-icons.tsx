@@ -1,9 +1,19 @@
 import type * as React from "react"
 import type { IconWeight } from "@phosphor-icons/react"
 import {
+  Books,
+  Certificate,
+  ChatsCircle,
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
+  Drop,
+  Fire,
+  Heartbeat,
+  MagnifyingGlass,
+  Siren,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
   ChartLineUp, ChartBar, Package, Path, User, Stack, GearSix,
+  UsersThree,
+  WarningDiamond,
   Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText, GasPump, Car,
 } from "@phosphor-icons/react"
 
@@ -11,9 +21,19 @@ export type IconCmp = React.ComponentType<{ size?: number; weight?: IconWeight; 
 
 /** Mapa único de iconos para áreas e ítems de navegación (rail, panel, móvil, ⌘K). */
 export const NAV_ICONS: Record<string, IconCmp> = {
+  Books,
+  Certificate,
+  ChatsCircle,
   SquaresFour, ClipboardText, CheckSquare, ShoppingCart, Truck,
+  Drop,
+  Fire,
+  Heartbeat,
+  MagnifyingGlass,
+  Siren,
   Warehouse, Users, MapPin, Cube, Buildings, ShieldCheck, ArrowSquareOut,
   ChartLineUp, ChartBar, Package, Path, User, Stack, GearSix,
+  UsersThree,
+  WarningDiamond,
   Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText, GasPump, Car,
 }
 

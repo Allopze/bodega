@@ -1,0 +1,45 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { eq } from "drizzle-orm"
+import { db } from "@/db"
+import { purchaseRequests } from "@/db/schema"
+import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { deleteRequest } from "@/lib/services/requests-delete"
+import { type ActionState } from "@/lib/validation/operations"
+import { logger } from "@/lib/logger"
+
+const REVALIDATE = "/solicitudes"
+
+export async function deleteRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("requests:view_own") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const requestId = formData.get("requestId") as string
+  if (!requestId) return { ok: false, message: "ID requerido" }
+
+  const request = await db.query.purchaseRequests.findFirst({
+    where: eq(purchaseRequests.id, requestId),
+  })
+  if (!request) return { ok: false, message: "Solicitud no encontrada" }
+
+  const isOwner = request.requesterId === session.user.id
+  const canDeleteAny = can(session, "requests:delete")
+  if (!isOwner && !canDeleteAny) {
+    return { ok: false, message: "Solo puedes eliminar tus propias solicitudes" }
+  }
+  if (!canAccessWorksite(session, request.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
+  }
+
+  try {
+    await deleteRequest(requestId, session.user.id, { userEmail: session.user.email ?? undefined })
+  } catch (e) {
+    logger.error("[deleteRequestAction]", e)
+    return { ok: false, message: "Error al eliminar la solicitud" }
+  }
+
+  revalidatePath(REVALIDATE)
+  return { ok: true, message: "Solicitud eliminada correctamente" }
+}

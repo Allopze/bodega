@@ -1,36 +1,21 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { db } from "@/db"
-import {
-  purchaseRequests, purchaseRequestItems,
-  purchaseOrderItems, receipts, receiptItems,
-  approvalDecisions, products, worksites,
-} from "@/db/schema"
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm"
-import { isGlobalRole, requirePermission, visibleWorksiteIds } from "@/lib/auth/can"
+import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { StateBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
-import { formatQty } from "@/lib/utils"
-import {
-  TableRoot, Table, TableHeader, TableBody,
-  TableRow, TableHead, TableCell, TableCellNum, TableCaption,
-} from "@/components/ui/table"
-import { Warning, ArrowSquareOut, DownloadSimple } from "@phosphor-icons/react/dist/ssr"
+import { Warning, DownloadSimple } from "@phosphor-icons/react/dist/ssr"
 import { TrazabilidadFilters } from "./trazabilidad-filters"
+import { getTrazabilidadMatrix } from "@/lib/services/trazabilidad-matrix"
+import { TrazabilidadMatrixCard } from "./_components/trazabilidad-matrix-card"
+import { TrazabilidadMatrixTable } from "./_components/trazabilidad-matrix-table"
+import {
+  TRACEABILITY_PAGE_SIZE as PAGE_SIZE,
+  TRACEABILITY_ALERT_SCAN_LIMIT as ALERT_SCAN_LIMIT,
+} from "@/lib/constants"
 
 export const metadata: Metadata = { title: "Trazabilidad de ítems" }
-
-/** States that indicate an item has been approved (or past approval). */
-const APPROVED_STATES = [
-  "approved", "pending_purchase", "in_purchase_order", "purchased",
-  "partially_received", "received",
-] as const
-const APPROVED_STATE_SET = new Set<string>(APPROVED_STATES)
-
-import { TRACEABILITY_PAGE_SIZE as PAGE_SIZE, TRACEABILITY_ALERT_SCAN_LIMIT as ALERT_SCAN_LIMIT } from "@/lib/constants"
 
 export default async function TrazabilidadPage({
   searchParams,
@@ -42,218 +27,20 @@ export default async function TrazabilidadPage({
   catch { redirect("/forbidden") }
 
   const sp = await searchParams
-  const filterFaenaId = typeof sp.faena === "string" ? sp.faena : ""
-  const filterEstado  = typeof sp.estado === "string" ? sp.estado : ""
-  const currentPage   = Math.max(1, typeof sp.page === "string" ? parseInt(sp.page, 10) || 1 : 1)
-  const scopedWorksiteIds = visibleWorksiteIds(session)
-  const isGlobal = isGlobalRole(session)
-  const isAlertFilter = filterEstado === "alert"
-
-  const itemFilters = [
-    !isGlobal
-      ? scopedWorksiteIds.length > 0
-        ? inArray(purchaseRequests.worksiteId, scopedWorksiteIds)
-        : sql`false`
-      : undefined,
-    filterFaenaId ? eq(purchaseRequests.worksiteId, filterFaenaId) : undefined,
-    filterEstado === "pending"
-      ? inArray(purchaseRequestItems.status, ["approved", "pending_purchase"])
-      : undefined,
-    isAlertFilter
-      ? inArray(purchaseRequestItems.status, APPROVED_STATES)
-      : undefined,
-    filterEstado && !isAlertFilter && filterEstado !== "pending"
-      ? eq(purchaseRequestItems.status, filterEstado)
-      : undefined,
-  ].filter(Boolean)
-
-  const itemWhere = itemFilters.length > 0 ? and(...itemFilters) : undefined
-  const queryOffset = isAlertFilter ? 0 : (currentPage - 1) * PAGE_SIZE
-  const queryLimit = isAlertFilter ? ALERT_SCAN_LIMIT : PAGE_SIZE
-
-  /* ── Fetch scoped item rows first so downstream queries stay bounded ─── */
-  const [[totalRow], itemRows, allWorksites] = await Promise.all([
-    db.select({ n: count() })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-      .where(itemWhere),
-
-    db.select({
-      id:              purchaseRequestItems.id,
-      requestId:       purchaseRequestItems.requestId,
-      requestCode:     purchaseRequests.code,
-      worksiteId:      purchaseRequests.worksiteId,
-      productId:       purchaseRequestItems.productId,
-      productNameFree: purchaseRequestItems.productNameFree,
-      productName:     products.name,
-      productSku:      products.sku,
-      quantity:        purchaseRequestItems.quantity,
-      unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
-      status:          purchaseRequestItems.status,
-    })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-      .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
-      .where(itemWhere)
-      .orderBy(desc(purchaseRequestItems.createdAt))
-      .limit(queryLimit)
-      .offset(queryOffset),
-
-    db.select({ id: worksites.id, name: worksites.name })
-      .from(worksites)
-      .where(eq(worksites.isActive, true))
-      .orderBy(asc(worksites.name)),
-  ])
-
-  const requestItemIds = itemRows.map((item) => item.id)
-  const [allOcItems, allReceiptItems, allApproveDecisions] = requestItemIds.length > 0
-    ? await Promise.all([
-    db.select({
-      id:            purchaseOrderItems.id,
-      purchaseOrderId: purchaseOrderItems.purchaseOrderId,
-      requestItemId: purchaseOrderItems.requestItemId,
-      quantity:      purchaseOrderItems.quantity,
-    })
-      .from(purchaseOrderItems)
-      .where(inArray(purchaseOrderItems.requestItemId, requestItemIds)),
-
-    db.select({
-      purchaseOrderItemId: receiptItems.purchaseOrderItemId,
-      quantityReceived:    receiptItems.quantityReceived,
-    })
-      .from(receiptItems)
-      .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
-      .innerJoin(purchaseOrderItems, eq(receiptItems.purchaseOrderItemId, purchaseOrderItems.id))
-      .where(and(
-        inArray(purchaseOrderItems.requestItemId, requestItemIds),
-        eq(receipts.locationType, "faena"),
-      )),
-
-    // Approval decisions may be recorded as "approve" or "modify" when quantity changes.
-    db.select({
-      requestItemId: approvalDecisions.requestItemId,
-      modifiedQty:   approvalDecisions.modifiedQty,
-    })
-      .from(approvalDecisions)
-      .where(and(
-        inArray(approvalDecisions.type, ["approve", "modify"]),
-        inArray(approvalDecisions.requestItemId, requestItemIds),
-      )),
-  ])
-    : [[], [], []] as const
-
-  /* ── Build lookup maps ──────────────────────────────────────────────── */
-  const worksiteMap   = Object.fromEntries(allWorksites.map((w) => [w.id, w.name]))
-
-  // OC items indexed by requestItemId → list of OC items
-  const ocByItemId = new Map<string, Array<{ id: string; purchaseOrderId: string; quantity: number }>>()
-  for (const oi of allOcItems) {
-    if (!oi.requestItemId) continue
-    const arr = ocByItemId.get(oi.requestItemId) ?? []
-    arr.push({ id: oi.id, purchaseOrderId: oi.purchaseOrderId, quantity: oi.quantity })
-    ocByItemId.set(oi.requestItemId, arr)
-  }
-
-  // Received quantities indexed by OC item ID
-  const receivedByOcItem = new Map<string, number>()
-  for (const ri of allReceiptItems) {
-    receivedByOcItem.set(
-      ri.purchaseOrderItemId,
-      (receivedByOcItem.get(ri.purchaseOrderItemId) ?? 0) + ri.quantityReceived,
-    )
-  }
-
-  // Last approve decision modifiedQty indexed by requestItemId
-  // modifiedQty=null → approver kept original quantity
-  const modifiedQtyByItemId = new Map<string, number | null>()
-  for (const d of allApproveDecisions) {
-    if (!d.requestItemId) continue
-    // Later entries overwrite earlier — last decision wins
-    modifiedQtyByItemId.set(d.requestItemId, d.modifiedQty)
-  }
-
-  /* ── Aggregate per item ─────────────────────────────────────────────── */
-  type MatrixRow = {
-    itemId:       string
-    requestId:    string
-    requestCode:  string
-    productName:  string
-    productSku:   string | null
-    worksiteId:   string
-    worksiteName: string
-    uom:          string
-    requested:    number
-    approved:     number | null  // null = not yet approved
-    inOc:         number
-    received:     number
-    status:       string
-    /** True when approved > inOc — the core missing-item alert */
-    alert:        boolean
-  }
-
-  const rows: MatrixRow[] = []
-
-  for (const item of itemRows) {
-    const ocItems = ocByItemId.get(item.id) ?? []
-    const inOc     = ocItems.reduce((s, oi) => s + oi.quantity, 0)
-    const received = ocItems.reduce((s, oi) => s + (receivedByOcItem.get(oi.id) ?? 0), 0)
-
-    const isApproved = APPROVED_STATE_SET.has(item.status)
-    let approved: number | null = null
-    if (isApproved) {
-      // modifiedQty null means no change; undefined means no decision found (use original)
-      const mod = modifiedQtyByItemId.get(item.id)
-      approved = mod !== undefined ? (mod ?? item.quantity) : item.quantity
-    }
-
-    const alert = isApproved && approved !== null && inOc < approved
-
-    const productName = item.productName ?? item.productNameFree ?? "—"
-    const productSku  = item.productSku ?? null
-
-    rows.push({
-      itemId:       item.id,
-      requestId:    item.requestId,
-      requestCode:  item.requestCode,
-      productName,
-      productSku,
-      worksiteId:   item.worksiteId,
-      worksiteName: worksiteMap[item.worksiteId] ?? item.worksiteId,
-      uom:          item.unitOfMeasure,
-      requested:    item.quantity,
-      approved,
-      inOc,
-      received,
-      status:       item.status,
-      alert,
-    })
-  }
-
-  /* ── Apply filters ──────────────────────────────────────────────────── */
-  const filtered = rows.filter((r) => {
-    if (filterEstado === "alert"   && !r.alert) return false
-    return true
-  })
-
-  /* ── Paginate ───────────────────────────────────────────────────────── */
-  const totalFiltered = isAlertFilter ? filtered.length : (totalRow?.n ?? 0)
-  const totalPages    = Math.ceil(totalFiltered / PAGE_SIZE)
-  const safePage      = Math.min(currentPage, Math.max(totalPages, 1))
-  const paginated     = isAlertFilter
-    ? filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
-    : filtered
-
-  const alertCount = rows.filter((r) => r.alert).length
-
-  /* ── Filter options visible to this user ───────────────────────────── */
-  const visibleRowWorksiteIds = new Set(rows.map((r) => r.worksiteId))
-  const visibleWorksites      = allWorksites.filter((w) => visibleRowWorksiteIds.has(w.id))
-
-  const baseParams = {
-    ...(filterFaenaId ? { faena: filterFaenaId } : {}),
-    ...(filterEstado ? { estado: filterEstado } : {}),
-  }
-  const pageHref = (page: number) => `/trazabilidad?${new URLSearchParams({ ...baseParams, page: String(page) }).toString()}`
+  const {
+    rows,
+    paginated,
+    totalFiltered,
+    totalPages,
+    safePage,
+    alertCount,
+    visibleWorksites,
+    filterFaenaId,
+    filterEstado,
+    pageHref,
+    totalRows,
+    isAlertFilter,
+  } = await getTrazabilidadMatrix(sp, session)
 
   return (
     <PageContainer>
@@ -310,9 +97,9 @@ export default async function TrazabilidadPage({
           </Link>
         )}
         <span className="ml-auto self-end text-xs text-[var(--color-text-subtle)]">
-          {totalFiltered} de {totalRow?.n ?? 0} ítems
+          {totalFiltered} de {totalRows} ítems
           {totalPages > 1 && ` · Pág. ${safePage} de ${totalPages}`}
-          {isAlertFilter && (totalRow?.n ?? 0) > ALERT_SCAN_LIMIT && ` · primeras ${ALERT_SCAN_LIMIT} filas revisadas`}
+          {isAlertFilter && totalRows > ALERT_SCAN_LIMIT && ` · primeras ${ALERT_SCAN_LIMIT} filas revisadas`}
         </span>
       </div>
 
@@ -329,156 +116,10 @@ export default async function TrazabilidadPage({
         <>
           <div className="grid gap-2 md:hidden">
             {paginated.map((row) => (
-              <article
-                key={row.itemId}
-                className={[
-                  "rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4",
-                  row.alert ? "ring-1 ring-inset ring-[var(--color-signal-line)]" : "",
-                ].join(" ")}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <Link href={`/trazabilidad/${row.itemId}`} className="text-sm font-medium text-[var(--color-primary)] hover:underline underline-offset-2">{row.productName}</Link>
-                    <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
-                      {row.productSku ? <span className="font-mono">{row.productSku} · </span> : null}
-                      {row.worksiteName}
-                    </p>
-                  </div>
-                  <StateBadge state={row.status} entity="item" size="sm" />
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                  <div>
-                    <p className="text-[var(--color-text-subtle)]">Solicitud</p>
-                    <Link
-                      href={`/solicitudes/${row.requestId}`}
-                      className="inline-flex items-center gap-1 font-medium text-[var(--color-primary)]"
-                    >
-                      {row.requestCode}
-                      <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
-                    </Link>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[var(--color-text-subtle)]">Solicitado</p>
-                    <p className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(row.requested, row.uom)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[var(--color-text-subtle)]">Aprobado</p>
-                    <p className="font-mono tabular-nums text-[var(--color-text)]">
-                      {row.approved !== null ? formatQty(row.approved, row.uom) : "—"}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[var(--color-text-subtle)]">En OC</p>
-                    <p className={["font-mono tabular-nums", row.alert ? "font-semibold text-[var(--color-signal-ink)]" : "text-[var(--color-text)]"].join(" ")}>
-                      {formatQty(row.inOc, row.uom)}
-                      {row.alert && (
-                        <Warning
-                          weight="fill"
-                          className="ml-1 inline h-3.5 w-3.5 text-[var(--color-signal-ink)]"
-                          aria-label={`Faltan ${formatQty((row.approved ?? 0) - row.inOc, row.uom)} en OC`}
-                        />
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[var(--color-text-subtle)]">Recibido</p>
-                    <p className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(row.received, row.uom)}</p>
-                  </div>
-                </div>
-              </article>
+              <TrazabilidadMatrixCard key={row.itemId} row={row} />
             ))}
           </div>
-
-          <TableRoot className="hidden md:block">
-            <Table>
-              <TableCaption className="sr-only">
-                Matriz de trazabilidad de ítems por producto, faena, solicitud, cantidades y estado.
-              </TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>Faena</TableHead>
-                  <TableHead>Solicitud</TableHead>
-                  <TableHead className="text-right">Solicitado</TableHead>
-                  <TableHead className="text-right">Aprobado</TableHead>
-                  <TableHead className="text-right">En OC</TableHead>
-                  <TableHead className="text-right">Recibido</TableHead>
-                  <TableHead>Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginated.map((row) => (
-                  <TableRow
-                    key={row.itemId}
-                    data-alert={row.alert ? "true" : undefined}
-                    className={row.alert
-                      ? "bg-[var(--color-signal-tint)] ring-1 ring-inset ring-[var(--color-signal-line)]"
-                      : undefined}
-                  >
-                    {/* Product */}
-                    <TableCell className="max-w-[220px]">
-                      <Link
-                        href={`/trazabilidad/${row.itemId}`}
-                        className="font-medium text-[var(--color-primary)] hover:underline underline-offset-2 truncate block"
-                        title={row.productName}
-                      >
-                        {row.productName}
-                      </Link>
-                      {row.productSku && (
-                        <div className="text-xs text-[var(--color-text-subtle)] font-mono">{row.productSku}</div>
-                      )}
-                    </TableCell>
-
-                    {/* Worksite */}
-                    <TableCell className="text-sm text-[var(--color-text-muted)] whitespace-nowrap">
-                      {row.worksiteName}
-                    </TableCell>
-
-                    {/* Request code + link */}
-                    <TableCell>
-                      <Link
-                        href={`/solicitudes/${row.requestId}`}
-                        className="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline underline-offset-2"
-                      >
-                        {row.requestCode}
-                        <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
-                      </Link>
-                    </TableCell>
-
-                    {/* Quantities */}
-                    <TableCellNum>{formatQty(row.requested, row.uom)}</TableCellNum>
-
-                    <TableCellNum>
-                      {row.approved !== null ? formatQty(row.approved, row.uom) : (
-                        <span className="text-[var(--color-text-subtle)]">—</span>
-                      )}
-                    </TableCellNum>
-
-                    <TableCellNum>
-                      <span className={row.alert ? "font-semibold text-[var(--color-signal-ink)]" : undefined}>
-                        {formatQty(row.inOc, row.uom)}
-                      </span>
-                      {row.alert && (
-                        <Warning
-                          weight="fill"
-                          className="inline ml-1 h-3.5 w-3.5 text-[var(--color-signal-ink)]"
-                          aria-label={`Faltan ${formatQty((row.approved ?? 0) - row.inOc, row.uom)} en OC`}
-                        />
-                      )}
-                    </TableCellNum>
-
-                    <TableCellNum>{formatQty(row.received, row.uom)}</TableCellNum>
-
-                    {/* Status badge */}
-                    <TableCell>
-                      <StateBadge state={row.status} entity="item" size="sm" />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableRoot>
+          <TrazabilidadMatrixTable rows={paginated} />
         </>
       )}
 

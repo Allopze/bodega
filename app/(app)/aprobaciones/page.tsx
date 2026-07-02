@@ -15,7 +15,7 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, textSearchSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import type { FilterOption } from "@/components/adquisiciones/list-filters"
 import { ApprovalPanel } from "./approval-panel"
-import type { ApprovalItem, ApprovalRequest } from "./approval-panel"
+import type { ApprovalItem, ApprovalRequest } from "./types"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
 

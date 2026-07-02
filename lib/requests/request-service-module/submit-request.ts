@@ -1,0 +1,78 @@
+import { and, eq } from "drizzle-orm"
+import { db } from "@/db"
+import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
+import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { submitItemTx } from "@/lib/services/item-state"
+import type { RequestModuleConfig, SubmitRequestInput } from "../request-config"
+
+export async function submitRequest(
+  config: Pick<RequestModuleConfig, "requestType" | "quotationsTable">,
+  input: SubmitRequestInput,
+): Promise<void> {
+  const now = new Date().toISOString()
+  const qt = config.quotationsTable
+
+  await db.transaction(async (tx) => {
+    const request = await tx.query.purchaseRequests.findFirst({
+      where: and(
+        eq(purchaseRequests.id, input.requestId),
+        eq(purchaseRequests.requestType, config.requestType),
+      ),
+    })
+    if (!request) throw new Error(`Solicitud de ${config.requestType === "repuestos" ? "repuestos" : "servicios"} no encontrada`)
+    if (!["draft", "returned"].includes(request.status)) {
+      throw new Error("Solo se pueden enviar solicitudes en borrador o devueltas")
+    }
+
+    const quotations = await tx
+      .select({ id: qt.id })
+      .from(qt)
+      .where(and(
+        eq(qt.requestId, input.requestId),
+        eq(qt.status, "pending"),
+      ))
+
+    if (quotations.length < 3 && !request.notes?.trim()) {
+      throw new Error(
+        "Se requieren al menos 3 cotizaciones. Si no es posible, agrega una justificación en las notas de la solicitud.",
+      )
+    }
+
+    const items = await tx
+      .select({ id: purchaseRequestItems.id })
+      .from(purchaseRequestItems)
+      .where(and(
+        eq(purchaseRequestItems.requestId, input.requestId),
+        eq(purchaseRequestItems.status, "draft"),
+      ))
+
+    for (const item of items) {
+      await submitItemTx(tx, item.id, input.userId, { userEmail: input.userEmail })
+    }
+
+    await tx.update(purchaseRequests).set({
+      status:      "submitted",
+      submittedAt: now,
+      updatedAt:   now,
+    }).where(eq(purchaseRequests.id, input.requestId))
+
+    await recordStatusChange({
+      entityType: "purchase_request",
+      entityId:   input.requestId,
+      fromStatus: request.status,
+      toStatus:   "submitted",
+      changedBy:  input.userId,
+    }, tx)
+
+    await recordAudit({
+      userId:     input.userId,
+      userEmail:  input.userEmail,
+      action:     "status_change",
+      entityType: "purchase_request",
+      entityId:   input.requestId,
+      entityCode: request.code,
+      oldState:   { status: request.status },
+      newState:   { status: "submitted", quotationCount: quotations.length },
+    }, tx)
+  })
+}
