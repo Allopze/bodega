@@ -43,6 +43,12 @@ beforeEach(async () => {
     code: "FA",
     isActive: true,
   })
+  await inMemoryDb.insert(schema.worksites).values({
+    id: "ws-2",
+    name: "Faena B",
+    code: "FB",
+    isActive: true,
+  })
   await inMemoryDb.insert(schema.workers).values({
     id: "worker-1",
     firstName: "Ada",
@@ -50,6 +56,15 @@ beforeEach(async () => {
     rut: "11.111.111-1",
     position: "Operadora",
     worksiteId: "ws-1",
+    isActive: true,
+  })
+  await inMemoryDb.insert(schema.workers).values({
+    id: "worker-2",
+    firstName: "Grace",
+    lastName: "Hopper",
+    rut: "22.222.222-2",
+    position: "Operadora",
+    worksiteId: "ws-2",
     isActive: true,
   })
 })
@@ -131,5 +146,22 @@ describe("prevention training", () => {
       worksiteId: "ws-1",
       completedAt: "2026-06-01",
     }, "user-1", [])).rejects.toThrow(/sin acceso/i)
+  })
+
+  it("denies assigning a worker to a different worksite than their current faena", async () => {
+    const { createTrainingCourse, assignTrainingToWorker } = await import("@/lib/services/prevention-training")
+
+    const course = await createTrainingCourse({
+      code: "FAENA-CRUZADA",
+      name: "Curso con trabajador de otra faena",
+      requiredForCargo: [],
+    }, "user-1")
+
+    await expect(assignTrainingToWorker({
+      courseId: course.id,
+      workerId: "worker-2",
+      worksiteId: "ws-1",
+      completedAt: "2026-06-01",
+    }, "user-1", ["ws-1"])).rejects.toThrow(/trabajador no pertenece/i)
   })
 })

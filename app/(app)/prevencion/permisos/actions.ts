@@ -106,7 +106,7 @@ export async function signPermitAction(
     return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   }
   try {
-    await signPermit(parsed.data, session.user.id)
+    await signPermit(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {

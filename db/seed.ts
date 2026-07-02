@@ -472,6 +472,17 @@ async function main() {
   } catch (e) {
     console.log(`  Protocolos MINSAL: ya cargados. (${(e as Error).message})`)
   }
+
+  /* ── Biblioteca documental SST — taxonomía por defecto ───────────── */
+  console.log("")
+  console.log("  Sembrando categorías de la biblioteca documental SST...")
+  try {
+    const { seedDefaultCategories } = await import("@/lib/services/prevention-documents-library")
+    await seedDefaultCategories()
+    console.log("  Categorías documentales cargadas (10 categorías, upsert idempotente).")
+  } catch (e) {
+    console.log(`  Categorías documentales: ya cargadas. (${(e as Error).message})`)
+  }
 }
 
 main()

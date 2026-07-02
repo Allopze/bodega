@@ -22,6 +22,20 @@ function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
   if (!scope.includes(worksiteId)) throw new Error("Sin acceso a esta faena.")
 }
 
+async function assertCommitteeAccess(committeeId: string, scope: WorksiteScope) {
+  const [committee] = await db.select().from(committees).where(eq(committees.id, committeeId)).limit(1)
+  if (!committee) throw new Error("Comité no encontrado.")
+  assertWorksiteAccess(committee.worksiteId, scope)
+  return committee
+}
+
+async function assertMeetingAccess(meetingId: string, scope: WorksiteScope) {
+  const [meeting] = await db.select().from(committeeMeetings).where(eq(committeeMeetings.id, meetingId)).limit(1)
+  if (!meeting) throw new Error("Reunión no encontrada.")
+  await assertCommitteeAccess(meeting.committeeId, scope)
+  return meeting
+}
+
 export async function createCommittee(input: unknown, scope: WorksiteScope) {
   const data = committeeCreateSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
@@ -39,8 +53,9 @@ export async function createCommittee(input: unknown, scope: WorksiteScope) {
   return row
 }
 
-export async function addCommitteeMember(input: unknown) {
+export async function addCommitteeMember(input: unknown, scope: WorksiteScope) {
   const data = committeeMemberAddSchema.parse(input)
+  await assertCommitteeAccess(data.committeeId, scope)
   const now = new Date().toISOString()
   const [row] = await db.insert(committeeMembers).values({
     id: `cmmb-${nanoid()}`,
@@ -53,8 +68,9 @@ export async function addCommitteeMember(input: unknown) {
   return row
 }
 
-export async function scheduleMeeting(input: unknown) {
+export async function scheduleMeeting(input: unknown, scope: WorksiteScope) {
   const data = committeeMeetingScheduleSchema.parse(input)
+  await assertCommitteeAccess(data.committeeId, scope)
   const now = new Date().toISOString()
   const [row] = await db.insert(committeeMeetings).values({
     id: `cmet-${nanoid()}`,
@@ -68,7 +84,8 @@ export async function scheduleMeeting(input: unknown) {
   return row
 }
 
-export async function recordMeetingAttendance(meetingId: string, attendeeIds: string[]) {
+export async function recordMeetingAttendance(meetingId: string, attendeeIds: string[], scope: WorksiteScope) {
+  await assertMeetingAccess(meetingId, scope)
   const now = new Date().toISOString()
   const [updated] = await db.update(committeeMeetings)
     .set({ heldAt: now, attendees: attendeeIds, updatedAt: now })
@@ -77,8 +94,9 @@ export async function recordMeetingAttendance(meetingId: string, attendeeIds: st
   return updated
 }
 
-export async function addAgreement(input: unknown) {
+export async function addAgreement(input: unknown, scope: WorksiteScope) {
   const data = committeeAgreementAddSchema.parse(input)
+  await assertMeetingAccess(data.meetingId, scope)
   const now = new Date().toISOString()
   const [row] = await db.insert(committeeAgreements).values({
     id: `cagr-${nanoid()}`,

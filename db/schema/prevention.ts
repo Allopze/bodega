@@ -1279,6 +1279,231 @@ export const incidentDisseminationsRelations = relations(incidentDisseminations,
   performedByUser: one(users, { fields: [incidentDisseminations.performedByUserId], references: [users.id] }),
 }))
 
+/* ── Documentación Preventiva — Biblioteca SST (Ola 5) ─────────────────────
+ *
+ * Repositorio documental interno de la empresa. NO incluye contratistas
+ * (ese flujo vive en la sección "Contratistas" del módulo prevención).
+ *
+ * Modelo:
+ *   - `sstDocumentCategories` y `sstDocumentTypes` configuran la taxonomía.
+ *   - `sstDocuments` es la cabecera lógica (lo que un prevencionista "ve" en
+ *     la biblioteca). Mantiene puntero a la versión vigente.
+ *   - `sstDocumentVersions` es el archivo físico: un documento puede tener
+ *     N versiones, pero solo una vigente a la vez. Sustituir un archivo
+ *     aprobado implica crear una versión nueva, nunca editar la anterior.
+ *   - `sstDocumentLinks` asocia many-to-many el documento con entidades
+ *     internas existentes (trabajador, faena, vehículo, etc.).
+ *   - `sstDocumentAcknowledgments` registra el acuse de lectura de una
+ *     versión concreta por un usuario concreto.
+ *   - `sstDocumentAudit` es la bitácora de acciones relevantes.
+ *
+ * Categorías (catálogo sembrado en seed, sin valores rígidos en CHECK para
+ * permitir agregar nuevas categorías vía admin sin migración):
+ *   - 'gestion_preventiva'  : política, MIPER, mapas, procedimientos, auditorías
+ *   - 'legal_normativa'     : RIOHS, protocolos obligatorios, fiscalización
+ *   - 'capacitacion'        : registros, materiales, certificados
+ *   - 'epp'                 : actas, reposición, fichas técnicas
+ *   - 'incidentes'          : investigaciones, reportes, medidas correctivas
+ *   - 'comite'              : constitución, actas, acuerdos
+ *   - 'emergencias'         : planes, simulacros, brigadas
+ *   - 'equipos_vehiculos'   : hojas SDS, mantenciones, certificaciones
+ *   - 'fiscalizacion'       : actas, observaciones, respuestas
+ *   - 'salud_ocupacional'   : protocolos MINSAL, aptitudes
+ *
+ * Estados: 'borrador' | 'en_revision' | 'observado' | 'aprobado' |
+ *          'vigente' | 'vencido' | 'reemplazado' | 'archivado'
+ * Versión: 'borrador' | 'en_revision' | 'observado' | 'aprobado' |
+ *          'vigente' | 'reemplazado' | 'archivado'
+ * Confidencialidad: 'publico_interno' | 'restringido' | 'sensible'
+ */
+export const sstDocumentCategories = pgTable("sst_document_categories", {
+  slug:        text("slug").primaryKey(),         // ej: 'gestion_preventiva'
+  name:        text("name").notNull(),
+  description: text("description"),
+  sortOrder:   integer("sort_order").notNull().default(0),
+  isActive:    boolean("is_active").notNull().default(true),
+  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+})
+
+export const sstDocumentTypes = pgTable("sst_document_types", {
+  id:            text("id").primaryKey(),
+  categorySlug:  text("category_slug").notNull().references(() => sstDocumentCategories.slug, { onDelete: "restrict" }),
+  code:          text("code").notNull(),         // ej: SST-POL-001 (catálogo sugerido)
+  name:          text("name").notNull(),
+  description:   text("description"),
+  defaultConfidentiality: text("default_confidentiality").notNull().default("publico_interno"),
+  defaultValidityMonths:  integer("default_validity_months"),
+  requiresApproval:       boolean("requires_approval").notNull().default(true),
+  requiresAcknowledgment: boolean("requires_acknowledgment").notNull().default(false),
+  isActive:      boolean("is_active").notNull().default(true),
+  createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("sst_document_types_category_code_unique").on(table.categorySlug, table.code),
+])
+
+export const sstDocuments = pgTable("sst_documents", {
+  id:               text("id").primaryKey(),
+  categorySlug:     text("category_slug").notNull().references(() => sstDocumentCategories.slug, { onDelete: "restrict" }),
+  typeId:           text("type_id").references(() => sstDocumentTypes.id, { onDelete: "set null" }),
+  internalCode:     text("internal_code"),                  // ej: SST-POL-001
+  title:            text("title").notNull(),
+  description:      text("description"),
+  worksiteId:       text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
+  status:           text("status").notNull().default("borrador"),
+  confidentiality:  text("confidentiality").notNull().default("publico_interno"),
+  currentVersionId: text("current_version_id"),             // FK lógica a sstDocumentVersions.id; sin constraint para evitar ciclo
+  effectiveFrom:    text("effective_from"),                  // ISO date 'YYYY-MM-DD'
+  expiresAt:        text("expires_at"),                      // ISO date 'YYYY-MM-DD'
+  responsibleUserId:text("responsible_user_id").references(() => users.id, { onDelete: "set null" }),
+  uploadedBy:       text("uploaded_by").notNull().references(() => users.id),
+  reviewedBy:       text("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  approvedBy:       text("approved_by").references(() => users.id, { onDelete: "set null" }),
+  approvedAt:       timestamp("approved_at", { withTimezone: true, mode: "string" }),
+  requiresAcknowledgment: boolean("requires_acknowledgment").notNull().default(false),
+  tags:             jsonb("tags").notNull().default(sql`'[]'::jsonb`),
+  extraMetadata:    jsonb("extra_metadata").notNull().default(sql`'{}'::jsonb`),
+  checksum:         text("checksum"),                        // SHA-256 hex del archivo de la versión actual
+  createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("sst_documents_category_status_idx").on(table.categorySlug, table.status),
+  index("sst_documents_worksite_status_idx").on(table.worksiteId, table.status),
+  index("sst_documents_expires_idx").on(table.expiresAt),
+  index("sst_documents_responsible_idx").on(table.responsibleUserId),
+  check("sst_documents_status_valid", sql`${table.status} IN ('borrador', 'en_revision', 'observado', 'aprobado', 'vigente', 'vencido', 'reemplazado', 'archivado')`),
+  check("sst_documents_confidentiality_valid", sql`${table.confidentiality} IN ('publico_interno', 'restringido', 'sensible')`),
+])
+
+export const sstDocumentVersions = pgTable("sst_document_versions", {
+  id:            text("id").primaryKey(),
+  documentId:    text("document_id").notNull().references(() => sstDocuments.id, { onDelete: "cascade" }),
+  version:       integer("version").notNull(),
+  status:        text("status").notNull().default("borrador"),
+  fileName:      text("file_name").notNull(),                // nombre original que subió el usuario
+  storageName:   text("storage_name").notNull(),             // nombre interno en disco (safe, no incluye path)
+  filePath:      text("file_path").notNull(),                // ej: 'storage/sst-documents/abc123.pdf'
+  mimeType:      text("mime_type").notNull(),
+  fileSize:      integer("file_size").notNull(),
+  checksum:      text("checksum").notNull(),                 // SHA-256 hex — detecta duplicados
+  effectiveFrom: text("effective_from"),                      // ISO date — inicio de vigencia de esta versión
+  effectiveTo:   text("effective_to"),                        // ISO date — fin de vigencia
+  changelog:     text("changelog"),                           // motivo del cambio
+  uploadedBy:    text("uploaded_by").notNull().references(() => users.id),
+  reviewedBy:    text("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  approvedBy:    text("approved_by").references(() => users.id, { onDelete: "set null" }),
+  approvedAt:    timestamp("approved_at", { withTimezone: true, mode: "string" }),
+  supersedesId:  text("supersedes_id"),                       // id de la versión anterior que esta reemplaza
+  createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("sst_document_versions_doc_version_unique").on(table.documentId, table.version),
+  index("sst_document_versions_doc_status_idx").on(table.documentId, table.status),
+  index("sst_document_versions_checksum_idx").on(table.checksum),
+  check("sst_document_versions_status_valid", sql`${table.status} IN ('borrador', 'en_revision', 'observado', 'aprobado', 'vigente', 'reemplazado', 'archivado')`),
+  check("sst_document_versions_size_positive", sql`${table.fileSize} > 0`),
+])
+
+/* Asocia documentos con entidades internas existentes. Una fila por par
+ * (documento, entidad). entityType ∈ 'worker' | 'worksite' | 'vehicle' |
+ * 'equipment' | 'incident' | 'training' | 'committee' | 'epp_delivery' |
+ * 'corrective_action' | 'emergency_plan'.
+ *
+ * El target se referencia como TEXT libre (id de la entidad). El caller debe
+ * garantizar la integridad referencial semántica; se documenta el contrato
+ * en lib/services/prevention-documents-library.ts.
+ */
+export const sstDocumentLinks = pgTable("sst_document_links", {
+  id:         text("id").primaryKey(),
+  documentId: text("document_id").notNull().references(() => sstDocuments.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  entityId:   text("entity_id").notNull(),
+  notes:      text("notes"),
+  createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("sst_document_links_doc_entity_unique").on(table.documentId, table.entityType, table.entityId),
+  index("sst_document_links_entity_idx").on(table.entityType, table.entityId),
+  check("sst_document_links_entity_type_valid", sql`${table.entityType} IN ('worker', 'worksite', 'vehicle', 'equipment', 'incident', 'training', 'committee', 'epp_delivery', 'corrective_action', 'emergency_plan')`),
+])
+
+/* Acuse de lectura / recepción. Una fila por (versionId, userId). El usuario
+ * registra el acuse autenticado; queda registro de cuándo y desde qué IP.
+ */
+export const sstDocumentAcknowledgments = pgTable("sst_document_acks", {
+  id:          text("id").primaryKey(),
+  versionId:   text("version_id").notNull().references(() => sstDocumentVersions.id, { onDelete: "cascade" }),
+  userId:      text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  method:      text("method").notNull().default("digital"),
+  signature:   text("signature").notNull(),                  // nombre tipeado o marca simple
+  ip:          text("ip"),
+  userAgent:   text("user_agent"),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("sst_document_acks_version_user_unique").on(table.versionId, table.userId),
+  index("sst_document_acks_user_idx").on(table.userId),
+])
+
+/* Bitácora de acciones relevantes: create, upload, view, download, edit,
+ * status_change, approve, observe, replace, archive, ack, permission_change.
+ * Captura oldState/newState para reconstruir transiciones.
+ */
+export const sstDocumentAudit = pgTable("sst_document_audit", {
+  id:          text("id").primaryKey(),
+  documentId:  text("document_id").notNull().references(() => sstDocuments.id, { onDelete: "cascade" }),
+  versionId:   text("version_id").references(() => sstDocumentVersions.id, { onDelete: "set null" }),
+  action:      text("action").notNull(),
+  userId:      text("user_id").references(() => users.id, { onDelete: "set null" }),
+  fromStatus:  text("from_status"),
+  toStatus:    text("to_status"),
+  comment:     text("comment"),
+  metadata:    jsonb("metadata"),
+  ip:          text("ip"),
+  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("sst_document_audit_doc_created_idx").on(table.documentId, table.createdAt),
+  index("sst_document_audit_user_idx").on(table.userId),
+  check("sst_document_audit_action_valid", sql`${table.action} IN ('create', 'upload', 'view', 'download', 'edit', 'status_change', 'approve', 'observe', 'replace', 'archive', 'ack', 'link', 'unlink', 'delete', 'permission_change')`),
+])
+
+/* ── Relations (Biblioteca SST) ──────────────────────────────────────────── */
+export const sstDocumentsRelations = relations(sstDocuments, ({ one, many }) => ({
+  category:        one(sstDocumentCategories, { fields: [sstDocuments.categorySlug], references: [sstDocumentCategories.slug] }),
+  type:            one(sstDocumentTypes, { fields: [sstDocuments.typeId], references: [sstDocumentTypes.id] }),
+  worksite:        one(worksites, { fields: [sstDocuments.worksiteId], references: [worksites.id] }),
+  uploader:        one(users, { fields: [sstDocuments.uploadedBy], references: [users.id], relationName: "sstDocumentUploader" }),
+  reviewer:        one(users, { fields: [sstDocuments.reviewedBy], references: [users.id], relationName: "sstDocumentReviewer" }),
+  approver:        one(users, { fields: [sstDocuments.approvedBy], references: [users.id], relationName: "sstDocumentApprover" }),
+  responsible:     one(users, { fields: [sstDocuments.responsibleUserId], references: [users.id], relationName: "sstDocumentResponsible" }),
+  versions:        many(sstDocumentVersions),
+  links:           many(sstDocumentLinks),
+  audit:           many(sstDocumentAudit),
+}))
+
+export const sstDocumentVersionsRelations = relations(sstDocumentVersions, ({ one, many }) => ({
+  document:     one(sstDocuments, { fields: [sstDocumentVersions.documentId], references: [sstDocuments.id] }),
+  uploader:     one(users, { fields: [sstDocumentVersions.uploadedBy], references: [users.id], relationName: "sstDocVersionUploader" }),
+  reviewer:     one(users, { fields: [sstDocumentVersions.reviewedBy], references: [users.id], relationName: "sstDocVersionReviewer" }),
+  approver:     one(users, { fields: [sstDocumentVersions.approvedBy], references: [users.id], relationName: "sstDocVersionApprover" }),
+  supersedes:   one(sstDocumentVersions, { fields: [sstDocumentVersions.supersedesId], references: [sstDocumentVersions.id], relationName: "sstDocVersionSupersedes" }),
+  acks:         many(sstDocumentAcknowledgments),
+}))
+
+export const sstDocumentLinksRelations = relations(sstDocumentLinks, ({ one }) => ({
+  document: one(sstDocuments, { fields: [sstDocumentLinks.documentId], references: [sstDocuments.id] }),
+}))
+
+export const sstDocumentAcknowledgmentsRelations = relations(sstDocumentAcknowledgments, ({ one }) => ({
+  version: one(sstDocumentVersions, { fields: [sstDocumentAcknowledgments.versionId], references: [sstDocumentVersions.id] }),
+  user:    one(users, { fields: [sstDocumentAcknowledgments.userId], references: [users.id] }),
+}))
+
+export const sstDocumentAuditRelations = relations(sstDocumentAudit, ({ one }) => ({
+  document: one(sstDocuments, { fields: [sstDocumentAudit.documentId], references: [sstDocuments.id] }),
+  version:  one(sstDocumentVersions, { fields: [sstDocumentAudit.versionId], references: [sstDocumentVersions.id] }),
+  user:     one(users, { fields: [sstDocumentAudit.userId], references: [users.id] }),
+}))
+
 /* ── Inferred Types (Ola 3 + 4) ─────────────────────────────────────────── */
 export type HealthExam = typeof healthExams.$inferSelect
 export type NewHealthExam = typeof healthExams.$inferInsert
@@ -1336,3 +1561,19 @@ export type IncidentCorrectiveFollowup = typeof incidentCorrectiveFollowups.$inf
 export type NewIncidentCorrectiveFollowup = typeof incidentCorrectiveFollowups.$inferInsert
 export type IncidentDissemination = typeof incidentDisseminations.$inferSelect
 export type NewIncidentDissemination = typeof incidentDisseminations.$inferInsert
+
+/* ── Inferred Types (Biblioteca SST — Ola 5) ───────────────────────────── */
+export type SstDocumentCategory = typeof sstDocumentCategories.$inferSelect
+export type NewSstDocumentCategory = typeof sstDocumentCategories.$inferInsert
+export type SstDocumentType = typeof sstDocumentTypes.$inferSelect
+export type NewSstDocumentType = typeof sstDocumentTypes.$inferInsert
+export type SstDocument = typeof sstDocuments.$inferSelect
+export type NewSstDocument = typeof sstDocuments.$inferInsert
+export type SstDocumentVersion = typeof sstDocumentVersions.$inferSelect
+export type NewSstDocumentVersion = typeof sstDocumentVersions.$inferInsert
+export type SstDocumentLink = typeof sstDocumentLinks.$inferSelect
+export type NewSstDocumentLink = typeof sstDocumentLinks.$inferInsert
+export type SstDocumentAcknowledgment = typeof sstDocumentAcknowledgments.$inferSelect
+export type NewSstDocumentAcknowledgment = typeof sstDocumentAcknowledgments.$inferInsert
+export type SstDocumentAudit = typeof sstDocumentAudit.$inferSelect
+export type NewSstDocumentAudit = typeof sstDocumentAudit.$inferInsert

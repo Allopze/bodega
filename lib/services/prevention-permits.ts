@@ -108,10 +108,11 @@ export async function approvePermitRequest(permitId: string, userId: string, sco
   return updated
 }
 
-export async function signPermit(input: unknown, userId: string) {
+export async function signPermit(input: unknown, userId: string, scope: WorksiteScope) {
   const data = permitSignoffSchema.parse(input)
   const [permit] = await db.select().from(permitRequests).where(eq(permitRequests.id, data.permitId)).limit(1)
   if (!permit) throw new Error("Solicitud de permiso no encontrada.")
+  assertWorksiteAccess(permit.worksiteId, scope)
 
   const now = new Date().toISOString()
   const [row] = await db.insert(permitSignoffs).values({

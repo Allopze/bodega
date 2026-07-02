@@ -6,6 +6,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   createEquipmentReport,
   reviewEquipmentReport,
+  signEquipmentReport,
   createEquipmentChecklist,
   closeEquipmentChecklist,
 } from "@/lib/services/prevention-equipment"
@@ -70,6 +71,19 @@ export async function reviewEquipmentReportAction(
     return { ok: true }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function signEquipmentReportAction(reportId: string): Promise<ActionState> {
+  const { session, error } = await guardPermission("prevention:equipment_reports:manage")
+  if (error) return error
+  if (!reportId) return { ok: false, message: "Falta el identificador del reporte." }
+  try {
+    await signEquipmentReport(reportId, scopeToIds(resolveWorksiteScope(session)))
+    revalidatePath(REVALIDATE_REPORTES)
+    return { ok: true, message: "Reporte firmado por el operador." }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Error al firmar el reporte." }
   }
 }
 

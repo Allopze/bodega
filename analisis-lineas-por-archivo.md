@@ -1,7 +1,7 @@
 # Análisis de Líneas por Archivo
 
-**Total:** 797 archivos fuente | **113,064** líneas totales  
-**Promedio:** 142 líneas/archivo | **Mediana:** 95 líneas/archivo  
+**Total:** 863 archivos fuente | **123,267** líneas totales  
+**Promedio:** 143 líneas/archivo | **Mediana:** 93 líneas/archivo  
 **Generado:** 2026-07-01
 
 ---
@@ -13,12 +13,15 @@ Estos son los principales candidatos a dividir en módulos más pequeños:
 | Líneas | Archivo |
 |-------:|---------|
 | 1653 | `scripts/capture-all-routes.ts` |
+| 1579 | `db/schema/prevention.ts` |
+| 1316 | `lib/services/prevention-documents-library.ts` |
 | 960 | `lib/services/prevention-pdtp.ts` |
 | 878 | `app/(app)/solicitudes/request-form.tsx` |
 | 873 | `lib/services/analytics.ts` |
 | 840 | `lib/services/sst.ts` |
 | 835 | `app/(print)/compras/[id]/print/page.tsx` |
 | 834 | `app/(print)/sst/[id]/print/document.tsx` |
+| 764 | `app/(app)/prevencion/biblioteca/[id]/document-detail-view.tsx` |
 | 753 | `app/(app)/combustibles/actions.ts` |
 | 732 | `app/(app)/prevencion/[id]/evaluation-detail.tsx` |
 | 705 | `lib/services/item-state.ts` |
@@ -28,60 +31,118 @@ Estos son los principales candidatos a dividir en módulos más pequeños:
 | 619 | `lib/__tests__/full-flow-integration.test.ts` |
 | 599 | `app/(app)/admin/usuarios/user-form.tsx` |
 | 598 | `lib/services/ppa.ts` |
+| 597 | `lib/validation/prevention.ts` |
 | 556 | `app/(app)/compras/oc-form.tsx` |
 | 553 | `lib/requests/request-service.ts` |
+| 552 | `lib/__tests__/sst-service-full.test.ts` |
+| 549 | `lib/__tests__/deliveries-service.test.ts` |
 | 539 | `app/(app)/solicitudes/actions.ts` |
 | 536 | `app/(app)/aprobaciones/approval-panel.tsx` |
+| 528 | `lib/__tests__/requests-draft-diff.test.ts` |
 | 528 | `app/(app)/trazabilidad/page.tsx` |
+| 510 | `lib/__tests__/request-service-factory.test.ts` |
 | 496 | `app/(app)/prevencion/trabajador/[workerId]/worker-evaluations.tsx` |
+| 491 | `lib/__tests__/stock-export.test.ts` |
+| 490 | `db/seed.ts` |
 | 482 | `lib/sst/definitions/trabajador-antiguo.ts` |
-| 479 | `db/seed.ts` |
 | 477 | `app/(app)/prevencion/nueva/nueva-evaluacion-form.tsx` |
+| 475 | `app/(app)/solicitudes/item-editor.tsx` |
+| 472 | `app/(app)/compras/actions.ts` |
+| 471 | `scripts/measure-operational-queries.ts` |
+| 471 | `app/(app)/combustibles/import-fuel-modal.tsx` |
+| 466 | `lib/__tests__/trazabilidad-item.test.ts` |
 
 ---
 
 ## Distribución por directorio
 
 ```
- 25,417  lib/__tests__          (tests — no aplicar)
- 12,153  lib/services           ← CORE: más denso del proyecto
-  3,031  app/(app)/solicitudes
-  2,806  scripts
-  2,464  app/(app)/combustibles
+ 25,739  lib/__tests__          (tests — no aplicar)
+ 13,513  lib/services           ← CORE: más denso del proyecto
+  4,214  app/(app)/combustibles
+  3,507  app/(app)/solicitudes
+  3,147  db/schema              ← nuevo schema masivo
+  2,831  scripts
   2,328  components/ui
+  2,255  db/migrations
+  2,235  app/(app)/prevencion/biblioteca
   2,172  app/(app)/admin/usuarios
   2,150  e2e
   2,033  app/(app)/prevencion/[id]
-  1,803  app/(app)/compras
+  1,995  app/(app)/compras
   1,758  app/(app)/bodega
   1,673  components/layout
   1,508  lib/sst/__tests__
+  1,451  app/(app)/prevencion/ppa
+  1,435  modules
+  1,424  app/(app)/recepcion
+  1,324  lib/validation
   1,299  lib
-  1,137  lib/validation
+  1,229  app/(app)/admin/productos
+  1,175  app/(print)
   1,109  lib/requests
-  1,089  app/(app)/admin/productos
   1,088  app/(app)/aprobaciones
-  1,070  app/(app)/recepcion
+  1,059  app/(app)/trazabilidad
   1,057  app/(app)/entregas
   1,039  app/(app)/compras/[id]
+    992  app/(auth)
     988  app/(app)/prevencion/pdtp
+    988  app/(print)/sst/[id]/print
+    974  app/(app)/prevencion/incidentes
     969  app/(app)/prevencion/comites
-    956  app/(app)/prevencion/ppa
-    932  app/(print)/sst/[id]/print
     926  app/(app)/prevencion/documentacion
-    908  app/(print)/compras/[id]/print
     888  lib/sst/definitions
-    835  db
-    805  app/(app)/prevencion/salud
+    887  app/(app)/prevencion/epp
+    861  app/(app)/prevencion/salud
+    848  lib/combustibles
+    846  db
+    820  app/(app)/soporte
+    796  app/(app)/prevencion/equipos
     785  app/(app)/mantenciones
+    753  app/(app)/prevencion/capacitaciones
+    727  app/(public)
     722  app/(app)/analitica
     721  app/(app)/prevencion/emergencias
     719  app/(app)/prevencion/permisos
     704  lib/sst
     685  app/(app)/dashboard
     683  lib/auth
-    663  app/(app)/prevencion/capacitaciones
+    670  app/(app)/flota
     657  app/(app)/prevencion
+    646  lib/reports
+    634  app/(app)/prevencion/contratistas
+    623  app/(app)/prevencion/trabajador
+    614  lib/ppa
+    570  app/(app)/prevencion/nueva
+    553  app/(app)/admin/trabajadores
+    481  app/(app)/admin/proveedores
+    478  app/(app)/prevencion/inspecciones
+    460  components/admin
+    451  app/(app)/admin/faenas
+    443  app/(app)/prevencion/iper
+    438  app/(app)/prevencion/alcotest
+    429  app/(app)/repuestos
+    429  app/(app)/servicios
+    407  app/(app)/admin/configuracion
+    393  app/(app)/prevencion/kpis
+    376  app/(app)/reportes
+    340  app/(app)/admin/plantillas
+    332  app/(app)/admin/correo-smtp
+    323  lib/hooks
+    305  components/states
+    290  app/(app)/perfil
+    279  db/seed
+    273  components/adquisiciones
+    259  lib/testing
+    218  app/(app)
+    211  app/(app)/admin/auditoria
+    202  lib/storage
+    199  lib/prevention
+    148  components
+    109  lib/email
+    106  lib/adquisiciones
+     95  lib/pdf
+     87  components/solicitudes
 ```
 
 ---
@@ -90,10 +151,10 @@ Estos son los principales candidatos a dividir en módulos más pequeños:
 
 | Rango | Cantidad | Acción sugerida |
 |-------|----------|-----------------|
-| > 500 líneas | **25 archivos** | 🔴 **Dividir urgentemente** |
-| 300–500 líneas | **62 archivos** | 🟡 Revisar y considerar dividir |
-| 200–300 líneas | **81 archivos** | 🟢 Monitorear, dividir si crece |
-| < 200 líneas | **629 archivos** | ✅ Bien |
+| > 500 líneas | **30 archivos** | 🔴 **Dividir urgentemente** |
+| 300–500 líneas | **63 archivos** | 🟡 Revisar y considerar dividir |
+| 200–300 líneas | **84 archivos** | 🟢 Monitorear, dividir si crece |
+| < 200 líneas | **686 archivos** | ✅ Bien |
 
 ---
 
@@ -101,16 +162,16 @@ Estos son los principales candidatos a dividir en módulos más pequeños:
 
 | # | Archivo | Líneas | Razón |
 |---|---------|-------:|-------|
-| 1 | `lib/services/prevention-pdtp.ts` | 960 | Servicio monolítico; separar lógica de validación, cálculos y persistencia |
-| 2 | `app/(app)/solicitudes/request-form.tsx` | 878 | Componente UI masivo; extraer subcomponentes y lógica de negocio a hooks |
-| 3 | `lib/services/analytics.ts` | 873 | Servicio de analytics; dividir por tipo de reporte/métrica |
-| 4 | `lib/services/sst.ts` | 840 | Servicio SST monolítico; separar por dominio (evaluaciones, checklist, capacitaciones) |
-| 5 | `app/(app)/combustibles/actions.ts` | 753 | Actions monolíticas; separar por entidad (carga, tanque, proveedor) |
-| 6 | `app/(app)/prevencion/[id]/evaluation-detail.tsx` | 732 | Componente + lógica; extraer subcomponentes y lógica de negocio |
-| 7 | `lib/services/item-state.ts` | 705 | Máquina de estados compleja; separar por tipo de ítem o workflow |
-| 8 | `lib/services/purchasing.ts` | 701 | Servicio de compras; separar OC, recepción, facturación |
-| 9 | `lib/reports/export.ts` | 646 | Exportación; separar por formato (XLSX, PDF) o módulo |
-| 10 | `lib/services/ppa.ts` | 598 | Servicio PPA; separar evaluaciones, cálculos, reportes |
+| 1 | `db/schema/prevention.ts` | 1579 | Schema masivo; separar por dominio (evaluaciones, documentos, comités, etc.) |
+| 2 | `lib/services/prevention-documents-library.ts` | 1316 | Biblioteca de documentos monolítica; separar CRUD, versionado, búsqueda y notificaciones |
+| 3 | `lib/services/prevention-pdtp.ts` | 960 | Servicio monolítico; separar lógica de validación, cálculos y persistencia |
+| 4 | `app/(app)/solicitudes/request-form.tsx` | 878 | Componente UI masivo; extraer subcomponentes y lógica de negocio a hooks |
+| 5 | `lib/services/analytics.ts` | 873 | Servicio de analytics; dividir por tipo de reporte/métrica |
+| 6 | `lib/services/sst.ts` | 840 | Servicio SST monolítico; separar por dominio (evaluaciones, checklist, capacitaciones) |
+| 7 | `app/(app)/prevencion/biblioteca/[id]/document-detail-view.tsx` | 764 | Vista de detalle masiva; extraer subcomponentes y lógica de vista previa |
+| 8 | `app/(app)/combustibles/actions.ts` | 753 | Actions monolíticas; separar por entidad (carga, tanque, proveedor) |
+| 9 | `app/(app)/prevencion/[id]/evaluation-detail.tsx` | 732 | Componente + lógica; extraer subcomponentes y lógica de negocio |
+| 10 | `lib/services/purchasing.ts` | 701 | Servicio de compras; separar OC, recepción, facturación |
 
 ---
 
@@ -119,4 +180,5 @@ Estos son los principales candidatos a dividir en módulos más pequeños:
 - Los archivos en `lib/__tests__/` no requieren acción (son tests, pueden ser largos).
 - `scripts/capture-all-routes.ts` (1653 lns) es un script de una sola ejecución — baja prioridad.
 - Los prints (`app/(print)/...`) son plantillas de impresión — pueden ser extensas por naturaleza.
+- Nuevos grandes archivos respecto al análisis anterior: `db/schema/prevention.ts` (+1579), `lib/services/prevention-documents-library.ts` (+1316), `app/(app)/prevencion/biblioteca/[id]/document-detail-view.tsx` (+764), `lib/validation/prevention.ts` (+597).
 - El criterio sugerido de 300 líneas como límite práctico para archivos de producción sigue la convención general de maintainability.

@@ -10,6 +10,7 @@ import {
   equipmentReportReviews,
   equipmentChecklists,
   sanitizationControls,
+  workers,
 } from "@/db/schema"
 import type { ReportData } from "@/lib/reports/export"
 import { nanoid } from "@/lib/id"
@@ -26,11 +27,22 @@ function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
   if (!scope.includes(worksiteId)) throw new Error("Sin acceso a esta faena.")
 }
 
+async function assertWorkerBelongsToWorksite(workerId: string, worksiteId: string): Promise<void> {
+  const [worker] = await db.select({ worksiteId: workers.worksiteId })
+    .from(workers)
+    .where(eq(workers.id, workerId))
+    .limit(1)
+  if (!worker || worker.worksiteId !== worksiteId) {
+    throw new Error("El trabajador no pertenece a la faena seleccionada.")
+  }
+}
+
 /* ── Daily reports ──────────────────────────────────────────────────────── */
 
 export async function createEquipmentReport(input: unknown, userId: string, scope: WorksiteScope) {
   const data = equipmentDailyReportSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
+  await assertWorkerBelongsToWorksite(data.operatorWorkerId, data.worksiteId)
 
   const now = new Date().toISOString()
   const [row] = await db.insert(equipmentDailyReports).values({
@@ -64,7 +76,7 @@ export async function listEquipmentReports(scope: WorksiteScope, worksiteId?: st
     .limit(limit)
 }
 
-export async function signEquipmentReport(reportId: string, workerId: string, scope: WorksiteScope) {
+export async function signEquipmentReport(reportId: string, scope: WorksiteScope) {
   const [report] = await db.select().from(equipmentDailyReports)
     .where(eq(equipmentDailyReports.id, reportId)).limit(1)
   if (!report) throw new Error("Reporte no encontrado.")
@@ -72,7 +84,7 @@ export async function signEquipmentReport(reportId: string, workerId: string, sc
 
   const now = new Date().toISOString()
   const [updated] = await db.update(equipmentDailyReports)
-    .set({ signedByWorkerId: workerId, updatedAt: now })
+    .set({ signedByWorkerId: report.operatorWorkerId, updatedAt: now })
     .where(eq(equipmentDailyReports.id, reportId))
     .returning()
   return updated

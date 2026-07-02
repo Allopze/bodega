@@ -68,12 +68,25 @@ beforeEach(async () => {
     code: "FA",
     isActive: true,
   })
+  await inMemoryDb.insert(schema.worksites).values({
+    id: "ws-2",
+    name: "Faena B",
+    code: "FB",
+    isActive: true,
+  })
   await inMemoryDb.insert(schema.workers).values({
     id: "worker-1",
     firstName: "Juan",
     lastName: "Perez",
     rut: "11111111-1",
     worksiteId: "ws-1",
+  })
+  await inMemoryDb.insert(schema.workers).values({
+    id: "worker-2",
+    firstName: "Maria",
+    lastName: "Rojas",
+    rut: "22222222-2",
+    worksiteId: "ws-2",
   })
 })
 
@@ -197,41 +210,6 @@ describe("prevention emergency service", () => {
   })
 })
 
-/* ── Legal docs tests ─────────────────────────────────────────────────── */
-describe("prevention legal docs service", () => {
-  it("creates document, version, delivery and signature", async () => {
-    const { createLegalDocument, addDocumentVersion, deliverDocument, acknowledgeDelivery, listLegalDocuments } = await import("@/lib/services/prevention-legal-docs")
-
-    const doc = await createLegalDocument({
-      type: "rio_hs",
-      code: "RIOHS-2026",
-      title: "Reglamento Interno de Orden, Higiene y Seguridad",
-    })
-    assertPresent(doc, "expected legal document")
-
-    const version = await addDocumentVersion({
-      documentId: doc.id,
-      effectiveFrom: "2026-01-01",
-      changelog: "Versión inicial 2026",
-    }, "user-1")
-    assertPresent(version, "expected document version")
-
-    const delivery = await deliverDocument({
-      versionId: version.id,
-      workerId: "worker-1",
-      method: "digital",
-    })
-    assertPresent(delivery, "expected document delivery")
-
-    const sig = await acknowledgeDelivery(delivery.id, "user-2", "firma-digital-hash")
-    expect(sig).toBeDefined()
-    expect(sig!.signature).toBe("firma-digital-hash")
-
-    const docs = await listLegalDocuments()
-    expect(docs).toHaveLength(1)
-  })
-})
-
 /* ── Committees tests ─────────────────────────────────────────────────── */
 describe("prevention committees service", () => {
   it("creates committee, adds member, schedules meeting and agreements", async () => {
@@ -245,27 +223,62 @@ describe("prevention committees service", () => {
       userId: "user-1",
       role: "presidente",
       startDate: "2026-01-01",
-    })
+    }, ["ws-1"])
 
     const meeting = await scheduleMeeting({
       committeeId: comm.id,
       scheduledAt: "2026-06-15T10:00:00.000Z",
       agenda: "Revisión mensual de indicadores",
       attendeeIds: ["user-1", "user-2"],
-    })
+    }, ["ws-1"])
     assertPresent(meeting, "expected committee meeting")
 
-    await recordMeetingAttendance(meeting.id, ["user-1", "user-2"])
+    await recordMeetingAttendance(meeting.id, ["user-1", "user-2"], ["ws-1"])
 
     await addAgreement({
       meetingId: meeting.id,
       description: "Realizar inspección de extintores",
       responsibleId: "user-1",
       dueDate: "2026-06-30",
-    })
+    }, ["ws-1"])
 
     const list = await listCommittees(["ws-1"])
     expect(list).toHaveLength(1)
     expect(list[0]!.type).toBe("cphs")
+  })
+
+  it("denies child mutations on committees outside the user's worksite scope", async () => {
+    const { createCommittee, addCommitteeMember, scheduleMeeting, addAgreement } = await import("@/lib/services/prevention-committees")
+
+    const comm = await createCommittee({ worksiteId: "ws-2", type: "cphs" }, "all")
+    assertPresent(comm, "expected committee")
+
+    await expect(addCommitteeMember({
+      committeeId: comm.id,
+      userId: "user-1",
+      role: "presidente",
+      startDate: "2026-01-01",
+    }, ["ws-1"])).rejects.toThrow(/sin acceso/i)
+
+    await expect(scheduleMeeting({
+      committeeId: comm.id,
+      scheduledAt: "2026-06-15T10:00:00.000Z",
+      agenda: "Revisión mensual",
+      attendeeIds: ["user-1"],
+    }, ["ws-1"])).rejects.toThrow(/sin acceso/i)
+
+    const meeting = await scheduleMeeting({
+      committeeId: comm.id,
+      scheduledAt: "2026-06-15T10:00:00.000Z",
+      agenda: "Revisión mensual",
+      attendeeIds: ["user-1"],
+    }, "all")
+
+    await expect(addAgreement({
+      meetingId: meeting!.id,
+      description: "Acuerdo fuera de scope",
+      responsibleId: "user-1",
+      dueDate: "2026-06-30",
+    }, ["ws-1"])).rejects.toThrow(/sin acceso/i)
   })
 })

@@ -11,7 +11,7 @@
 
 import { and, desc, eq, inArray, notInArray } from "drizzle-orm"
 import { db } from "@/db"
-import { preventionIncidentActions, preventionIncidents } from "@/db/schema"
+import { preventionIncidentActions, preventionIncidents, workers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import {
   preventionIncidentActionSchema,
@@ -29,12 +29,25 @@ export function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): 
   }
 }
 
+async function assertWorkerBelongsToWorksite(workerId: string, worksiteId: string): Promise<void> {
+  const [worker] = await db.select({ worksiteId: workers.worksiteId })
+    .from(workers)
+    .where(eq(workers.id, workerId))
+    .limit(1)
+  if (!worker || worker.worksiteId !== worksiteId) {
+    throw new Error("El trabajador no pertenece a la faena seleccionada.")
+  }
+}
+
 /**
  * Crea un incidente nuevo en estado 'open'. El caller debe estar dentro del scope.
  */
 export async function createIncident(input: unknown, userId: string, scope: WorksiteScope) {
   const data = preventionIncidentCreateSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
+  if (data.workerId) {
+    await assertWorkerBelongsToWorksite(data.workerId, data.worksiteId)
+  }
 
   const now = new Date().toISOString()
   const id = nanoid()

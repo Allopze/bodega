@@ -24,6 +24,16 @@ export function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): 
   }
 }
 
+async function assertWorkerBelongsToWorksite(workerId: string, worksiteId: string): Promise<void> {
+  const [worker] = await db.select({ worksiteId: workers.worksiteId })
+    .from(workers)
+    .where(eq(workers.id, workerId))
+    .limit(1)
+  if (!worker || worker.worksiteId !== worksiteId) {
+    throw new Error("El trabajador no pertenece a la faena seleccionada.")
+  }
+}
+
 export async function createTrainingCourse(input: unknown, userId: string) {
   const data = trainingCourseCreateSchema.parse(input)
   const now = new Date().toISOString()
@@ -49,6 +59,7 @@ export async function createTrainingCourse(input: unknown, userId: string) {
 export async function assignTrainingToWorker(input: unknown, userId: string, scope: WorksiteScope) {
   const data = trainingAssignSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
+  await assertWorkerBelongsToWorksite(data.workerId, data.worksiteId)
   const now = new Date().toISOString()
   const id = nanoid()
 

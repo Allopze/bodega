@@ -43,6 +43,12 @@ beforeEach(async () => {
     code: "FA",
     isActive: true,
   })
+  await inMemoryDb.insert(schema.worksites).values({
+    id: "ws-2",
+    name: "Faena B",
+    code: "FB",
+    isActive: true,
+  })
   await inMemoryDb.insert(schema.workers).values({
     id: "worker-1",
     firstName: "Ada",
@@ -50,6 +56,15 @@ beforeEach(async () => {
     rut: "11.111.111-1",
     position: "Operadora",
     worksiteId: "ws-1",
+    isActive: true,
+  })
+  await inMemoryDb.insert(schema.workers).values({
+    id: "worker-2",
+    firstName: "Grace",
+    lastName: "Hopper",
+    rut: "22.222.222-2",
+    position: "Operadora",
+    worksiteId: "ws-2",
     isActive: true,
   })
 })
@@ -144,5 +159,19 @@ describe("prevention incidents", () => {
       title: "X",
       description: "Y",
     }, "user-1", [])).rejects.toThrow(/sin acceso/i)
+  })
+
+  it("denies creating an incident for a worker from another worksite", async () => {
+    const { createIncident } = await import("@/lib/services/prevention-incidents")
+
+    await expect(createIncident({
+      worksiteId: "ws-1",
+      workerId: "worker-2",
+      type: "incidente",
+      severity: "leve",
+      occurredAt: "2026-07-01T10:00:00.000Z",
+      title: "Trabajador cruzado",
+      description: "No debe permitir trabajador de otra faena",
+    }, "user-1", ["ws-1"])).rejects.toThrow(/trabajador no pertenece/i)
   })
 })

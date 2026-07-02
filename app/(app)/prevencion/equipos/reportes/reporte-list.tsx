@@ -8,11 +8,11 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Truck, Plus, Check } from "@phosphor-icons/react"
+import { Truck, Plus, Check, PenNib } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import type { EquipmentDailyReport } from "@/db/schema"
 import { ReporteForm } from "./reporte-form"
-import { reviewEquipmentReportAction } from "../actions"
+import { reviewEquipmentReportAction, signEquipmentReportAction } from "../actions"
 
 interface WorkerSummary {
   id: string
@@ -48,6 +48,7 @@ const STATUS_LABEL: Record<string, string> = {
 export function ReporteList({ reports, worksites, workers, canManage, showForm, onShowFormChange }: Props) {
   const router = useRouter()
   const [reviewing, setReviewing] = React.useState<string | null>(null)
+  const [signing, setSigning] = React.useState<string | null>(null)
 
   const worksiteName = React.useCallback(
     (id: string) => worksites.find((w) => w.id === id)?.name ?? id,
@@ -68,6 +69,18 @@ export function ReporteList({ reports, worksites, workers, canManage, showForm, 
       return
     }
     toast.success("Reporte aprobado.")
+    router.refresh()
+  }
+
+  async function onSign(reportId: string) {
+    setSigning(reportId)
+    const result = await signEquipmentReportAction(reportId)
+    setSigning(null)
+    if (!result.ok) {
+      toast.error(result.message)
+      return
+    }
+    toast.success(result.message ?? "Reporte firmado.")
     router.refresh()
   }
 
@@ -131,7 +144,18 @@ export function ReporteList({ reports, worksites, workers, canManage, showForm, 
                 <TableCellNum>{r.hourmeter ?? "—"}</TableCellNum>
                 <TableCell className="font-mono text-xs">{r.reportedAt?.slice(0, 10)}</TableCell>
                 {canManage ? (
-                  <TableCell>
+                  <TableCell className="text-right">
+                    {!r.signedByWorkerId ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={signing === r.id}
+                        onClick={() => onSign(r.id)}
+                      >
+                        <PenNib size={14} className="mr-1" />
+                        {signing === r.id ? "Firmando..." : "Firmar"}
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
                       variant="ghost"

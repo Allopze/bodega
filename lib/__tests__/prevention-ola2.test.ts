@@ -208,6 +208,13 @@ describe("prevention equipment service", () => {
       rut: "11111111-1",
       worksiteId: "ws-1",
     })
+    await inMemoryDb.insert(schema.workers).values({
+      id: "worker-2",
+      firstName: "Maria",
+      lastName: "Rojas",
+      rut: "22222222-2",
+      worksiteId: "ws-2",
+    })
   })
 
   it("creates equipment daily report and reviews it", async () => {
@@ -258,6 +265,35 @@ describe("prevention equipment service", () => {
     expect(closed).toBeDefined()
     expect(closed!.closedAt).not.toBeNull()
   })
+
+  it("denies creating an equipment report with an operator from another worksite", async () => {
+    const { createEquipmentReport } = await import("@/lib/services/prevention-equipment")
+
+    await expect(createEquipmentReport({
+      worksiteId: "ws-1",
+      equipmentId: "eqp-camion-02",
+      operatorWorkerId: "worker-2",
+      shift: "diurno",
+      status: "ok",
+      checklist: { luces: true },
+    }, "user-1", ["ws-1"])).rejects.toThrow(/trabajador no pertenece/i)
+  })
+
+  it("signs the equipment report with its operator worker", async () => {
+    const { createEquipmentReport, signEquipmentReport } = await import("@/lib/services/prevention-equipment")
+
+    const report = await createEquipmentReport({
+      worksiteId: "ws-1",
+      equipmentId: "eqp-camion-03",
+      operatorWorkerId: "worker-1",
+      shift: "diurno",
+      status: "ok",
+      checklist: { luces: true },
+    }, "user-1", ["ws-1"])
+
+    const signed = await signEquipmentReport(report!.id, ["ws-1"])
+    expect(signed!.signedByWorkerId).toBe("worker-1")
+  })
 })
 
 /* ── Alcohol tests ─────────────────────────────────────────────────────────── */
@@ -280,6 +316,17 @@ describe("prevention alcohol tests service", () => {
     const sent = await markAlcoholTestSent(test!.id, ["ws-1"])
     expect(sent).toBeDefined()
     expect(sent!.sentAt).not.toBeNull()
+  })
+
+  it("denies registering an alcohol test for a worker from another worksite", async () => {
+    const { registerAlcoholTest } = await import("@/lib/services/prevention-alcohol-tests")
+
+    await expect(registerAlcoholTest({
+      worksiteId: "ws-1",
+      testedWorkerId: "worker-2",
+      shift: "diurno",
+      result: "negativo",
+    }, "user-1", ["ws-1"])).rejects.toThrow(/trabajador no pertenece/i)
   })
 })
 

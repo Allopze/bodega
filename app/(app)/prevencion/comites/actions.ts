@@ -42,14 +42,14 @@ export async function createCommitteeAction(input: unknown): Promise<ActionState
 }
 
 export async function addCommitteeMemberAction(input: unknown): Promise<ActionState> {
-  const { error } = await guardPermission("prevention:cphs:manage")
+  const { session, error } = await guardPermission("prevention:cphs:manage")
   if (error) return error
   const parsed = committeeMemberAddSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   }
   try {
-    await addCommitteeMember(parsed.data)
+    await addCommitteeMember(parsed.data, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Integrante agregado." }
   } catch (e) {
@@ -58,14 +58,14 @@ export async function addCommitteeMemberAction(input: unknown): Promise<ActionSt
 }
 
 export async function scheduleMeetingAction(input: unknown): Promise<ActionState> {
-  const { error } = await guardPermission("prevention:cphs:manage")
+  const { session, error } = await guardPermission("prevention:cphs:manage")
   if (error) return error
   const parsed = committeeMeetingScheduleSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   }
   try {
-    await scheduleMeeting(parsed.data)
+    await scheduleMeeting(parsed.data, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Reunión agendada." }
   } catch (e) {
@@ -74,14 +74,14 @@ export async function scheduleMeetingAction(input: unknown): Promise<ActionState
 }
 
 export async function addAgreementAction(input: unknown): Promise<ActionState> {
-  const { error } = await guardPermission("prevention:cphs:manage")
+  const { session, error } = await guardPermission("prevention:cphs:manage")
   if (error) return error
   const parsed = committeeAgreementAddSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   }
   try {
-    await addAgreement(parsed.data)
+    await addAgreement(parsed.data, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Acuerdo registrado." }
   } catch (e) {

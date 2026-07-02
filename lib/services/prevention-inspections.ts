@@ -10,6 +10,7 @@ import {
   inspectionRuns,
   inspectionItems,
   behavioralObservations,
+  workers,
 } from "@/db/schema"
 import type { ReportData } from "@/lib/reports/export"
 import { nanoid } from "@/lib/id"
@@ -195,6 +196,15 @@ export async function closeInspectionRun(input: unknown, userId: string, scope: 
 export async function addBehavioralObservation(input: unknown, userId: string, scope: WorksiteScope) {
   const data = behavioralObservationCreateSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
+  if (data.workerId) {
+    const [worker] = await db.select({ worksiteId: workers.worksiteId })
+      .from(workers)
+      .where(eq(workers.id, data.workerId))
+      .limit(1)
+    if (!worker || worker.worksiteId !== data.worksiteId) {
+      throw new Error("El trabajador no pertenece a la faena seleccionada.")
+    }
+  }
 
   const now = new Date().toISOString()
   const [row] = await db.insert(behavioralObservations).values({

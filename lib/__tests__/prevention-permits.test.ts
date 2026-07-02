@@ -70,8 +70,8 @@ describe("prevention permits service (P3.21)", () => {
     const approved = await approvePermitRequest(request.id, "user-1", ["ws-1"])
     expect(approved.status).toBe("aprobado")
 
-    await signPermit({ permitId: request.id, role: "prevencionista", signature: "Juan Perez, 11.111.111-1" }, "user-1")
-    await signPermit({ permitId: request.id, role: "jefe_terreno", signature: "Ana Soto, 22.222.222-2" }, "user-1")
+    await signPermit({ permitId: request.id, role: "prevencionista", signature: "Juan Perez, 11.111.111-1" }, "user-1", ["ws-1"])
+    await signPermit({ permitId: request.id, role: "jefe_terreno", signature: "Ana Soto, 22.222.222-2" }, "user-1", ["ws-1"])
 
     const signoffs = await listSignoffsForPermits([request.id])
     expect(signoffs.map((s) => s.role).sort()).toEqual(["jefe_terreno", "prevencionista"])
@@ -98,6 +98,33 @@ describe("prevention permits service (P3.21)", () => {
     }, "user-1", ["ws-2"])
 
     await expect(approvePermitRequest(request.id, "user-1", ["ws-1"])).rejects.toThrow(/sin acceso/i)
+  })
+
+  it("denies signing a permit outside the caller's worksite scope", async () => {
+    const { createPermitTemplate, createPermitRequest, signPermit } = await import("@/lib/services/prevention-permits")
+
+    const template = await createPermitTemplate({
+      code: "AST-IZAJES-01",
+      title: "AST izaje",
+      riskType: "izaje",
+      astFields: {},
+      requiresSignoff: {},
+    })
+    const request = await createPermitRequest({
+      templateId: template.id,
+      worksiteId: "ws-2",
+      task: "Izaje carga",
+      location: "Patio",
+      plannedStart: "2026-07-01T08:00:00.000Z",
+      plannedEnd: "2026-07-01T09:00:00.000Z",
+      ast: {},
+    }, "user-1", ["ws-2"])
+
+    await expect(signPermit({
+      permitId: request.id,
+      role: "prevencionista",
+      signature: "Juan Perez, 11.111.111-1",
+    }, "user-1", ["ws-1"])).rejects.toThrow(/sin acceso/i)
   })
 
   it("rejects approving twice (idempotent status transition)", async () => {

@@ -5,6 +5,7 @@ const INVOICE_ATTACHMENT_PREFIX = "storage/purchase-orders/"
 const QUOTATION_ATTACHMENT_PREFIX = "storage/repuestos/"
 const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
 const FLEET_DOCUMENT_PREFIX = "storage/flota/"
+const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 
 /**
  * Resolves the base storage directory.
@@ -149,4 +150,33 @@ export function resolveFleetDocumentFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolveFleetDir(), storageName)
+}
+
+/* ── Biblioteca SST ────────────────────────────────────────────────────────
+ *
+ * Almacenamiento para los documentos preventivos de la biblioteca SST.
+ * NO comparte espacio con la flota ni con la bodega.
+ * El `storageName` es siempre un nanoid con extensión segura; nunca se
+ * acepta el nombre original del usuario para evitar traversal.
+ */
+export function resolveSstDocumentsDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "sst-documents")
+}
+
+export function createSstDocumentPath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid sst document storage name")
+  }
+  return `${SST_DOCUMENT_PREFIX}${storageName}`
+}
+
+export function resolveSstDocumentFile(filePath: string): string | null {
+  if (!filePath.startsWith(SST_DOCUMENT_PREFIX)) {
+    return null
+  }
+  const storageName = filePath.slice(SST_DOCUMENT_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+  return path.join(/*turbopackIgnore: true*/ resolveSstDocumentsDir(), storageName)
 }

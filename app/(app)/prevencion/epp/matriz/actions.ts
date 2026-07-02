@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { guardAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { setEppPositionEntry, logEppDelivery, acknowledgeEppDelivery } from "@/lib/services/prevention-epp-matrix"
-import { eppPositionEntrySchema, eppDeliveryLogSchema, type ActionState } from "@/lib/validation/prevention"
+import { setEppPositionEntry, logEppDelivery, acknowledgeEppDelivery, setEppLifecyclePolicy } from "@/lib/services/prevention-epp-matrix"
+import { eppPositionEntrySchema, eppDeliveryLogSchema, eppLifecyclePolicySchema, type ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/epp/matriz"
 
@@ -64,5 +64,24 @@ export async function acknowledgeEppDeliveryAction(recambioLogId: string): Promi
     return { ok: true, message: "Acuse de recibo registrado." }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar el acuse de recibo." }
+  }
+}
+
+export async function setEppLifecyclePolicyAction(input: unknown): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:epp_matrix:manage")) {
+    return { ok: false, message: "No tienes permisos para gestionar políticas EPP." }
+  }
+  const parsed = eppLifecyclePolicySchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del formulario.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
+  try {
+    await setEppLifecyclePolicy(parsed.data)
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Política de vida útil EPP guardada." }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Error al guardar la política EPP." }
   }
 }

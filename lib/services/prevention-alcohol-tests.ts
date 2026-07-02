@@ -17,9 +17,22 @@ function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
   if (!scope.includes(worksiteId)) throw new Error("Sin acceso a esta faena.")
 }
 
+async function assertWorkerBelongsToWorksite(workerId: string, worksiteId: string): Promise<void> {
+  const [worker] = await db.select({ worksiteId: workers.worksiteId })
+    .from(workers)
+    .where(eq(workers.id, workerId))
+    .limit(1)
+  if (!worker || worker.worksiteId !== worksiteId) {
+    throw new Error("El trabajador no pertenece a la faena seleccionada.")
+  }
+}
+
 export async function registerAlcoholTest(input: unknown, userId: string, scope: WorksiteScope) {
   const data = alcoholTestSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
+  if (data.testedWorkerId) {
+    await assertWorkerBelongsToWorksite(data.testedWorkerId, data.worksiteId)
+  }
 
   const now = new Date().toISOString()
   const [row] = await db.insert(alcoholTests).values({

@@ -25,7 +25,7 @@ export async function registerAlcoholTestAction(
   if (error) return error
   const scope = scopeToIds(resolveWorksiteScope(session))
   try {
-    const result = registerAlcoholTest(input, session.user.id, scope)
+    const result = await registerAlcoholTest(input, session.user.id, scope)
     revalidatePath(REVALIDATE)
     if (result && typeof result === "object" && "result" in result && (result as { result: string }).result === "positivo") {
       return { ok: true, message: "Test positivo registrado. Escalar al prevencionista para suspender el turno." }

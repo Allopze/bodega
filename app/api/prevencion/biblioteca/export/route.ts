@@ -3,18 +3,33 @@ export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export"
-import { buildLegalDocsExport } from "@/lib/services/prevention-legal-docs"
+import { buildDocumentsExport } from "@/lib/services/prevention-documents-library"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
-  if (!can(session, "prevention:legal_docs:view")) return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+  if (!can(session, "prevention:docs:export")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+  }
+
+  const scope = resolveWorksiteScope(session)
+
+  const url = new URL(request.url)
+  const filters = {
+    q:          url.searchParams.get("q") ?? undefined,
+    categorySlug: url.searchParams.get("categorySlug") ?? undefined,
+    status:     url.searchParams.get("status") ?? undefined,
+    worksiteId: url.searchParams.get("worksiteId") ?? undefined,
+    page:       1,
+    pageSize:   10_000,
+  }
 
   try {
-    const report = await buildLegalDocsExport()
+    const report = await buildDocumentsExport(scope, filters as never)
     const xlsx = await buildXlsxBuffer({
       filenameBase: report.filenameBase,
       worksheetName: report.worksheetName,
@@ -29,7 +44,7 @@ export async function GET() {
       },
     })
   } catch (err) {
-    logger.error("[prevencion/documentacion/export]", err)
+    logger.error("[biblioteca/export]", err)
     return NextResponse.json({ error: "Error al generar el export" }, { status: 500 })
   }
 }
