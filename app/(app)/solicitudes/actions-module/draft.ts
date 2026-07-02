@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache"
 import type { Session } from "next-auth"
-import { db } from "@/db"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"

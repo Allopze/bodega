@@ -1,5 +1,3 @@
-import type { Badge } from "@/components/ui/badge"
-
 export interface DocumentBundle {
   doc: {
     id: string

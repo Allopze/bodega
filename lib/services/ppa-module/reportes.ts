@@ -11,9 +11,7 @@ import {
 } from "@/lib/ppa/types"
 import { estadoPpaLabel, decisionPpaLabel } from "@/lib/ppa/badges"
 import type { ReportData } from "@/lib/reports/export"
-import { listPpa } from "./calculos"
-import { getPpa } from "./calculos"
-import type { PpaRow } from "./evaluaciones"
+import { listPpa, getPpa } from "./calculos"
 
 export async function reviewPpa(
   input: PpaReviewInput,

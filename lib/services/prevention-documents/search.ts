@@ -16,14 +16,12 @@ import type { SstDocumentSearchInput } from "@/lib/validation/prevention"
 import { type WorksiteScope } from "@/lib/auth/scope"
 import {
   type SstDocumentStatus,
-  type RequestContext,
   type DashboardCounters,
   type ExpiringDocument,
   type DocumentExportRow,
   assertScopeAccess,
   effectiveStatus,
   daysUntil,
-  todayIso,
   recordAuditEntry,
 } from "./utils"
 

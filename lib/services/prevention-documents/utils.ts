@@ -1,50 +1,16 @@
-import { and, desc, eq, inArray, isNotNull, isNull, like, lte, ne, or, sql, type SQL } from "drizzle-orm"
-import { promises as fs } from "node:fs"
 import { createHash } from "node:crypto"
 import { join, extname } from "node:path"
 import { db } from "@/db"
 import {
-  sstDocumentCategories,
-  sstDocumentTypes,
-  sstDocuments,
-  sstDocumentVersions,
-  sstDocumentLinks,
-  sstDocumentAcknowledgments,
   sstDocumentAudit,
-  users,
-  worksites,
-  workers,
-  fuelVehicles,
   type SstDocument,
   type SstDocumentVersion,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { logger } from "@/lib/logger"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
-import { resolveSstDocumentFile, resolveSstDocumentsDir, createSstDocumentPath } from "@/lib/storage/config"
-import { validateFileBuffer, MimeType, type MimeTypeSet } from "@/lib/file-validation"
-import {
-  sstDocumentCreateSchema,
-  sstDocumentUpdateSchema,
-  sstDocumentVersionCreateSchema,
-  sstDocumentStatusChangeSchema,
-  sstDocumentVersionStatusChangeSchema,
-  sstDocumentApproveSchema,
-  sstDocumentObserveSchema,
-  sstDocumentArchiveSchema,
-  sstDocumentLinkSchema,
-  sstDocumentUnlinkSchema,
-  sstDocumentAckSchema,
-  sstDocumentSearchSchema,
-  sstDocumentCategoryUpsertSchema,
-  sstDocumentTypeUpsertSchema,
-  SST_DOCUMENT_LINK_ENTITY_TYPES,
-  type SstDocumentSearchInput,
-} from "@/lib/validation/prevention"
+import { resolveSstDocumentsDir, createSstDocumentPath } from "@/lib/storage/config"
 import { type WorksiteScope } from "@/lib/auth/scope"
-import { recordAudit, recordStatusChange } from "@/lib/audit"
 
-const ALLOWED_MIMES: MimeTypeSet = MimeType.INVOICE
 export const MAX_FILE_SIZE = 25 * 1024 * 1024
 export const EXPIRY_ALERT_THRESHOLDS = [30, 15, 7] as const
 
@@ -54,8 +20,6 @@ export type SstDocumentStatus =
 
 export type SstDocumentConfidentiality =
   | "publico_interno" | "restringido" | "sensible"
-
-type SstDocumentLinkEntityType = (typeof SST_DOCUMENT_LINK_ENTITY_TYPES)[number]
 
 export interface UploadInput {
   documentId: string

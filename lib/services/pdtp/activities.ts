@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities } from "@/db/schema"
 import { addPdtpChangeLogEntry, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
-import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 
 export type PdtpActivityUpdateInput = {
   activityId: string

@@ -3,7 +3,7 @@ import { db } from "@/db"
 import { sstResponses } from "@/db/schema/sst"
 import { nanoid } from "@/lib/id"
 import { sstResponsesBatchSchema } from "@/lib/validation/sst"
-import { getEvaluation, deleteEvaluation } from "./evaluations"
+import { getEvaluation } from "./evaluations"
 import { assertEditable } from "./helpers"
 
 export async function saveResponses(evaluationId: string, responses: z.infer<typeof sstResponsesBatchSchema>, worksiteIds: string[] | "all"): Promise<void> {

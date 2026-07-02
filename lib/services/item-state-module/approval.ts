@@ -1,5 +1,5 @@
 import { eq, and } from "drizzle-orm"
-import { db, type Tx } from "@/db"
+import { db } from "@/db"
 import {
   purchaseRequestItems, approvalDecisions,
 } from "@/db/schema"

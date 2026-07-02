@@ -1,4 +1,4 @@
-import { and, desc, eq, ne } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpPrograms } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "./helpers"

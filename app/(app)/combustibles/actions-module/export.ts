@@ -1,6 +1,5 @@
 "use server"
 
-import type { Session } from "next-auth"
 import { db } from "@/db"
 import { fuelLoads } from "@/db/schema"
 import { desc } from "drizzle-orm"

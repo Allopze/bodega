@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpExecutions, pdtpPrograms } from "@/db/schema"
-import { nanoid } from "@/lib/id"
 import { pdtpExecutionId } from "./helpers"
 import { assertWorksiteAccess } from "./helpers"
 import type { WorksiteScope } from "./helpers"

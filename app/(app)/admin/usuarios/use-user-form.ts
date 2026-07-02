@@ -52,7 +52,7 @@ export interface UseUserFormReturn {
   handleOpenChange: (v: boolean) => void
 }
 
-export function useUserForm({ editUser, onClose, allRoles, allPermissions, allWorksites }: UseUserFormProps): UseUserFormReturn {
+export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermissions, allWorksites: _allWorksites }: UseUserFormProps): UseUserFormReturn {
   const isEdit = !!editUser
 
   const action = isEdit ? updateUser : createUser
@@ -158,7 +158,6 @@ export function useUserForm({ editUser, onClose, allRoles, allPermissions, allWo
       if (inherited || direct) modules.add(p.module)
     }
     return [...modules]
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   }, [allPermissions, selectedRoles, selectedPermissions])
 
   return {

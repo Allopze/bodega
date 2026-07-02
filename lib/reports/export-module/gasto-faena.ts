@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, worksites, suppliers } from "@/db/schema"
 import { formatDate } from "@/lib/utils"

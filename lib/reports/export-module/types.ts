@@ -1,5 +1,3 @@
-import type { Session } from "next-auth"
-
 export type ReportCell = string | number | null | undefined
 
 export interface ExportFilters {

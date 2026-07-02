@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { eq, and, inArray, desc, sql } from "drizzle-orm"
+import { eq, and, inArray, desc } from "drizzle-orm"
 import { db } from "@/db"
 import { sstEvaluations, sstResponses, sstScheduledFollowups, sstWeeklyEvaluations, sstActionPlan, type SstEvaluation } from "@/db/schema/sst"
 import { workers, worksites } from "@/db/schema/worksites"

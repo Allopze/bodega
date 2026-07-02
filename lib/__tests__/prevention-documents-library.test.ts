@@ -34,7 +34,7 @@ import {
   SST_DOCUMENT_STATUSES,
   SST_DOCUMENT_LINK_ENTITY_TYPES,
 } from "@/lib/validation/prevention"
-import { DEFAULT_CATEGORIES, seedDefaultCategories, todayIso } from "@/lib/services/prevention-documents-library"
+import { DEFAULT_CATEGORIES, todayIso } from "@/lib/services/prevention-documents-library"
 
 beforeEach(() => {
   vi.clearAllMocks()

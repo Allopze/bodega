@@ -8,11 +8,8 @@ import { evaluatePpa } from "@/lib/ppa/evaluation"
 import { cleanRut } from "@/lib/rut"
 import {
   isTareaCritica,
-  tipoTrabajoLabel,
-  PPA_STOP_REASON_LABELS,
   type PpaAnswers,
   type EstadoPpa,
-  type PpaStopReason,
 } from "@/lib/ppa/types"
 import {
   getUserIdsWithPermissionForWorksite,

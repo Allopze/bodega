@@ -1,11 +1,10 @@
-import { and, eq } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
   sstDocuments,
   sstDocumentVersions,
   sstDocumentLinks,
   sstDocumentAcknowledgments,
-  users,
   worksites,
   workers,
   fuelVehicles,
@@ -19,7 +18,6 @@ import {
 } from "@/lib/validation/prevention"
 import { type WorksiteScope } from "@/lib/auth/scope"
 import {
-  type SstDocumentStatus,
   type RequestContext,
   assertScopeAccess,
   recordAuditEntry,

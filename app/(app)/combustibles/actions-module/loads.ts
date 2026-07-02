@@ -1,7 +1,6 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import type { Session } from "next-auth"
 import { db } from "@/db"
 import { fuelLoads } from "@/db/schema"
 import { eq } from "drizzle-orm"

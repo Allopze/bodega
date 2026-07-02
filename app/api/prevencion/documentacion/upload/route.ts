@@ -2,8 +2,6 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth/auth"
-import { can } from "@/lib/auth/can"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
@@ -36,7 +34,7 @@ export async function POST(request: Request) {
   let form: FormData
   try {
     form = await request.formData()
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: "Body inválido: se esperaba multipart/form-data." }, { status: 400 })
   }
 

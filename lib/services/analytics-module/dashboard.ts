@@ -7,9 +7,9 @@ import {
   purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests,
   suppliers, worksiteStock, worksites, workers,
 } from "@/db/schema"
-import type { AnalyticsDashboardData, AnalyticsFilters, VehicleCostRow } from "./types"
+import type { AnalyticsDashboardData, AnalyticsFilters } from "./types"
 import {
-  ACTIVE_ORDER_STATUSES, REQUEST_TYPE_LABELS, normalizeAnalyticsFilters,
+  ACTIVE_ORDER_STATUSES, normalizeAnalyticsFilters,
   previousPeriod, dateFilter, worksiteFilter, mergeSpendByMonth,
   mergeWorksiteSpend, variationPct, moduleLabel, getAnalyticsAlertThresholds,
   buildDataGaps, dateOnly,
