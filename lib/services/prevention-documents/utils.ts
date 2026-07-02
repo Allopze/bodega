@@ -15,13 +15,6 @@ import {
   worksites,
   workers,
   fuelVehicles,
-  preventionIncidents,
-  trainingCourses,
-  committees,
-  eppRecambioLog,
-  equipmentDailyReports,
-  preventionIncidentActions,
-  emergencyPlans,
   type SstDocument,
   type SstDocumentVersion,
 } from "@/db/schema"

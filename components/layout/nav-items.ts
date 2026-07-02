@@ -25,6 +25,7 @@ export interface NavItem {
   roles?:       string[]
   badge?:       "count"
   children?:    NavChild[]
+  group?:       string
 }
 
 export interface AreaNode {

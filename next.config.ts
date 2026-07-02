@@ -30,6 +30,9 @@ const nextConfig: NextConfig = {
       { source: "/servicios/:id", destination: "/solicitudes/:id", permanent: false },
       { source: "/repuestos", destination: "/solicitudes", permanent: false },
       { source: "/servicios", destination: "/solicitudes", permanent: false },
+      // Biblioteca SST renamed to Documentación (2026-07-02)
+      { source: "/prevencion/biblioteca", destination: "/prevencion/documentacion", permanent: true },
+      { source: "/prevencion/biblioteca/:path*", destination: "/prevencion/documentacion/:path*", permanent: true },
     ];
   },
   // playwright-core ships non-JS assets (browsers.json, etc.) that NFT

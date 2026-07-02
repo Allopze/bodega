@@ -22,22 +22,22 @@ function collectNavHrefs() {
 }
 
 describe("prevention documentation canonical surface", () => {
-  it("uses Biblioteca SST as the only documentation navigation surface", () => {
+  it("uses Documentación (/prevencion/documentacion) as the navigation surface", () => {
     const hrefs = collectNavHrefs()
 
-    expect(hrefs).toContain("/prevencion/biblioteca")
-    expect(hrefs).not.toContain("/prevencion/documentacion")
+    expect(hrefs).toContain("/prevencion/documentacion")
+    expect(hrefs).not.toContain("/prevencion/biblioteca")
     expect(preventionModule.permissions.some((permission) => permission.startsWith("prevention:legal_docs:"))).toBe(false)
     expect(Object.keys(preventionModule.permissionMeta).some((permission) => permission.startsWith("prevention:legal_docs:"))).toBe(false)
     expect(preventionModule.defaultGrants?.some((seed) => seed.permission.startsWith("prevention:legal_docs:")) ?? false).toBe(false)
   })
 
-  it("does not expose the legacy documentacion app or export routes", () => {
+  it("exposes the documentacion app routes and does not have legacy surfaces", () => {
     const root = process.cwd()
 
-    expect(existsSync(path.join(root, "app/(app)/prevencion/documentacion/page.tsx"))).toBe(false)
-    expect(existsSync(path.join(root, "app/(app)/prevencion/documentacion/actions.ts"))).toBe(false)
-    expect(existsSync(path.join(root, "app/api/prevencion/documentacion/export/route.ts"))).toBe(false)
+    expect(existsSync(path.join(root, "app/(app)/prevencion/documentacion/page.tsx"))).toBe(true)
+    expect(existsSync(path.join(root, "app/(app)/prevencion/documentacion/actions.ts"))).toBe(true)
+    expect(existsSync(path.join(root, "app/api/prevencion/documentacion/export/route.ts"))).toBe(true)
     expect(existsSync(path.join(root, "lib/services/prevention-legal-docs.ts"))).toBe(false)
 
     const validationSource = readFileSync(path.join(root, "lib/validation/prevention.ts"), "utf8")

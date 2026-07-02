@@ -462,17 +462,6 @@ async function main() {
   console.log(`  Catálogo PDTP 2026 cargado: ${pdtpCatalog2026.activities.length} actividades.`)
   console.log("  No se cargaron stock ni solicitudes demo.")
 
-  /* ── MINSAL Protocols seed ─────────────────────────────────────────── */
-  console.log("")
-  console.log("  Sembrando protocolos MINSAL...")
-  try {
-    const { seedMinsalProtocols } = await import("@/lib/services/prevention-health")
-    await seedMinsalProtocols()
-    console.log("  Protocolos MINSAL cargados (PREXOR, TMERT, psicosocial, UV, sílice, hiperbaria, estrés térmico).")
-  } catch (e) {
-    console.log(`  Protocolos MINSAL: ya cargados. (${(e as Error).message})`)
-  }
-
   /* ── Biblioteca documental SST — taxonomía por defecto ───────────── */
   console.log("")
   console.log("  Sembrando categorías de la biblioteca documental SST...")

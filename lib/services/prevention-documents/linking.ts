@@ -9,13 +9,6 @@ import {
   worksites,
   workers,
   fuelVehicles,
-  preventionIncidents,
-  trainingCourses,
-  committees,
-  eppRecambioLog,
-  equipmentDailyReports,
-  preventionIncidentActions,
-  emergencyPlans,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import {
@@ -53,51 +46,6 @@ async function assertLinkedEntityAccess(
   }
   if (entityType === "vehicle") {
     const [row] = await db.select({ worksiteId: fuelVehicles.worksiteId }).from(fuelVehicles).where(eq(fuelVehicles.id, entityId))
-    if (!row) throw new Error("Entidad vinculada no encontrada.")
-    assertScopeAccess(row.worksiteId, scope)
-    return
-  }
-  if (entityType === "equipment") {
-    const [row] = await db.select({ worksiteId: equipmentDailyReports.worksiteId }).from(equipmentDailyReports).where(eq(equipmentDailyReports.id, entityId))
-    if (!row) throw new Error("Entidad vinculada no encontrada.")
-    assertScopeAccess(row.worksiteId, scope)
-    return
-  }
-  if (entityType === "incident") {
-    const [row] = await db.select({ worksiteId: preventionIncidents.worksiteId }).from(preventionIncidents).where(eq(preventionIncidents.id, entityId))
-    if (!row) throw new Error("Entidad vinculada no encontrada.")
-    assertScopeAccess(row.worksiteId, scope)
-    return
-  }
-  if (entityType === "training") {
-    const [row] = await db.select({ id: trainingCourses.id }).from(trainingCourses).where(eq(trainingCourses.id, entityId))
-    if (!row) throw new Error("Entidad vinculada no encontrada.")
-    return
-  }
-  if (entityType === "committee") {
-    const [row] = await db.select({ worksiteId: committees.worksiteId }).from(committees).where(eq(committees.id, entityId))
-    if (!row) throw new Error("Entidad vinculada no encontrada.")
-    assertScopeAccess(row.worksiteId, scope)
-    return
-  }
-  if (entityType === "epp_delivery") {
-    const [delivery] = await db.select({ workerId: eppRecambioLog.workerId }).from(eppRecambioLog).where(eq(eppRecambioLog.id, entityId))
-    if (!delivery) throw new Error("Entidad vinculada no encontrada.")
-    const [worker] = await db.select({ worksiteId: workers.worksiteId }).from(workers).where(eq(workers.id, delivery.workerId))
-    if (!worker) throw new Error("Entidad vinculada no encontrada.")
-    assertScopeAccess(worker.worksiteId, scope)
-    return
-  }
-  if (entityType === "corrective_action") {
-    const [action] = await db.select({ incidentId: preventionIncidentActions.incidentId }).from(preventionIncidentActions).where(eq(preventionIncidentActions.id, entityId))
-    if (!action) throw new Error("Entidad vinculada no encontrada.")
-    const [incident] = await db.select({ worksiteId: preventionIncidents.worksiteId }).from(preventionIncidents).where(eq(preventionIncidents.id, action.incidentId))
-    if (!incident) throw new Error("Entidad vinculada no encontrada.")
-    assertScopeAccess(incident.worksiteId, scope)
-    return
-  }
-  if (entityType === "emergency_plan") {
-    const [row] = await db.select({ worksiteId: emergencyPlans.worksiteId }).from(emergencyPlans).where(eq(emergencyPlans.id, entityId))
     if (!row) throw new Error("Entidad vinculada no encontrada.")
     assertScopeAccess(row.worksiteId, scope)
   }

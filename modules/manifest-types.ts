@@ -21,6 +21,8 @@ export interface NavItem {
   roles?: string[]
   badge?: "count"
   children?: NavChild[]
+  /** Encabezado de sección bajo el que se agrupa este ítem (opcional). */
+  group?: string
 }
 
 export interface NavSection {

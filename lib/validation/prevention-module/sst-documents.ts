@@ -53,13 +53,6 @@ export const SST_DOCUMENT_LINK_ENTITY_TYPES = [
   "worker",
   "worksite",
   "vehicle",
-  "equipment",
-  "incident",
-  "training",
-  "committee",
-  "epp_delivery",
-  "corrective_action",
-  "emergency_plan",
 ] as const
 
 export const sstDocumentCreateSchema = z.object({

@@ -182,7 +182,7 @@ export async function buildDocumentsExport(scope: WorksiteScope, filters: Partia
   }))
 
   return {
-    filenameBase: "biblioteca-sst", worksheetName: "Biblioteca SST",
+    filenameBase: "documentacion-preventiva", worksheetName: "Documentación preventiva",
     headers: ["Categoría", "Tipo", "Código", "Título", "Estado", "Confidencialidad",
       "Faena", "Responsable", "Subido por", "Aprobado por", "Fecha emisión",
       "Vencimiento", "Días para vencer", "Versión vigente", "Requiere acuse", "Actualizado"],

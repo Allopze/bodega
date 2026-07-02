@@ -149,14 +149,22 @@ export function AreaItems({
 }) {
   return (
     <ul className="space-y-0.5">
-      {area.items.map((item) => {
+      {area.items.map((item, index) => {
         const count = item.badge === "count" ? (badgeCounts?.[item.href] ?? 0) : 0
+        const showGroupHeader = item.group && item.group !== area.items[index - 1]?.group
         return (
-          <li key={item.href}>
-            {item.children && item.children.length > 0
-              ? <BranchRow item={item} pathname={pathname} count={count} onNavigate={onNavigate} />
-              : <LeafRow   item={item} pathname={pathname} count={count} onNavigate={onNavigate} />}
-          </li>
+          <React.Fragment key={item.href}>
+            {showGroupHeader && (
+              <li className="mt-3 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-text-faint first:mt-1" aria-hidden="true">
+                {item.group}
+              </li>
+            )}
+            <li>
+              {item.children && item.children.length > 0
+                ? <BranchRow item={item} pathname={pathname} count={count} onNavigate={onNavigate} />
+                : <LeafRow   item={item} pathname={pathname} count={count} onNavigate={onNavigate} />}
+            </li>
+          </React.Fragment>
         )
       })}
     </ul>
