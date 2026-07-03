@@ -17,7 +17,7 @@ import { db } from "@/db"
 import { users, worksites } from "@/db/schema"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { PreventionExportButton } from "@/components/prevention/export-button"
+import { DocumentacionHeaderActions } from "./documentacion-header-actions"
 import { DocumentacionView } from "./documentacion-view"
 
 export const metadata: Metadata = { title: "Documentación" }
@@ -104,25 +104,16 @@ export default async function DocumentacionPage({
 
   const canManage = can(session, "prevention:docs:manage")
   const canApprove = can(session, "prevention:docs:approve")
-  const canExport = can(session, "prevention:docs:export")
   const canAck = can(session, "prevention:docs:ack")
   const canArchive = can(session, "prevention:docs:archive")
 
   return (
     <PageContainer width="workbench">
-      <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]} />
       <PageHeader
         title="Documentación"
         description="Repositorio de documentación preventiva. Vencimientos, versiones, aprobaciones y acuses."
         breadcrumb={<Breadcrumbs items={breadcrumbs} />}
-        actions={
-          canExport ? (
-            <PreventionExportButton
-              href="/api/prevencion/documentacion/export"
-              label="Exportar XLSX"
-            />
-          ) : undefined
-        }
+        actions={canManage ? <DocumentacionHeaderActions currentFolderId={activeFolderId} /> : undefined}
       />
       <DocumentacionView
         counters={counters}

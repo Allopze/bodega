@@ -43,14 +43,14 @@ export default async function ReviewQueuePage() {
 
   return (
     <PageContainer width="workbench">
-      <Breadcrumbs items={[
-        { label: "Prevención", href: "/prevencion" },
-        { label: "Documentación", href: "/prevencion/documentacion" },
-        { label: "Bandeja de revisión" },
-      ]} />
       <PageHeader
         title="Bandeja de revisión"
         description="Documentos en revisión o observados que requieren tu decisión."
+        breadcrumb={<Breadcrumbs items={[
+          { label: "Prevención", href: "/prevencion" },
+          { label: "Documentación", href: "/prevencion/documentacion" },
+          { label: "Bandeja de revisión" },
+        ]} />}
       />
       <ReviewQueueView documents={enriched} />
     </PageContainer>

@@ -23,7 +23,6 @@ vi.mock("./actions", () => ({
 import {
   archiveSstDocumentAction,
   archiveSstDocumentFolderAction,
-  createAndUploadSstDocumentAction,
   moveSstDocumentAction,
   moveSstDocumentFolderAction,
   renameSstDocumentFolderAction,
@@ -57,7 +56,7 @@ function firstFolderLink() {
 }
 
 describe("DocumentacionView", () => {
-  it("renders folders, documents, breadcrumbs, and context actions", () => {
+  it("renders folders, documents, and context actions", () => {
     render(
       <DocumentacionView
         counters={counters}
@@ -106,8 +105,7 @@ describe("DocumentacionView", () => {
     expect(screen.getByRole("link", { name: /Procedimiento trabajo seguro/i })).toHaveAttribute("href", "/prevencion/documentacion/sdoc-1")
     expect(screen.getByRole("link", { name: /Descargar/i })).toHaveAttribute("href", "/api/prevencion/documentacion/sdoc-1?download=1")
     expect(screen.getAllByText(/Mover/i).length).toBeGreaterThan(0)
-    expect(screen.getByText("Documentación")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Papelera" })).toHaveAttribute("href", "/prevencion/documentacion/papelera")
+    expect(screen.queryByRole("link", { name: "Papelera" })).not.toBeInTheDocument()
   })
 
   it("opens a context menu with right click actions for folders", () => {
@@ -325,44 +323,6 @@ describe("DocumentacionView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Archivar documentos seleccionados" }))
     await waitFor(() => expect(archiveSstDocumentAction).toHaveBeenCalledWith({ documentId: "sdoc-1" }))
     expect(archiveSstDocumentAction).toHaveBeenCalledWith({ documentId: "sdoc-2" })
-  })
-
-  it("shows a contextual dropzone for files dropped in the current folder", async () => {
-    vi.mocked(createAndUploadSstDocumentAction).mockResolvedValue({ ok: true, data: { id: "sdoc-new" } })
-    render(
-      <DocumentacionView
-        counters={counters}
-        expiring={[]}
-        documents={[]}
-        folders={[]}
-        breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
-        currentFolderId="sdf-1"
-        categories={[{ slug: "gestion_preventiva", name: "Gestión preventiva", description: null, sortOrder: 1 }]}
-        types={[]}
-        searchParams={{}}
-        total={0}
-        canManage
-        canApprove
-        canAck
-        canArchive
-      />,
-    )
-
-    fireEvent.drop(screen.getByLabelText("Zona para subir documentos"), {
-      dataTransfer: { files: [new File(["pdf"], "procedimiento.pdf", { type: "application/pdf" })] },
-    })
-
-    expect(screen.getByText("1 archivo listo para registrar")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Crear documento con este archivo" })).toHaveAttribute("href", "/prevencion/documentacion/nuevo?folder=sdf-1")
-
-    fireEvent.click(screen.getByRole("button", { name: "Registrar y subir archivo directo" }))
-    expect(screen.getByLabelText("Título rápido")).toHaveValue("procedimiento")
-    fireEvent.click(screen.getByRole("button", { name: "Crear documento y subir archivo" }))
-    await waitFor(() => expect(createAndUploadSstDocumentAction).toHaveBeenCalled())
-    const formData = vi.mocked(createAndUploadSstDocumentAction).mock.calls[0]?.[0] as FormData
-    expect(formData.get("folderId")).toBe("sdf-1")
-    expect(formData.get("categorySlug")).toBe("gestion_preventiva")
-    expect(formData.get("file")).toBeInstanceOf(File)
   })
 
   it("restores archived folders from the archived view", async () => {

@@ -17,7 +17,6 @@ export type {
   SstDocumentConfidentiality,
   DashboardCounters,
   ExpiringDocument,
-  DocumentExportRow,
   FolderBreadcrumbItem,
 } from "./types"
 import type { SstDocumentStatus, SstDocumentConfidentiality, FolderBreadcrumbItem } from "./types"

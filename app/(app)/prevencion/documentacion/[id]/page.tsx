@@ -79,14 +79,14 @@ export default async function DocumentDetailPage({ params }: Props) {
 
   return (
     <PageContainer width="workbench">
-      <Breadcrumbs items={[
-        { label: "Prevención", href: "/prevencion" },
-        { label: "Documentación", href: "/prevencion/documentacion" },
-        { label: bundle.doc.title.slice(0, 48) },
-      ]} />
       <PageHeader
         title={bundle.doc.title}
         description={`${bundle.doc.internalCode ?? "—"} · ${bundle.doc.categorySlug} · ${bundle.doc.status}`}
+        breadcrumb={<Breadcrumbs items={[
+          { label: "Prevención", href: "/prevencion" },
+          { label: "Documentación", href: "/prevencion/documentacion" },
+          { label: bundle.doc.title.slice(0, 48) },
+        ]} />}
       />
       <DocumentDetailView
         bundle={bundle}

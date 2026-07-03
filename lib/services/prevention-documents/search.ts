@@ -2,14 +2,10 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, like, lte, ne, or, sql,
 import { db } from "@/db"
 import {
   sstDocuments,
-  sstDocumentCategories,
-  sstDocumentTypes,
   sstDocumentVersions,
   sstDocumentLinks,
   sstDocumentAcknowledgments,
   sstDocumentAudit,
-  users,
-  worksites,
 } from "@/db/schema"
 import { sstDocumentSearchSchema } from "@/lib/validation/prevention"
 import type { SstDocumentSearchInput } from "@/lib/validation/prevention"
@@ -18,7 +14,6 @@ import {
   type SstDocumentStatus,
   type DashboardCounters,
   type ExpiringDocument,
-  type DocumentExportRow,
   assertScopeAccess,
   effectiveStatus,
   daysUntil,
@@ -149,51 +144,6 @@ export async function listReviewQueue(scope: WorksiteScope) {
   const whereParts = [or(eq(sstDocuments.status, "en_revision"), eq(sstDocuments.status, "observado"))]
   if (scope.mode === "some") whereParts.push(or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId)))
   return db.select().from(sstDocuments).where(and(...whereParts)).orderBy(desc(sstDocuments.updatedAt)).limit(100)
-}
-
-/* ── Export XLSX ────────────────────────────────────────────────────────── */
-
-export async function buildDocumentsExport(scope: WorksiteScope, filters: Partial<SstDocumentSearchInput> = {}) {
-  const { rows } = await searchDocuments({ ...filters, page: filters.page ?? 1, pageSize: filters.pageSize ?? 10_000 } as SstDocumentSearchInput, scope)
-
-  const userIds = new Set<string>(), worksiteIds = new Set<string>()
-  for (const r of rows) {
-    if (r.responsibleUserId) userIds.add(r.responsibleUserId)
-    if (r.uploadedBy) userIds.add(r.uploadedBy)
-    if (r.approvedBy) userIds.add(r.approvedBy)
-    if (r.worksiteId) worksiteIds.add(r.worksiteId)
-  }
-  const userRows = userIds.size ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, Array.from(userIds))) : []
-  const userName = (id: string | null) => (id ? userRows.find((u) => u.id === id)?.name ?? id : null)
-  const worksiteRows = worksiteIds.size ? await db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, Array.from(worksiteIds))) : []
-  const worksiteName = (id: string | null) => (id ? worksiteRows.find((w) => w.id === id)?.name ?? id : null)
-  const categories = await db.select().from(sstDocumentCategories)
-  const types = await db.select().from(sstDocumentTypes)
-  const catName = (slug: string) => categories.find((c) => c.slug === slug)?.name ?? slug
-  const typeName = (id: string | null) => id ? types.find((t) => t.id === id)?.name ?? id : ""
-
-  const exportRows: DocumentExportRow[] = rows.map((d) => ({
-    categoria: catName(d.categorySlug), tipo: typeName(d.typeId), codigo: d.internalCode ?? "",
-    titulo: d.title, estado: d.status as string, confidencialidad: d.confidentiality as string,
-    faena: worksiteName(d.worksiteId), responsable: userName(d.responsibleUserId),
-    subidoPor: userName(d.uploadedBy), aprobadoPor: userName(d.approvedBy),
-    fechaEmision: d.effectiveFrom ?? "", fechaVencimiento: d.expiresAt ?? "",
-    diasParaVencer: d.expiresAt ? daysUntil(d.expiresAt) : null,
-    versionVigente: null, requiereAcuse: d.requiresAcknowledgment ? "Sí" : "No",
-    actualizado: d.updatedAt.slice(0, 10),
-  }))
-
-  return {
-    filenameBase: "documentacion-preventiva", worksheetName: "Documentación preventiva",
-    headers: ["Categoría", "Tipo", "Código", "Título", "Estado", "Confidencialidad",
-      "Faena", "Responsable", "Subido por", "Aprobado por", "Fecha emisión",
-      "Vencimiento", "Días para vencer", "Versión vigente", "Requiere acuse", "Actualizado"],
-    rows: exportRows.map((r) => [
-      r.categoria, r.tipo, r.codigo, r.titulo, r.estado, r.confidencialidad,
-      r.faena, r.responsable, r.subidoPor, r.aprobadoPor, r.fechaEmision,
-      r.fechaVencimiento, r.diasParaVencer, r.versionVigente, r.requiereAcuse, r.actualizado,
-    ]),
-  }
 }
 
 /* ── Tracking de visualizaciones y descargas ────────────────────────────── */

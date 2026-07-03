@@ -14,7 +14,6 @@ describe("prevention module RBAC", () => {
       "prevention:docs:archive",
       "prevention:docs:ack",
       "prevention:docs:link",
-      "prevention:docs:export",
       "prevention:docs:manage_sensitive",
       "prevention:docs:manage_restricted",
     ]
@@ -38,6 +37,7 @@ describe("prevention module RBAC", () => {
       "prevention:contractors:view",
       "prevention:cphs:view",
       "prevention:permits:view",
+      "prevention:docs:export",
     ]
     for (const permission of deleted) {
       expect(ALL_MODULE_PERMISSIONS).not.toContain(permission)

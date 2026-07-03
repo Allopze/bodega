@@ -26,25 +26,6 @@ export interface ExpiringDocument {
   responsibleUserId: string | null
 }
 
-export interface DocumentExportRow {
-  categoria: string
-  tipo: string
-  codigo: string
-  titulo: string
-  estado: string
-  confidencialidad: string
-  faena: string | null
-  responsable: string | null
-  subidoPor: string | null
-  aprobadoPor: string | null
-  fechaEmision: string | null
-  fechaVencimiento: string | null
-  diasParaVencer: number | null
-  versionVigente: number | null
-  requiereAcuse: string
-  actualizado: string
-}
-
 export interface FolderBreadcrumbItem {
   id: string
   name: string

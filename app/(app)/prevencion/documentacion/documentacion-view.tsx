@@ -6,9 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import {
   DownloadSimple,
   DotsThreeVertical,
-  FileArrowUp,
   FileText,
-  FolderPlus,
   FolderOpen,
   MagnifyingGlass,
 } from "@phosphor-icons/react"
@@ -21,7 +19,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   DropdownMenu,
@@ -46,8 +43,6 @@ import type { DashboardCounters, ExpiringDocument, SstDocumentStatus } from "@/l
 import { buildFolderOptionLabels } from "@/lib/services/prevention-documents/labels"
 import {
   archiveSstDocumentAction,
-  createAndUploadSstDocumentAction,
-  createSstDocumentFolderAction,
   archiveSstDocumentFolderAction,
   moveSstDocumentAction,
   moveSstDocumentFolderAction,
@@ -164,9 +159,7 @@ export function DocumentacionView(props: Props) {
     documents,
     folders = [],
     folderOptions = [],
-    breadcrumbs = [{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }],
     currentFolderId = null,
-    categories,
     searchParams: incoming,
     canManage,
     canArchive,
@@ -175,7 +168,6 @@ export function DocumentacionView(props: Props) {
   const [q, setQ] = React.useState(incoming.q ?? "")
   const [status, setStatus] = React.useState(incoming.status ?? "")
   const [pending, startTransition] = React.useTransition()
-  const [folderName, setFolderName] = React.useState("")
   const [moveDocumentId, setMoveDocumentId] = React.useState<string | null>(null)
   const [moveFolderId, setMoveFolderId] = React.useState<string>("")
   const [menu, setMenu] = React.useState<MenuState>(null)
@@ -186,11 +178,9 @@ export function DocumentacionView(props: Props) {
   const [selectedFolders, setSelectedFolders] = React.useState<Set<string>>(() => new Set())
   const [selectedDocuments, setSelectedDocuments] = React.useState<Set<string>>(() => new Set())
   const [bulkMoveOpen, setBulkMoveOpen] = React.useState(false)
-  const [droppedFiles, setDroppedFiles] = React.useState<File[]>([])
   const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null)
 
   const selectedCount = selectedFolders.size + selectedDocuments.size
-  const newDocumentHref = `/prevencion/documentacion/nuevo${currentFolderId ? `?folder=${encodeURIComponent(currentFolderId)}` : ""}`
   const folderOptionLabels = React.useMemo(() => buildFolderOptionLabels(folderOptions), [folderOptions])
   const bulkDownloadHref = selectedDocuments.size > 0
     ? `/api/prevencion/documentacion/bulk-download?ids=${encodeURIComponent(Array.from(selectedDocuments).join(","))}`
@@ -210,19 +200,6 @@ export function DocumentacionView(props: Props) {
     if (next.status !== undefined) { if (next.status) sp.set("status", next.status); else sp.delete("status") }
     router.push(`/prevencion/documentacion?${sp.toString()}`)
   }, [router, searchParams])
-
-  const createFolder = React.useCallback((event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const name = folderName.trim()
-    if (!name) return
-    startTransition(async () => {
-      const result = await createSstDocumentFolderAction({ name, parentId: currentFolderId })
-      if (result.ok) {
-        setFolderName("")
-        router.refresh()
-      }
-    })
-  }, [currentFolderId, folderName, router])
 
   const moveDocument = React.useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -398,7 +375,7 @@ export function DocumentacionView(props: Props) {
   const hasContent = folders.length > 0 || documents.length > 0
 
   const Toolbar = (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-(--color-border) bg-(--color-chrome) px-4 py-3">
+    <div className="rounded-lg border border-(--color-border) bg-(--color-chrome) px-4 py-3">
       <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <StatChip label="Total" value={counters.total} />
         <StatChip label="Vigentes" value={counters.byStatus.vigente} tone="success" />
@@ -407,52 +384,11 @@ export function DocumentacionView(props: Props) {
         <StatChip label="Vencidos" value={counters.byStatus.vencido} tone="danger" />
         <StatChip label="Próximos ≤30 d" value={counters.expiringSoon.within30} tone="warning" />
       </div>
-      {canManage && (
-        <div className="flex flex-wrap gap-2">
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button type="button" variant="secondary" size="sm">
-                <FolderPlus size={16} className="mr-1" />
-                Nueva carpeta
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <form onSubmit={createFolder}>
-                <DialogHeader>
-                  <DialogTitle>Nueva carpeta</DialogTitle>
-                  <DialogDescription>Se creará dentro de la ubicación actual.</DialogDescription>
-                </DialogHeader>
-                <Input
-                  autoFocus
-                  placeholder="Nombre de carpeta"
-                  value={folderName}
-                  onChange={(event) => setFolderName(event.target.value)}
-                />
-                <DialogFooter>
-                  <Button type="submit" disabled={pending || !folderName.trim()}>
-                    Crear carpeta
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-          <Button asChild size="sm">
-            <Link href={newDocumentHref}>
-              <FileArrowUp size={16} className="mr-1" />
-              Subir archivo
-            </Link>
-          </Button>
-          <Button asChild size="sm" variant="secondary">
-            <Link href="/prevencion/documentacion/papelera">Papelera</Link>
-          </Button>
-        </div>
-      )}
     </div>
   )
 
   return (
       <div className="space-y-5">
-        <InlineBreadcrumbs items={breadcrumbs} />
         {Toolbar}
 
         <form
@@ -482,16 +418,6 @@ export function DocumentacionView(props: Props) {
 
         {!hasContent ? (
           <>
-            {canManage && (
-              <DocumentDropzone
-                categories={categories}
-                currentFolderId={currentFolderId}
-                droppedFiles={droppedFiles}
-                href={newDocumentHref}
-                onCreated={(documentId) => router.push(`/prevencion/documentacion/${documentId}`)}
-                onFiles={setDroppedFiles}
-              />
-            )}
             <EmptyState
               title="Carpeta vacía"
               description="Sube documentos o crea una carpeta para ordenar la documentación preventiva."
@@ -499,16 +425,6 @@ export function DocumentacionView(props: Props) {
           </>
         ) : (
           <div className="space-y-3">
-            {canManage && (
-              <DocumentDropzone
-                categories={categories}
-                currentFolderId={currentFolderId}
-                droppedFiles={droppedFiles}
-                href={newDocumentHref}
-                onCreated={(documentId) => router.push(`/prevencion/documentacion/${documentId}`)}
-                onFiles={setDroppedFiles}
-              />
-            )}
             {selectedCount > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-(--color-border) bg-(--color-chrome) px-4 py-2">
                 <span className="text-sm font-medium text-(--color-text)">{selectedCount} seleccionados</span>
@@ -803,141 +719,6 @@ export function DocumentacionView(props: Props) {
         </Dialog>
       </div>
     )
-}
-
-function InlineBreadcrumbs({ items }: { items: BreadcrumbItem[] }) {
-  return (
-    <nav aria-label="Ruta de carpeta" className="flex flex-wrap items-center gap-1.5">
-      {items.map((item, index) => (
-        <React.Fragment key={`${item.label}-${index}`}>
-          {index > 0 && <span className="text-xs text-(--color-text-faint)">/</span>}
-          {item.href ? (
-            <Link href={item.href} className="text-xs text-(--color-text-muted) hover:text-(--color-text)">
-              {item.label}
-            </Link>
-          ) : (
-            <span className="text-xs font-medium text-(--color-text-subtle)">{item.label}</span>
-          )}
-        </React.Fragment>
-      ))}
-    </nav>
-  )
-}
-
-function DocumentDropzone({
-  categories,
-  currentFolderId,
-  droppedFiles,
-  href,
-  onCreated,
-  onFiles,
-}: {
-  categories: CategoryRow[]
-  currentFolderId: string | null
-  droppedFiles: File[]
-  href: string
-  onCreated: (documentId: string) => void
-  onFiles: (files: File[]) => void
-}) {
-  const [quickOpen, setQuickOpen] = React.useState(false)
-  const [quickTitle, setQuickTitle] = React.useState("")
-  const [quickCategory, setQuickCategory] = React.useState(categories[0]?.slug ?? "")
-  const [pending, startTransition] = React.useTransition()
-  const count = droppedFiles.length
-  const firstFile = droppedFiles[0] ?? null
-
-  React.useEffect(() => {
-    if (!firstFile) return
-    setQuickTitle(firstFile.name.replace(/\.[^.]+$/, ""))
-  }, [firstFile])
-
-  const submitQuickUpload = React.useCallback((event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!firstFile || !quickTitle.trim() || !quickCategory) return
-    const formData = new FormData()
-    formData.set("file", firstFile)
-    formData.set("title", quickTitle.trim())
-    formData.set("categorySlug", quickCategory)
-    formData.set("confidentiality", "publico_interno")
-    if (currentFolderId) formData.set("folderId", currentFolderId)
-    startTransition(async () => {
-      const result = await createAndUploadSstDocumentAction(formData)
-      if (result.ok && result.data?.id) {
-        onCreated(result.data.id)
-        onFiles([])
-        setQuickOpen(false)
-      }
-    })
-  }, [currentFolderId, firstFile, onCreated, onFiles, quickCategory, quickTitle])
-
-  return (
-    <div
-      aria-label="Zona para subir documentos"
-      className="rounded-lg border border-dashed border-(--color-border) bg-(--color-surface) px-4 py-3"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault()
-        onFiles(Array.from(event.dataTransfer.files))
-      }}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-(--color-text)">Arrastra archivos a esta carpeta</p>
-          <p className="text-xs text-(--color-text-subtle)">
-            {count > 0
-              ? `${count} archivo${count === 1 ? "" : "s"} listo${count === 1 ? "" : "s"} para registrar`
-              : "El registro mantiene categoría, responsable, vigencia y control de versiones."}
-          </p>
-        </div>
-        {count > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm">
-              <Link href={href}>Crear documento con este archivo</Link>
-            </Button>
-            {firstFile && categories.length > 0 && (
-              <Dialog open={quickOpen} onOpenChange={setQuickOpen}>
-                <DialogTrigger asChild>
-                  <Button type="button" size="sm" variant="secondary">
-                    Registrar y subir archivo directo
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <form onSubmit={submitQuickUpload}>
-                    <DialogHeader>
-                      <DialogTitle>Registro rápido</DialogTitle>
-                      <DialogDescription>Crea el documento y sube este archivo como primera versión.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-3">
-                      <label htmlFor="quick-doc-title" className="block text-sm font-medium text-(--color-text)">Título rápido</label>
-                      <Input
-                        id="quick-doc-title"
-                        value={quickTitle}
-                        onChange={(event) => setQuickTitle(event.target.value)}
-                      />
-                      <label htmlFor="quick-doc-category" className="block text-sm font-medium text-(--color-text)">Categoría rápida</label>
-                      <Select value={quickCategory} onValueChange={setQuickCategory}>
-                        <SelectTrigger id="quick-doc-category"><SelectValue placeholder="Categoría" /></SelectTrigger>
-                        <SelectContent>
-                          {categories.map((category) => (
-                            <SelectItem key={category.slug} value={category.slug}>{category.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <DialogFooter>
-                      <Button type="submit" disabled={pending || !quickTitle.trim() || !quickCategory}>
-                        Crear documento y subir archivo
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
 }
 
 function DocumentTableRow({

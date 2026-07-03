@@ -130,7 +130,6 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-salud-protocolos", path: "/prevencion/salud/protocolos", auth: true },
   { slug: "prevencion-emergencias", path: "/prevencion/emergencias", auth: true },
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
-  { slug: "prevencion-documentacion-nuevo", path: "/prevencion/documentacion/nuevo", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
   { slug: "prevencion-documentacion-papelera", path: "/prevencion/documentacion/papelera", auth: true },
   { slug: "prevencion-documentacion-revisiones", path: "/prevencion/documentacion/revisiones", auth: true },

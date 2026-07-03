@@ -22,9 +22,11 @@ test.describe("Documentación SST", () => {
     await expect(page.getByRole("button", { name: "Nueva carpeta" })).toBeVisible()
   })
 
-  test("el formulario de nuevo documento carga", async ({ page }) => {
-    await page.goto("/prevencion/documentacion/nuevo")
-    await expect(page.getByRole("heading", { name: "Nuevo documento" })).toBeVisible()
+  test("el botón Subir archivo abre el modal de subida (no navega a un formulario)", async ({ page }) => {
+    await page.goto("/prevencion/documentacion")
+    await page.getByRole("button", { name: /Subir archivo/i }).click()
+    await expect(page.getByRole("button", { name: "Subir archivos" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Subir carpeta" })).toBeVisible()
   })
 
   test("la papelera carga", async ({ page }) => {

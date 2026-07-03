@@ -24,6 +24,7 @@ import {
   linkDocumentToEntity,
   unlinkDocumentEntity,
   acknowledgeVersion,
+  listDocumentCategories,
 } from "@/lib/services/prevention-documents-library"
 import {
   sstDocumentCreateSchema,
@@ -82,8 +83,17 @@ export async function createAndUploadSstDocumentAction(formData: FormData): Prom
   const file = formData.get("file")
   if (!(file instanceof File)) return { ok: false, message: "Selecciona un archivo." }
 
+  // Subida tipo Drive: el modal no pide categoría. Si no viene, cae en la
+  // primera categoría activa (por sortOrder) como default; se re-clasifica luego.
+  let categorySlug = String(formData.get("categorySlug") ?? "")
+  if (!categorySlug) {
+    const categories = await listDocumentCategories(true)
+    if (categories.length === 0) return { ok: false, message: "No hay categorías de documentos configuradas." }
+    categorySlug = categories[0]!.slug
+  }
+
   const input = {
-    categorySlug: String(formData.get("categorySlug") ?? ""),
+    categorySlug,
     typeId: String(formData.get("typeId") ?? ""),
     folderId: String(formData.get("folderId") ?? ""),
     title: String(formData.get("title") ?? ""),

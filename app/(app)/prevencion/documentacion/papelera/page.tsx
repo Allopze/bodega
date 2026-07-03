@@ -52,10 +52,10 @@ export default async function PapeleraPage() {
 
   return (
     <PageContainer width="workbench">
-      <Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación", href: "/prevencion/documentacion" }, { label: "Papelera" }]} />
       <PageHeader
         title="Papelera"
         description="Carpetas y documentos archivados. Restaura lo que necesites recuperar."
+        breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación", href: "/prevencion/documentacion" }, { label: "Papelera" }]} />}
       />
       <PapeleraView folders={folders} documents={documents} canRestore={canRestore} />
     </PageContainer>

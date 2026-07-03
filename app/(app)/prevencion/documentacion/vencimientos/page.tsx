@@ -38,14 +38,14 @@ export default async function ExpirationsPage() {
 
   return (
     <PageContainer width="workbench">
-      <Breadcrumbs items={[
-        { label: "Prevención", href: "/prevencion" },
-        { label: "Documentación", href: "/prevencion/documentacion" },
-        { label: "Vencimientos" },
-      ]} />
       <PageHeader
         title="Vencimientos documentales"
         description="Documentos vigentes próximos a vencer, vencidos y por vencer en los próximos 90 días."
+        breadcrumb={<Breadcrumbs items={[
+          { label: "Prevención", href: "/prevencion" },
+          { label: "Documentación", href: "/prevencion/documentacion" },
+          { label: "Vencimientos" },
+        ]} />}
       />
       <ExpiringView documents={enriched} />
     </PageContainer>
