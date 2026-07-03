@@ -1,27 +1,10 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
-// Content-Security-Policy conservadora: endurece las directivas de alto valor que
-// NO rompen una app Next+React (object-src/base-uri/form-action/frame-ancestors)
-// y mantiene 'unsafe-inline' en script/style porque Next inyecta scripts de
-// hidratación inline y Radix inyecta estilos inline de posicionamiento (sin
-// migración a nonces todavía). connect-src incluye https: para el ingest de
-// Sentry. Verificar en navegador antes de endurecer script-src con nonces.
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self' https:",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join("; ");
-
+// NOTE: la Content-Security-Policy se define en el middleware (`proxy.ts` →
+// `lib/security/csp.ts`) con nonce por request + 'strict-dynamic'. No se
+// duplica aquí para evitar dos cabeceras CSP en conflicto.
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

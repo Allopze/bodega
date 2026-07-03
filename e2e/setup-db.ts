@@ -115,6 +115,15 @@ async function main() {
     { id: "p-feedback-own", name: "feedback:view_own", module: "feedback", description: "Ver reportes propios" },
     { id: "p-feedback-all", name: "feedback:view_all", module: "feedback", description: "Ver todos los reportes" },
     { id: "p-feedback-manage", name: "feedback:manage", module: "feedback", description: "Gestionar reportes" },
+    { id: "p-prev-docs-v", name: "prevention:docs:view", module: "prevention", description: "Ver documentación preventiva" },
+    { id: "p-prev-docs-m", name: "prevention:docs:manage", module: "prevention", description: "Gestionar documentos" },
+    { id: "p-prev-docs-a", name: "prevention:docs:approve", module: "prevention", description: "Aprobar/observar/archivar documentos" },
+    { id: "p-prev-docs-arch", name: "prevention:docs:archive", module: "prevention", description: "Archivar documentos" },
+    { id: "p-prev-docs-ack", name: "prevention:docs:ack", module: "prevention", description: "Acuse de lectura de documentos" },
+    { id: "p-prev-docs-link", name: "prevention:docs:link", module: "prevention", description: "Asociar documentos con entidades" },
+    { id: "p-prev-docs-e", name: "prevention:docs:export", module: "prevention", description: "Exportar documentación (XLSX)" },
+    { id: "p-prev-docs-sens", name: "prevention:docs:manage_sensitive", module: "prevention", description: "Gestionar documentos sensibles" },
+    { id: "p-prev-docs-rest", name: "prevention:docs:manage_restricted", module: "prevention", description: "Gestionar documentos restringidos" },
   ]
 
   await db.insert(schema.permissions).values(permissions)
