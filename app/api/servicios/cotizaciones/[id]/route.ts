@@ -10,6 +10,7 @@ import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveServiceQuotationFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
 
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -62,3 +63,4 @@ export async function GET(
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 }
+

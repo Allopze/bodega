@@ -110,3 +110,10 @@ export const LINK_TYPE_LABELS: Record<string, string> = {
   corrective_action: "Acción correctiva",
   emergency_plan: "Plan de emergencia",
 }
+
+/* Únicos tipos que `linkDocumentToEntity` valida existencia + scope (ver
+ * lib/services/prevention-documents/linking.ts::assertLinkedEntityAccess).
+ * El resto de LINK_TYPE_LABELS sólo sirve para mostrar links preexistentes
+ * de otro origen; ofrecerlos en el formulario de creación aceptaría un
+ * entityId sin verificar que la entidad exista. */
+export const LINKABLE_ENTITY_TYPES = ["worker", "worksite", "vehicle"] as const

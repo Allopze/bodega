@@ -188,6 +188,35 @@ export async function notifySafe(input: CreateNotificationInput): Promise<void> 
   catch (err) { logger.error("[notifications] failed to create notification", err) }
 }
 
+/**
+ * Fire-and-forget with retry — for critical notifications (approval, rejection, return).
+ * Retries up to 2 times with exponential backoff (300ms, 900ms) on DB errors.
+ * If all retries fail, logs the error and moves on — never blocks the caller.
+ */
+export async function notifySafeWithRetry(input: CreateNotificationInput): Promise<void> {
+  const BACKOFF_MS = [300, 900]
+
+  for (let attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
+    try {
+      await createNotification(input)
+      return
+    } catch (err) {
+      if (attempt < BACKOFF_MS.length) {
+        logger.warn(
+          `[notifications] retry ${attempt + 1}/${BACKOFF_MS.length} for userId=${input.userId} type=${input.type}`,
+          err,
+        )
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]))
+      } else {
+        logger.error(
+          `[notifications] all retries exhausted for userId=${input.userId} type=${input.type}`,
+          err,
+        )
+      }
+    }
+  }
+}
+
 export async function notifyManyUser(
   userIds: string[],
   input: Omit<CreateNotificationInput, "userId">,

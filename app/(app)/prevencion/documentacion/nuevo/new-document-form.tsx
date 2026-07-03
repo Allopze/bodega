@@ -18,6 +18,7 @@ interface Category { slug: string; name: string; description: string | null }
 interface DocType { id: string; categorySlug: string; code: string; name: string; defaultConfidentiality: string; defaultValidityMonths: number | null }
 
 interface Props {
+  initialFolderId?: string | null
   categories: Category[]
   types: DocType[]
   worksites: Array<{ id: string; name: string }>
@@ -30,7 +31,7 @@ const CONFIDENCES = [
   { value: "sensible",        label: "Sensible" },
 ]
 
-export function NewDocumentForm({ categories, types, worksites, users }: Props) {
+export function NewDocumentForm({ initialFolderId = null, categories, types, worksites, users }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [category, setCategory] = useState<string>(categories[0]?.slug ?? "")
@@ -77,6 +78,7 @@ export function NewDocumentForm({ categories, types, worksites, users }: Props) 
       const res = await createSstDocumentAction({
         categorySlug: category as "gestion_preventiva" | "legal_normativa" | "capacitacion" | "epp" | "incidentes" | "comite" | "emergencias" | "equipos_vehiculos" | "fiscalizacion" | "salud_ocupacional",
         typeId: typeId || undefined,
+        folderId: initialFolderId,
         title: title.trim(),
         description: description || undefined,
         internalCode: internalCode || undefined,

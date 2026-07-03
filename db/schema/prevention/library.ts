@@ -1,6 +1,6 @@
 import { relations, sql } from "drizzle-orm"
 import { boolean, check, index, integer, jsonb, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
-import { pgTable } from "drizzle-orm/pg-core"
+import { pgTable, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
 
@@ -31,10 +31,27 @@ export const sstDocumentTypes = pgTable("sst_document_types", {
   uniqueIndex("sst_document_types_category_code_unique").on(table.categorySlug, table.code),
 ])
 
+export const sstDocumentFolders = pgTable("sst_document_folders", {
+  id:          text("id").primaryKey(),
+  parentId:    text("parent_id").references((): AnyPgColumn => sstDocumentFolders.id, { onDelete: "set null" }),
+  name:        text("name").notNull(),
+  slug:        text("slug").notNull(),
+  worksiteId:  text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
+  createdBy:   text("created_by").notNull().references(() => users.id),
+  archivedAt:  timestamp("archived_at", { withTimezone: true, mode: "string" }),
+  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("sst_document_folders_parent_slug_unique").on(table.parentId, table.slug),
+  index("sst_document_folders_parent_idx").on(table.parentId),
+  index("sst_document_folders_worksite_idx").on(table.worksiteId),
+])
+
 export const sstDocuments = pgTable("sst_documents", {
   id:               text("id").primaryKey(),
   categorySlug:     text("category_slug").notNull().references(() => sstDocumentCategories.slug, { onDelete: "restrict" }),
   typeId:           text("type_id").references(() => sstDocumentTypes.id, { onDelete: "set null" }),
+  folderId:         text("folder_id").references(() => sstDocumentFolders.id, { onDelete: "set null" }),
   internalCode:     text("internal_code"),
   title:            text("title").notNull(),
   description:      text("description"),
@@ -57,6 +74,7 @@ export const sstDocuments = pgTable("sst_documents", {
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   index("sst_documents_category_status_idx").on(table.categorySlug, table.status),
+  index("sst_documents_folder_status_idx").on(table.folderId, table.status),
   index("sst_documents_worksite_status_idx").on(table.worksiteId, table.status),
   index("sst_documents_expires_idx").on(table.expiresAt),
   index("sst_documents_responsible_idx").on(table.responsibleUserId),
@@ -142,6 +160,7 @@ export const sstDocumentAudit = pgTable("sst_document_audit", {
 export const sstDocumentsRelations = relations(sstDocuments, ({ one, many }) => ({
   category:        one(sstDocumentCategories, { fields: [sstDocuments.categorySlug], references: [sstDocumentCategories.slug] }),
   type:            one(sstDocumentTypes, { fields: [sstDocuments.typeId], references: [sstDocumentTypes.id] }),
+  folder:          one(sstDocumentFolders, { fields: [sstDocuments.folderId], references: [sstDocumentFolders.id] }),
   worksite:        one(worksites, { fields: [sstDocuments.worksiteId], references: [worksites.id] }),
   uploader:        one(users, { fields: [sstDocuments.uploadedBy], references: [users.id], relationName: "sstDocumentUploader" }),
   reviewer:        one(users, { fields: [sstDocuments.reviewedBy], references: [users.id], relationName: "sstDocumentReviewer" }),
@@ -150,6 +169,14 @@ export const sstDocumentsRelations = relations(sstDocuments, ({ one, many }) => 
   versions:        many(sstDocumentVersions),
   links:           many(sstDocumentLinks),
   audit:           many(sstDocumentAudit),
+}))
+
+export const sstDocumentFoldersRelations = relations(sstDocumentFolders, ({ one, many }) => ({
+  parent:    one(sstDocumentFolders, { fields: [sstDocumentFolders.parentId], references: [sstDocumentFolders.id], relationName: "sstDocumentFolderParent" }),
+  children:  many(sstDocumentFolders, { relationName: "sstDocumentFolderParent" }),
+  worksite:  one(worksites, { fields: [sstDocumentFolders.worksiteId], references: [worksites.id] }),
+  creator:   one(users, { fields: [sstDocumentFolders.createdBy], references: [users.id] }),
+  documents: many(sstDocuments),
 }))
 
 export const sstDocumentVersionsRelations = relations(sstDocumentVersions, ({ one, many }) => ({
@@ -181,6 +208,8 @@ export type SstDocumentCategory = typeof sstDocumentCategories.$inferSelect
 export type NewSstDocumentCategory = typeof sstDocumentCategories.$inferInsert
 export type SstDocumentType = typeof sstDocumentTypes.$inferSelect
 export type NewSstDocumentType = typeof sstDocumentTypes.$inferInsert
+export type SstDocumentFolder = typeof sstDocumentFolders.$inferSelect
+export type NewSstDocumentFolder = typeof sstDocumentFolders.$inferInsert
 export type SstDocument = typeof sstDocuments.$inferSelect
 export type NewSstDocument = typeof sstDocuments.$inferInsert
 export type SstDocumentVersion = typeof sstDocumentVersions.$inferSelect

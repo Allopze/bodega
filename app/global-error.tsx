@@ -15,6 +15,10 @@ export default function GlobalError({
 
   return (
     <html lang="es">
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Error — Chome</title>
+      </head>
       <body style={{
         display: "flex",
         alignItems: "center",

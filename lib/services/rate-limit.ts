@@ -8,6 +8,8 @@ import { and, eq, gt, lt, sql } from "drizzle-orm"
 
 const LIMIT_ATTEMPTS = 5
 const LOCK_TIME = 15 * 60 * 1000 // 15 minutes
+const PRUNE_INTERVAL = 5 * 60 * 1000 // prune at most every 5 minutes
+let lastPrune = 0
 
 /**
  * Per-surface tuning for `recordFailure`. Defaults match the login limiter
@@ -100,8 +102,10 @@ export async function recordSuccess(key: string): Promise<void> {
  *
  * IMPORTANT: it must NOT touch active in-progress counters (lockUntil = 0, recent).
  * The previous predicate accidentally matched every lockUntil=0 row, wiping the counter.
+ *
+ * Exported so a cron job (or script) can call it independently without a login attempt.
  */
-async function pruneExpiredLocks(): Promise<void> {
+export async function pruneExpiredLocks(): Promise<void> {
   const now = Date.now()
   const cutoff = new Date(now - LOCK_TIME).toISOString()
 
@@ -115,4 +119,13 @@ async function pruneExpiredLocks(): Promise<void> {
       eq(rateLimits.lockUntil, 0),
       lt(rateLimits.updatedAt, cutoff),
     ))
+}
+
+/** Throttled prune wrapper — avoids writing on every single login attempt. */
+async function pruneIfNeeded() {
+  const now = Date.now()
+  if (now - lastPrune >= PRUNE_INTERVAL) {
+    lastPrune = now
+    await pruneExpiredLocks()
+  }
 }

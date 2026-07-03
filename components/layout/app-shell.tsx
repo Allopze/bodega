@@ -6,9 +6,12 @@ import { cn } from "@/lib/utils"
 import { useHideOnScroll } from "@/lib/hooks/use-hide-on-scroll"
 import { DesktopNav } from "./desktop-nav"
 import { MobileNav } from "./mobile-nav"
-import { CommandPalette } from "./command-palette"
 import { TopBar } from "./top-bar"
 import { ShellHeaderProvider } from "./header-context"
+
+const CommandPalette = React.lazy(() =>
+  import("./command-palette").then((m) => ({ default: m.CommandPalette }))
+)
 
 interface AppShellProps {
   session:        Session
@@ -130,8 +133,10 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
         </ShellHeaderProvider>
       </div>
 
-      {/* Paleta de comandos global (⌘K / Ctrl+K) */}
-      <CommandPalette session={session} />
+      {/* Paleta de comandos global (⌘K / Ctrl+K) — lazy load */}
+      <React.Suspense fallback={null}>
+        <CommandPalette session={session} />
+      </React.Suspense>
     </div>
   )
 }

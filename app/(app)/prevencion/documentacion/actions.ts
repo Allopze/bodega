@@ -14,6 +14,13 @@ import {
   approveCurrentVersion,
   observeDocument,
   archiveDocument,
+  restoreDocument,
+  createDocumentFolder,
+  renameDocumentFolder,
+  moveDocumentFolder,
+  archiveDocumentFolder,
+  restoreDocumentFolder,
+  moveDocumentToFolder,
   linkDocumentToEntity,
   unlinkDocumentEntity,
   acknowledgeVersion,
@@ -24,6 +31,10 @@ import {
   sstDocumentStatusChangeSchema,
   sstDocumentObserveSchema,
   sstDocumentArchiveSchema,
+  sstDocumentFolderCreateSchema,
+  sstDocumentFolderUpdateSchema,
+  sstDocumentFolderMoveSchema,
+  sstDocumentMoveSchema,
   sstDocumentLinkSchema,
   sstDocumentUnlinkSchema,
   sstDocumentAckSchema,
@@ -59,6 +70,60 @@ export async function createSstDocumentAction(input: Parameters<typeof createDoc
     })
     revalidatePath(REVALIDATE)
     return { ok: true, data: { id: row.id } }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function createAndUploadSstDocumentAction(formData: FormData): Promise<ActionState & { data?: { id: string } }> {
+  const guard = await guardPermission("prevention:docs:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  const file = formData.get("file")
+  if (!(file instanceof File)) return { ok: false, message: "Selecciona un archivo." }
+
+  const input = {
+    categorySlug: String(formData.get("categorySlug") ?? ""),
+    typeId: String(formData.get("typeId") ?? ""),
+    folderId: String(formData.get("folderId") ?? ""),
+    title: String(formData.get("title") ?? ""),
+    description: String(formData.get("description") ?? ""),
+    internalCode: String(formData.get("internalCode") ?? ""),
+    worksiteId: String(formData.get("worksiteId") ?? ""),
+    confidentiality: String(formData.get("confidentiality") ?? "publico_interno"),
+    effectiveFrom: String(formData.get("effectiveFrom") ?? ""),
+    expiresAt: String(formData.get("expiresAt") ?? ""),
+    responsibleUserId: String(formData.get("responsibleUserId") ?? ""),
+    requiresAcknowledgment: formData.get("requiresAcknowledgment") === "on",
+    tags: [],
+    extraMetadata: {},
+  }
+  const parsed = sstDocumentCreateSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa los campos del documento.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
+
+  try {
+    const ctx = await clientCtx(session)
+    const row = await createDocument({
+      data: parsed.data,
+      ctx,
+      scope: resolveWorksiteScope(session),
+      permissions: session.user.permissions,
+    })
+    await uploadDocumentVersion({
+      input: {
+        documentId: row.id,
+        file,
+        changelog: "Primera versión cargada desde biblioteca",
+      },
+      ctx,
+      scope: resolveWorksiteScope(session),
+      permissions: session.user.permissions,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${row.id}`)
+    return { ok: true, message: "Documento creado y archivo subido.", data: { id: row.id } }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
   }
@@ -198,7 +263,119 @@ export async function archiveSstDocumentAction(input: { documentId: string; comm
   }
 }
 
-export async function linkSstDocumentAction(input: { documentId: string; entityType: "worker" | "worksite" | "vehicle" | "equipment" | "incident" | "training" | "committee" | "epp_delivery" | "corrective_action" | "emergency_plan"; entityId: string; notes?: string }): Promise<ActionState> {
+export async function restoreSstDocumentAction(input: { documentId: string; comment?: string }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:archive")
+  if (guard.error) return guard.error
+  const session = guard.session
+  if (!input.documentId) return { ok: false, message: "Documento requerido." }
+  try {
+    await restoreDocument({
+      input,
+      ctx: await clientCtx(session),
+      scope: resolveWorksiteScope(session),
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    return { ok: true, message: "Documento restaurado como borrador." }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function createSstDocumentFolderAction(input: { name: string; parentId?: string | null; worksiteId?: string | null }): Promise<ActionState & { data?: { id: string } }> {
+  const guard = await guardPermission("prevention:docs:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  const parsed = sstDocumentFolderCreateSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Revisa el nombre de la carpeta.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
+  }
+  try {
+    const folder = await createDocumentFolder({
+      input: parsed.data,
+      ctx: await clientCtx(session),
+      scope: resolveWorksiteScope(session),
+    })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Carpeta creada.", data: { id: folder.id } }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function renameSstDocumentFolderAction(input: { id: string; name: string }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  const parsed = sstDocumentFolderUpdateSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: "Revisa el nombre de la carpeta." }
+  try {
+    await renameDocumentFolder({ input: parsed.data, ctx: await clientCtx(session), scope: resolveWorksiteScope(session) })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Carpeta renombrada." }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function moveSstDocumentFolderAction(input: { id: string; parentId?: string | null }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  const parsed = sstDocumentFolderMoveSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: "Destino inválido." }
+  try {
+    await moveDocumentFolder({ input: parsed.data, ctx: await clientCtx(session), scope: resolveWorksiteScope(session) })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Carpeta movida." }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function archiveSstDocumentFolderAction(input: { id: string }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:archive")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    await archiveDocumentFolder({ input, ctx: await clientCtx(session), scope: resolveWorksiteScope(session) })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Carpeta archivada." }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function restoreSstDocumentFolderAction(input: { id: string }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:archive")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    await restoreDocumentFolder({ input, ctx: await clientCtx(session), scope: resolveWorksiteScope(session) })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Carpeta restaurada." }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function moveSstDocumentAction(input: { id: string; folderId?: string | null }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  const parsed = sstDocumentMoveSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: "Destino inválido." }
+  try {
+    await moveDocumentToFolder({ input: parsed.data, ctx: await clientCtx(session), scope: resolveWorksiteScope(session) })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.data.id}`)
+    return { ok: true, message: "Documento movido." }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function linkSstDocumentAction(input: { documentId: string; entityType: "worker" | "worksite" | "vehicle"; entityId: string; notes?: string }): Promise<ActionState> {
   const guard = await guardPermission("prevention:docs:link")
   if (guard.error) return guard.error
   const session = guard.session

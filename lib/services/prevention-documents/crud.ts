@@ -51,6 +51,7 @@ export async function createDocument({ data, ctx, scope, permissions }: CreateDo
 
   await db.insert(sstDocuments).values({
     id, categorySlug: parsed.categorySlug, typeId: parsed.typeId || null,
+    folderId: parsed.folderId || null,
     internalCode: parsed.internalCode || null, title: parsed.title,
     description: parsed.description || null, worksiteId: parsed.worksiteId || null,
     status: "borrador", confidentiality: parsed.confidentiality,
@@ -96,6 +97,7 @@ export async function updateDocumentMetadata(args: {
   const now = new Date().toISOString()
   const patch: Record<string, unknown> = { updatedAt: now }
   if (data.title !== undefined) patch.title = data.title
+  if (data.folderId !== undefined) patch.folderId = data.folderId || null
   if (data.description !== undefined) patch.description = data.description || null
   if (data.worksiteId !== undefined) patch.worksiteId = data.worksiteId || null
   if (data.confidentiality !== undefined) patch.confidentiality = data.confidentiality
@@ -320,6 +322,41 @@ export async function archiveDocument(args: {
   if (!updated) throw new Error("No se pudo archivar el documento.")
   await db.update(sstDocumentVersions).set({ status: "archivado", updatedAt: now }).where(and(eq(sstDocumentVersions.documentId, data.documentId), ne(sstDocumentVersions.status, "vigente"), ne(sstDocumentVersions.status, "aprobado")))
   await recordAuditEntry({ documentId: data.documentId, userId: args.ctx.userId, userEmail: args.ctx.userEmail, action: "archive", comment: data.comment || null, ip: args.ctx.ip })
+  return updated
+}
+
+export async function restoreDocument(args: {
+  input: { documentId: string; comment?: string }; ctx: RequestContext; scope: WorksiteScope
+}) {
+  const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, args.input.documentId))
+  if (!doc) throw new Error("Documento no encontrado.")
+  assertScopeAccess(doc.worksiteId, args.scope)
+  if (doc.status !== "archivado") throw new Error("Sólo se pueden restaurar documentos archivados.")
+
+  const now = new Date().toISOString()
+  const [updated] = await db.update(sstDocuments)
+    .set({ status: "borrador", updatedAt: now })
+    .where(eq(sstDocuments.id, args.input.documentId))
+    .returning()
+  if (!updated) throw new Error("No se pudo restaurar el documento.")
+  await recordStatusChange({
+    entityType: "sst_document",
+    entityId: args.input.documentId,
+    fromStatus: "archivado",
+    toStatus: "borrador",
+    changedBy: args.ctx.userId,
+    reason: args.input.comment || "Restaurado desde biblioteca documental",
+  })
+  await recordAuditEntry({
+    documentId: args.input.documentId,
+    userId: args.ctx.userId,
+    userEmail: args.ctx.userEmail,
+    action: "status_change",
+    fromStatus: "archivado",
+    toStatus: "borrador",
+    comment: args.input.comment || null,
+    ip: args.ctx.ip,
+  })
   return updated
 }
 

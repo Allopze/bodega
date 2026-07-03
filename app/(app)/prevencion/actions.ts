@@ -15,6 +15,7 @@ import {
   listEvaluationsGroupedByWorker,
   saveResponses,
   closeEvaluation,
+  archiveEvaluationPdf,
   markFollowup,
   getFollowups,
   getWeeklyEvaluations,
@@ -218,6 +219,9 @@ export async function closeEvaluationAction(
     const evaluation = await closeEvaluation(id, input, worksiteIds)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${id}`)
+    // Best-effort: guarda copia PDF en la biblioteca documental. Nunca lanza,
+    // así que no puede convertir un cierre exitoso en un error de acción.
+    await archiveEvaluationPdf(id, session)
     return { ok: true, message: "Evaluación cerrada exitosamente", data: { evaluation } }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al cerrar la evaluación" }

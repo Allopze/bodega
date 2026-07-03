@@ -30,7 +30,8 @@ vi.mock("@/lib/audit", () => ({
   recordStatusChange: vi.fn(),
 }))
 
-import { linkDocumentToEntity, updateDocumentMetadata } from "@/lib/services/prevention-documents-library"
+import { recordStatusChange } from "@/lib/audit"
+import { linkDocumentToEntity, restoreDocument, updateDocumentMetadata } from "@/lib/services/prevention-documents-library"
 
 const ctx = {
   userId: "user-1",
@@ -131,5 +132,31 @@ describe("prevention documents library service", () => {
       ctx,
       scope: { mode: "some", ids: ["ws-1"] },
     })).rejects.toThrow(/sin acceso/i)
+  })
+
+  it("restores an archived document as draft and records the status change", async () => {
+    mockDoc.current = {
+      id: "sdoc-1",
+      title: "Procedimiento archivado",
+      status: "archivado",
+      worksiteId: "ws-1",
+      confidentiality: "publico_interno",
+    }
+    mockUpdated.current = { ...mockDoc.current, status: "borrador" }
+    mockSelectWhere.mockResolvedValue([mockDoc.current])
+
+    await restoreDocument({
+      input: { documentId: "sdoc-1", comment: "Restaurar" },
+      ctx,
+      scope: { mode: "some", ids: ["ws-1"] },
+    })
+
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "borrador" }))
+    expect(recordStatusChange).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "sst_document",
+      entityId: "sdoc-1",
+      fromStatus: "archivado",
+      toStatus: "borrador",
+    }))
   })
 })

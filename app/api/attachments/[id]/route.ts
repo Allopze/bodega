@@ -20,6 +20,7 @@ import { encodeContentDisposition } from "@/lib/utils"
  */
 const SERVED_ENTITY_TYPE = "delivery" as const
 
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -65,3 +66,4 @@ export async function GET(
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 }
+

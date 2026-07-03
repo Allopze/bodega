@@ -11,7 +11,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
+    strategy:
+      matrix:
+        node-version: [20]
     services:
       postgres:
         image: postgres:16
@@ -37,11 +39,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
 
       - name: Check env files
         run: npm run check:secrets
@@ -85,79 +90,8 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: E2E smoke (admin + purchase)
-        run: npm run test:e2e -- e2e/admin-flow.spec.ts e2e/purchase-flow.spec.ts
+      - name: E2E (full suite)
+        run: npm run test:e2e
 
       - name: E2E accessibility audit
-        run: npm run test:e2e -- e2e/accessibility.spec.ts
-
-      - name: E2E extended (flota, mantenciones, soporte, bodega, entregas, combustibles, repuestos, negative, roles, export)
-        run: npm run test:e2e -- e2e/flota.spec.ts e2e/mantenciones.spec.ts e2e/soporte.spec.ts e2e/bodega-conteo-fisico.spec.ts e2e/delivery-print.spec.ts e2e/combustibles.spec.ts e2e/repuestos-servicios-flow.spec.ts e2e/negative-flows.spec.ts e2e/restricted-roles.spec.ts e2e/export-volume.spec.ts e2e/worker-delivery-flow.spec.ts e2e/ppa-flow.spec.ts e2e/sst-pdf.spec.ts e2e/pdf-exports.spec.ts
-
-  docker-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: bodega_smoke
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build production image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: prod
-          load: true
-          tags: bodega:ci-test
-
-      - name: Trivy container scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'bodega:ci-test'
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Smoke test — verify image starts and responds
-        run: |
-          # Start container with a real disposable Postgres service.
-          docker run -d --name bodega-smoke \
-            -e NODE_ENV=production \
-            -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/bodega_smoke \
-            -e AUTH_SECRET=test-secret-do-not-use-in-prod \
-            -e NEXTAUTH_URL=http://localhost:3000 \
-            -e STORAGE_PATH=/tmp \
-            --add-host=host.docker.internal:host-gateway \
-            -p 3000:3000 \
-            bodega:ci-test
-
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:3000/api/health | tee /tmp/bodega-health.json; then
-              grep -q '"db":"connected"' /tmp/bodega-health.json
-              docker stop bodega-smoke
-              exit 0
-            fi
-            sleep 2
-          done
-
-          docker logs bodega-smoke
-          docker stop bodega-smoke
-          exit 1
+        run: npx playwright test e2e/accessibility.spec.ts

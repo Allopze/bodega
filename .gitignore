@@ -61,5 +61,6 @@ next-env.d.ts
 /audit
 /ui-audit
 .env.local
+
 /releases
 /Registros SG-SST

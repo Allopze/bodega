@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/lib/toast"
 import { linkSstDocumentAction, unlinkSstDocumentAction } from "../actions"
 import type { DocumentBundle } from "./document-detail.helpers"
-import { LINK_TYPE_LABELS } from "./document-detail.helpers"
+import { LINK_TYPE_LABELS, LINKABLE_ENTITY_TYPES } from "./document-detail.helpers"
 
 interface Props {
   documentId: string
@@ -51,7 +51,7 @@ export function LinksTab({ documentId, links, linkEnrichment, worksiteMap, canLi
                 startTransition(async () => {
                   const res = await linkSstDocumentAction({
                     documentId,
-                    entityType: entityType as "worker" | "worksite" | "vehicle" | "equipment" | "incident" | "training" | "committee" | "epp_delivery" | "corrective_action" | "emergency_plan",
+                    entityType: entityType as "worker" | "worksite" | "vehicle",
                     entityId,
                     notes,
                   })
@@ -70,8 +70,8 @@ export function LinksTab({ documentId, links, linkEnrichment, worksiteMap, canLi
                 <Select value={entityType} onValueChange={setEntityType}>
                   <SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(LINK_TYPE_LABELS).map(([k, l]) => (
-                      <SelectItem key={k} value={k}>{l}</SelectItem>
+                    {LINKABLE_ENTITY_TYPES.map((k) => (
+                      <SelectItem key={k} value={k}>{LINK_TYPE_LABELS[k]}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

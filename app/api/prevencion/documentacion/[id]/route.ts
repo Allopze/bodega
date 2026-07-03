@@ -10,7 +10,7 @@ import { sstDocumentVersions, sstDocuments } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
-import { recordDocumentView } from "@/lib/services/prevention-documents-library"
+import { recordDocumentDownload, recordDocumentView } from "@/lib/services/prevention-documents-library"
 import { promises as fs } from "node:fs"
 
 interface RouteCtx {
@@ -28,7 +28,7 @@ interface RouteCtx {
  * para permitir revalidación rápida en el cliente sin exponer el archivo
  * a caches públicos.
  */
-export async function GET(_request: Request, ctx: RouteCtx) {
+export async function GET(request: Request, ctx: RouteCtx) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   if (!can(session, "prevention:docs:view")) {
@@ -58,16 +58,21 @@ export async function GET(_request: Request, ctx: RouteCtx) {
   const absolutePath = resolveSstDocumentFile(version.filePath)
   if (!absolutePath) return NextResponse.json({ error: "Ruta inválida" }, { status: 400 })
 
-  // Registrar la visualización.
+  const { searchParams } = new URL(request.url)
+  const shouldDownload = searchParams.get("download") === "1"
+
+  // Registrar la visualización o descarga.
   try {
-    await recordDocumentView({
+    const auditArgs = {
       documentId: id,
       versionId: version.id,
       userId: session.user.id,
       source: "api",
-    })
+    }
+    if (shouldDownload) await recordDocumentDownload(auditArgs)
+    else await recordDocumentView(auditArgs)
   } catch (err) {
-    logger.warn("[documentacion/serve] no se pudo registrar view", err)
+    logger.warn("[documentacion/serve] no se pudo registrar auditoría documental", err)
   }
 
   try {
@@ -75,7 +80,7 @@ export async function GET(_request: Request, ctx: RouteCtx) {
     return new Response(file, {
       headers: {
         "Content-Type": version.mimeType ?? "application/octet-stream",
-        "Content-Disposition": encodeContentDisposition(version.fileName, "inline"),
+        "Content-Disposition": encodeContentDisposition(version.fileName, shouldDownload ? "attachment" : "inline"),
         "Cache-Control": "private, max-age=30",
       },
     })

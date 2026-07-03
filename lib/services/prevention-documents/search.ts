@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, like, lte, ne, or, sql, type SQL } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, isNotNull, isNull, like, lte, ne, or, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   sstDocuments,
@@ -56,13 +56,17 @@ export async function searchDocuments(input: SstDocumentSearchInput, scope: Work
     const q = `%${data.q.replace(/[%_]/g, (m) => `\\${m}`)}%`
     conditions.push(or(like(sstDocuments.title, q), like(sstDocuments.internalCode, q), like(sstDocuments.description, q)))
   }
+  if (data.folderId !== undefined) {
+    if (data.folderId) conditions.push(eq(sstDocuments.folderId, data.folderId))
+    else conditions.push(isNull(sstDocuments.folderId))
+  }
   if (data.categorySlug) conditions.push(eq(sstDocuments.categorySlug, data.categorySlug))
   if (data.status) conditions.push(eq(sstDocuments.status, data.status))
   if (data.confidentiality) conditions.push(eq(sstDocuments.confidentiality, data.confidentiality))
   if (data.worksiteId) conditions.push(eq(sstDocuments.worksiteId, data.worksiteId))
   if (data.responsibleUserId) conditions.push(eq(sstDocuments.responsibleUserId, data.responsibleUserId))
   if (data.expiresBefore) conditions.push(lte(sstDocuments.expiresAt, data.expiresBefore))
-  if (data.expiresAfter) conditions.push(sql`${sstDocuments.expiresAt} IS NOT NULL`)
+  if (data.expiresAfter) conditions.push(gte(sstDocuments.expiresAt, data.expiresAfter))
 
   if (data.entityType && data.entityId) {
     const docIds = await db.select({ documentId: sstDocumentLinks.documentId }).from(sstDocumentLinks).where(and(eq(sstDocumentLinks.entityType, data.entityType), eq(sstDocumentLinks.entityId, data.entityId)))

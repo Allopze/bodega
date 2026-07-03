@@ -9,6 +9,9 @@ import {
   searchDocuments,
   listDocumentCategories,
   listDocumentTypes,
+  listDocumentFolders,
+  listFolderOptions,
+  getFolderBreadcrumbItems,
 } from "@/lib/services/prevention-documents-library"
 import { db } from "@/db"
 import { users, worksites } from "@/db/schema"
@@ -22,7 +25,7 @@ export const metadata: Metadata = { title: "Documentación" }
 export default async function DocumentacionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; category?: string; status?: string; worksiteId?: string }>
+  searchParams: Promise<{ q?: string; category?: string; status?: string; worksiteId?: string; folder?: string }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -32,13 +35,19 @@ export default async function DocumentacionPage({
   const scope = resolveWorksiteScope(session)
   const params = await searchParams
 
-  const [counters, expiring, categories, types, searchResult] = await Promise.all([
+  const activeFolderId = params.folder || null
+
+  const [counters, expiring, categories, types, folders, folderOptions, breadcrumbs, searchResult] = await Promise.all([
     getDashboardCounters(scope),
     getExpiringDocuments(scope, 30, 50),
     listDocumentCategories(true),
     listDocumentTypes(),
+    listDocumentFolders({ parentId: activeFolderId, scope, includeArchived: params.status === "archivado" }),
+    listFolderOptions(scope),
+    getFolderBreadcrumbItems(activeFolderId, scope),
     searchDocuments({
       q: params.q ?? "",
+      folderId: activeFolderId,
       categorySlug: (params.category as never) ?? "",
       status: (params.status as never) ?? "",
       worksiteId: params.worksiteId ?? "",
@@ -99,6 +108,7 @@ export default async function DocumentacionPage({
       <PageHeader
         title="Documentación"
         description="Repositorio de documentación preventiva. Vencimientos, versiones, aprobaciones y acuses."
+        breadcrumb={<Breadcrumbs items={breadcrumbs} />}
         actions={
           canExport ? (
             <PreventionExportButton
@@ -112,6 +122,10 @@ export default async function DocumentacionPage({
         counters={counters}
         expiring={expiringWithRefs}
         documents={docsWithRefs}
+        folders={folders}
+        folderOptions={folderOptions}
+        breadcrumbs={breadcrumbs}
+        currentFolderId={activeFolderId}
         categories={categories}
         types={types}
         searchParams={params}

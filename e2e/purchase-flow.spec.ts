@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import { login, selectRadixById, pickCurrentMonthDate } from "./helpers"
 
+
 test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ page }) => {
   await login(page)
 
@@ -80,6 +81,7 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   await page.goto("/compras/nueva")
   await expect(page.getByText("Rechazo E2E")).toHaveCount(0)
 })
+
 
 test("descarga real de Excel desde el navegador", async ({ page }) => {
   await login(page)

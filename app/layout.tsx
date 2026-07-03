@@ -7,11 +7,11 @@ const exo = localFont({
   variable: "--font-exo",
   display: "swap",
   src: [
-    { path: "../fonts/exo/Exo-Regular.otf",   weight: "400", style: "normal" },
-    { path: "../fonts/exo/Exo-Medium.otf",    weight: "500", style: "normal" },
-    { path: "../fonts/exo/Exo-DemiBold.otf",  weight: "600", style: "normal" },
-    { path: "../fonts/exo/Exo-Bold.otf",      weight: "700", style: "normal" },
-    { path: "../fonts/exo/Exo-ExtraBold.otf", weight: "800", style: "normal" },
+    { path: "../fonts/exo/woff2/Exo-Regular.woff2",   weight: "400", style: "normal" },
+    { path: "../fonts/exo/woff2/Exo-Medium.woff2",    weight: "500", style: "normal" },
+    { path: "../fonts/exo/woff2/Exo-DemiBold.woff2",  weight: "600", style: "normal" },
+    { path: "../fonts/exo/woff2/Exo-Bold.woff2",      weight: "700", style: "normal" },
+    { path: "../fonts/exo/woff2/Exo-ExtraBold.woff2", weight: "800", style: "normal" },
   ],
 })
 
@@ -19,10 +19,10 @@ const myriad = localFont({
   variable: "--font-myriad",
   display: "swap",
   src: [
-    { path: "../fonts/myriad-pro/myriadpro-light.otf",      weight: "300", style: "normal" },
-    { path: "../fonts/myriad-pro/myriadpro-regular.otf",    weight: "400", style: "normal" },
-    { path: "../fonts/myriad-pro/myriadpro-semibold.otf",   weight: "600", style: "normal" },
-    { path: "../fonts/myriad-pro/myriadpro-bold.otf",       weight: "700", style: "normal" },
+    { path: "../fonts/myriad-pro/woff2/myriadpro-light.woff2",      weight: "300", style: "normal" },
+    { path: "../fonts/myriad-pro/woff2/myriadpro-regular.woff2",    weight: "400", style: "normal" },
+    { path: "../fonts/myriad-pro/woff2/myriadpro-semibold.woff2",   weight: "600", style: "normal" },
+    { path: "../fonts/myriad-pro/woff2/myriadpro-bold.woff2",       weight: "700", style: "normal" },
   ],
 })
 

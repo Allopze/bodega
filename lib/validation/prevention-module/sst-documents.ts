@@ -58,6 +58,7 @@ export const SST_DOCUMENT_LINK_ENTITY_TYPES = [
 export const sstDocumentCreateSchema = z.object({
   categorySlug:    z.enum(SST_DOCUMENT_CATEGORY_SLUGS),
   typeId:          z.string().optional().or(z.literal("")),
+  folderId:        z.string().optional().nullable().or(z.literal("")),
   internalCode:    z.string().trim().max(60).optional().or(z.literal("")),
   title:           z.string().trim().min(1, "Título requerido").max(200),
   description:     z.string().max(2000).optional().or(z.literal("")),
@@ -73,6 +74,7 @@ export const sstDocumentCreateSchema = z.object({
 
 export const sstDocumentUpdateSchema = z.object({
   id:              z.string().min(1),
+  folderId:        z.string().optional().nullable().or(z.literal("")),
   title:           z.string().trim().min(1).max(200).optional(),
   description:     z.string().max(2000).optional().or(z.literal("")),
   worksiteId:      z.string().optional().or(z.literal("")),
@@ -141,6 +143,7 @@ export const sstDocumentAckSchema = z.object({
 
 export const sstDocumentSearchSchema = z.object({
   q:            z.string().trim().max(160).optional().or(z.literal("")),
+  folderId:     z.string().optional().nullable().or(z.literal("")),
   categorySlug: z.enum(SST_DOCUMENT_CATEGORY_SLUGS).optional().or(z.literal("")),
   status:       z.enum(SST_DOCUMENT_STATUSES).optional().or(z.literal("")),
   confidentiality: z.enum(SST_DOCUMENT_CONFIDENTIALITIES).optional().or(z.literal("")),
@@ -175,7 +178,32 @@ export const sstDocumentTypeUpsertSchema = z.object({
   isActive:    z.boolean().default(true),
 })
 
+export const sstDocumentFolderCreateSchema = z.object({
+  name:       z.string().trim().min(1, "Nombre requerido").max(120),
+  parentId:   z.string().min(1).optional().nullable().or(z.literal("")),
+  worksiteId: z.string().min(1).optional().nullable().or(z.literal("")),
+})
+
+export const sstDocumentFolderUpdateSchema = z.object({
+  id:   z.string().min(1, "Carpeta requerida"),
+  name: z.string().trim().min(1, "Nombre requerido").max(120),
+})
+
+export const sstDocumentFolderMoveSchema = z.object({
+  id:       z.string().min(1, "Carpeta requerida"),
+  parentId: z.string().min(1).nullable().optional().or(z.literal("")),
+})
+
+export const sstDocumentMoveSchema = z.object({
+  id:       z.string().min(1, "Documento requerido"),
+  folderId: z.string().min(1).nullable().optional().or(z.literal("")),
+})
+
 /* Tipos derivados */
 export type SstDocumentSearchInput = z.infer<typeof sstDocumentSearchSchema>
 export type SstDocumentCreateInput = z.infer<typeof sstDocumentCreateSchema>
 export type SstDocumentUpdateInput = z.infer<typeof sstDocumentUpdateSchema>
+export type SstDocumentFolderCreateInput = z.infer<typeof sstDocumentFolderCreateSchema>
+export type SstDocumentFolderUpdateInput = z.infer<typeof sstDocumentFolderUpdateSchema>
+export type SstDocumentFolderMoveInput = z.infer<typeof sstDocumentFolderMoveSchema>
+export type SstDocumentMoveInput = z.infer<typeof sstDocumentMoveSchema>

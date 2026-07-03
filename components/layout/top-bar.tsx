@@ -9,10 +9,13 @@ import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import { Avatar } from "@/components/ui/avatar"
 import { Breadcrumbs } from "@/components/ui/page-header"
-import { NotificationBell } from "./notification-bell"
 import { BrandMark } from "./brand-mark"
 import { findActiveBreadcrumb } from "./nav-items"
 import { useShellHeader } from "./header-context"
+
+const NotificationBell = React.lazy(() =>
+  import("./notification-bell").then((m) => ({ default: m.NotificationBell }))
+)
 import {
   DropdownMenu,
   DropdownMenuTrigger,

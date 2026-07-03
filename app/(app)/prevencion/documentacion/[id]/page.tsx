@@ -5,7 +5,7 @@ import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDocumentBundle } from "@/lib/services/prevention-documents-library"
 import { db } from "@/db"
-import { users, worksites } from "@/db/schema"
+import { users, worksites, workers, fuelVehicles } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { DocumentDetailView } from "./document-detail-view"
@@ -44,16 +44,7 @@ export default async function DocumentDetailPage({ params }: Props) {
   const worksiteIds = Array.from(new Set([
     bundle.doc.worksiteId ?? "",
     ...bundle.links.filter((l) => l.entityType === "worksite").map((l) => l.entityId),
-    ...bundle.links.filter((l) => l.entityType === "vehicle").map((l) => l.entityId),
   ].filter(Boolean) as string[]))
-
-  const [userRows, worksiteRows] = await Promise.all([
-    userIds.length ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds)) : Promise.resolve([] as Array<{ id: string; name: string; email: string }>),
-    worksiteIds.length ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, worksiteIds)) : Promise.resolve([] as Array<{ id: string; name: string }>),
-  ])
-
-  const userMap = Object.fromEntries(userRows.map((u) => [u.id, u]))
-  const worksiteMap = Object.fromEntries(worksiteRows.map((w) => [w.id, w]))
 
   // Hidratar entidades linkeadas: nombre legible según entityType.
   const linkIdsByType: Record<string, string[]> = {}
@@ -61,15 +52,24 @@ export default async function DocumentDetailPage({ params }: Props) {
     const list = linkIdsByType[link.entityType] ?? (linkIdsByType[link.entityType] = [])
     list.push(link.entityId)
   }
+
+  const [userRows, worksiteRows, workerRows, vehicleRows] = await Promise.all([
+    userIds.length ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds)) : Promise.resolve([] as Array<{ id: string; name: string; email: string }>),
+    worksiteIds.length ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, worksiteIds)) : Promise.resolve([] as Array<{ id: string; name: string }>),
+    linkIdsByType.worker?.length ? db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName }).from(workers).where(inArray(workers.id, linkIdsByType.worker)) : Promise.resolve([] as Array<{ id: string; firstName: string; lastName: string }>),
+    linkIdsByType.vehicle?.length ? db.select({ id: fuelVehicles.id, plate: fuelVehicles.plate }).from(fuelVehicles).where(inArray(fuelVehicles.id, linkIdsByType.vehicle)) : Promise.resolve([] as Array<{ id: string; plate: string }>),
+  ])
+
+  const userMap = Object.fromEntries(userRows.map((u) => [u.id, u]))
+  const worksiteMap = Object.fromEntries(worksiteRows.map((w) => [w.id, w]))
+
   const linkEnrichment: Record<string, Record<string, string>> = {}
-
-  if (linkIdsByType.worker?.length) {
-    linkEnrichment.worker = Object.fromEntries(linkIdsByType.worker.map((id) => [id, id]))
+  if (workerRows.length) {
+    linkEnrichment.worker = Object.fromEntries(workerRows.map((w) => [w.id, `${w.firstName} ${w.lastName}`]))
   }
-
-  // Hidratar tipos.
-  const allTypeIds = bundle.versions.map((v) => v.documentId) // reusado; en realidad los types no se hidratan por versión
-  void allTypeIds
+  if (vehicleRows.length) {
+    linkEnrichment.vehicle = Object.fromEntries(vehicleRows.map((v) => [v.id, v.plate]))
+  }
 
   const canManage = can(session, "prevention:docs:manage")
   const canApprove = can(session, "prevention:docs:approve")

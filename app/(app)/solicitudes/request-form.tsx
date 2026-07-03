@@ -89,12 +89,12 @@ function RequestFormHeader({
 }
 
 function ItemsSection({
-  items, requestType, readOnly, savedId, itemsError,
+  items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
   products, suppliers, maxFileSizeMb,
   onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr,
   resubmitAction, resubmitPending,
 }: {
-  items: ItemRow[]; requestType: string; readOnly: boolean; savedId?: string
+  items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
   itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; maxFileSizeMb: number
   onAdd: () => void; onRemove: (key: string) => void; onUpdate: (key: string, patch: Partial<ItemRow>) => void
   onSelectProduct: (key: string, pid: string) => void; onSelectFreeProduct: (key: string, name: string) => void
@@ -147,10 +147,10 @@ function ItemsSection({
 }
 
 function SummarySidebar({
-  isDraft, worksiteLabel, requestTypeLabel, urgencyLabel, requiredDate,
+  isDraft, readOnly: _readOnly, worksiteLabel, requestTypeLabel, urgencyLabel, requiredDate,
   statusLabel, items, missingItems,
 }: {
-  isDraft: boolean; worksiteLabel: string; requestTypeLabel: string
+  isDraft: boolean; readOnly?: boolean; worksiteLabel: string; requestTypeLabel: string
   urgencyLabel: string; requiredDate: string; statusLabel: string; items: ItemRow[]
   missingItems: string[]
 }) {

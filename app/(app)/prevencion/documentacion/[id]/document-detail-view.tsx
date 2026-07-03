@@ -15,6 +15,7 @@ import {
   approveSstDocumentAction,
   changeSstDocumentStatusAction,
   observeSstDocumentAction,
+  restoreSstDocumentAction,
 } from "../actions"
 import type { DetailViewProps } from "./document-detail.helpers"
 import { STATUS_LABELS, STATUS_TONES } from "./document-detail.helpers"
@@ -33,6 +34,9 @@ export function DocumentDetailView(props: DetailViewProps) {
   const doc = bundle.doc
   const currentVersion = bundle.versions.find((v) => v.id === doc.currentVersionId) ?? null
   const isArchived = doc.status === "archivado"
+  const canPreviewCurrentVersion = currentVersion
+    ? currentVersion.mimeType === "application/pdf" || currentVersion.mimeType.startsWith("image/")
+    : false
 
   return (
     <Tabs defaultValue="overview" className="space-y-4">
@@ -84,6 +88,19 @@ export function DocumentDetailView(props: DetailViewProps) {
                   <CardTitle>Archivo vigente · v{currentVersion.version}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {canPreviewCurrentVersion ? (
+                    <div className="overflow-hidden rounded-md border border-(--color-border) bg-(--color-chrome)">
+                      <iframe
+                        title={`Previsualización de ${currentVersion.fileName}`}
+                        src={`/api/prevencion/documentacion/${doc.id}`}
+                        className="h-[28rem] w-full"
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-(--color-border) bg-(--color-chrome) px-4 py-3 text-sm text-[var(--color-text-subtle)]">
+                      Vista previa no disponible para este formato. Usa abrir o descargar para revisar el archivo original.
+                    </div>
+                  )}
                   <div className="text-sm">
                     <p><strong>Nombre:</strong> {currentVersion.fileName}</p>
                     <p><strong>MIME:</strong> {currentVersion.mimeType}</p>
@@ -97,8 +114,8 @@ export function DocumentDetailView(props: DetailViewProps) {
                       </a>
                     </Button>
                     <Button asChild variant="secondary">
-                      <a href={`/api/prevencion/documentacion/${doc.id}/version/${currentVersion.id}`} download>
-                        Descargar
+                      <a href={`/api/prevencion/documentacion/${doc.id}?download=1`}>
+                        Descargar archivo
                       </a>
                     </Button>
                   </div>
@@ -108,11 +125,16 @@ export function DocumentDetailView(props: DetailViewProps) {
           </div>
 
           <div className="space-y-4">
-            {canManage && !isArchived ? (
+            {canManage ? (
               <Card>
                 <CardHeader><CardTitle>Acciones</CardTitle></CardHeader>
                 <CardContent className="flex flex-col gap-2">
-                  {canApprove ? (
+                  {isArchived && canArchive ? (
+                    <Button variant="secondary" onClick={() => doRestore()} disabled={isPending}>
+                      Restaurar documento
+                    </Button>
+                  ) : null}
+                  {!isArchived && canApprove ? (
                     <>
                       <Button onClick={() => doApprove()} disabled={isPending}>
                         <ThumbsUp size={14} className="mr-1" /> Aprobar y marcar vigente
@@ -252,6 +274,18 @@ export function DocumentDetailView(props: DetailViewProps) {
         router.refresh()
       } else {
         toast.error(res.message ?? "Error al enviar a revisión.")
+      }
+    })
+  }
+
+  function doRestore() {
+    startTransition(async () => {
+      const res = await restoreSstDocumentAction({ documentId: doc.id, comment: "Restaurado desde detalle" })
+      if (res.ok) {
+        toast.success(res.message ?? "Documento restaurado.")
+        router.refresh()
+      } else {
+        toast.error(res.message ?? "Error al restaurar.")
       }
     })
   }

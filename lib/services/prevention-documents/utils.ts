@@ -87,6 +87,74 @@ export interface DocumentExportRow {
   actualizado: string
 }
 
+export interface FolderBreadcrumbItem {
+  id: string
+  name: string
+}
+
+export function normalizeFolderName(name: string): string {
+  const normalized = name.trim().replace(/\s+/g, " ")
+  if (!normalized) throw new Error("Nombre de carpeta requerido.")
+  return normalized
+}
+
+export function folderSlug(name: string): string {
+  return normalizeFolderName(name)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "carpeta"
+}
+
+export function buildFolderHref(folderId: string | null | undefined): string {
+  if (!folderId) return "/prevencion/documentacion"
+  return `/prevencion/documentacion?folder=${encodeURIComponent(folderId)}`
+}
+
+export function buildFolderBreadcrumbs(path: FolderBreadcrumbItem[]) {
+  return [
+    { label: "Prevención", href: "/prevencion" },
+    { label: "Documentación", href: path.length ? "/prevencion/documentacion" : undefined },
+    ...path.map((folder, index) => ({
+      label: folder.name,
+      href: index === path.length - 1 ? undefined : buildFolderHref(folder.id),
+    })),
+  ]
+}
+
+export function buildFolderOptionLabels(folders: Array<{ id: string; name: string; parentId: string | null }>) {
+  const byParent = new Map<string | null, Array<{ id: string; name: string; parentId: string | null }>>()
+  for (const folder of folders) {
+    const siblings = byParent.get(folder.parentId) ?? []
+    siblings.push(folder)
+    byParent.set(folder.parentId, siblings)
+  }
+  for (const siblings of byParent.values()) siblings.sort((a, b) => a.name.localeCompare(b.name, "es"))
+
+  const labels: Array<{ id: string; label: string }> = []
+  const visit = (parentId: string | null, depth: number, path: Set<string>) => {
+    for (const folder of byParent.get(parentId) ?? []) {
+      if (path.has(folder.id)) continue
+      labels.push({ id: folder.id, label: `${"—".repeat(depth)}${depth ? " " : ""}${folder.name}` })
+      visit(folder.id, depth + 1, new Set([...path, folder.id]))
+    }
+  }
+  visit(null, 0, new Set())
+  return labels
+}
+
+export function canMoveFolder(args: {
+  folderId: string
+  targetParentId: string | null | undefined
+  descendantIds: readonly string[]
+}) {
+  if (!args.targetParentId) return true
+  if (args.targetParentId === args.folderId) return false
+  return !args.descendantIds.includes(args.targetParentId)
+}
+
 export function assertScopeAccess(worksiteId: string | null, scope: WorksiteScope) {
   if (scope.mode === "all") return
   if (!worksiteId) {

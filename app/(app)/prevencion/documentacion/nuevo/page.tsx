@@ -12,13 +12,18 @@ import { NewDocumentForm } from "./new-document-form"
 
 export const metadata: Metadata = { title: "Nuevo documento SST" }
 
-export default async function NewDocumentPage() {
+export default async function NewDocumentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ folder?: string }>
+}) {
   let session
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:docs:manage")) redirect("/forbidden")
 
   const scope = resolveWorksiteScope(session)
+  const params = await searchParams
   const worksiteIds: string[] | "all" = scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const [categories, types, worksites, userRows] = await Promise.all([
     listDocumentCategories(true),
@@ -39,6 +44,7 @@ export default async function NewDocumentPage() {
         description="Crea la cabecera del documento. Luego podrás subir el archivo (PDF/JPG/PNG/XML) en la página de detalle."
       />
       <NewDocumentForm
+        initialFolderId={params.folder ?? null}
         categories={categories.map((c) => ({ slug: c.slug, name: c.name, description: c.description }))}
         types={types.map((t) => ({
           id: t.id,

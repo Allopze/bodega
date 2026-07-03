@@ -127,6 +127,13 @@
       "when": 1783030502953,
       "tag": "0017_nervous_malice",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783037695178,
+      "tag": "0018_public_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

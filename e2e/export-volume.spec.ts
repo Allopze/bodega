@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 import ExcelJS from "exceljs"
 import { clearRateLimits } from "./helpers"
 
+
 test("exportes: genera XLSX parseable con volumen operativo alto", async ({ page }) => {
   await login(page)
 
@@ -38,3 +39,4 @@ async function login(page: Page) {
   await page.getByRole("button", { name: "Ingresar" }).click()
   await expect(page).toHaveURL(/\/dashboard/)
 }
+
