@@ -14,6 +14,7 @@ const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as 
 const mockGetEvaluation = vi.hoisted(() => vi.fn())
 const mockSaveResponses = vi.hoisted(() => vi.fn())
 const mockCloseEvaluation = vi.hoisted(() => vi.fn())
+const mockArchiveEvaluationPdf = vi.hoisted(() => vi.fn())
 const mockMarkFollowup = vi.hoisted(() => vi.fn())
 const mockDeleteEvaluation = vi.hoisted(() => vi.fn())
 const mockMarkWeekCompleted = vi.hoisted(() => vi.fn())
@@ -53,6 +54,7 @@ vi.mock("@/lib/services/sst", () => ({
   getWeeklyEvaluations: vi.fn(() => []),
   saveActionPlanItem: vi.fn(() => ({ id: "ap-1" })),
   deleteActionPlanItem: vi.fn(),
+  archiveEvaluationPdf: mockArchiveEvaluationPdf,
 }))
 vi.mock("@/lib/sst/definitions/index", () => ({
   getDefinition: vi.fn(() => ({ sections: [] })),
@@ -206,6 +208,13 @@ describe("closeEvaluationAction", () => {
   })
 
   it("closes evaluation successfully", async () => {
+    const res = await closeEvaluationAction("eval-1", { evaluationId: "eval-1", restricciones: "ninguna", observacionesGenerales: "" })
+    expect(res.ok).toBe(true)
+    expect(res.message).toContain("Evaluación cerrada exitosamente")
+  })
+
+  it("still reports a successful close when archiveEvaluationPdf fails", async () => {
+    mockArchiveEvaluationPdf.mockRejectedValueOnce(new Error("pdf archive boom"))
     const res = await closeEvaluationAction("eval-1", { evaluationId: "eval-1", restricciones: "ninguna", observacionesGenerales: "" })
     expect(res.ok).toBe(true)
     expect(res.message).toContain("Evaluación cerrada exitosamente")

@@ -34,6 +34,7 @@ vi.mock("@/lib/services/sst", () => ({
   saveResponses: mockSaveResponses,
   closeEvaluation: mockCloseEvaluation,
   getDashboardStats: vi.fn().mockResolvedValue({}),
+  archiveEvaluationPdf: vi.fn(),
 }))
 
 vi.mock("@/lib/services/ppa", () => ({

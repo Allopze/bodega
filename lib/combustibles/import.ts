@@ -4,7 +4,7 @@
  * Basado en el Excel "CONTROL FACTURAS COMBUSTIBLES" de TCT Copec.
  */
 
-import * as XLSX from "xlsx"
+import ExcelJS from "exceljs"
 
 export interface ParsedFuelLoad {
   rowIndex: number
@@ -42,18 +42,22 @@ export interface ImportResult {
 /**
  * Parsea un archivo Excel y extrae las cargas de combustible.
  */
-export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
-  const wb = XLSX.read(fileBuffer, { type: "array", cellDates: true })
+export async function parseFuelExcel(fileBuffer: ArrayBuffer): Promise<ImportResult> {
+  const workbook = new ExcelJS.Workbook()
+  try {
+    // exceljs's typings declare `Buffer` but its runtime (JSZip) accepts an
+    // ArrayBuffer directly, which is required here to stay browser-safe.
+    await workbook.xlsx.load(fileBuffer as never)
+  } catch {
+    return { loads: [], errors: [{ rowIndex: 0, field: "file", message: "Archivo Excel inválido o corrupto" }], duplicates: [] }
+  }
 
   // Buscar hoja "BASE DE DATOS" o la primera con datos
-  const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes("BASE"))
-    ?? wb.SheetNames[0]
-  if (!sheetName) return { loads: [], errors: [{ rowIndex: 0, field: "file", message: "No se encontró hoja con datos" }], duplicates: [] }
+  const sheet = workbook.worksheets.find(ws => ws.name.toUpperCase().includes("BASE"))
+    ?? workbook.worksheets[0]
+  if (!sheet) return { loads: [], errors: [{ rowIndex: 0, field: "file", message: "No se encontró hoja con datos" }], duplicates: [] }
 
-  const ws = wb.Sheets[sheetName]
-  if (!ws) return { loads: [], errors: [{ rowIndex: 0, field: "file", message: "Hoja vacía" }], duplicates: [] }
-
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: null })
+  const rows = sheetToRecords(sheet)
 
   const loads: ParsedFuelLoad[] = []
   const errors: ImportError[] = []
@@ -164,6 +168,44 @@ export function parseFuelExcel(fileBuffer: ArrayBuffer): ImportResult {
   }
 
   return { loads, errors, duplicates }
+}
+
+/** Convierte la primera fila de la hoja en encabezados y el resto en objetos
+ *  `{ encabezado: valor }`, replicando el comportamiento de `defval: null`. */
+function sheetToRecords(sheet: ExcelJS.Worksheet): Record<string, unknown>[] {
+  const headers: (string | null)[] = []
+  sheet.getRow(1).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    const value = normalizeCellValue(cell.value)
+    headers[colNumber] = value === null ? null : String(value)
+  })
+
+  const records: Record<string, unknown>[] = []
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return
+    const record: Record<string, unknown> = {}
+    for (let col = 1; col < headers.length; col++) {
+      const header = headers[col]
+      if (!header) continue
+      record[header] = normalizeCellValue(row.getCell(col).value)
+    }
+    records.push(record)
+  })
+  return records
+}
+
+/** Reduce un valor de celda de ExcelJS (texto enriquecido, fórmula, hipervínculo,
+ *  fecha o primitivo) al valor plano que el resto del parser espera. */
+function normalizeCellValue(value: ExcelJS.CellValue): unknown {
+  if (value === null || value === undefined) return null
+  if (value instanceof Date) return value
+  if (typeof value === "object") {
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((part) => part.text).join("")
+    }
+    if ("result" in value) return value.result ?? null
+    if ("text" in value) return value.text
+  }
+  return value
 }
 
 /** Normaliza un encabezado de columna: colapsa espacios/saltos de línea,

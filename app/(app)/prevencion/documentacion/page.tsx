@@ -60,6 +60,7 @@ export default async function DocumentacionPage({
   const worksiteIds = Array.from(new Set([
     ...searchResult.rows.map((r) => r.worksiteId).filter(Boolean) as string[],
     ...expiring.map((e) => e.worksiteId).filter(Boolean) as string[],
+    ...folders.map((f) => f.worksiteId).filter(Boolean) as string[],
   ]))
   const userIds = Array.from(new Set([
     ...searchResult.rows.map((r) => r.responsibleUserId).filter(Boolean) as string[],
@@ -88,6 +89,11 @@ export default async function DocumentacionPage({
     daysUntilExpiry: d.expiresAt
       ? (Math.ceil((new Date(`${d.expiresAt}T00:00:00Z`).getTime() - nowMs) / (1000 * 60 * 60 * 24)))
       : null,
+  }))
+
+  const foldersWithRefs = folders.map((f) => ({
+    ...f,
+    worksiteName: f.worksiteId ? worksiteMap[f.worksiteId] ?? null : null,
   }))
 
   const expiringWithRefs = expiring.map((e) => ({
@@ -122,7 +128,7 @@ export default async function DocumentacionPage({
         counters={counters}
         expiring={expiringWithRefs}
         documents={docsWithRefs}
-        folders={folders}
+        folders={foldersWithRefs}
         folderOptions={folderOptions}
         breadcrumbs={breadcrumbs}
         currentFolderId={activeFolderId}

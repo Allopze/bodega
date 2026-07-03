@@ -10,16 +10,21 @@ import { nanoid } from "@/lib/id"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import { resolveSstDocumentsDir, createSstDocumentPath } from "@/lib/storage/config"
 import { type WorksiteScope } from "@/lib/auth/scope"
+import { buildFolderOptionLabels } from "./labels"
+
+export type {
+  SstDocumentStatus,
+  SstDocumentConfidentiality,
+  DashboardCounters,
+  ExpiringDocument,
+  DocumentExportRow,
+  FolderBreadcrumbItem,
+} from "./types"
+import type { SstDocumentStatus, SstDocumentConfidentiality, FolderBreadcrumbItem } from "./types"
+export { buildFolderOptionLabels }
 
 export const MAX_FILE_SIZE = 25 * 1024 * 1024
 export const EXPIRY_ALERT_THRESHOLDS = [30, 15, 7] as const
-
-export type SstDocumentStatus =
-  | "borrador" | "en_revision" | "observado" | "aprobado"
-  | "vigente" | "vencido" | "reemplazado" | "archivado"
-
-export type SstDocumentConfidentiality =
-  | "publico_interno" | "restringido" | "sensible"
 
 export interface UploadInput {
   documentId: string
@@ -45,51 +50,6 @@ export interface CreateDocumentInput {
   ctx: RequestContext
   scope: WorksiteScope
   permissions: readonly string[]
-}
-
-export interface DashboardCounters {
-  total: number
-  byStatus: Record<SstDocumentStatus, number>
-  expiringSoon: { within7: number; within15: number; within30: number }
-  pendingReview: number
-  observed: number
-  ackPending: number
-}
-
-export interface ExpiringDocument {
-  id: string
-  title: string
-  internalCode: string | null
-  status: SstDocumentStatus
-  expiresAt: string | null
-  daysRemaining: number | null
-  worksiteId: string | null
-  categorySlug: string
-  responsibleUserId: string | null
-}
-
-export interface DocumentExportRow {
-  categoria: string
-  tipo: string
-  codigo: string
-  titulo: string
-  estado: string
-  confidencialidad: string
-  faena: string | null
-  responsable: string | null
-  subidoPor: string | null
-  aprobadoPor: string | null
-  fechaEmision: string | null
-  fechaVencimiento: string | null
-  diasParaVencer: number | null
-  versionVigente: number | null
-  requiereAcuse: string
-  actualizado: string
-}
-
-export interface FolderBreadcrumbItem {
-  id: string
-  name: string
 }
 
 export function normalizeFolderName(name: string): string {
@@ -122,27 +82,6 @@ export function buildFolderBreadcrumbs(path: FolderBreadcrumbItem[]) {
       href: index === path.length - 1 ? undefined : buildFolderHref(folder.id),
     })),
   ]
-}
-
-export function buildFolderOptionLabels(folders: Array<{ id: string; name: string; parentId: string | null }>) {
-  const byParent = new Map<string | null, Array<{ id: string; name: string; parentId: string | null }>>()
-  for (const folder of folders) {
-    const siblings = byParent.get(folder.parentId) ?? []
-    siblings.push(folder)
-    byParent.set(folder.parentId, siblings)
-  }
-  for (const siblings of byParent.values()) siblings.sort((a, b) => a.name.localeCompare(b.name, "es"))
-
-  const labels: Array<{ id: string; label: string }> = []
-  const visit = (parentId: string | null, depth: number, path: Set<string>) => {
-    for (const folder of byParent.get(parentId) ?? []) {
-      if (path.has(folder.id)) continue
-      labels.push({ id: folder.id, label: `${"—".repeat(depth)}${depth ? " " : ""}${folder.name}` })
-      visit(folder.id, depth + 1, new Set([...path, folder.id]))
-    }
-  }
-  visit(null, 0, new Set())
-  return labels
 }
 
 export function canMoveFolder(args: {

@@ -1,13 +1,20 @@
 import { describe, it, expect } from "vitest"
 import { parseFuelExcel } from "../import"
-import * as XLSX from "xlsx"
+import ExcelJS from "exceljs"
 
-function createTestExcel(rows: Record<string, unknown>[]): ArrayBuffer {
-  const ws = XLSX.utils.json_to_sheet(rows)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, "BASE DE DATOS")
-  const wbOut = XLSX.write(wb, { type: "array", bookType: "xlsx" })
-  return new Uint8Array(wbOut).buffer as ArrayBuffer
+async function createTestExcel(rows: Record<string, unknown>[]): Promise<ArrayBuffer> {
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet("BASE DE DATOS")
+  const headers: string[] = []
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (!headers.includes(key)) headers.push(key)
+    }
+  }
+  sheet.addRow(headers)
+  for (const row of rows) sheet.addRow(headers.map((h) => row[h] ?? null))
+  const buffer = await workbook.xlsx.writeBuffer()
+  return buffer as unknown as ArrayBuffer
 }
 
 describe("parseFuelExcel", () => {
@@ -29,9 +36,9 @@ describe("parseFuelExcel", () => {
     "TOTAL FACTURA A PAGAR": 8953889.44,
   }
 
-  it("parses a valid row correctly", () => {
-    const buffer = createTestExcel([validRow])
-    const result = parseFuelExcel(buffer)
+  it("parses a valid row correctly", async () => {
+    const buffer = await createTestExcel([validRow])
+    const result = await parseFuelExcel(buffer)
     expect(result.loads).toHaveLength(1)
     expect(result.errors).toHaveLength(0)
     expect(result.loads[0]!.serviceType).toBe("TCT")
@@ -40,70 +47,70 @@ describe("parseFuelExcel", () => {
     expect(result.loads[0]!.totalAmount).toBe(8953889.44)
   })
 
-  it("parses optional odometer and hour meter readings", () => {
+  it("parses optional odometer and hour meter readings", async () => {
     const row = { ...validRow, "KILOMETRAJE": 12500, "HOROMETRO": 440.5 }
-    const buffer = createTestExcel([row])
-    const result = parseFuelExcel(buffer)
+    const buffer = await createTestExcel([row])
+    const result = await parseFuelExcel(buffer)
     expect(result.loads).toHaveLength(1)
     expect(result.loads[0]!.odometerReading).toBe(12500)
     expect(result.loads[0]!.hourMeterReading).toBe(440.5)
   })
 
-  it("detects missing required fields", () => {
+  it("detects missing required fields", async () => {
     const invalidRow = { ...validRow, "VEHICULO": "" }
-    const buffer = createTestExcel([invalidRow])
-    const result = parseFuelExcel(buffer)
+    const buffer = await createTestExcel([invalidRow])
+    const result = await parseFuelExcel(buffer)
     expect(result.loads).toHaveLength(0)
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0]!.field).toBe("VEHICULO")
   })
 
-  it("detects invalid service type", () => {
+  it("detects invalid service type", async () => {
     const invalidRow = { ...validRow, "SERVICIO": "INVALID" }
-    const buffer = createTestExcel([invalidRow])
-    const result = parseFuelExcel(buffer)
+    const buffer = await createTestExcel([invalidRow])
+    const result = await parseFuelExcel(buffer)
     expect(result.loads).toHaveLength(0)
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0]!.field).toBe("SERVICIO")
   })
 
-  it("detects duplicate receipt numbers", () => {
-    const buffer = createTestExcel([validRow, { ...validRow }])
-    const result = parseFuelExcel(buffer)
+  it("detects duplicate receipt numbers", async () => {
+    const buffer = await createTestExcel([validRow, { ...validRow }])
+    const result = await parseFuelExcel(buffer)
     expect(result.loads).toHaveLength(2)
     expect(result.duplicates).toHaveLength(1)
   })
 
-  it("skips empty rows", () => {
-    const buffer = createTestExcel([{}, {}, validRow])
-    const result = parseFuelExcel(buffer)
+  it("skips empty rows", async () => {
+    const buffer = await createTestExcel([{}, {}, validRow])
+    const result = await parseFuelExcel(buffer)
     expect(result.loads).toHaveLength(1)
     expect(result.errors).toHaveLength(0)
   })
 
-  it("handles string dates", () => {
+  it("handles string dates", async () => {
     const row = { ...validRow, "MES-AÑO": "2026-03-15" }
-    const buffer = createTestExcel([row])
-    const result = parseFuelExcel(buffer)
+    const buffer = await createTestExcel([row])
+    const result = await parseFuelExcel(buffer)
     expect(result.loads).toHaveLength(1)
     expect(result.loads[0]!.month).toBe("2026-03")
   })
 
-  it("does not shift dates on servers with UTC offset (H11)", () => {
+  it("does not shift dates on servers with UTC offset (H11)", async () => {
     // A Date at midnight local time: toISOString would give previous day in UTC-X zones.
     // We create the date directly as a JS Date object (as XLSX does with cellDates:true)
     // and verify the parsed loadDate matches the original calendar date.
     const dateWithMidnight = new Date(2026, 0, 15, 0, 0, 0, 0) // Jan 15 at local midnight
-    const buffer = createTestExcel([{ ...validRow, "MES-AÑO": dateWithMidnight }])
-    const result = parseFuelExcel(buffer)
+    const buffer = await createTestExcel([{ ...validRow, "MES-AÑO": dateWithMidnight }])
+    const result = await parseFuelExcel(buffer)
     expect(result.loads).toHaveLength(1)
     // Should always be 2026-01-15 regardless of server timezone offset
     expect(result.loads[0]!.loadDate).toBe("2026-01-15")
     expect(result.loads[0]!.month).toBe("2026-01")
   })
 
-  it("returns empty for empty file", () => {
-    const result = parseFuelExcel(new ArrayBuffer(0))
+  it("returns empty for empty file", async () => {
+    const result = await parseFuelExcel(new ArrayBuffer(0))
     expect(result.loads).toHaveLength(0)
   })
 })

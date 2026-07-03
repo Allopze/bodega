@@ -212,6 +212,22 @@ export async function listDocumentFolders(args: {
 }
 
 /**
+ * Todas las carpetas archivadas dentro del alcance, sin importar su carpeta
+ * padre (a diferencia de `listDocumentFolders`, que filtra por `parentId`).
+ * Alimenta la papelera, donde el usuario ve los elementos archivados en una
+ * sola lista plana para restaurarlos.
+ */
+export async function listArchivedDocumentFolders(scope: WorksiteScope) {
+  const conditions: (SQL | undefined)[] = [isNotNull(sstDocumentFolders.archivedAt)]
+  if (scope.mode === "some") {
+    conditions.push(or(inArray(sstDocumentFolders.worksiteId, scope.ids), isNull(sstDocumentFolders.worksiteId)))
+  } else if (scope.mode === "none") {
+    conditions.push(isNull(sstDocumentFolders.worksiteId))
+  }
+  return db.select().from(sstDocumentFolders).where(and(...conditions)).orderBy(asc(sstDocumentFolders.name))
+}
+
+/**
  * Get-or-create idempotente para carpetas raíz creadas por procesos de
  * sistema (p.ej. copia automática de evaluaciones SST). El slug incluye el
  * worksiteId porque `sst_document_folders_parent_slug_unique` es (parentId,

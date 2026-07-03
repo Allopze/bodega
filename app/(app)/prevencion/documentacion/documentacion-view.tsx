@@ -4,11 +4,9 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
-  ArrowLeft,
   DownloadSimple,
   DotsThreeVertical,
   FileArrowUp,
-  FilePlus,
   FileText,
   FolderPlus,
   FolderOpen,
@@ -16,7 +14,6 @@ import {
 } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -45,8 +42,8 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tooltip } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import type { DashboardCounters, ExpiringDocument, SstDocumentStatus } from "@/lib/services/prevention-documents-library"
-import { buildFolderOptionLabels } from "@/lib/services/prevention-documents-library"
+import type { DashboardCounters, ExpiringDocument, SstDocumentStatus } from "@/lib/services/prevention-documents/types"
+import { buildFolderOptionLabels } from "@/lib/services/prevention-documents/labels"
 import {
   archiveSstDocumentAction,
   createAndUploadSstDocumentAction,
@@ -96,6 +93,7 @@ interface FolderRow {
   parentId: string | null
   name: string
   worksiteId: string | null
+  worksiteName?: string | null
   archivedAt?: string | null
   updatedAt: string
 }
@@ -151,6 +149,13 @@ const STATUS_TONES: Record<string, "default" | "info" | "success" | "warning" | 
   archivado: "outline",
 }
 
+type MenuState =
+  | { kind: "folder"; folder: FolderRow; x: number; y: number }
+  | { kind: "document"; doc: DocumentRow; x: number; y: number }
+  | null
+
+const DRAG_MIME = "application/x-sst-doc-item"
+
 export function DocumentacionView(props: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -163,7 +168,6 @@ export function DocumentacionView(props: Props) {
     currentFolderId = null,
     categories,
     searchParams: incoming,
-    total,
     canManage,
     canArchive,
   } = props
@@ -174,8 +178,8 @@ export function DocumentacionView(props: Props) {
   const [folderName, setFolderName] = React.useState("")
   const [moveDocumentId, setMoveDocumentId] = React.useState<string | null>(null)
   const [moveFolderId, setMoveFolderId] = React.useState<string>("")
-  const [contextFolder, setContextFolder] = React.useState<FolderRow | null>(null)
-  const [contextMenuPosition, setContextMenuPosition] = React.useState({ x: 0, y: 0 })
+  const [menu, setMenu] = React.useState<MenuState>(null)
+  const [dialogFolder, setDialogFolder] = React.useState<FolderRow | null>(null)
   const [folderAction, setFolderAction] = React.useState<"rename" | "move" | null>(null)
   const [folderActionName, setFolderActionName] = React.useState("")
   const [folderActionParentId, setFolderActionParentId] = React.useState("")
@@ -183,9 +187,8 @@ export function DocumentacionView(props: Props) {
   const [selectedDocuments, setSelectedDocuments] = React.useState<Set<string>>(() => new Set())
   const [bulkMoveOpen, setBulkMoveOpen] = React.useState(false)
   const [droppedFiles, setDroppedFiles] = React.useState<File[]>([])
+  const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null)
 
-  const activeCategory = incoming.category && incoming.category !== "all" ? incoming.category : null
-  const activeCategoryRow = activeCategory ? categories.find((c) => c.slug === activeCategory) : null
   const selectedCount = selectedFolders.size + selectedDocuments.size
   const newDocumentHref = `/prevencion/documentacion/nuevo${currentFolderId ? `?folder=${encodeURIComponent(currentFolderId)}` : ""}`
   const folderOptionLabels = React.useMemo(() => buildFolderOptionLabels(folderOptions), [folderOptions])
@@ -194,11 +197,11 @@ export function DocumentacionView(props: Props) {
     : "#"
 
   React.useEffect(() => {
-    const closeContextMenu = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setContextFolder(null)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(null)
     }
-    document.addEventListener("keydown", closeContextMenu)
-    return () => document.removeEventListener("keydown", closeContextMenu)
+    document.addEventListener("keydown", closeOnEscape)
+    return () => document.removeEventListener("keydown", closeOnEscape)
   }, [])
 
   const applyFilters = React.useCallback((next: { q?: string; status?: string }) => {
@@ -235,7 +238,8 @@ export function DocumentacionView(props: Props) {
   }, [moveDocumentId, moveFolderId, router])
 
   const openFolderAction = React.useCallback((folder: FolderRow, action: "rename" | "move") => {
-    setContextFolder(folder)
+    setMenu(null)
+    setDialogFolder(folder)
     setFolderAction(action)
     setFolderActionName(folder.name)
     setFolderActionParentId(folder.parentId ?? "")
@@ -243,37 +247,37 @@ export function DocumentacionView(props: Props) {
 
   const submitFolderRename = React.useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!contextFolder) return
+    if (!dialogFolder) return
     const name = folderActionName.trim()
     if (!name) return
     startTransition(async () => {
-      const result = await renameSstDocumentFolderAction({ id: contextFolder.id, name })
+      const result = await renameSstDocumentFolderAction({ id: dialogFolder.id, name })
       if (result.ok) {
         setFolderAction(null)
-        setContextFolder(null)
+        setDialogFolder(null)
         router.refresh()
       }
     })
-  }, [contextFolder, folderActionName, router])
+  }, [dialogFolder, folderActionName, router])
 
   const submitFolderMove = React.useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!contextFolder) return
+    if (!dialogFolder) return
     startTransition(async () => {
-      const result = await moveSstDocumentFolderAction({ id: contextFolder.id, parentId: folderActionParentId || null })
+      const result = await moveSstDocumentFolderAction({ id: dialogFolder.id, parentId: folderActionParentId || null })
       if (result.ok) {
         setFolderAction(null)
-        setContextFolder(null)
+        setDialogFolder(null)
         router.refresh()
       }
     })
-  }, [contextFolder, folderActionParentId, router])
+  }, [dialogFolder, folderActionParentId, router])
 
   const archiveFolder = React.useCallback((folder: FolderRow) => {
     startTransition(async () => {
       const result = await archiveSstDocumentFolderAction({ id: folder.id })
       if (result.ok) {
-        setContextFolder(null)
+        setMenu(null)
         router.refresh()
       }
     })
@@ -343,11 +347,48 @@ export function DocumentacionView(props: Props) {
     })
   }, [moveFolderId, router, selectedDocuments])
 
-  const openContextMenu = React.useCallback((event: React.MouseEvent, folder: FolderRow) => {
+  const openFolderMenu = React.useCallback((event: React.MouseEvent, folder: FolderRow) => {
     event.preventDefault()
-    setContextFolder(folder)
-    setContextMenuPosition({ x: event.clientX, y: event.clientY })
+    setMenu({ kind: "folder", folder, x: event.clientX, y: event.clientY })
   }, [])
+
+  const openDocumentMenu = React.useCallback((event: React.MouseEvent, doc: DocumentRow) => {
+    event.preventDefault()
+    setMenu({ kind: "document", doc, x: event.clientX, y: event.clientY })
+  }, [])
+
+  const archiveDocument = React.useCallback((documentId: string) => {
+    startTransition(async () => {
+      const result = await archiveSstDocumentAction({ documentId })
+      if (result.ok) {
+        setMenu(null)
+        router.refresh()
+      }
+    })
+  }, [router])
+
+  // Drag-to-move estilo Google Drive: soltar un documento o carpeta sobre otra
+  // carpeta lo mueve dentro. El payload viaja en un MIME propio para no chocar
+  // con la subida de archivos del sistema operativo (que usa dataTransfer.files).
+  const handleDropOnFolder = React.useCallback((event: React.DragEvent, folder: FolderRow) => {
+    const raw = event.dataTransfer.getData(DRAG_MIME)
+    if (!raw) return
+    event.preventDefault()
+    setDragOverFolderId(null)
+    let payload: { kind: "folder" | "document"; id: string }
+    try { payload = JSON.parse(raw) as typeof payload } catch { return }
+    if (payload.kind === "document") {
+      startTransition(async () => {
+        const result = await moveSstDocumentAction({ id: payload.id, folderId: folder.id })
+        if (result.ok) router.refresh()
+      })
+    } else if (payload.kind === "folder" && payload.id !== folder.id) {
+      startTransition(async () => {
+        const result = await moveSstDocumentFolderAction({ id: payload.id, parentId: folder.id })
+        if (result.ok) router.refresh()
+      })
+    }
+  }, [router])
 
   const folderHref = React.useCallback((folderId: string | null) => {
     if (!folderId) return "/prevencion/documentacion"
@@ -409,8 +450,7 @@ export function DocumentacionView(props: Props) {
     </div>
   )
 
-  if (!activeCategory) {
-    return (
+  return (
       <div className="space-y-5">
         <InlineBreadcrumbs items={breadcrumbs} />
         {Toolbar}
@@ -533,7 +573,24 @@ export function DocumentacionView(props: Props) {
                 </TableHeader>
                 <TableBody>
                   {folders.map((folder) => (
-                    <TableRow key={folder.id} onContextMenu={(event) => openContextMenu(event, folder)}>
+                    <TableRow
+                      key={folder.id}
+                      draggable={canManage}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData(DRAG_MIME, JSON.stringify({ kind: "folder", id: folder.id }))
+                        event.dataTransfer.effectAllowed = "move"
+                      }}
+                      onDragOver={(event) => {
+                        if (canManage && event.dataTransfer.types.includes(DRAG_MIME)) {
+                          event.preventDefault()
+                          setDragOverFolderId(folder.id)
+                        }
+                      }}
+                      onDragLeave={() => setDragOverFolderId((current) => (current === folder.id ? null : current))}
+                      onDrop={(event) => handleDropOnFolder(event, folder)}
+                      onContextMenu={(event) => openFolderMenu(event, folder)}
+                      className={cn(dragOverFolderId === folder.id && "bg-(--color-surface-2) outline outline-2 -outline-offset-2 outline-(--color-primary)")}
+                    >
                       <TableCell>
                         <input
                           type="checkbox"
@@ -546,7 +603,8 @@ export function DocumentacionView(props: Props) {
                       <TableCell>
                         <Link
                           href={folderHref(folder.id)}
-                          onContextMenu={(event) => openContextMenu(event, folder)}
+                          draggable={false}
+                          onContextMenu={(event) => openFolderMenu(event, folder)}
                           className="inline-flex items-center gap-2 font-medium text-(--color-text) hover:underline"
                         >
                           <FolderOpen size={18} weight="duotone" className="text-(--color-primary)" />
@@ -554,7 +612,7 @@ export function DocumentacionView(props: Props) {
                         </Link>
                       </TableCell>
                       <TableCell><Badge variant="outline">Carpeta</Badge></TableCell>
-                      <TableCell className="text-xs">{folder.worksiteId ?? "Global"}</TableCell>
+                      <TableCell className="text-xs">{folder.worksiteName ?? "Global"}</TableCell>
                       <TableCell className="text-xs">—</TableCell>
                       <TableCell className="text-xs">—</TableCell>
                       <TableCell className="text-right">
@@ -594,6 +652,7 @@ export function DocumentacionView(props: Props) {
                       canManage={canManage}
                       selected={selectedDocuments.has(d.id)}
                       onToggleSelected={() => toggleDocumentSelection(d.id)}
+                      onContextMenu={(event) => openDocumentMenu(event, d)}
                       onMove={() => {
                         setMoveDocumentId(d.id)
                         setMoveFolderId(currentFolderId ?? "")
@@ -652,33 +711,50 @@ export function DocumentacionView(props: Props) {
           </DialogContent>
         </Dialog>
 
-        {contextFolder && (
-          <div
-            role="menu"
-            aria-label="Acciones contextuales"
-            className="fixed z-50 min-w-56 rounded-md border border-(--color-border) bg-(--color-surface) p-1.5 shadow-(--shadow-md)"
-            style={{ left: contextMenuPosition.x, top: contextMenuPosition.y }}
-          >
-            <Link role="menuitem" href={folderHref(contextFolder.id)} className="block rounded px-2.5 py-2 text-sm hover:bg-(--color-surface-2)">Abrir</Link>
-            {canManage && (
-              <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm hover:bg-(--color-surface-2)" onClick={() => openFolderAction(contextFolder, "rename")}>
-                Renombrar carpeta
-              </button>
-            )}
-            {canManage && (
-              <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm hover:bg-(--color-surface-2)" onClick={() => openFolderAction(contextFolder, "move")}>
-                Mover carpeta
-              </button>
-            )}
-            {canArchive && (
-              <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm text-(--color-danger) hover:bg-(--color-surface-2)" onClick={() => archiveFolder(contextFolder)}>
-                Archivar carpeta
-              </button>
-            )}
-            <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm hover:bg-(--color-surface-2)" onClick={() => setContextFolder(null)}>
-              Cerrar menú
-            </button>
-          </div>
+        {menu && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setMenu(null)}
+              onContextMenu={(event) => { event.preventDefault(); setMenu(null) }}
+            />
+            <div
+              role="menu"
+              aria-label="Acciones"
+              className="fixed z-50 min-w-56 rounded-md border border-(--color-border) bg-(--color-surface) p-1.5 shadow-(--shadow-md)"
+              style={{
+                left: Math.min(menu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 240),
+                top: Math.min(menu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 220),
+              }}
+            >
+              {menu.kind === "folder" ? (
+                <>
+                  <Link role="menuitem" href={folderHref(menu.folder.id)} className="block rounded px-2.5 py-2 text-sm hover:bg-(--color-surface-2)" onClick={() => setMenu(null)}>Abrir</Link>
+                  {canManage && (
+                    <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm hover:bg-(--color-surface-2)" onClick={() => openFolderAction(menu.folder, "rename")}>Renombrar</button>
+                  )}
+                  {canManage && (
+                    <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm hover:bg-(--color-surface-2)" onClick={() => openFolderAction(menu.folder, "move")}>Mover</button>
+                  )}
+                  {canArchive && (
+                    <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm text-(--color-danger) hover:bg-(--color-surface-2)" onClick={() => archiveFolder(menu.folder)}>Archivar</button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Link role="menuitem" href={`/prevencion/documentacion/${menu.doc.id}`} className="block rounded px-2.5 py-2 text-sm hover:bg-(--color-surface-2)" onClick={() => setMenu(null)}>Ver detalle</Link>
+                  <Link role="menuitem" href={`/api/prevencion/documentacion/${menu.doc.id}`} target="_blank" className="block rounded px-2.5 py-2 text-sm hover:bg-(--color-surface-2)" onClick={() => setMenu(null)}>Vista previa</Link>
+                  <Link role="menuitem" href={`/api/prevencion/documentacion/${menu.doc.id}?download=1`} className="block rounded px-2.5 py-2 text-sm hover:bg-(--color-surface-2)" onClick={() => setMenu(null)}>Descargar</Link>
+                  {canManage && (
+                    <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm hover:bg-(--color-surface-2)" onClick={() => { const id = menu.doc.id; setMenu(null); setMoveDocumentId(id); setMoveFolderId(currentFolderId ?? "") }}>Mover</button>
+                  )}
+                  {canArchive && (
+                    <button type="button" role="menuitem" className="block w-full rounded px-2.5 py-2 text-left text-sm text-(--color-danger) hover:bg-(--color-surface-2)" onClick={() => archiveDocument(menu.doc.id)}>Archivar</button>
+                  )}
+                </>
+              )}
+            </div>
+          </>
         )}
 
         <Dialog open={folderAction === "rename"} onOpenChange={(open) => { if (!open) setFolderAction(null) }}>
@@ -713,7 +789,7 @@ export function DocumentacionView(props: Props) {
                 <SelectContent>
                   <SelectItem value="root">Documentación</SelectItem>
                   {folderOptionLabels
-                    .filter((folder) => folder.id !== contextFolder?.id)
+                    .filter((folder) => folder.id !== dialogFolder?.id)
                     .map((folder) => (
                       <SelectItem key={folder.id} value={folder.id}>{folder.label}</SelectItem>
                     ))}
@@ -727,133 +803,6 @@ export function DocumentacionView(props: Props) {
         </Dialog>
       </div>
     )
-  }
-
-  // ── Document list (category selected) ────────────────────────────────────
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/prevencion/documentacion"
-          data-pressable
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-subtle) transition-[background-color] duration-(--duration-fast) hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
-        >
-          <ArrowLeft size={18} />
-        </Link>
-        <FolderOpen size={20} weight="duotone" className="text-(--color-primary)" />
-        <h2 className="text-lg font-semibold text-(--color-text)">{activeCategoryRow?.name ?? activeCategory}</h2>
-        {canManage && (
-          <div className="ml-auto">
-            <Button asChild size="sm">
-              <Link href="/prevencion/documentacion/nuevo">
-                <FilePlus size={14} className="mr-1" />
-                Nuevo documento
-              </Link>
-            </Button>
-          </div>
-        )}
-      </div>
-
-      <form
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(e) => { e.preventDefault(); applyFilters({ q, status }) }}
-      >
-        <div className="relative min-w-[200px] flex-1">
-          <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-(--color-text-subtle)" size={16} />
-          <Input
-            className="pl-9"
-            placeholder="Título, código..."
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Estado" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            {Object.entries(STATUS_LABELS).map(([k, label]) => (
-              <SelectItem key={k} value={k}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button type="submit" variant="secondary">Filtrar</Button>
-        {(q || (status && status !== "all")) && (
-          <Button type="button" variant="ghost" onClick={() => { setQ(""); setStatus(""); applyFilters({ q: "", status: "" }) }}>
-            Limpiar
-          </Button>
-        )}
-      </form>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-(--color-text-subtle)">
-            {total} documento{total === 1 ? "" : "s"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {documents.length === 0 ? (
-            <EmptyState
-              title="No hay documentos"
-              description="Esta carpeta está vacía o no coincide con los filtros."
-            />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Faena</TableHead>
-                  <TableHead>Responsable</TableHead>
-                  <TableHead>Vence</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {documents.map((d) => {
-                  const tone = STATUS_TONES[d.status] ?? "default"
-                  const days = d.daysUntilExpiry
-                  return (
-                    <TableRow key={d.id}>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <Link href={`/prevencion/documentacion/${d.id}`} className="font-medium text-(--color-text) hover:underline">
-                            {d.title}
-                          </Link>
-                          {d.internalCode && (
-                            <span className="text-xs text-(--color-text-subtle)">{d.internalCode}</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell><Badge variant={tone}>{STATUS_LABELS[d.status as SstDocumentStatus] ?? d.status}</Badge></TableCell>
-                      <TableCell className="text-xs">{d.worksiteName ?? "—"}</TableCell>
-                      <TableCell className="text-xs">{d.responsibleName ?? "—"}</TableCell>
-                      <TableCell className="text-xs">
-                        {d.expiresAt ? (
-                          <Tooltip content={`${d.expiresAt}${days !== null ? ` · ${days} día(s)` : ""}`}>
-                            <span className={cn(
-                              days !== null && days < 0 && "font-semibold text-(--color-danger)",
-                              days !== null && days >= 0 && days <= 30 && "text-(--color-warning)",
-                            )}>
-                              {d.expiresAt}
-                            </span>
-                          </Tooltip>
-                        ) : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Button asChild size="sm" variant="secondary">
-                          <Link href={`/prevencion/documentacion/${d.id}`}>Ver</Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
 }
 
 function InlineBreadcrumbs({ items }: { items: BreadcrumbItem[] }) {
@@ -996,18 +945,27 @@ function DocumentTableRow({
   canManage,
   selected,
   onToggleSelected,
+  onContextMenu,
   onMove,
 }: {
   document: DocumentRow
   canManage: boolean
   selected: boolean
   onToggleSelected: () => void
+  onContextMenu: (event: React.MouseEvent) => void
   onMove: () => void
 }) {
   const tone = STATUS_TONES[d.status] ?? "default"
   const days = d.daysUntilExpiry
   return (
-    <TableRow>
+    <TableRow
+      draggable={canManage}
+      onDragStart={(event) => {
+        event.dataTransfer.setData(DRAG_MIME, JSON.stringify({ kind: "document", id: d.id }))
+        event.dataTransfer.effectAllowed = "move"
+      }}
+      onContextMenu={onContextMenu}
+    >
       <TableCell>
         <input
           type="checkbox"
@@ -1019,7 +977,7 @@ function DocumentTableRow({
       </TableCell>
       <TableCell>
         <div className="flex flex-col">
-          <Link href={`/prevencion/documentacion/${d.id}`} className="inline-flex items-center gap-2 font-medium text-(--color-text) hover:underline">
+          <Link href={`/prevencion/documentacion/${d.id}`} draggable={false} className="inline-flex items-center gap-2 font-medium text-(--color-text) hover:underline">
             <FileText size={18} className="text-(--color-text-subtle)" />
             {d.title}
           </Link>

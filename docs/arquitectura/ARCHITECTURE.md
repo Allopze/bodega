@@ -8,7 +8,7 @@ Documento técnico completo de la arquitectura del sistema.
 
 | Capa | Tecnología | Versión |
 |---|---|---|
-| Framework | Next.js (App Router) | 16.2.7 |
+| Framework | Next.js (App Router) | 16.2.10 |
 | Lenguaje | TypeScript (strict) | 5.x |
 | Base de datos | PostgreSQL | vía `postgres` + `drizzle-orm/postgres-js` |
 | ORM | Drizzle ORM | latest |
@@ -59,17 +59,31 @@ Los permisos, la navegación del sidebar y el seed RBAC se derivan automáticame
 
 | ID | Permisos | Descripción |
 |---|---|---|
-| `admin` | 7 | Usuarios, faenas, productos, configuración, auditoría |
-| `requests` | 4 | Solicitudes de compra |
+| `admin` | 10 | Usuarios, faenas, productos, proveedores, trabajadores, configuración, auditoría |
+| `requests` | 5 | Solicitudes de compra |
 | `approvals` | 1 | Aprobaciones de ítems |
-| `purchasing` | 4 | Órdenes de compra |
+| `purchasing` | 5 | Órdenes de compra |
 | `receiving` | 3 | Recepción de mercadería |
 | `warehouse` | 3 | Stock y movimientos |
-| `deliveries` | 0 | Entregas (usa warehouse:register_movement) |
-| `traceability` | 0 | Vista de trazabilidad (usa requests:view_all) |
+| `deliveries` | 2 | Entregas |
+| `traceability` | 1 | Vista de trazabilidad |
 | `reports` | 1 | Reportes y exportaciones |
+| `analytics` | 2 | Analítica |
+| `repuestos` | 5 | Solicitudes de repuestos |
+| `servicios` | 5 | Solicitudes de servicios |
+| `sst` | 5 | Evaluaciones SST |
+| `ppa` | 3 | Prevención de Peligros en el Área |
+| `feedback` | 4 | Soporte / feedback interno |
+| `combustibles` | 7 | Cargas, cuentas corrientes, import de combustible |
+| `flota` | 1 | Vehículos |
+| `mantenciones` | 3 | Mantención de flota/equipos |
+| `prevention` | 13 | Documentación SST, capacitaciones, incidentes, inspecciones, alcotest, etc. |
 
-**Total: 23 permisos** — derivados automáticamente del registry.
+**Total: 79 permisos** — derivados automáticamente del registry (`modules/registry.ts`).
+Este módulo creció de 9 a 19 entradas a medida que se sumaron repuestos, servicios,
+SST, PPA, feedback, combustibles, flota, mantenciones y prevención; recalcular con
+`npx tsx -e "import { registry } from './modules/registry'; console.log(registry.map((m) => [m.id, m.permissions.length]))"`
+si vuelve a quedar desactualizado.
 
 ---
 
@@ -130,19 +144,25 @@ chome-solicitudes-bodega/
 │   ├── admin/                        # DataTable, Sheet, FormState, SubmitButton
 │   └── __tests__/                    # Tests de componentes
 ├── db/
-│   ├── schema/                       # 11 archivos de esquema Drizzle
+│   ├── schema/                       # 22 archivos de esquema Drizzle + index.ts (creció con
+│   │   │                             # combustibles, PPA, SST, mantención, feedback, etc.)
 │   │   ├── users.ts                  # users, roles, permissions, invitations, user_roles, worksite_users
 │   │   ├── worksites.ts              # worksites, suppliers, workers
 │   │   ├── products.ts               # products, categories, attributes, product_suppliers
 │   │   ├── requests.ts               # purchase_requests, purchase_request_items, request_item_attributes
-│   │   ├── approvals.ts              # approval_decisions
 │   │   ├── purchasing.ts             # purchase_orders, purchase_order_items, quotations
 │   │   ├── receiving.ts              # receipts, receipt_items
-│   │   ├── deliveries.ts             # deliveries, delivery_items
+│   │   ├── repuestos.ts / servicios.ts # solicitudes unificadas de repuestos y servicios
 │   │   ├── stock.ts                  # worksite_stock, inventory_movements
 │   │   ├── audit.ts                  # audit_log, status_history, attachments
-│   │   └── system.ts                 # system_settings, code_sequences, rate_limits, notifications
-│   ├── migrations/                   # 11 archivos de migración SQL versionados
+│   │   ├── sst.ts / ppa.ts           # Evaluaciones SST y Prevención de Peligros en el Área
+│   │   ├── maintenance.ts            # Mantención de flota/equipos
+│   │   ├── fuel-*.ts                 # fuel-invoices, fuel-suppliers, fuel-vehicles (combustibles)
+│   │   ├── feedback.ts               # Soporte / feedback interno
+│   │   ├── cost-centers.ts, email-templates.ts, code-sequences.ts, rate-limits.ts
+│   │   └── system-settings.ts        # system_settings, notifications
+│   ├── migrations/                   # 19 migraciones SQL versionadas (0000..0018; ver
+│   │                                 # db/migrations/README.md sobre el baseline 2026-06-25)
 │   ├── index.ts                      # Singleton Drizzle + postgres-js
 │   └── seed.ts                       # Seed inicial (roles, permisos, catálogo EPP)
 ├── lib/
@@ -151,7 +171,7 @@ chome-solicitudes-bodega/
 │   │   ├── can.ts                    # Guards: can(), canAny(), requirePermission()
 │   │   ├── rbac.ts                   # RBAC snapshot con caché 60s
 │   │   ├── visibility.ts             # Filtrado por faena (scoping)
-│   │   └── types.ts                  # Tipos de permisos (23 permisos)
+│   │   └── types.ts                  # Tipos de permisos (79 permisos)
 │   ├── services/                     # Lógica de negocio
 │   │   ├── system-settings.ts        # Perfil empresa, límite PDF
 │   │   ├── notifications.ts          # Creación de notificaciones in-app
@@ -206,7 +226,7 @@ PostgreSQL vía `postgres` con Drizzle ORM. La conexión se define con `DATABASE
 | `users` | Cuentas de usuario | id, name, email, hashedPassword, avatarColor, isActive, avatarColor |
 | `user_invitations` | Invitaciones por email | id, email, tokenHash, role, worksiteId, expiresAt, acceptedAt |
 | `roles` | Roles del sistema | id, name (administrador, jefa_chome, secretaria, prevencionista, solicitante_faena) |
-| `permissions` | Permisos granulares | id, key (23 permisos), description |
+| `permissions` | Permisos granulares | id, key (79 permisos), description |
 | `role_permissions` | M:N rol ↔ permiso | roleId, permissionId |
 | `user_roles` | M:N usuario ↔ rol | userId, roleId, isPrimary |
 | `worksite_users` | Scoping usuario ↔ faena | userId, worksiteId, isPrimary |
@@ -361,25 +381,40 @@ draft → issued → sent → supplier_confirmed → partially_received → rece
 
 ### RBAC
 
-**5 roles predefinidos:**
+**12 roles predefinidos** (crecieron desde los 5 originales a medida que se
+agregaron los módulos de prevención/mantención/combustibles; fuente de verdad:
+`SYSTEM_ROLES` en `lib/auth/system-rbac.ts`):
 
 | Rol | Visibilidad | Alcance |
 |---|---|---|
 | `administrador` | Todas las faenas | Control total del sistema |
 | `jefa_chome` | Todas las faenas | Aprobar, comprar, recibir, despachar |
 | `secretaria` | Todas las faenas | Aprobar, comprar, recibir, despachar |
-| `prevencionista` | Todas las faenas | Aprobar ítems EPP |
+| `prevencionista` | Todas las faenas | Jefa Dpto. Prevención de riesgos |
 | `solicitante_faena` | Solo faenas asignadas | Crear y enviar solicitudes |
+| `prevencionista_faena` | Solo faenas asignadas | Solicita EPP y servicios desde faena |
+| `jefe_mantencion` | Todas las faenas | Gestión de mantención de flota/equipos |
+| `conductor_lider` | Solo faenas asignadas | Evaluaciones SST de conductores |
+| `admin_contrato` | Solo faenas asignadas | Administrador de contrato / Supervisor de faena |
+| `supervisor_faena` | Solo faenas asignadas | Supervisor de faena |
+| `jefe_terreno` | Solo faenas asignadas | Jefe de terreno |
+| `cphs` | Solo faenas asignadas | Comité Paritario de Higiene y Seguridad |
 
-**23 permisos granulares** organizados por módulo:
+**79 permisos granulares** derivados del registry de módulos (`modules/registry.ts`
+vía `modules/permissions.ts`), organizados por módulo. Ejemplos representativos
+(la lista completa vive en el registry, no se mantiene a mano acá):
 
-- `requests:create`, `requests:view_own`, `requests:view_all`
+- `requests:create`, `requests:view_own`, `requests:view_all`, `requests:submit`
 - `approvals:approve`
 - `purchasing:view`, `purchasing:create_order`, `purchasing:send_order`
 - `receiving:view`, `receiving:register`
 - `warehouse:view_stock`, `warehouse:register_movement`
 - `deliveries:view`, `deliveries:register`
 - `reports:view`
+- `repuestos:create`, `repuestos:submit`; `servicios:create`, `servicios:submit`
+- `combustibles:import`
+- `sst:view`, `sst:create`, `sst:close`, `sst:manage`
+- `prevention:docs:manage`, `prevention:docs:manage_sensitive`, `prevention:docs:manage_restricted`
 - `admin:users`, `admin:worksites`, `admin:products`, `admin:suppliers`, `admin:workers`, `admin:settings`, `admin:audit`
 - `trazabilidad:view`
 
@@ -527,7 +562,7 @@ Suite Vitest y Playwright. E2E con BD Postgres desechable `postgres:///bodega_e2
 npm install          # Instala dependencias
 npm run db:migrate   # Aplica migraciones versionadas
 npm run db:seed      # Crea roles, permisos y catálogo EPP base
-npm run dev          # Dev server en :3000
+npm run dev          # Dev server en :3001
 npm run build        # Build de producción
 npm test             # Unit tests
 npm run test:e2e     # E2E tests

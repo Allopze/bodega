@@ -5,7 +5,7 @@ import type { Session } from "next-auth"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
-import { permissionForRequestType, QUOTATION_TYPES } from "@/lib/request-types"
+import { isRequestType, permissionForRequestType, QUOTATION_TYPES } from "@/lib/request-types"
 import { addQuotation, persistRepuestoDraft } from "@/lib/services/repuestos"
 import { addServiceQuotation, persistServiceDraft } from "@/lib/services/servicios"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
@@ -35,10 +35,15 @@ export async function persistDraft(
   let itemsRaw: unknown[] = []
   try { itemsRaw = JSON.parse(formData.get("itemsJson") as string ?? "[]") } catch {}
 
+  const requestTypeRaw = formData.get("requestType") || "epp"
+  if (isRequestType(requestTypeRaw) && !can(session, permissionForRequestType(requestTypeRaw, "create"))) {
+    return { ok: false, message: "No tienes permisos para crear este tipo de solicitud" }
+  }
+
   const parsed = requestSchema.safeParse({
     id:           formData.get("id") || undefined,
     worksiteId:   formData.get("worksiteId"),
-    requestType:  formData.get("requestType") || "epp",
+    requestType:  requestTypeRaw,
     urgency:      formData.get("urgency") || "normal",
     requiredDate: String(formData.get("requiredDate") ?? ""),
     notes:        formData.get("notes") || "",
@@ -56,11 +61,6 @@ export async function persistDraft(
     }
   }
   const d = parsed.data
-
-  const createPermission = permissionForRequestType(d.requestType, "create")
-  if (!can(session, createPermission)) {
-    return { ok: false, message: "No tienes permisos para crear este tipo de solicitud" }
-  }
 
   const isEdit = !!d.id
   if (!canAccessWorksite(session, d.worksiteId)) {

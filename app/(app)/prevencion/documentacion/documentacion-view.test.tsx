@@ -138,14 +138,14 @@ describe("DocumentacionView", () => {
 
     fireEvent.contextMenu(firstFolderLink(), { clientX: 140, clientY: 220 })
 
-    expect(screen.getByRole("menu", { name: /Acciones contextuales/i })).toBeInTheDocument()
-    expect(screen.getByRole("menu", { name: /Acciones contextuales/i })).toHaveStyle({ left: "140px", top: "220px" })
-    expect(screen.getByRole("menuitem", { name: "Renombrar carpeta" })).toBeInTheDocument()
-    expect(screen.getByRole("menuitem", { name: "Mover carpeta" })).toBeInTheDocument()
-    expect(screen.getByRole("menuitem", { name: "Archivar carpeta" })).toBeInTheDocument()
+    expect(screen.getByRole("menu", { name: /Acciones/i })).toBeInTheDocument()
+    expect(screen.getByRole("menu", { name: /Acciones/i })).toHaveStyle({ left: "140px", top: "220px" })
+    expect(screen.getByRole("menuitem", { name: "Renombrar" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Mover" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Archivar" })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: "Escape" })
-    expect(screen.queryByRole("menu", { name: /Acciones contextuales/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menu", { name: /Acciones/i })).not.toBeInTheDocument()
   })
 
   it("submits folder rename, move, and archive actions", async () => {
@@ -182,18 +182,18 @@ describe("DocumentacionView", () => {
     )
 
     fireEvent.contextMenu(firstFolderLink())
-    fireEvent.click(screen.getByRole("menuitem", { name: "Renombrar carpeta" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Renombrar" }))
     fireEvent.change(screen.getByLabelText("Nombre de carpeta"), { target: { value: "Protocolos actualizados" } })
     fireEvent.click(screen.getByRole("button", { name: "Guardar nombre" }))
     await waitFor(() => expect(renameSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1", name: "Protocolos actualizados" }))
 
     fireEvent.contextMenu(firstFolderLink())
-    fireEvent.click(screen.getByRole("menuitem", { name: "Mover carpeta" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mover" }))
     fireEvent.click(screen.getByRole("button", { name: "Mover carpeta a destino" }))
     await waitFor(() => expect(moveSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1", parentId: null }))
 
     fireEvent.contextMenu(firstFolderLink())
-    fireEvent.click(screen.getByRole("menuitem", { name: "Archivar carpeta" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archivar" }))
     await waitFor(() => expect(archiveSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1" }))
   })
 

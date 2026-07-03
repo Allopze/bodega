@@ -11,6 +11,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkOverdueWeeklyAlerts } from '@/lib/services/sst-alerts'
 import { logger } from '@/lib/logger'
+import { verifyCronSecret } from '@/lib/security/cron-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Cron secret not configured' }, { status: 500 })
   }
 
-  if (authHeader !== `Bearer ${secret}`) {
+  if (!verifyCronSecret(authHeader, secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

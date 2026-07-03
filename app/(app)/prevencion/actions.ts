@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { logger } from "@/lib/logger"
 import { guardPermission, guardAuth, can, canAny } from "@/lib/auth/can"
 import { getDefinition } from "@/lib/sst/definitions/index"
 import { writableSectionIds } from "@/lib/sst/checklist"
@@ -215,17 +216,25 @@ export async function closeEvaluationAction(
   const scope = resolveWorksiteScope(session)
   const worksiteIds = scopeToIds(scope)
 
+  let evaluation: SstEvaluation
   try {
-    const evaluation = await closeEvaluation(id, input, worksiteIds)
+    evaluation = await closeEvaluation(id, input, worksiteIds)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${id}`)
-    // Best-effort: guarda copia PDF en la biblioteca documental. Nunca lanza,
-    // así que no puede convertir un cierre exitoso en un error de acción.
-    await archiveEvaluationPdf(id, session)
-    return { ok: true, message: "Evaluación cerrada exitosamente", data: { evaluation } }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al cerrar la evaluación" }
   }
+
+  // Best-effort: guarda copia PDF en la biblioteca documental. Se ejecuta
+  // fuera del try de negocio, en su propio try/catch, para que un fallo aquí
+  // nunca convierta un cierre ya persistido en un error de acción.
+  try {
+    await archiveEvaluationPdf(id, session)
+  } catch (e) {
+    logger.error("[closeEvaluationAction] archiveEvaluationPdf falló tras un cierre exitoso", e)
+  }
+
+  return { ok: true, message: "Evaluación cerrada exitosamente", data: { evaluation } }
 }
 
 // ── markFollowupAction ────────────────────────────────────────────────────────

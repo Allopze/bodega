@@ -110,10 +110,10 @@ export function ImportFuelLoadsModal({ worksites }: { worksites: Worksite[] }) {
     setFileName(file.name)
 
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const buffer = ev.target?.result as ArrayBuffer
-        const parsed = parseFuelExcel(buffer)
+        const parsed = await parseFuelExcel(buffer)
         setLoads(parsed.loads)
         setErrors(parsed.errors)
         setDuplicates(parsed.duplicates)
