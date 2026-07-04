@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm"
+import { and, asc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpExecutions, pdtpPrograms } from "@/db/schema"
+import { pdtpActivities, pdtpExecutions, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
 import { assertWorksiteAccess } from "./helpers"
 import type { WorksiteScope } from "./helpers"
@@ -51,4 +51,51 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
     .where(eq(pdtpExecutions.id, executionId)).returning()
   if (!updated) throw new Error("No se pudo aprobar la ejecución PDTP.")
   return updated
+}
+
+export type PendingPdtpExecution = {
+  id: string
+  activityId: string
+  activityN: number
+  activityName: string
+  worksiteId: string
+  worksiteName: string
+  year: number
+  month: number
+  week: number
+  executedQuantity: number
+  executedByUserId: string | null
+  executedAt: string | null
+}
+
+export async function listPendingPdtpExecutions(
+  year: number,
+  scope: WorksiteScope,
+): Promise<PendingPdtpExecution[]> {
+  const rows = await db
+    .select({
+      id: pdtpExecutions.id,
+      activityId: pdtpExecutions.activityId,
+      activityN: pdtpActivities.n,
+      activityName: pdtpActivities.activity,
+      worksiteId: pdtpExecutions.worksiteId,
+      worksiteName: worksites.name,
+      year: pdtpExecutions.year,
+      month: pdtpExecutions.month,
+      week: pdtpExecutions.week,
+      executedQuantity: pdtpExecutions.executedQuantity,
+      executedByUserId: pdtpExecutions.executedByUserId,
+      executedAt: pdtpExecutions.executedAt,
+    })
+    .from(pdtpExecutions)
+    .innerJoin(pdtpActivities, eq(pdtpExecutions.activityId, pdtpActivities.id))
+    .innerJoin(worksites, eq(pdtpExecutions.worksiteId, worksites.id))
+    .where(and(
+      eq(pdtpExecutions.status, "submitted"),
+      eq(pdtpExecutions.year, year),
+      scope === "all" ? undefined : inArray(pdtpExecutions.worksiteId, scope),
+    ))
+    .orderBy(asc(worksites.name), asc(pdtpExecutions.month), asc(pdtpExecutions.week))
+
+  return rows
 }

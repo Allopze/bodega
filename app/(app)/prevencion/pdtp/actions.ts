@@ -120,6 +120,7 @@ export async function approvePdtpExecutionAction(executionId: string): Promise<A
     const parsed = pdtpExecutionApprovalSchema.parse({ executionId })
     await approvePdtpExecution(parsed.executionId, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
+    revalidatePath("/prevencion/pdtp/aprobaciones")
     return { ok: true }
   } catch (e) {
     return { ok: false, message: (e as Error).message }

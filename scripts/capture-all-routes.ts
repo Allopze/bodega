@@ -113,6 +113,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-detalle", path: "/prevencion/sst-audit-1", auth: true },
   { slug: "prevencion-trabajador-detalle", path: "/prevencion/trabajador/worker-audit-1", auth: true },
   { slug: "prevencion-pdtp", path: "/prevencion/pdtp", auth: true },
+  { slug: "prevencion-pdtp-aprobaciones", path: "/prevencion/pdtp/aprobaciones", auth: true },
   { slug: "prevencion-iper", path: "/prevencion/iper", auth: true },
   { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },
   { slug: "prevencion-incidentes-detalle", path: "/prevencion/incidentes/inc-audit-1", auth: true },

@@ -403,6 +403,47 @@ describe("prevention PDTP service", () => {
     await expect(approvePdtpExecution(exec.id, "user-1", ["ws-1"])).rejects.toThrow(/ya fue aprobada/i)
   })
 
+  it("listPendingPdtpExecutions: only submitted rows, scope filtering, joined names", async () => {
+    const { markPdtpExecution, approvePdtpExecution, listPendingPdtpExecutions } =
+      await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-2", name: "Faena B", code: "FB", isActive: true })
+
+    const [act1] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+    const [act2] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 2))
+    const [act3] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 3))
+
+    // Pending, worksite A
+    await markPdtpExecution({
+      activityId: act1!.id, worksiteId: "ws-1", year: 2026, month: 1, week: 1, executedQuantity: 1,
+    }, "user-1", ["ws-1"])
+    // Pending, worksite B
+    await markPdtpExecution({
+      activityId: act2!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 2, executedQuantity: 1,
+    }, "user-1", ["ws-2"])
+    // Approved (not pending) — must be excluded
+    const exec3 = await markPdtpExecution({
+      activityId: act3!.id, worksiteId: "ws-1", year: 2026, month: 1, week: 1, executedQuantity: 1,
+    }, "user-1", ["ws-1"])
+    await approvePdtpExecution(exec3.id, "user-1", ["ws-1"])
+
+    const all = await listPendingPdtpExecutions(2026, "all")
+    expect(all).toHaveLength(2)
+    expect(all.map((e) => e.worksiteId).sort()).toEqual(["ws-1", "ws-2"])
+    const row1 = all.find((e) => e.worksiteId === "ws-1")
+    expect(row1?.worksiteName).toBe("Faena A")
+    expect(row1?.activityId).toBe(act1!.id)
+    expect(row1?.activityName).toBe(act1!.activity)
+    expect(row1?.activityN).toBe(1)
+
+    const scopedToA = await listPendingPdtpExecutions(2026, ["ws-1"])
+    expect(scopedToA).toHaveLength(1)
+    expect(scopedToA[0]?.worksiteId).toBe("ws-1")
+
+    const scopedToNone = await listPendingPdtpExecutions(2026, [])
+    expect(scopedToNone).toHaveLength(0)
+  })
+
   it("updatePdtpActivity: edits fields and writes change log", async () => {
     const { updatePdtpActivity } = await import("@/lib/services/prevention-pdtp")
     const { program } = await loadCatalog()

@@ -89,8 +89,15 @@ export function getVisibleAreas(session: Session): AreaNode[] {
 
 export function isHrefActive(href: string, pathname: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard"
-  if (href === "/prevencion" && (pathname === "/prevencion/ppa" || pathname.startsWith("/prevencion/ppa/"))) {
-    return false
+  if (href === "/prevencion") {
+    const preventionSubmodulePrefixes = [
+      "/prevencion/documentacion",
+      "/prevencion/pdtp",
+      "/prevencion/ppa",
+    ]
+    if (preventionSubmodulePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+      return false
+    }
   }
   return pathname === href || pathname.startsWith(href + "/")
 }

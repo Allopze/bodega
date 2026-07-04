@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
@@ -12,6 +13,7 @@ import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
 import { PreventionExportButton } from "@/components/prevention/export-button"
 import { PdtpSheetPicker, PdtpSheetTable, PdtpViewToggle, PdtpWorksitePicker } from "./pdtp-sheet-table"
 import { PdtpIndicatorsPanel } from "./pdtp-indicators-panel"
@@ -102,7 +104,16 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
             { label: "Programa preventivo SG-SST" },
           ]} />
         }
-        actions={<PreventionExportButton href={exportHref} label="Exportar programa" />}
+        actions={
+          <>
+            {canApprove && (
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/prevencion/pdtp/aprobaciones">Aprobaciones</Link>
+              </Button>
+            )}
+            <PreventionExportButton href={exportHref} label="Exportar programa" />
+          </>
+        }
       />
 
       <div className="space-y-4">

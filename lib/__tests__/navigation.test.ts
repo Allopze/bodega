@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Session } from "next-auth"
-import { flattenNavTargets, getVisibleAreas } from "@/components/layout/nav-items"
+import { flattenNavTargets, getVisibleAreas, isHrefActive } from "@/components/layout/nav-items"
 import { safeInternalPath } from "@/lib/navigation"
 
 describe("safeInternalPath", () => {
@@ -77,5 +77,14 @@ describe("sidebar navigation", () => {
 
     expect(reportArea?.items.map((item) => item.href)).toContain("/analitica")
     expect(commandTargets.map((target) => target.href)).toContain("/analitica")
+  })
+
+  it("does not mark Evaluaciones SST active while browsing explicit Prevencion submodules", () => {
+    expect(isHrefActive("/prevencion", "/prevencion")).toBe(true)
+    expect(isHrefActive("/prevencion", "/prevencion/nueva")).toBe(true)
+    expect(isHrefActive("/prevencion", "/prevencion/pdtp")).toBe(false)
+    expect(isHrefActive("/prevencion", "/prevencion/pdtp/cronograma")).toBe(false)
+    expect(isHrefActive("/prevencion", "/prevencion/documentacion")).toBe(false)
+    expect(isHrefActive("/prevencion", "/prevencion/ppa")).toBe(false)
   })
 })
