@@ -14,14 +14,8 @@ vi.mock("@/lib/toast", () => ({
 }))
 
 vi.mock("../actions", () => ({
-  approveSstDocumentAction: vi.fn(),
-  changeSstDocumentStatusAction: vi.fn(),
-  observeSstDocumentAction: vi.fn(),
   restoreSstDocumentAction: vi.fn(),
-  acknowledgeSstDocumentAction: vi.fn(),
   uploadSstDocumentVersionAction: vi.fn(),
-  linkSstDocumentAction: vi.fn(),
-  unlinkSstDocumentAction: vi.fn(),
   archiveSstDocumentAction: vi.fn(),
 }))
 

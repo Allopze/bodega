@@ -72,6 +72,7 @@ export async function uploadFilesAsDocuments(
 export function DocumentacionHeaderActions({ currentFolderId }: Props) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
+  const [folderOpen, setFolderOpen] = React.useState(false)
   const [folderName, setFolderName] = React.useState("")
 
   const [uploadOpen, setUploadOpen] = React.useState(false)
@@ -97,6 +98,7 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
       const result = await createSstDocumentFolderAction({ name, parentId: currentFolderId })
       if (result.ok) {
         setFolderName("")
+        setFolderOpen(false)
         router.refresh()
       }
     })
@@ -117,7 +119,13 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Dialog>
+      <Dialog
+        open={folderOpen}
+        onOpenChange={(open) => {
+          setFolderOpen(open)
+          if (!open) setFolderName("")
+        }}
+      >
         <DialogTrigger asChild>
           <Button type="button" variant="secondary" size="sm">
             <FolderPlus size={16} className="mr-1" />

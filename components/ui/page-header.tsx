@@ -31,7 +31,7 @@ export function PageHeader({ title, description, actions, headerActions, breadcr
   }, [breadcrumb, description, desktopActions, pathname, setHeader, title])
 
   return (
-    <div className={cn(actions ? "pb-2 mb-3" : "sr-only", className)}>
+    <div className={cn(actions ? "pb-2 mb-3 lg:sr-only" : "sr-only", className)}>
       <div className="flex min-h-[2rem] flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="min-w-0">
           {eyebrow && (

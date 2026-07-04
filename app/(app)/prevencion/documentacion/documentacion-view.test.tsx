@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
+import * as React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { ShellHeaderProvider, useShellHeader } from "@/components/layout/header-context"
 import { DocumentacionView } from "./documentacion-view"
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
 }))
 
 vi.mock("./actions", () => ({
@@ -49,59 +50,89 @@ const counters = {
   ackPending: 0,
 }
 
-function firstFolderLink() {
-  const link = screen.getAllByRole("link", { name: /Protocolos MINSAL/i })[0]
-  if (!link) throw new Error("Expected Protocolos MINSAL link")
-  return link
+function firstFolderTile() {
+  // Both the primary trigger (Link in list / role="button" tile in grid) and
+  // the selection checkbox carry a matching label, so we filter out the
+  // <input> and keep the element that actually owns the contextmenu listener.
+  const matches = screen.getAllByLabelText(/Carpeta Protocolos MINSAL/i)
+  const trigger = matches.find((el) => el.tagName !== "INPUT")
+  if (!trigger) throw new Error("Expected folder trigger (link or tile) to be present")
+  return trigger
+}
+
+const FOLDER = {
+  id: "sdf-1",
+  parentId: null,
+  name: "Protocolos MINSAL",
+  worksiteId: null,
+  updatedAt: "2026-07-02T00:00:00.000Z",
+}
+
+const DOCUMENT = {
+  id: "sdoc-1",
+  title: "Procedimiento trabajo seguro",
+  internalCode: "PTS-001",
+  categorySlug: "gestion_preventiva",
+  status: "vigente",
+  confidentiality: "publico_interno",
+  worksiteId: "ws-1",
+  worksiteName: "Faena Norte",
+  responsibleUserId: null,
+  responsibleName: null,
+  uploaderName: "Prevencionista",
+  expiresAt: "2026-08-01",
+  daysUntilExpiry: 29,
+  currentVersionId: "sdv-1",
+  fileName: "procedimiento.pdf",
+  mimeType: "application/pdf",
+  fileSize: 2048,
+  requiresAcknowledgment: false,
+  updatedAt: "2026-07-02T00:00:00.000Z",
+}
+
+function HeaderSearchSetter({ value }: { value: string }) {
+  const { setSearchQuery } = useShellHeader()
+
+  React.useEffect(() => {
+    setSearchQuery(value)
+  }, [setSearchQuery, value])
+
+  return null
+}
+
+function renderWithHeaderSearch(ui: React.ReactElement, value: string) {
+  return render(
+    <ShellHeaderProvider>
+      <HeaderSearchSetter value={value} />
+      {ui}
+    </ShellHeaderProvider>,
+  )
 }
 
 describe("DocumentacionView", () => {
-  it("renders as a plain file library without governance columns or state filters", () => {
+  it("renders the document library with a view-mode toggle, no governance columns or state filters", () => {
     render(
       <DocumentacionView
         counters={counters}
         expiring={[]}
-        documents={[{
-          id: "sdoc-1",
-          title: "Procedimiento trabajo seguro",
-          internalCode: "PTS-001",
-          categorySlug: "gestion_preventiva",
-          status: "vigente",
-          confidentiality: "publico_interno",
-          worksiteId: "ws-1",
-          worksiteName: "Faena Norte",
-          responsibleUserId: null,
-          responsibleName: null,
-          uploaderName: "Prevencionista",
-          expiresAt: "2026-08-01",
-          daysUntilExpiry: 29,
-          currentVersionId: "sdv-1",
-          fileName: "procedimiento.pdf",
-          mimeType: "application/pdf",
-          fileSize: 2048,
-          requiresAcknowledgment: false,
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
-        folders={[{
-          id: "sdf-1",
-          parentId: null,
-          name: "Protocolos MINSAL",
-          worksiteId: null,
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
+        documents={[DOCUMENT]}
+        folders={[FOLDER]}
         folderOptions={[]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
         searchParams={{}}
         total={2}
         canManage
         canArchive
+        userId="test-user"
       />,
     )
 
-    expect(screen.getByRole("columnheader", { name: "Nombre" })).toBeInTheDocument()
-    expect(screen.getByRole("columnheader", { name: "Tipo" })).toBeInTheDocument()
-    expect(screen.getByRole("columnheader", { name: "Actualizado" })).toBeInTheDocument()
-    expect(screen.getByRole("columnheader", { name: "Tamaño" })).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "Cambiar modo de vista" })).toBeInTheDocument()
+    // The folder/document are reachable by their aria-label in either view
+    // (list renders a link, grid renders a button); the toggle is what
+    // switches between them — see the next test for that interaction.
+    expect(screen.getAllByLabelText(/Carpeta Protocolos MINSAL/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(/Documento Procedimiento trabajo seguro/i).length).toBeGreaterThan(0)
     expect(screen.queryByRole("columnheader", { name: "Estado" })).not.toBeInTheDocument()
     expect(screen.queryByRole("columnheader", { name: "Faena" })).not.toBeInTheDocument()
     expect(screen.queryByRole("columnheader", { name: "Responsable" })).not.toBeInTheDocument()
@@ -109,73 +140,82 @@ describe("DocumentacionView", () => {
     expect(screen.queryByText("En revisión")).not.toBeInTheDocument()
     expect(screen.queryByText("Vencidos")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Filtrar" })).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText("Buscar en documentación...")).not.toBeInTheDocument()
   })
 
-  it("renders folders, documents, and context actions", () => {
+  it("filters folders and documents with the shell header search", async () => {
+    renderWithHeaderSearch(
+      <DocumentacionView
+        counters={counters}
+        expiring={[]}
+        documents={[
+          DOCUMENT,
+          {
+            ...DOCUMENT,
+            id: "sdoc-2",
+            title: "Matriz de riesgos",
+            internalCode: "MAT-001",
+            fileName: "matriz.xlsx",
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          },
+        ]}
+        folders={[FOLDER]}
+        folderOptions={[]}
+        breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
+        searchParams={{}}
+        total={3}
+        canManage
+        canArchive
+        userId="test-user"
+      />,
+      "matriz",
+    )
+
+    await waitFor(() => expect(screen.getAllByLabelText(/Documento Matriz de riesgos/i).length).toBeGreaterThan(0))
+    expect(screen.queryAllByLabelText(/Carpeta Protocolos MINSAL/i)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(/Documento Procedimiento trabajo seguro/i)).toHaveLength(0)
+  })
+
+  it("lets the user switch between list and grid via the toggle", () => {
     render(
       <DocumentacionView
         counters={counters}
         expiring={[]}
-        documents={[{
-          id: "sdoc-1",
-          title: "Procedimiento trabajo seguro",
-          internalCode: "PTS-001",
-          categorySlug: "gestion_preventiva",
-          status: "vigente",
-          confidentiality: "publico_interno",
-          worksiteId: "ws-1",
-          worksiteName: "Faena Norte",
-          responsibleUserId: null,
-          responsibleName: null,
-          uploaderName: "Prevencionista",
-          expiresAt: null,
-          daysUntilExpiry: null,
-          currentVersionId: "sdv-1",
-          requiresAcknowledgment: false,
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
-        folders={[{
-          id: "sdf-1",
-          parentId: null,
-          name: "Protocolos MINSAL",
-          worksiteId: null,
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
-        breadcrumbs={[
-          { label: "Prevención", href: "/prevencion" },
-          { label: "Documentación" },
-        ]}
-        categories={[{ slug: "gestion_preventiva", name: "Gestión preventiva", description: null, sortOrder: 1 }]}
-        types={[]}
+        documents={[{ ...DOCUMENT, expiresAt: null, daysUntilExpiry: null, currentVersionId: null }]}
+        folders={[FOLDER]}
+        folderOptions={[]}
+        breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
         searchParams={{}}
         total={1}
         canManage
-        canApprove
-        canAck
         canArchive
+        userId="test-user"
       />,
     )
 
-    expect(screen.getByRole("link", { name: /Protocolos MINSAL/i })).toHaveAttribute("href", "/prevencion/documentacion?folder=sdf-1")
-    expect(screen.getByRole("link", { name: /Procedimiento trabajo seguro/i })).toHaveAttribute("href", "/prevencion/documentacion/sdoc-1")
-    expect(screen.getByRole("link", { name: /Descargar/i })).toHaveAttribute("href", "/api/prevencion/documentacion/sdoc-1?download=1")
-    expect(screen.getAllByText(/Mover/i).length).toBeGreaterThan(0)
-    expect(screen.queryByRole("link", { name: "Papelera" })).not.toBeInTheDocument()
+    // First paint is "list" — the table headers are present and the folder appears as a row.
+    expect(screen.getByRole("columnheader", { name: "Nombre" })).toBeInTheDocument()
+    expect(screen.getAllByRole("link", { name: /Protocolos MINSAL/i }).length).toBeGreaterThan(0)
+
+    // Switch to grid — columns disappear, the folder becomes a button tile.
+    fireEvent.click(screen.getByRole("button", { name: "Cambiar a vista de cuadrícula" }))
+    expect(screen.queryByRole("columnheader", { name: "Nombre" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Carpeta Protocolos MINSAL/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Documento Procedimiento trabajo seguro/i })).toBeInTheDocument()
+
+    // Back to list.
+    fireEvent.click(screen.getByRole("button", { name: "Cambiar a vista de lista" }))
+    expect(screen.getByRole("columnheader", { name: "Nombre" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Carpeta Protocolos MINSAL/i })).not.toBeInTheDocument()
   })
 
-  it("opens a context menu with right click actions for folders", () => {
+  it("renders a context menu with right click for folders, regardless of view mode", () => {
     render(
       <DocumentacionView
         counters={counters}
         expiring={[]}
         documents={[]}
-        folders={[{
-          id: "sdf-1",
-          parentId: null,
-          name: "Protocolos MINSAL",
-          worksiteId: null,
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
+        folders={[FOLDER]}
         folderOptions={[{ id: "sdf-2", parentId: null, name: "Procedimientos" }]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
         categories={[]}
@@ -186,10 +226,11 @@ describe("DocumentacionView", () => {
         canApprove
         canAck
         canArchive
+        userId="test-user"
       />,
     )
 
-    fireEvent.contextMenu(firstFolderLink(), { clientX: 140, clientY: 220 })
+    fireEvent.contextMenu(firstFolderTile(), { clientX: 140, clientY: 220 })
 
     expect(screen.getByRole("menu", { name: /Acciones/i })).toBeInTheDocument()
     expect(screen.getByRole("menu", { name: /Acciones/i })).toHaveStyle({ left: "140px", top: "220px" })
@@ -211,13 +252,7 @@ describe("DocumentacionView", () => {
         counters={counters}
         expiring={[]}
         documents={[]}
-        folders={[{
-          id: "sdf-1",
-          parentId: null,
-          name: "Protocolos MINSAL",
-          worksiteId: null,
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
+        folders={[FOLDER]}
         folderOptions={[
           { id: "sdf-1", parentId: null, name: "Protocolos MINSAL" },
           { id: "sdf-2", parentId: null, name: "Procedimientos" },
@@ -231,21 +266,22 @@ describe("DocumentacionView", () => {
         canApprove
         canAck
         canArchive
+        userId="test-user"
       />,
     )
 
-    fireEvent.contextMenu(firstFolderLink())
+    fireEvent.contextMenu(firstFolderTile())
     fireEvent.click(screen.getByRole("menuitem", { name: "Renombrar" }))
     fireEvent.change(screen.getByLabelText("Nombre de carpeta"), { target: { value: "Protocolos actualizados" } })
     fireEvent.click(screen.getByRole("button", { name: "Guardar nombre" }))
     await waitFor(() => expect(renameSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1", name: "Protocolos actualizados" }))
 
-    fireEvent.contextMenu(firstFolderLink())
+    fireEvent.contextMenu(firstFolderTile())
     fireEvent.click(screen.getByRole("menuitem", { name: "Mover" }))
     fireEvent.click(screen.getByRole("button", { name: "Mover carpeta a destino" }))
     await waitFor(() => expect(moveSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1", parentId: null }))
 
-    fireEvent.contextMenu(firstFolderLink())
+    fireEvent.contextMenu(firstFolderTile())
     fireEvent.click(screen.getByRole("menuitem", { name: "Archivar" }))
     await waitFor(() => expect(archiveSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1" }))
   })
@@ -256,31 +292,8 @@ describe("DocumentacionView", () => {
       <DocumentacionView
         counters={counters}
         expiring={[]}
-        documents={[{
-          id: "sdoc-1",
-          title: "Procedimiento trabajo seguro",
-          internalCode: "PTS-001",
-          categorySlug: "gestion_preventiva",
-          status: "vigente",
-          confidentiality: "publico_interno",
-          worksiteId: "ws-1",
-          worksiteName: "Faena Norte",
-          responsibleUserId: null,
-          responsibleName: null,
-          uploaderName: "Prevencionista",
-          expiresAt: null,
-          daysUntilExpiry: null,
-          currentVersionId: "sdv-1",
-          requiresAcknowledgment: false,
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
-        folders={[{
-          id: "sdf-1",
-          parentId: null,
-          name: "Protocolos MINSAL",
-          worksiteId: null,
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
+        documents={[{ ...DOCUMENT, expiresAt: null, daysUntilExpiry: null, currentVersionId: null }]}
+        folders={[FOLDER]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
         categories={[]}
         types={[]}
@@ -290,6 +303,7 @@ describe("DocumentacionView", () => {
         canApprove
         canAck
         canArchive
+        userId="test-user"
       />,
     )
 
@@ -310,41 +324,21 @@ describe("DocumentacionView", () => {
         counters={counters}
         expiring={[]}
         documents={[
+          { ...DOCUMENT, expiresAt: null, daysUntilExpiry: null, currentVersionId: null },
           {
-            id: "sdoc-1",
-            title: "Procedimiento trabajo seguro",
-            internalCode: "PTS-001",
-            categorySlug: "gestion_preventiva",
-            status: "vigente",
-            confidentiality: "publico_interno",
-            worksiteId: "ws-1",
-            worksiteName: "Faena Norte",
-            responsibleUserId: null,
-            responsibleName: null,
-            uploaderName: "Prevencionista",
-            expiresAt: null,
-            daysUntilExpiry: null,
-            currentVersionId: "sdv-1",
-            requiresAcknowledgment: false,
-            updatedAt: "2026-07-02T00:00:00.000Z",
-          },
-          {
+            ...DOCUMENT,
             id: "sdoc-2",
             title: "Matriz de riesgos",
             internalCode: "MAT-001",
-            categorySlug: "gestion_preventiva",
             status: "borrador",
-            confidentiality: "publico_interno",
             worksiteId: null,
             worksiteName: null,
-            responsibleUserId: null,
-            responsibleName: null,
-            uploaderName: "Prevencionista",
+            currentVersionId: null,
             expiresAt: null,
             daysUntilExpiry: null,
-            currentVersionId: null,
-            requiresAcknowledgment: false,
-            updatedAt: "2026-07-02T00:00:00.000Z",
+            fileName: null,
+            mimeType: null,
+            fileSize: null,
           },
         ]}
         folders={[]}
@@ -358,6 +352,7 @@ describe("DocumentacionView", () => {
         canApprove
         canAck
         canArchive
+        userId="test-user"
       />,
     )
 
@@ -388,14 +383,7 @@ describe("DocumentacionView", () => {
         counters={counters}
         expiring={[]}
         documents={[]}
-        folders={[{
-          id: "sdf-archived",
-          parentId: null,
-          name: "Carpeta archivada",
-          worksiteId: null,
-          archivedAt: "2026-07-02T00:00:00.000Z",
-          updatedAt: "2026-07-02T00:00:00.000Z",
-        }]}
+        folders={[{ ...FOLDER, id: "sdf-archived", name: "Carpeta archivada", archivedAt: "2026-07-02T00:00:00.000Z" }]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
         categories={[]}
         types={[]}
@@ -405,6 +393,7 @@ describe("DocumentacionView", () => {
         canApprove
         canAck
         canArchive
+        userId="test-user"
       />,
     )
 

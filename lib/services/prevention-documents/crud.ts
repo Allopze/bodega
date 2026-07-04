@@ -13,16 +13,11 @@ import {
   sstDocumentCreateSchema,
   sstDocumentUpdateSchema,
   sstDocumentVersionCreateSchema,
-  sstDocumentStatusChangeSchema,
-  sstDocumentVersionStatusChangeSchema,
-  sstDocumentApproveSchema,
-  sstDocumentObserveSchema,
   sstDocumentArchiveSchema,
 } from "@/lib/validation/prevention"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { type WorksiteScope } from "@/lib/auth/scope"
 import {
-  type SstDocumentStatus,
   type SstDocumentConfidentiality,
   type RequestContext,
   type CreateDocumentInput,
@@ -157,7 +152,7 @@ export async function uploadDocumentVersion(args: {
   const [row] = await db.insert(sstDocumentVersions).values({
     id, documentId: data.documentId,
     version: sql`(SELECT COALESCE(MAX(${sstDocumentVersions.version}), 0) + 1 FROM ${sstDocumentVersions} WHERE ${sstDocumentVersions.documentId} = ${data.documentId})`,
-    status: "borrador", fileName: file.name, storageName, filePath: relativePath,
+    status: "vigente", fileName: file.name, storageName, filePath: relativePath,
     mimeType: validated.mimeType, fileSize: file.size, checksum,
     effectiveFrom: data.effectiveFrom || null, effectiveTo: data.effectiveTo || null,
     changelog: data.changelog || null, uploadedBy: args.ctx.userId,
@@ -170,141 +165,20 @@ export async function uploadDocumentVersion(args: {
     catch (err) { logger.warn("[documents-library] no se pudo limpiar archivo huérfano", err) }
     throw new Error("No se pudo registrar la nueva versión.")
   }
-  await db.update(sstDocuments).set({ checksum, updatedAt: now }).where(eq(sstDocuments.id, data.documentId))
+  await db.update(sstDocuments)
+    .set({ currentVersionId: id, checksum, updatedAt: now })
+    .where(eq(sstDocuments.id, data.documentId))
+  if (doc.currentVersionId && doc.currentVersionId !== id) {
+    await db.update(sstDocumentVersions)
+      .set({ status: "reemplazado", effectiveTo: now.slice(0, 10), updatedAt: now })
+      .where(eq(sstDocumentVersions.id, doc.currentVersionId))
+  }
   await recordAuditEntry({
     documentId: data.documentId, versionId: id, userId: args.ctx.userId, userEmail: args.ctx.userEmail,
     action: "upload", ip: args.ctx.ip, comment: data.changelog || null,
     metadata: { fileName: file.name, size: file.size, mime: validated.mimeType, version: row.version },
   })
   return row
-}
-
-/* ── Máquina de estados ─────────────────────────────────────────────────── */
-
-const ALLOWED_DOC_STATUS: Record<SstDocumentStatus, SstDocumentStatus[]> = {
-  borrador: ["en_revision", "archivado"],
-  en_revision: ["aprobado", "observado", "borrador", "archivado"],
-  observado: ["en_revision", "borrador", "archivado"],
-  aprobado: ["vigente", "archivado"],
-  vigente: ["vencido", "reemplazado", "archivado"],
-  vencido: ["vigente", "reemplazado", "archivado"],
-  reemplazado: ["archivado"],
-  archivado: [],
-}
-
-const ALLOWED_VERSION_STATUS: Record<string, SstDocumentStatus[]> = {
-  borrador: ["en_revision", "archivado"],
-  en_revision: ["aprobado", "observado", "borrador", "archivado"],
-  observado: ["en_revision", "borrador", "archivado"],
-  aprobado: ["vigente", "archivado"],
-  vigente: ["reemplazado", "archivado"],
-  reemplazado: ["archivado"],
-  archivado: [],
-}
-
-export async function changeDocumentStatus(args: {
-  input: unknown; ctx: RequestContext; scope: WorksiteScope; permissions: readonly string[]
-}) {
-  const data = sstDocumentStatusChangeSchema.parse(args.input)
-  const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.documentId))
-  if (!doc) throw new Error("Documento no encontrado.")
-  assertScopeAccess(doc.worksiteId, args.scope)
-
-  const from = doc.status as SstDocumentStatus
-  const to = data.toStatus
-  if (!ALLOWED_DOC_STATUS[from]?.includes(to)) throw new Error(`Transición inválida: ${from} → ${to}.`)
-
-  if (to === "aprobado" || to === "vigente") {
-    if (!doc.currentVersionId) throw new Error("No se puede aprobar/vigentar un documento sin versión aprobada.")
-    const [ver] = await db.select({ status: sstDocumentVersions.status }).from(sstDocumentVersions).where(eq(sstDocumentVersions.id, doc.currentVersionId)).limit(1)
-    if (!ver) throw new Error("La versión vigente no existe.")
-    if (to === "aprobado" && !["aprobado", "vigente"].includes(ver.status)) throw new Error("La versión actual debe estar aprobada antes que el documento.")
-    if (to === "vigente" && ver.status !== "aprobado") throw new Error("La versión actual debe estar aprobada para marcar el documento como vigente.")
-  }
-
-  const now = new Date().toISOString()
-  const [updated] = await db.update(sstDocuments).set({ status: to, updatedAt: now }).where(eq(sstDocuments.id, data.documentId)).returning()
-  if (!updated) throw new Error("No se pudo actualizar el estado del documento.")
-
-  await recordStatusChange({ entityType: "sst_document", entityId: data.documentId, fromStatus: from, toStatus: to, changedBy: args.ctx.userId, reason: data.comment })
-  await recordAuditEntry({ documentId: data.documentId, userId: args.ctx.userId, userEmail: args.ctx.userEmail, action: "status_change", fromStatus: from, toStatus: to, comment: data.comment || null, ip: args.ctx.ip })
-  return updated
-}
-
-export async function changeVersionStatus(args: {
-  input: unknown; ctx: RequestContext; scope: WorksiteScope
-}) {
-  const data = sstDocumentVersionStatusChangeSchema.parse(args.input)
-  const [ver] = await db.select().from(sstDocumentVersions).where(eq(sstDocumentVersions.id, data.versionId)).limit(1)
-  if (!ver) throw new Error("Versión no encontrada.")
-  const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, ver.documentId)).limit(1)
-  if (!doc) throw new Error("Documento no encontrado.")
-  assertScopeAccess(doc.worksiteId, args.scope)
-
-  const from = ver.status as SstDocumentStatus
-  const to = data.toStatus as SstDocumentStatus
-  if (!ALLOWED_VERSION_STATUS[from]?.includes(to)) throw new Error(`Transición inválida: ${from} → ${to}.`)
-
-  const now = new Date().toISOString()
-  const [updated] = await db.update(sstDocumentVersions)
-    .set({ status: to, updatedAt: now, approvedBy: to === "aprobado" || to === "vigente" ? args.ctx.userId : ver.approvedBy, approvedAt: to === "aprobado" || to === "vigente" ? now : ver.approvedAt })
-    .where(eq(sstDocumentVersions.id, data.versionId)).returning()
-  if (!updated) throw new Error("No se pudo actualizar la versión.")
-
-  if (to === "vigente") {
-    await db.update(sstDocuments).set({ currentVersionId: ver.id, updatedAt: now, checksum: ver.checksum }).where(eq(sstDocuments.id, ver.documentId))
-    if (doc.currentVersionId && doc.currentVersionId !== ver.id) {
-      await db.update(sstDocumentVersions).set({ status: "reemplazado", effectiveTo: now.slice(0, 10), updatedAt: now }).where(and(eq(sstDocumentVersions.id, doc.currentVersionId), ne(sstDocumentVersions.id, ver.id)))
-    }
-  }
-
-  await recordAuditEntry({ documentId: ver.documentId, versionId: ver.id, userId: args.ctx.userId, userEmail: args.ctx.userEmail, action: "status_change", fromStatus: from, toStatus: to, comment: data.comment || null, ip: args.ctx.ip })
-  return updated
-}
-
-/* ── Aprobación y observación ───────────────────────────────────────────── */
-
-export async function approveCurrentVersion(args: {
-  input: unknown; ctx: RequestContext; scope: WorksiteScope
-}) {
-  const data = sstDocumentApproveSchema.parse(args.input)
-  const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.documentId))
-  if (!doc) throw new Error("Documento no encontrado.")
-  assertScopeAccess(doc.worksiteId, args.scope)
-
-  const targetVersionId = data.versionId || doc.currentVersionId
-  if (!targetVersionId) throw new Error("No hay versión para aprobar. Sube un archivo primero.")
-
-  await changeVersionStatus({ input: { versionId: targetVersionId, toStatus: "aprobado", comment: data.comment }, ctx: args.ctx, scope: args.scope })
-  await changeVersionStatus({ input: { versionId: targetVersionId, toStatus: "vigente", comment: data.comment }, ctx: args.ctx, scope: args.scope })
-
-  if (["en_revision", "observado", "borrador", "aprobado"].includes(doc.status)) {
-    await changeDocumentStatus({ input: { documentId: data.documentId, toStatus: "vigente", comment: data.comment || "Aprobado y vigente" }, ctx: args.ctx, scope: args.scope, permissions: [] })
-  }
-
-  await recordAuditEntry({ documentId: data.documentId, versionId: targetVersionId, userId: args.ctx.userId, userEmail: args.ctx.userEmail, action: "approve", comment: data.comment || null, ip: args.ctx.ip })
-  const [updated] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.documentId))
-  return updated
-}
-
-export async function observeDocument(args: {
-  input: unknown; ctx: RequestContext; scope: WorksiteScope
-}) {
-  const data = sstDocumentObserveSchema.parse(args.input)
-  const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.documentId))
-  if (!doc) throw new Error("Documento no encontrado.")
-  assertScopeAccess(doc.worksiteId, args.scope)
-
-  const targetVersionId = data.versionId || doc.currentVersionId
-  if (targetVersionId) {
-    await changeVersionStatus({ input: { versionId: targetVersionId, toStatus: "observado", comment: data.comment }, ctx: args.ctx, scope: args.scope })
-  }
-  const from = doc.status as SstDocumentStatus
-  if (from !== "observado") {
-    await changeDocumentStatus({ input: { documentId: data.documentId, toStatus: "observado", comment: data.comment }, ctx: args.ctx, scope: args.scope, permissions: [] })
-  }
-  await recordAuditEntry({ documentId: data.documentId, versionId: targetVersionId || null, userId: args.ctx.userId, userEmail: args.ctx.userEmail, action: "observe", comment: data.comment, ip: args.ctx.ip })
-  return { observed: true }
 }
 
 /* ── Archivado lógico ───────────────────────────────────────────────────── */

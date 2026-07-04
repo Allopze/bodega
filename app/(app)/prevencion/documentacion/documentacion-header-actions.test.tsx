@@ -34,6 +34,7 @@ describe("DocumentacionHeaderActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Crear carpeta" }))
 
     await waitFor(() => expect(createSstDocumentFolderAction).toHaveBeenCalledWith({ name: "Protocolos", parentId: "sdf-parent" }))
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Nueva carpeta" })).not.toBeInTheDocument())
     expect(refresh).toHaveBeenCalled()
   })
 
@@ -46,6 +47,29 @@ describe("DocumentacionHeaderActions", () => {
 
     expect(screen.getByRole("button", { name: "Subir archivos" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Subir carpeta" })).toBeInTheDocument()
+  })
+
+  it("ignores a second upload trigger while the first batch is still running", async () => {
+    let resolveUpload: (value: { ok: true }) => void = () => {}
+    vi.mocked(createAndUploadSstDocumentAction).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveUpload = resolve
+      }),
+    )
+
+    render(<DocumentacionHeaderActions currentFolderId="sdf-parent" />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Subir archivo/i }))
+    const input = document.querySelector('input[type="file"]:not([webkitdirectory])') as HTMLInputElement
+    const file = new File(["contenido"], "procedimiento.pdf", { type: "application/pdf" })
+
+    fireEvent.change(input, { target: { files: [file] } })
+    await waitFor(() => expect(createAndUploadSstDocumentAction).toHaveBeenCalledTimes(1))
+
+    fireEvent.change(input, { target: { files: [file] } })
+    expect(createAndUploadSstDocumentAction).toHaveBeenCalledTimes(1)
+    resolveUpload({ ok: true })
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
   })
 
   it("preserves nested folder structure when uploading a folder", async () => {

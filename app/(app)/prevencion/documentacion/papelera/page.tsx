@@ -5,7 +5,7 @@ import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { listArchivedDocumentFolders, searchDocuments } from "@/lib/services/prevention-documents-library"
 import { db } from "@/db"
-import { worksites } from "@/db/schema"
+import { sstDocumentVersions, worksites } from "@/db/schema"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { PapeleraView } from "./papelera-view"
@@ -29,24 +29,44 @@ export default async function PapeleraPage() {
     ...archivedFolders.map((f) => f.worksiteId).filter(Boolean) as string[],
     ...archivedDocs.rows.map((d) => d.worksiteId).filter(Boolean) as string[],
   ]))
-  const worksiteRows = worksiteIds.length
-    ? await db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, worksiteIds))
-    : []
+  const versionIds = Array.from(new Set(
+    archivedDocs.rows.map((d) => d.currentVersionId).filter(Boolean) as string[],
+  ))
+  const [worksiteRows, versionRows] = await Promise.all([
+    worksiteIds.length
+      ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, worksiteIds))
+      : Promise.resolve([] as Array<{ id: string; name: string }>),
+    versionIds.length
+      ? db.select({
+          id: sstDocumentVersions.id,
+          fileName: sstDocumentVersions.fileName,
+          mimeType: sstDocumentVersions.mimeType,
+        }).from(sstDocumentVersions).where(inArray(sstDocumentVersions.id, versionIds))
+      : Promise.resolve([] as Array<{ id: string; fileName: string; mimeType: string }>),
+  ])
   const worksiteMap = Object.fromEntries(worksiteRows.map((w) => [w.id, w.name]))
+  const versionMap = Object.fromEntries(versionRows.map((v) => [v.id, v]))
 
   const folders = archivedFolders.map((f) => ({
     id: f.id,
     name: f.name,
+    parentId: f.parentId,
     worksiteName: f.worksiteId ? worksiteMap[f.worksiteId] ?? null : null,
     archivedAt: f.archivedAt,
+    updatedAt: f.updatedAt,
   }))
-  const documents = archivedDocs.rows.map((d) => ({
-    id: d.id,
-    title: d.title,
-    internalCode: d.internalCode,
-    worksiteName: d.worksiteId ? worksiteMap[d.worksiteId] ?? null : null,
-    updatedAt: d.updatedAt,
-  }))
+  const documents = archivedDocs.rows.map((d) => {
+    const version = d.currentVersionId ? versionMap[d.currentVersionId] : null
+    return {
+      id: d.id,
+      title: d.title,
+      internalCode: d.internalCode,
+      worksiteName: d.worksiteId ? worksiteMap[d.worksiteId] ?? null : null,
+      fileName: version?.fileName ?? null,
+      mimeType: version?.mimeType ?? null,
+      updatedAt: d.updatedAt,
+    }
+  })
 
   const canRestore = can(session, "prevention:docs:archive")
 
@@ -57,7 +77,12 @@ export default async function PapeleraPage() {
         description="Carpetas y documentos archivados. Restaura lo que necesites recuperar."
         breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación", href: "/prevencion/documentacion" }, { label: "Papelera" }]} />}
       />
-      <PapeleraView folders={folders} documents={documents} canRestore={canRestore} />
+      <PapeleraView
+        folders={folders}
+        documents={documents}
+        canRestore={canRestore}
+        userId={session.user.id}
+      />
     </PageContainer>
   )
 }

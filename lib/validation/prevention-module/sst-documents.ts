@@ -49,12 +49,6 @@ export const SST_DOCUMENT_CONFIDENTIALITIES = [
   "sensible",
 ] as const
 
-export const SST_DOCUMENT_LINK_ENTITY_TYPES = [
-  "worker",
-  "worksite",
-  "vehicle",
-] as const
-
 export const sstDocumentCreateSchema = z.object({
   categorySlug:    z.enum(SST_DOCUMENT_CATEGORY_SLUGS),
   typeId:          z.string().optional().or(z.literal("")),
@@ -96,49 +90,15 @@ export const sstDocumentVersionCreateSchema = z.object({
   supersedesId:  z.string().optional().or(z.literal("")),
 })
 
-export const sstDocumentStatusChangeSchema = z.object({
-  documentId: z.string().min(1, "Documento requerido"),
-  toStatus:   z.enum(SST_DOCUMENT_STATUSES),
-  comment:    z.string().max(2000).optional().or(z.literal("")),
-})
-
 export const sstDocumentVersionStatusChangeSchema = z.object({
   versionId: z.string().min(1, "Versión requerida"),
   toStatus:  z.enum(SST_DOCUMENT_VERSION_STATUSES),
   comment:   z.string().max(2000).optional().or(z.literal("")),
 })
 
-export const sstDocumentApproveSchema = z.object({
-  documentId: z.string().min(1),
-  versionId:  z.string().min(1).optional().or(z.literal("")),
-  comment:    z.string().max(2000).optional().or(z.literal("")),
-})
-
-export const sstDocumentObserveSchema = z.object({
-  documentId: z.string().min(1, "Documento requerido"),
-  versionId:  z.string().optional().or(z.literal("")),
-  comment:    z.string().trim().min(1, "El comentario es obligatorio al observar").max(2000),
-})
-
 export const sstDocumentArchiveSchema = z.object({
   documentId: z.string().min(1),
   comment:    z.string().max(2000).optional().or(z.literal("")),
-})
-
-export const sstDocumentLinkSchema = z.object({
-  documentId: z.string().min(1, "Documento requerido"),
-  entityType: z.enum(SST_DOCUMENT_LINK_ENTITY_TYPES),
-  entityId:   z.string().min(1, "Entidad requerida"),
-  notes:      z.string().max(500).optional().or(z.literal("")),
-})
-
-export const sstDocumentUnlinkSchema = z.object({
-  linkId: z.string().min(1, "Link requerido"),
-})
-
-export const sstDocumentAckSchema = z.object({
-  versionId: z.string().min(1, "Versión requerida"),
-  signature: z.string().trim().min(2, "Firma o nombre requerido").max(120),
 })
 
 export const sstDocumentSearchSchema = z.object({
@@ -149,8 +109,6 @@ export const sstDocumentSearchSchema = z.object({
   confidentiality: z.enum(SST_DOCUMENT_CONFIDENTIALITIES).optional().or(z.literal("")),
   worksiteId:   z.string().optional().or(z.literal("")),
   responsibleUserId: z.string().optional().or(z.literal("")),
-  entityType:   z.enum(SST_DOCUMENT_LINK_ENTITY_TYPES).optional().or(z.literal("")),
-  entityId:     z.string().optional().or(z.literal("")),
   expiresBefore: z.string().optional().or(z.literal("")),
   expiresAfter:  z.string().optional().or(z.literal("")),
   page:          z.coerce.number().int().min(1).default(1),

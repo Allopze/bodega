@@ -57,11 +57,11 @@ export function TopBar({
   const activeSection = activeNav?.areaLabel ?? null
   const activeLabel   = activeNav?.itemLabel ?? null
 
-  // Adquisiciones routes have their own per-screen search bar (URL-synced,
+  // These routes have their own per-screen search bar (URL-synced,
   // server-side). The top-bar in-memory search is inert there — hide it so
   // users don't see two search inputs with different behaviours.
-  const ADQUISICIONES_PREFIXES = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion"]
-  const hideSearch = ADQUISICIONES_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion"]
+  const hideSearch = ROUTES_WITH_OWN_SEARCH.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 
   async function handleSignOut() {
     setIsSigningOut(true)
@@ -202,19 +202,17 @@ export function TopBar({
               </Link>
             </DropdownMenuItem>
             {session.user.permissions?.some((p) => p.startsWith("admin:")) && (
-              <>
-                <DropdownMenuItem asChild>
-                  <Link
-                    href="/admin"
-                    className="flex items-center gap-2 text-sm text-(--color-text) w-full cursor-pointer"
-                  >
-                    <ShieldCheck size={16} className="text-(--color-text-subtle)" />
-                    <span>Administración</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/admin"
+                  className="flex items-center gap-2 text-sm text-(--color-text) w-full cursor-pointer"
+                >
+                  <ShieldCheck size={16} className="text-(--color-text-subtle)" />
+                  <span>Administración</span>
+                </Link>
+              </DropdownMenuItem>
             )}
+            {session.user.permissions?.some((p) => p.startsWith("admin:")) && <DropdownMenuSeparator />}
             <DropdownMenuItem asChild>
               <button
                 type="button"

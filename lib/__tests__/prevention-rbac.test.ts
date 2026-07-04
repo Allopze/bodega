@@ -10,10 +10,7 @@ describe("prevention module RBAC", () => {
       "prevention:pdtp:sign_legal",
       "prevention:docs:view",
       "prevention:docs:manage",
-      "prevention:docs:approve",
       "prevention:docs:archive",
-      "prevention:docs:ack",
-      "prevention:docs:link",
       "prevention:docs:manage_sensitive",
       "prevention:docs:manage_restricted",
     ]
@@ -38,6 +35,9 @@ describe("prevention module RBAC", () => {
       "prevention:cphs:view",
       "prevention:permits:view",
       "prevention:docs:export",
+      "prevention:docs:approve",
+      "prevention:docs:ack",
+      "prevention:docs:link",
     ]
     for (const permission of deleted) {
       expect(ALL_MODULE_PERMISSIONS).not.toContain(permission)

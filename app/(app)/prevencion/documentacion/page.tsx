@@ -100,6 +100,7 @@ export default async function DocumentacionPage({
         total={searchResult.total}
         canManage={canManage}
         canArchive={canArchive}
+        userId={session.user.id}
       />
     </PageContainer>
   )

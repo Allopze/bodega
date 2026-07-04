@@ -1,10 +1,8 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, like, lte, ne, or, sql, type SQL } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, isNull, like, lte, or, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   sstDocuments,
   sstDocumentVersions,
-  sstDocumentLinks,
-  sstDocumentAcknowledgments,
   sstDocumentAudit,
 } from "@/db/schema"
 import { sstDocumentSearchSchema } from "@/lib/validation/prevention"
@@ -13,7 +11,6 @@ import { type WorksiteScope } from "@/lib/auth/scope"
 import {
   type SstDocumentStatus,
   type DashboardCounters,
-  type ExpiringDocument,
   assertScopeAccess,
   effectiveStatus,
   daysUntil,
@@ -28,17 +25,10 @@ export async function getDocumentBundle(id: string, scope: WorksiteScope) {
   assertScopeAccess(doc.worksiteId, scope)
 
   const versions = await db.select().from(sstDocumentVersions).where(eq(sstDocumentVersions.documentId, id)).orderBy(desc(sstDocumentVersions.version))
-  const links = await db.select().from(sstDocumentLinks).where(eq(sstDocumentLinks.documentId, id))
-  const acks = versions.length === 0 ? [] : await db.select({
-    id: sstDocumentAcknowledgments.id, versionId: sstDocumentAcknowledgments.versionId,
-    userId: sstDocumentAcknowledgments.userId, method: sstDocumentAcknowledgments.method,
-    signature: sstDocumentAcknowledgments.signature, ip: sstDocumentAcknowledgments.ip,
-    acknowledgedAt: sstDocumentAcknowledgments.acknowledgedAt,
-  }).from(sstDocumentAcknowledgments).where(inArray(sstDocumentAcknowledgments.versionId, versions.map((v) => v.id)))
   const audit = await db.select().from(sstDocumentAudit).where(eq(sstDocumentAudit.documentId, id)).orderBy(desc(sstDocumentAudit.createdAt)).limit(200)
 
   const effective = { ...doc, status: effectiveStatus(doc.status as SstDocumentStatus, doc.expiresAt) }
-  return { doc: effective, versions, links, acks, audit }
+  return { doc: effective, versions, links: [], acks: [], audit }
 }
 
 /* ── Búsqueda ───────────────────────────────────────────────────────────── */
@@ -62,16 +52,6 @@ export async function searchDocuments(input: SstDocumentSearchInput, scope: Work
   if (data.responsibleUserId) conditions.push(eq(sstDocuments.responsibleUserId, data.responsibleUserId))
   if (data.expiresBefore) conditions.push(lte(sstDocuments.expiresAt, data.expiresBefore))
   if (data.expiresAfter) conditions.push(gte(sstDocuments.expiresAt, data.expiresAfter))
-
-  if (data.entityType && data.entityId) {
-    const docIds = await db.select({ documentId: sstDocumentLinks.documentId }).from(sstDocumentLinks).where(and(eq(sstDocumentLinks.entityType, data.entityType), eq(sstDocumentLinks.entityId, data.entityId)))
-    if (docIds.length === 0) return { rows: [], total: 0 }
-    conditions.push(inArray(sstDocuments.id, docIds.map((d) => d.documentId)))
-  } else if (data.entityType) {
-    const docIds = await db.select({ documentId: sstDocumentLinks.documentId }).from(sstDocumentLinks).where(eq(sstDocumentLinks.entityType, data.entityType))
-    if (docIds.length === 0) return { rows: [], total: 0 }
-    conditions.push(inArray(sstDocuments.id, docIds.map((d) => d.documentId)))
-  }
 
   if (scope.mode === "some") {
     conditions.push(or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId)))
@@ -120,30 +100,6 @@ export async function getDashboardCounters(scope: WorksiteScope): Promise<Dashbo
     expiringSoon: { within7: expiring7, within15: expiring15, within30: expiring30 },
     pendingReview: byStatus.en_revision, observed: byStatus.observado, ackPending,
   }
-}
-
-export async function getExpiringDocuments(scope: WorksiteScope, daysAhead = 30, limit = 200): Promise<ExpiringDocument[]> {
-  const target = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const whereParts = [isNotNull(sstDocuments.expiresAt), lte(sstDocuments.expiresAt, target), ne(sstDocuments.status, "archivado"), ne(sstDocuments.status, "reemplazado")]
-  if (scope.mode === "some") {
-    const scoped = or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId))
-    if (scoped) whereParts.push(scoped)
-  }
-  const rows = await db.select({
-    id: sstDocuments.id, title: sstDocuments.title, internalCode: sstDocuments.internalCode,
-    status: sstDocuments.status, expiresAt: sstDocuments.expiresAt, worksiteId: sstDocuments.worksiteId,
-    categorySlug: sstDocuments.categorySlug, responsibleUserId: sstDocuments.responsibleUserId,
-  }).from(sstDocuments).where(and(...whereParts)).orderBy(sstDocuments.expiresAt).limit(limit)
-
-  return rows.map((r) => ({ ...r, status: effectiveStatus(r.status as SstDocumentStatus, r.expiresAt), daysRemaining: daysUntil(r.expiresAt) }))
-}
-
-/* ── Bandeja de revisión ────────────────────────────────────────────────── */
-
-export async function listReviewQueue(scope: WorksiteScope) {
-  const whereParts = [or(eq(sstDocuments.status, "en_revision"), eq(sstDocuments.status, "observado"))]
-  if (scope.mode === "some") whereParts.push(or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId)))
-  return db.select().from(sstDocuments).where(and(...whereParts)).orderBy(desc(sstDocuments.updatedAt)).limit(100)
 }
 
 /* ── Tracking de visualizaciones y descargas ────────────────────────────── */

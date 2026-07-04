@@ -3,7 +3,7 @@
  *
  * Cubre:
  *   - Validación Zod de inputs (categorías, tipos, documentos, versiones,
- *     estados, observaciones, archivo).
+ *     archivo y búsqueda).
  *   - El helper de estados efectivos (vencido por fecha).
  *   - El seeder idempotente de categorías por defecto.
  *
@@ -25,14 +25,9 @@ import {
   sstDocumentCreateSchema,
   sstDocumentUpdateSchema,
   sstDocumentVersionCreateSchema,
-  sstDocumentObserveSchema,
-  sstDocumentStatusChangeSchema,
-  sstDocumentAckSchema,
-  sstDocumentLinkSchema,
   SST_DOCUMENT_CATEGORY_SLUGS,
   SST_DOCUMENT_CONFIDENTIALITIES,
   SST_DOCUMENT_STATUSES,
-  SST_DOCUMENT_LINK_ENTITY_TYPES,
 } from "@/lib/validation/prevention"
 import { DEFAULT_CATEGORIES, todayIso } from "@/lib/services/prevention-documents-library"
 
@@ -106,49 +101,11 @@ describe("validation: sstDocumentVersionCreateSchema", () => {
   })
 })
 
-describe("validation: sstDocumentObserveSchema", () => {
-  it("exige comentario no vacío al observar", () => {
-    const r1 = sstDocumentObserveSchema.safeParse({ documentId: "sdoc-1", comment: "" })
-    const r2 = sstDocumentObserveSchema.safeParse({ documentId: "sdoc-1", comment: "  " })
-    const r3 = sstDocumentObserveSchema.safeParse({ documentId: "sdoc-1", comment: "Faltan firmas" })
-    expect(r1.success).toBe(false)
-    expect(r2.success).toBe(false)
-    expect(r3.success).toBe(true)
-  })
-})
-
-describe("validation: sstDocumentStatusChangeSchema", () => {
-  it("solo permite transiciones a estados válidos", () => {
-    const r1 = sstDocumentStatusChangeSchema.safeParse({ documentId: "sdoc-1", toStatus: "no_existe" })
-    const r2 = sstDocumentStatusChangeSchema.safeParse({ documentId: "sdoc-1", toStatus: "vigente" })
-    expect(r1.success).toBe(false)
-    expect(r2.success).toBe(true)
-  })
-
+describe("validation: SST_DOCUMENT_STATUSES", () => {
   it("valida que el set de estados cubre todos los del CHECK constraint", () => {
     const expected = ["borrador", "en_revision", "observado", "aprobado", "vigente", "vencido", "reemplazado", "archivado"]
     for (const e of expected) {
       expect(SST_DOCUMENT_STATUSES).toContain(e as never)
-    }
-  })
-})
-
-describe("validation: sstDocumentAckSchema", () => {
-  it("exige firma con al menos 2 caracteres", () => {
-    const r1 = sstDocumentAckSchema.safeParse({ versionId: "sdv-1", signature: "a" })
-    const r2 = sstDocumentAckSchema.safeParse({ versionId: "sdv-1", signature: "Mauricio Sandoval" })
-    expect(r1.success).toBe(false)
-    expect(r2.success).toBe(true)
-  })
-})
-
-describe("validation: sstDocumentLinkSchema", () => {
-  it("restringe entityType a la lista permitida", () => {
-    const r1 = sstDocumentLinkSchema.safeParse({ documentId: "sdoc-1", entityType: "fuer_de_lista", entityId: "x" })
-    expect(r1.success).toBe(false)
-    for (const et of SST_DOCUMENT_LINK_ENTITY_TYPES) {
-      const res = sstDocumentLinkSchema.safeParse({ documentId: "sdoc-1", entityType: et, entityId: "x" })
-      expect(res.success).toBe(true)
     }
   })
 })

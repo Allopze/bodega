@@ -31,7 +31,7 @@ vi.mock("@/lib/audit", () => ({
 }))
 
 import { recordStatusChange } from "@/lib/audit"
-import { linkDocumentToEntity, restoreDocument, updateDocumentMetadata } from "@/lib/services/prevention-documents-library"
+import { restoreDocument, updateDocumentMetadata } from "@/lib/services/prevention-documents-library"
 
 const ctx = {
   userId: "user-1",
@@ -86,52 +86,6 @@ describe("prevention documents library service", () => {
       scope: { mode: "some", ids: ["ws-1"] },
       permissions: [],
     })).rejects.toThrow(/documentos sensibles/i)
-  })
-
-  it("denies linking a document to a missing entity", async () => {
-    mockDoc.current = {
-      id: "sdoc-1",
-      title: "Procedimiento",
-      status: "borrador",
-      worksiteId: "ws-1",
-      confidentiality: "publico_interno",
-    }
-    mockSelectWhere
-      .mockResolvedValueOnce([mockDoc.current])
-      .mockResolvedValueOnce([])
-
-    await expect(linkDocumentToEntity({
-      input: {
-        documentId: "sdoc-1",
-        entityType: "worker",
-        entityId: "worker-missing",
-      },
-      ctx,
-      scope: { mode: "some", ids: ["ws-1"] },
-    })).rejects.toThrow(/entidad vinculada no encontrada/i)
-  })
-
-  it("denies linking a document to an entity outside the caller's worksite scope", async () => {
-    mockDoc.current = {
-      id: "sdoc-1",
-      title: "Procedimiento",
-      status: "borrador",
-      worksiteId: "ws-1",
-      confidentiality: "publico_interno",
-    }
-    mockSelectWhere
-      .mockResolvedValueOnce([mockDoc.current])
-      .mockResolvedValueOnce([{ worksiteId: "ws-2" }])
-
-    await expect(linkDocumentToEntity({
-      input: {
-        documentId: "sdoc-1",
-        entityType: "worker",
-        entityId: "worker-2",
-      },
-      ctx,
-      scope: { mode: "some", ids: ["ws-1"] },
-    })).rejects.toThrow(/sin acceso/i)
   })
 
   it("restores an archived document as draft and records the status change", async () => {
