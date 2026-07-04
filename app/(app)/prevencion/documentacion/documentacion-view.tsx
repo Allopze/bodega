@@ -10,7 +10,6 @@ import {
   FolderOpen,
   MagnifyingGlass,
 } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -29,17 +28,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tooltip } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import type { DashboardCounters, ExpiringDocument, SstDocumentStatus } from "@/lib/services/prevention-documents/types"
 import { buildFolderOptionLabels } from "@/lib/services/prevention-documents/labels"
 import {
   archiveSstDocumentAction,
@@ -50,20 +41,6 @@ import {
   restoreSstDocumentFolderAction,
 } from "./actions"
 
-interface CategoryRow {
-  slug: string
-  name: string
-  description: string | null
-  sortOrder: number
-}
-
-interface TypeRow {
-  id: string
-  categorySlug: string
-  code: string
-  name: string
-}
-
 interface DocumentRow {
   id: string
   title: string
@@ -72,13 +49,16 @@ interface DocumentRow {
   status: string
   confidentiality: string
   worksiteId: string | null
-  worksiteName: string | null
+  worksiteName?: string | null
   responsibleUserId: string | null
-  responsibleName: string | null
-  uploaderName: string | null
+  responsibleName?: string | null
+  uploaderName?: string | null
   expiresAt: string | null
-  daysUntilExpiry: number | null
+  daysUntilExpiry?: number | null
   currentVersionId: string | null
+  fileName?: string | null
+  mimeType?: string | null
+  fileSize?: number | null
   requiresAcknowledgment: boolean
   updatedAt: string
 }
@@ -105,43 +85,21 @@ interface BreadcrumbItem {
 }
 
 interface Props {
-  counters: DashboardCounters
-  expiring: Array<ExpiringDocument & { worksiteName: string | null; responsibleName: string | null }>
+  counters?: unknown
+  expiring?: unknown[]
   documents: DocumentRow[]
   folders?: FolderRow[]
   folderOptions?: FolderOption[]
   breadcrumbs?: BreadcrumbItem[]
   currentFolderId?: string | null
-  categories: CategoryRow[]
-  types: TypeRow[]
+  categories?: unknown[]
+  types?: unknown[]
   searchParams: { q?: string; category?: string; status?: string; worksiteId?: string }
   total: number
   canManage: boolean
-  canApprove: boolean
-  canAck: boolean
+  canApprove?: boolean
+  canAck?: boolean
   canArchive: boolean
-}
-
-const STATUS_LABELS: Record<SstDocumentStatus, string> = {
-  borrador: "Borrador",
-  en_revision: "En revisión",
-  observado: "Observado",
-  aprobado: "Aprobado",
-  vigente: "Vigente",
-  vencido: "Vencido",
-  reemplazado: "Reemplazado",
-  archivado: "Archivado",
-}
-
-const STATUS_TONES: Record<string, "default" | "info" | "success" | "warning" | "danger" | "primary" | "signal" | "outline"> = {
-  borrador: "default",
-  en_revision: "info",
-  observado: "warning",
-  aprobado: "info",
-  vigente: "success",
-  vencido: "danger",
-  reemplazado: "outline",
-  archivado: "outline",
 }
 
 type MenuState =
@@ -155,7 +113,6 @@ export function DocumentacionView(props: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const {
-    counters,
     documents,
     folders = [],
     folderOptions = [],
@@ -166,7 +123,6 @@ export function DocumentacionView(props: Props) {
   } = props
 
   const [q, setQ] = React.useState(incoming.q ?? "")
-  const [status, setStatus] = React.useState(incoming.status ?? "")
   const [pending, startTransition] = React.useTransition()
   const [moveDocumentId, setMoveDocumentId] = React.useState<string | null>(null)
   const [moveFolderId, setMoveFolderId] = React.useState<string>("")
@@ -194,10 +150,12 @@ export function DocumentacionView(props: Props) {
     return () => document.removeEventListener("keydown", closeOnEscape)
   }, [])
 
-  const applyFilters = React.useCallback((next: { q?: string; status?: string }) => {
+  const applyFilters = React.useCallback((next: { q?: string }) => {
     const sp = new URLSearchParams(searchParams.toString())
     if (next.q !== undefined) { if (next.q) sp.set("q", next.q); else sp.delete("q") }
-    if (next.status !== undefined) { if (next.status) sp.set("status", next.status); else sp.delete("status") }
+    sp.delete("status")
+    sp.delete("category")
+    sp.delete("worksiteId")
     router.push(`/prevencion/documentacion?${sp.toString()}`)
   }, [router, searchParams])
 
@@ -374,26 +332,11 @@ export function DocumentacionView(props: Props) {
 
   const hasContent = folders.length > 0 || documents.length > 0
 
-  const Toolbar = (
-    <div className="rounded-lg border border-(--color-border) bg-(--color-chrome) px-4 py-3">
-      <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        <StatChip label="Total" value={counters.total} />
-        <StatChip label="Vigentes" value={counters.byStatus.vigente} tone="success" />
-        <StatChip label="En revisión" value={counters.byStatus.en_revision} tone="info" />
-        <StatChip label="Observados" value={counters.byStatus.observado} tone="warning" />
-        <StatChip label="Vencidos" value={counters.byStatus.vencido} tone="danger" />
-        <StatChip label="Próximos ≤30 d" value={counters.expiringSoon.within30} tone="warning" />
-      </div>
-    </div>
-  )
-
   return (
       <div className="space-y-5">
-        {Toolbar}
-
         <form
-          className="flex flex-wrap items-end gap-3"
-          onSubmit={(e) => { e.preventDefault(); applyFilters({ q, status }) }}
+          className="flex items-end gap-3"
+          onSubmit={(e) => { e.preventDefault(); applyFilters({ q }) }}
         >
           <div className="relative min-w-[200px] flex-1">
             <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-(--color-text-subtle)" size={16} />
@@ -404,16 +347,6 @@ export function DocumentacionView(props: Props) {
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          <Select value={status || "all"} onValueChange={(value) => setStatus(value === "all" ? "" : value)}>
-            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Estado" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              {Object.entries(STATUS_LABELS).map(([k, label]) => (
-                <SelectItem key={k} value={k}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button type="submit" variant="secondary">Filtrar</Button>
         </form>
 
         {!hasContent ? (
@@ -480,10 +413,9 @@ export function DocumentacionView(props: Props) {
                   <TableRow>
                     <TableHead className="w-10">Sel.</TableHead>
                     <TableHead>Nombre</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Faena</TableHead>
-                    <TableHead>Responsable</TableHead>
-                    <TableHead>Vence</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Actualizado</TableHead>
+                    <TableHead>Tamaño</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -527,9 +459,8 @@ export function DocumentacionView(props: Props) {
                           {folder.name}
                         </Link>
                       </TableCell>
-                      <TableCell><Badge variant="outline">Carpeta</Badge></TableCell>
-                      <TableCell className="text-xs">{folder.worksiteName ?? "Global"}</TableCell>
-                      <TableCell className="text-xs">—</TableCell>
+                      <TableCell className="text-xs text-(--color-text-subtle)">Carpeta</TableCell>
+                      <TableCell className="text-xs text-(--color-text-subtle)">{formatDate(folder.updatedAt)}</TableCell>
                       <TableCell className="text-xs">—</TableCell>
                       <TableCell className="text-right">
                         {folder.archivedAt && canArchive ? (
@@ -736,8 +667,6 @@ function DocumentTableRow({
   onContextMenu: (event: React.MouseEvent) => void
   onMove: () => void
 }) {
-  const tone = STATUS_TONES[d.status] ?? "default"
-  const days = d.daysUntilExpiry
   return (
     <TableRow
       draggable={canManage}
@@ -762,26 +691,14 @@ function DocumentTableRow({
             <FileText size={18} className="text-(--color-text-subtle)" />
             {d.title}
           </Link>
-          {d.internalCode && (
-            <span className="text-xs text-(--color-text-subtle)">{d.internalCode}</span>
+          {d.fileName && d.fileName !== d.title && (
+            <span className="text-xs text-(--color-text-subtle)">{d.fileName}</span>
           )}
         </div>
       </TableCell>
-      <TableCell><Badge variant={tone}>{STATUS_LABELS[d.status as SstDocumentStatus] ?? d.status}</Badge></TableCell>
-      <TableCell className="text-xs">{d.worksiteName ?? "—"}</TableCell>
-      <TableCell className="text-xs">{d.responsibleName ?? "—"}</TableCell>
-      <TableCell className="text-xs">
-        {d.expiresAt ? (
-          <Tooltip content={`${d.expiresAt}${days !== null ? ` · ${days} día(s)` : ""}`}>
-            <span className={cn(
-              days !== null && days < 0 && "font-semibold text-(--color-danger)",
-              days !== null && days >= 0 && days <= 30 && "text-(--color-warning)",
-            )}>
-              {d.expiresAt}
-            </span>
-          </Tooltip>
-        ) : "—"}
-      </TableCell>
+      <TableCell className="text-xs text-(--color-text-subtle)">{documentTypeLabel(d)}</TableCell>
+      <TableCell className="text-xs text-(--color-text-subtle)">{formatDate(d.updatedAt)}</TableCell>
+      <TableCell className="text-xs text-(--color-text-subtle)">{formatFileSize(d.fileSize)}</TableCell>
       <TableCell>
         <div className="flex justify-end gap-1">
           <Button asChild size="sm" variant="secondary">
@@ -820,20 +737,22 @@ function DocumentTableRow({
   )
 }
 
-function StatChip({ label, value, tone }: { label: string; value: number; tone?: "success" | "info" | "warning" | "danger" }) {
-  return (
-    <span className="flex items-center gap-1.5 text-(--color-text-subtle)">
-      <span className="text-xs">{label}</span>
-      <span className={cn(
-        "font-semibold tabular-nums",
-        tone === "success" && "text-(--color-success)",
-        tone === "info" && "text-(--color-info)",
-        tone === "warning" && "text-(--color-warning)",
-        tone === "danger" && "text-(--color-danger)",
-        !tone && "text-(--color-text)",
-      )}>
-        {value}
-      </span>
-    </span>
-  )
+function documentTypeLabel(document: DocumentRow) {
+  if (document.mimeType === "application/pdf") return "PDF"
+  if (document.mimeType?.startsWith("image/")) return "Imagen"
+  if (document.mimeType?.includes("spreadsheet") || document.fileName?.match(/\.(xlsx|xls)$/i)) return "Excel"
+  if (document.mimeType?.includes("word") || document.fileName?.match(/\.(docx|doc)$/i)) return "Word"
+  const extension = document.fileName?.split(".").pop()
+  return extension ? extension.toUpperCase() : "Archivo"
+}
+
+function formatFileSize(size: number | null | undefined) {
+  if (!size) return "—"
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDate(value: string) {
+  return value.slice(0, 10)
 }

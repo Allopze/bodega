@@ -91,6 +91,12 @@ describe("DocumentDetailView", () => {
 
     expect(screen.getByTitle("Previsualización de procedimiento.pdf")).toHaveAttribute("src", "/api/prevencion/documentacion/sdoc-1")
     expect(screen.getByRole("link", { name: /Descargar archivo/i })).toHaveAttribute("href", "/api/prevencion/documentacion/sdoc-1?download=1")
+    expect(screen.queryByRole("tab", { name: /Asociaciones/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: /Acuses/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: /Bitácora/i })).not.toBeInTheDocument()
+    expect(screen.queryByText("Metadata")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Aprobar/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Enviar a revisión/i })).not.toBeInTheDocument()
   })
 
   it("shows a restore action for archived documents", () => {

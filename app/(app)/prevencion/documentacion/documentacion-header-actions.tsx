@@ -26,7 +26,7 @@ interface Props {
  * metadata por defecto — la categoría la resuelve el server action. En subida
  * de carpeta se recrea la estructura usando `webkitRelativePath`.
  */
-async function uploadFilesAsDocuments(
+export async function uploadFilesAsDocuments(
   files: File[],
   currentFolderId: string | null,
   onProgress: (done: number, failed: number) => void,
@@ -40,7 +40,10 @@ async function uploadFilesAsDocuments(
     const name = parts[parts.length - 1] ?? ""
     const parentId = await ensureFolder(parts.slice(0, -1).join("/"))
     const res = await createSstDocumentFolderAction({ name, parentId })
-    const id = res.ok && res.data ? res.data.id : parentId
+    if (!res.ok || !res.data?.id) {
+      throw new Error(res.message ?? `No se pudo crear la carpeta ${name}.`)
+    }
+    const id = res.data.id
     folderCache.set(dirPath, id)
     return id
   }

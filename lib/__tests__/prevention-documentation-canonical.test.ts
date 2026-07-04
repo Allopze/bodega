@@ -44,6 +44,9 @@ describe("prevention documentation canonical surface", () => {
     expect(existsSync(path.join(root, "app/(app)/prevencion/documentacion/actions.ts"))).toBe(true)
     expect(existsSync(path.join(root, "app/api/prevencion/documentacion/export/route.ts"))).toBe(false)
     expect(existsSync(path.join(root, "lib/services/prevention-legal-docs.ts"))).toBe(false)
+    expect(readFileSync(path.join(root, "app/(app)/prevencion/documentacion/nuevo/page.tsx"), "utf8")).toContain('redirect("/prevencion/documentacion")')
+    expect(readFileSync(path.join(root, "app/(app)/prevencion/documentacion/revisiones/page.tsx"), "utf8")).toContain('redirect("/prevencion/documentacion")')
+    expect(readFileSync(path.join(root, "app/(app)/prevencion/documentacion/vencimientos/page.tsx"), "utf8")).toContain('redirect("/prevencion/documentacion")')
 
     const validationSource = readFileSync(path.join(root, "lib/validation/prevention.ts"), "utf8")
     expect(validationSource).not.toContain("legalDocumentCreateSchema")

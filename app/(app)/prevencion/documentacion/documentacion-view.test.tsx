@@ -56,6 +56,61 @@ function firstFolderLink() {
 }
 
 describe("DocumentacionView", () => {
+  it("renders as a plain file library without governance columns or state filters", () => {
+    render(
+      <DocumentacionView
+        counters={counters}
+        expiring={[]}
+        documents={[{
+          id: "sdoc-1",
+          title: "Procedimiento trabajo seguro",
+          internalCode: "PTS-001",
+          categorySlug: "gestion_preventiva",
+          status: "vigente",
+          confidentiality: "publico_interno",
+          worksiteId: "ws-1",
+          worksiteName: "Faena Norte",
+          responsibleUserId: null,
+          responsibleName: null,
+          uploaderName: "Prevencionista",
+          expiresAt: "2026-08-01",
+          daysUntilExpiry: 29,
+          currentVersionId: "sdv-1",
+          fileName: "procedimiento.pdf",
+          mimeType: "application/pdf",
+          fileSize: 2048,
+          requiresAcknowledgment: false,
+          updatedAt: "2026-07-02T00:00:00.000Z",
+        }]}
+        folders={[{
+          id: "sdf-1",
+          parentId: null,
+          name: "Protocolos MINSAL",
+          worksiteId: null,
+          updatedAt: "2026-07-02T00:00:00.000Z",
+        }]}
+        folderOptions={[]}
+        breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
+        searchParams={{}}
+        total={2}
+        canManage
+        canArchive
+      />,
+    )
+
+    expect(screen.getByRole("columnheader", { name: "Nombre" })).toBeInTheDocument()
+    expect(screen.getByRole("columnheader", { name: "Tipo" })).toBeInTheDocument()
+    expect(screen.getByRole("columnheader", { name: "Actualizado" })).toBeInTheDocument()
+    expect(screen.getByRole("columnheader", { name: "Tamaño" })).toBeInTheDocument()
+    expect(screen.queryByRole("columnheader", { name: "Estado" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("columnheader", { name: "Faena" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("columnheader", { name: "Responsable" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("columnheader", { name: "Vence" })).not.toBeInTheDocument()
+    expect(screen.queryByText("En revisión")).not.toBeInTheDocument()
+    expect(screen.queryByText("Vencidos")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Filtrar" })).not.toBeInTheDocument()
+  })
+
   it("renders folders, documents, and context actions", () => {
     render(
       <DocumentacionView

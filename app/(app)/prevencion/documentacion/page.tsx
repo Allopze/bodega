@@ -4,17 +4,13 @@ import { inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
-  getDashboardCounters,
-  getExpiringDocuments,
   searchDocuments,
-  listDocumentCategories,
-  listDocumentTypes,
   listDocumentFolders,
   listFolderOptions,
   getFolderBreadcrumbItems,
 } from "@/lib/services/prevention-documents-library"
 import { db } from "@/db"
-import { users, worksites } from "@/db/schema"
+import { sstDocumentVersions, worksites } from "@/db/schema"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { DocumentacionHeaderActions } from "./documentacion-header-actions"
@@ -37,58 +33,45 @@ export default async function DocumentacionPage({
 
   const activeFolderId = params.folder || null
 
-  const [counters, expiring, categories, types, folders, folderOptions, breadcrumbs, searchResult] = await Promise.all([
-    getDashboardCounters(scope),
-    getExpiringDocuments(scope, 30, 50),
-    listDocumentCategories(true),
-    listDocumentTypes(),
+  const [folders, folderOptions, breadcrumbs, searchResult] = await Promise.all([
     listDocumentFolders({ parentId: activeFolderId, scope, includeArchived: params.status === "archivado" }),
     listFolderOptions(scope),
     getFolderBreadcrumbItems(activeFolderId, scope),
     searchDocuments({
       q: params.q ?? "",
       folderId: activeFolderId,
-      categorySlug: (params.category as never) ?? "",
-      status: (params.status as never) ?? "",
-      worksiteId: params.worksiteId ?? "",
+      categorySlug: "",
+      status: "",
+      worksiteId: "",
       page: 1,
       pageSize: 50,
     }, scope),
   ])
 
-  // Hidratar obras y usuarios.
+  // Hidratar obras de carpetas y metadatos básicos de la versión vigente.
   const worksiteIds = Array.from(new Set([
-    ...searchResult.rows.map((r) => r.worksiteId).filter(Boolean) as string[],
-    ...expiring.map((e) => e.worksiteId).filter(Boolean) as string[],
     ...folders.map((f) => f.worksiteId).filter(Boolean) as string[],
   ]))
-  const userIds = Array.from(new Set([
-    ...searchResult.rows.map((r) => r.responsibleUserId).filter(Boolean) as string[],
-    ...searchResult.rows.map((r) => r.uploadedBy).filter(Boolean) as string[],
-    ...searchResult.rows.map((r) => r.approvedBy).filter(Boolean) as string[],
-    ...expiring.map((e) => e.responsibleUserId).filter(Boolean) as string[],
-  ]))
+  const versionIds = Array.from(new Set(searchResult.rows.map((r) => r.currentVersionId).filter(Boolean) as string[]))
 
-  const [worksiteRows, userRows] = await Promise.all([
+  const [worksiteRows, versionRows] = await Promise.all([
     worksiteIds.length ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, worksiteIds)) : Promise.resolve([] as Array<{ id: string; name: string }>),
-    userIds.length ? db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds)) : Promise.resolve([] as Array<{ id: string; name: string }>),
+    versionIds.length ? db.select({
+      id: sstDocumentVersions.id,
+      fileName: sstDocumentVersions.fileName,
+      mimeType: sstDocumentVersions.mimeType,
+      fileSize: sstDocumentVersions.fileSize,
+    }).from(sstDocumentVersions).where(inArray(sstDocumentVersions.id, versionIds)) : Promise.resolve([] as Array<{ id: string; fileName: string; mimeType: string; fileSize: number }>),
   ])
 
   const worksiteMap = Object.fromEntries(worksiteRows.map((w) => [w.id, w.name]))
-  const userMap = Object.fromEntries(userRows.map((u) => [u.id, u.name]))
+  const versionMap = Object.fromEntries(versionRows.map((v) => [v.id, v]))
 
-  // Calculamos los días para vencer una sola vez (en el Server Component, antes de
-  // pasar el dato al cliente) para evitar impureza durante el render.
-  // eslint-disable-next-line react-hooks/purity -- server-side data prep
-  const nowMs = Date.now()
   const docsWithRefs = searchResult.rows.map((d) => ({
     ...d,
-    worksiteName: d.worksiteId ? worksiteMap[d.worksiteId] ?? null : null,
-    responsibleName: d.responsibleUserId ? userMap[d.responsibleUserId] ?? null : null,
-    uploaderName: userMap[d.uploadedBy] ?? null,
-    daysUntilExpiry: d.expiresAt
-      ? (Math.ceil((new Date(`${d.expiresAt}T00:00:00Z`).getTime() - nowMs) / (1000 * 60 * 60 * 24)))
-      : null,
+    fileName: d.currentVersionId ? versionMap[d.currentVersionId]?.fileName ?? null : null,
+    mimeType: d.currentVersionId ? versionMap[d.currentVersionId]?.mimeType ?? null : null,
+    fileSize: d.currentVersionId ? versionMap[d.currentVersionId]?.fileSize ?? null : null,
   }))
 
   const foldersWithRefs = folders.map((f) => ({
@@ -96,40 +79,26 @@ export default async function DocumentacionPage({
     worksiteName: f.worksiteId ? worksiteMap[f.worksiteId] ?? null : null,
   }))
 
-  const expiringWithRefs = expiring.map((e) => ({
-    ...e,
-    worksiteName: e.worksiteId ? worksiteMap[e.worksiteId] ?? null : null,
-    responsibleName: e.responsibleUserId ? userMap[e.responsibleUserId] ?? null : null,
-  }))
-
   const canManage = can(session, "prevention:docs:manage")
-  const canApprove = can(session, "prevention:docs:approve")
-  const canAck = can(session, "prevention:docs:ack")
   const canArchive = can(session, "prevention:docs:archive")
 
   return (
     <PageContainer width="workbench">
       <PageHeader
         title="Documentación"
-        description="Repositorio de documentación preventiva. Vencimientos, versiones, aprobaciones y acuses."
+        description="Biblioteca de archivos y carpetas preventivas."
         breadcrumb={<Breadcrumbs items={breadcrumbs} />}
         actions={canManage ? <DocumentacionHeaderActions currentFolderId={activeFolderId} /> : undefined}
       />
       <DocumentacionView
-        counters={counters}
-        expiring={expiringWithRefs}
         documents={docsWithRefs}
         folders={foldersWithRefs}
         folderOptions={folderOptions}
         breadcrumbs={breadcrumbs}
         currentFolderId={activeFolderId}
-        categories={categories}
-        types={types}
         searchParams={params}
         total={searchResult.total}
         canManage={canManage}
-        canApprove={canApprove}
-        canAck={canAck}
         canArchive={canArchive}
       />
     </PageContainer>
