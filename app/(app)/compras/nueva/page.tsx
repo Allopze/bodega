@@ -55,7 +55,7 @@ export default async function NuevaOcPage({
   }
 
   const requestIds = [...new Set(rawItems.map((i) => i.requestId))]
-  const productIds = [...new Set(rawItems.map((i) => i.productId).filter(Boolean))] as string[]
+  const productIds = [...new Set(rawItems.flatMap((i) => i.productId ? [i.productId] : []))]
 
   const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites] = await Promise.all([
     db

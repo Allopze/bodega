@@ -87,6 +87,7 @@ export function ProductList({ products, categories, allSuppliers }: {
     <>
       <div className="flex items-center gap-2 mb-1">
         <button
+          type="button"
           onClick={openNewCat}
           className="flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] px-2 py-1 rounded-[var(--radius-sm)] hover:bg-[var(--color-surface-2)]"
         >
@@ -139,6 +140,7 @@ export function ProductList({ products, categories, allSuppliers }: {
               <TableCell>
                 <div className="flex items-center gap-2 justify-end">
                   <button
+                    type="button"
                     onClick={() => openEditProduct(p.id)}
                     disabled={loadingEditId === p.id}
                     className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
@@ -191,6 +193,7 @@ export function ProductList({ products, categories, allSuppliers }: {
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
                 <button
+                  type="button"
                   onClick={() => openEditProduct(p.id)}
                   disabled={loadingEditId === p.id}
                   className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
@@ -218,7 +221,7 @@ export function ProductList({ products, categories, allSuppliers }: {
             <p className="text-eyebrow">
               Categorías ({categories.length})
             </p>
-            <button onClick={openNewCat} className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1 transition-transform">
+            <button type="button" onClick={openNewCat} className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1 transition-transform">
               <Plus size={12} />Nueva categoría
             </button>
           </div>
@@ -242,6 +245,7 @@ export function ProductList({ products, categories, allSuppliers }: {
       )}
 
       <CategoryPanel
+        key={editCategory?.id ?? "nueva"}
         open={catSheetOpen}
         onClose={() => setCatSheetOpen(false)}
         editCategory={editCategory}

@@ -82,7 +82,7 @@ export async function createOrderAction(
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
 
-  const itemIds = [...new Set(items.map((item) => item.requestItemId).filter(Boolean))]
+  const itemIds = [...new Set(items.flatMap((item) => item.requestItemId ? [item.requestItemId] : []))]
   if (itemIds.length !== items.length) {
     return { ok: false, message: "Hay ítems duplicados o inválidos en la orden" }
   }

@@ -6,15 +6,18 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
-import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { type ActionState } from "@/lib/validation/operations"
 
 const REVALIDATE = "/solicitudes"
 
 export async function cancelRequest(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("requests:create") }
+  try { session = await requireAuth() }
   catch { return { ok: false, message: "Sin permisos" } }
+  if (!can(session, "requests:create") && !can(session, "requests:view_all")) {
+    return { ok: false, message: "Sin permisos para cancelar solicitudes" }
+  }
 
   const requestId = formData.get("requestId") as string
   if (!requestId) return { ok: false, message: "ID requerido" }
@@ -33,7 +36,7 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
   if (requiresReason && !reason) {
     return { ok: false, message: "El motivo de cancelación es obligatorio" }
   }
-  if (request.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
+  if (request.requesterId !== session.user.id && !can(session, "requests:view_all")) {
     return { ok: false, message: "Solo puedes cancelar tus propias solicitudes" }
   }
   if (!canAccessWorksite(session, request.worksiteId)) {

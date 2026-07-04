@@ -97,7 +97,7 @@ export function FaenasList({
               </dl>
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <button onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label="Editar faena">
+                <button type="button" onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label="Editar faena">
                   <PencilSimple size={16} />
                 </button>
                 <form action={wsToggleAction}>
@@ -128,7 +128,7 @@ export function FaenasList({
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast)" title="Editar">
+                    <button type="button" onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast)" title="Editar">
                       <PencilSimple size={16} />
                     </button>
                     <form action={wsToggleAction}>
@@ -147,6 +147,7 @@ export function FaenasList({
       />
 
       <WorksiteForm
+        key={editWs?.id ?? "nuevo"}
         open={wsSheetOpen}
         onClose={() => setWsSheetOpen(false)}
         editWorksite={editWs}

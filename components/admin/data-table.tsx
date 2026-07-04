@@ -174,6 +174,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 >
                   {col.sortable ? (
                     <button
+                      type="button"
                       onClick={() => toggleSort(col.key)}
                       className={cn(
                         "inline-flex items-center gap-1",

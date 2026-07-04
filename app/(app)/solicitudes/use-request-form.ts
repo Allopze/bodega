@@ -35,6 +35,7 @@ export function useRequestForm({
     && (userPermissions.includes("requests:delete") || userPermissions.includes("requests:view_own"))
   const canCancelRequest = isEdit
     && ["draft", "returned", "submitted", "in_review", "partially_approved"].includes(editRequest.status)
+    && (userPermissions.includes("requests:create") || userPermissions.includes("requests:view_all"))
 
   const [draftState, draftAction, draftPending] = useActionState<ActionState & { requestId?: string }, FormData>(saveDraft, INITIAL_STATE)
   const [submitState, submitAction] = useActionState<ActionState, FormData>(submitRequest, INITIAL_STATE)

@@ -82,10 +82,15 @@ function BranchRow({
   // El padre sólo toma el tint si él mismo es la ruta activa; si solo un hijo
   // está activo, se mantiene en text para no eclipsar al hijo resaltado.
   const active = selfActive
-  const [open, setOpen] = React.useState(selfActive || childActive)
-  React.useEffect(() => {
-    if (selfActive || childActive) setOpen(true)
-  }, [selfActive, childActive])
+  const shouldOpen = selfActive || childActive
+  const [open, setOpen] = React.useState(shouldOpen)
+  const [wasShouldOpen, setWasShouldOpen] = React.useState(shouldOpen)
+  // Auto-expandir cuando la navegación mete la ruta activa dentro de esta rama,
+  // sin pisar un colapso manual (derivado en render, sin useEffect).
+  if (shouldOpen !== wasShouldOpen) {
+    setWasShouldOpen(shouldOpen)
+    if (shouldOpen) setOpen(true)
+  }
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>

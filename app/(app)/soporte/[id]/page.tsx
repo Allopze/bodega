@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
-import { requirePermission, can } from "@/lib/auth/can"
+import { requireAuth, can } from "@/lib/auth/can"
 import { getReport } from "@/lib/services/feedback"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -18,8 +18,11 @@ interface Props {
 
 export default async function ReporteDetailPage({ params }: Props) {
   let session
-  try { session = await requirePermission("feedback:view_own") }
+  try { session = await requireAuth() }
   catch { redirect("/forbidden") }
+  if (!can(session, "feedback:view_own") && !can(session, "feedback:view_all") && !can(session, "feedback:manage")) {
+    redirect("/forbidden")
+  }
 
   const { id } = await params
   const report = await getReport(id)

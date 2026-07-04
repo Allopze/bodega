@@ -117,9 +117,13 @@ function AreaAccordion({
   first:        boolean
 }) {
   const [open, setOpen] = React.useState(defaultOpen)
-  React.useEffect(() => {
+  const [wasDefaultOpen, setWasDefaultOpen] = React.useState(defaultOpen)
+  // Auto-expandir cuando la navegación activa esta área, sin pisar un colapso
+  // manual del usuario (derivado en render, sin useEffect).
+  if (defaultOpen !== wasDefaultOpen) {
+    setWasDefaultOpen(defaultOpen)
     if (defaultOpen) setOpen(true)
-  }, [defaultOpen])
+  }
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen} className={cn(!first && "mt-4")}>

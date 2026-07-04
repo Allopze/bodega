@@ -27,7 +27,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "analyze": "next experimental-analyze",
-    "release": "tsx scripts/release.ts"
+    "release": "tsx scripts/release.ts",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

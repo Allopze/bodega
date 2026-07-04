@@ -148,8 +148,8 @@ export default async function AprobacionesPage({
     .orderBy(asc(purchaseRequestItems.sortOrder))
 
   const pendingItemIds = pendingItems.map((i) => i.id)
-  const productIds = [...new Set(pendingItems.map((i) => i.productId).filter(Boolean))] as string[]
-  const supplierIds = [...new Set(pendingItems.map((i) => i.suggestedSupplierId).filter(Boolean))] as string[]
+  const productIds = [...new Set(pendingItems.flatMap((i) => i.productId ? [i.productId] : []))]
+  const supplierIds = [...new Set(pendingItems.flatMap((i) => i.suggestedSupplierId ? [i.suggestedSupplierId] : []))]
 
   // Batch load everything else in parallel
   const [allAttrs, wsRows, requesterRows, productRows, supplierRows] = await Promise.all([

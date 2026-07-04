@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useState } from "react"
+import { useActionState, useState } from "react"
 import { toast } from "@/lib/toast"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
@@ -39,18 +39,20 @@ interface WorkerFormProps {
 export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormProps) {
   const isEdit = !!editWorker
   const action = isEdit ? updateWorker : createWorker
-  const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
+  const [state, formAction] = useActionState<ActionState, FormData>(
+    async (prev, formData) => {
+      const result = await action(prev, formData)
+      if (result.ok) {
+        toast.success(result.message ?? (isEdit ? "Trabajador actualizado" : "Trabajador creado"))
+        onClose()
+      } else if (result.message && !result.fieldErrors) {
+        toast.error(result.message)
+      }
+      return result
+    },
+    INITIAL_STATE,
+  )
   const [selectedWorksiteId, setSelectedWorksiteId] = useState(editWorker?.worksiteId ?? "")
-
-  useEffect(() => {
-    if (state.ok) {
-      toast.success(state.message ?? (isEdit ? "Trabajador actualizado" : "Trabajador creado"))
-      onClose()
-    } else if (state.message && !state.fieldErrors) {
-      toast.error(state.message)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state])
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>

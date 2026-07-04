@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { requirePermission } from "@/lib/auth/can"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { Storefront, CheckCircle, PauseCircle, Receipt } from "@phosphor-icons/react/dist/ssr"
@@ -17,7 +17,7 @@ export default async function ProveedoresPage() {
   const allSuppliers = await db.query.suppliers.findMany({ orderBy: (s, { asc }) => [asc(s.name)] })
 
   const activeCount = allSuppliers.filter((s) => s.isActive).length
-  const paymentTermsCount = new Set(allSuppliers.map((s) => s.paymentTerms).filter(Boolean)).size
+  const paymentTermsCount = new Set(allSuppliers.flatMap((s) => s.paymentTerms ? [s.paymentTerms] : [])).size
   const summaryStats: SummaryStat[] = [
     { key: "total",    label: "Proveedores",   value: allSuppliers.length,             icon: <Storefront size={13} /> },
     { key: "active",   label: "Activos",       value: activeCount,                     icon: <CheckCircle size={13} /> },
@@ -30,13 +30,11 @@ export default async function ProveedoresPage() {
       <PageHeader
         title="Proveedores"
         description="Gestión de proveedores y precios referenciales."
-        breadcrumb={
-          <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración", href: "/admin" },
-            { label: "Proveedores" },
-          ]} />
-        }
+        breadcrumb={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Administración", href: "/admin" },
+          { label: "Proveedores" },
+        ]}
       />
       {allSuppliers.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <SupplierList suppliers={allSuppliers.map((s) => ({

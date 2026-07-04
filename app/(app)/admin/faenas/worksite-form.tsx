@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect } from "react"
+import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/admin/submit-button"
@@ -31,22 +31,20 @@ interface WorksiteFormProps {
 export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps) {
   const isEdit = !!editWorksite
   const action = isEdit ? updateWorksite : createWorksite
-  const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
+  const [state, formAction] = useActionState<ActionState, FormData>(
+    async (prev, formData) => {
+      const result = await action(prev, formData)
+      if (result.ok) {
+        toast.success(result.message ?? (isEdit ? "Faena actualizada" : "Faena creada"))
+        onClose()
+      } else if (result.message && !result.fieldErrors) {
+        toast.error(result.message)
+      }
+      return result
+    },
+    INITIAL_STATE,
+  )
   const [code, changeCode] = React.useReducer((_current: string, next: string) => next, editWorksite?.code ?? "")
-
-  useEffect(() => {
-    if (state.ok) {
-      toast.success(state.message ?? (isEdit ? "Faena actualizada" : "Faena creada"))
-      onClose()
-    } else if (state.message && !state.fieldErrors) {
-      toast.error(state.message)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state])
-
-  useEffect(() => {
-    changeCode(editWorksite?.code ?? "")
-  }, [editWorksite?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>

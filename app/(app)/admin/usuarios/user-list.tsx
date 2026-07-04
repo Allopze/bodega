@@ -143,6 +143,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
               <TableCell>
                 <div className="flex items-center gap-2 justify-end">
                   <button
+                    type="button"
                     onClick={() => openEdit(u)}
                     className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                     title="Editar"
@@ -209,6 +210,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
                 <button
+                  type="button"
                   onClick={() => openEdit(u)}
                   className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                   title="Editar"

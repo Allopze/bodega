@@ -157,7 +157,7 @@ export function useOcForm({
     }))
 
   const totals = computeOrderTotals(includedItems)
-  const supplierGroupCount = new Set(includedItems.map((i) => i.targetSupplierId).filter(Boolean)).size
+  const supplierGroupCount = new Set(includedItems.flatMap((i) => i.targetSupplierId ? [i.targetSupplierId] : [])).size
 
   const itemsJson = JSON.stringify(
     includedItems.map((i) => ({

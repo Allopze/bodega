@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
 import { desc, count, inArray, eq, and, or, ilike, sql } from "drizzle-orm"
-import { requirePermission, can, canAccessWorksite } from "@/lib/auth/can"
+import { requireAuth, can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
@@ -21,8 +21,11 @@ export default async function SolicitudesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   let session
-  try { session = await requirePermission("requests:view_own") }
+  try { session = await requireAuth() }
   catch { redirect("/forbidden") }
+  if (!can(session, "requests:view_own") && !can(session, "requests:view_all")) {
+    redirect("/forbidden")
+  }
 
   const sp = await searchParams
   const viewAll = can(session, "requests:view_all")

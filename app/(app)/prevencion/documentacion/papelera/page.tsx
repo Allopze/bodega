@@ -26,11 +26,11 @@ export default async function PapeleraPage() {
   ])
 
   const worksiteIds = Array.from(new Set([
-    ...archivedFolders.map((f) => f.worksiteId).filter(Boolean) as string[],
-    ...archivedDocs.rows.map((d) => d.worksiteId).filter(Boolean) as string[],
+    ...archivedFolders.flatMap((f) => f.worksiteId ? [f.worksiteId] : []),
+    ...archivedDocs.rows.flatMap((d) => d.worksiteId ? [d.worksiteId] : []),
   ]))
   const versionIds = Array.from(new Set(
-    archivedDocs.rows.map((d) => d.currentVersionId).filter(Boolean) as string[],
+    archivedDocs.rows.flatMap((d) => d.currentVersionId ? [d.currentVersionId] : []),
   ))
   const [worksiteRows, versionRows] = await Promise.all([
     worksiteIds.length

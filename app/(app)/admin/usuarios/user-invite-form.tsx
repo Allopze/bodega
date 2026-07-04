@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect } from "react"
+import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Check, Copy, Envelope } from "@phosphor-icons/react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
@@ -28,42 +28,38 @@ interface PendingInvite {
 }
 
 export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserInviteFormProps) {
-  const [state, formAction] = useActionState<ActionState, FormData>(inviteUser, INITIAL_STATE)
   const [selectedRoles, setSelectedRoles] = React.useState<string[]>([])
   const [selectedWsIds, setSelectedWsIds] = React.useState<string[]>([])
   const [primaryWorksiteId, setPrimaryWorksiteId] = React.useState("")
   const [pending, setPending] = React.useState<PendingInvite | null>(null)
   const [copied, setCopied]   = React.useState(false)
-  // Track the last state we already reacted to so we don't fire a
-  // setState cascade on re-render. useActionState returns a new state
-  // reference after every server response, so a single `===` check is
-  // enough to detect "this is new".
-  const lastSeenStateRef = React.useRef<ActionState>(INITIAL_STATE)
 
-  useEffect(() => {
-    if (state === lastSeenStateRef.current) return
-    lastSeenStateRef.current = state
-    if (state.ok) {
-      toast.success(state.message ?? "Invitación creada")
-      const data = state.data as { email?: string; inviteUrl?: string } | undefined
-      if (data?.inviteUrl) {
-        // The action returned a non-empty inviteUrl only when SMTP is
-        // not configured. Keep the form open and surface the link in a
-        // deliberate, dismissable panel instead of a transient toast.
-        const matchedEmail = data.email ?? state.message?.match(/a\s+(\S+@\S+)/i)?.[1] ?? ""
-        setPending({ email: matchedEmail, inviteUrl: data.inviteUrl })
-        // Reset role/worksite selections so the form is ready for a new invite.
-        setSelectedRoles([])
-        setSelectedWsIds([])
-        setPrimaryWorksiteId("")
-      } else {
-        onClose()
+  const [state, formAction] = useActionState<ActionState, FormData>(
+    async (prev, formData) => {
+      const result = await inviteUser(prev, formData)
+      if (result.ok) {
+        toast.success(result.message ?? "Invitación creada")
+        const data = result.data as { email?: string; inviteUrl?: string } | undefined
+        if (data?.inviteUrl) {
+          // The action returned a non-empty inviteUrl only when SMTP is
+          // not configured. Keep the form open and surface the link in a
+          // deliberate, dismissable panel instead of a transient toast.
+          const matchedEmail = data.email ?? result.message?.match(/a\s+(\S+@\S+)/i)?.[1] ?? ""
+          setPending({ email: matchedEmail, inviteUrl: data.inviteUrl })
+          // Reset role/worksite selections so the form is ready for a new invite.
+          setSelectedRoles([])
+          setSelectedWsIds([])
+          setPrimaryWorksiteId("")
+        } else {
+          onClose()
+        }
+      } else if (result.message && !result.fieldErrors) {
+        toast.error(result.message)
       }
-    } else if (state.message && !state.fieldErrors) {
-      toast.error(state.message)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state])
+      return result
+    },
+    INITIAL_STATE,
+  )
 
   function toggleRole(id: string) {
     setSelectedRoles((prev) =>

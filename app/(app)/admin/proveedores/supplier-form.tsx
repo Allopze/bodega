@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect } from "react"
+import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/admin/submit-button"
@@ -38,17 +38,19 @@ interface SupplierFormProps {
 export function SupplierForm({ open, onClose, editSupplier }: SupplierFormProps) {
   const isEdit = !!editSupplier
   const action = isEdit ? updateSupplier : createSupplier
-  const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
-
-  useEffect(() => {
-    if (state.ok) {
-      toast.success(state.message ?? (isEdit ? "Proveedor actualizado" : "Proveedor creado"))
-      onClose()
-    } else if (state.message && !state.fieldErrors) {
-      toast.error(state.message)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state])
+  const [state, formAction] = useActionState<ActionState, FormData>(
+    async (prev, formData) => {
+      const result = await action(prev, formData)
+      if (result.ok) {
+        toast.success(result.message ?? (isEdit ? "Proveedor actualizado" : "Proveedor creado"))
+        onClose()
+      } else if (result.message && !result.fieldErrors) {
+        toast.error(result.message)
+      }
+      return result
+    },
+    INITIAL_STATE,
+  )
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>

@@ -35,6 +35,7 @@ export default function GlobalError({
             Ocurrió un error crítico. Por favor recarga la página.
           </p>
           <button
+            type="button"
             onClick={reset}
             style={{
               padding: "0.5rem 1.25rem",

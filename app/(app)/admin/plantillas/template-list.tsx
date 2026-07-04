@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useActionState, useEffect } from "react"
+import { useActionState } from "react"
 import Link from "next/link"
 import { EnvelopeSimple } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { INITIAL_STATE } from "@/components/admin/form-state"
+import type { ActionState } from "@/lib/validation/masters"
 import { updateTemplateAction, resetTemplateAction } from "./actions"
 
 interface TemplateItem {
@@ -73,26 +74,32 @@ function TemplateCard({
   onStartEdit: () => void
   onStopEdit: () => void
 }) {
-  const [state, formAction, isPending] = useActionState(updateTemplateAction, INITIAL_STATE)
-  const [resetState, resetFormAction] = useActionState(resetTemplateAction, INITIAL_STATE)
-
-  useEffect(() => {
-    if (state.ok) {
-      toast.success(state.message ?? "Plantilla actualizada")
-      onStopEdit()
-    } else if (state.message && !state.fieldErrors) {
-      toast.error(state.message)
-    }
-  }, [state, onStopEdit])
-
-  useEffect(() => {
-    if (resetState.ok) {
-      toast.success(resetState.message ?? "Plantilla restaurada")
-      onStopEdit()
-    } else if (resetState.message) {
-      toast.error(resetState.message)
-    }
-  }, [resetState, onStopEdit])
+  const [state, formAction, isPending] = useActionState(
+    async (prev: ActionState, formData: FormData) => {
+      const result = await updateTemplateAction(prev, formData)
+      if (result.ok) {
+        toast.success(result.message ?? "Plantilla actualizada")
+        onStopEdit()
+      } else if (result.message && !result.fieldErrors) {
+        toast.error(result.message)
+      }
+      return result
+    },
+    INITIAL_STATE,
+  )
+  const [, resetFormAction] = useActionState(
+    async (prev: ActionState, formData: FormData) => {
+      const result = await resetTemplateAction(prev, formData)
+      if (result.ok) {
+        toast.success(result.message ?? "Plantilla restaurada")
+        onStopEdit()
+      } else if (result.message) {
+        toast.error(result.message)
+      }
+      return result
+    },
+    INITIAL_STATE,
+  )
 
   if (isEditing) {
     return (

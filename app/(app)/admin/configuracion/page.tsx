@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { getCompanyProfile, getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { ConfigForm } from "./config-form"
@@ -25,15 +25,11 @@ export default async function ConfiguracionPage() {
       <PageHeader
         title="Configuración del Sistema"
         description="Ajustar parámetros globales de Chome Solicitudes y Bodega."
-        breadcrumb={
-          <Breadcrumbs
-            items={[
-              { label: "Dashboard", href: "/dashboard" },
-              { label: "Administración", href: "/admin" },
-              { label: "Configuración" },
-            ]}
-          />
-        }
+        breadcrumb={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Administración", href: "/admin" },
+          { label: "Configuración" },
+        ]}
       />
       <ConfigForm initialPdfMaxSizeMb={pdfMaxSizeMb} initialCompanyProfile={companyProfile} />
     </PageContainer>

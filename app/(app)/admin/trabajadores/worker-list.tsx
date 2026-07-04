@@ -95,7 +95,7 @@ export function WorkerList({
               </dl>
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <button onClick={() => openEdit(w)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label="Editar trabajador">
+                <button type="button" onClick={() => openEdit(w)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label="Editar trabajador">
                   <PencilSimple size={16} />
                 </button>
                 <form action={toggleAction}>
@@ -137,6 +137,7 @@ export function WorkerList({
               <TableCell>
                 <div className="flex items-center gap-2 justify-end">
                   <button
+                    type="button"
                     onClick={() => openEdit(w)}
                     className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
                     title="Editar"

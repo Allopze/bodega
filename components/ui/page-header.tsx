@@ -6,12 +6,17 @@ import { usePathname } from "next/navigation"
 import { useShellHeader } from "@/components/layout/header-context"
 import { cn } from "@/lib/utils"
 
+export interface BreadcrumbItem {
+  label: string
+  href?: string
+}
+
 interface PageHeaderProps {
   title:       string
   description?: string
   actions?:    React.ReactNode
   headerActions?: React.ReactNode
-  breadcrumb?: React.ReactNode
+  breadcrumb?: React.ReactNode | BreadcrumbItem[]
   className?:  string
   /** Optional eyebrow text rendered above the title (e.g., section number). */
   eyebrow?:    string
@@ -21,14 +26,18 @@ export function PageHeader({ title, description, actions, headerActions, breadcr
   const pathname = usePathname()
   const { setHeader } = useShellHeader()
   const desktopActions = headerActions ?? actions
+  const breadcrumbNode = React.useMemo(
+    () => Array.isArray(breadcrumb) ? <Breadcrumbs items={breadcrumb} /> : breadcrumb,
+    [breadcrumb],
+  )
 
   React.useEffect(() => {
-    setHeader({ title, description, breadcrumb, actions: desktopActions })
+    setHeader({ title, description, breadcrumb: breadcrumbNode, actions: desktopActions })
 
     return () => {
       setHeader({})
     }
-  }, [breadcrumb, description, desktopActions, pathname, setHeader, title])
+  }, [breadcrumbNode, description, desktopActions, pathname, setHeader, title])
 
   return (
     <div className={cn(actions ? "pb-2 mb-3 lg:sr-only" : "sr-only", className)}>
@@ -54,11 +63,6 @@ export function PageHeader({ title, description, actions, headerActions, breadcr
       </div>
     </div>
   )
-}
-
-interface BreadcrumbItem {
-  label: string
-  href?: string
 }
 
 interface BreadcrumbsProps {

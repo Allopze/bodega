@@ -19,6 +19,7 @@ export function NotificationBell() {
     <PopoverPrimitive.Root>
       <PopoverPrimitive.Trigger asChild>
         <button
+          type="button"
           className={cn(
             "relative flex items-center justify-center",
             "min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0",
@@ -65,6 +66,7 @@ export function NotificationBell() {
             <span className="text-sm font-semibold text-[var(--color-text)]">Notificaciones</span>
             {hasUnread && (
               <button
+                type="button"
                 onClick={() => markAllRead.mutate()}
                 disabled={markAllRead.isPending}
                 className="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-ink)] transition-colors disabled:opacity-50"

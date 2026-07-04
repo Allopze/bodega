@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useState } from "react"
+import { useActionState, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
@@ -60,7 +60,18 @@ export function MaintenanceForm({
   onSuccess?: () => void
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
-    action,
+    async (prev, formData) => {
+      const result = await action(prev, formData)
+      if (result.message) {
+        if (result.ok) {
+          toast.success(result.message)
+          onSuccess?.()
+        } else {
+          toast.error(result.message)
+        }
+      }
+      return result
+    },
     { ok: false, message: "" },
   )
 
@@ -75,18 +86,6 @@ export function MaintenanceForm({
   const [supplierId, setSupplierId] = useState(defaults?.supplierId ?? "")
   const [worksiteId, setWorksiteId] = useState(defaults?.worksiteId ?? "")
   const [costCenterId, setCostCenterId] = useState(defaults?.costCenterId ?? "")
-
-  useEffect(() => {
-    if (!state.message) return
-    if (state.ok) {
-      toast.success(state.message)
-      onSuccess?.()
-    } else {
-      toast.error(state.message)
-    }
-    // onSuccess intentionally omitted: only react to action state changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state])
 
   return (
     <form action={formAction} className="grid grid-cols-1 gap-4 lg:grid-cols-4">

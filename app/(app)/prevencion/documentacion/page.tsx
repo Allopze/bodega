@@ -50,9 +50,9 @@ export default async function DocumentacionPage({
 
   // Hidratar obras de carpetas y metadatos básicos de la versión vigente.
   const worksiteIds = Array.from(new Set([
-    ...folders.map((f) => f.worksiteId).filter(Boolean) as string[],
+    ...folders.flatMap((f) => f.worksiteId ? [f.worksiteId] : []),
   ]))
-  const versionIds = Array.from(new Set(searchResult.rows.map((r) => r.currentVersionId).filter(Boolean) as string[]))
+  const versionIds = Array.from(new Set(searchResult.rows.flatMap((r) => r.currentVersionId ? [r.currentVersionId] : [])))
 
   const [worksiteRows, versionRows] = await Promise.all([
     worksiteIds.length ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, worksiteIds)) : Promise.resolve([] as Array<{ id: string; name: string }>),

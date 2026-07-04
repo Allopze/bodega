@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect } from "react"
+import { useActionState } from "react"
 import * as React from "react"
 import { toast } from "@/lib/toast"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
@@ -27,20 +27,20 @@ interface CategoryPanelProps {
 export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProps) {
   const isEdit = !!editCategory
   const action = isEdit ? updateCategory : createCategory
-  const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
+  const [state, formAction] = useActionState<ActionState, FormData>(
+    async (prev, formData) => {
+      const result = await action(prev, formData)
+      if (result.ok) {
+        toast.success(result.message ?? (isEdit ? "Categoría actualizada" : "Categoría creada"))
+        onClose()
+      } else if (result.message && !result.fieldErrors) {
+        toast.error(result.message)
+      }
+      return result
+    },
+    INITIAL_STATE,
+  )
   const [slug, changeSlug] = React.useReducer((_current: string, next: string) => next, editCategory?.slug ?? "")
-
-  useEffect(() => {
-    if (state.ok) {
-      toast.success(state.message ?? (isEdit ? "Categoría actualizada" : "Categoría creada"))
-      onClose()
-    } else if (state.message && !state.fieldErrors) {
-      toast.error(state.message)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state])
-
-  useEffect(() => { changeSlug(editCategory?.slug ?? "") }, [editCategory?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>

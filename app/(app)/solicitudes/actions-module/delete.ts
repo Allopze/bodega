@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests } from "@/db/schema"
-import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { deleteRequest } from "@/lib/services/requests-delete"
 import { type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
@@ -13,8 +13,11 @@ const REVALIDATE = "/solicitudes"
 
 export async function deleteRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("requests:view_own") }
+  try { session = await requireAuth() }
   catch { return { ok: false, message: "Sin permisos" } }
+  if (!can(session, "requests:view_own") && !can(session, "requests:delete") && !can(session, "requests:view_all")) {
+    return { ok: false, message: "Sin permisos para eliminar solicitudes" }
+  }
 
   const requestId = formData.get("requestId") as string
   if (!requestId) return { ok: false, message: "ID requerido" }

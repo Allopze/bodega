@@ -57,7 +57,7 @@ export default async function FlotaPage({
   }
 
   // Extract unique filter options from vehicles
-  const operationalStatuses = [...new Set(vehicles.map((v) => v.operationalStatus).filter(Boolean))] as string[]
+  const operationalStatuses = [...new Set(vehicles.flatMap((v) => v.operationalStatus ? [v.operationalStatus] : []))]
   const responsibleUsers = [...new Map(
     vehicles.filter((v) => v.responsibleName).map((v) => [v.responsibleName, { id: v.responsibleName!, name: v.responsibleName! }])
   ).values()]

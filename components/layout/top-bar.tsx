@@ -83,6 +83,7 @@ export function TopBar({
     )}>
       <div className="flex items-center gap-2 lg:hidden">
         <button
+          type="button"
           onClick={onMenuToggle}
           className={cn(
             "lg:hidden flex items-center justify-center",
@@ -178,6 +179,7 @@ export function TopBar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
+              type="button"
               className="ml-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) shrink-0 cursor-pointer"
               aria-label="Abrir menú de usuario"
             >

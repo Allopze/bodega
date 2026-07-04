@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { Buildings, CheckCircle, PauseCircle, MapPin } from "@phosphor-icons/react/dist/ssr"
@@ -24,7 +24,7 @@ export default async function FaenasPage() {
   const canCreateWorksites = resolveWorksiteScope(session).mode === "all"
 
   const activeCount = allWorksites.filter((w) => w.isActive).length
-  const regionCount = new Set(allWorksites.map((w) => w.region).filter(Boolean)).size
+  const regionCount = new Set(allWorksites.flatMap((w) => w.region ? [w.region] : [])).size
   const summaryStats: SummaryStat[] = [
     { key: "total",    label: "Faenas",    value: allWorksites.length,             icon: <Buildings size={13} /> },
     { key: "active",   label: "Activas",   value: activeCount,                     icon: <CheckCircle size={13} /> },
@@ -37,13 +37,11 @@ export default async function FaenasPage() {
       <PageHeader
         title="Faenas"
         description="Configura las faenas activas de la organización."
-        breadcrumb={
-          <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración", href: "/admin" },
-            { label: "Faenas" },
-          ]} />
-        }
+        breadcrumb={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Administración", href: "/admin" },
+          { label: "Faenas" },
+        ]}
       />
       {allWorksites.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <FaenasList

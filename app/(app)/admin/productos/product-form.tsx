@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect } from "react"
+import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Plus, Trash } from "@phosphor-icons/react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
@@ -53,22 +53,24 @@ const UOM_OPTIONS = ["unidad", "par", "caja", "paquete", "rollo", "metro", "kg",
 export function ProductForm({ open, onClose, categories, allSuppliers, editProduct, variant = "sheet" }: ProductFormProps) {
   const isEdit = !!editProduct
   const action = isEdit ? updateProduct : createProduct
-  const [state, formAction] = useActionState<ActionState, FormData>(action, INITIAL_STATE)
+  const [state, formAction] = useActionState<ActionState, FormData>(
+    async (prev, formData) => {
+      const result = await action(prev, formData)
+      if (result.ok) {
+        toast.success(result.message ?? (isEdit ? "Producto actualizado" : "Producto creado"))
+        onClose()
+      } else if (result.message && !result.fieldErrors) {
+        toast.error(result.message)
+      }
+      return result
+    },
+    INITIAL_STATE,
+  )
 
   const [categoryId, setCategoryId] = React.useState(editProduct?.categoryId ?? "")
   const [uom,        setUom]        = React.useState(editProduct?.unitOfMeasure ?? "unidad")
   const [attrs,      setAttrs]      = React.useState<AttributeRow[]>(editProduct?.attributes ?? [])
   const [suppRows,   setSuppRows]   = React.useState<SupplierRow[]>(editProduct?.suppliers ?? [])
-
-  useEffect(() => {
-    if (state.ok) {
-      toast.success(state.message ?? (isEdit ? "Producto actualizado" : "Producto creado"))
-      onClose()
-    } else if (state.message && !state.fieldErrors) {
-      toast.error(state.message)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state])
 
   function addAttr() {
     setAttrs((prev) => [...prev, { name: "", type: "text", isRequired: false, options: "", sortOrder: prev.length }])
