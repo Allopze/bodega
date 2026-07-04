@@ -62,7 +62,7 @@ export function FaenasList({
         rows={rows}
         searchKeys={["name", "code", "region"]}
         pageSize={20}
-        searchPlaceholder="Buscar faena..."
+
         emptyTitle="Sin faenas"
         emptyDescription={canCreateWorksites ? "Crea la primera faena para comenzar." : "No hay faenas dentro de tu alcance."}
         emptyAction={canCreateWorksites ? <Button size="sm" onClick={openNewWs}><Plus size={14} />Nueva faena</Button> : undefined}

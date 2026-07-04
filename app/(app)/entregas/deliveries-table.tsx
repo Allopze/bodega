@@ -33,7 +33,7 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
       rows={deliveries as unknown as Record<string, unknown>[]}
       searchKeys={["code", "workerName", "worksiteName", "itemSummary"]}
       pageSize={20}
-      searchPlaceholder="Buscar entrega, trabajador, faena o EPP..."
+
       emptyTitle="Sin entregas"
       emptyDescription="No hay entregas de EPP que coincidan con la búsqueda."
       renderMobileCard={(row) => {

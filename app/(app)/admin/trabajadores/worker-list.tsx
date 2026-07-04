@@ -62,7 +62,7 @@ export function WorkerList({
         rows={workers as unknown as Record<string, unknown>[]}
         searchKeys={["firstName", "lastName", "rut", "position", "worksiteName"]}
         pageSize={25}
-        searchPlaceholder="Buscar trabajador, RUT o cargo..."
+
         emptyTitle="Sin trabajadores"
         emptyDescription="Registra el primer trabajador para gestionar entregas de EPP."
         emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo trabajador</Button>}

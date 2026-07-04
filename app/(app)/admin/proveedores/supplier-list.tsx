@@ -52,7 +52,7 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
         rows={suppliers as unknown as Record<string, unknown>[]}
         searchKeys={["name", "rut", "businessActivity", "commune", "city"]}
         pageSize={25}
-        searchPlaceholder="Buscar proveedor o RUT..."
+
         emptyTitle="Sin proveedores"
         emptyDescription="Registra el primer proveedor para comenzar."
         emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>}

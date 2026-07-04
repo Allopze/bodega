@@ -2,13 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ShieldCheck, MagnifyingGlass } from "@phosphor-icons/react"
+import { ShieldCheck } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import {
   TableRoot, Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -19,6 +18,7 @@ import type { PpaRow } from "@/lib/services/ppa"
 import { estadoPpaLabel, estadoPpaBadgeVariant, ESTADO_PPA_LABELS } from "@/lib/ppa/badges"
 import { tipoTrabajoLabel } from "@/lib/ppa/types"
 import { listPpaAction, type PpaListClientFilters } from "./actions"
+import { useSafeShellHeader } from "@/components/layout/header-context"
 
 const QUICK_FILTERS: { value: string; label: string; tone?: "signal" }[] = [
   { value: "",            label: "Todos" },
@@ -42,23 +42,24 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
   const [page, setPage] = React.useState(1)
   const [pending, startTransition] = React.useTransition()
 
+  const { searchQuery } = useSafeShellHeader()
+
   const [estado, setEstado] = React.useState("")
   const [worksiteId, setWorksiteId] = React.useState("")
-  const [search, setSearch] = React.useState("")
   const [dateFrom, setDateFrom] = React.useState("")
   const [dateTo, setDateTo] = React.useState("")
 
-  const filtersActive = !!(estado || worksiteId || search.trim() || dateFrom || dateTo)
+  const filtersActive = !!(estado || worksiteId || searchQuery.trim() || dateFrom || dateTo)
   const firstRender = React.useRef(true)
 
   const filters = React.useMemo<PpaListClientFilters>(() => ({
     estado: estado || undefined,
     worksiteId: worksiteId || undefined,
-    search: search.trim() || undefined,
+    search: searchQuery.trim() || undefined,
     dateFrom: dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : undefined,
     // Incluye todo el día final (hasta 23:59:59.999).
     dateTo: dateTo ? new Date(`${dateTo}T23:59:59.999`).toISOString() : undefined,
-  }), [estado, worksiteId, search, dateFrom, dateTo])
+  }), [estado, worksiteId, searchQuery, dateFrom, dateTo])
 
   // Re-consulta server-side cuando cambian filtros (con debounce) o página.
   React.useEffect(() => {
@@ -83,7 +84,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
 
   function clearFilters() {
     setPage(1)
-    setEstado(""); setWorksiteId(""); setSearch(""); setDateFrom(""); setDateTo("")
+    setEstado(""); setWorksiteId(""); setDateFrom(""); setDateTo("")
   }
 
   return (
@@ -121,17 +122,6 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
 
       {/* Filtros detallados */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <MagnifyingGlass size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
-          <Input
-            placeholder="Trabajador o faena…"
-            value={search}
-            onChange={(e) => onFilterChange(() => setSearch(e.target.value))}
-            className="max-w-xs pl-8"
-            aria-label="Buscar por trabajador o faena"
-          />
-        </div>
-
         <Select value={estado || "all"} onValueChange={(v) => onFilterChange(() => setEstado(v === "all" ? "" : v))}>
           <SelectTrigger className="w-44" aria-label="Filtrar por estado">
             <SelectValue placeholder="Estado" />

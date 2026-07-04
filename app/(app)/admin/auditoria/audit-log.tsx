@@ -53,7 +53,7 @@ export function AuditLog({ entries }: { entries: AuditRow[] }) {
       rows={entries as unknown as Record<string, unknown>[]}
       searchKeys={["userEmail", "entityType", "entityCode", "action"]}
       pageSize={30}
-      searchPlaceholder="Buscar usuario, entidad, código..."
+
       emptyTitle="Sin entradas de auditoría"
       emptyDescription="Las acciones del sistema aparecerán aquí."
       renderMobileCard={(row) => {

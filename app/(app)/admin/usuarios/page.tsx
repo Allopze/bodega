@@ -1,9 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import Link from "next/link"
 import { db } from "@/db"
 import { permissions, rolePermissions, roles, userPermissions, userRoles, users, worksites, worksiteUsers } from "@/db/schema"
-import { and, eq, ilike, inArray, or, sql, count } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { visibleUserIdsForAdminScope } from "@/lib/auth/admin-user-scope"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -11,25 +10,14 @@ import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { UserList } from "./user-list"
-import { resolvePagination } from "@/lib/pagination"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
 
-const PAGE_SIZE = 25
 
 export const metadata: Metadata = { title: "Usuarios" }
 
-export default async function UsuariosPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>
-}) {
+export default async function UsuariosPage() {
   let session
   try { session = await requirePermission("admin:users") }
   catch { redirect("/forbidden") }
-
-  const sp = await searchParams
-  const q = typeof sp.q === "string" ? sp.q : ""
 
   const visibleUserIds = await visibleUserIdsForAdminScope(db, session)
   const userScope = visibleUserIds === undefined
@@ -53,24 +41,10 @@ export default async function UsuariosPage({
       ? and(inArray(worksiteUsers.userId, visibleUserIds), worksiteScopeSql(session, worksiteUsers.worksiteId))
       : sql`false`
 
-  const searchCondition = q
-    ? or(ilike(users.name, `%${q}%`), ilike(users.email, `%${q}%`))
-    : undefined
-
-  // Count total for pagination
-  const [totalRow] = await db
-    .select({ n: count() })
-    .from(users)
-    .where(and(userScope, searchCondition))
-  const totalItems = totalRow?.n ?? 0
-  const pagination = resolvePagination({ pageParam: sp.page, totalItems, pageSize: PAGE_SIZE })
-
-  // Load users with pagination
+  // Load all users — DataTable handles client-side filtering + pagination via TopBar search
   const allUsers = await db.query.users.findMany({
-    where: and(userScope, searchCondition),
+    where: userScope,
     orderBy: (u, { asc }) => [asc(u.name)],
-    limit: pagination.limit,
-    offset: pagination.offset,
   })
 
   // Load role assignments for all users in one query
@@ -155,43 +129,8 @@ export default async function UsuariosPage({
           ]} />
         }
       />
-      <form className="mb-4">
-        <div className="flex gap-2">
-          <Input name="q" placeholder="Buscar por nombre o email..." defaultValue={q} className="max-w-sm h-9" />
-          <Button type="submit" variant="secondary" size="sm" className="h-9 px-3">Buscar</Button>
-
-          {q && (
-            <Button asChild variant="ghost" size="sm" className="h-9">
-              <Link href="/admin/usuarios">Limpiar</Link>
-            </Button>
-          )}
-        </div>
-      </form>
-
-      {pagination.totalItems > PAGE_SIZE && (
-        <div className="mb-4 flex items-center justify-between text-sm text-[var(--color-text-subtle)]">
-          <span>{pagination.totalItems} usuarios</span>
-          <div className="flex gap-1">
-            {pagination.page > 1 && (
-              <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
-                <Link href={`/admin/usuarios?page=${pagination.page - 1}${q ? `&q=${encodeURIComponent(q)}` : ""}`}>Anterior</Link>
-              </Button>
-            )}
-            <span className="flex h-7 items-center px-2">
-              Pág. {pagination.page} de {pagination.totalPages}
-            </span>
-            {pagination.page < pagination.totalPages && (
-              <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
-                <Link href={`/admin/usuarios?page=${pagination.page + 1}${q ? `&q=${encodeURIComponent(q)}` : ""}`}>Siguiente</Link>
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
       <UserList
         users={userRows}
-        pagination={{ page: pagination.page, totalPages: pagination.totalPages, totalItems }}
         allRoles={allRolesData
           .filter((r) => canManageAdmins || r.name !== "administrador")
           .map((r) => ({ id: r.id, name: r.name, label: r.label }))}

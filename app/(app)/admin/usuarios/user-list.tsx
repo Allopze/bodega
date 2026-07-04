@@ -46,7 +46,6 @@ interface UserListProps {
   allRoles:     Role[]
   allPermissions: Permission[]
   allWorksites: Worksite[]
-  pagination?:  { page: number; totalPages: number; totalItems: number }
 }
 
 const COLUMNS = [
@@ -58,7 +57,7 @@ const COLUMNS = [
   { key: "",          label: "",          sortable: false, width: "w-24" },
 ]
 
-export function UserList({ users, allRoles, allPermissions, allWorksites, pagination: _pagination }: UserListProps) {
+export function UserList({ users, allRoles, allPermissions, allWorksites }: UserListProps) {
   const [sheetOpen, setSheetOpen]   = React.useState(false)
   const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)
@@ -81,7 +80,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites, pagina
         rows={users as unknown as Record<string, unknown>[]}
         searchKeys={["name", "email"]}
         pageSize={25}
-        searchPlaceholder="Buscar usuario o correo..."
+
         emptyTitle="Sin usuarios"
         emptyDescription="Invita al equipo o crea usuarios manualmente."
         emptyAction={<Button size="sm" onClick={() => setInviteOpen(true)}><EnvelopeSimple size={14} />Invitar usuario</Button>}

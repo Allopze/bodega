@@ -100,7 +100,7 @@ export function ProductList({ products, categories, allSuppliers }: {
         rows={products as unknown as Record<string, unknown>[]}
         searchKeys={["sku", "name", "categoryName"]}
         pageSize={25}
-        searchPlaceholder="Buscar SKU, nombre o categoría..."
+
         emptyTitle="Sin productos"
         emptyDescription="Registra el primer producto del catálogo."
         emptyAction={
