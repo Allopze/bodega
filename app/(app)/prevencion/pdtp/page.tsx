@@ -9,10 +9,11 @@ import {
 } from "@/lib/services/prevention-pdtp"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import { listScopedWorksites } from "@/lib/services/ppa"
+import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PreventionExportButton } from "@/components/prevention/export-button"
-import { PdtpSheetPicker, PdtpSheetTable, PdtpWorksitePicker } from "./pdtp-sheet-table"
+import { PdtpSheetPicker, PdtpSheetTable, PdtpViewToggle, PdtpWorksitePicker } from "./pdtp-sheet-table"
 import { PdtpIndicatorsPanel } from "./pdtp-indicators-panel"
 import { approvePdtpProgramJdprAction, signPdtpProgramLegalAction, activatePdtpProgramAction, addPdtpActivityFormAction } from "./actions"
 import { db } from "@/db"
@@ -32,7 +33,7 @@ const SHEET_OPTIONS: Array<{ code: PdtpSheetCode; label: string }> = [
 ]
 
 type PdtpPageProps = {
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; actividadError?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; actividadError?: string | string[] }>
 }
 
 export default async function PdtpPage({ searchParams }: PdtpPageProps) {
@@ -44,7 +45,10 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
   const query = await searchParams
   const requestedSheet = Array.isArray(query.hoja) ? query.hoja[0] : query.hoja
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
+  const requestedView = Array.isArray(query.vista) ? query.vista[0] : query.vista
   const actividadError = Array.isArray(query.actividadError) ? query.actividadError[0] : query.actividadError
+  const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
+  const currentPeriod = currentPdtpPeriod()
   const sheetCode = normalizeSheetCode(requestedSheet) ?? defaultSheetForRoles(session.user.roles)
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
@@ -116,9 +120,18 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
 
         <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} />
         <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} />
+        <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} />
 
         {view ? (
-          <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canManage={canManage} canApprove={canApprove} pendingApprovals={pendingApprovals} />
+          <PdtpSheetTable
+            view={view}
+            worksiteId={selectedWorksiteId}
+            canManage={canManage}
+            canApprove={canApprove}
+            pendingApprovals={pendingApprovals}
+            viewMode={viewMode}
+            currentPeriod={currentPeriod}
+          />
         ) : (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5">
             <p className="font-medium text-[var(--color-text)]">Catálogo PDTP no cargado</p>

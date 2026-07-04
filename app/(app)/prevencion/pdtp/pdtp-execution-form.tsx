@@ -8,7 +8,14 @@ const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "S
 
 type ExecState = { ok: boolean; message?: string; fieldErrors?: Record<string, string[]> } | null
 
-export function PdtpExecutionForm({ activityId, worksiteId }: { activityId: string; worksiteId: string }) {
+type PdtpExecutionFormProps = {
+  activityId: string
+  worksiteId: string
+  defaultMonth?: number
+  defaultWeek?: number
+}
+
+export function PdtpExecutionForm({ activityId, worksiteId, defaultMonth, defaultWeek }: PdtpExecutionFormProps) {
   const [state, formAction] = React.useActionState<ExecState, FormData>(
     async (_prev, formData) => {
       const result = await markPdtpExecutionFormAction(formData)
@@ -37,7 +44,7 @@ export function PdtpExecutionForm({ activityId, worksiteId }: { activityId: stri
         Mes
         <select
           name="month"
-          defaultValue="1"
+          defaultValue={String(defaultMonth ?? 1)}
           className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
           aria-invalid={!!state?.fieldErrors?.month}
         >
@@ -50,7 +57,7 @@ export function PdtpExecutionForm({ activityId, worksiteId }: { activityId: stri
         Semana
         <select
           name="week"
-          defaultValue="1"
+          defaultValue={String(defaultWeek ?? 1)}
           className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
           aria-invalid={!!state?.fieldErrors?.week}
         >
