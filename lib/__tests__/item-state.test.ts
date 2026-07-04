@@ -65,6 +65,14 @@ describe("Item State Machine", () => {
       expect(canTransition("partially_received", "received")).toBe(true)
     })
 
+    it("allows partially_received → partially_delivered", () => {
+      expect(canTransition("partially_received", "partially_delivered")).toBe(true)
+    })
+
+    it("allows partially_received → delivered", () => {
+      expect(canTransition("partially_received", "delivered")).toBe(true)
+    })
+
     it("allows received → partially_delivered", () => {
       expect(canTransition("received", "partially_delivered")).toBe(true)
     })

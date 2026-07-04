@@ -106,7 +106,7 @@ const ACTIVE_REQUEST_STATUSES = new Set([
 ])
 const APPROVAL_ITEM_STATUSES = new Set(["requested"])
 const PURCHASE_ITEM_STATUSES = new Set(["approved", "pending_purchase"])
-const DELIVERY_ITEM_STATUSES = new Set(["received", "partially_delivered"])
+const DELIVERY_ITEM_STATUSES = new Set(["partially_received", "received", "partially_delivered"])
 // Office can still receive while the order isn't fully at office yet.
 const OFFICE_RECEIVABLE_STATUSES = new Set(["sent", "partially_office_received"])
 // Faena can receive only once something arrived at office.

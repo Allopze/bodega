@@ -31,7 +31,7 @@ export const ALLOWED_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
   pending_purchase:   ["in_purchase_order", "postponed"],
   in_purchase_order:  ["purchased", "pending_purchase"],
   purchased:          ["partially_received", "received"],
-  partially_received: ["received"],
+  partially_received: ["received", "partially_delivered", "delivered"],
   received:           ["partially_delivered", "delivered"],
   partially_delivered:["delivered"],
   delivered:          [],

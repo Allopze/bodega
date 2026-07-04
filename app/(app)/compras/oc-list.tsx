@@ -15,7 +15,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { formatCLP, formatDate } from "@/lib/utils"
-import { issueOrderAction, sendOrderAction, deleteOrderAction } from "./actions"
+import { issueOrderAction, sendOrderAction, deleteOrderAction, resumeItemAction } from "./actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Trash } from "@phosphor-icons/react"
 import { useTransition } from "react"
@@ -204,6 +204,45 @@ function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?: boolea
   )
 }
 
+function PostponedItemRow({ item }: { item: PendingItem }) {
+  const [resumeState, resumeAction] = useActionState<ActionState, FormData>(
+    resumeItemAction, INITIAL_STATE,
+  )
+
+  React.useEffect(() => {
+    if (resumeState.ok && resumeState.message) toast.success(resumeState.message)
+    else if (resumeState.ok === false && resumeState.message && resumeState !== INITIAL_STATE) {
+      toast.error(resumeState.message)
+    }
+  }, [resumeState])
+
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-[var(--color-border)] py-3 first:border-t-0 first:pt-0 last:pb-0">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/solicitudes/${item.requestId}`} className="font-mono text-xs text-[var(--color-primary)] hover:underline">
+            {item.requestCode}
+          </Link>
+          <span className="text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
+        </div>
+        <p className="mt-1 truncate text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
+        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+          {item.quantity} {item.unitOfMeasure}{item.notes ? ` · ${item.notes}` : ""}
+        </p>
+      </div>
+      <form action={resumeAction} className="self-center">
+        <input type="hidden" name="itemId" value={item.id} />
+        <SubmitButton
+          label="Reanudar"
+          loadingLabel="Reanudando…"
+          variant="secondary"
+          size="sm"
+        />
+      </form>
+    </div>
+  )
+}
+
 /* ── OC List component ───────────────────────────────────────────────────────── */
 
 const OC_STATUS_OPTIONS: FilterOption[] = Object.entries(OC_STATE_META).map(
@@ -213,6 +252,7 @@ const OC_STATUS_OPTIONS: FilterOption[] = Object.entries(OC_STATE_META).map(
 export function OcList({
   orders,
   pendingCount,
+  postponedItems = [],
   canCreate,
   canDelete = false,
   createdCount = 0,
@@ -221,6 +261,7 @@ export function OcList({
 }: {
   orders:       OcRow[]
   pendingCount: number
+  postponedItems?: PendingItem[]
   canCreate:    boolean
   canDelete?:   boolean
   createdCount?: number
@@ -269,6 +310,22 @@ export function OcList({
             </Button>
           )}
         </div>
+      )}
+
+      {postponedItems.length > 0 && (
+        <section className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Ítems postergados</h2>
+              <p className="text-xs text-[var(--color-text-muted)]">Reanúdalos para que vuelvan al consolidado de OC.</p>
+            </div>
+          </div>
+          <div>
+            {postponedItems.map((item) => (
+              <PostponedItemRow key={item.id} item={item} />
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Filtros server-side (URL-synced) */}

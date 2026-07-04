@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { db }       from "@/db"
 import {
   purchaseOrders, purchaseOrderItems, purchaseOrderInvoices,
-  worksites, suppliers,
+  worksites, suppliers, products,
   purchaseRequests,
 } from "@/db/schema"
 import { and, or, ilike, inArray, count, desc, eq, sql } from "drizzle-orm"
@@ -48,15 +48,26 @@ export default async function ComprasPage({
       : sql`false`
 
   // ── Approved / pending_purchase items (never-miss alert) ────────────────────
-  const [pendingRow] = await db
+  const [[pendingRow], [postponedRow]] = await Promise.all([
+    db
     .select({ total: count() })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
     .where(and(
       inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]),
       requestWorksiteScope,
-    ))
+    )),
+    db
+      .select({ total: count() })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .where(and(
+        eq(purchaseRequestItems.status, "postponed"),
+        requestWorksiteScope,
+      )),
+  ])
   const pendingCount = pendingRow?.total ?? 0
+  const postponedCount = postponedRow?.total ?? 0
 
   // URL-synced search & filters (server-side, so search finds records on any page)
   const listParams = parseListParams(sp)
@@ -133,9 +144,10 @@ export default async function ComprasPage({
   const canDeleteOrder = can(session, "purchasing:delete_order")
   const headerSignals: HeaderSignal[] = [
     { key: "no-oc", label: "Sin OC", value: pendingCount, href: canCreateOrder ? "/compras/nueva" : undefined, tone: "signal" },
+    { key: "postponed", label: "Postergados", value: postponedCount, tone: "signal" },
   ]
 
-  if (visibleOrders.length === 0 && pendingCount === 0) {
+  if (visibleOrders.length === 0 && pendingCount === 0 && postponedCount === 0) {
     return (
       <PageContainer>
         <PageHeader
@@ -149,7 +161,7 @@ export default async function ComprasPage({
           }
           headerActions={<HeaderSignals signals={headerSignals} />}
         />
-        <OcList orders={[]} pendingCount={0} canCreate={canCreateOrder} canDelete={canDeleteOrder} createdCount={createdCount} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
+        <OcList orders={[]} pendingCount={0} postponedItems={[]} canCreate={canCreateOrder} canDelete={canDeleteOrder} createdCount={createdCount} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
 
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
@@ -160,7 +172,7 @@ export default async function ComprasPage({
   const wsIds       = [...new Set(visibleOrders.map((o) => o.worksiteId))]
   const supplierIds = [...new Set(visibleOrders.map((o) => o.supplierId))]
 
-  const [wsRows, supplierRows, itemCounts, invoiceCounts] = await Promise.all([
+  const [wsRows, supplierRows, itemCounts, invoiceCounts, postponedRows] = await Promise.all([
     wsIds.length > 0
       ? db
           .select({ id: worksites.id, name: worksites.name })
@@ -190,6 +202,31 @@ export default async function ComprasPage({
           .where(inArray(purchaseOrderInvoices.purchaseOrderId, orderIds))
           .groupBy(purchaseOrderInvoices.purchaseOrderId)
       : Promise.resolve([]),
+
+    postponedCount > 0
+      ? db
+          .select({
+            id: purchaseRequestItems.id,
+            requestId: purchaseRequestItems.requestId,
+            requestCode: purchaseRequests.code,
+            worksiteId: purchaseRequests.worksiteId,
+            worksiteName: worksites.name,
+            productNameFree: purchaseRequestItems.productNameFree,
+            productName: products.name,
+            productSku: products.sku,
+            quantity: purchaseRequestItems.quantity,
+            unitOfMeasure: purchaseRequestItems.unitOfMeasure,
+            urgency: purchaseRequestItems.urgency,
+            notes: purchaseRequestItems.notes,
+          })
+          .from(purchaseRequestItems)
+          .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+          .innerJoin(worksites, eq(purchaseRequests.worksiteId, worksites.id))
+          .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
+          .where(and(eq(purchaseRequestItems.status, "postponed"), requestWorksiteScope))
+          .orderBy(desc(purchaseRequestItems.updatedAt))
+          .limit(10)
+      : Promise.resolve([]),
   ])
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
@@ -211,6 +248,20 @@ export default async function ComprasPage({
     createdAt:    o.createdAt,
   }))
 
+  const postponedItems = postponedRows.map((item) => ({
+    id: item.id,
+    requestId: item.requestId,
+    requestCode: item.requestCode,
+    worksiteId: item.worksiteId,
+    worksiteName: item.worksiteName,
+    productName: item.productName ?? item.productNameFree ?? "(sin nombre)",
+    productSku: item.productSku,
+    quantity: item.quantity,
+    unitOfMeasure: item.unitOfMeasure,
+    urgency: item.urgency ?? "normal",
+    notes: item.notes,
+  }))
+
   return (
     <PageContainer>
       <PageHeader
@@ -227,6 +278,7 @@ export default async function ComprasPage({
       <OcList
         orders={rows}
         pendingCount={pendingCount}
+        postponedItems={postponedItems}
         canCreate={canCreateOrder}
         canDelete={canDeleteOrder}
         createdCount={createdCount}

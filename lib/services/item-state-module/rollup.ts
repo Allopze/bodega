@@ -23,7 +23,7 @@ export async function rollupRequestStatus(
   const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
   const allRejected   = statuses.every((s) => s === "rejected")
   const allReturned   = statuses.every((s) => s === "returned")
-  const allClosed     = statuses.every((s) => ["received", "rejected", "delivered", "postponed"].includes(s))
+  const allClosed     = statuses.every((s) => ["rejected", "delivered", "postponed"].includes(s))
   const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_received", "received", "partially_delivered"].includes(s))
   const allResolved   = !pendingReview
 
@@ -58,7 +58,7 @@ export async function rollupRequestStatus(
     .where(
       and(
         eq(purchaseRequests.id, requestId),
-        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved", "approved", "rejected", "returned", "in_purchasing"]),
+        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved", "approved", "rejected", "returned", "in_purchasing", "closed"]),
       ),
     )
 }

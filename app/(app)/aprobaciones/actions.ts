@@ -14,8 +14,7 @@ const REVALIDATE = "/aprobaciones"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// EPP requests come from prevencionista — only jefatura/secretaría/admin can approve.
-const EPP_APPROVER_ROLES = new Set(["administrador", "jefa_chome", "secretaria"])
+const EPP_APPROVER_ROLES = new Set(["administrador", "jefa_chome", "secretaria", "prevencionista"])
 
 function canApproveEpp(roles: string[]): boolean {
   return roles.some((r) => EPP_APPROVER_ROLES.has(r))
@@ -60,7 +59,7 @@ export async function approveItemAction(
       return { ok: false, message: "No tienes acceso a la faena de este ítem" }
     }
     if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
-      return { ok: false, message: "Las solicitudes de EPP solo pueden ser aprobadas por Jefatura o Secretaría" }
+      return { ok: false, message: "Las solicitudes de EPP solo pueden ser aprobadas por Jefatura, Secretaría o Prevención" }
     }
 
     await approveItem(itemId, session.user.id, {
@@ -123,7 +122,7 @@ export async function rejectItemAction(
       return { ok: false, message: "No tienes acceso a la faena de este ítem" }
     }
     if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
-      return { ok: false, message: "Las solicitudes de EPP solo pueden ser gestionadas por Jefatura o Secretaría" }
+      return { ok: false, message: "Las solicitudes de EPP solo pueden ser gestionadas por Jefatura, Secretaría o Prevención" }
     }
 
     await rejectItem(itemId, session.user.id, reason, {
@@ -181,7 +180,7 @@ export async function returnItemAction(
       return { ok: false, message: "No tienes acceso a la faena de este ítem" }
     }
     if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
-      return { ok: false, message: "Las solicitudes de EPP solo pueden ser gestionadas por Jefatura o Secretaría" }
+      return { ok: false, message: "Las solicitudes de EPP solo pueden ser gestionadas por Jefatura, Secretaría o Prevención" }
     }
 
     await returnItem(itemId, session.user.id, reason, {

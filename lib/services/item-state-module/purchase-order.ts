@@ -125,6 +125,8 @@ export async function markItemPendingPurchase(
       oldState:   { status: item.status },
       newState:   { status: "pending_purchase" },
     }, tx)
+
+    await rollupRequestStatus(item.requestId, tx)
   })
 }
 
@@ -173,5 +175,7 @@ export async function postponeItem(
       newState:   { status: "postponed" },
       reason,
     }, tx)
+
+    await rollupRequestStatus(item.requestId, tx)
   })
 }

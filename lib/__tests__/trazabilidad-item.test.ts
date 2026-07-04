@@ -420,12 +420,12 @@ describe("getItemDetail", () => {
     it("returns timeline entries with user info, ordered by changedAt DESC", async () => {
       await inMemoryDb.insert(schema.statusHistory).values([
         {
-          id: "sh-1", entityType: "purchase_request_item", entityId: ITEM,
+          id: "sh-1", entityType: "request_item", entityId: ITEM,
           fromStatus: "draft", toStatus: "requested",
           changedBy: USER_REQ, changedAt: "2026-06-01T10:00:00Z",
         },
         {
-          id: "sh-2", entityType: "purchase_request_item", entityId: ITEM,
+          id: "sh-2", entityType: "request_item", entityId: ITEM,
           fromStatus: "requested", toStatus: "approved",
           changedBy: USER_APR, changedAt: "2026-06-02T14:00:00Z",
           reason: "Aprobado por jefa",

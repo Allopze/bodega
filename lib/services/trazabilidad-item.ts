@@ -265,7 +265,7 @@ export async function getItemDetail(
     .leftJoin(users, eq(statusHistory.changedBy, users.id))
     .where(
       and(
-        eq(statusHistory.entityType, "purchase_request_item"),
+        eq(statusHistory.entityType, "request_item"),
         eq(statusHistory.entityId, itemId),
       ),
     )

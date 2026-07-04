@@ -1,7 +1,7 @@
 import { db } from "@/db"
 import {
   purchaseRequests, purchaseRequestItems,
-  purchaseOrderItems, receipts, receiptItems,
+  purchaseOrders, purchaseOrderItems, receipts, receiptItems,
   approvalDecisions, products, worksites,
 } from "@/db/schema"
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm"
@@ -130,7 +130,12 @@ export async function getTrazabilidadMatrix(
         quantity:       purchaseOrderItems.quantity,
       })
         .from(purchaseOrderItems)
-        .where(inArray(purchaseOrderItems.requestItemId, requestItemIds)),
+        .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
+        .where(and(
+          inArray(purchaseOrderItems.requestItemId, requestItemIds),
+          sql`${purchaseOrderItems.status} <> 'cancelled'`,
+          sql`${purchaseOrders.status} <> 'cancelled'`,
+        )),
 
       db.select({
         purchaseOrderItemId: receiptItems.purchaseOrderItemId,

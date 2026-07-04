@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseRequests } from "@/db/schema"
+import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { type ActionState } from "@/lib/validation/operations"
@@ -21,10 +21,17 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
 
   const request = await db.query.purchaseRequests.findFirst({
     where: eq(purchaseRequests.id, requestId),
+    with: { items: true },
   })
   if (!request) return { ok: false, message: "Solicitud no encontrada" }
-  if (!["draft", "returned"].includes(request.status)) {
+  const cancellableStatuses = ["draft", "returned", "submitted", "in_review", "partially_approved"]
+  if (!cancellableStatuses.includes(request.status)) {
     return { ok: false, message: "No se puede cancelar una solicitud en estado " + request.status }
+  }
+  const reason = (formData.get("reason") as string | null)?.trim()
+  const requiresReason = !["draft", "returned"].includes(request.status)
+  if (requiresReason && !reason) {
+    return { ok: false, message: "El motivo de cancelación es obligatorio" }
   }
   if (request.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
     return { ok: false, message: "Solo puedes cancelar tus propias solicitudes" }
@@ -32,12 +39,42 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
   if (!canAccessWorksite(session, request.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
   }
+  const lockedStatuses = ["in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"]
+  if (request.items.some((item) => lockedStatuses.includes(item.status))) {
+    return { ok: false, message: "No se puede cancelar: la solicitud ya tiene ítems en compra, recepción o entrega" }
+  }
 
   await db.transaction(async (tx) => {
+    const now = new Date().toISOString()
     await tx.update(purchaseRequests).set({
       status:    "cancelled",
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     }).where(eq(purchaseRequests.id, requestId))
+
+    const itemIdsToReject = request.items
+      .filter((item) => ["draft", "requested", "approved", "returned", "pending_purchase"].includes(item.status))
+      .map((item) => item.id)
+
+    if (itemIdsToReject.length > 0) {
+      await tx
+        .update(purchaseRequestItems)
+        .set({ status: "rejected", updatedAt: now })
+        .where(and(
+          inArray(purchaseRequestItems.id, itemIdsToReject),
+          inArray(purchaseRequestItems.status, ["draft", "requested", "approved", "returned", "pending_purchase"]),
+        ))
+
+      for (const item of request.items.filter((item) => itemIdsToReject.includes(item.id))) {
+        await recordStatusChange({
+          entityType: "request_item",
+          entityId: item.id,
+          fromStatus: item.status,
+          toStatus: "rejected",
+          changedBy: session.user.id,
+          reason,
+        }, tx)
+      }
+    }
 
     await recordStatusChange({
       entityType: "purchase_request",
@@ -45,6 +82,7 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
       fromStatus: request.status,
       toStatus:   "cancelled",
       changedBy:  session.user.id,
+      reason,
     }, tx)
     await recordAudit({
       userId:     session.user.id,
@@ -54,7 +92,8 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
       entityId:   requestId,
       entityCode: request.code,
       oldState:   { status: request.status },
-      newState:   { status: "cancelled" },
+      newState:   { status: "cancelled", rejectedItemIds: itemIdsToReject },
+      reason,
     }, tx)
   })
 

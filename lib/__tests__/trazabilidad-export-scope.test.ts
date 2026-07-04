@@ -359,6 +359,90 @@ describe("trazabilidad export scoping and filter tests", () => {
     expect(rows[0]?.alert).toBe(true)
   })
 
+  it("excludes cancelled purchase order items from inOc totals", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-1",
+      name: "Faena 1",
+      code: "F-1",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: "sup-1",
+      name: "Proveedor 1",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: "req-1",
+      code: "SOL-0001",
+      worksiteId: "ws-1",
+      requesterId: "u-1",
+      status: "approved",
+      createdAt: now,
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: "item-1",
+      requestId: "req-1",
+      productNameFree: "Guantes",
+      quantity: 10,
+      unitOfMeasure: "par",
+      status: "pending_purchase",
+      createdAt: now,
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrders).values([
+      {
+        id: "po-cancelled",
+        code: "OC-CANCELLED",
+        worksiteId: "ws-1",
+        supplierId: "sup-1",
+        createdBy: "u-1",
+        status: "cancelled",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "po-active",
+        code: "OC-ACTIVE",
+        worksiteId: "ws-1",
+        supplierId: "sup-1",
+        createdBy: "u-1",
+        status: "issued",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
+    await inMemoryDb.insert(schema.purchaseOrderItems).values([
+      {
+        id: "poi-cancelled",
+        purchaseOrderId: "po-cancelled",
+        requestItemId: "item-1",
+        quantity: 10,
+        unitOfMeasure: "par",
+        unitPrice: 1000,
+        status: "cancelled",
+      },
+      {
+        id: "poi-active",
+        purchaseOrderId: "po-active",
+        requestItemId: "item-1",
+        quantity: 10,
+        unitOfMeasure: "par",
+        unitPrice: 1000,
+      },
+    ])
+
+    const rows = await buildTrazabilidadRows(globalSession())
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.inOc).toBe(10)
+  })
+
   it("getTrazabilidadXlsx constructs excel workbook buffer and truncates rows if requested", async () => {
     const now = new Date().toISOString()
     await inMemoryDb.insert(schema.worksites).values({

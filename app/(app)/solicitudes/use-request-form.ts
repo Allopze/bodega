@@ -33,6 +33,8 @@ export function useRequestForm({
   const canDeleteRequest = isEdit
     && (DELETABLE_REQUEST_STATUSES as readonly string[]).includes(editRequest.status)
     && (userPermissions.includes("requests:delete") || userPermissions.includes("requests:view_own"))
+  const canCancelRequest = isEdit
+    && ["draft", "returned", "submitted", "in_review", "partially_approved"].includes(editRequest.status)
 
   const [draftState, draftAction, draftPending] = useActionState<ActionState & { requestId?: string }, FormData>(saveDraft, INITIAL_STATE)
   const [submitState, submitAction] = useActionState<ActionState, FormData>(submitRequest, INITIAL_STATE)
@@ -237,7 +239,7 @@ export function useRequestForm({
     isEdit, isDraft, readOnly, savedId, dirty, lastSavedAt, hasRealContent,
     requestTypeLabel, urgencyLabel, worksiteLabel, missingItems, statusLabel,
     itemsError, requiredDateError, submitMessage, submitOk,
-    canDeleteRequest, deleteConfirmOpen, setDeleteConfirmOpen,
+    canDeleteRequest, canCancelRequest, deleteConfirmOpen, setDeleteConfirmOpen,
     isSaving, isSubmitting, isDeleting, draftPending, resubmitPending,
     addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct, updateAttr,
     buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction, resubmitAction,

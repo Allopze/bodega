@@ -32,6 +32,7 @@ import {
   issueOrder,
   markOrderSent,
   cancelOrder,
+  closeOrder,
   createPurchaseOrderInvoice,
   deletePurchaseOrderInvoice,
 } from "@/lib/services/purchasing"
@@ -87,6 +88,35 @@ describe("Purchasing service — edge cases", () => {
           orders: [{ supplierId: "sup-purch", items: [] }],
         })
       ).rejects.toThrow("sin ítems")
+    })
+
+    it("rejects partial purchase quantities instead of orphaning the approved balance", async () => {
+      const requestId = "req-partial-purchase-block"
+      const requestItemId = "item-partial-purchase-block"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-PARTIAL-PURCHASE", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 10, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+
+      await expect(createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [{
+          requestItemId,
+          productId: "prod-purch",
+          productNameFree: null,
+          quantity: 6,
+          unitOfMeasure: "unidad",
+          unitPrice: 1000,
+        }],
+      })).rejects.toThrow("cantidad completa")
     })
   })
 
@@ -347,6 +377,167 @@ describe("Purchasing service — edge cases", () => {
       await expect(
         cancelOrder("nonexistent", userId, "test")
       ).rejects.toThrow("not found")
+    })
+  })
+
+  // ── closeOrder ─────────────────────────────────────────────────────────
+
+  describe("closeOrder", () => {
+    it("closes a partially received order and returns incomplete items to pending_purchase", async () => {
+      const requestId = "req-close-partial"
+      const receivedItemId = "item-close-received"
+      const pendingItemId = "item-close-pending"
+
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-CLOSE-PARTIAL", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "in_purchasing", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values([
+        {
+          id: receivedItemId, requestId, productId: "prod-purch",
+          quantity: 2, unitOfMeasure: "unidad", status: "pending_purchase",
+          createdAt: now, updatedAt: now,
+        },
+        {
+          id: pendingItemId, requestId, productId: "prod-purch",
+          quantity: 3, unitOfMeasure: "unidad", status: "pending_purchase",
+          createdAt: now, updatedAt: now,
+        },
+      ])
+
+      const orderId = await createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [
+          {
+            requestItemId: receivedItemId,
+            productId: "prod-purch",
+            productNameFree: null,
+            quantity: 2,
+            unitOfMeasure: "unidad",
+            unitPrice: 1000,
+          },
+          {
+            requestItemId: pendingItemId,
+            productId: "prod-purch",
+            productNameFree: null,
+            quantity: 3,
+            unitOfMeasure: "unidad",
+            unitPrice: 1000,
+          },
+        ],
+      })
+
+      await inMemoryDb
+        .update(schema.purchaseOrders)
+        .set({ status: "partially_received" })
+        .where(eq(schema.purchaseOrders.id, orderId))
+      await inMemoryDb
+        .update(schema.purchaseRequestItems)
+        .set({ status: "received" })
+        .where(eq(schema.purchaseRequestItems.id, receivedItemId))
+      await inMemoryDb
+        .update(schema.purchaseRequestItems)
+        .set({ status: "purchased" })
+        .where(eq(schema.purchaseRequestItems.id, pendingItemId))
+
+      await closeOrder(orderId, userId, "Proveedor no despachará saldo")
+
+      const order = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: eq(schema.purchaseOrders.id, orderId),
+      })
+      expect(order?.status).toBe("closed")
+
+      const pendingItem = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, pendingItemId),
+      })
+      expect(pendingItem?.status).toBe("pending_purchase")
+
+      const receivedItem = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, receivedItemId),
+      })
+      expect(receivedItem?.status).toBe("received")
+
+      const request = await inMemoryDb.query.purchaseRequests.findFirst({
+        where: eq(schema.purchaseRequests.id, requestId),
+      })
+      expect(request?.status).toBe("in_purchasing")
+    })
+
+    it("splits remaining quantity when closing an order with a partially received request item", async () => {
+      const requestId = "req-close-split"
+      const requestItemId = "item-close-split"
+
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-CLOSE-SPLIT", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "in_purchasing", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 10, unitOfMeasure: "unidad", status: "pending_purchase",
+        urgency: "critical", requiredDate: "2026-08-01",
+        notes: "Talla L", sortOrder: 7,
+        createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.requestItemAttributes).values({
+        id: "attr-close-split",
+        requestItemId,
+        attributeName: "Talla",
+        value: "L",
+      })
+
+      const orderId = await createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [{
+          requestItemId,
+          productId: "prod-purch",
+          productNameFree: null,
+          quantity: 10,
+          unitOfMeasure: "unidad",
+          unitPrice: 1000,
+        }],
+      })
+
+      await inMemoryDb
+        .update(schema.purchaseOrders)
+        .set({ status: "partially_received" })
+        .where(eq(schema.purchaseOrders.id, orderId))
+      await inMemoryDb
+        .update(schema.purchaseOrderItems)
+        .set({ quantityOfficeReceived: 10, quantityReceived: 4, status: "partially_received" })
+        .where(eq(schema.purchaseOrderItems.purchaseOrderId, orderId))
+      await inMemoryDb
+        .update(schema.purchaseRequestItems)
+        .set({ status: "partially_received" })
+        .where(eq(schema.purchaseRequestItems.id, requestItemId))
+
+      await closeOrder(orderId, userId, "Proveedor no despachará saldo")
+
+      const originalItem = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, requestItemId),
+      })
+      expect(originalItem?.quantity).toBe(4)
+      expect(originalItem?.status).toBe("partially_received")
+
+      const requestItems = await inMemoryDb.query.purchaseRequestItems.findMany({
+        where: eq(schema.purchaseRequestItems.requestId, requestId),
+        with: { attributes: true },
+      })
+      const splitItem = requestItems.find((item) => item.id !== requestItemId)
+      expect(splitItem).toBeDefined()
+      expect(splitItem).toMatchObject({
+        quantity: 6,
+        status: "pending_purchase",
+        productId: "prod-purch",
+        urgency: "critical",
+        requiredDate: "2026-08-01",
+      })
+      expect(splitItem?.attributes[0]).toMatchObject({ attributeName: "Talla", value: "L" })
     })
   })
 

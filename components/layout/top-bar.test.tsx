@@ -31,6 +31,9 @@ function makeSession(permissions: string[] = []): Session {
       roles: ["administrador"],
       permissions,
       worksiteIds: [],
+      primaryWorksiteId: null,
+      avatarColor: null,
+      isActive: true,
       isGlobal: true,
     },
   }

@@ -84,7 +84,7 @@ export async function registerWorksiteDelivery(
         .for("update")
 
       if (!lockedRequestItem) throw new Error("Ítem de solicitud no encontrado")
-      if (!["received", "partially_delivered"].includes(lockedRequestItem.status)) {
+      if (!["partially_received", "received", "partially_delivered"].includes(lockedRequestItem.status)) {
         throw new Error("Solo puedes asociar ítems recibidos pendientes de entrega")
       }
       if (lockedRequestItem.productId !== input.productId) {
@@ -206,7 +206,7 @@ export async function registerWorkerEppDelivery(
       .for("update")
 
     if (!lockedRequestItem) throw new Error("Ítem de solicitud no encontrado")
-    if (!["received", "partially_delivered"].includes(lockedRequestItem.status)) {
+    if (!["partially_received", "received", "partially_delivered"].includes(lockedRequestItem.status)) {
       throw new Error("Solo puedes entregar EPP recibidos pendientes de entrega")
     }
     if (!lockedRequestItem.productId) throw new Error("El ítem recibido no tiene producto de catálogo")

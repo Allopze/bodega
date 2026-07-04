@@ -9,6 +9,7 @@ const mockRequireAuth = vi.hoisted(() => vi.fn())
 const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
 const mockCan = vi.hoisted(() => vi.fn(() => true))
 const mockFindFirstRequest = vi.hoisted(() => vi.fn())
+const mockFindManyItems = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -20,6 +21,7 @@ vi.mock("@/db", () => {
   const db = {
     query: {
       purchaseRequests: { findFirst: mockFindFirstRequest },
+      purchaseRequestItems: { findMany: mockFindManyItems },
       products: { findMany: vi.fn(() => []) },
     },
     select: vi.fn(() => {
@@ -103,15 +105,53 @@ describe("cancelRequest", () => {
     expect(res.message).toContain("Solicitud no encontrada")
   })
 
-  it("returns error if not draft or returned", async () => {
+  it("returns error if status is not cancellable", async () => {
     mockFindFirstRequest.mockResolvedValueOnce({
-      id: "req-1", status: "submitted", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
+      id: "req-1", status: "approved", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
+      items: [{ id: "item-1", status: "approved" }],
     })
     const fd = new FormData()
     fd.set("requestId", "req-1")
     const res = await cancelRequest(prevState, fd)
     expect(res.ok).toBe(false)
     expect(res.message).toContain("No se puede cancelar")
+  })
+
+  it("requires a reason when cancelling a submitted request", async () => {
+    mockFindFirstRequest.mockResolvedValueOnce({
+      id: "req-1", status: "submitted", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
+      items: [{ id: "item-1", status: "requested" }],
+    })
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    const res = await cancelRequest(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("motivo")
+  })
+
+  it("cancels a submitted request with reason when no item has entered purchasing", async () => {
+    mockFindFirstRequest.mockResolvedValueOnce({
+      id: "req-1", status: "submitted", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
+      items: [{ id: "item-1", status: "requested" }],
+    })
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("reason", "Necesidad anulada")
+
+    await expect(cancelRequest(prevState, fd)).rejects.toThrow("NEXT_REDIRECT")
+  })
+
+  it("blocks submitted request cancellation after an item entered purchasing", async () => {
+    mockFindFirstRequest.mockResolvedValueOnce({
+      id: "req-1", status: "submitted", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
+      items: [{ id: "item-1", status: "purchased" }],
+    })
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("reason", "Necesidad anulada")
+    const res = await cancelRequest(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("compra")
   })
 })
 

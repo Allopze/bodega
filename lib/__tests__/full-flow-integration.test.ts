@@ -10,7 +10,7 @@
  * 6. Create Purchase Order (OC) (transitions item to in_purchase_order, creates draft OC)
  * 7. Issue OC (transitions OC to issued)
  * 8. Send OC (transitions OC to sent, item to purchased)
- * 9. Register Receipt of OC items into worksite (transitions item to received, OC to received, request to closed)
+ * 9. Register Receipt of OC items into worksite (transitions item to received, OC to received, request remains in_purchasing until delivery)
  * 10. Verify worksite stock is correctly incremented
  * 11. Register EPP delivery to a worker and verify stock + traceability
  */
@@ -302,13 +302,13 @@ describe("Full procurement workflow integration", () => {
     })
     expect(finalOrder?.status).toBe("received")
 
-    // Verify Request item transitioned to "received" and Request header rolled up to "closed"
+    // Verify Request item transitioned to "received" and Request header stays in_purchasing until delivery
     const finalReq = await inMemoryDb.query.purchaseRequests.findFirst({
       where: eq(schema.purchaseRequests.id, requestId),
       with: { items: true },
     })
     expect(finalReq?.items[0]?.status).toBe("received")
-    expect(finalReq?.status).toBe("closed")
+    expect(finalReq?.status).toBe("in_purchasing")
 
     // 10. Verify worksite stock is correctly incremented
     const stock = await inMemoryDb.query.worksiteStock.findFirst({
@@ -347,6 +347,7 @@ describe("Full procurement workflow integration", () => {
       with: { items: true },
     })
     expect(deliveredReq?.items[0]?.status).toBe("delivered")
+    expect(deliveredReq?.status).toBe("closed")
   })
 
   it("registers a worker delivery with old EPP return and creates egreso_desecho movement", async () => {

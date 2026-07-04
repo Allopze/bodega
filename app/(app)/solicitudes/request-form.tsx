@@ -284,8 +284,33 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
         )}
 
         {form.readOnly && (
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex items-center justify-between gap-3 pt-2">
             <p className="text-xs text-text-subtle">Esta solicitud está en estado <strong>{form.statusLabel}</strong> y no puede modificarse.</p>
+            {form.canCancelRequest && (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button type="button" variant="ghost" size="sm" className="text-[var(--color-danger)] hover:text-[var(--color-danger)]">
+                    Cancelar solicitud
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>¿Cancelar esta solicitud?</DialogTitle>
+                    <DialogDescription>Indica el motivo para sacar la solicitud {editRequest!.code} del flujo. Solo se permite si aún no tiene ítems en compra, recepción o entrega.</DialogDescription>
+                  </DialogHeader>
+                  <form action={form.cancelAction} className="space-y-4">
+                    <input type="hidden" name="requestId" value={editRequest!.id} />
+                    <Field label="Motivo" required htmlFor="cancelReason">
+                      <Textarea id="cancelReason" name="reason" rows={3} placeholder="Ej: la necesidad fue anulada por la faena" required />
+                    </Field>
+                    <DialogFooter>
+                      <DialogClose asChild><Button type="button" variant="ghost" size="sm">Volver</Button></DialogClose>
+                      <SubmitButton label="Cancelar solicitud" loadingLabel="Cancelando..." variant="destructive" size="sm" />
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         )}
 

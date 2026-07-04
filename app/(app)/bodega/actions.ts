@@ -73,7 +73,7 @@ export async function dispatchAction(
       .then((rows) => rows[0])
 
     if (!item) return { ok: false, message: "Ítem de solicitud no encontrado" }
-    if (!["received", "partially_delivered"].includes(item.status)) {
+    if (!["partially_received", "received", "partially_delivered"].includes(item.status)) {
       return { ok: false, message: "Solo puedes asociar ítems recibidos pendientes de entrega" }
     }
     if (item.productId !== productId || item.worksiteId !== worksiteId) {

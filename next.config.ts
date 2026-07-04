@@ -51,6 +51,13 @@ const nextConfig: NextConfig = {
       "./node_modules/playwright/**/*",
     ],
   },
+  outputFileTracingExcludes: {
+    "/*": [
+      "./Registros SG-SST/**/*",
+      "./audit/screenshots/**/*",
+      "./coverage/**/*",
+    ],
+  },
 };
 
 export default withSentryConfig(nextConfig, {

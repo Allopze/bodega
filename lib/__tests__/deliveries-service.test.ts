@@ -361,6 +361,49 @@ describe("registerWorkerEppDelivery — database transactions", () => {
     expect(mockTxInsert).toHaveBeenCalled()
   })
 
+  it("allows delivering EPP from a partially received request item", async () => {
+    const mockTxQuery = {
+      worksites: {
+        findFirst: vi.fn().mockResolvedValue({ id: "ws-1", name: "Faena 1", isActive: true }),
+      },
+      workers: {
+        findFirst: vi.fn().mockResolvedValue({ id: "w-1", firstName: "Pedro", lastName: "Rojas", isActive: true, worksiteId: "ws-1" }),
+      },
+      purchaseRequests: {
+        findFirst: vi.fn().mockResolvedValue({ id: "req-1", worksiteId: "ws-1" }),
+      },
+      products: {
+        findFirst: vi.fn().mockResolvedValue({ id: "prod-1", name: "EPP Product", isActive: true, isEpp: true }),
+      },
+      worksiteStock: {
+        findFirst: vi.fn().mockResolvedValue({ worksiteId: "ws-1", productId: "prod-1", quantity: 4 }),
+      },
+    }
+
+    const mockTxSelect = vi.fn()
+    const mockTxInsert = vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
+
+    mockTransaction.mockImplementation(async (fn) => fn({
+      query: mockTxQuery,
+      select: mockTxSelect,
+      insert: mockTxInsert,
+    }))
+
+    mockTxSelect.mockReturnValueOnce(chainResult([{ id: "item-1", status: "partially_received", productId: "prod-1", requestId: "req-1", quantity: 10, unitOfMeasure: "unidad" }]))
+    mockTxSelect.mockReturnValueOnce(chainResult([]))
+
+    const result = await registerWorkerEppDelivery({
+      worksiteId: "ws-1",
+      workerId: "w-1",
+      requestItemId: "item-1",
+      quantity: 4,
+      deliveredBy: "u-1",
+    })
+
+    expect(result).toBe("del-nanoid-123")
+    expect(mockTxInsert).toHaveBeenCalled()
+  })
+
   it("throws if worker worksiteId doesn't match delivery worksiteId", async () => {
     const mockTxQuery = {
       worksites: {
@@ -546,4 +589,3 @@ describe("registerWorkerEppDelivery — database transactions", () => {
     })).rejects.toThrow("Stock insuficiente")
   })
 })
-

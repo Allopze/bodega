@@ -90,6 +90,16 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
 
   await db.transaction(async (tx) => {
     for (const orderInput of input.orders) {
+      for (const item of orderInput.items) {
+        const requestItem = await tx.query.purchaseRequestItems.findFirst({
+          where: eq(purchaseRequestItems.id, item.requestItemId),
+        })
+        if (!requestItem) throw new Error(`Item ${item.requestItemId} not found`)
+        if (item.quantity !== requestItem.quantity) {
+          throw new Error("La OC debe comprar la cantidad completa aprobada del ítem; divide el ítem antes de comprar una cantidad parcial")
+        }
+      }
+
       const orderId = nanoid()
       const code    = await nextCodeTx(tx, "OC", year)
       const totals  = computeOrderTotals(orderInput.items)

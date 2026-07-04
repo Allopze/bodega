@@ -100,7 +100,7 @@ export default async function Page({
       .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
       .innerJoin(products, eq(purchaseRequestItems.productId, products.id))
       .where(and(
-        inArray(purchaseRequestItems.status, ["received", "partially_delivered"]),
+        inArray(purchaseRequestItems.status, ["partially_received", "received", "partially_delivered"]),
         isNotNull(purchaseRequestItems.productId),
         eq(products.isEpp, true),
         worksiteScopeSql(session, purchaseRequests.worksiteId),
