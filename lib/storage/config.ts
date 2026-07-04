@@ -6,6 +6,7 @@ const QUOTATION_ATTACHMENT_PREFIX = "storage/repuestos/"
 const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
 const FLEET_DOCUMENT_PREFIX = "storage/flota/"
 const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
+const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 
 /**
  * Resolves the base storage directory.
@@ -179,4 +180,34 @@ export function resolveSstDocumentFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolveSstDocumentsDir(), storageName)
+}
+
+/* ── Evidencia PDTP ────────────────────────────────────────────────────────
+ *
+ * Almacenamiento para la evidencia (foto/archivo) de ejecuciones del
+ * Programa de Trabajo Preventivo SG-SST. NO comparte espacio con la
+ * biblioteca SST ni con el resto de módulos.
+ * El `storageName` es siempre un nanoid con extensión segura; nunca se
+ * acepta el nombre original del usuario para evitar traversal.
+ */
+export function resolvePdtpEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "pdtp-evidence")
+}
+
+export function createPdtpEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid pdtp evidence storage name")
+  }
+  return `${PDTP_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolvePdtpEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(PDTP_EVIDENCE_PREFIX)) {
+    return null
+  }
+  const storageName = filePath.slice(PDTP_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+  return path.join(/*turbopackIgnore: true*/ resolvePdtpEvidenceDir(), storageName)
 }

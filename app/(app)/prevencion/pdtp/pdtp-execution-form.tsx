@@ -16,14 +16,33 @@ type PdtpExecutionFormProps = {
 }
 
 export function PdtpExecutionForm({ activityId, worksiteId, defaultMonth, defaultWeek }: PdtpExecutionFormProps) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [state, formAction] = React.useActionState<ExecState, FormData>(
     async (_prev, formData) => {
+      const { toast } = await import("@/lib/toast")
+      const file = fileInputRef.current?.files?.[0]
+      if (file) {
+        const uploadData = new FormData()
+        uploadData.set("file", file)
+        uploadData.set("worksiteId", worksiteId)
+        try {
+          const res = await fetch("/api/prevencion/pdtp/evidence", { method: "POST", body: uploadData })
+          const json = await res.json()
+          if (!res.ok) {
+            toast.error(json.error ?? "Error al subir la evidencia.")
+            return { ok: false, message: json.error ?? "Error al subir la evidencia." }
+          }
+          formData.set("evidenceUrl", json.path)
+        } catch {
+          toast.error("Error al subir la evidencia.")
+          return { ok: false, message: "Error al subir la evidencia." }
+        }
+      }
+
       const result = await markPdtpExecutionFormAction(formData)
       if (!result.ok) {
-        const { toast } = await import("@/lib/toast")
         toast.error(result.message ?? "Error al registrar la ejecución PDTP.")
       } else {
-        const { toast } = await import("@/lib/toast")
         toast.success("Ejecución PDTP registrada.")
       }
       return result
@@ -78,7 +97,24 @@ export function PdtpExecutionForm({ activityId, worksiteId, defaultMonth, defaul
           aria-invalid={!!state?.fieldErrors?.executedQuantity}
         />
       </label>
-      <input name="evidenceText" type="hidden" value="Registro desde tabla PDTP" />
+      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
+        Observación
+        <input
+          name="evidenceText"
+          type="text"
+          placeholder="Opcional"
+          className="h-8 w-40 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+        />
+      </label>
+      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
+        Evidencia
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,application/pdf"
+          className="text-xs text-[var(--color-text)]"
+        />
+      </label>
       <Button type="submit" size="sm" variant="secondary" disabled={pending}>
         {pending ? "Guardando…" : "Guardar"}
       </Button>

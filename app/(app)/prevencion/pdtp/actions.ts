@@ -38,6 +38,7 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
   }
 
   try {
+    const evidenceUrl = formData.get("evidenceUrl")
     await markPdtpExecution({
       activityId: formData.get("activityId"),
       worksiteId: formData.get("worksiteId"),
@@ -46,6 +47,8 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
       week: formData.get("week"),
       executedQuantity: formData.get("executedQuantity"),
       evidenceText: formData.get("evidenceText") ?? "",
+      evidenceUrl: evidenceUrl ?? "",
+      evidencePhotos: evidenceUrl ? [String(evidenceUrl)] : [],
     }, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
