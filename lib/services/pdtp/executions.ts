@@ -17,6 +17,23 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   if (!program) throw new Error("Programa PDTP no encontrado.")
   if (program.status !== "active") throw new Error("Solo se pueden registrar ejecuciones contra programas PDTP en estado activo.")
 
+  // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
+  // 'draft' o 'rejected' (devuelta para corrección) son editables.
+  const [existing] = await db
+    .select({ status: pdtpExecutions.status })
+    .from(pdtpExecutions)
+    .where(and(
+      eq(pdtpExecutions.activityId, data.activityId),
+      eq(pdtpExecutions.worksiteId, data.worksiteId),
+      eq(pdtpExecutions.year, data.year),
+      eq(pdtpExecutions.month, data.month),
+      eq(pdtpExecutions.week, data.week),
+    ))
+    .limit(1)
+  if (existing && existing.status === "approved") {
+    throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
+  }
+
   const now = new Date().toISOString()
   const id = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
 
@@ -30,7 +47,11 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     set: {
       executedQuantity: data.executedQuantity, status: "submitted",
       evidenceText: data.evidenceText || null, evidenceUrl: data.evidenceUrl || null,
-      evidencePhotos: data.evidencePhotos, executedByUserId: userId, executedAt: now, updatedAt: now,
+      evidencePhotos: data.evidencePhotos, executedByUserId: userId, executedAt: now,
+      // Limpia rechazo previo: cuando el prevencionista reenvía, la
+      // ejecución vuelve a 'submitted' con un nuevo intento.
+      rejectedByUserId: null, rejectedAt: null, rejectionReason: null,
+      updatedAt: now,
     },
   }).returning()
 
@@ -42,14 +63,58 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
   const [execution] = await db.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
   if (!execution) throw new Error("Ejecución PDTP no encontrada.")
   if (execution.status === "approved") throw new Error("La ejecución ya fue aprobada.")
-  if (execution.status !== "submitted") throw new Error("Solo se pueden aprobar ejecuciones en estado 'submitted'.")
+  if (execution.status !== "submitted" && execution.status !== "rejected") {
+    throw new Error("Solo se pueden aprobar ejecuciones en estado 'submitted' o 'rejected'.")
+  }
   assertWorksiteAccess(execution.worksiteId, scope)
 
   const now = new Date().toISOString()
   const [updated] = await db.update(pdtpExecutions)
-    .set({ status: "approved", approvedByUserId: userId, approvedAt: now, updatedAt: now })
+    .set({
+      status: "approved",
+      approvedByUserId: userId,
+      approvedAt: now,
+      // Aprobar limpia cualquier rechazo previo.
+      rejectedByUserId: null,
+      rejectedAt: null,
+      rejectionReason: null,
+      updatedAt: now,
+    })
     .where(eq(pdtpExecutions.id, executionId)).returning()
   if (!updated) throw new Error("No se pudo aprobar la ejecución PDTP.")
+  return updated
+}
+
+export async function rejectPdtpExecution(
+  executionId: string,
+  userId: string,
+  reason: string,
+  scope: WorksiteScope,
+) {
+  if (!reason || reason.trim().length === 0) {
+    throw new Error("Debes indicar el motivo del rechazo.")
+  }
+  if (reason.length > 1000) {
+    throw new Error("El motivo del rechazo no puede superar 1000 caracteres.")
+  }
+  const [execution] = await db.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
+  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
+  if (execution.status === "approved") throw new Error("La ejecución ya fue aprobada, no se puede rechazar.")
+  if (execution.status === "rejected") throw new Error("La ejecución ya fue rechazada.")
+  if (execution.status !== "submitted") throw new Error("Solo se pueden rechazar ejecuciones en estado 'submitted'.")
+  assertWorksiteAccess(execution.worksiteId, scope)
+
+  const now = new Date().toISOString()
+  const [updated] = await db.update(pdtpExecutions)
+    .set({
+      status: "rejected",
+      rejectedByUserId: userId,
+      rejectedAt: now,
+      rejectionReason: reason.trim(),
+      updatedAt: now,
+    })
+    .where(eq(pdtpExecutions.id, executionId)).returning()
+  if (!updated) throw new Error("No se pudo rechazar la ejecución PDTP.")
   return updated
 }
 
@@ -64,6 +129,9 @@ export type PendingPdtpExecution = {
   month: number
   week: number
   executedQuantity: number
+  evidenceText: string | null
+  evidenceUrl: string | null
+  evidencePhotos: string[]
   executedByUserId: string | null
   executedAt: string | null
 }
@@ -84,6 +152,9 @@ export async function listPendingPdtpExecutions(
       month: pdtpExecutions.month,
       week: pdtpExecutions.week,
       executedQuantity: pdtpExecutions.executedQuantity,
+      evidenceText: pdtpExecutions.evidenceText,
+      evidenceUrl: pdtpExecutions.evidenceUrl,
+      evidencePhotos: pdtpExecutions.evidencePhotos,
       executedByUserId: pdtpExecutions.executedByUserId,
       executedAt: pdtpExecutions.executedAt,
     })
@@ -97,5 +168,8 @@ export async function listPendingPdtpExecutions(
     ))
     .orderBy(asc(worksites.name), asc(pdtpExecutions.month), asc(pdtpExecutions.week))
 
-  return rows
+  return rows.map((r) => ({
+    ...r,
+    evidencePhotos: Array.isArray(r.evidencePhotos) ? r.evidencePhotos : [],
+  }))
 }

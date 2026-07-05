@@ -8,6 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PdtpApprovalButtons } from "../pdtp-approval-buttons"
+import { PdtpEvidenceThumbs } from "../pdtp-evidence-thumbs"
 
 export const metadata: Metadata = { title: "Aprobaciones PDTP" }
 
@@ -30,7 +31,15 @@ export default async function PdtpApprovalsPage() {
     activityName: string
     worksiteId: string
     worksiteName: string
-    pendingApprovals: Array<{ id: string; activityId: string; month: number; week: number }>
+    pendingApprovals: Array<{
+      id: string
+      activityId: string
+      month: number
+      week: number
+      evidenceText: string | null
+      evidenceUrl: string | null
+      evidencePhotos: string[]
+    }>
   }>()
   for (const execution of pending) {
     const key = `${execution.activityId}::${execution.worksiteId}`
@@ -51,6 +60,9 @@ export default async function PdtpApprovalsPage() {
       activityId: execution.activityId,
       month: execution.month,
       week: execution.week,
+      evidenceText: execution.evidenceText,
+      evidenceUrl: execution.evidenceUrl,
+      evidencePhotos: execution.evidencePhotos,
     })
   }
   const groupedRows = [...rows.values()]
@@ -92,8 +104,24 @@ export default async function PdtpApprovalsPage() {
                 <TableRow key={`${row.activityId}::${row.worksiteId}`}>
                   <TableCell>{row.worksiteName}</TableCell>
                   <TableCell>
-                    <span className="text-[var(--color-text-faint)]">N°{row.activityN}</span>{" "}
-                    {row.activityName}
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-[var(--color-text-faint)]">N°{row.activityN}</span>{" "}
+                        {row.activityName}
+                      </div>
+                      {row.pendingApprovals.some((e) => e.evidenceUrl || e.evidenceText || (e.evidencePhotos && e.evidencePhotos.length > 0)) && (
+                        <div className="space-y-2">
+                          {row.pendingApprovals.map((exec) => (
+                            <PdtpEvidenceThumbs
+                              key={exec.id}
+                              evidenceUrl={exec.evidenceUrl}
+                              evidencePhotos={exec.evidencePhotos}
+                              evidenceText={exec.evidenceText}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <PdtpApprovalButtons activityId={row.activityId} pendingApprovals={row.pendingApprovals} />

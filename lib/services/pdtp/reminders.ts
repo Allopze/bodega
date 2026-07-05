@@ -117,18 +117,43 @@ export async function runPdtpWeeklyReminders(period: PdtpPeriod = currentPdtpPer
     return { period, programId: program.id, year: period.year, targets, notifiedUsers: 0 }
   }
 
-  const notifiedUserIds = new Set<string>()
+  // Consolida targets por (userId, worksiteId) para no spamear al mismo
+  // destinatario si tiene varias faenas con pendientes. Dedupe por
+  // (userId, dedupeKey) en `notifications` previene duplicados si el
+  // cron se ejecuta varias veces en el mismo período.
+  const userWorksiteMap = new Map<string, { userId: string; worksiteId: string; worksiteName: string; activityIds: Set<string> }>()
   for (const target of targets) {
     const userIds = await getUserIdsWithPermissionForWorksite("prevention:pdtp:manage", target.worksiteId)
-    if (userIds.length === 0) continue
-    for (const id of userIds) notifiedUserIds.add(id)
-    await createNotifications(userIds, {
+    for (const userId of userIds) {
+      const key = `${userId}::${target.worksiteId}`
+      const existing = userWorksiteMap.get(key)
+      if (existing) {
+        for (const aid of target.activityIds) existing.activityIds.add(aid)
+      } else {
+        userWorksiteMap.set(key, {
+          userId,
+          worksiteId: target.worksiteId,
+          worksiteName: target.worksiteName,
+          activityIds: new Set(target.activityIds),
+        })
+      }
+    }
+  }
+
+  const notifiedUserIds = new Set<string>()
+  for (const entry of userWorksiteMap.values()) {
+    notifiedUserIds.add(entry.userId)
+    // dedupeKey estable: 1 notificación por (user, faena, semana, mes, año)
+    // hasta que el usuario ejecute las actividades o cambie el período.
+    const dedupeKey = `pdtp-weekly:${entry.userId}:${entry.worksiteId}:${period.year}:${period.month}:W${period.week}`
+    await createNotifications([entry.userId], {
       type: "system_alert",
-      title: `📋 PDTP semana ${period.week} con ${target.activityIds.length} actividad(es) pendiente(s)`,
-      body: `La faena "${target.worksiteName}" tiene actividades del programa preventivo SG-SST ${period.year} sin registrar esta semana.`,
+      title: `📋 PDTP semana ${period.week} con ${entry.activityIds.size} actividad(es) pendiente(s)`,
+      body: `La faena "${entry.worksiteName}" tiene actividades del programa preventivo SG-SST ${period.year} sin registrar esta semana.`,
       entityType: "pdtp_program",
       entityId: program.id,
       entityHref: "/prevencion/pdtp",
+      dedupeKey,
     })
   }
 

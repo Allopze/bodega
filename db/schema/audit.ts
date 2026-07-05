@@ -1,5 +1,5 @@
-import { pgTable, text, integer, boolean, timestamp, index } from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+import { pgTable, text, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
 
 /* ── Audit Log ────────────────────────────────────────────────────────────── */
@@ -80,8 +80,16 @@ export const notifications = pgTable("notifications", {
   entityHref:   text("entity_href"),     // direct navigation link (e.g. /solicitudes/{id})
   isRead:       boolean("is_read").notNull().default(false),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  /**
+   * Llave opcional para deduplicación. Cuando se setea, sólo puede
+   * existir una notificación con esa llave por (userId). Útil para
+   * recordatorios recurrentes (cron PDTP) que no deben spamear al
+   * destinatario. Índice único parcial al final.
+   */
+  dedupeKey:    text("dedupe_key"),
 }, (table) => [
   index("notifications_user_read_idx").on(table.userId, table.isRead, table.createdAt),
+  uniqueIndex("notifications_user_dedupe_unique").on(table.userId, table.dedupeKey).where(sql`${table.dedupeKey} IS NOT NULL`),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

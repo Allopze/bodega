@@ -37,6 +37,12 @@ export interface CreateNotificationInput {
   entityType?: string
   entityId?:  string
   entityHref?: string
+  /**
+   * Llave de deduplicación opcional. Si se setea, no se creará una
+   * segunda notificación con la misma `(userId, dedupeKey)` (índice
+   * único parcial en DB). Útil para recordatorios recurrentes.
+   */
+  dedupeKey?: string
 }
 
 /* ── Core ────────────────────────────────────────────────────────────────────── */
@@ -46,6 +52,19 @@ export interface CreateNotificationInput {
  * Prefer `notifySafe()` in server actions to avoid blocking on errors.
  */
 export async function createNotification(input: CreateNotificationInput): Promise<void> {
+  // Si hay dedupeKey, hacer SELECT previo para evitar duplicado. Más
+  // portable que onConflictDoNothing sobre índice único parcial.
+  if (input.dedupeKey) {
+    const existing = await db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(and(
+        eq(notifications.userId, input.userId),
+        eq(notifications.dedupeKey, input.dedupeKey),
+      ))
+      .limit(1)
+    if (existing.length > 0) return
+  }
   await db.insert(notifications).values({
     id:         nanoid(),
     userId:     input.userId,
@@ -56,6 +75,7 @@ export async function createNotification(input: CreateNotificationInput): Promis
     entityId:   input.entityId ?? null,
     entityHref: input.entityHref ?? null,
     isRead:     false,
+    dedupeKey:  input.dedupeKey ?? null,
   })
 
   // S-15: Send email only if the user has email_notifications enabled (default true).
@@ -111,25 +131,45 @@ export async function createNotification(input: CreateNotificationInput): Promis
 
 /**
  * Creates notifications for multiple users. Throws on DB error.
+ * Si `input.dedupeKey` está setado, usa `onConflictDoNothing` por
+ * (userId, dedupeKey) para que ejecuciones repetidas del cron no
+ * dupliquen notificaciones.
  */
 export async function createNotifications(
   userIds: string[],
   input: Omit<CreateNotificationInput, "userId">,
 ): Promise<void> {
   if (userIds.length === 0) return
-  await db.insert(notifications).values(
-    userIds.map((userId) => ({
-      id:         nanoid(),
-      userId,
-      type:       input.type,
-      title:      input.title,
-      body:       input.body ?? null,
-      entityType: input.entityType ?? null,
-      entityId:   input.entityId ?? null,
-      entityHref: input.entityHref ?? null,
-      isRead:     false,
-    })),
-  )
+  const values = userIds.map((userId) => ({
+    id:         nanoid(),
+    userId,
+    type:       input.type,
+    title:      input.title,
+    body:       input.body ?? null,
+    entityType: input.entityType ?? null,
+    entityId:   input.entityId ?? null,
+    entityHref: input.entityHref ?? null,
+    isRead:     false,
+    dedupeKey:  input.dedupeKey ?? null,
+  }))
+
+  // Si hay dedupeKey, filtrar userIds que ya tienen una notificación con
+  // esa llave. La aplicación del guard es per-usuario, no global.
+  if (input.dedupeKey) {
+    const existing = await db
+      .selectDistinct({ userId: notifications.userId })
+      .from(notifications)
+      .where(and(
+        eq(notifications.dedupeKey, input.dedupeKey),
+        inArray(notifications.userId, userIds),
+      ))
+    const skipUserIds = new Set(existing.map((r) => r.userId))
+    const toInsert = values.filter((v) => !skipUserIds.has(v.userId))
+    if (toInsert.length === 0) return
+    await db.insert(notifications).values(toInsert)
+  } else {
+    await db.insert(notifications).values(values)
+  }
 
   // Send emails asynchronously — batch into a single SMTP connection
   const targetUsers = await db

@@ -502,4 +502,151 @@ describe("prevention PDTP service", () => {
     const memberships = await inMemoryDb.select().from(schema.pdtpSheetActivities).where(eq(schema.pdtpSheetActivities.activityId, created.id))
     expect(memberships.length).toBeGreaterThanOrEqual(1)
   })
+
+  it("rejectPdtpExecution: submitted→rejected, motivo persistido, re-envío la vuelve a submitted", async () => {
+    const { markPdtpExecution, rejectPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+    const exec = await markPdtpExecution({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 3,
+      week: 1,
+      executedQuantity: 1,
+      evidenceText: "Cantidad mal ingresada",
+    }, "user-1", ["ws-1"])
+
+    expect(exec.status).toBe("submitted")
+
+    // No se puede rechazar fuera de scope (antes de rechazar)
+    await expect(rejectPdtpExecution(exec.id, "user-1", "X", ["ws-other"])).rejects.toThrow(/sin acceso/i)
+
+    // Rechazar con motivo
+    const rejected = await rejectPdtpExecution(exec.id, "user-1", "Cantidad debe ser 3, no 1", ["ws-1"])
+    expect(rejected.status).toBe("rejected")
+    expect(rejected.rejectionReason).toBe("Cantidad debe ser 3, no 1")
+    expect(rejected.rejectedByUserId).toBe("user-1")
+    expect(rejected.rejectedAt).toBeTruthy()
+
+    // No se puede rechazar dos veces
+    await expect(rejectPdtpExecution(exec.id, "user-1", "Otro motivo", ["ws-1"])).rejects.toThrow(/ya fue rechazada/i)
+
+    // Re-envío por el prevencionista con cantidad corregida → vuelve a submitted y limpia el rechazo
+    const resubmitted = await markPdtpExecution({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 3,
+      week: 1,
+      executedQuantity: 3,
+      evidenceText: "Corregido",
+    }, "user-1", ["ws-1"])
+    expect(resubmitted.status).toBe("submitted")
+    expect(resubmitted.rejectionReason).toBeNull()
+    expect(resubmitted.rejectedAt).toBeNull()
+    expect(resubmitted.executedQuantity).toBe(3)
+
+    // Ahora se puede aprobar normalmente
+    const approved = await approvePdtpExecution(resubmitted.id, "user-1", ["ws-1"])
+    expect(approved.status).toBe("approved")
+    expect(approved.approvedByUserId).toBe("user-1")
+  })
+
+  it("markPdtpExecution: rechaza modificar una ejecución ya aprobada", async () => {
+    const { markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 2))
+    const exec = await markPdtpExecution({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 4,
+      week: 1,
+      executedQuantity: 1,
+    }, "user-1", ["ws-1"])
+    await approvePdtpExecution(exec.id, "user-1", ["ws-1"])
+
+    // Re-envío debe fallar
+    await expect(markPdtpExecution({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 4,
+      week: 1,
+      executedQuantity: 5,
+    }, "user-1", ["ws-1"])).rejects.toThrow(/ya fue aprobada/i)
+  })
+
+  it("rejectPdtpExecution: rechaza si el motivo está vacío", async () => {
+    const { markPdtpExecution, rejectPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 3))
+    const exec = await markPdtpExecution({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 5,
+      week: 1,
+      executedQuantity: 1,
+    }, "user-1", ["ws-1"])
+
+    await expect(rejectPdtpExecution(exec.id, "user-1", "", ["ws-1"])).rejects.toThrow(/motivo del rechazo/i)
+    await expect(rejectPdtpExecution(exec.id, "user-1", "   ", ["ws-1"])).rejects.toThrow(/motivo del rechazo/i)
+  })
+
+  it("getPdtpSheetView prefiere el programa activo sobre el más reciente por versión", async () => {
+    const { loadPdtpCatalog, getPdtpSheetView, approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
+    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const catalog = extractPdtpCatalogFromWorkbook(workbook)
+
+    // v1 → activar
+    const { program: v1 } = await loadPdtpCatalog({ year: 2026, version: 1, title: "v1", catalog, userId: "user-1" })
+    await approvePdtpProgramJdpr(v1.id, "user-1")
+    await signPdtpProgramLegal(v1.id, "user-1")
+    await activatePdtpProgram(v1.id, "user-1")
+
+    // v2 creado como draft (sin activar)
+    await loadPdtpCatalog({ year: 2026, version: 2, title: "v2", catalog, userId: "user-1" })
+
+    const view = await getPdtpSheetView(2026, "pdtp_general")
+    expect(view?.program.id).toBe(v1.id)
+    expect(view?.program.status).toBe("active")
+  })
+
+  it("setPdtpActivityOverride: respeta el scope de faenas del usuario", async () => {
+    const { setPdtpActivityOverride, deletePdtpActivityOverride } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-2", name: "Faena B", code: "FB", isActive: true })
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 5))
+
+    // Scope ["ws-1"] no puede fijar override para ws-2
+    await expect(setPdtpActivityOverride({
+      activityId: activity!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, plannedQuantity: 4,
+    }, "user-1", ["ws-1"])).rejects.toThrow(/sin acceso/i)
+
+    // Scope "all" sí puede
+    const created = await setPdtpActivityOverride({
+      activityId: activity!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, plannedQuantity: 4,
+    }, "user-1", "all")
+    expect(created.plannedQuantity).toBe(4)
+
+    // delete con scope [] no puede borrar
+    await expect(deletePdtpActivityOverride({
+      activityId: activity!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1,
+    }, "user-1", [])).rejects.toThrow(/sin acceso/i)
+
+    // delete con scope que contiene ws-2 sí
+    await deletePdtpActivityOverride({
+      activityId: activity!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1,
+    }, "user-1", ["ws-2"])
+    const remaining = await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)
+      .where(eq(schema.pdtpActivityScheduleOverrides.worksiteId, "ws-2"))
+    expect(remaining).toHaveLength(0)
+  })
 })

@@ -15,6 +15,7 @@ import { deriveActivityStatus, type PdtpActivityStatus, type PdtpPeriod } from "
 import { PdtpExecutionForm } from "./pdtp-execution-form"
 import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
 import { PdtpOverrideForm } from "./pdtp-override-form"
+import { PdtpEvidenceThumbs } from "./pdtp-evidence-thumbs"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -91,6 +92,26 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove
                         <div className="max-w-[38rem]">
                           <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
                           <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{activity.objective}</p>
+                          {worksiteId && activity.executions.length > 0 && (
+                            <div className="mt-2 space-y-2">
+                              {activity.executions.map((exec) => (
+                                <div key={exec.id} className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5">
+                                  <div className="mb-1 flex items-center gap-2 text-[10px] text-[var(--color-text-subtle)]">
+                                    <span className="font-mono">M{exec.month}/S{exec.week}</span>
+                                    <span>·</span>
+                                    <span>{exec.executedQuantity}</span>
+                                    <span>·</span>
+                                    <span className="uppercase tracking-wide">{exec.status}</span>
+                                  </div>
+                                  <PdtpEvidenceThumbs
+                                    evidenceUrl={exec.evidenceUrl}
+                                    evidencePhotos={exec.evidencePhotos}
+                                    evidenceText={exec.evidenceText}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>{activity.responsibleDisplay}</TableCell>
@@ -154,6 +175,31 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove
                       <div className="max-w-[38rem]">
                         <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
                         <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{activity.objective}</p>
+                        {worksiteId && activity.executions.length > 0 && (
+                          <details className="mt-2 text-[11px]">
+                            <summary className="cursor-pointer text-[var(--color-text-muted)]">
+                              {activity.executions.length} ejecución(es) con evidencia
+                            </summary>
+                            <div className="mt-1 space-y-2">
+                              {activity.executions.map((exec) => (
+                                <div key={exec.id} className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5">
+                                  <div className="mb-1 flex items-center gap-2 text-[10px] text-[var(--color-text-subtle)]">
+                                    <span className="font-mono">M{exec.month}/S{exec.week}</span>
+                                    <span>·</span>
+                                    <span>{exec.executedQuantity}</span>
+                                    <span>·</span>
+                                    <span className="uppercase tracking-wide">{exec.status}</span>
+                                  </div>
+                                  <PdtpEvidenceThumbs
+                                    evidenceUrl={exec.evidenceUrl}
+                                    evidencePhotos={exec.evidencePhotos}
+                                    evidenceText={exec.evidenceText}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-[var(--color-text-muted)]">{activity.program}</TableCell>

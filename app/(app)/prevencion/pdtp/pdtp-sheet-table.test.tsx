@@ -20,6 +20,7 @@ function makeActivity(
   activity: string,
   monthlyPlanned: number[],
   monthlyExecuted: number[],
+  executions: PdtpSheetView["activities"][number]["executions"] = [],
 ): PdtpSheetView["activities"][number] {
   const totalPlanned = monthlyPlanned.reduce((s, v) => s + v, 0)
   const totalExecuted = monthlyExecuted.reduce((s, v) => s + v, 0)
@@ -35,6 +36,7 @@ function makeActivity(
     monthlyExecuted,
     totalPlanned,
     totalExecuted,
+    executions,
   } as unknown as PdtpSheetView["activities"][number]
 }
 

@@ -33,9 +33,14 @@ function overrideId(activityId: string, worksiteId: string, year: number, month:
 
 /**
  * Crea o actualiza un override para una celda actividad/faena/período.
- * Valida que la actividad exista y pertenezca a un programa activo.
+ * Valida que la actividad exista, pertenezca a un programa activo y que
+ * la faena esté dentro del scope del usuario.
  */
-export async function setPdtpActivityOverride(input: PdtpOverrideInput, userId: string): Promise<PdtpActivityScheduleOverride> {
+export async function setPdtpActivityOverride(
+  input: PdtpOverrideInput,
+  userId: string,
+  scope?: string[] | "all",
+): Promise<PdtpActivityScheduleOverride> {
   const [activity] = await db
     .select({ programId: pdtpActivities.programId })
     .from(pdtpActivities)
@@ -54,6 +59,11 @@ export async function setPdtpActivityOverride(input: PdtpOverrideInput, userId: 
   }
   if (program.year !== input.year) {
     throw new Error(`El override debe corresponder al año del programa (${program.year}).`)
+  }
+
+  // RBAC: el usuario solo puede fijar overrides para faenas de su scope.
+  if (scope !== undefined) {
+    assertPdtpWorksiteAccess(input.worksiteId, scope)
   }
 
   const now = new Date().toISOString()
@@ -95,13 +105,22 @@ export async function setPdtpActivityOverride(input: PdtpOverrideInput, userId: 
 /**
  * Elimina un override (vuelve al valor global del catálogo).
  */
-export async function deletePdtpActivityOverride(input: Omit<PdtpOverrideInput, "plannedQuantity">, userId: string): Promise<void> {
+export async function deletePdtpActivityOverride(
+  input: Omit<PdtpOverrideInput, "plannedQuantity">,
+  userId: string,
+  scope?: string[] | "all",
+): Promise<void> {
   const [activity] = await db
     .select({ programId: pdtpActivities.programId })
     .from(pdtpActivities)
     .where(eq(pdtpActivities.id, input.activityId))
     .limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
+
+  if (scope !== undefined) {
+    assertPdtpWorksiteAccess(input.worksiteId, scope)
+  }
+
   await db
     .delete(pdtpActivityScheduleOverrides)
     .where(and(
@@ -112,6 +131,17 @@ export async function deletePdtpActivityOverride(input: Omit<PdtpOverrideInput, 
       eq(pdtpActivityScheduleOverrides.week, input.week),
     ))
   void userId
+}
+
+/**
+ * Verifica que la faena esté en el scope del usuario. Acepta "all"
+ * como bypass explícito para roles globales.
+ */
+function assertPdtpWorksiteAccess(worksiteId: string, scope: string[] | "all"): void {
+  if (scope === "all") return
+  if (!scope.includes(worksiteId)) {
+    throw new Error("Actividad PDTP no encontrada o sin acceso a la faena.")
+  }
 }
 
 /**

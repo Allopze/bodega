@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
 import { SHEET_EXPORT_NAMES, MONTH_LABELS } from "./constants"
@@ -15,14 +15,37 @@ export type PdtpSheetView = {
     totalExecuted: number
     monthlyPlanned: number[]
     monthlyExecuted: number[]
+    /**
+     * Ejecuciones registradas para la faena (vacío si no hay faena
+     * seleccionada o si el catálogo no se cargó). Incluye evidencia
+     * para que la UI pueda renderizar miniaturas.
+     */
+    executions: Array<{
+      id: string
+      year: number
+      month: number
+      week: number
+      executedQuantity: number
+      status: string
+      evidenceText: string | null
+      evidenceUrl: string | null
+      evidencePhotos: string[]
+    }>
   }>
   monthlyTotals: Array<{ month: number; planned: number; executed: number; percent: number | null }>
 }
 
 export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, worksiteId?: string): Promise<PdtpSheetView | null> {
-  const [program] = await db.select().from(pdtpPrograms)
+  // Preferir el programa activo del año. Si no hay uno activo (ej. se
+  // está editando un nuevo borrador o la versión activa fue cerrada),
+  // caer al más reciente por versión para mantener visibilidad de los
+  // borradores en curso. Esto evita el bug previo donde un v2 en
+  // 'draft' shadow-eaba al v1 'active' y `markPdtpExecution` fallaba
+  // con "Solo se pueden registrar ejecuciones contra programas PDTP
+  // en estado activo".
+  const programs = await db.select().from(pdtpPrograms)
     .where(eq(pdtpPrograms.year, year))
-    .orderBy(desc(pdtpPrograms.version)).limit(1)
+  const program = programs.find((p) => p.status === "active") ?? programs[0]
   if (!program) return null
 
   const [sheet] = await db.select().from(pdtpSheets).where(eq(pdtpSheets.code, sheetCode)).limit(1)
@@ -67,7 +90,8 @@ export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, w
       monthlyPlanned[cell.month - 1] = (monthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
       monthlyTotals[cell.month - 1]!.planned += cell.plannedQuantity
     }
-    for (const execution of executionsByActivity.get(activity.id) ?? []) {
+    const activityExecutions = executionsByActivity.get(activity.id) ?? []
+    for (const execution of activityExecutions) {
       monthlyExecuted[execution.month - 1] = (monthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
       monthlyTotals[execution.month - 1]!.executed += execution.executedQuantity
     }
@@ -76,6 +100,19 @@ export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, w
       ...activity, schedule, monthlyPlanned, monthlyExecuted,
       totalPlanned: monthlyPlanned.reduce((s, v) => s + v, 0),
       totalExecuted: monthlyExecuted.reduce((s, v) => s + v, 0),
+      executions: activityExecutions
+        .filter((e) => e.evidenceUrl || (Array.isArray(e.evidencePhotos) && e.evidencePhotos.length > 0) || e.evidenceText)
+        .map((e) => ({
+          id: e.id,
+          year: e.year,
+          month: e.month,
+          week: e.week,
+          executedQuantity: e.executedQuantity,
+          status: e.status,
+          evidenceText: e.evidenceText,
+          evidenceUrl: e.evidenceUrl,
+          evidencePhotos: Array.isArray(e.evidencePhotos) ? e.evidencePhotos : [],
+        })),
     }
   })
 

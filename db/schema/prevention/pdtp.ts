@@ -83,6 +83,9 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
   executedAt:       timestamp("executed_at", { withTimezone: true, mode: "string" }),
   approvedByUserId: text("approved_by_user_id").references(() => users.id),
   approvedAt:       timestamp("approved_at", { withTimezone: true, mode: "string" }),
+  rejectedByUserId: text("rejected_by_user_id").references(() => users.id),
+  rejectedAt:       timestamp("rejected_at", { withTimezone: true, mode: "string" }),
+  rejectionReason:  text("rejection_reason"),
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [

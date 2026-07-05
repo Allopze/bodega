@@ -10,6 +10,7 @@ import {
   signPdtpProgramLegal,
   activatePdtpProgram,
   approvePdtpExecution,
+  rejectPdtpExecution,
   updatePdtpActivity,
   addPdtpActivity,
   setPdtpActivityOverride,
@@ -18,6 +19,7 @@ import {
 import type { ActionState } from "@/lib/validation/prevention"
 import {
   pdtpExecutionApprovalSchema,
+  pdtpExecutionRejectionSchema,
   pdtpActivityUpdateSchema,
   pdtpActivityAddSchema,
   pdtpActivityOverrideSchema,
@@ -130,6 +132,26 @@ export async function approvePdtpExecutionAction(executionId: string): Promise<A
   }
 }
 
+export async function rejectPdtpExecutionAction(
+  executionId: string,
+  reason: string,
+): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:approve")) {
+    return { ok: false, message: "No tienes permisos para rechazar ejecuciones PDTP." }
+  }
+  try {
+    const parsed = pdtpExecutionRejectionSchema.parse({ executionId, reason })
+    await rejectPdtpExecution(parsed.executionId, session.user.id, parsed.reason, scopeToIds(resolveWorksiteScope(session)))
+    revalidatePath(REVALIDATE)
+    revalidatePath("/prevencion/pdtp/aprobaciones")
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
 // ── WS4: Activity edit + add ────────────────────────────────────────────────
 
 export async function updatePdtpActivityAction(input: unknown): Promise<ActionState> {
@@ -193,9 +215,9 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
       plannedQuantity: fd.get("plannedQuantity"),
     })
     if (mode === "delete" || parsed.plannedQuantity === 0) {
-      await deletePdtpActivityOverride(parsed, session.user.id)
+      await deletePdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     } else {
-      await setPdtpActivityOverride(parsed, session.user.id)
+      await setPdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     }
   } catch (e) {
     return backTo((e as Error).message)
