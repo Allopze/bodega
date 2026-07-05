@@ -95,6 +95,8 @@ describe("database schema consistency", () => {
       )
     `)).rejects.toThrow()
 
+    // quantity_received is bounded by quantity independently — not by quantity_office_received.
+    // (directo_faena orders receive at faena without ever passing through office.)
     await expect(db.execute(sql`
       INSERT INTO purchase_order_items (
         id, purchase_order_id, product_id, quantity, unit_of_measure, unit_price, discount, subtotal,
@@ -102,7 +104,7 @@ describe("database schema consistency", () => {
       )
       VALUES (
         'poi-invalid-received-check', ${fixture.orderId}, ${fixture.productId}, 5, 'unidad', 1000, 0, 5000,
-        2, 3, 'issued', 0
+        0, 6, 'issued', 0
       )
     `)).rejects.toThrow()
 
