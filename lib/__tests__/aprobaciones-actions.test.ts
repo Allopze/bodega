@@ -18,6 +18,8 @@ const mockApproveItem = vi.hoisted(() => vi.fn())
 const mockRejectItem = vi.hoisted(() => vi.fn())
 const mockReturnItem = vi.hoisted(() => vi.fn())
 const mockFindFirstItem = vi.hoisted(() => vi.fn())
+const mockFindFirstRequest = vi.hoisted(() => vi.fn())
+const mockDbUpdate = vi.hoisted(() => vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })))
 const mockNotifyAfterCommit = vi.hoisted(() => vi.fn((fn: () => Promise<unknown>) => fn()))
 const mockNotifySafe = vi.hoisted(() => vi.fn())
 
@@ -29,7 +31,9 @@ vi.mock("@/db", () => ({
   db: {
     query: {
       purchaseRequestItems: { findFirst: mockFindFirstItem },
+      purchaseRequests: { findFirst: mockFindFirstRequest },
     },
+    update: mockDbUpdate,
   },
 }))
 vi.mock("@/lib/services/item-state", () => ({
@@ -43,7 +47,7 @@ vi.mock("@/lib/services/notifications", () => ({
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 
-import { approveItemAction, rejectItemAction, returnItemAction } from "@/app/(app)/aprobaciones/actions"
+import { approveItemAction, rejectItemAction, returnItemAction, updateDeliveryModeAction } from "@/app/(app)/aprobaciones/actions"
 import type { ActionState } from "@/lib/validation/operations"
 
 const prevState: ActionState = { ok: false, message: "" }
@@ -322,5 +326,44 @@ describe("EPP approval gating (MISS-04)", () => {
     const res = await approveItemAction(prevState, makeFormData())
     expect(res.ok).toBe(true)
     expect(mockApproveItem).toHaveBeenCalled()
+  })
+})
+
+// ── Delivery mode (dispatch route) gating ────────────────────────────────────
+
+describe("updateDeliveryModeAction", () => {
+  beforeEach(() => {
+    mockRequirePermission.mockResolvedValue(makeSession())
+    mockCanAccessWorksite.mockReturnValue(true)
+    mockFindFirstRequest.mockResolvedValue({ id: "req-1", worksiteId: "ws-1" })
+    mockDbUpdate.mockClear()
+  })
+
+  it("persists directo_faena for an approver role", async () => {
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "directo_faena")
+    const res = await updateDeliveryModeAction(prevState, fd)
+    expect(res.ok).toBe(true)
+    expect(mockDbUpdate).toHaveBeenCalled()
+  })
+
+  it("rejects an invalid mode", async () => {
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "bogus")
+    const res = await updateDeliveryModeAction(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  it("rejects a non-dispatch role (e.g. prevencionista only)", async () => {
+    mockRequirePermission.mockResolvedValue(makeSession({ roles: ["prevencionista"] }))
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "directo_faena")
+    const res = await updateDeliveryModeAction(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(mockDbUpdate).not.toHaveBeenCalled()
   })
 })

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseRequestItems } from "@/db/schema"
+import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { approveItem, rejectItem, returnItem } from "@/lib/services/item-state"
 import { notifySafe, notifyAfterCommit } from "@/lib/services/notifications"
@@ -15,6 +15,9 @@ const REVALIDATE = "/aprobaciones"
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const EPP_APPROVER_ROLES = new Set(["administrador", "jefa_chome", "secretaria", "prevencionista"])
+
+// Delivery mode (dispatch route) is a logistics call: secretaría / jefatura / admin only.
+const DISPATCH_DECIDER_ROLES = new Set(["administrador", "jefa_chome", "secretaria"])
 
 function canApproveEpp(roles: string[]): boolean {
   return roles.some((r) => EPP_APPROVER_ROLES.has(r))
@@ -252,4 +255,42 @@ export async function bulkApproveRequestAction(
     }
   }
   return { ok: true, message: `${approved} ítem(s) aprobado(s)` }
+}
+
+// ── Set delivery mode (dispatch route) on a request ───────────────────────────
+
+export async function updateDeliveryModeAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("approvals:approve") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  if (!session.user.roles.some((r) => DISPATCH_DECIDER_ROLES.has(r))) {
+    return { ok: false, message: "Solo Secretaría o Jefatura pueden definir el modo de despacho" }
+  }
+
+  const requestId = formData.get("requestId") as string | null
+  const mode      = formData.get("mode") as string | null
+  if (!requestId) return { ok: false, message: "Solicitud no especificada" }
+  if (mode !== "via_oficina" && mode !== "directo_faena") {
+    return { ok: false, message: "Modo de despacho inválido" }
+  }
+
+  const request = await db.query.purchaseRequests.findFirst({
+    where: eq(purchaseRequests.id, requestId),
+    columns: { id: true, worksiteId: true },
+  })
+  if (!request) return { ok: false, message: "Solicitud no encontrada" }
+  if (!canAccessWorksite(session, request.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
+  }
+
+  await db.update(purchaseRequests).set({ deliveryMode: mode }).where(eq(purchaseRequests.id, requestId))
+  revalidatePath(REVALIDATE)
+  return {
+    ok: true,
+    message: mode === "directo_faena" ? "Despacho directo a faena" : "Despacho vía oficina",
+  }
 }
