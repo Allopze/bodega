@@ -29,6 +29,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
   submittedAt:  text("submitted_at"),
   closedAt:     text("closed_at"),
   notes:        text("notes"),
+  deliveryMode: text("delivery_mode").notNull().default("via_oficina"), // via_oficina | directo_faena
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -40,6 +41,9 @@ export const purchaseRequests = pgTable("purchase_requests", {
       'draft', 'submitted', 'in_review', 'partially_approved', 'approved',
       'rejected', 'returned', 'in_purchasing', 'closed', 'cancelled'
     )
+  `),
+  check("purchase_requests_delivery_mode_valid", sql`
+    ${table.deliveryMode} IN ('via_oficina', 'directo_faena')
   `),
   index("purchase_requests_worksite_id_status_idx").on(table.worksiteId, table.status),
   index("purchase_requests_cost_center_idx").on(table.costCenterId),

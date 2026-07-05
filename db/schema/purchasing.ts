@@ -33,6 +33,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   totalAmount:       numeric("total_amount", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
   notes:             text("notes"),
   supplierNotes:     text("supplier_notes"),
+  deliveryMode:      text("delivery_mode").notNull().default("via_oficina"), // via_oficina | directo_faena — snapshot from request
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -48,6 +49,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
     ${table.netAmount} >= 0
     AND ${table.taxAmount} >= 0
     AND ${table.totalAmount} >= 0
+  `),
+  check("purchase_orders_delivery_mode_valid", sql`
+    ${table.deliveryMode} IN ('via_oficina', 'directo_faena')
   `),
   index("purchase_orders_worksite_status_idx").on(table.worksiteId, table.status, table.createdAt),
   index("purchase_orders_cost_center_idx").on(table.costCenterId),
@@ -77,7 +81,9 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
     ${table.status} IN ('issued', 'partially_received', 'received', 'cancelled')
   `),
   // Invariant: quantity > 0, unitPrice/subtotal >= 0, discount in 0-100,
-  // and received counters are monotonic (0 <= qtyReceived <= qtyOfficeReceived <= qty)
+  // and received counters are each bounded by quantity (0 <= qtyOfficeReceived <= qty,
+  // 0 <= qtyReceived <= qty). Office no longer caps faena: the office-before-faena order
+  // is enforced in app code only for via_oficina OCs (directo_faena skips the office stage).
   check("purchase_order_items_numeric_integrity", sql`
     ${table.quantity} > 0
     AND ${table.unitPrice} >= 0
@@ -87,7 +93,7 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
     AND ${table.quantityOfficeReceived} >= 0
     AND ${table.quantityReceived} >= 0
     AND ${table.quantityOfficeReceived} <= ${table.quantity}
-    AND ${table.quantityReceived} <= ${table.quantityOfficeReceived}
+    AND ${table.quantityReceived} <= ${table.quantity}
   `),
 ])
 
