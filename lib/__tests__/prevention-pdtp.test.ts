@@ -19,6 +19,23 @@ vi.mock("@/db", () => ({
   },
 }))
 
+// H-B7: en tests, los archivos físicos no existen. Para los tests que
+// usan evidenceUrl, pre-creamos los archivos en el FS real.
+import { mkdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+const tmpEvidenceDir = join(tmpdir(), "pdtp-evidence-test")
+mkdirSync(tmpEvidenceDir, { recursive: true })
+
+vi.mock("@/lib/storage/config", () => ({
+  resolvePdtpEvidenceFile: (filePath: string) => {
+    if (typeof filePath === "string" && filePath.startsWith("storage/pdtp-evidence/")) {
+      return join(tmpEvidenceDir, filePath.slice("storage/pdtp-evidence/".length))
+    }
+    return null
+  },
+}))
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 afterAll(async () => {
@@ -717,6 +734,12 @@ describe("prevention PDTP service", () => {
 
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 38))
 
+    // H-B7: pre-creamos archivos físicos para que la validación de
+    // existencia (H-B7) los acepte
+    for (const name of ["foto-001.pdf", "foto-002.pdf", "foto-003.pdf"]) {
+      writeFileSync(join(tmpEvidenceDir, name), "%PDF-1.4 test")
+    }
+
     // 1ra ejecución con foto 1
     const first = await markPdtpExecution({
       activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 1,
@@ -764,6 +787,9 @@ describe("prevention PDTP service", () => {
 
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 39))
 
+    // H-B7: pre-creamos el archivo físico
+    writeFileSync(join(tmpEvidenceDir, "preservada.pdf"), "%PDF-1.4 test")
+
     // 1ra con evidencia
     await markPdtpExecution({
       activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 2,
@@ -778,5 +804,23 @@ describe("prevention PDTP service", () => {
       evidenceText: "Solo texto",
     }, "user-1", ["ws-1"])
     expect(second.evidenceUrl).toBe("storage/pdtp-evidence/preservada.pdf")
+  })
+
+  it("H-B7: descarta evidenceUrl cuyo archivo físico no existe", async () => {
+    const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 40))
+
+    // No escribimos el archivo en disco → resolvePdtpEvidenceFile
+    // retorna un path que existsSync rechaza.
+    const row = await markPdtpExecution({
+      activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 3,
+      executedQuantity: 1,
+      evidenceUrl: "storage/pdtp-evidence/inexistente.pdf",
+    }, "user-1", ["ws-1"])
+
+    // Se guarda la ejecución pero sin evidenceUrl (se loggea warning)
+    expect(row.evidenceUrl).toBeNull()
   })
 })

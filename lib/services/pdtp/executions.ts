@@ -5,6 +5,9 @@ import { pdtpExecutionId } from "./helpers"
 import { assertWorksiteAccess } from "./helpers"
 import type { WorksiteScope } from "./helpers"
 import { pdtpExecutionSchema } from "@/lib/validation/prevention"
+import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
+import { existsSync } from "node:fs"
+import { logger } from "@/lib/logger"
 
 export async function markPdtpExecution(input: unknown, userId: string, scope: WorksiteScope) {
   const data = pdtpExecutionSchema.parse(input)
@@ -46,8 +49,17 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     return idx >= 0 ? url.slice(idx + 1) : url
   }
   const previousPhotos = Array.isArray(existing?.evidencePhotos) ? existing.evidencePhotos : []
-  const newPhotos = (data.evidencePhotos ?? []).filter(Boolean)
-  const allPhotos = [...previousPhotos, ...newPhotos]
+  const newPhotosInput = (data.evidencePhotos ?? []).filter(Boolean)
+  // H-B7: filtramos fotos nuevas cuyo archivo no exista físicamente
+  const verifiedNewPhotos = newPhotosInput.filter((url) => {
+    const absolutePath = resolvePdtpEvidenceFile(url)
+    if (!absolutePath || !existsSync(absolutePath)) {
+      logger.warn({ url }, "[pdtp] foto de evidencia sin archivo físico, descartada")
+      return false
+    }
+    return true
+  })
+  const allPhotos = [...previousPhotos, ...verifiedNewPhotos]
   const dedupedPhotos: string[] = []
   const seen = new Set<string>()
   for (const url of allPhotos) {
@@ -59,11 +71,32 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   // evidenceUrl: si viene uno nuevo, se usa; si no, se preserva el
   // previo. Esto evita que un re-envío sin archivo borre el archivo
   // que el prevencionista subió antes.
-  const nextEvidenceUrl = data.evidenceUrl || existing?.evidenceUrl || null
+  // H-B7: si se recibió una URL nueva, verificamos que el archivo
+  // físico exista; si no, descartamos la referencia y loggeamos.
+  // Razón: la DB no debe quedar con referencias a archivos inexistentes
+  // (un upload pudo fallar, el cliente pudo cerrar la pestaña, etc).
+  let nextEvidenceUrl: string | null = null
+  if (data.evidenceUrl) {
+    const absolutePath = resolvePdtpEvidenceFile(data.evidenceUrl)
+    if (absolutePath && existsSync(absolutePath)) {
+      nextEvidenceUrl = data.evidenceUrl
+    } else {
+      logger.warn(
+        { evidenceUrl: data.evidenceUrl, activityId: data.activityId, worksiteId: data.worksiteId },
+        "[pdtp] evidenceUrl no se pudo resolver a un archivo físico; se descarta la referencia"
+      )
+    }
+  } else {
+    nextEvidenceUrl = existing?.evidenceUrl ?? null
+  }
 
   const now = new Date().toISOString()
   const id = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
 
+  // H-B8 (intencional): `evidenceText || null` colapsa string vacío a
+  // null en DB. Es la convención del módulo: "sin texto de evidencia"
+  // ≡ NULL (semánticamente equivalente y simplifica queries). Lo mismo
+  // aplica a `evidenceUrl` cuando se preserva el previo inexistente.
   const [row] = await db.insert(pdtpExecutions).values({
     id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
     week: data.week, executedQuantity: data.executedQuantity, status: "submitted",

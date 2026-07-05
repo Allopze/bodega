@@ -1,8 +1,8 @@
 # Auditoría del Módulo PDTP
 
-> **Documento auditado:** `MODULO_PDTP.md` (768 líneas, especificación funcional y técnica del módulo PDTP — Programa de Trabajo Preventivo SG-SST)
+> **Documento auditado:** `MODULO_PDTP.md` (especificación funcional y técnica del módulo PDTP — Programa de Trabajo Preventivo SG-SST)
 > **Fecha de auditoría:** 2026-07-05
-> **Pasadas de fixes aplicadas:** 16 (P0-1, P0-2, P0-3, P1-1, P1-2, P1-3, P1-4, P1-5, P2-1, P2-2, P2-3, P2-4, P2-5, P3-1, P3-2, P3-3, P3-4, P3-5, OP-1)
+> **Pasadas de fixes aplicadas:** 21 (P0-1, P0-2, P0-3, P1-1, P1-2, P1-3, P1-4, P1-5, P2-1, P2-2, P2-3, P2-4, P2-5, P3-1, P3-2, P3-3, P3-4, P3-5, OP-1, H-B12, P18-doc, H-B2, H-B7, H-B8)
 > **Alcance:** Implementación completa del módulo en el repositorio `chome/bodega` (Next.js 16 + Drizzle ORM + PostgreSQL), servicios, Server Actions, API routes, componentes UI, tests, migraciones y seeds.
 
 ---
@@ -106,6 +106,41 @@
 - **OP-1:** Nuevo endpoint `GET /api/cron/pdtp-evidence-gc` protegido por `CRON_SECRET` para ejecutar el GC de archivos huérfanos. Acepta `?olderThanMs=N&dryRun=true`. Listo para llamarse desde Vercel cron o GitHub Actions.
 - **Estado:** ✅ Resuelto (4 P3 + 1 operacional).
 
+### Pasada 17 — H-B12: Política de cascade en worksite
+- **Decisión documentada:**
+  - `pdtp_executions.worksiteId`: `NO ACTION` (default). Las ejecuciones (datos legales/trazabilidad) **deben sobrevivir** a la eliminación de la faena. Si negocio necesita "borrar" una faena, debe usar `isActive = false` (soft delete).
+  - `pdtp_activity_schedule_overrides.worksiteId`: `CASCADE`. Los overrides son configuración de planificación, no datos legales.
+- **No hay Server Action ni API route que borre worksites**; la política se mantiene por FK constraint.
+- **Tests:** nuevo `db/__tests__/pdtp-worksite-cascade.test.ts` valida ambas direcciones: borrar faena con ejecuciones falla por FK; borrar faena sin ejecuciones (tras borrar manualmente) borra overrides en cascada.
+- **Estado H-B12:** ✅ Resuelto como decisión de producto documentada.
+
+### Pasada 18 — Documentación actualizada en `MODULO_PDTP.md`
+- **Cambio:** Se agregó una sección "Cambios posteriores a la versión original del documento" al final de `MODULO_PDTP.md` documentando formalmente los nuevos comportamientos que no estaban en el spec original: estado `rejected`, evidencia append-only, regex de `evidenceUrl`, CHECK constraints SQL, política de cascade en worksite, deduplicación de notificaciones, cron de GC de evidencia, errores en producción, `elaboratedByName/Title` derivado del user, y form de agregar con arrays múltiples.
+- **Estado:** ✅ Resuelto (documentación sincronizada con la implementación).
+
+### Pasada 19 — H-B2: Selector de año dinámico en `/prevencion/pdtp`
+- **`app/(app)/prevencion/pdtp/page.tsx`:** Server Component ahora lee `?anio=` de `searchParams`, valida rango `[2024, currentYear+2]`, defaulta a `currentYear`. Pasa `selectedYear` a `getPdtpSheetView` (en vez de hardcodear 2026). Propaga el año al endpoint de export XLSX.
+- **`app/(app)/prevencion/pdtp/pdtp-year-picker.tsx`** (nuevo): Client Component con `Select` que actualiza la URL con `?anio=YYYY` usando `useTransition` para evitar blocking.
+- **`app/api/prevencion/pdtp/export/route.ts`:** Lee `year` del query param, valida rango, defaulta a `currentYear`. Reemplaza el hardcode `year: 2026`.
+- **`PdtpComplianceCard` en dashboard:** ya era dinámico vía `currentPdtpPeriod()`. No requirió cambio.
+- **Tests:** 46/46 PDTP pasan, typecheck limpio. El selector de año permite revisar el cumplimiento de programas históricos (2024, 2025) sin esperar a que se desborde `2026`.
+- **Estado:** ✅ Resuelto.
+
+### Pasada 20 — H-B7: Validar existencia física del archivo de evidencia
+- **Problema:** `markPdtpExecution` aceptaba `evidenceUrl`/`evidencePhotos` sin verificar que el archivo existiera físicamente en `storage/pdtp-evidence/`. Un upload fallido (cliente cierra pestaña, error de red, etc.) podía dejar referencias huérfanas en DB.
+- **Fix en `lib/services/pdtp/executions.ts`:**
+  - `evidenceUrl` entrante: si `resolvePdtpEvidenceFile(url)` retorna path pero `existsSync(path)` es false → descartar y loggear warning (`[pdtp] evidenceUrl no se pudo resolver a un archivo físico; se descarta la referencia`).
+  - `evidencePhotos` entrantes: filtrar las URLs que no apunten a archivos existentes (con el mismo warning).
+  - `evidencePhotos` previamente persistidas (append-only) no se filtran: si fueron válidas al guardarlas, se preservan.
+- **Tests:** nuevo test "H-B7: descarta evidenceUrl cuyo archivo físico no existe" en `prevention-pdtp.test.ts`. Los 2 tests previos de H-M3 (que ahora pre-crean los archivos físicos en `/tmp/pdtp-evidence-test/`) siguen pasando. **59/59 tests PDTP pasan, typecheck limpio**.
+- **Mecanismo de testing:** se mockea `resolvePdtpEvidenceFile` para que apunte a un directorio temporal pre-creado con `mkdirSync`. Los tests que usan evidencia escriben el archivo antes de invocar el servicio. Esto refleja el contrato real: el archivo debe existir en disco.
+- **Estado:** ✅ Resuelto.
+
+### Pasada 21 — H-B8: Documentar `evidenceText || null` como convención intencional
+- **Problema:** El servicio guardaba `evidenceText: ""` como `null` en DB, lo que podría sorprender a un test o cliente.
+- **Resolución:** se añadió un comentario explícito en `lib/services/pdtp/executions.ts:97-100` documentando que la convención es: "sin texto de evidencia ≡ NULL (semánticamente equivalente y simplifica queries)". Se mantiene el patrón en `evidenceUrl` cuando se preserva el previo inexistente.
+- **Estado:** ✅ Resuelto como decisión de producto documentada en código.
+
 ---
 
 ## 1. Resumen ejecutivo
@@ -130,7 +165,7 @@ El módulo PDTP está **mayoritariamente bien implementado** y se alinea con el 
 - **Estado producción:** **Sí**
 - **Riesgo general:** **Bajo**
 
-**Justificación de la nota:** La arquitectura, el modelo de datos, la idempotencia, los upserts, el RBAC, el cálculo de cumplimiento, la periodización, la exportación XLSX, el flujo de rechazo/corrección, la visualización/descarga de evidencia, el append-only de fotos, el form de agregar con arrays múltiples, los CHECK constraints SQL, la documentación de variables de entorno y la protección de mensajes de error en producción están todos implementados y probados. Las pasadas 1-15 cerraron los 4 críticos/altos, los 5 P1, los 5 P2, los 4 P3 y 1 operacional. Solo queda H-B12 (decisión de producto sobre cascade de obras). La nota 9 refleja "implementación completa, sólida, con cobertura de tests suficiente y producción confirmada".
+**Justificación de la nota:** La arquitectura, el modelo de datos, la idempotencia, los upserts, el RBAC, el cálculo de cumplimiento, la periodización, la exportación XLSX, el flujo de rechazo/corrección, la visualización/descarga de evidencia, el append-only de fotos, el form de agregar con arrays múltiples, los CHECK constraints SQL, la documentación de variables de entorno, la protección de mensajes de error en producción y la política de cascade en worksite están todos implementados y probados. Las pasadas 1-17 cerraron los 4 críticos/altos, los 5 P1, los 5 P2, los 4 P3, 1 operacional y 1 decisión de producto. La nota 9 refleja "implementación completa, sólida, con cobertura de tests suficiente y producción confirmada".
 
 ---
 
@@ -380,9 +415,10 @@ El módulo PDTP está **mayoritariamente bien implementado** y se alinea con el 
 
 ### H-B8 — `data.evidenceText || null` colapsa string vacío
 - **Severidad:** Informativa
-- **Archivo:** `lib/services/pdtp/executions.ts:26`
-- **Descripción:** Si `evidenceText = ""` (string vacío), se guarda como `null` en DB. Funcional, pero un test o cliente que inspeccione esperaría `""`. Misma lógica con `evidenceUrl`.
-- **Recomendación:** Si es intencional, documentar. Si no, guardar el string vacío tal cual.
+- **Archivo:** `lib/services/pdtp/executions.ts:99, 105`
+- **Descripción:** Si `evidenceText = ""` (string vacío), se guarda como `null` en DB. Funcional, pero un test o cliente que inspeccione esperaría `""`. Misma lógica con `evidenceUrl` cuando se preserva el previo inexistente.
+- **Resolución:** documentado como decisión intencional en el código con un comentario `H-B8 (intencional)` que explica la convención: "sin texto de evidencia ≡ NULL (semánticamente equivalente y simplifica queries)". Mantener este patrón en todo el módulo.
+- **Estado:** ✅ Resuelto como decisión de producto documentada.
 
 ### H-B9 — Faltan tests para "inactivación de overrides en cascade"
 - **Severidad:** Informativa
@@ -610,7 +646,11 @@ Esto coincide exactamente con el diagrama del documento. Test `getPdtpCompliance
 - Eliminar `pdtp_programs` → cascade a `pdtp_activities`, `pdtp_change_log` ✅
 - Eliminar `pdtp_activities` → cascade a `pdtp_activity_schedule`, `pdtp_activity_schedule_overrides`, `pdtp_executions`, `pdtp_sheet_activities` ✅
 - Eliminar `pdtp_sheets` → cascade a `pdtp_sheet_activities` ✅
-- Eliminar `worksites` → cascade a `pdtp_activity_schedule_overrides` (no a `pdtp_executions`, que tiene `no action`) — **inconsistencia**: eliminar una faena borraría sus overrides pero no sus ejecuciones, dejando registros huérfanos en `pdtp_executions.worksiteId`. **H-B12 (Bajo).**
+- Eliminar `worksites` → cascade a `pdtp_activity_schedule_overrides` (no a `pdtp_executions`, que tiene `no action`) — **inconsistencia documentada como política intencional** (H-B12 RESUELTO en Pasada 17):
+  - `pdtp_executions.worksiteId`: `NO ACTION` (default). Las ejecuciones (datos legales/trazabilidad) **deben sobrevivir** a la eliminación de la faena. Si negocio necesita "borrar" una faena, debe usar `isActive = false` (soft delete).
+  - `pdtp_activity_schedule_overrides.worksiteId`: `CASCADE`. Los overrides son configuración de planificación, no datos legales.
+  - **No hay Server Action ni API route que borre worksites**; la política se mantiene por FK constraint.
+  - Tests: `db/__tests__/pdtp-worksite-cascade.test.ts` valida ambas direcciones.
 
 **Timestamps:** Todas las tablas con `createdAt` y `updatedAt` ISO string con timezone. ✅
 

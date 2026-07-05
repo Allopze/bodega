@@ -36,13 +36,20 @@ export async function GET(request: NextRequest) {
   const url = request.nextUrl
   const sheetCode = normalizeSheetCode(url.searchParams.get("hoja"))
   const worksiteId = url.searchParams.get("faena") || undefined
+  const yearParam = Number.parseInt(url.searchParams.get("year") ?? "", 10)
+  const currentYear = new Date().getFullYear()
+  const minYear = 2024
+  const maxYear = currentYear + 2
+  const year = Number.isFinite(yearParam) && yearParam >= minYear && yearParam <= maxYear
+    ? yearParam
+    : currentYear
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
 
   try {
     if (worksiteId) assertWorksiteAccess(worksiteId, worksiteIds)
-    const report = await buildPdtpExport({ year: 2026, sheetCode, worksiteId })
+    const report = await buildPdtpExport({ year, sheetCode, worksiteId })
     const xlsx = await buildXlsxBuffer(report)
 
     return new NextResponse(xlsx, {

@@ -18,7 +18,7 @@ El módulo PDTP es el sistema digital que **reemplaza y supera** el archivo Exce
 | **8 hojas oficiales** | Réplica fiel de las vistas del Excel: PDTP General, CPHS, PRF y Adm. de contrato, Sup y JT, PRF, Adm. de contrato, Subgerencia, Capacitación y Campañas |
 | **Cronograma semanal P/E** | 12 meses × 4 semanas = 48 semanas lógicas con cantidades planificadas y ejecutadas por actividad |
 | **Ejecución por faena** | Los prevencionistas registran cantidades ejecutadas, texto de evidencia y fotos/archivos adjuntos |
-| **Aprobación de ejecuciones** | Bandeja unificada para la jefatura de prevención (JDPR) que revisa y aprueba ejecuciones submitidas |
+| **Aprobación de ejecuciones** | Bandeja unificada para la jefatura de prevención (JDPR) que revisa y aprueba ejecuciones submitidas. Soporta **rechazo con motivo** (estado `rejected` + `rejectionReason` + `rejectedByUserId` + `rejectedAt`) que devuelve la ejecución al prevencionista para corrección. La ejecución rechazada puede ser re-enviada con nuevos datos; al hacerlo vuelve a `submitted` con campos de rechazo limpiados. |
 | **Overrides por faena** | Cada faena puede tener metas planificadas distintas a las globales del catálogo (ej: según cantidad de equipos) |
 | **Firma del programa** | Flujo Elaborado → Aprobado JDPR → Firmado Legal → Activo, con control de cambios en cada paso |
 | **Indicadores de cumplimiento** | % mensual, trimestral y anual de actividades ejecutadas vs. planificadas, con meta configurable (default 90%) |
@@ -68,7 +68,7 @@ flowchart LR
     E --> F[JDPR revisa en bandeja]
     F --> G{¿Aprueba?}
     G -->|Sí| H[status: approved ✅]
-    G -->|No| I[Rechazada, corrige]
+    G -->|No| I[Rechazada con motivo<br/>status: rejected<br/>rejection_reason]
     I --> A
 
     style A fill:#e8f4fd,stroke:#2196f3
@@ -277,7 +277,7 @@ flowchart TB
 - **Client Components** manejan interacción del usuario (formularios, modales) y llaman Server Actions
 - **Server Actions** son el único punto de entrada para mutaciones. Siempre ejecutan: `guardAuth()` → `can(permiso)` → `resolveWorksiteScope()` → servicio → `revalidatePath()`
 - **Servicios** son funciones puras sin dependencia de Next.js. Reciben inputs tipados y acceden a la DB vía Drizzle
-- **Validación Zod** actúa como capa de contract entre Actions y Services. Los schemas definen la forma exacta de los inputs
+- **Validación Zod** actúa como capa de contract entre Actions y Services. Los schemas definen la forma exacta de los inputs. Adicionalmente, **CHECK constraints a nivel SQL** (`db/migrations/0022`) refuerzan `status IN (...)`, `month 1-12`, `week 1-4`, `executed/planned_quantity >= 0`, `compliance_target 0-1`, `objective_order 1-8`, `n >= 1`, `length(section) > 0`. Defense in depth.
 - **DB** usa Drizzle ORM con relaciones declaradas. Las tablas usan `uniqueIndex` para upserts atómicos (`onConflictDoUpdate`)
 
 ### Modelo de datos (9 tablas)
@@ -340,12 +340,15 @@ erDiagram
         integer month "1-12"
         integer week "1-4"
         numeric executed_quantity
-        text status "draft | submitted | approved"
+        text status "draft | submitted | approved | rejected"
         text evidence_text
         text evidence_url
-        jsonb evidence_photos
+        jsonb evidence_photos "append-only on re-submit"
         text executed_by_user_id FK
         text approved_by_user_id FK
+        text rejected_by_user_id FK "nullable, set on rejection"
+        text rejected_at "nullable, ISO timestamp"
+        text rejection_reason "nullable, max 1000 chars"
     }
 
     pdtp_sheets {
@@ -765,3 +768,115 @@ Los badges se muestran en la tabla:
 - `lib/__tests__/pdtp-period.test.ts` — tests de la lógica de períodos: `currentPdtpPeriod` con casos borde (día 1, 7, 8, 14, 15, 21, 22, 28, 31), `deriveActivityStatus` con matriz de estados
 - `lib/__tests__/pdtp-execution-action.test.ts` — tests de la Server Action: `markPdtpExecutionAction` verifica que evidenceUrl y evidencePhotos se persisten correctamente
 - `app/(app)/prevencion/pdtp/pdtp-sheet-table.test.tsx` — test de render del componente: verifica que la tabla muestra actividades con estados correctos
+
+
+---
+
+## Cambios posteriores a la versión original del documento
+
+> Esta sección documenta funcionalidades que se agregaron o modificaron
+> después de la redacción inicial del spec, validadas por la auditoría
+> del módulo (`AUDITORIA_MODULO_PDTP.md`) y corregidas en las 17
+> pasadas de fixes.
+
+### Estado de ejecución `rejected` (rechazo con motivo)
+
+`pdtp_executions.status` admite el valor `"rejected"` además de
+`draft | submitted | approved`. Campos nuevos:
+
+- `rejected_by_user_id` (FK a `users`)
+- `rejected_at` (timestamp)
+- `rejection_reason` (text, max 1000 chars, requerido al rechazar)
+
+Flujo:
+
+1. JDPR rechaza desde la bandeja con un motivo (mín. 3 chars).
+2. La ejecución queda en `status = "rejected"` con `rejectionReason` y
+   `rejectedByUserId` poblados.
+3. El prevencionista puede re-enviar la ejecución con datos
+   corregidos. `markPdtpExecution` limpia los campos de rechazo y
+   vuelve a `submitted` (append-only de fotos preserva la historia).
+4. JDPR aprueba normalmente.
+
+No se puede aprobar una ejecución en `rejected` directamente sin un
+re-envío previo. `markPdtpExecution` también rechaza modificar una
+ejecución ya `approved`.
+
+### Evidencia fotográfica: append-only
+
+`pdtp_executions.evidence_photos` (jsonb) preserva la historia:
+re-envíos concatenan las fotos previas con las nuevas, deduplicando
+por nombre de archivo. `evidence_url` (text) se preserva si el
+re-envío no incluye archivo nuevo. Esto evita pérdida de evidencia
+histórica.
+
+### Validación de prefijo en `evidenceUrl`
+
+`pdtpExecutionSchema` (Zod) ahora valida que `evidenceUrl` y cada
+item de `evidencePhotos` cumplan la regex
+`^storage\/pdtp-evidence\/[A-Za-z0-9_-]{1,60}\.(pdf|jpg|jpeg|png)$`.
+Previene path traversal, open redirect, y rutas arbitrarias.
+
+### CHECK constraints SQL (migración `0022`)
+
+Refuerzo a nivel DB de:
+
+- `pdtp_programs.status` IN (`draft | active | closed`)
+- `pdtp_programs.compliance_target` BETWEEN 0 AND 1
+- `pdtp_activities.n` >= 1
+- `pdtp_activities.objective_order` BETWEEN 1 AND 8
+- `pdtp_activity_schedule.month` BETWEEN 1 AND 12
+- `pdtp_activity_schedule.week` BETWEEN 1 AND 4
+- `pdtp_activity_schedule.planned_quantity` >= 0
+- `pdtp_activity_schedule_overrides.{month, week, planned_quantity}` análogos
+- `pdtp_executions.status` IN (`draft | submitted | approved | rejected`)
+- `pdtp_executions.{month, week, executed_quantity}` análogos
+- `pdtp_change_log.length(section) > 0`
+
+Defense in depth: la TS valida en runtime y la DB rechaza datos
+inválidos incluso si alguien hace INSERT manual.
+
+### Política de cascade en `worksite_id`
+
+- `pdtp_executions.worksiteId`: `NO ACTION` (default). Las ejecuciones
+  (datos legales) **deben sobrevivir** a la eliminación de la faena.
+  Para "borrar" una faena usar `isActive = false` (soft delete).
+- `pdtp_activity_schedule_overrides.worksiteId`: `CASCADE`. Los
+  overrides son configuración de planificación, no datos legales.
+
+### Cuarentenización de notificaciones del cron
+
+`notifications` tiene una nueva columna `dedupe_key` + índice único
+parcial. El cron `pdtp-weekly-reminders` consolida los targets por
+`(userId, worksiteId)` y emite una sola notificación por (user,
+faena, semana) con `dedupeKey = "pdtp-weekly:{userId}:{worksiteId}:
+{year}:{month}:W{week}"`. Ejecuciones repetidas del cron no
+duplican.
+
+### Cron de GC de evidencia
+
+`GET /api/cron/pdtp-evidence-gc` (protegido con `CRON_SECRET`)
+ejecuta `cleanupPdtpEvidenceOrphans({ olderThanMs, dryRun })` que
+elimina archivos en `storage/pdtp-evidence/` que no estén referenciados
+en `pdtp_executions.evidence_url` ni `evidence_photos` y cuyo mtime
+sea mayor al umbral. Pensado para llamarse semanalmente.
+
+### Errores en producción (H-B11)
+
+Los endpoints `/api/cron/*` ocultan `err.message` al cliente cuando
+`NODE_ENV === "production"` para evitar fuga de paths internos,
+queries SQL, etc. En desarrollo sí se exponen para debug.
+
+### `elaboratedByName/Title` derivado del user (H-B13)
+
+`loadPdtpCatalog` ahora deriva estos campos del usuario que ejecuta el
+seed (lookup en `users`), en lugar de hardcodear "Lorena Alvarado
+Cornejo".
+
+### Form de agregar actividad con arrays múltiples (H-M2)
+
+`PdtpAddActivityForm` (Client Component) permite capturar N
+responsables y N hojas vía state local + `+`/`trash` buttons.
+`addPdtpActivityFormAction` lee los arrays con `fd.getAll()`.
+`displayOrder` en `pdtp_sheet_activities` se calcula como
+`MAX(displayOrder) + 1` por hoja, no como número de actividad.

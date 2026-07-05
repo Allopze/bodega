@@ -13,6 +13,7 @@ import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { PdtpYearPicker } from "./pdtp-year-picker"
 import { Button } from "@/components/ui/button"
 import { PreventionExportButton } from "@/components/prevention/export-button"
 import { PdtpSheetPicker, PdtpSheetTable, PdtpViewToggle, PdtpWorksitePicker } from "./pdtp-sheet-table"
@@ -36,7 +37,7 @@ const SHEET_OPTIONS: Array<{ code: PdtpSheetCode; label: string }> = [
 ]
 
 type PdtpPageProps = {
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; actividadError?: string | string[]; overrideError?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; actividadError?: string | string[]; overrideError?: string | string[] }>
 }
 
 export default async function PdtpPage({ searchParams }: PdtpPageProps) {
@@ -49,6 +50,15 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
   const requestedSheet = Array.isArray(query.hoja) ? query.hoja[0] : query.hoja
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
   const requestedView = Array.isArray(query.vista) ? query.vista[0] : query.vista
+  const requestedYearRaw = Array.isArray(query.anio) ? query.anio[0] : query.anio
+  const parsedYear = requestedYearRaw ? Number.parseInt(requestedYearRaw, 10) : NaN
+  const currentYear = new Date().getFullYear()
+  const minYear = 2024
+  const maxYear = currentYear + 2
+  const selectedYear =
+    Number.isFinite(parsedYear) && parsedYear >= minYear && parsedYear <= maxYear
+      ? parsedYear
+      : currentYear
   const actividadError = Array.isArray(query.actividadError) ? query.actividadError[0] : query.actividadError
   const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
@@ -61,7 +71,7 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
   const selectedWorksiteId = worksites.some((worksite) => worksite.id === requestedWorksite)
     ? requestedWorksite
     : worksites[0]?.id
-  const view = await getPdtpSheetView(2026, sheetCode, selectedWorksiteId)
+  const view = await getPdtpSheetView(selectedYear, sheetCode, selectedWorksiteId)
   const indicators = await getPdtpComplianceIndicators(2026, selectedWorksiteId)
 
   // Prefer active program for lifecycle display; fall back to view.program (latest draft)
@@ -92,7 +102,7 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
   }
   const canSignLegal = can(session, "prevention:pdtp:sign_legal")
   const canManage = can(session, "prevention:pdtp:manage")
-  const exportHref = `/api/prevencion/pdtp/export?hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}`
+  const exportHref = `/api/prevencion/pdtp/export?hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${selectedYear}`
 
   return (
     <PageContainer>
@@ -108,6 +118,10 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
         }
         actions={
           <>
+            <PdtpYearPicker
+              current={selectedYear}
+              options={Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i)}
+            />
             {canApprove && (
               <Button asChild variant="secondary" size="sm">
                 <Link href="/prevencion/pdtp/aprobaciones">Aprobaciones</Link>
