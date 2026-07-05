@@ -147,6 +147,7 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         issuedAt:     purchaseOrders.issuedAt,
         sentAt:       purchaseOrders.sentAt,
         totalAmount:  purchaseOrders.totalAmount,
+        deliveryMode: purchaseOrders.deliveryMode,
         itemCount:    sql<number>`(SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = ${purchaseOrders.id})`,
       })
       .from(purchaseOrders)

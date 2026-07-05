@@ -69,6 +69,7 @@ export interface WorkOrderRow {
   sentAt:          string | null
   itemCount:       number
   totalAmount:     number
+  deliveryMode?:   string  // "via_oficina" | "directo_faena"; undefined ⇒ treated as via_oficina
 }
 
 export interface WorkQueueSnapshot {
@@ -111,6 +112,8 @@ const DELIVERY_ITEM_STATUSES = new Set(["partially_received", "received", "parti
 const OFFICE_RECEIVABLE_STATUSES = new Set(["sent", "partially_office_received"])
 // Faena can receive only once something arrived at office.
 const FAENA_RECEIVABLE_STATUSES = new Set(["partially_office_received", "office_received", "partially_received"])
+// directo_faena OCs skip office entirely; faena can receive as soon as the OC is sent.
+const DIRECT_FAENA_RECEIVABLE_STATUSES = new Set(["sent", "partially_received"])
 
 
 const PRIORITY_RANK: Record<WorkPriority, number> = {
@@ -186,8 +189,10 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
   }
 
   // Stage 1 — arrival at office (mandatory first step), for office staff.
+  // directo_faena OCs skip the office checkpoint entirely (the receiving service
+  // rejects office registration for them), so never emit an office task for them.
   if (hasPermission(actor, "receiving:register_office")) {
-    for (const order of snapshot.orders.filter((order) => OFFICE_RECEIVABLE_STATUSES.has(order.status) && canSeeWorksite(actor, order.worksiteId))) {
+    for (const order of snapshot.orders.filter((order) => OFFICE_RECEIVABLE_STATUSES.has(order.status) && order.deliveryMode !== "directo_faena" && canSeeWorksite(actor, order.worksiteId))) {
       tasks.push({
         id:          `receipt-office:${order.id}`,
         type:        "receipt",
@@ -203,8 +208,15 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
   }
 
   // Stage 2 — receipt at worksite (generates stock), for faena staff.
+  // directo_faena OCs never reach office_received/partially_office_received, so
+  // they use their own status set (faena receives straight from "sent").
   if (hasPermission(actor, "receiving:register_faena")) {
-    for (const order of snapshot.orders.filter((order) => FAENA_RECEIVABLE_STATUSES.has(order.status) && canSeeWorksite(actor, order.worksiteId))) {
+    for (const order of snapshot.orders.filter((order) => {
+      const receivable = order.deliveryMode === "directo_faena"
+        ? DIRECT_FAENA_RECEIVABLE_STATUSES.has(order.status)
+        : FAENA_RECEIVABLE_STATUSES.has(order.status)
+      return receivable && canSeeWorksite(actor, order.worksiteId)
+    })) {
       tasks.push({
         id:          `receipt-faena:${order.id}`,
         type:        "receipt",

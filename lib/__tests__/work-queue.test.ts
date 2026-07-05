@@ -224,6 +224,53 @@ describe("buildWorkTasks", () => {
     expect(tasks.some((t) => t.type === "receipt" && t.title.includes("oficina"))).toBe(true)
   })
 
+  it("regression: via_oficina sent order yields office task and no faena task", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [],
+      orders: [{
+        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
+        supplierName: "Proveedor", status: "sent", deliveryMode: "via_oficina",
+        createdAt: "2026-01-01", issuedAt: null, sentAt: "2026-01-03",
+        itemCount: 2, totalAmount: 10000,
+      }],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("oficina"))).toBe(true)
+    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("faena"))).toBe(false)
+  })
+
+  it("directo_faena sent order yields faena task and no office task", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [],
+      orders: [{
+        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
+        supplierName: "Proveedor", status: "sent", deliveryMode: "directo_faena",
+        createdAt: "2026-01-01", issuedAt: null, sentAt: "2026-01-03",
+        itemCount: 2, totalAmount: 10000,
+      }],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("faena"))).toBe(true)
+    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("oficina"))).toBe(false)
+  })
+
+  it("directo_faena partially_received order yields a faena receipt task", () => {
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [],
+      orders: [{
+        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
+        supplierName: "Proveedor", status: "partially_received", deliveryMode: "directo_faena",
+        createdAt: "2026-01-01", issuedAt: null, sentAt: "2026-01-03",
+        itemCount: 2, totalAmount: 10000,
+      }],
+    }
+    const tasks = buildWorkTasks(globalActor, snapshot)
+    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("faena"))).toBe(true)
+  })
+
   it("generates delivery tasks for received items with stock", () => {
     const snapshot: WorkQueueSnapshot = {
       requests: [],

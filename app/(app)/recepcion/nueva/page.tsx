@@ -76,7 +76,9 @@ export default async function NuevaRecepcionPage({
     <PageContainer width="workbench">
       <PageHeader
         title={`Recepción OC ${order.code}`}
-        description="Registra primero la llegada a oficina Chome y luego la recepción en faena."
+        description={order.deliveryMode === "directo_faena"
+          ? "Los productos se reciben directamente en faena; no requieren paso por oficina."
+          : "Registra primero la llegada a oficina Chome y luego la recepción en faena."}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard",  href: "/dashboard" },
