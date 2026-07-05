@@ -18,10 +18,17 @@ export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequ
   const [collapsed, setCollapsed] = React.useState(false)
   const { bulkState, bulkAction } = useBulkApproveAction()
   const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
+  // Controlled value: React 19 auto-resets *uncontrolled* form fields after a successful
+  // action, which would snap an uncontrolled <select> back to its (stale) defaultValue.
+  // Seeding local state keeps the picked value visible; revert to server truth on failure.
+  const [mode, setMode] = React.useState(request.deliveryMode)
 
   React.useEffect(() => {
-    if (modeState.message && !modeState.ok) toast.error(modeState.message)
-  }, [modeState])
+    if (modeState.message && !modeState.ok) {
+      toast.error(modeState.message)
+      setMode(request.deliveryMode)
+    }
+  }, [modeState, request.deliveryMode])
 
   const pendingIds = request.pendingItems.map((i) => i.id).join(",")
   const allApproved = bulkState.ok === true
@@ -72,8 +79,11 @@ export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequ
               <select
                 id={`mode-${request.id}`}
                 name="mode"
-                defaultValue={request.deliveryMode}
-                onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                value={mode}
+                onChange={(e) => {
+                  setMode(e.currentTarget.value as ApprovalRequest["deliveryMode"])
+                  e.currentTarget.form?.requestSubmit()
+                }}
                 className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
               >
                 <option value="via_oficina">Vía oficina</option>
