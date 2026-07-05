@@ -47,6 +47,7 @@ export interface CreateOrderInput {
   estimatedDelivery?: string | null
   deliveryAddress?:   string | null
   notes?:             string | null
+  deliveryMode?:      "via_oficina" | "directo_faena"
   items:              CreateOrderItemInput[]
 }
 
@@ -70,6 +71,7 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
     estimatedDelivery:  input.estimatedDelivery,
     deliveryAddress:    input.deliveryAddress,
     notes:              input.notes,
+    deliveryMode:       input.deliveryMode,
     orders: [{
       supplierId: input.supplierId,
       items:      input.items,
@@ -113,6 +115,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         supplierId:        orderInput.supplierId,
         createdBy:         input.createdBy,
         status:            "draft",
+        deliveryMode:      input.deliveryMode ?? "via_oficina",
         paymentTerms:      input.paymentTerms ?? null,
         estimatedDelivery: input.estimatedDelivery ?? null,
         deliveryAddress:   input.deliveryAddress ?? null,

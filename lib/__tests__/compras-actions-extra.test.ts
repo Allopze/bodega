@@ -59,7 +59,7 @@ vi.mock("@/app/(app)/compras/actions.helpers", () => ({
   assertOrderAccess: mockAssertOrderAccess,
 }))
 
-import { sendOrderAction, cancelOrderAction, closeOrderAction, deleteOrderAction } from "@/app/(app)/compras/actions"
+import { sendOrderAction, cancelOrderAction, closeOrderAction, deleteOrderAction, createOrderAction } from "@/app/(app)/compras/actions"
 import type { ActionState } from "@/lib/validation/operations"
 
 const prevState: ActionState = { ok: false, message: "" }
@@ -181,5 +181,36 @@ describe("deleteOrderAction", () => {
     const res = await deleteOrderAction(prevState, fd)
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Orden no especificada")
+  })
+})
+
+describe("createOrderAction delivery-mode mixing guard", () => {
+  beforeEach(() => {
+    mockRequirePermission.mockResolvedValue({
+      user: { id: "u1", email: "a@b.cl", roles: ["administrador"], worksiteIds: ["ws-1"] },
+    })
+    mockCanAccessWorksite.mockReturnValue(true)
+  })
+
+  it("rejects an OC mixing via_oficina and directo_faena items", async () => {
+    const { db } = await import("@/db")
+    ;(db.query.purchaseRequestItems.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: "ri-1", status: "approved", quantity: 2, unitOfMeasure: "unidad",
+        request: { worksiteId: "ws-1", deliveryMode: "via_oficina" } },
+      { id: "ri-2", status: "approved", quantity: 2, unitOfMeasure: "unidad",
+        request: { worksiteId: "ws-1", deliveryMode: "directo_faena" } },
+    ])
+
+    const fd = new FormData()
+    fd.set("worksiteId", "ws-1")
+    fd.set("supplierId", "sup-1")
+    fd.set("itemsJson", JSON.stringify([
+      { requestItemId: "ri-1", quantity: 2, unitOfMeasure: "unidad", unitPrice: 100, supplierId: "sup-1" },
+      { requestItemId: "ri-2", quantity: 2, unitOfMeasure: "unidad", unitPrice: 100, supplierId: "sup-1" },
+    ]))
+
+    const res = await createOrderAction({ ok: false, message: "" }, fd)
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/modo de despacho distinto/i)
   })
 })

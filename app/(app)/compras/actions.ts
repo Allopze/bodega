@@ -113,6 +113,12 @@ export async function createOrderAction(
     }
   }
 
+  const deliveryModes = new Set(dbItems.map((i) => i.request.deliveryMode))
+  if (deliveryModes.size > 1) {
+    return { ok: false, message: "Los ítems seleccionados pertenecen a solicitudes con modo de despacho distinto. Crea órdenes separadas." }
+  }
+  const deliveryMode = (deliveryModes.values().next().value ?? "via_oficina") as "via_oficina" | "directo_faena"
+
   const supplierIdsByItem = new Map<string, string>()
   for (const item of items) {
     const dbItem = dbItemMap.get(item.requestItemId)
@@ -151,6 +157,7 @@ export async function createOrderAction(
       estimatedDelivery:  estimatedDelivery || null,
       deliveryAddress:    deliveryAddress || null,
       notes:              notes || null,
+      deliveryMode,
       orders: [...groups.entries()].map(([groupSupplierId, groupItems]) => ({
         supplierId: groupSupplierId,
         items: groupItems.map((item, i) => ({
