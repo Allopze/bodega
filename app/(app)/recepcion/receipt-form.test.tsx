@@ -173,6 +173,29 @@ describe("ReceiptForm", () => {
       const faenaButton = screen.getByText("Recepción en faena").closest("button")
       expect(faenaButton).not.toHaveAttribute("disabled")
     })
+
+    it("directo_faena OC does not render the office option and starts in faena", () => {
+      const { container, queryByText } = render(
+        <ReceiptForm
+          purchaseOrderId="oc-1"
+          orderCode="OC-1"
+          orderWorksiteName="Faena X"
+          items={[{ id: "i1", requestItemId: "ri1", productName: "P", productSku: null,
+                    quantity: 10, quantityOfficeReceived: 0, quantityReceived: 0,
+                    unitOfMeasure: "unidad", notes: null }]}
+          canOffice={false}
+          canFaena={true}
+          deliveryMode="directo_faena"
+        />,
+      )
+      expect(queryByText(/Recepción en oficina/i)).toBeNull()
+      const stageInput = container.querySelector('input[name="stage"]') as HTMLInputElement
+      expect(stageInput.value).toBe("faena")
+      // getRemaining for directo_faena caps at (quantity - quantityReceived) = 10 - 0 = 10,
+      // not (quantityOfficeReceived - quantityReceived) = 0 - 0 = 0 — so faena must be enabled.
+      const faenaButton = queryByText("Recepción en faena")?.closest("button")
+      expect(faenaButton).not.toHaveAttribute("disabled")
+    })
   })
 
   describe("item display", () => {

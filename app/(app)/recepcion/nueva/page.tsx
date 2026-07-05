@@ -90,8 +90,9 @@ export default async function NuevaRecepcionPage({
         orderCode={order.code}
         orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
         items={items}
-        canOffice={canOffice}
+        canOffice={canOffice && order.deliveryMode !== "directo_faena"}
         canFaena={canFaena}
+        deliveryMode={order.deliveryMode as "via_oficina" | "directo_faena"}
       />
     </PageContainer>
   )

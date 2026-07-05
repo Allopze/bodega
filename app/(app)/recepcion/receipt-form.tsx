@@ -122,6 +122,7 @@ export function ReceiptForm({
   items,
   canOffice,
   canFaena,
+  deliveryMode = "via_oficina",
 }: {
   purchaseOrderId: string
   orderCode:       string
@@ -129,13 +130,15 @@ export function ReceiptForm({
   items:           ReceiptOcItem[]
   canOffice:       boolean
   canFaena:        boolean
+  deliveryMode?:   "via_oficina" | "directo_faena"
 }) {
   const getRemaining = React.useCallback((item: ReceiptOcItem, stage: ReceiptStage) => {
-    // Office caps at the ordered quantity; faena caps STRICTLY at what already arrived at
-    // office (no fallback to full quantity → goods must pass through office first).
     if (stage === "office") return Math.max(0, item.quantity - item.quantityOfficeReceived)
+    // Direct-to-faena: cap at the ordered quantity (goods never pass through office).
+    if (deliveryMode === "directo_faena") return Math.max(0, item.quantity - item.quantityReceived)
+    // Via-oficina: faena caps STRICTLY at what already arrived at office.
     return Math.max(0, item.quantityOfficeReceived - item.quantityReceived)
-  }, [])
+  }, [deliveryMode])
 
   // A stage is offered only when the user can perform it AND there is something left to receive.
   const officeAvailable = canOffice && items.some((i) => getRemaining(i, "office") > 0)
