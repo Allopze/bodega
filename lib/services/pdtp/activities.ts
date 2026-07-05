@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities } from "@/db/schema"
 import { addPdtpChangeLogEntry, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
@@ -109,8 +109,18 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   }
 
   for (const sheetCode of input.sheetCodes) {
+    // H-M5: calcular displayOrder como MAX+1 por hoja para que las
+    // actividades agregadas manualmente aparezcan al final de la hoja
+    // en orden de inserción (en vez de mezclarse con las oficiales
+    // por número de actividad).
+    const [{ maxOrder } = { maxOrder: 0 }] = await db
+      .select({ maxOrder: sql<number>`COALESCE(MAX(${pdtpSheetActivities.displayOrder}), 0)` })
+      .from(pdtpSheetActivities)
+      .where(eq(pdtpSheetActivities.sheetCode, sheetCode))
+    const nextOrder = Number(maxOrder) + 1
     await db.insert(pdtpSheetActivities).values({
-      id: pdtpSheetActivityId(input.programId, sheetCode, newN), sheetCode, activityId, sheetRow: 0, displayOrder: newN,
+      id: pdtpSheetActivityId(input.programId, sheetCode, newN), sheetCode, activityId,
+      sheetRow: nextOrder, displayOrder: nextOrder,
     }).onConflictDoNothing()
   }
 

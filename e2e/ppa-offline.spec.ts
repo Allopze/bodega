@@ -629,14 +629,7 @@ test.describe("PPA Digital — SW cache eviction", () => {
       await navigator.serviceWorker.ready
     })
 
-    // Step 2: Manually add entries to the cache to approach the limit
-    const initialSize = await page.evaluate(async () => {
-      const cache = await caches.open("ppa-v2")
-      const keys = await cache.keys()
-      return keys.length
-    })
-
-    // Add synthetic cache entries to push close to MAX_CACHE_ENTRIES
+    // Step 2: Add synthetic cache entries to push close to MAX_CACHE_ENTRIES
     await page.evaluate(async (count) => {
       const cache = await caches.open("ppa-v2")
       for (let i = 0; i < count; i++) {

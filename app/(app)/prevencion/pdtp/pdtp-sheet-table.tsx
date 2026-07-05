@@ -92,6 +92,14 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove
                         <div className="max-w-[38rem]">
                           <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
                           <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{activity.objective}</p>
+                          {activity.notes && (
+                            <p
+                              className="mt-1 text-[11px] italic text-[var(--color-text-faint)]"
+                              title={activity.notes}
+                            >
+                              📝 {activity.notes.length > 120 ? `${activity.notes.slice(0, 120)}…` : activity.notes}
+                            </p>
+                          )}
                           {worksiteId && activity.executions.length > 0 && (
                             <div className="mt-2 space-y-2">
                               {activity.executions.map((exec) => (

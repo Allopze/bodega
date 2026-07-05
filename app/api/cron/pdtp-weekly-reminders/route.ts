@@ -35,9 +35,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.info("[cron/pdtp-weekly-reminders] Completed", result)
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
+    // H-B11: en producción, no exponer err.message al cliente porque
+    // puede filtrar paths internos, queries SQL, etc. Loguear el
+    // detalle y devolver un mensaje genérico. En desarrollo (NODE_ENV
+    // !== "production") sí exponerlo para debug.
     logger.error("[cron/pdtp-weekly-reminders] Fatal error", err)
+    const isProd = process.env.NODE_ENV === "production"
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unknown error" },
+      { error: isProd ? "Internal cron error" : (err instanceof Error ? err.message : "Unknown error") },
       { status: 500 },
     )
   }

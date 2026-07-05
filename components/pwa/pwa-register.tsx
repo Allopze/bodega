@@ -15,13 +15,9 @@ export function PwaRegister() {
   React.useEffect(() => {
     if (!("serviceWorker" in navigator)) return
 
-    let registration: ServiceWorkerRegistration | null = null
-
     navigator.serviceWorker
       .register(SW_URL, { scope: "/ppa" })
       .then((reg) => {
-        registration = reg
-
         // Check for updates periodically (every 60 minutes)
         const checkInterval = setInterval(() => {
           reg.update().catch(() => {})

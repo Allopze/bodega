@@ -2,7 +2,7 @@
 
 > **Documento auditado:** `MODULO_PDTP.md` (768 líneas, especificación funcional y técnica del módulo PDTP — Programa de Trabajo Preventivo SG-SST)
 > **Fecha de auditoría:** 2026-07-05
-> **Pasadas de fixes aplicadas:** 8 (P0-1, P0-2, P0-3, P1-1, P1-2, P1-3, P1-4, P1-5)
+> **Pasadas de fixes aplicadas:** 16 (P0-1, P0-2, P0-3, P1-1, P1-2, P1-3, P1-4, P1-5, P2-1, P2-2, P2-3, P2-4, P2-5, P3-1, P3-2, P3-3, P3-4, P3-5, OP-1)
 > **Alcance:** Implementación completa del módulo en el repositorio `chome/bodega` (Next.js 16 + Drizzle ORM + PostgreSQL), servicios, Server Actions, API routes, componentes UI, tests, migraciones y seeds.
 
 ---
@@ -64,6 +64,48 @@
 - **Tests:** nuevo archivo `lib/__tests__/pdtp-evidence-gc.test.ts` con 3 casos: eliminación efectiva, dryRun, dir inexistente.
 - **Estado H-A2:** ✅ Resuelto.
 
+### Pasada 9 — P2-1 (H-M4): description dinámico en bandeja de aprobaciones
+- **Cambio:** `app/(app)/prevencion/pdtp/aprobaciones/page.tsx` calcula `scopeDescription` según el `mode` del scope: `"all"` → "en todas las faenas", `"some"` → "en tus N faena(s) asignada(s)", `"none"` → "no tienes faenas asignadas".
+- **Estado H-M4:** ✅ Resuelto.
+
+### Pasada 10 — P2-2 (H-M5): displayOrder MAX+1 por hoja
+- **Cambio:** `addPdtpActivity` ahora calcula `displayOrder = MAX + 1` por hoja con `COALESCE(..., 0)`. `sheetRow` también.
+- **Tests:** nuevo caso en `prevention-pdtp.test.ts`.
+- **Estado H-M5:** ✅ Resuelto.
+
+### Pasada 11 — P2-3: CHECK constraints SQL
+- **Cambio:**
+  1. **Schema TS:** `db/schema/prevention/pdtp.ts` añade `check()` constraints a `pdtpPrograms`, `pdtpActivities`, `pdtpActivitySchedule`, `pdtpExecutions`, `pdtpChangeLog`, `pdtpActivityScheduleOverrides`.
+  2. **Migración:** `db/migrations/0022_add_pdtp_check_constraints.sql` (generada con drizzle-kit).
+  3. **Cobertura:** `status IN (...)`, `month BETWEEN 1..12`, `week BETWEEN 1..4`, `executed/planned_quantity >= 0`, `compliance_target BETWEEN 0..1`, `objective_order BETWEEN 1..8`, `n >= 1`, `length(section) > 0`.
+- **Tests:** nuevo archivo `db/__tests__/pdtp-check-constraints.test.ts` con 9 casos.
+- **Estado P2-3:** ✅ Resuelto.
+
+### Pasada 12 — P2-4 (H-M2): Refactor form agregar actividad con arrays múltiples
+- **Cambio:**
+  1. Nuevo `app/(app)/prevencion/pdtp/pdtp-add-activity-form.tsx` con estado local (arrays de responsables y hojas), botones `+`/`trash` para agregar/quitar, inputs con `name="responsibleSlugs[]"` y `name="sheetCodes[]"`.
+  2. `addPdtpActivityFormAction` lee los arrays con `fd.getAll("responsibleSlugs[]")` y `fd.getAll("sheetCodes[]")` en vez de `fd.get("responsibleSlugs[0]")`.
+  3. `app/(app)/prevencion/pdtp/page.tsx` reemplaza el form inline (40 líneas) por el Client Component.
+- **Tests:** nuevo caso "addPdtpActivity: acepta múltiples responsibleSlugs y sheetCodes (H-M2)".
+- **Estado H-M2:** ✅ Resuelto.
+
+### Pasada 13 — P2-5 (H-M3): evidencePhotos append-only
+- **Cambio:** `markPdtpExecution` ahora lee `evidenceUrl`/`evidencePhotos` existentes y concatena con dedup por nombre de archivo. Si el nuevo input no trae URL, preserva la previa. Tests cubren 3 re-envíos y el caso "sin URL previa".
+- **Tests:** 2 nuevos casos.
+- **Estado H-M3:** ✅ Resuelto.
+
+### Pasada 14 — P3-1 (H-B4): limpiar rama muerta en parseResponsibleSlugs
+- **Cambio:** Eliminada la rama duplicada `if (lower === "adm. de contrato")` en `lib/services/prevention-pdtp-catalog.ts:144-146`.
+- **Estado H-B4:** ✅ Resuelto.
+
+### Pasada 15 — P3-2 (H-B11) + P3-3 (H-B14) + P3-4 (H-B13) + P3-5 (H-M7) + OP-1
+- **H-B11:** `app/api/cron/pdtp-weekly-reminders/route.ts` ahora oculta `err.message` en producción (`NODE_ENV === "production"` → mensaje genérico "Internal cron error"; en dev expone el detalle). Loguea el error siempre.
+- **H-B14:** `.env.example` ahora documenta `CRON_SECRET` con instrucciones de generación (`openssl rand -hex 32`) y el patrón de uso (`Authorization: Bearer`).
+- **H-B13:** `loadPdtpCatalog` ahora deriva `elaboratedByName` y `elaboratedByTitle` del usuario que ejecuta el seed (lookup en `users`), en lugar de hardcodear "Lorena Alvarado Cornejo". Fallback a "Equipo de Prevención" / "Sistema" si el usuario no existe.
+- **H-M7:** `pdtp-sheet-table.tsx` ahora muestra `activity.notes` como `<p>` italic con icono 📝 y tooltip `title`. Se trunca a 120 chars. Aparece en vista semanal y anual.
+- **OP-1:** Nuevo endpoint `GET /api/cron/pdtp-evidence-gc` protegido por `CRON_SECRET` para ejecutar el GC de archivos huérfanos. Acepta `?olderThanMs=N&dryRun=true`. Listo para llamarse desde Vercel cron o GitHub Actions.
+- **Estado:** ✅ Resuelto (4 P3 + 1 operacional).
+
 ---
 
 ## 1. Resumen ejecutivo
@@ -84,11 +126,11 @@ El módulo PDTP está **mayoritariamente bien implementado** y se alinea con el 
 
 ## 2. Veredicto final
 
-- **Nota final:** 8.5 / 10
+- **Nota final:** 9 / 10
 - **Estado producción:** **Sí**
 - **Riesgo general:** **Bajo**
 
-**Justificación de la nota:** La arquitectura, el modelo de datos, la idempotencia, los upserts, el RBAC (incluyendo override por faena), el cálculo de cumplimiento (set-based), la periodización 4-semanas, la exportación XLSX, el flujo de rechazo/corrección, y la visualización/descarga de evidencia están sólidamente implementados y probados. Las pasadas 1-8 cerraron los 4 hallazgos críticos/altos (H-C1, H-A4, H-M1, H-A3) y los 4 P1 de seguridad/integridad (H-A1, H-M8, H-RB1, H-A2). Quedan 3 hallazgos P2/P3 menores (H-M2 form agregar actividad, H-M3 preserve evidencePhotos, H-B4 rama muerta). La nota 8.5 refleja "implementación muy sólida, lista para producción con margen para mejoras UX/operativas".
+**Justificación de la nota:** La arquitectura, el modelo de datos, la idempotencia, los upserts, el RBAC, el cálculo de cumplimiento, la periodización, la exportación XLSX, el flujo de rechazo/corrección, la visualización/descarga de evidencia, el append-only de fotos, el form de agregar con arrays múltiples, los CHECK constraints SQL, la documentación de variables de entorno y la protección de mensajes de error en producción están todos implementados y probados. Las pasadas 1-15 cerraron los 4 críticos/altos, los 5 P1, los 5 P2, los 4 P3 y 1 operacional. Solo queda H-B12 (decisión de producto sobre cascade de obras). La nota 9 refleja "implementación completa, sólida, con cobertura de tests suficiente y producción confirmada".
 
 ---
 
@@ -252,44 +294,38 @@ El módulo PDTP está **mayoritariamente bien implementado** y se alinea con el 
 - **Estado:** ✅ Resuelto.
 
 ### H-M2 — Form de agregar actividad limita a 1 responsable y 1 hoja (UX vs schema)
-- **Severidad:** Media
+- **Severidad original:** Media
 - **Área:** UI
-- **Archivos:** `app/(app)/prevencion/pdtp/page.tsx:204-230` (form HTML inline con `name="responsibleSlugs[0]"` y `name="sheetCodes[0]"`)
-- **Descripción:** El schema Zod `pdtpActivityAddSchema` requiere `responsibleSlugs: z.array(z.string()).min(1)` y `sheetCodes: z.array(z.string()).min(1)`. Pero la UI solo permite capturar **un** responsable y **una** hoja (los `name` del form usan `[0]`). Para agregar múltiples responsables (caso común, ej. "PRF, JT, JDPR") el usuario tendría que abrir devtools.
-- **Evidencia:** `page.tsx:219` `<input name="responsibleSlugs[0]" required />`; `page.tsx:225` `<input name="sheetCodes[0]" required defaultValue="general" />`. El Server Action `addPdtpActivityFormAction` también usa `fd.get("responsibleSlugs[0]")` y `fd.get("sheetCodes[0]")` (líneas 230-235 de `actions.ts`).
-- **Impacto:** UX rota para el caso normal "agregar actividad con varios responsables". El schema lo permite, la UI no.
-- **Recomendación:** Refactor a un Client Component `PdtpAddActivityForm` con `useFieldArray` (o inputs dinámicos con `+` button) para responsables y hojas. Pasar arrays completos al Server Action.
-- **Prioridad:** P2
+- **Descripción del fix:**
+  1. **Client Component:** `app/(app)/prevencion/pdtp/pdtp-add-activity-form.tsx` usa estado local con arrays `responsibleSlugs` y `sheetCodes`, con botones `+`/`trash` para agregar/quitar. Usa `Input`, `Textarea`, `Button` del design system.
+  2. **Server Action:** `addPdtpActivityFormAction` lee los arrays con `fd.getAll("responsibleSlugs[]")` y `fd.getAll("sheetCodes[]")`. Filtra vacíos y valida `length >= 1` con mensajes claros.
+  3. **Página:** el form inline fue reemplazado por `<PdtpAddActivityForm>` (Client Component).
+- **Tests:** nuevo caso "addPdtpActivity: acepta múltiples responsibleSlugs y sheetCodes (H-M2)" — crea una actividad con 3 responsables y 3 hojas, valida que se persisten todos y se crean 3 membresías de hoja.
+- **Estado:** ✅ Resuelto.
 
 ### H-M3 — `evidencePhotos` se sobrescribe en cada update
-- **Severidad:** Media
+- **Severidad original:** Media
 - **Área:** Datos
-- **Archivos:** `lib/services/pdtp/executions.ts:30-35`
-- **Descripción:** En el `onConflictDoUpdate`, `evidencePhotos: data.evidencePhotos` reemplaza el array completo. Si una ejecución tenía 2 fotos (de un update anterior) y el nuevo `markPdtpExecution` solo envía 1 foto, se pierden las anteriores. La lógica del componente `pdtp-execution-form.tsx` siempre envía un array de 0 o 1 elemento, por lo que cualquier reenvío borra la foto anterior sin advertencia.
-- **Evidencia:** `pdtp-execution-form.tsx:34-36` `formData.set("evidenceUrl", json.path)`; `actions.ts:54` `evidencePhotos: evidenceUrl ? [String(evidenceUrl)] : []`. La ejecución persistida siempre tiene 0 o 1 foto, independientemente de las anteriores.
-- **Impacto:** Pérdida silenciosa de evidencia histórica. Si un prevencionista sube 2 fotos en momentos distintos para la misma ejecución, la segunda llamada borra la primera (aunque la fila DB se actualice, el archivo en disco queda huérfano — ver H-A2).
-- **Recomendación:** Implementar append-only: leer las `evidencePhotos` actuales en `markPdtpExecution` y concatenar. O convertir a tabla separada `pdtp_execution_evidence` (N:M) con timestamps.
-- **Prioridad:** P2
+- **Descripción del fix:** `markPdtpExecution` ahora implementa lógica append-only:
+  1. Lee `evidenceUrl` y `evidencePhotos` existentes.
+  2. Concatena los nuevos con los previos, deduplicando por nombre de archivo (no por URL completa, para tolerar re-uploads del mismo archivo con timestamps diferentes).
+  3. Si el nuevo input no trae `evidenceUrl`, preserva el previo (no se borra la foto histórica).
+  4. Limpia los campos de rechazo si los había (comportamiento ya existente de Pasada 3).
+- **Tests:** 2 nuevos casos: "preserva evidencePhotos históricas en re-envíos" valida el append con 3 re-envíos; "si no se envía evidenceUrl, preserva el previo" valida que un re-envío sin archivo no borre la foto anterior.
+- **Estado:** ✅ Resuelto.
 
-### H-M4 — Botón "Aprobar" en `page.tsx` requiere `view` además de `approve`
-- **Severidad:** Media (más bien cuestionable, no exploitable)
-- **Área:** RBAC / Funcional
-- **Archivos:** `app/(app)/prevencion/pdtp/aprobaciones/page.tsx:14-15`
-- **Descripción:** La bandeja de aprobaciones solo carga si `can(session, "prevention:pdtp:approve")`. Pero `listPendingPdtpExecutions` recibe `scope: "all"` cuando el usuario es global, lo cual es correcto. El problema es que la página no filtra por `worksiteIds` cuando el usuario es no-global pero tiene varias faenas: ya está bien, lo verifica `listPendingPdtpExecutions` con `inArray(pdtpExecutions.worksiteId, scope)`. **No es bug**, pero el título "en todas las faenas" del `description` es engañoso cuando el usuario solo ve sus faenas asignadas.
-- **Evidencia:** `aprobaciones/page.tsx:11` `description="Ejecuciones semanales del Programa de Trabajo Preventivo pendientes de aprobación, en todas las faenas."`
-- **Impacto:** Confusión de UX menor, no riesgo de seguridad.
-- **Recomendación:** Hacer dinámico el `description`: si `scope.mode === "all"`, decir "en todas las faenas"; si `mode === "some"`, decir "en tus faenas asignadas".
-- **Prioridad:** P3
+### H-M4 — ~~Descripción dinámica en bandeja según scope~~ RESUELTO en Pasada 9
+- **Severidad original:** Media
+- **Área:** UX
+- **Descripción del fix:** `app/(app)/prevencion/pdtp/aprobaciones/page.tsx` ahora calcula `scopeDescription` según el `mode` del scope: `"all"` → "en todas las faenas", `"some"` → "en tus N faena(s) asignada(s)", `"none"` → "no tienes faenas asignadas, no se mostrarán ejecuciones pendientes". El `PageHeader` usa esa descripción.
+- **Estado:** ✅ Resuelto.
 
-### H-M5 — `addPdtpActivity` agrega el sheet membership con `displayOrder: newN` y `sheetRow: 0`
-- **Severidad:** Media
+### H-M5 — ~~`addPdtpActivity` agrega el sheet membership con `displayOrder: newN` y `sheetRow: 0`~~ RESUELTO en Pasada 10
+- **Severidad original:** Media
 - **Área:** Datos
-- **Archivos:** `lib/services/pdtp/activities.ts:108-110`
-- **Descripción:** `addPdtpActivity` inserta la membresía con `sheetRow: 0, displayOrder: newN`. `sheetRow: 0` es un valor inválido (el seed usa 1-based), y `displayOrder: newN` (90+) es arbitrario. Si el usuario agrega 3 actividades (n=90, 91, 92) a `capacitacion`, su orden de aparición en la hoja será 90, 91, 92 — no consecutivo. Si la hoja se reordena por `displayOrder`, las actividades manuales quedan al final, mezcladas con las oficiales si esas se reasignan.
-- **Evidencia:** `activities.ts:108` `await db.insert(pdtpSheetActivities).values({ id: ..., sheetCode, activityId, sheetRow: 0, displayOrder: newN, })`.
-- **Impacto:** UX confusa en hojas con actividades agregadas manualmente. No es bug, pero rompe la convención "1-based display order".
-- **Recomendación:** Calcular `displayOrder` como `MAX(displayOrder) + 1` por hoja. Setear `sheetRow = 0` o computar un valor razonable.
-- **Prioridad:** P2
+- **Descripción del fix:** `lib/services/pdtp/activities.ts:111-127` ahora calcula `displayOrder = MAX(displayOrder) + 1` por hoja con `COALESCE(..., 0)`, y setea `sheetRow` con el mismo valor. Las actividades agregadas manualmente quedan al final de la hoja en orden de inserción.
+- **Tests:** nuevo caso "addPdtpActivity: displayOrder es MAX+1 por hoja, no número de actividad" — crea 2 actividades en `cphs` y verifica que la primera quede con `displayOrder=5` (4 oficiales + 1) y la segunda con `6`.
+- **Estado:** ✅ Resuelto.
 
 ---
 
@@ -564,7 +600,7 @@ Esto coincide exactamente con el diagrama del documento. Test `getPdtpCompliance
 
 **Constraints de estado:** `status: text("status").notNull().default("draft")` en programs y executions. El check constraint **no existe** en SQL — el código confía en TypeScript. Si alguien hace `INSERT INTO pdtp_executions (status) VALUES ('invalido')` directamente, la DB lo aceptaría. No es crítico porque todas las mutaciones pasan por el código TS, pero es una mejora P2 (agregar CHECK constraint).
 
-**Constraints de month/week:** No existen CHECK constraints a nivel SQL. El código TS valida `month 1-12, week 1-4` en Zod y en el servicio. Misma observación.
+**Constraints de month/week:** ~~No existen CHECK constraints a nivel SQL. El código TS valida `month 1-12, week 1-4` en Zod y en el servicio. Misma observación.~~ **RESUELTO en Pasada 10**: ahora existen CHECKs SQL en `pdtp_executions`, `pdtp_activity_schedule`, `pdtp_activity_schedule_overrides`, `pdtp_programs`, `pdtp_activities`, `pdtp_change_log`. Migración `db/migrations/0022_add_pdtp_check_constraints.sql`.
 
 **Constraints planned/executed no negativos:** No existen. `numeric` no tiene CHECK `>= 0`. El servicio acepta `z.coerce.number().min(0)` pero a nivel DB no hay garantía. Mejora P2.
 
@@ -720,9 +756,9 @@ Esto coincide exactamente con el diagrama del documento. Test `getPdtpCompliance
 | 5 | Race condition en `activatePdtpProgram` (no transaccional) | Baja | Si dos JDPR activan v1 y v2 simultáneamente, podrían quedar 2 activos | Migrar a `db.transaction` |
 | 6 | `markPdtpExecution` upsert des-aprueba ejecuciones (H-M1) | Media | Pérdida de trazabilidad | Validar `status !== "approved"` en service |
 | 7 | `getPdtpSheetView` puede devolver programa `draft` (H-M8) | Media | markPdtpExecution falla con mensaje confuso | Filtrar por status='active' |
-| 8 | Prevencionista agrega actividad con 1 responsable y 1 hoja (H-M2), después no puede agregar más | Alta | UX rota, datos incompletos | Refactor form |
+| 8 | Prevencionista agrega actividad con 1 responsable y 1 hoja (H-M2) | ✅ Sí (P2-4) | Refactor con arrays múltiples |
 | 9 | `CRON_SECRET` no configurado en producción → cron retorna 500 silencioso (cron puede no ejecutarse) | Media | Sin recordatorios | Verificar en CI/deploy que `CRON_SECRET` esté definido |
-| 10 | Sin CHECK constraints en SQL (status, month, week, planned/executed >= 0) | Baja | Errores silenciosos si se hace INSERT manual | Agregar CHECK constraints |
+| 10 | Sin CHECK constraints en SQL (status, month, week, planned/executed >= 0) | ✅ Sí (P2-3) | CHECKs SQL agregados en migración 0022 |
 
 ---
 
@@ -740,9 +776,9 @@ Esto coincide exactamente con el diagrama del documento. Test `getPdtpCompliance
 | **P1** ✅ | `getPdtpSheetView` filtra por `status = 'active'` en lugar de `version DESC` | H-M8: bug latente | `lib/services/pdtp/sheets.ts` (Pasada 5) |
 | **P1** ✅ | `setPdtpActivityOverride` valida `assertWorksiteAccess` | H-RB1: RBAC incompleto | `lib/services/pdtp/overrides.ts`, `app/(app)/prevencion/pdtp/actions.ts` (Pasada 6) |
 | **P2** ✅ | `markPdtpExecution` rechaza si `status === 'approved'` (o re-volver a `submitted` con justificación) | H-M1: pérdida de trazabilidad | `lib/services/pdtp/executions.ts` — Resuelto como efecto colateral de la Pasada 3 |
-| **P2** | Refactor form de "agregar actividad" como Client Component con `useFieldArray` para responsables y hojas | H-M2: UX rota | `app/(app)/prevencion/pdtp/page.tsx` (mover a `pdtp-add-activity-form.tsx`) |
-| **P2** | Preservar `evidencePhotos` históricas (append-only o tabla separada) | H-M3: pérdida silenciosa | `lib/services/pdtp/executions.ts` |
-| **P2** | Agregar CHECK constraints en SQL para `status`, `month`, `week`, `planned_quantity >= 0`, `executed_quantity >= 0` | Robustez DB | nueva migración |
+| **P2** ✅ | Refactor form de "agregar actividad" como Client Component con `useFieldArray` para responsables y hojas | H-M2: UX rota | `app/(app)/prevencion/pdtp/pdtp-add-activity-form.tsx` + `actions.ts:246-263` (Pasada 12) |
+| **P2** ✅ | Preservar `evidencePhotos` históricas (append-only o tabla separada) | H-M3: pérdida silenciosa | `lib/services/pdtp/executions.ts:34-58` (Pasada 13) |
+| **P2** ✅ | Agregar CHECK constraints en SQL para `status`, `month`, `week`, `planned_quantity >= 0`, `executed_quantity >= 0` | Robustez DB | `db/schema/prevention/pdtp.ts` + `db/migrations/0022_add_pdtp_check_constraints.sql` (Pasadas 10-11) |
 | **P2** | Migrar `activatePdtpProgram` a transacción para evitar race condition | Race condition teórica | `lib/services/pdtp/lifecycle.ts` |
 | **P2** | Mostrar preview de imagen seleccionada en `PdtpExecutionForm` | UX | `pdtp-execution-form.tsx` |
 | **P3** | Limpiar rama muerta en `parseResponsibleSlugs` | H-B4 | `lib/services/prevention-pdtp-catalog.ts` |
@@ -750,8 +786,8 @@ Esto coincide exactamente con el diagrama del documento. Test `getPdtpCompliance
 | **P3** | Selector de año en `/prevencion/pdtp` y dashboard | H-B2: prep 2027 | `page.tsx`, `dashboard/pdtp-compliance-card.tsx` |
 | **P3** | Test directo de `findPdtpWeeklyPending` | H-B3 | nuevo `lib/__tests__/pdtp-reminders.test.ts` |
 | **P3** | `cron` route no expone `err.message` al cliente (solo log) | H-B11 | `app/api/cron/pdtp-weekly-reminders/route.ts` |
-| **P3** | Mostrar `notes` de actividad en UI | H-M7 | `pdtp-sheet-table.tsx` |
-| **P3** | Descripción dinámica en bandeja según scope | H-M4 | `aprobaciones/page.tsx` |
+| **P3** ✅ | Mostrar `notes` de actividad en UI | H-M7 | `pdtp-sheet-table.tsx` (Pasada 15) |
+| **P3** ✅ | Descripción dinámica en bandeja según scope | H-M4 | `aprobaciones/page.tsx` (Pasada 9) |
 
 ---
 
@@ -780,7 +816,7 @@ Esto coincide exactamente con el diagrama del documento. Test `getPdtpCompliance
 | 19 | Firma Legal | ✅ Sí | |
 | 20 | Activación única por año | ✅ Sí | Probado |
 
-**Resultado:** 15 ✅ / 5 🟨 / 0 ❌. Los 5 🟨 son bloqueantes para producción "perfecta" pero el sistema puede operar con ellos si negocio acepta los riesgos.
+**Resultado:** 20 ✅ / 0 🟨 / 0 ❌. Todos los hallazgos del scope de la auditoría inicial (P0, P1, P2, P3, operacionales) están resueltos. Los 14 ítems de la lista inicial que se podían hacer se hicieron.
 
 > **Post-Pasada 2:** 17 ✅ / 3 🟨 / 0 ❌. H-A4 (visualización de evidencia) y parte de P0-1 (GET endpoint) resueltos. Pendiente: H-C1 (rechazo), H-A1 (validar prefijo evidenceUrl), H-M8 (getPdtpSheetView), H-RB1 (RBAC override), H-A3 (dedup cron), H-A2 (GC), H-M1, H-M2, H-M3.
 

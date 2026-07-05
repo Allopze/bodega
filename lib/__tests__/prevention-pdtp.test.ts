@@ -503,6 +503,43 @@ describe("prevention PDTP service", () => {
     expect(memberships.length).toBeGreaterThanOrEqual(1)
   })
 
+  it("addPdtpActivity: displayOrder es MAX+1 por hoja, no número de actividad", async () => {
+    const { addPdtpActivity } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+
+    // La hoja cphs tiene 4 actividades oficiales (11, 12, 13, 14). El
+    // MAX(displayOrder) actual es 4. Una actividad manual agregada
+    // debe quedar con displayOrder = 5, no con displayOrder = 90.
+    const a1 = await addPdtpActivity({
+      programId: program.id,
+      objectiveOrder: 6,
+      objective: "CONTROLAR LA APLICACIÓN DEL PROCEDIMIENTO DE ACCIDENTES E INCIDENTES",
+      activity: "A1",
+      program: "X",
+      responsibleSlugs: ["cphs"],
+      responsibleDisplay: "CPHS",
+      sheetCodes: ["cphs"],
+    }, "user-1")
+    const memberships1 = await inMemoryDb.select().from(schema.pdtpSheetActivities)
+      .where(eq(schema.pdtpSheetActivities.activityId, a1.id))
+    expect(memberships1[0]!.displayOrder).toBe(5)
+    expect(memberships1[0]!.sheetRow).toBe(5)
+
+    const a2 = await addPdtpActivity({
+      programId: program.id,
+      objectiveOrder: 6,
+      objective: "CONTROLAR LA APLICACIÓN DEL PROCEDIMIENTO DE ACCIDENTES E INCIDENTES",
+      activity: "A2",
+      program: "X",
+      responsibleSlugs: ["cphs"],
+      responsibleDisplay: "CPHS",
+      sheetCodes: ["cphs"],
+    }, "user-1")
+    const memberships2 = await inMemoryDb.select().from(schema.pdtpSheetActivities)
+      .where(eq(schema.pdtpSheetActivities.activityId, a2.id))
+    expect(memberships2[0]!.displayOrder).toBe(6)
+  })
+
   it("rejectPdtpExecution: submitted→rejected, motivo persistido, re-envío la vuelve a submitted", async () => {
     const { markPdtpExecution, rejectPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
     await loadActiveCatalog()
@@ -648,5 +685,98 @@ describe("prevention PDTP service", () => {
     const remaining = await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)
       .where(eq(schema.pdtpActivityScheduleOverrides.worksiteId, "ws-2"))
     expect(remaining).toHaveLength(0)
+  })
+
+  it("addPdtpActivity: acepta múltiples responsibleSlugs y sheetCodes (H-M2)", async () => {
+    const { addPdtpActivity } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+
+    const created = await addPdtpActivity({
+      programId: program.id,
+      objectiveOrder: 6,
+      objective: "CONTROLAR LA APLICACIÓN DEL PROCEDIMIENTO DE ACCIDENTES E INCIDENTES",
+      activity: "Actividad con múltiples responsables y hojas",
+      program: "X",
+      responsibleSlugs: ["prf", "jt", "jdpr"],
+      responsibleDisplay: "PRF, JT, JDPR",
+      sheetCodes: ["pdtp_general", "cphs", "capacitacion"],
+    }, "user-1")
+
+    expect(created.responsibleSlugs).toEqual(["prf", "jt", "jdpr"])
+
+    const memberships = await inMemoryDb.select().from(schema.pdtpSheetActivities)
+      .where(eq(schema.pdtpSheetActivities.activityId, created.id))
+    expect(memberships).toHaveLength(3)
+    const sheetCodes = memberships.map((m) => m.sheetCode).sort()
+    expect(sheetCodes).toEqual(["capacitacion", "cphs", "pdtp_general"])
+  })
+
+  it("markPdtpExecution: preserva evidencePhotos históricas en re-envíos (H-M3 append-only)", async () => {
+    const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 38))
+
+    // 1ra ejecución con foto 1
+    const first = await markPdtpExecution({
+      activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 1,
+      executedQuantity: 1, evidenceText: "Foto 1",
+      evidenceUrl: "storage/pdtp-evidence/foto-001.pdf",
+      evidencePhotos: ["storage/pdtp-evidence/foto-001.pdf"],
+    }, "user-1", ["ws-1"])
+    expect(first.evidencePhotos).toEqual(["storage/pdtp-evidence/foto-001.pdf"])
+
+    // 2da ejecución (mismo período) con foto 2 → debe preservar foto 1
+    const second = await markPdtpExecution({
+      activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 1,
+      executedQuantity: 1, evidenceText: "Foto 2",
+      evidenceUrl: "storage/pdtp-evidence/foto-002.pdf",
+      evidencePhotos: ["storage/pdtp-evidence/foto-002.pdf"],
+    }, "user-1", ["ws-1"])
+    expect(second.evidencePhotos).toEqual([
+      "storage/pdtp-evidence/foto-001.pdf",
+      "storage/pdtp-evidence/foto-002.pdf",
+    ])
+    expect(second.evidenceUrl).toBe("storage/pdtp-evidence/foto-002.pdf")
+
+    // 3ra ejecución con la misma foto 1 + foto 3 → no duplica foto 1
+    const third = await markPdtpExecution({
+      activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 1,
+      executedQuantity: 1, evidenceText: "Foto 3",
+      evidenceUrl: "storage/pdtp-evidence/foto-003.pdf",
+      evidencePhotos: [
+        "storage/pdtp-evidence/foto-001.pdf",
+        "storage/pdtp-evidence/foto-003.pdf",
+      ],
+    }, "user-1", ["ws-1"])
+    expect(third.evidencePhotos).toEqual([
+      "storage/pdtp-evidence/foto-001.pdf",
+      "storage/pdtp-evidence/foto-002.pdf",
+      "storage/pdtp-evidence/foto-003.pdf",
+    ])
+    // evidenceUrl: el último enviado (foto-003)
+    expect(third.evidenceUrl).toBe("storage/pdtp-evidence/foto-003.pdf")
+  })
+
+  it("markPdtpExecution: si no se envía evidenceUrl, preserva el previo (H-M3)", async () => {
+    const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 39))
+
+    // 1ra con evidencia
+    await markPdtpExecution({
+      activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 2,
+      executedQuantity: 1,
+      evidenceUrl: "storage/pdtp-evidence/preservada.pdf",
+    }, "user-1", ["ws-1"])
+
+    // 2da sin evidenciaUrl → debe preservar el previo
+    const second = await markPdtpExecution({
+      activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 2,
+      executedQuantity: 1,
+      evidenceText: "Solo texto",
+    }, "user-1", ["ws-1"])
+    expect(second.evidenceUrl).toBe("storage/pdtp-evidence/preservada.pdf")
   })
 })

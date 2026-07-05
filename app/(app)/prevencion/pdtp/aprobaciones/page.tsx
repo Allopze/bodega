@@ -22,6 +22,14 @@ export default async function PdtpApprovalsPage() {
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const pending = await listPendingPdtpExecutions(currentPdtpPeriod().year, worksiteIds)
+  // H-M4: el description debe reflejar el scope real del usuario para
+  // no inducir a error (un usuario de faena solo ve sus faenas).
+  const scopeDescription =
+    scope.mode === "all"
+      ? "Ejecuciones semanales del Programa de Trabajo Preventivo pendientes de aprobación, en todas las faenas."
+      : scope.mode === "some"
+        ? `Ejecuciones semanales del Programa de Trabajo Preventivo pendientes de aprobación en tus ${scope.ids.length} faena(s) asignada(s).`
+        : "No tienes faenas asignadas, no se mostrarán ejecuciones pendientes."
 
   // One row per (activityId, worksiteId) pair — the same activity can be
   // pending in multiple faenas at once.
@@ -71,7 +79,7 @@ export default async function PdtpApprovalsPage() {
     <PageContainer>
       <PageHeader
         title="Aprobaciones PDTP"
-        description="Ejecuciones semanales del Programa de Trabajo Preventivo pendientes de aprobación, en todas las faenas."
+        description={scopeDescription}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },

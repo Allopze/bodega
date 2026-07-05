@@ -143,7 +143,6 @@ export function parseResponsibleSlugs(display: string): string[] {
     .filter(Boolean)
     .map((part) => {
       const lower = part.toLocaleLowerCase("es-CL")
-      if (lower === "adm. de contrato" || lower === "adm. de contrato") return "admin_contrato"
       if (lower === "adm. de contrato") return "admin_contrato"
       if (lower === "sub. gerente operaciones") return "subgerente_operaciones"
       if (lower === "gerente legal y rrhh") return "gerente_legal_rrhh"

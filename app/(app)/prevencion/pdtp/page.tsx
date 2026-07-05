@@ -17,7 +17,8 @@ import { Button } from "@/components/ui/button"
 import { PreventionExportButton } from "@/components/prevention/export-button"
 import { PdtpSheetPicker, PdtpSheetTable, PdtpViewToggle, PdtpWorksitePicker } from "./pdtp-sheet-table"
 import { PdtpIndicatorsPanel } from "./pdtp-indicators-panel"
-import { approvePdtpProgramJdprAction, signPdtpProgramLegalAction, activatePdtpProgramAction, addPdtpActivityFormAction } from "./actions"
+import { PdtpAddActivityForm } from "./pdtp-add-activity-form"
+import { approvePdtpProgramJdprAction, signPdtpProgramLegalAction, activatePdtpProgramAction } from "./actions"
 import { db } from "@/db"
 import { pdtpExecutions, pdtpChangeLog, pdtpPrograms } from "@/db/schema"
 
@@ -165,60 +166,12 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
 
         {/* WS4: Activity add form (draft programs only, manage permission) */}
         {canManage && view?.program?.status === "draft" && (
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h3 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Agregar actividad</h3>
-            {actividadError && (
-              <p className="mb-3 rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
-                {actividadError}
-              </p>
-            )}
-            <form action={addPdtpActivityFormAction} className="grid grid-cols-2 gap-3">
-              <input type="hidden" name="programId" value={view.program.id} />
-              <input type="hidden" name="hoja" value={sheetCode} />
-              <input type="hidden" name="faena" value={selectedWorksiteId ?? ""} />
-              <div>
-                <label className="text-xs text-[var(--color-text-subtle)]">Orden objetivo (1-8)</label>
-                <input name="objectiveOrder" type="number" min="1" max="8" required
-                  className="mt-1 w-full rounded border border-[var(--color-border)] bg-transparent px-2 py-1 text-sm text-[var(--color-text)]" />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-subtle)]">Objetivo</label>
-                <input name="objective" required
-                  className="mt-1 w-full rounded border border-[var(--color-border)] bg-transparent px-2 py-1 text-sm text-[var(--color-text)]" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-[var(--color-text-subtle)]">Actividad</label>
-                <textarea name="activity" required rows={2}
-                  className="mt-1 w-full rounded border border-[var(--color-border)] bg-transparent px-2 py-1 text-sm text-[var(--color-text)]" />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-subtle)]">Programa</label>
-                <input name="program" required
-                  className="mt-1 w-full rounded border border-[var(--color-border)] bg-transparent px-2 py-1 text-sm text-[var(--color-text)]" />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-subtle)]">Responsable (nombre)</label>
-                <input name="responsibleDisplay" required
-                  className="mt-1 w-full rounded border border-[var(--color-border)] bg-transparent px-2 py-1 text-sm text-[var(--color-text)]" />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-subtle)]">Responsable (slug RBAC)</label>
-                <input name="responsibleSlugs[0]" required
-                  className="mt-1 w-full rounded border border-[var(--color-border)] bg-transparent px-2 py-1 text-sm text-[var(--color-text)]" />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-subtle)]">Código hoja (ej: general)</label>
-                <input name="sheetCodes[0]" required defaultValue="general"
-                  className="mt-1 w-full rounded border border-[var(--color-border)] bg-transparent px-2 py-1 text-sm text-[var(--color-text)]" />
-              </div>
-              <div className="col-span-2 flex justify-end">
-                <button type="submit"
-                  className="rounded bg-[var(--color-accent)] px-4 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)]">
-                  Agregar actividad
-                </button>
-              </div>
-            </form>
-          </div>
+          <PdtpAddActivityForm
+            programId={view.program.id}
+            hoja={sheetCode}
+            faena={selectedWorksiteId ?? ""}
+            errorMessage={actividadError}
+          />
         )}
       </div>
     </PageContainer>

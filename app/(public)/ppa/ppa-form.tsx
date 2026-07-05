@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils"
 import { evaluatePpa } from "@/lib/ppa/evaluation"
 import { PPA_STOP_REASON_LABELS, type PpaAnswers, type PpaStopReason } from "@/lib/ppa/types"
 import { submitPpaAction, findWorkerByRutAction } from "./actions"
+import { usePpaOfflineQueue } from "@/lib/pwa/hooks"
+import { OfflineBanner } from "@/components/pwa/offline-banner"
 
 interface Option { value: string; label: string }
 
@@ -73,6 +75,7 @@ export function PpaForm({
 }: Props) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
+  const { online, enqueue } = usePpaOfflineQueue()
 
   const [worksiteId, setWorksiteId] = React.useState(initialWorksiteId)
   const [rutSearch, setRutSearch] = React.useState("")
@@ -177,33 +180,77 @@ export function PpaForm({
     }
   }
 
-  function doSubmit() {
-    setConfirmOpen(false)
+  function buildPayload() {
     const name = manual ? workerName.trim() : (matchedWorker?.name ?? "")
     const rut = manual ? workerRut.trim() : rutSearch.trim()
+    return {
+      worksiteId,
+      workerId: manual ? undefined : workerId || undefined,
+      workerName: name,
+      workerRut: rut || undefined,
+      workerCompany: workerCompany || undefined,
+      tipoTrabajo,
+      cambioPlanificado: cambioPlanificado as "si" | "no",
+      cambioDescripcion,
+      peligroNoControlado: peligroNoControlado as "si" | "no",
+      peligroDescripcion,
+      controles,
+      seguroComenzar: seguroComenzar as "si" | "no",
+      complementarias: comp,
+    }
+  }
+
+  function doSubmit() {
+    setConfirmOpen(false)
+    const payload = buildPayload()
 
     startTransition(async () => {
-      const res = await submitPpaAction({
-        worksiteId,
-        workerId: manual ? undefined : workerId || undefined,
-        workerName: name,
-        workerRut: rut || undefined,
-        workerCompany: workerCompany || undefined,
-        tipoTrabajo,
-        cambioPlanificado: cambioPlanificado as "si" | "no",
-        cambioDescripcion,
-        peligroNoControlado: peligroNoControlado as "si" | "no",
-        peligroDescripcion,
-        controles,
-        seguroComenzar: seguroComenzar as "si" | "no",
-        complementarias: comp,
-      })
+      // ── Offline path: queue in IndexedDB ──────────────────────────
+      if (!online) {
+        try {
+          await enqueue(payload)
+        } catch {
+          toast.error("No se pudo guardar offline. Verifica el almacenamiento del navegador.")
+          return
+        }
+        toast.success(
+          "PPA guardado offline. Se enviará automáticamente cuando vuelva la conexión.",
+          { duration: 6000 },
+        )
+        router.push("/ppa?saved=offline")
+        return
+      }
 
-      if (res.ok && res.data?.token) {
-        router.push(`/ppa/result/${res.data.token}`)
-      } else {
-        if (res.fieldErrors) setErrors(res.fieldErrors)
-        toast.error(res.message ?? "No se pudo enviar el PPA.")
+      // ── Online path: submit directly to server ────────────────────
+      try {
+        const res = await submitPpaAction(payload)
+
+        if (res.ok && res.data?.token) {
+          router.push(`/ppa/result/${res.data.token}`)
+        } else {
+          if (res.fieldErrors) setErrors(res.fieldErrors)
+          toast.error(res.message ?? "No se pudo enviar el PPA.")
+        }
+      } catch (e) {
+        // Network error while supposedly online → queue for retry.
+        // Only queue on actual network failures (TypeError = fetch failed),
+        // not on server-side validation errors.
+        const isNetworkError = e instanceof TypeError && /fetch|network/i.test(e.message)
+        if (!isNetworkError) {
+          toast.error(e instanceof Error ? e.message : "No se pudo enviar el PPA.")
+          return
+        }
+        try {
+          await enqueue(payload)
+        } catch {
+          toast.error("Error de red y no se pudo guardar offline. Intenta más tarde.")
+          return
+        }
+        toast.warning(
+          "Error de red. Tu PPA se ha guardado localmente y se enviará cuando vuelva la conexión.",
+          { duration: 6000 },
+        )
+        router.push("/ppa?saved=offline")
       }
     })
   }
@@ -230,6 +277,7 @@ export function PpaForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
+      <OfflineBanner />
       {/* ── Identificación ───────────────────────────────────────────── */}
       <section className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
         <h2 className="text-base font-semibold">Identificación</h2>
@@ -402,7 +450,7 @@ export function PpaForm({
       </section>
 
       <Button type="submit" size="lg" loading={pending} className="w-full">
-        Enviar PPA
+        {online ? "Enviar PPA" : "Guardar offline"}
       </Button>
 
       <ConfirmDialog

@@ -1,5 +1,5 @@
-import { relations } from "drizzle-orm"
-import { index, integer, jsonb, numeric, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { relations, sql } from "drizzle-orm"
+import { check, index, integer, jsonb, numeric, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { pgTable } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
@@ -23,6 +23,8 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
 }, (table) => [
   uniqueIndex("pdtp_programs_year_version_unique").on(table.year, table.version),
   index("pdtp_programs_status_idx").on(table.status),
+  check("pdtp_programs_status_check", sql`${table.status} IN ('draft', 'active', 'closed')`),
+  check("pdtp_programs_compliance_target_check", sql`${table.complianceTarget} >= 0 AND ${table.complianceTarget} <= 1`),
 ])
 
 export const pdtpResponsibleCatalog = pgTable("pdtp_responsible_catalog", {
@@ -52,6 +54,8 @@ export const pdtpActivities = pgTable("pdtp_activities", {
 }, (table) => [
   uniqueIndex("pdtp_activities_program_n_unique").on(table.programId, table.n),
   index("pdtp_activities_program_objective_idx").on(table.programId, table.objectiveOrder),
+  check("pdtp_activities_n_check", sql`${table.n} >= 1`),
+  check("pdtp_activities_objective_order_check", sql`${table.objectiveOrder} BETWEEN 1 AND 8`),
 ])
 
 export const pdtpActivitySchedule = pgTable("pdtp_activity_schedule", {
@@ -65,6 +69,9 @@ export const pdtpActivitySchedule = pgTable("pdtp_activity_schedule", {
 }, (table) => [
   uniqueIndex("pdtp_activity_schedule_activity_period_unique").on(table.activityId, table.year, table.month, table.week),
   index("pdtp_activity_schedule_year_month_idx").on(table.year, table.month),
+  check("pdtp_activity_schedule_month_check", sql`${table.month} BETWEEN 1 AND 12`),
+  check("pdtp_activity_schedule_week_check", sql`${table.week} BETWEEN 1 AND 4`),
+  check("pdtp_activity_schedule_quantity_check", sql`${table.plannedQuantity} >= 0`),
 ])
 
 export const pdtpExecutions = pgTable("pdtp_executions", {
@@ -92,6 +99,10 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
   uniqueIndex("pdtp_executions_activity_scope_period_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week),
   index("pdtp_executions_worksite_period_idx").on(table.worksiteId, table.year, table.month),
   index("pdtp_executions_status_idx").on(table.status),
+  check("pdtp_executions_status_check", sql`${table.status} IN ('draft', 'submitted', 'approved', 'rejected')`),
+  check("pdtp_executions_month_check", sql`${table.month} BETWEEN 1 AND 12`),
+  check("pdtp_executions_week_check", sql`${table.week} BETWEEN 1 AND 4`),
+  check("pdtp_executions_quantity_check", sql`${table.executedQuantity} >= 0`),
 ])
 
 export const pdtpChangeLog = pgTable("pdtp_change_log", {
@@ -106,6 +117,7 @@ export const pdtpChangeLog = pgTable("pdtp_change_log", {
   note:            text("note"),
 }, (table) => [
   index("pdtp_change_log_program_version_idx").on(table.programId, table.version),
+  check("pdtp_change_log_section_check", sql`length(${table.section}) > 0`),
 ])
 
 export const pdtpSheets = pgTable("pdtp_sheets", {
@@ -142,6 +154,9 @@ export const pdtpActivityScheduleOverrides = pgTable("pdtp_activity_schedule_ove
 }, (table) => [
   uniqueIndex("pdtp_schedule_overrides_activity_scope_period_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week),
   index("pdtp_schedule_overrides_worksite_year_month_idx").on(table.worksiteId, table.year, table.month),
+  check("pdtp_schedule_overrides_month_check", sql`${table.month} BETWEEN 1 AND 12`),
+  check("pdtp_schedule_overrides_week_check", sql`${table.week} BETWEEN 1 AND 4`),
+  check("pdtp_schedule_overrides_quantity_check", sql`${table.plannedQuantity} >= 0`),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

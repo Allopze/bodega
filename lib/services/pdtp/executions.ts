@@ -19,8 +19,14 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
 
   // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
   // 'draft' o 'rejected' (devuelta para corrección) son editables.
+  // H-M3: también leemos evidenceUrl/evidencePhotos existentes para
+  // hacer append-only (preservar la historia de evidencias).
   const [existing] = await db
-    .select({ status: pdtpExecutions.status })
+    .select({
+      status: pdtpExecutions.status,
+      evidenceUrl: pdtpExecutions.evidenceUrl,
+      evidencePhotos: pdtpExecutions.evidencePhotos,
+    })
     .from(pdtpExecutions)
     .where(and(
       eq(pdtpExecutions.activityId, data.activityId),
@@ -34,20 +40,41 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
   }
 
+  // Append-only: dedupe por nombre de archivo, preserva URLs previas
+  function fileName(url: string): string {
+    const idx = url.lastIndexOf("/")
+    return idx >= 0 ? url.slice(idx + 1) : url
+  }
+  const previousPhotos = Array.isArray(existing?.evidencePhotos) ? existing.evidencePhotos : []
+  const newPhotos = (data.evidencePhotos ?? []).filter(Boolean)
+  const allPhotos = [...previousPhotos, ...newPhotos]
+  const dedupedPhotos: string[] = []
+  const seen = new Set<string>()
+  for (const url of allPhotos) {
+    const name = fileName(url)
+    if (seen.has(name)) continue
+    seen.add(name)
+    dedupedPhotos.push(url)
+  }
+  // evidenceUrl: si viene uno nuevo, se usa; si no, se preserva el
+  // previo. Esto evita que un re-envío sin archivo borre el archivo
+  // que el prevencionista subió antes.
+  const nextEvidenceUrl = data.evidenceUrl || existing?.evidenceUrl || null
+
   const now = new Date().toISOString()
   const id = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
 
   const [row] = await db.insert(pdtpExecutions).values({
     id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
     week: data.week, executedQuantity: data.executedQuantity, status: "submitted",
-    evidenceText: data.evidenceText || null, evidenceUrl: data.evidenceUrl || null,
-    evidencePhotos: data.evidencePhotos, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
+    evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
+    evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
   }).onConflictDoUpdate({
     target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
     set: {
       executedQuantity: data.executedQuantity, status: "submitted",
-      evidenceText: data.evidenceText || null, evidenceUrl: data.evidenceUrl || null,
-      evidencePhotos: data.evidencePhotos, executedByUserId: userId, executedAt: now,
+      evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
+      evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now,
       // Limpia rechazo previo: cuando el prevencionista reenvía, la
       // ejecución vuelve a 'submitted' con un nuevo intento.
       rejectedByUserId: null, rejectedAt: null, rejectionReason: null,

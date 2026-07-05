@@ -21,6 +21,7 @@ function makeActivity(
   monthlyPlanned: number[],
   monthlyExecuted: number[],
   executions: PdtpSheetView["activities"][number]["executions"] = [],
+  notes: string | null = null,
 ): PdtpSheetView["activities"][number] {
   const totalPlanned = monthlyPlanned.reduce((s, v) => s + v, 0)
   const totalExecuted = monthlyExecuted.reduce((s, v) => s + v, 0)
@@ -37,6 +38,7 @@ function makeActivity(
     totalPlanned,
     totalExecuted,
     executions,
+    notes,
   } as unknown as PdtpSheetView["activities"][number]
 }
 
@@ -125,5 +127,16 @@ describe("PdtpSheetTable — weekly filter", () => {
     expect(screen.getByText("Actividad ejecutada")).toBeDefined()
     expect(screen.getByText("Actividad sin plan este mes")).toBeDefined()
     expect(screen.getByText("—")).toBeDefined()
+  })
+
+  it("muestra la nota de la actividad (H-M7)", () => {
+    const withNotes = makeActivity("a-note", "5", "Actividad con nota", withPlanned(7, 1), ZERO12, [], "Esta es una nota de prueba sobre la actividad")
+    const view = makeView([withNotes])
+    // Modo semana filtra por monthlyPlanned[month-1] > 0. Nuestra actividad tiene plan en julio (month 7).
+    const { container } = render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+    // Buscamos el <p> con title que contiene la nota
+    const noteEl = container.querySelector(`p[title="Esta es una nota de prueba sobre la actividad"]`)
+    expect(noteEl).toBeTruthy()
+    expect(noteEl?.textContent).toContain("Esta es una nota de prueba")
   })
 })

@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm"
 import { db, type DB } from "@/db"
 import {
   pdtpActivities,
@@ -6,6 +7,7 @@ import {
   pdtpResponsibleCatalog,
   pdtpSheetActivities,
   pdtpSheets,
+  users as schemaUsers,
 } from "@/db/schema"
 import { SHEET_META } from "./constants"
 import { collectResponsibleCatalog, displayNameForActivity, pdtpActivityId, pdtpProgramId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
@@ -19,13 +21,30 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
   const now = new Date().toISOString()
   const programId = pdtpProgramId(input.year, input.version)
 
+  // H-B13: derivar `elaboratedByName`/`elaboratedByTitle` del usuario
+  // que invoca el seed en lugar de hardcodear. Si el usuario no
+  // existe en DB (caso raro de tests), cae a un placeholder genérico.
+  const [elaborator] = await database
+    .select({ name: schemaUsers.name })
+    .from(schemaUsers)
+    .where(eq(schemaUsers.id, input.userId))
+    .limit(1)
+  const elaboratedByName = elaborator?.name?.trim() || "Equipo de Prevención"
+  const elaboratedByTitle = elaborator?.name?.trim() ? "Prevencionista" : "Sistema"
+
   const [program] = await database.insert(pdtpPrograms).values({
     id: programId, year: input.year, version: input.version, status: "draft", title: input.title,
-    elaboratedByUserId: input.userId, elaboratedByName: "Lorena Alvarado Cornejo",
-    elaboratedByTitle: "Jefa Dpto. Prevención de Riesgos", createdAt: now, updatedAt: now,
+    elaboratedByUserId: input.userId, elaboratedByName,
+    elaboratedByTitle, createdAt: now, updatedAt: now,
   }).onConflictDoUpdate({
     target: [pdtpPrograms.year, pdtpPrograms.version],
-    set: { title: input.title, elaboratedByUserId: input.userId, updatedAt: now },
+    set: {
+      title: input.title,
+      elaboratedByUserId: input.userId,
+      elaboratedByName,
+      elaboratedByTitle,
+      updatedAt: now,
+    },
   }).returning()
   if (!program) throw new Error("No se pudo cargar el programa PDTP.")
 
