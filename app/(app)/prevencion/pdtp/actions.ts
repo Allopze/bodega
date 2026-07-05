@@ -12,12 +12,15 @@ import {
   approvePdtpExecution,
   updatePdtpActivity,
   addPdtpActivity,
+  setPdtpActivityOverride,
+  deletePdtpActivityOverride,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
   pdtpExecutionApprovalSchema,
   pdtpActivityUpdateSchema,
   pdtpActivityAddSchema,
+  pdtpActivityOverrideSchema,
 } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/pdtp"
@@ -159,6 +162,46 @@ export async function addPdtpActivityAction(input: unknown): Promise<ActionState
   } catch (e) {
     return { ok: false, message: (e as Error).message }
   }
+}
+
+export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<void> {
+  const hoja = String(fd.get("hoja") ?? "")
+  const faena = String(fd.get("faena") ?? "")
+  const backTo = (errorMessage?: string): never => {
+    const params = new URLSearchParams()
+    if (hoja) params.set("hoja", hoja)
+    if (faena) params.set("faena", faena)
+    if (errorMessage) params.set("overrideError", errorMessage)
+    const qs = params.toString()
+    redirect(qs ? `${REVALIDATE}?${qs}` : REVALIDATE)
+  }
+
+  const { session, error } = await guardAuth()
+  if (error) return backTo(error.message)
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return backTo("No tienes permisos para fijar metas PDTP por faena.")
+  }
+
+  const mode = String(fd.get("mode") ?? "set")
+  try {
+    const parsed = pdtpActivityOverrideSchema.parse({
+      activityId: fd.get("activityId"),
+      worksiteId: fd.get("worksiteId"),
+      year: fd.get("year"),
+      month: fd.get("month"),
+      week: fd.get("week"),
+      plannedQuantity: fd.get("plannedQuantity"),
+    })
+    if (mode === "delete" || parsed.plannedQuantity === 0) {
+      await deletePdtpActivityOverride(parsed, session.user.id)
+    } else {
+      await setPdtpActivityOverride(parsed, session.user.id)
+    }
+  } catch (e) {
+    return backTo((e as Error).message)
+  }
+  revalidatePath(REVALIDATE)
+  return backTo()
 }
 
 export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {

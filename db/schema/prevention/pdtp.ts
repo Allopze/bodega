@@ -125,6 +125,22 @@ export const pdtpSheetActivities = pgTable("pdtp_sheet_activities", {
   index("pdtp_sheet_activities_sheet_order_idx").on(table.sheetCode, table.displayOrder),
 ])
 
+export const pdtpActivityScheduleOverrides = pgTable("pdtp_activity_schedule_overrides", {
+  id:              text("id").primaryKey(),
+  activityId:      text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  worksiteId:      text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  year:            integer("year").notNull(),
+  month:           integer("month").notNull(),
+  week:            integer("week").notNull(),
+  plannedQuantity: numeric("planned_quantity", { precision: 10, scale: 2, mode: "number" }).notNull().default(0),
+  updatedByUserId: text("updated_by_user_id").references(() => users.id),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_schedule_overrides_activity_scope_period_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week),
+  index("pdtp_schedule_overrides_worksite_year_month_idx").on(table.worksiteId, table.year, table.month),
+])
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const pdtpProgramsRelations = relations(pdtpPrograms, ({ many, one }) => ({
   elaboratedByUser: one(users, { fields: [pdtpPrograms.elaboratedByUserId], references: [users.id] }),
@@ -166,6 +182,12 @@ export const pdtpSheetActivitiesRelations = relations(pdtpSheetActivities, ({ on
   activity: one(pdtpActivities, { fields: [pdtpSheetActivities.activityId], references: [pdtpActivities.id] }),
 }))
 
+export const pdtpActivityScheduleOverridesRelations = relations(pdtpActivityScheduleOverrides, ({ one }) => ({
+  activity: one(pdtpActivities, { fields: [pdtpActivityScheduleOverrides.activityId], references: [pdtpActivities.id] }),
+  worksite: one(worksites, { fields: [pdtpActivityScheduleOverrides.worksiteId], references: [worksites.id] }),
+  updatedByUser: one(users, { fields: [pdtpActivityScheduleOverrides.updatedByUserId], references: [users.id] }),
+}))
+
 /* ── Types ───────────────────────────────────────────────────────────────── */
 export type PdtpProgram = typeof pdtpPrograms.$inferSelect
 export type NewPdtpProgram = typeof pdtpPrograms.$inferInsert
@@ -183,3 +205,5 @@ export type PdtpSheet = typeof pdtpSheets.$inferSelect
 export type NewPdtpSheet = typeof pdtpSheets.$inferInsert
 export type PdtpSheetActivity = typeof pdtpSheetActivities.$inferSelect
 export type NewPdtpSheetActivity = typeof pdtpSheetActivities.$inferInsert
+export type PdtpActivityScheduleOverride = typeof pdtpActivityScheduleOverrides.$inferSelect
+export type NewPdtpActivityScheduleOverride = typeof pdtpActivityScheduleOverrides.$inferInsert

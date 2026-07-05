@@ -14,6 +14,7 @@ import type { PdtpSheetView } from "@/lib/services/prevention-pdtp"
 import { deriveActivityStatus, type PdtpActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { PdtpExecutionForm } from "./pdtp-execution-form"
 import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
+import { PdtpOverrideForm } from "./pdtp-override-form"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -39,9 +40,10 @@ type PdtpSheetTableProps = {
   pendingApprovals?: PendingApproval[]
   viewMode: "semana" | "anual"
   currentPeriod: PdtpPeriod
+  sheetCode: string
 }
 
-export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove = false, pendingApprovals = [], viewMode, currentPeriod }: PdtpSheetTableProps) {
+export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove = false, pendingApprovals = [], viewMode, currentPeriod, sheetCode }: PdtpSheetTableProps) {
   const annualPlanned = view.monthlyTotals.reduce((sum, month) => sum + month.planned, 0)
   const annualExecuted = view.monthlyTotals.reduce((sum, month) => sum + month.executed, 0)
   const annualPercent = annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) : null
@@ -95,12 +97,25 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove
                       <TableCell><StatusBadge status={status} /></TableCell>
                       {canManage && worksiteId && (
                         <TableCell>
-                          <PdtpExecutionForm
-                            activityId={activity.id}
-                            worksiteId={worksiteId}
-                            defaultMonth={currentPeriod.month}
-                            defaultWeek={currentPeriod.week}
-                          />
+                          <div className="space-y-2">
+                            <PdtpExecutionForm
+                              activityId={activity.id}
+                              worksiteId={worksiteId}
+                              defaultMonth={currentPeriod.month}
+                              defaultWeek={currentPeriod.week}
+                            />
+                            <PdtpOverrideForm
+                              activityId={activity.id}
+                              activityN={activity.n}
+                              activityName={activity.activity}
+                              worksiteId={worksiteId}
+                              year={currentPeriod.year}
+                              defaultMonth={currentPeriod.month}
+                              defaultWeek={currentPeriod.week}
+                              globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}
+                              hoja={sheetCode}
+                            />
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>
@@ -160,7 +175,20 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove
                     <TableCellNum className="font-semibold">{worksiteId ? formatQuantity(activity.totalExecuted) : "-"}</TableCellNum>
                     {canManage && worksiteId && (
                       <TableCell>
-                        <PdtpExecutionForm activityId={activity.id} worksiteId={worksiteId} />
+                        <div className="space-y-2">
+                          <PdtpExecutionForm activityId={activity.id} worksiteId={worksiteId} />
+                          <PdtpOverrideForm
+                            activityId={activity.id}
+                            activityN={activity.n}
+                            activityName={activity.activity}
+                            worksiteId={worksiteId}
+                            year={currentPeriod.year}
+                            defaultMonth={currentPeriod.month}
+                            defaultWeek={currentPeriod.week}
+                            globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}
+                            hoja={sheetCode}
+                          />
+                        </div>
                       </TableCell>
                     )}
                     {canApprove && worksiteId && pendingApprovals.length > 0 && (

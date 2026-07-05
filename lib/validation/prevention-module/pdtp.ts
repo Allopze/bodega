@@ -44,3 +44,12 @@ export const pdtpActivityAddSchema = z.object({
   sheetCodes: z.array(z.string().min(1)).min(1, "Al menos una hoja"),
   schedule: z.array(pdtpScheduleCellSchema).optional(),
 })
+
+export const pdtpActivityOverrideSchema = z.object({
+  activityId: z.string().min(1, "Actividad requerida"),
+  worksiteId: z.string().min(1, "Faena requerida"),
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+  week: z.coerce.number().int().min(1).max(4),
+  plannedQuantity: z.coerce.number().min(0),
+})

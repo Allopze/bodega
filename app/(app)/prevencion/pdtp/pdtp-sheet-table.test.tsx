@@ -74,7 +74,7 @@ describe("PdtpSheetTable — weekly filter", () => {
 
   it("includes only activities planned for the current month and shows their status chip", () => {
     const view = makeView([executedActivity, pendingActivity, overdueActivity, notScheduledActivity])
-    render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} />)
+    render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
 
     expect(screen.getByText("Actividad ejecutada")).toBeDefined()
     expect(screen.getByText("Actividad pendiente")).toBeDefined()
@@ -91,7 +91,7 @@ describe("PdtpSheetTable — weekly filter", () => {
 
   it("renders a friendly empty state when nothing is planned for the current month", () => {
     const view = makeView([notScheduledActivity])
-    render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} />)
+    render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
 
     expect(screen.getByText("No hay actividades planificadas para este mes.")).toBeDefined()
     expect(screen.queryByText("Actividad sin plan este mes")).toBeNull()
@@ -104,6 +104,7 @@ describe("PdtpSheetTable — weekly filter", () => {
         view={view}
         viewMode="semana"
         currentPeriod={CURRENT_PERIOD}
+        sheetCode="pdtp_general"
         canManage
         worksiteId="ws-1"
       />,
@@ -117,7 +118,7 @@ describe("PdtpSheetTable — weekly filter", () => {
 
   it("annual mode shows every activity, including ones with nothing planned this month", () => {
     const view = makeView([executedActivity, notScheduledActivity])
-    render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} />)
+    render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
 
     expect(screen.getByText("Actividad ejecutada")).toBeDefined()
     expect(screen.getByText("Actividad sin plan este mes")).toBeDefined()

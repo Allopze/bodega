@@ -134,6 +134,13 @@
       "when": 1783037695178,
       "tag": "0018_public_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783207071713,
+      "tag": "0019_cute_chimera",
+      "breakpoints": true
     }
   ]
 }

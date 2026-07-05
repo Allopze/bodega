@@ -35,7 +35,7 @@ const SHEET_OPTIONS: Array<{ code: PdtpSheetCode; label: string }> = [
 ]
 
 type PdtpPageProps = {
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; actividadError?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; actividadError?: string | string[]; overrideError?: string | string[] }>
 }
 
 export default async function PdtpPage({ searchParams }: PdtpPageProps) {
@@ -49,6 +49,7 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
   const requestedView = Array.isArray(query.vista) ? query.vista[0] : query.vista
   const actividadError = Array.isArray(query.actividadError) ? query.actividadError[0] : query.actividadError
+  const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
   const currentPeriod = currentPdtpPeriod()
   const sheetCode = normalizeSheetCode(requestedSheet) ?? defaultSheetForRoles(session.user.roles)
@@ -133,6 +134,12 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
         <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} />
         <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} />
 
+        {overrideError && (
+          <p className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
+            {overrideError}
+          </p>
+        )}
+
         {view ? (
           <PdtpSheetTable
             view={view}
@@ -142,6 +149,7 @@ export default async function PdtpPage({ searchParams }: PdtpPageProps) {
             pendingApprovals={pendingApprovals}
             viewMode={viewMode}
             currentPeriod={currentPeriod}
+            sheetCode={sheetCode}
           />
         ) : (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5">

@@ -12,6 +12,8 @@ import { RecentActivity } from "./recent-activity"
 import { can } from "@/lib/auth/can"
 import type { Permission } from "@/modules/permissions"
 import { cn, formatCLP } from "@/lib/utils"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { loadPdtpComplianceSummary, PdtpComplianceCard } from "./pdtp-compliance-card"
 import {
   ArrowRight,
   CheckCircle,
@@ -66,6 +68,12 @@ function formatShortDate(value: string) {
   }).format(new Date(value))
 }
 
+function scopeToWorksiteIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
+  if (scope.mode === "all") return "all"
+  if (scope.mode === "none") return []
+  return scope.ids
+}
+
 export default async function DashboardPage() {
   const session = await auth()
   if (!session) return null
@@ -86,6 +94,12 @@ export default async function DashboardPage() {
     : 0
 
   const firstName = session.user.name?.split(" ")[0] ?? "usuario"
+
+  // PDTP compliance summary — sólo si el usuario puede ver el módulo
+  const canViewPdtp = can(session, "prevention:pdtp:view")
+  const pdtpSummary = canViewPdtp
+    ? await loadPdtpComplianceSummary(scopeToWorksiteIds(resolveWorksiteScope(session)))
+    : null
 
   const signalDefs: Array<HeaderSignal & { perm: Permission }> = [
     { key: "approvals", label: "Por aprobar",   value: data.metrics.pending_approvals,      href: "/aprobaciones",  tone: "signal", perm: "approvals:approve" },
@@ -162,6 +176,19 @@ export default async function DashboardPage() {
       <div className="mt-4">
         <QuickActions session={session} />
       </div>
+
+      {/* ── Cumplimiento PDTP (gated por permiso) ── */}
+      {pdtpSummary && (
+        <section className="mt-6">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-h2 text-[var(--color-text)]">Programa de Trabajo Preventivo</h2>
+            <p className="text-xs text-[var(--color-text-muted)]">Meta anual {Math.round(pdtpSummary.target * 100)}%</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <PdtpComplianceCard {...pdtpSummary} />
+          </div>
+        </section>
+      )}
 
       {/* ── Trabajo: cola con tareas, o actividad reciente sin pendientes ── */}
       {visibleTasks.length > 0 ? (

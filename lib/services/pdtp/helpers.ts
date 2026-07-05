@@ -3,6 +3,7 @@ import { db } from "@/db"
 import { pdtpActivitySchedule, pdtpChangeLog, pdtpExecutions } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { ROLE_RESPONSIBLE_SLUGS } from "./constants"
+import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 
 export type WorksiteScope = string[] | "all"
 
@@ -84,11 +85,17 @@ export function collectResponsibleCatalog(catalog: { activities: Array<{ respons
 }
 
 export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
-  const [scheduleRows, executionRows] = await Promise.all([
+  const [scheduleRows, executionRows, overrideRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds)),
     worksiteId
       ? db.select().from(pdtpExecutions).where(and(inArray(pdtpExecutions.activityId, activityIds), eq(pdtpExecutions.worksiteId, worksiteId), eq(pdtpExecutions.year, year)))
       : Promise.resolve([] as Array<typeof pdtpExecutions.$inferSelect>),
+    worksiteId
+      ? loadPdtpOverrides(activityIds, year, worksiteId)
+      : Promise.resolve([] as Awaited<ReturnType<typeof loadPdtpOverrides>>),
   ])
-  return { scheduleRows, executionRows }
+  const effectiveSchedule = worksiteId
+    ? applyOverridesToSchedule(scheduleRows, overrideRows)
+    : scheduleRows
+  return { scheduleRows: effectiveSchedule, executionRows }
 }
