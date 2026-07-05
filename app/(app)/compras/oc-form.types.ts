@@ -26,6 +26,7 @@ export interface PendingItemOption {
   supplierPrices:      Record<string, number>
   suggestedSupplierId?: string | null
   supplierHint?:        string | null
+  deliveryMode:        "via_oficina" | "directo_faena"
 }
 
 export interface OcItemRow extends PendingItemOption {

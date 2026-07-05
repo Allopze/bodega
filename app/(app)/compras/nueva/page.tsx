@@ -59,7 +59,10 @@ export default async function NuevaOcPage({
 
   const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites] = await Promise.all([
     db
-      .select({ id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId })
+      .select({
+        id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId,
+        deliveryMode: purchaseRequests.deliveryMode,
+      })
       .from(purchaseRequests)
       .where(inArray(purchaseRequests.id, requestIds)),
 
@@ -130,6 +133,7 @@ export default async function NuevaOcPage({
         supplierPrices:  item.productId ? (supplierPriceMap[item.productId] ?? {}) : {},
         suggestedSupplierId: item.suggestedSupplierId,
         supplierHint:        item.supplierHint,
+        deliveryMode:    req.deliveryMode as "via_oficina" | "directo_faena",
       }]
     })
 

@@ -87,15 +87,33 @@ export function useOcForm({
     ? pendingItems.filter((i) => i.worksiteId === worksiteId)
     : pendingItems
 
+  // The OC creation guard rejects mixing via_oficina and directo_faena items in
+  // the same order, so when a faena has pending items in both modes, the picker
+  // must work one mode at a time instead of allowing a mixed selection that
+  // only fails once the user submits.
+  const worksiteModes = React.useMemo(
+    () => [...new Set(filteredByWorksite.map((i) => i.deliveryMode))],
+    [filteredByWorksite],
+  )
+  const [modeFilter, setModeFilter] = React.useState<PendingItemOption["deliveryMode"] | null>(null)
+  React.useEffect(() => {
+    if (worksiteModes.length <= 1) { setModeFilter(null); return }
+    if (!modeFilter || !worksiteModes.includes(modeFilter)) setModeFilter(worksiteModes[0]!)
+  }, [worksiteModes, modeFilter])
+
+  const filteredByMode = modeFilter
+    ? filteredByWorksite.filter((i) => i.deliveryMode === modeFilter)
+    : filteredByWorksite
+
   // Client-side text search across product name, SKU, and request code
   const normalizedSearch = search.trim().toLowerCase()
   const filteredItems = normalizedSearch
-    ? filteredByWorksite.filter((i) =>
+    ? filteredByMode.filter((i) =>
         i.productName.toLowerCase().includes(normalizedSearch) ||
         (i.productSku ?? "").toLowerCase().includes(normalizedSearch) ||
         i.requestCode.toLowerCase().includes(normalizedSearch)
       )
-    : filteredByWorksite
+    : filteredByMode
 
   // Auto-select suggested supplier if all filtered items share the same suggestedSupplierId
   React.useEffect(() => {
@@ -117,6 +135,14 @@ export function useOcForm({
       })
     }
   }, [filteredItems, supplierId, suppliers])
+
+  // A tab switch changes which items are selectable; clear the selection
+  // instead of carrying over ids from the other mode (they'd fail the
+  // mixing guard on submit anyway).
+  function handleModeChange(mode: string) {
+    setModeFilter(mode as PendingItemOption["deliveryMode"])
+    setSelectedItems(new Set())
+  }
 
   function toggleItem(itemId: string) {
     const shouldSelect = !selectedItems.has(itemId)
@@ -176,17 +202,17 @@ export function useOcForm({
   return {
     // State
     supplierId, worksiteId, paymentTerms, estDelivery, address, notes,
-    selectedItems, unitPrices, discounts, search, state,
+    selectedItems, unitPrices, discounts, search, state, modeFilter,
     // Setters
     setPaymentTerms, setEstDelivery, setAddress, setNotes,
     setWorksiteId, setSearch, setSupplierId,
     // Derived
-    filteredByWorksite, filteredItems, includedItems, totals, supplierGroupCount, itemsJson,
+    filteredByWorksite, filteredItems, worksiteModes, includedItems, totals, supplierGroupCount, itemsJson,
     // Handlers
     handleSupplierChange, onSupplierValueChange,
     setDefaultPriceForItem,
     itemPrice, itemDiscount, setItemPrice, setItemDiscount,
-    toggleItem, toggleAll,
+    toggleItem, toggleAll, handleModeChange,
     // Props passthrough
     action, suppliers, worksites, pendingItems,
   }

@@ -5,9 +5,15 @@ import { Package, MagnifyingGlass } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatQty, formatCLP } from "@/lib/utils"
 import { priceHint, suggestedSupplierLabel, itemSupplierId } from "./oc-form.helpers"
 import type { SupplierOption, PendingItemOption } from "./oc-form.types"
+
+const MODE_LABELS: Record<string, string> = {
+  via_oficina:   "Vía oficina",
+  directo_faena: "Directo a faena",
+}
 
 interface OcFormItemsProps {
   filteredItems:      PendingItemOption[]
@@ -17,6 +23,9 @@ interface OcFormItemsProps {
   suppliers:          SupplierOption[]
   worksiteId:         string
   search:             string
+  worksiteModes:      string[]
+  modeFilter:         string | null
+  onModeChange:       (mode: string) => void
   onToggle:           (itemId: string) => void
   onToggleAll:        () => void
   onSearchChange:     (value: string) => void
@@ -28,7 +37,7 @@ interface OcFormItemsProps {
 
 export function OcFormItems({
   filteredItems, filteredByWorksite, selectedItems, supplierId, suppliers,
-  worksiteId, search, onToggle, onToggleAll, onSearchChange,
+  worksiteId, search, worksiteModes, modeFilter, onModeChange, onToggle, onToggleAll, onSearchChange,
   itemPrice, itemDiscount, setItemPrice, setItemDiscount,
 }: OcFormItemsProps) {
   return (
@@ -43,6 +52,23 @@ export function OcFormItems({
           </Button>
         )}
       </div>
+
+      {/* This faena has pending items in more than one modo de despacho — the OC
+          guard rejects mixing them, so the picker works one mode at a time. */}
+      {worksiteModes.length > 1 && modeFilter && (
+        <Tabs value={modeFilter} onValueChange={onModeChange}>
+          <TabsList>
+            {worksiteModes.map((mode) => {
+              const modeCount = filteredByWorksite.filter((i) => i.deliveryMode === mode).length
+              return (
+                <TabsTrigger key={mode} value={mode}>
+                  {MODE_LABELS[mode] ?? mode} ({modeCount})
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+        </Tabs>
+      )}
 
       {filteredByWorksite.length > 10 && (
         <div className="relative">

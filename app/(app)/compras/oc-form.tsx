@@ -113,6 +113,9 @@ export function OcForm({
           suppliers={f.suppliers}
           worksiteId={f.worksiteId}
           search={f.search}
+          worksiteModes={f.worksiteModes}
+          modeFilter={f.modeFilter}
+          onModeChange={f.handleModeChange}
           onToggle={f.toggleItem}
           onToggleAll={f.toggleAll}
           onSearchChange={f.setSearch}
