@@ -58,6 +58,7 @@ export interface ApprovalRequest {
   requesterName:   string
   requestUrgency:  string
   submittedAt:     string | null
+  deliveryMode:    "via_oficina" | "directo_faena"
   pendingItems:    ApprovalItem[]
   pendingCount:    number
 }

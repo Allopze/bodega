@@ -91,6 +91,7 @@ export default async function AprobacionesPage({
       status:       purchaseRequests.status,
       requesterId:  purchaseRequests.requesterId,
       submittedAt:  purchaseRequests.submittedAt,
+      deliveryMode: purchaseRequests.deliveryMode,
     })
     .from(purchaseRequests)
     .where(requestFilter)
@@ -237,6 +238,7 @@ export default async function AprobacionesPage({
         requesterName:  userMap[r.requesterId] ?? r.requesterId,
         requestUrgency: r.urgency,
         submittedAt:    r.submittedAt,
+        deliveryMode:   r.deliveryMode as "via_oficina" | "directo_faena",
         pendingItems:   mappedItems,
         pendingCount:   mappedItems.length,
       }

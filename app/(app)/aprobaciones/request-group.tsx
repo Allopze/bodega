@@ -1,18 +1,27 @@
 "use client"
 
 import * as React from "react"
+import { useActionState } from "react"
 import { CaretDown } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { formatDate } from "@/lib/utils"
+import { toast } from "@/lib/toast"
 import { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "./types"
 import type { ApprovalRequest } from "./types"
 import { ItemRow } from "./item-row"
 import { useBulkApproveAction } from "./use-approval-actions"
+import { updateDeliveryModeAction } from "./actions"
+import { INITIAL_STATE } from "@/components/admin/form-state"
 
 export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequest; canApproveEpp: boolean }) {
   const [collapsed, setCollapsed] = React.useState(false)
   const { bulkState, bulkAction } = useBulkApproveAction()
+  const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
+
+  React.useEffect(() => {
+    if (modeState.message && !modeState.ok) toast.error(modeState.message)
+  }, [modeState])
 
   const pendingIds = request.pendingItems.map((i) => i.id).join(",")
   const allApproved = bulkState.ok === true
@@ -55,6 +64,23 @@ export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequ
           <span className="text-xs font-medium text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)] rounded-full px-2 py-0.5">
             {request.pendingCount} pendiente{request.pendingCount !== 1 ? "s" : ""}
           </span>
+
+          {canApproveEpp && (
+            <form action={modeAction} className="flex items-center gap-1">
+              <input type="hidden" name="requestId" value={request.id} />
+              <label className="sr-only" htmlFor={`mode-${request.id}`}>Modo de despacho</label>
+              <select
+                id={`mode-${request.id}`}
+                name="mode"
+                defaultValue={request.deliveryMode}
+                onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
+              >
+                <option value="via_oficina">Vía oficina</option>
+                <option value="directo_faena">Directo a faena</option>
+              </select>
+            </form>
+          )}
 
           {!allApproved && canApproveThisRequest && (
             <form action={bulkAction}>
