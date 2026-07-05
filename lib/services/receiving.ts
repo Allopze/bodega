@@ -67,7 +67,11 @@ export async function registerReceipt(
     if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
       throw new Error(`Cannot receive against order in state '${order.status}'`)
     }
-    if (input.stage === "faena" && order.status === "sent") {
+    const directFaena = order.deliveryMode === "directo_faena"
+    if (directFaena && input.stage === "office") {
+      throw new Error("Esta OC es de despacho directo a faena; no registra llegada a oficina")
+    }
+    if (!directFaena && input.stage === "faena" && order.status === "sent") {
       throw new Error("Debes registrar primero la llegada a oficina antes de recibir en faena")
     }
 
@@ -104,14 +108,16 @@ export async function registerReceipt(
         throw new Error(`OC item ${ri.purchaseOrderItemId} not in this order`)
       }
 
-      // Office stage caps at the ordered quantity; faena stage caps STRICTLY at what already
-      // arrived at office (no fallback to the full quantity → the direct-to-faena path is closed).
+      // Office stage caps at the ordered quantity; faena stage caps at what already arrived at
+      // office for via_oficina OCs, or directly at the ordered quantity for directo_faena OCs.
       const currentReceived = input.stage === "office"
         ? (lockedOcItem.quantityOfficeReceived ?? 0)
         : (lockedOcItem.quantityReceived ?? 0)
       const remaining = input.stage === "office"
         ? lockedOcItem.quantity - (lockedOcItem.quantityOfficeReceived ?? 0)
-        : (lockedOcItem.quantityOfficeReceived ?? 0) - (lockedOcItem.quantityReceived ?? 0)
+        : directFaena
+          ? lockedOcItem.quantity - (lockedOcItem.quantityReceived ?? 0)
+          : (lockedOcItem.quantityOfficeReceived ?? 0) - (lockedOcItem.quantityReceived ?? 0)
 
       if (!Number.isFinite(qtyRec) || qtyRec <= 0) {
         throw new Error("Received quantity must be greater than 0")
@@ -165,7 +171,7 @@ export async function registerReceipt(
       }
     }
 
-    await rollupOrderReceiptStatus(input.purchaseOrderId, tx)
+    await rollupOrderReceiptStatus(input.purchaseOrderId, tx, order.deliveryMode)
 
     await recordAudit({
       userId:     input.receivedBy,
@@ -195,6 +201,7 @@ export async function registerReceipt(
 async function rollupOrderReceiptStatus(
   orderId: string,
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  deliveryMode: string,
 ): Promise<void> {
   const ocItems = await tx
     .select({
@@ -207,20 +214,30 @@ async function rollupOrderReceiptStatus(
 
   if (ocItems.length === 0) return
 
-  // Deterministic rollup from item quantities. Office is always first, so the
-  // invariant quantityReceived ≤ quantityOfficeReceived ≤ quantity holds, giving a
-  // monotonic chain: sent → partially_office_received → office_received → partially_received → received.
+  // Deterministic rollup from item quantities. For via_oficina OCs office is always
+  // first, so the invariant quantityReceived ≤ quantityOfficeReceived ≤ quantity holds,
+  // giving a monotonic chain: sent → partially_office_received → office_received →
+  // partially_received → received. directo_faena OCs skip office entirely and derive
+  // status from faena quantities alone.
   const allFaena  = ocItems.every((i) => (i.quantityReceived       ?? 0) >= i.quantity)
   const anyFaena  = ocItems.some( (i) => (i.quantityReceived       ?? 0) > 0)
-  const allOffice = ocItems.every((i) => (i.quantityOfficeReceived ?? 0) >= i.quantity)
-  const anyOffice = ocItems.some( (i) => (i.quantityOfficeReceived ?? 0) > 0)
 
   let newStatus: string
-  if (allFaena)        newStatus = "received"
-  else if (anyFaena)   newStatus = "partially_received"
-  else if (allOffice)  newStatus = "office_received"
-  else if (anyOffice)  newStatus = "partially_office_received"
-  else return
+  if (deliveryMode === "directo_faena") {
+    // Direct-to-faena OCs never pass through the office checkpoint; status is
+    // derived purely from faena-received quantities.
+    if (allFaena)      newStatus = "received"
+    else if (anyFaena) newStatus = "partially_received"
+    else return
+  } else {
+    const allOffice = ocItems.every((i) => (i.quantityOfficeReceived ?? 0) >= i.quantity)
+    const anyOffice = ocItems.some( (i) => (i.quantityOfficeReceived ?? 0) > 0)
+    if (allFaena)        newStatus = "received"
+    else if (anyFaena)   newStatus = "partially_received"
+    else if (allOffice)  newStatus = "office_received"
+    else if (anyOffice)  newStatus = "partially_office_received"
+    else return
+  }
 
   const now = new Date().toISOString()
   await tx

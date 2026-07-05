@@ -56,12 +56,15 @@ afterAll(async () => pg.close())
 
 let ocCounter = 0
 /** Creates a fresh "sent" OC with the given item quantities; returns { orderId, itemIds }. */
-async function makeOrder(quantities: number[]): Promise<{ orderId: string; itemIds: string[] }> {
+async function makeOrder(
+  quantities: number[],
+  deliveryMode: "via_oficina" | "directo_faena" = "via_oficina",
+): Promise<{ orderId: string; itemIds: string[] }> {
   const orderId = `oc-${++ocCounter}`
   const now = new Date().toISOString()
   await inMemoryDb.insert(schema.purchaseOrders).values({
     id: orderId, code: `OC-TEST-${ocCounter}`, worksiteId: WS_ID, supplierId: SUP_ID,
-    createdBy: USER_ID, status: "sent", createdAt: now, updatedAt: now,
+    createdBy: USER_ID, status: "sent", deliveryMode, createdAt: now, updatedAt: now,
   })
   const itemIds: string[] = []
   for (let i = 0; i < quantities.length; i++) {
@@ -175,5 +178,41 @@ describe("two-stage receiving gating", () => {
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
       items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 11 }],
     })).rejects.toThrow(/exceeds pending/i)
+  })
+})
+
+describe("direct-to-faena receiving", () => {
+  it("faena reception on a 'sent' directo_faena OC is accepted (no office needed)", async () => {
+    const { orderId, itemIds } = await makeOrder([10], "directo_faena")
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 4 }],
+    })
+    expect(await status(orderId)).toBe("partially_received")
+  })
+
+  it("full faena reception on directo_faena → received", async () => {
+    const { orderId, itemIds } = await makeOrder([10], "directo_faena")
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
+    })
+    expect(await status(orderId)).toBe("received")
+  })
+
+  it("faena reception caps at ordered quantity (not at office)", async () => {
+    const { orderId, itemIds } = await makeOrder([10], "directo_faena")
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 11 }],
+    })).rejects.toThrow(/exceeds pending/i)
+  })
+
+  it("office reception on a directo_faena OC is rejected", async () => {
+    const { orderId, itemIds } = await makeOrder([10], "directo_faena")
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 }],
+    })).rejects.toThrow(/directo a faena/i)
   })
 })
