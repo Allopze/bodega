@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { markPdtpExecutionFormAction } from "./actions"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -61,29 +62,37 @@ export function PdtpExecutionForm({ activityId, worksiteId, defaultMonth, defaul
       <input type="hidden" name="year" value="2026" />
       <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
         Mes
-        <select
-          name="month"
-          defaultValue={String(defaultMonth ?? 1)}
-          className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-          aria-invalid={!!state?.fieldErrors?.month}
-        >
-          {MONTH_LABELS.map((label, index) => (
-            <option key={label} value={index + 1}>{label}</option>
-          ))}
-        </select>
+        <Select name="month" defaultValue={String(defaultMonth ?? 1)}>
+          <SelectTrigger
+            className="h-8 w-24 text-sm"
+            error={!!state?.fieldErrors?.month}
+            aria-invalid={!!state?.fieldErrors?.month}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MONTH_LABELS.map((label, index) => (
+              <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </label>
       <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
         Semana
-        <select
-          name="week"
-          defaultValue={String(defaultWeek ?? 1)}
-          className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-          aria-invalid={!!state?.fieldErrors?.week}
-        >
-          {[1, 2, 3, 4].map((week) => (
-            <option key={week} value={week}>{week}</option>
-          ))}
-        </select>
+        <Select name="week" defaultValue={String(defaultWeek ?? 1)}>
+          <SelectTrigger
+            className="h-8 w-16 text-sm"
+            error={!!state?.fieldErrors?.week}
+            aria-invalid={!!state?.fieldErrors?.week}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[1, 2, 3, 4].map((week) => (
+              <SelectItem key={week} value={String(week)}>{week}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </label>
       <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
         Cantidad

@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -78,27 +79,29 @@ export function PdtpOverrideForm(props: Props) {
           <div className="grid grid-cols-3 gap-3">
             <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
               Mes
-              <select
-                name="month"
-                defaultValue={String(defaultMonth)}
-                className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-              >
-                {MONTH_LABELS.map((label, index) => (
-                  <option key={label} value={index + 1}>{label}</option>
-                ))}
-              </select>
+              <Select name="month" defaultValue={String(defaultMonth)}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MONTH_LABELS.map((label, index) => (
+                    <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </label>
             <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
               Semana
-              <select
-                name="week"
-                defaultValue={String(defaultWeek)}
-                className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-              >
-                {[1, 2, 3, 4].map((week) => (
-                  <option key={week} value={week}>{week}</option>
-                ))}
-              </select>
+              <Select name="week" defaultValue={String(defaultWeek)}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4].map((week) => (
+                    <SelectItem key={week} value={String(week)}>{week}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </label>
             <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
               Cantidad

@@ -4,6 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { CaretDown } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { formatDate } from "@/lib/utils"
 import { toast } from "@/lib/toast"
@@ -18,8 +19,9 @@ export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequ
   const [collapsed, setCollapsed] = React.useState(false)
   const { bulkState, bulkAction } = useBulkApproveAction()
   const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
+  const modeFormRef = React.useRef<HTMLFormElement>(null)
   // Controlled value: React 19 auto-resets *uncontrolled* form fields after a successful
-  // action, which would snap an uncontrolled <select> back to its (stale) defaultValue.
+  // action, which would snap an uncontrolled select back to its (stale) defaultValue.
   // Seeding local state keeps the picked value visible; revert to server truth on failure.
   const [mode, setMode] = React.useState(request.deliveryMode)
 
@@ -73,22 +75,28 @@ export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequ
           </span>
 
           {canApproveEpp && (
-            <form action={modeAction} className="flex items-center gap-1">
+            <form ref={modeFormRef} action={modeAction} className="flex items-center gap-1">
               <input type="hidden" name="requestId" value={request.id} />
-              <label className="sr-only" htmlFor={`mode-${request.id}`}>Modo de despacho</label>
-              <select
-                id={`mode-${request.id}`}
+              <Select
                 name="mode"
                 value={mode}
-                onChange={(e) => {
-                  setMode(e.currentTarget.value as ApprovalRequest["deliveryMode"])
-                  e.currentTarget.form?.requestSubmit()
+                onValueChange={(value) => {
+                  setMode(value as ApprovalRequest["deliveryMode"])
+                  modeFormRef.current?.requestSubmit()
                 }}
-                className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
               >
-                <option value="via_oficina">Vía oficina</option>
-                <option value="directo_faena">Directo a faena</option>
-              </select>
+                <SelectTrigger
+                  id={`mode-${request.id}`}
+                  aria-label="Modo de despacho"
+                  className="h-7 w-[9.5rem] px-2 text-xs"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="via_oficina">Vía oficina</SelectItem>
+                  <SelectItem value="directo_faena">Directo a faena</SelectItem>
+                </SelectContent>
+              </Select>
             </form>
           )}
 

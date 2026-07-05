@@ -114,10 +114,12 @@ describe("PdtpSheetTable — weekly filter", () => {
       />,
     )
 
-    const monthSelect = screen.getByLabelText("Mes") as HTMLSelectElement
-    const weekSelect = screen.getByLabelText("Semana") as HTMLSelectElement
-    expect(monthSelect.value).toBe(String(CURRENT_PERIOD.month))
-    expect(weekSelect.value).toBe(String(CURRENT_PERIOD.week))
+    // Month/week are Radix Selects now (not native <select>): the trigger has no
+    // `.value`, so assert the displayed label instead of a DOM select value.
+    const monthTrigger = screen.getByLabelText("Mes")
+    const weekTrigger = screen.getByLabelText("Semana")
+    expect(monthTrigger.textContent).toBe("Jul")
+    expect(weekTrigger.textContent).toBe(String(CURRENT_PERIOD.week))
   })
 
   it("annual mode shows every activity, including ones with nothing planned this month", () => {
