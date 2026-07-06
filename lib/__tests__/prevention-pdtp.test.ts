@@ -364,7 +364,8 @@ describe("prevention PDTP service", () => {
     await signPdtpProgramLegal(v1.id, "user-1")
     await activatePdtpProgram(v1.id, "user-1")
 
-    // v2 → also activated → v1 should be draft
+    // v2 → also activated → v1 should be closed (it was executed, not
+    // reopened as draft — see activatePdtpProgram in lib/services/pdtp/lifecycle.ts)
     const { program: v2 } = await loadPdtpCatalog({ year: 2026, version: 2, title: "v2", catalog, userId: "user-1" })
     await approvePdtpProgramJdpr(v2.id, "user-1")
     await signPdtpProgramLegal(v2.id, "user-1")
@@ -374,7 +375,7 @@ describe("prevention PDTP service", () => {
     expect(active?.id).toBe(v2.id)
 
     const [v1Row] = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.id, v1.id))
-    expect(v1Row?.status).toBe("draft")
+    expect(v1Row?.status).toBe("closed")
   })
 
   it("lifecycle transitions write change log entries", async () => {
@@ -444,7 +445,7 @@ describe("prevention PDTP service", () => {
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(exec3.id, "user-1", ["ws-1"])
 
-    const all = await listPendingPdtpExecutions(2026, "all")
+    const all = await listPendingPdtpExecutions("all", { year: 2026 })
     expect(all).toHaveLength(2)
     expect(all.map((e) => e.worksiteId).sort()).toEqual(["ws-1", "ws-2"])
     const row1 = all.find((e) => e.worksiteId === "ws-1")
@@ -453,11 +454,11 @@ describe("prevention PDTP service", () => {
     expect(row1?.activityName).toBe(act1!.activity)
     expect(row1?.activityN).toBe(1)
 
-    const scopedToA = await listPendingPdtpExecutions(2026, ["ws-1"])
+    const scopedToA = await listPendingPdtpExecutions(["ws-1"], { year: 2026 })
     expect(scopedToA).toHaveLength(1)
     expect(scopedToA[0]?.worksiteId).toBe("ws-1")
 
-    const scopedToNone = await listPendingPdtpExecutions(2026, [])
+    const scopedToNone = await listPendingPdtpExecutions([], { year: 2026 })
     expect(scopedToNone).toHaveLength(0)
   })
 

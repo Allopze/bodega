@@ -105,7 +105,7 @@ export async function loadPdtpComplianceSummary(worksiteIds: string[] | "all") {
   const targetWorksiteId = worksiteIds === "all" ? undefined : worksiteIds[0]
   const indicators = await getPdtpComplianceIndicators(period.year, targetWorksiteId)
   if (!indicators) return null
-  const pending = await listPendingPdtpExecutions(period.year, worksiteIds)
+  const pending = await listPendingPdtpExecutions(worksiteIds, { year: period.year })
   return {
     year: period.year,
     worksiteId: targetWorksiteId,

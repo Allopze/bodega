@@ -1,6 +1,6 @@
 {
-  "id": "71afec73-eb1e-45a5-b04b-419896e378ca",
-  "prevId": "7ca1415d-d69a-4600-9132-2d2aeb3a0a02",
+  "id": "44ebc160-5d3a-4314-9e79-f37d3a66f29f",
+  "prevId": "71afec73-eb1e-45a5-b04b-419896e378ca",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8185,6 +8185,10 @@
         "pdtp_programs_compliance_target_check": {
           "name": "pdtp_programs_compliance_target_check",
           "value": "\"pdtp_programs\".\"compliance_target\" >= 0 AND \"pdtp_programs\".\"compliance_target\" <= 1"
+        },
+        "pdtp_programs_year_check": {
+          "name": "pdtp_programs_year_check",
+          "value": "\"pdtp_programs\".\"year\" BETWEEN 2024 AND 2100"
         }
       },
       "isRLSEnabled": false
@@ -8442,7 +8446,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },

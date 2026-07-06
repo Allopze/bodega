@@ -117,16 +117,17 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove
                             <PdtpExecutionForm
                               activityId={activity.id}
                               worksiteId={worksiteId}
-                              year={currentPeriod.year}
+                              year={view.program.year}
                               defaultMonth={currentPeriod.month}
                               defaultWeek={currentPeriod.week}
                             />
                             <PdtpOverrideForm
+                              programId={view.program.id}
                               activityId={activity.id}
                               activityN={activity.n}
                               activityName={activity.activity}
                               worksiteId={worksiteId}
-                              year={currentPeriod.year}
+                              year={view.program.year}
                               defaultMonth={currentPeriod.month}
                               defaultWeek={currentPeriod.week}
                               globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}
@@ -218,13 +219,14 @@ export function PdtpSheetTable({ view, worksiteId, canManage = false, canApprove
                     {canManage && worksiteId && (
                       <TableCell>
                         <div className="space-y-2">
-                          <PdtpExecutionForm activityId={activity.id} worksiteId={worksiteId} year={currentPeriod.year} />
+                          <PdtpExecutionForm activityId={activity.id} worksiteId={worksiteId} year={view.program.year} />
                           <PdtpOverrideForm
+                            programId={view.program.id}
                             activityId={activity.id}
                             activityN={activity.n}
                             activityName={activity.activity}
                             worksiteId={worksiteId}
-                            year={currentPeriod.year}
+                            year={view.program.year}
                             defaultMonth={currentPeriod.month}
                             defaultWeek={currentPeriod.week}
                             globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}

@@ -176,6 +176,13 @@
       "when": 1783296422392,
       "tag": "0024_strong_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783301451478,
+      "tag": "0025_fast_cammi",
+      "breakpoints": true
     }
   ]
 }

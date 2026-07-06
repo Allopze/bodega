@@ -18,6 +18,7 @@ import { setPdtpActivityOverrideFormAction } from "./actions"
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 type Props = {
+  programId: string
   activityId: string
   activityN: number
   activityName: string
@@ -39,7 +40,7 @@ type Props = {
  * y se vuelve al plan global.
  */
 export function PdtpOverrideForm(props: Props) {
-  const { activityId, activityN, activityName, worksiteId, year, defaultMonth, defaultWeek, currentOverride, globalQuantity, hoja } = props
+  const { programId, activityId, activityN, activityName, worksiteId, year, defaultMonth, defaultWeek, currentOverride, globalQuantity, hoja } = props
   const initial = currentOverride ?? 0
   const [open, setOpen] = React.useState(false)
 
@@ -70,6 +71,7 @@ export function PdtpOverrideForm(props: Props) {
           }}
           className="space-y-3"
         >
+          <input type="hidden" name="programId" value={programId} />
           <input type="hidden" name="activityId" value={activityId} />
           <input type="hidden" name="worksiteId" value={worksiteId} />
           <input type="hidden" name="year" value={year} />

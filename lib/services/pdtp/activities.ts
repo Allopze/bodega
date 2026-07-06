@@ -1,7 +1,41 @@
-import { and, eq, isNull, or, sql } from "drizzle-orm"
+import { and, eq, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
-import { addPdtpChangeLogEntry, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
+import { pdtpActivities, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities } from "@/db/schema"
+import { addPdtpChangeLogEntry, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
+
+/** Todas las actividades de un programa, ordenadas por N°. Para el tab
+ * "Actividades" del builder — no está scoped a una hoja como
+ * getPdtpSheetViewByProgram. */
+export async function listPdtpProgramActivities(programId: string) {
+  return db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId)).orderBy(pdtpActivities.n)
+}
+
+export type PdtpObjectiveRenameInput = { programId: string; objectiveOrder: number; objective: string }
+
+/** El objetivo (texto) es compartido por todas las actividades de un mismo
+ * `objectiveOrder` (1-8) — no hay tabla `pdtp_objectives` separada. "Editar
+ * el objetivo N" es entonces una actualización masiva sobre ese grupo, no
+ * un campo de `updatePdtpActivity` (que edita una sola actividad). */
+export async function renamePdtpObjective(input: PdtpObjectiveRenameInput, userId: string) {
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "draft") throw new Error("Solo se pueden editar objetivos de programas en estado borrador (draft).")
+
+  const now = new Date().toISOString()
+  const updated = await db.update(pdtpActivities)
+    .set({ objective: input.objective, updatedAt: now })
+    .where(and(eq(pdtpActivities.programId, input.programId), eq(pdtpActivities.objectiveOrder, input.objectiveOrder)))
+    .returning({ id: pdtpActivities.id })
+
+  if (updated.length > 0) {
+    await addPdtpChangeLogEntry(
+      input.programId, program.version, userId, `objective:${input.objectiveOrder}`,
+      null, { objective: input.objective },
+      `Objetivo ${input.objectiveOrder} renombrado (${updated.length} actividad(es) afectadas).`,
+    )
+  }
+  return { updatedCount: updated.length }
+}
 
 export type PdtpActivityUpdateInput = {
   activityId: string
@@ -62,6 +96,16 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
 
   if (input.scheduleOverrides && input.scheduleOverrides.length > 0) {
     before.scheduleOverrides = "see after"; after.scheduleOverrides = input.scheduleOverrides
+    // El set entrante es autoritativo para el año del programa: borra
+    // celdas existentes que ya no aparecen (semana quitada en la UI) antes
+    // de upsertear las que sí. Antes esto solo insertaba/actualizaba y
+    // dejaba cantidades planificadas obsoletas en la DB.
+    const keptIds = input.scheduleOverrides.map((cell) => pdtpScheduleId(input.activityId, program.year, cell.month, cell.week))
+    await db.delete(pdtpActivitySchedule).where(and(
+      eq(pdtpActivitySchedule.activityId, input.activityId),
+      eq(pdtpActivitySchedule.year, program.year),
+      notInArray(pdtpActivitySchedule.id, keptIds),
+    ))
     for (const cell of input.scheduleOverrides) {
       await db.insert(pdtpActivitySchedule).values({
         id: pdtpScheduleId(input.activityId, program.year, cell.month, cell.week),
@@ -109,12 +153,7 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   }
 
   for (const sheetCode of input.sheetCodes) {
-    const [sheet] = await db.select().from(pdtpSheets)
-      .where(and(
-        eq(pdtpSheets.code, sheetCode),
-        or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, input.programId)),
-      ))
-      .limit(1)
+    const sheet = await resolveSheetForProgram(input.programId, sheetCode)
     if (!sheet) throw new Error(`Hoja PDTP no encontrada: ${sheetCode}.`)
 
     const [{ maxOrder } = { maxOrder: 0 }] = await db
@@ -156,11 +195,25 @@ export async function reorderPdtpActivities(programId: string, orderedIds: strin
   }
 
   const now = new Date().toISOString()
-  for (let i = 0; i < orderedIds.length; i++) {
-    await db.update(pdtpActivities)
-      .set({ n: i + 1, updatedAt: now })
-      .where(eq(pdtpActivities.id, orderedIds[i]!))
-  }
+  // `n` está bajo unique(programId, n) y check(n >= 1): renumerar en el
+  // sitio puede chocar a mitad de camino (ej. swap 1<->2 pone n=1 en dos
+  // filas) y un offset negativo violaría el check. Pasada 1 corre todo a
+  // un rango alto que ningún programa real alcanza (fuera del unique
+  // vigente), pasada 2 fija el n final — ambas en una transacción para que
+  // un fallo a mitad no deje el programa parcialmente renumerado.
+  const TEMP_N_OFFSET = 1_000_000
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await tx.update(pdtpActivities)
+        .set({ n: TEMP_N_OFFSET + i })
+        .where(eq(pdtpActivities.id, orderedIds[i]!))
+    }
+    for (let i = 0; i < orderedIds.length; i++) {
+      await tx.update(pdtpActivities)
+        .set({ n: i + 1, updatedAt: now })
+        .where(eq(pdtpActivities.id, orderedIds[i]!))
+    }
+  })
 
   await addPdtpChangeLogEntry(programId, program.version, userId, "activity:reorder", null, { orderedIds }, "Actividades reordenadas.")
 }

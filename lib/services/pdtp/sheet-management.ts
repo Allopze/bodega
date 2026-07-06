@@ -1,12 +1,23 @@
 import { and, eq, isNull, or } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpSheets } from "@/db/schema"
+import { pdtpPrograms, pdtpSheets } from "@/db/schema"
 
 export type PdtpSheetCreateInput = {
   programId: string; code: string; label: string; area: string
 }
 
+async function assertDraftProgram(programId: string): Promise<void> {
+  const [program] = await db.select({ status: pdtpPrograms.status }).from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "draft") throw new Error("Solo se pueden gestionar hojas de programas en estado borrador (draft).")
+}
+
 export async function createPdtpSheet(input: PdtpSheetCreateInput) {
+  // Antes no validaba que el programa existiera ni que estuviera en draft:
+  // se podían agregar hojas a un programa activo/cerrado, saltándose el
+  // mismo gate que el resto del módulo (actividades, overrides) respeta.
+  await assertDraftProgram(input.programId)
+
   const id = `${input.programId}-${input.code}`
   const [existing] = await db.select().from(pdtpSheets).where(eq(pdtpSheets.id, id)).limit(1)
   if (existing) throw new Error(`Ya existe una hoja con el código "${input.code}" en este programa.`)
@@ -24,6 +35,8 @@ export async function createPdtpSheet(input: PdtpSheetCreateInput) {
 }
 
 export async function deletePdtpSheet(sheetId: string, programId: string) {
+  await assertDraftProgram(programId)
+
   const [sheet] = await db.select().from(pdtpSheets).where(and(
     eq(pdtpSheets.id, sheetId),
     eq(pdtpSheets.programId, programId),

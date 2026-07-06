@@ -7,6 +7,9 @@ export type PdtpComplianceMonth = {
   month: number
   planned: number
   executed: number
+  /** Fracción 0-1 (no 0-100): se compara directo contra `complianceTarget`,
+   * que también es fracción. Distinto de `PdtpSheetView.monthlyTotals[].percent`
+   * (entero 0-100) — no mezclar los dos sin convertir. */
   percent: number | null
 }
 

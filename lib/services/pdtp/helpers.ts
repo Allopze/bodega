@@ -1,11 +1,16 @@
-import { and, eq, inArray } from "drizzle-orm"
-import { db } from "@/db"
-import { pdtpActivitySchedule, pdtpChangeLog, pdtpExecutions } from "@/db/schema"
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm"
+import { db, type Tx } from "@/db"
+import { pdtpActivitySchedule, pdtpChangeLog, pdtpExecutions, pdtpSheets } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { ROLE_RESPONSIBLE_SLUGS } from "./constants"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 
 export type WorksiteScope = string[] | "all"
+
+/** Código de error Postgres 23505 = unique_violation (driver `postgres`). */
+export function isUniqueViolation(e: unknown): boolean {
+  return typeof e === "object" && e !== null && "code" in e && (e as { code?: string }).code === "23505"
+}
 
 export function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
   if (scope === "all") return
@@ -41,6 +46,28 @@ export function pdtpProgramId(year: number, version: number) {
   return `pdtp-${year}-v${version}`
 }
 
+/**
+ * Resuelve la hoja PDTP (template o program-scoped) para un código dado.
+ * Un código puede tener dos filas: una plantilla global (`program_id
+ * NULL`, del seed) y una program-scoped (`program_id = programId`, creada
+ * por `createPdtpProgram`/`importPdtpFromExcel`). Sin este orden explícito,
+ * `.limit(1)` sobre ambas filas elige de forma arbitraria y puede devolver
+ * la plantilla — cuyas membresías (`pdtp_sheet_activities`) no incluyen las
+ * actividades de este programa — dando una vista vacía en silencio.
+ * Preferimos siempre la hoja program-scoped; caemos a la plantilla solo si
+ * el programa no tiene una copia propia.
+ */
+export async function resolveSheetForProgram(programId: string, sheetCode: string) {
+  const [sheet] = await db.select().from(pdtpSheets)
+    .where(and(
+      eq(pdtpSheets.code, sheetCode),
+      or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, programId)),
+    ))
+    .orderBy(sql`${pdtpSheets.programId} ASC NULLS LAST`)
+    .limit(1)
+  return sheet ?? null
+}
+
 export function pdtpActivityId(programId: string, activityNumber: number) {
   return `${programId}-a-${String(activityNumber).padStart(3, "0")}`
 }
@@ -60,9 +87,10 @@ export function pdtpExecutionId(activityId: string, worksiteId: string, year: nu
 export async function addPdtpChangeLogEntry(
   programId: string, version: number, userId: string | null,
   section: string, before: Record<string, unknown> | null, after: Record<string, unknown> | null, note: string,
+  dbOrTx: Tx | typeof db = db,
 ) {
   const now = new Date().toISOString()
-  await db.insert(pdtpChangeLog).values({
+  await dbOrTx.insert(pdtpChangeLog).values({
     id: nanoid(), programId, version, changedByUserId: userId,
     changedAt: now, section, before, after, note,
   })

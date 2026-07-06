@@ -4,8 +4,12 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Plus, Trash } from "@phosphor-icons/react/dist/ssr"
 import { addPdtpActivityFormAction } from "./actions"
+
+type ResponsibleOption = { slug: string; displayName: string }
+type SheetOption = { code: string; label: string }
 
 /**
  * H-M2: form de "agregar actividad" como Client Component con
@@ -13,6 +17,11 @@ import { addPdtpActivityFormAction } from "./actions"
  * agregar N responsables y N hojas, no solo 1. Envía los valores
  * como `responsibleSlugs[]` y `sheetCodes[]` (array notation) que
  * la Server Action lee con `fd.getAll()`.
+ *
+ * Responsables y hojas se eligen de un Select poblado desde el catálogo
+ * (antes eran `Input` de texto libre: el usuario tenía que escribir el
+ * slug/code interno a mano). Si el catálogo viene vacío (programa nuevo
+ * que nunca importó un Excel), cae a texto libre para no bloquear el uso.
  */
 export function PdtpAddActivityForm({
   programId,
@@ -20,23 +29,27 @@ export function PdtpAddActivityForm({
   faena,
   defaultObjectiveOrder = 1,
   errorMessage,
+  responsibleCatalog = [],
+  sheetOptions = [],
 }: {
   programId: string
   hoja: string
   faena: string
   defaultObjectiveOrder?: number
   errorMessage?: string
+  responsibleCatalog?: ResponsibleOption[]
+  sheetOptions?: SheetOption[]
 }) {
-  const [responsibleSlugs, setResponsibleSlugs] = React.useState<string[]>(["prf"])
-  const [sheetCodes, setSheetCodes] = React.useState<string[]>(["pdtp_general"])
+  const [responsibleSlugs, setResponsibleSlugs] = React.useState<string[]>([responsibleCatalog[0]?.slug ?? "prf"])
+  const [sheetCodes, setSheetCodes] = React.useState<string[]>([sheetOptions[0]?.code ?? "pdtp_general"])
 
-  const addResp = () => setResponsibleSlugs((s) => [...s, ""])
+  const addResp = () => setResponsibleSlugs((s) => [...s, responsibleCatalog[0]?.slug ?? ""])
   const removeResp = (i: number) =>
     setResponsibleSlugs((s) => s.filter((_, idx) => idx !== i))
   const updateResp = (i: number, v: string) =>
     setResponsibleSlugs((s) => s.map((x, idx) => (idx === i ? v : x)))
 
-  const addSheet = () => setSheetCodes((s) => [...s, ""])
+  const addSheet = () => setSheetCodes((s) => [...s, sheetOptions[0]?.code ?? ""])
   const removeSheet = (i: number) =>
     setSheetCodes((s) => s.filter((_, idx) => idx !== i))
   const updateSheet = (i: number, v: string) =>
@@ -111,14 +124,27 @@ export function PdtpAddActivityForm({
           <div className="space-y-1">
             {responsibleSlugs.map((slug, i) => (
               <div key={i} className="flex items-center gap-1">
-                <Input
-                  name="responsibleSlugs[]"
-                  value={slug}
-                  onChange={(e) => updateResp(i, e.target.value)}
-                  placeholder="prf, jt, jdpr, ..."
-                  required
-                  className="h-8"
-                />
+                {responsibleCatalog.length > 0 ? (
+                  <Select name="responsibleSlugs[]" value={slug} onValueChange={(v) => updateResp(i, v)}>
+                    <SelectTrigger className="h-8 flex-1 text-sm">
+                      <SelectValue placeholder="Responsable" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {responsibleCatalog.map((r) => (
+                        <SelectItem key={r.slug} value={r.slug}>{r.displayName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    name="responsibleSlugs[]"
+                    value={slug}
+                    onChange={(e) => updateResp(i, e.target.value)}
+                    placeholder="prf, jt, jdpr, ..."
+                    required
+                    className="h-8"
+                  />
+                )}
                 {responsibleSlugs.length > 1 && (
                   <Button
                     type="button"
@@ -154,14 +180,27 @@ export function PdtpAddActivityForm({
           <div className="space-y-1">
             {sheetCodes.map((code, i) => (
               <div key={i} className="flex items-center gap-1">
-                <Input
-                  name="sheetCodes[]"
-                  value={code}
-                  onChange={(e) => updateSheet(i, e.target.value)}
-                  placeholder="pdtp_general, cphs, ..."
-                  required
-                  className="h-8"
-                />
+                {sheetOptions.length > 0 ? (
+                  <Select name="sheetCodes[]" value={code} onValueChange={(v) => updateSheet(i, v)}>
+                    <SelectTrigger className="h-8 flex-1 text-sm">
+                      <SelectValue placeholder="Hoja" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sheetOptions.map((s) => (
+                        <SelectItem key={s.code} value={s.code}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    name="sheetCodes[]"
+                    value={code}
+                    onChange={(e) => updateSheet(i, e.target.value)}
+                    placeholder="pdtp_general, cphs, ..."
+                    required
+                    className="h-8"
+                  />
+                )}
                 {sheetCodes.length > 1 && (
                   <Button
                     type="button"

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import { ZodError } from "zod"
 import { guardAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
@@ -22,6 +23,7 @@ import {
   deletePdtpProgram as deletePdtpProgramService,
   createPdtpSheet,
   deletePdtpSheet as deletePdtpSheetService,
+  renamePdtpObjective,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
@@ -37,6 +39,7 @@ import {
   pdtpSheetDeleteSchema,
   pdtpActivityDeleteSchema,
   pdtpActivityReorderSchema,
+  pdtpObjectiveRenameSchema,
 } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/pdtp"
@@ -72,6 +75,16 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
+    // pdtp-execution-form.tsx lee state.fieldErrors.month/week/executedQuantity
+    // para marcar los Select/input inválidos — antes nunca se poblaba porque
+    // acá solo se devolvía el mensaje crudo del ZodError, nunca los campos.
+    if (e instanceof ZodError) {
+      return {
+        ok: false,
+        message: "Revisa los campos marcados.",
+        fieldErrors: e.flatten().fieldErrors as Record<string, string[]>,
+      }
+    }
     return { ok: false, message: (e as Error).message }
   }
 }
@@ -194,6 +207,7 @@ export async function addPdtpActivityAction(input: unknown): Promise<ActionState
     const parsed = pdtpActivityAddSchema.parse(input)
     await addPdtpActivity(parsed, session.user.id)
     revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
     return { ok: true }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
@@ -203,13 +217,19 @@ export async function addPdtpActivityAction(input: unknown): Promise<ActionState
 export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<void> {
   const hoja = String(fd.get("hoja") ?? "")
   const faena = String(fd.get("faena") ?? "")
+  const programId = String(fd.get("programId") ?? "")
+  // Bug C: antes esto siempre volvía a la lista (`/prevencion/pdtp`)
+  // ignorando el programId oculto que el form ya envía, y con ≥2 programas
+  // el usuario quedaba varado ahí sin ver el error. Vuelve al detalle del
+  // programa correcto, preservando hoja/faena y el mensaje de error.
+  const detailPath = programId ? `${REVALIDATE}/${programId}` : REVALIDATE
   const backTo = (errorMessage?: string): never => {
     const params = new URLSearchParams()
     if (hoja) params.set("hoja", hoja)
     if (faena) params.set("faena", faena)
     if (errorMessage) params.set("overrideError", errorMessage)
     const qs = params.toString()
-    redirect(qs ? `${REVALIDATE}?${qs}` : REVALIDATE)
+    redirect(qs ? `${detailPath}?${qs}` : detailPath)
   }
 
   const { session, error } = await guardAuth()
@@ -237,6 +257,7 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
     return backTo((e as Error).message)
   }
   revalidatePath(REVALIDATE)
+  if (programId) revalidatePath(detailPath)
   return backTo()
 }
 
@@ -289,6 +310,8 @@ export async function updatePdtpProgramAction(
     })
     await updatePdtpProgram(parsed.programId!, parsed, session.user.id)
     revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
@@ -336,6 +359,7 @@ export async function createPdtpSheetAction(
     })
     await createPdtpSheet(parsed)
     revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
@@ -359,6 +383,7 @@ export async function deletePdtpSheetAction(
     })
     await deletePdtpSheetService(parsed.sheetId, parsed.programId)
     revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
@@ -395,6 +420,8 @@ export async function reorderPdtpActivitiesAction(input: unknown): Promise<Actio
     const parsed = pdtpActivityReorderSchema.parse(input)
     await reorderPdtpActivities(parsed.programId, parsed.orderedIds, session.user.id)
     revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
@@ -404,15 +431,19 @@ export async function reorderPdtpActivitiesAction(input: unknown): Promise<Actio
 export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
   // Página 100% servidor (sin componentes cliente): el feedback de error se
   // propaga por query param en vez de toast, preservando hoja/faena actuales.
+  // Bug C: antes volvía siempre a la lista (`/prevencion/pdtp`), no al
+  // detalle del programa — con ≥2 programas el usuario quedaba varado.
   const hoja = String(fd.get("hoja") ?? "")
   const faena = String(fd.get("faena") ?? "")
+  const programId = String(fd.get("programId") ?? "")
+  const detailPath = programId ? `${REVALIDATE}/${programId}` : REVALIDATE
   const backTo = (errorMessage?: string): never => {
     const params = new URLSearchParams()
     if (hoja) params.set("hoja", hoja)
     if (faena) params.set("faena", faena)
     if (errorMessage) params.set("actividadError", errorMessage)
     const qs = params.toString()
-    redirect(qs ? `${REVALIDATE}?${qs}` : REVALIDATE)
+    redirect(qs ? `${detailPath}?${qs}` : detailPath)
   }
 
   const { session, error } = await guardAuth()
@@ -450,5 +481,26 @@ export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
     return backTo((e as Error).message)
   }
   revalidatePath(REVALIDATE)
+  if (programId) revalidatePath(detailPath)
   return backTo()
+}
+
+// ── Tab Objetivos: renombrar el objetivo de un grupo (objectiveOrder) ───────
+
+export async function renamePdtpObjectiveAction(input: unknown): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return { ok: false, message: "No tienes permisos para editar objetivos PDTP." }
+  }
+  try {
+    const parsed = pdtpObjectiveRenameSchema.parse(input)
+    await renamePdtpObjective(parsed, session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
 }

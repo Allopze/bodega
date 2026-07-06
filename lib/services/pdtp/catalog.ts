@@ -17,6 +17,13 @@ type LoadPdtpCatalogInput = {
   year: number; version: number; title: string; catalog: PdtpCatalog; userId: string
 }
 
+/** Catálogo global de responsables (roles RBAC + grupos de trabajadores),
+ * usado para poblar el select de "responsables" al agregar una actividad
+ * manualmente en vez de escribir el slug a mano. */
+export async function listPdtpResponsibleCatalog() {
+  return db.select().from(pdtpResponsibleCatalog).orderBy(pdtpResponsibleCatalog.displayName)
+}
+
 export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB = db) {
   const now = new Date().toISOString()
   const programId = pdtpProgramId(input.year, input.version)

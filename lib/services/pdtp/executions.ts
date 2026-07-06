@@ -16,9 +16,15 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   const [activity] = await db.select({ programId: pdtpActivities.programId }).from(pdtpActivities).where(eq(pdtpActivities.id, data.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
 
-  const [program] = await db.select({ status: pdtpPrograms.status }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+  const [program] = await db.select({ status: pdtpPrograms.status, year: pdtpPrograms.year }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   if (program.status !== "active") throw new Error("Solo se pueden registrar ejecuciones contra programas PDTP en estado activo.")
+  // Espejo del guard de overrides.ts: sin esto, una ejecución con el año
+  // calendario (en vez del año del programa) queda huérfana — el detalle y
+  // /aprobaciones consultan por `program.year`, así que nunca aparecería.
+  if (program.year !== data.year) {
+    throw new Error(`La ejecución debe corresponder al año del programa (${program.year}).`)
+  }
 
   // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
   // 'draft' o 'rejected' (devuelta para corrección) son editables.
@@ -197,9 +203,15 @@ export type PendingPdtpExecution = {
 }
 
 export async function listPendingPdtpExecutions(
-  year: number,
   scope: WorksiteScope,
+  filter: { programId?: string; year?: number } = {},
 ): Promise<PendingPdtpExecution[]> {
+  // Bug E: antes exigía un `year` fijo (el caller pasaba
+  // currentPdtpPeriod().year) — un programa cuyo año difiere del calendario
+  // (o cuyas ejecuciones ya no son del año en curso) nunca aparecía acá.
+  // Con `programId` filtramos por las actividades de ESE programa (no por
+  // año: un programa tiene un solo año, y así funciona sin importar cuál
+  // sea). Sin programId ni year, se listan pendientes de todos los años.
   const rows = await db
     .select({
       id: pdtpExecutions.id,
@@ -223,7 +235,8 @@ export async function listPendingPdtpExecutions(
     .innerJoin(worksites, eq(pdtpExecutions.worksiteId, worksites.id))
     .where(and(
       eq(pdtpExecutions.status, "submitted"),
-      eq(pdtpExecutions.year, year),
+      filter.programId ? eq(pdtpActivities.programId, filter.programId) : undefined,
+      filter.year ? eq(pdtpExecutions.year, filter.year) : undefined,
       scope === "all" ? undefined : inArray(pdtpExecutions.worksiteId, scope),
     ))
     .orderBy(asc(worksites.name), asc(pdtpExecutions.month), asc(pdtpExecutions.week))

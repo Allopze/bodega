@@ -8,7 +8,7 @@
  * (calca de sst-weekly-alerts).
  */
 
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, worksites } from "@/db/schema"
 import { currentPdtpPeriod, type PdtpPeriod } from "./period"
@@ -36,13 +36,17 @@ export type PdtpWeeklyPendingResult = {
  * agrupada por faena con los IDs de actividades pendientes.
  */
 export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeriod()): Promise<PdtpPendingTarget[]> {
+  // H4: antes se tomaba la versión más alta del año y se exigía que ESA
+  // fuera "active" — si existía un draft más nuevo (vN+1) mientras vN
+  // seguía activo, esto devolvía [] y el programa activo real nunca
+  // recibía recordatorios. Consultamos "active" directo, como
+  // getActivePdtpProgram/getPdtpComplianceIndicators.
   const [program] = await db
     .select()
     .from(pdtpPrograms)
-    .where(eq(pdtpPrograms.year, period.year))
-    .orderBy(desc(pdtpPrograms.version))
+    .where(and(eq(pdtpPrograms.year, period.year), eq(pdtpPrograms.status, "active")))
     .limit(1)
-  if (!program || program.status !== "active") return []
+  if (!program) return []
 
   const activityRows = await db
     .select({ id: pdtpActivities.id, worksiteScope: pdtpActivitySchedule.sourceColumn })
@@ -100,14 +104,16 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
  * efectivamente notificados (deduplicado).
  */
 export async function runPdtpWeeklyReminders(period: PdtpPeriod = currentPdtpPeriod()): Promise<PdtpWeeklyPendingResult> {
+  // Mismo criterio que findPdtpWeeklyPending: el programId reportado debe
+  // ser el activo que realmente generó los targets, no "la versión más
+  // alta" (que puede ser un draft sin relación con los pendientes).
   const [program] = await db
     .select()
     .from(pdtpPrograms)
-    .where(eq(pdtpPrograms.year, period.year))
-    .orderBy(desc(pdtpPrograms.version))
+    .where(and(eq(pdtpPrograms.year, period.year), eq(pdtpPrograms.status, "active")))
     .limit(1)
   if (!program) {
-    logger.info("[pdtp/reminders] no program found, skipping")
+    logger.info("[pdtp/reminders] no active program found, skipping")
     return { period, programId: "", year: period.year, targets: [], notifiedUsers: 0 }
   }
 

@@ -1,8 +1,8 @@
-import { and, eq, inArray, isNull, or } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
 import { SHEET_EXPORT_NAMES, MONTH_LABELS } from "./constants"
-import { emptyMonthlyTotals, loadProgramScheduleAndExecutions } from "./helpers"
+import { emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import type { ReportData, ReportCell } from "@/lib/reports/export"
 
@@ -27,6 +27,11 @@ export type PdtpSheetView = {
       evidencePhotos: string[]
     }>
   }>
+  /** `percent` aquí es entero 0-100 (no fracción). No confundir con
+   * `PdtpComplianceIndicators.percent`, que es fracción 0-1 para compararse
+   * directo contra `complianceTarget`. Hoy `monthlyTotals[].percent` no se
+   * renderiza en ninguna UI (solo `planned`/`executed`); si se consume, usar
+   * este valor tal cual (ya es %, no multiplicar por 100 de nuevo). */
   monthlyTotals: Array<{ month: number; planned: number; executed: number; percent: number | null }>
 }
 
@@ -38,12 +43,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: Pd
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) return null
 
-  const [sheet] = await db.select().from(pdtpSheets)
-    .where(and(
-      eq(pdtpSheets.code, sheetCode),
-      or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, programId)),
-    ))
-    .limit(1)
+  const sheet = await resolveSheetForProgram(programId, sheetCode)
   if (!sheet) return null
 
   const memberships = await db.select().from(pdtpSheetActivities)
@@ -77,9 +77,13 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: Pd
   }
 
   const monthlyTotals = emptyMonthlyTotals()
-  const activities = memberships.map((membership) => {
+  const activities: Array<NonNullable<PdtpSheetView["activities"][number]>> = []
+  for (const membership of memberships) {
     const activity = activityById.get(membership.activityId)
-    if (!activity) throw new Error(`Membresia PDTP referencia actividad inexistente: ${membership.activityId}.`)
+    // Skip sheet memberships from other programs (template sheets can be
+    // shared across programs, so a membership may reference an activity
+    // from a different program that was filtered out above).
+    if (!activity) continue
     const schedule = (scheduleByActivity.get(activity.id) ?? []).sort((a, b) => a.month - b.month || a.week - b.week)
     const monthlyPlanned = Array.from({ length: 12 }, () => 0)
     const monthlyExecuted = Array.from({ length: 12 }, () => 0)
@@ -94,7 +98,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: Pd
       monthlyTotals[execution.month - 1]!.executed += execution.executedQuantity
     }
 
-    return {
+    activities.push({
       ...activity, schedule, monthlyPlanned, monthlyExecuted,
       totalPlanned: monthlyPlanned.reduce((s, v) => s + v, 0),
       totalExecuted: monthlyExecuted.reduce((s, v) => s + v, 0),
@@ -111,8 +115,8 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: Pd
           evidenceUrl: e.evidenceUrl,
           evidencePhotos: Array.isArray(e.evidencePhotos) ? e.evidencePhotos : [],
         })),
-    }
-  })
+    })
+  }
 
   for (const month of monthlyTotals) {
     month.percent = month.planned > 0 ? Math.round((month.executed / month.planned) * 100) : null
@@ -128,7 +132,10 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId }
     ? await getPdtpSheetViewByProgram(programId, sheetCode, worksiteId)
     : await getPdtpSheetView(year, sheetCode, worksiteId)
   if (!view) {
-    return { filenameBase: `pdtp-sg-sst-${year}-${sheetCode}`, worksheetName: SHEET_EXPORT_NAMES[sheetCode], headers: [], rows: [] }
+    // Antes esto devolvía un XLSX "vacío" (headers/rows []) sin avisar al
+    // usuario que no existe programa/hoja para ese año o sheetCode. Mejor
+    // fallar explícito: el caller (route de export) ya maneja errores.
+    throw new Error(`No se encontró un programa PDTP para ${programId ? `programId=${programId}` : `año ${year}`} / hoja ${sheetCode}.`)
   }
 
   const monthHeaders = MONTH_LABELS.flatMap((month) => [`${month} P`, `${month} E`])
@@ -139,7 +146,10 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId }
     return [activity.n, activity.objective, activity.activity, activity.program, activity.responsibleDisplay, ...monthly, activity.totalPlanned, activity.totalExecuted, percent]
   })
 
-  return { filenameBase: `pdtp-sg-sst-${year}-${sheetCode}`, worksheetName: SHEET_EXPORT_NAMES[sheetCode], headers, rows }
+  // El filename usa el año real del programa (view.program.year), no el
+  // arg `year`: cuando el caller pasa `programId`, ese `year` puede venir
+  // de un `?year=` legado que no coincide con el programa resuelto.
+  return { filenameBase: `pdtp-sg-sst-${view.program.year}-${sheetCode}`, worksheetName: SHEET_EXPORT_NAMES[sheetCode], headers, rows }
 }
 
 /**
@@ -148,6 +158,7 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId }
 export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, worksiteId?: string): Promise<PdtpSheetView | null> {
   const programs = await db.select().from(pdtpPrograms)
     .where(eq(pdtpPrograms.year, year))
+    .orderBy(desc(pdtpPrograms.version))
   const program = programs.find((p) => p.status === "active") ?? programs[0]
   if (!program) return null
   return getPdtpSheetViewByProgram(program.id, sheetCode, worksiteId)

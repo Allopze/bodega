@@ -13,6 +13,7 @@ export async function getActivePdtpProgram(year: number) {
 export async function approvePdtpProgramJdpr(programId: string, userId: string) {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "draft") throw new Error("Solo se pueden aprobar programas en estado borrador (draft).")
   if (program.approvedByJdprUserId) throw new Error("El programa ya fue aprobado por JDPR.")
 
   const now = new Date().toISOString()
@@ -28,6 +29,7 @@ export async function approvePdtpProgramJdpr(programId: string, userId: string) 
 export async function signPdtpProgramLegal(programId: string, userId: string) {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "draft") throw new Error("Solo se pueden firmar programas en estado borrador (draft).")
   if (program.approvedByLegalUserId) throw new Error("El programa ya fue firmado por Gerencia Legal.")
 
   const now = new Date().toISOString()
@@ -49,14 +51,22 @@ export async function activatePdtpProgram(programId: string, userId: string) {
 
   const now = new Date().toISOString()
 
-  await db.update(pdtpPrograms).set({ status: "draft", updatedAt: now })
-    .where(and(eq(pdtpPrograms.year, program.year), eq(pdtpPrograms.status, "active"), ne(pdtpPrograms.id, programId)))
+  // El programa activo anterior del mismo año pasa a "closed", no "draft":
+  // ya fue ejecutado (tiene ejecuciones registradas contra él), volverlo a
+  // draft lo reabre para edición y bloquea el ciclo de vida (draft→closed
+  // es el estado final, no draft→active de nuevo). Ambos updates en una
+  // transacción: un fallo a mitad no debe dejar el año sin programa activo.
+  const updated = await db.transaction(async (tx) => {
+    await tx.update(pdtpPrograms).set({ status: "closed", updatedAt: now })
+      .where(and(eq(pdtpPrograms.year, program.year), eq(pdtpPrograms.status, "active"), ne(pdtpPrograms.id, programId)))
 
-  const [updated] = await db.update(pdtpPrograms)
-    .set({ status: "active", updatedAt: now })
-    .where(eq(pdtpPrograms.id, programId)).returning()
-  if (!updated) throw new Error("No se pudo activar el programa PDTP.")
+    const [row] = await tx.update(pdtpPrograms)
+      .set({ status: "active", updatedAt: now })
+      .where(eq(pdtpPrograms.id, programId)).returning()
+    if (!row) throw new Error("No se pudo activar el programa PDTP.")
 
-  await addPdtpChangeLogEntry(programId, program.version, userId, "lifecycle", { status: "draft" }, { status: "active" }, "Programa activado.")
+    await addPdtpChangeLogEntry(programId, program.version, userId, "lifecycle", { status: "draft" }, { status: "active" }, "Programa activado.", tx)
+    return row
+  })
   return updated
 }

@@ -5,25 +5,39 @@ import { useRouter } from "next/navigation"
 import { useActionState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   updatePdtpProgramAction,
   deletePdtpProgramAction,
   createPdtpSheetAction,
   deletePdtpSheetAction,
+  updatePdtpActivityAction,
+  deletePdtpActivityAction,
+  reorderPdtpActivitiesAction,
+  renamePdtpObjectiveAction,
 } from "../../actions"
 
-import type { pdtpPrograms, pdtpSheets } from "@/db/schema"
+import type { pdtpPrograms, pdtpSheets, pdtpActivities, pdtpActivitySchedule } from "@/db/schema"
 
 const TABS = ["Metadatos", "Hojas", "Objetivos", "Actividades", "Planificación"] as const
 
 type PdtpBuilderTabsProps = {
   program: typeof pdtpPrograms.$inferSelect
   sheets: Array<typeof pdtpSheets.$inferSelect>
+  activities: Array<typeof pdtpActivities.$inferSelect>
+  schedule: Array<typeof pdtpActivitySchedule.$inferSelect>
   userId: string
   canDelete: boolean
 }
 
-export function PdtpBuilderTabs({ program, sheets, userId, canDelete }: PdtpBuilderTabsProps) {
+export function PdtpBuilderTabs({ program, sheets, activities, schedule, userId, canDelete }: PdtpBuilderTabsProps) {
   const [activeTab, setActiveTab] = React.useState<string>("Metadatos")
 
   return (
@@ -52,19 +66,13 @@ export function PdtpBuilderTabs({ program, sheets, userId, canDelete }: PdtpBuil
         <SheetsTab programId={program.id} sheets={sheets} userId={userId} />
       )}
       {activeTab === "Objetivos" && (
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center text-sm text-[var(--color-text-muted)]">
-          El editor de objetivos estará disponible próximamente. Mientras tanto, puedes editar las actividades individualmente.
-        </div>
+        <ObjetivosTab programId={program.id} activities={activities} />
       )}
       {activeTab === "Actividades" && (
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center text-sm text-[var(--color-text-muted)]">
-          Usa la sección &ldquo;Agregar actividad&rdquo; en la vista del programa para añadir actividades.
-        </div>
+        <ActividadesTab programId={program.id} activities={activities} />
       )}
       {activeTab === "Planificación" && (
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center text-sm text-[var(--color-text-muted)]">
-          El editor de planificación estará disponible próximamente. Por ahora, edita las cantidades planificadas desde la vista semanal del programa.
-        </div>
+        <PlanificacionTab programId={program.id} year={program.year} activities={activities} schedule={schedule} />
       )}
     </div>
   )
@@ -75,13 +83,17 @@ function MetadataTab({ program, canDelete }: { program: typeof pdtpPrograms.$inf
   const [updateState, updateAction, updatePending] = useActionState(updatePdtpProgramAction, null)
   const [deleteState, deleteAction, deletePending] = useActionState(deletePdtpProgramAction, null)
 
-  if (updateState?.ok) {
-    router.refresh()
-  }
+  // Bug A: llamar router.refresh()/push() en el cuerpo del componente los
+  // dispara en cada render (useActionState no limpia su estado solo), lo
+  // que producía un loop de refetch. En un efecto, corren una sola vez por
+  // transición de estado.
+  React.useEffect(() => {
+    if (updateState?.ok) router.refresh()
+  }, [updateState, router])
 
-  if (deleteState?.ok) {
-    router.push("/prevencion/pdtp")
-  }
+  React.useEffect(() => {
+    if (deleteState?.ok) router.push("/prevencion/pdtp")
+  }, [deleteState, router])
 
   return (
     <div className="space-y-6">
@@ -125,6 +137,8 @@ function MetadataTab({ program, canDelete }: { program: typeof pdtpPrograms.$inf
           {updatePending ? "Guardando..." : "Guardar cambios"}
         </Button>
       </form>
+
+      <ImportExcelSection programId={program.id} />
 
       {canDelete && (
         <div className="max-w-md border-t border-[var(--color-border)] pt-6">
@@ -243,5 +257,468 @@ function DeleteSheetButton({ sheetId, programId }: { sheetId: string; programId:
         Eliminar
       </Button>
     </form>
+  )
+}
+
+function ImportExcelSection({ programId }: { programId: string }) {
+  const router = useRouter()
+  const formRef = React.useRef<HTMLFormElement>(null)
+  const fileRef = React.useRef<HTMLInputElement>(null)
+  const [pending, setPending] = React.useState(false)
+  const [state, setState] = React.useState<{ ok: boolean; message: string } | null>(null)
+
+  // Va contra una API route, no un Server Action: el workbook real
+  // ("PROGRAMA DE TRABAJO PREVENTIVO SG-SST.xlsx") pesa ~4-5 MB y Next.js
+  // limita el body de los Server Actions a 1 MB por defecto — con un
+  // Server Action esto fallaba en runtime con "Body exceeded 1 MB limit"
+  // para cualquier archivo real (mismo patrón que pdtp-execution-form.tsx).
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const file = fileRef.current?.files?.[0]
+    if (!file) return
+    setPending(true)
+    setState(null)
+    try {
+      const fd = new FormData()
+      fd.set("programId", programId)
+      fd.set("file", file)
+      const res = await fetch("/api/prevencion/pdtp/import", { method: "POST", body: fd })
+      const json = await res.json()
+      if (!res.ok) {
+        setState({ ok: false, message: json.error ?? "Error al importar el Excel." })
+      } else {
+        setState({ ok: true, message: json.message })
+        formRef.current?.reset()
+        router.refresh()
+      }
+    } catch {
+      setState({ ok: false, message: "Error de red al importar el Excel." })
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="max-w-md border-t border-[var(--color-border)] pt-6">
+      <h3 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Importar desde Excel</h3>
+      <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+        Sube el archivo &ldquo;PROGRAMA DE TRABAJO PREVENTIVO SG-SST.xlsx&rdquo; para poblar hojas y
+        actividades. Reemplaza por completo las actividades actuales del programa — no se acumulan.
+      </p>
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-3">
+        <input ref={fileRef} type="file" name="file" accept=".xlsx,.xls" required className="text-sm text-[var(--color-text)]" />
+        {state?.message && (
+          <p className={`rounded-[var(--radius)] border px-3 py-2 text-sm ${
+            state.ok
+              ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success)]"
+              : "border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] text-[var(--color-danger)]"
+          }`}>
+            {state.message}
+          </p>
+        )}
+        <Button type="submit" size="sm" variant="secondary" disabled={pending}>
+          {pending ? "Importando..." : "Importar Excel"}
+        </Button>
+      </form>
+    </div>
+  )
+}
+
+// ── Tab Actividades: edición inline, reordenamiento, eliminación ───────────
+
+type PdtpActivityRow = typeof pdtpActivities.$inferSelect
+
+function ActividadesTab({ programId, activities }: { programId: string; activities: PdtpActivityRow[] }) {
+  const router = useRouter()
+  const [items, setItems] = React.useState(activities)
+  const [editing, setEditing] = React.useState<PdtpActivityRow | null>(null)
+  const [busyId, setBusyId] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => { setItems(activities) }, [activities])
+
+  async function move(index: number, dir: -1 | 1) {
+    const target = index + dir
+    if (target < 0 || target >= items.length) return
+    const next = [...items]
+    ;[next[index], next[target]] = [next[target]!, next[index]!]
+    setItems(next)
+    setBusyId(next[target]!.id)
+    setError(null)
+    try {
+      const result = await reorderPdtpActivitiesAction({ programId, orderedIds: next.map((a) => a.id) })
+      if (!result.ok) {
+        setError(result.message ?? "Error al reordenar.")
+        setItems(activities)
+      } else {
+        router.refresh()
+      }
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleDelete(activityId: string) {
+    if (!confirm("¿Eliminar esta actividad? Se perderá su planificación y ejecuciones registradas.")) return
+    setBusyId(activityId)
+    setError(null)
+    try {
+      const result = await deletePdtpActivityAction({ activityId })
+      if (!result.ok) {
+        setError(result.message ?? "Error al eliminar la actividad.")
+      } else {
+        setItems((s) => s.filter((a) => a.id !== activityId))
+        router.refresh()
+      }
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {error && (
+        <p className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
+          {error}
+        </p>
+      )}
+      {items.length === 0 ? (
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center text-sm text-[var(--color-text-muted)]">
+          Sin actividades. Usa &ldquo;Agregar actividad&rdquo; en la vista del programa o importa un Excel desde Metadatos.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <table className="w-full text-sm">
+            <thead className="bg-[var(--color-surface-2)] text-xs text-[var(--color-text-subtle)]">
+              <tr>
+                <th className="w-12 px-3 py-2 text-left">N°</th>
+                <th className="px-3 py-2 text-left">Actividad</th>
+                <th className="px-3 py-2 text-left">Programa</th>
+                <th className="w-56 px-3 py-2 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {items.map((activity, index) => (
+                <tr key={activity.id} className="bg-[var(--color-surface)]">
+                  <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-subtle)]">{activity.n}</td>
+                  <td className="px-3 py-2">
+                    <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
+                    <p className="text-xs text-[var(--color-text-subtle)]">{activity.objective}</p>
+                  </td>
+                  <td className="px-3 py-2 text-[var(--color-text-muted)]">{activity.program}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || index === 0} onClick={() => move(index, -1)} aria-label="Subir">↑</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || index === items.length - 1} onClick={() => move(index, 1)} aria-label="Bajar">↓</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null} onClick={() => setEditing(activity)}>Editar</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null} onClick={() => handleDelete(activity.id)}>Eliminar</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <EditActivityDialog activity={editing} onClose={() => setEditing(null)} onSaved={() => router.refresh()} />
+    </div>
+  )
+}
+
+function EditActivityDialog({ activity, onClose, onSaved }: {
+  activity: PdtpActivityRow | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [activityText, setActivityText] = React.useState("")
+  const [program, setProgram] = React.useState("")
+  const [notes, setNotes] = React.useState("")
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (activity) {
+      setActivityText(activity.activity)
+      setProgram(activity.program)
+      setNotes(activity.notes ?? "")
+      setError(null)
+    }
+  }, [activity])
+
+  async function handleSave() {
+    if (!activity) return
+    setPending(true)
+    setError(null)
+    try {
+      const result = await updatePdtpActivityAction({ activityId: activity.id, activity: activityText, program, notes })
+      if (!result.ok) {
+        setError(result.message ?? "Error al guardar.")
+      } else {
+        onSaved()
+        onClose()
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Dialog open={activity !== null} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar actividad N°{activity?.n}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-[var(--color-text-subtle)]">Actividad</label>
+            <Textarea value={activityText} onChange={(e) => setActivityText(e.target.value)} rows={3} className="mt-1" />
+          </div>
+          <div>
+            <label className="text-xs text-[var(--color-text-subtle)]">Programa</label>
+            <Input value={program} onChange={(e) => setProgram(e.target.value)} className="mt-1" />
+          </div>
+          <div>
+            <label className="text-xs text-[var(--color-text-subtle)]">Notas</label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="mt-1" />
+          </div>
+          {error && (
+            <p className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
+              {error}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>Cancelar</Button>
+          <Button type="button" size="sm" onClick={handleSave} disabled={pending}>{pending ? "Guardando..." : "Guardar"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Tab Objetivos: renombrar el objetivo compartido por cada grupo (1-8) ───
+
+function ObjetivosTab({ programId, activities }: { programId: string; activities: PdtpActivityRow[] }) {
+  const groups = React.useMemo(() => {
+    const byOrder = new Map<number, { objective: string; count: number }>()
+    for (const activity of activities) {
+      const existing = byOrder.get(activity.objectiveOrder)
+      if (!existing) byOrder.set(activity.objectiveOrder, { objective: activity.objective, count: 1 })
+      else existing.count += 1
+    }
+    return Array.from({ length: 8 }, (_, i) => i + 1).map((order) => ({
+      objectiveOrder: order,
+      objective: byOrder.get(order)?.objective ?? "",
+      count: byOrder.get(order)?.count ?? 0,
+    }))
+  }, [activities])
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-[var(--color-text-muted)]">
+        El objetivo es compartido por todas las actividades del mismo grupo (1-8): renombrarlo aquí actualiza todas sus actividades a la vez.
+      </p>
+      {groups.map((group) => (
+        <ObjectiveRow key={group.objectiveOrder} programId={programId} group={group} />
+      ))}
+    </div>
+  )
+}
+
+function ObjectiveRow({ programId, group }: {
+  programId: string
+  group: { objectiveOrder: number; objective: string; count: number }
+}) {
+  const router = useRouter()
+  const [value, setValue] = React.useState(group.objective)
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => setValue(group.objective), [group.objective])
+
+  async function handleSave() {
+    if (!value.trim() || value === group.objective) return
+    setPending(true)
+    setError(null)
+    try {
+      const result = await renamePdtpObjectiveAction({ programId, objectiveOrder: group.objectiveOrder, objective: value })
+      if (!result.ok) {
+        setError(result.message ?? "Error al renombrar el objetivo.")
+      } else {
+        router.refresh()
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+      <div className="flex items-center gap-2">
+        <span className="w-6 shrink-0 font-mono text-xs text-[var(--color-text-subtle)]">{group.objectiveOrder}</span>
+        <Input value={value} onChange={(e) => setValue(e.target.value)} className="h-8 flex-1" placeholder="Sin actividades en este objetivo aún" />
+        <Button type="button" size="sm" disabled={pending || !value.trim() || value === group.objective} onClick={handleSave}>
+          {pending ? "..." : "Guardar"}
+        </Button>
+      </div>
+      <p className="mt-1 text-[11px] text-[var(--color-text-subtle)]">
+        {group.count > 0 ? `${group.count} actividad(es)` : "Aún sin actividades — se asignarán al agregar una con este orden de objetivo."}
+      </p>
+      {error && <p className="mt-1 text-xs text-[var(--color-danger)]">{error}</p>}
+    </div>
+  )
+}
+
+// ── Tab Planificación: matriz semanal editable con bulk-fill por fila ──────
+
+type PdtpScheduleRow = typeof pdtpActivitySchedule.$inferSelect
+
+const PLAN_MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+function scheduleKey(month: number, week: number) {
+  return `${month}-${week}`
+}
+
+function PlanificacionTab({ programId: _programId, year, activities, schedule }: {
+  programId: string
+  year: number
+  activities: PdtpActivityRow[]
+  schedule: PdtpScheduleRow[]
+}) {
+  const scheduleByActivity = React.useMemo(() => {
+    const map = new Map<string, Record<string, number>>()
+    for (const activity of activities) map.set(activity.id, {})
+    for (const cell of schedule) {
+      const row = map.get(cell.activityId)
+      if (row) row[scheduleKey(cell.month, cell.week)] = cell.plannedQuantity
+    }
+    return map
+  }, [activities, schedule])
+
+  if (activities.length === 0) {
+    return (
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center text-sm text-[var(--color-text-muted)]">
+        Sin actividades. Agrega actividades antes de planificar cantidades.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-[var(--color-text-muted)]">
+        Cantidad planificada por semana para {year}. Cada mes tiene 4 celdas (S1-S4). &ldquo;Rellenar&rdquo;
+        fija una cantidad en las 48 semanas de la fila (sin guardar todavía) — revisa y presiona Guardar.
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+        <table className="w-full border-collapse text-sm">
+          <thead className="bg-[var(--color-surface-2)] text-xs text-[var(--color-text-subtle)]">
+            <tr>
+              <th className="sticky left-0 z-10 min-w-[16rem] border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-left">Actividad</th>
+              {PLAN_MONTH_LABELS.map((m) => (
+                <th key={m} className="min-w-[5.5rem] border-b border-[var(--color-border)] px-1 py-2 text-center">{m}</th>
+              ))}
+              <th className="min-w-[13rem] border-b border-[var(--color-border)] px-2 py-2 text-left">Rellenar / Guardar</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--color-border)]">
+            {activities.map((activity) => (
+              <PlanificacionRow key={activity.id} activity={activity} initial={scheduleByActivity.get(activity.id) ?? {}} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function PlanificacionRow({ activity, initial }: { activity: PdtpActivityRow; initial: Record<string, number> }) {
+  const router = useRouter()
+  const [values, setValues] = React.useState<Record<string, number>>(initial)
+  const [fillValue, setFillValue] = React.useState("")
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => setValues(initial), [initial])
+
+  function setCell(month: number, week: number, raw: string) {
+    const n = raw === "" ? 0 : Number(raw)
+    setValues((prev) => ({ ...prev, [scheduleKey(month, week)]: Number.isFinite(n) ? n : 0 }))
+  }
+
+  function fillAll() {
+    const n = Number(fillValue)
+    if (!Number.isFinite(n) || n < 0) return
+    const next: Record<string, number> = {}
+    for (let m = 1; m <= 12; m++) for (let w = 1; w <= 4; w++) next[scheduleKey(m, w)] = n
+    setValues(next)
+  }
+
+  async function handleSave() {
+    const scheduleOverrides = Object.entries(values)
+      .map(([key, plannedQuantity]) => {
+        const [month, week] = key.split("-").map(Number) as [number, number]
+        return { month, week, plannedQuantity }
+      })
+      .filter((c) => c.plannedQuantity > 0)
+
+    setPending(true)
+    setError(null)
+    try {
+      // scheduleOverrides es autoritativo para el año del programa: reemplaza
+      // por completo la planificación de esta actividad (ver updatePdtpActivity
+      // en lib/services/pdtp/activities.ts). Por eso la matriz mantiene las 48
+      // celdas en memoria en vez de solo las que el usuario tocó.
+      const result = await updatePdtpActivityAction({ activityId: activity.id, scheduleOverrides })
+      if (!result.ok) {
+        setError(result.message ?? "Error al guardar la planificación.")
+      } else {
+        router.refresh()
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <tr className="bg-[var(--color-surface)] align-top">
+      <td className="sticky left-0 z-10 border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs">
+        <span className="font-mono text-[var(--color-text-subtle)]">N°{activity.n}</span> {activity.activity}
+      </td>
+      {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+        <td key={month} className="p-1">
+          <div className="grid grid-cols-2 gap-0.5">
+            {[1, 2, 3, 4].map((week) => (
+              <input
+                key={week}
+                type="number"
+                min="0"
+                step="0.25"
+                value={values[scheduleKey(month, week)] || ""}
+                onChange={(e) => setCell(month, week, e.target.value)}
+                title={`${PLAN_MONTH_LABELS[month - 1]} · Semana ${week}`}
+                className="h-6 w-11 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-center text-[11px] text-[var(--color-text)]"
+              />
+            ))}
+          </div>
+        </td>
+      ))}
+      <td className="px-2 py-2">
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min="0"
+            step="0.25"
+            placeholder="cant."
+            value={fillValue}
+            onChange={(e) => setFillValue(e.target.value)}
+            className="h-7 w-14 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-xs text-[var(--color-text)]"
+          />
+          <Button type="button" variant="ghost" size="sm" onClick={fillAll} disabled={fillValue === ""}>Rellenar</Button>
+          <Button type="button" size="sm" onClick={handleSave} disabled={pending}>{pending ? "..." : "Guardar"}</Button>
+        </div>
+        {error && <p className="mt-1 text-[11px] text-[var(--color-danger)]">{error}</p>}
+      </td>
+    </tr>
   )
 }

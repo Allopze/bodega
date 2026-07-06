@@ -35,14 +35,18 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
     redirect(`/prevencion/pdtp/${programs[0]!.id}${qs ? `?${qs}` : ""}`)
   }
 
-  // Fetch quick compliance for each program
-  const complianceByProgram = new Map<string, { annual?: { percent: number | null } } | null>()
-  for (const program of programs.slice(0, 5)) {
+  // Fetch quick compliance for each program. Antes se limitaba a los
+  // primeros 5 (`slice(0, 5)`) sin avisar — programas 6+ mostraban la
+  // card sin % de cumplimiento en silencio. En paralelo en vez de
+  // secuencial: mismo costo total, N veces más rápido.
+  const complianceEntries = await Promise.all(programs.map(async (program) => {
     try {
-      const indicators = await getPdtpComplianceIndicators(program.id)
-      complianceByProgram.set(program.id, indicators)
-    } catch { /* ignore */ }
-  }
+      return [program.id, await getPdtpComplianceIndicators(program.id)] as const
+    } catch {
+      return [program.id, null] as const
+    }
+  }))
+  const complianceByProgram = new Map(complianceEntries)
 
   return (
     <PageContainer>

@@ -79,7 +79,7 @@ export const pdtpActivityOverrideSchema = z.object({
 })
 
 export const pdtpProgramCreateSchema = z.object({
-  year: z.coerce.number().int().min(2024, "El año debe ser al menos 2024"),
+  year: z.coerce.number().int().min(2024, "El año debe ser al menos 2024").max(2100, "El año no puede superar 2100"),
   title: z.string().trim().min(1, "Título requerido").max(200, "Máximo 200 caracteres"),
   copySheetsFromProgramId: z.string().optional(),
 })
@@ -113,4 +113,10 @@ export const pdtpActivityDeleteSchema = z.object({
 export const pdtpActivityReorderSchema = z.object({
   programId: z.string().min(1, "Programa requerido"),
   orderedIds: z.array(z.string().min(1)).min(1, "Al menos una actividad"),
+})
+
+export const pdtpObjectiveRenameSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  objectiveOrder: z.coerce.number().int().min(1).max(8),
+  objective: z.string().trim().min(1, "Objetivo requerido").max(200),
 })

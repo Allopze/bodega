@@ -25,6 +25,7 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
   index("pdtp_programs_status_idx").on(table.status),
   check("pdtp_programs_status_check", sql`${table.status} IN ('draft', 'active', 'closed')`),
   check("pdtp_programs_compliance_target_check", sql`${table.complianceTarget} >= 0 AND ${table.complianceTarget} <= 1`),
+  check("pdtp_programs_year_check", sql`${table.year} BETWEEN 2024 AND 2100`),
 ])
 
 export const pdtpResponsibleCatalog = pgTable("pdtp_responsible_catalog", {
@@ -123,7 +124,7 @@ export const pdtpChangeLog = pgTable("pdtp_change_log", {
 export const pdtpSheets = pgTable("pdtp_sheets", {
   id:                text("id").primaryKey(),
   code:              text("code").notNull(),
-  programId:         text("program_id").references(() => pdtpPrograms.id),
+  programId:         text("program_id").references(() => pdtpPrograms.id, { onDelete: "cascade" }),
   label:             text("label").notNull(),
   area:              text("area").notNull(),
   defaultScopeRoles: jsonb("default_scope_roles").notNull(),

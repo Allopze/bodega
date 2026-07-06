@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
-import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { listPendingPdtpExecutions, getPdtpProgram } from "@/lib/services/prevention-pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -12,23 +12,34 @@ import { PdtpEvidenceThumbs } from "../pdtp-evidence-thumbs"
 
 export const metadata: Metadata = { title: "Aprobaciones PDTP" }
 
-export default async function PdtpApprovalsPage() {
+type PdtpApprovalsPageProps = {
+  searchParams: Promise<{ programId?: string }>
+}
+
+export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsPageProps) {
   let session
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:pdtp:approve")) redirect("/forbidden")
 
+  const { programId } = await searchParams
+  const program = programId ? await getPdtpProgram(programId) : null
+
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
-  const pending = await listPendingPdtpExecutions(currentPdtpPeriod().year, worksiteIds)
+  // Bug E: antes fijaba currentPdtpPeriod().year — una ejecución cuyo año
+  // real es el del programa (no necesariamente el calendario) nunca
+  // aparecía. Con programId filtra por ese programa sin importar su año;
+  // sin programId muestra pendientes de todos los años/programas.
+  const pending = await listPendingPdtpExecutions(worksiteIds, program ? { programId: program.id } : {})
   // H-M4: el description debe reflejar el scope real del usuario para
   // no inducir a error (un usuario de faena solo ve sus faenas).
   const scopeDescription =
     scope.mode === "all"
-      ? "Ejecuciones semanales del Programa de Trabajo Preventivo pendientes de aprobación, en todas las faenas."
+      ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del Programa de Trabajo Preventivo"} pendientes de aprobación, en todas las faenas.`
       : scope.mode === "some"
-        ? `Ejecuciones semanales del Programa de Trabajo Preventivo pendientes de aprobación en tus ${scope.ids.length} faena(s) asignada(s).`
+        ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del Programa de Trabajo Preventivo"} pendientes de aprobación en tus ${scope.ids.length} faena(s) asignada(s).`
         : "No tienes faenas asignadas, no se mostrarán ejecuciones pendientes."
 
   // One row per (activityId, worksiteId) pair — the same activity can be
@@ -85,8 +96,16 @@ export default async function PdtpApprovalsPage() {
             { label: "Dashboard", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Programa preventivo SG-SST", href: "/prevencion/pdtp" },
+            ...(program ? [{ label: program.title, href: `/prevencion/pdtp/${program.id}` }] : []),
             { label: "Aprobaciones" },
           ]} />
+        }
+        actions={
+          program && (
+            <Link href="/prevencion/pdtp/aprobaciones" className="text-sm text-[var(--color-primary)] hover:underline">
+              Ver todos los programas
+            </Link>
+          )
         }
       />
 

@@ -17,6 +17,7 @@ import {
   type PdtpActivitySchedule,
   type PdtpActivityScheduleOverride,
 } from "@/db/schema"
+import { addPdtpChangeLogEntry } from "./helpers"
 
 export type PdtpOverrideInput = {
   activityId: string
@@ -42,14 +43,14 @@ export async function setPdtpActivityOverride(
   scope?: string[] | "all",
 ): Promise<PdtpActivityScheduleOverride> {
   const [activity] = await db
-    .select({ programId: pdtpActivities.programId })
+    .select({ programId: pdtpActivities.programId, n: pdtpActivities.n })
     .from(pdtpActivities)
     .where(eq(pdtpActivities.id, input.activityId))
     .limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
 
   const [program] = await db
-    .select({ status: pdtpPrograms.status, year: pdtpPrograms.year })
+    .select({ status: pdtpPrograms.status, year: pdtpPrograms.year, version: pdtpPrograms.version })
     .from(pdtpPrograms)
     .where(eq(pdtpPrograms.id, activity.programId))
     .limit(1)
@@ -99,6 +100,14 @@ export async function setPdtpActivityOverride(
     })
     .returning()
   if (!row) throw new Error("No se pudo registrar el override PDTP.")
+
+  // Antes los overrides no dejaban rastro en pdtp_change_log — hueco vs.
+  // el resto del módulo, que sí registra "control de cambios".
+  await addPdtpChangeLogEntry(
+    activity.programId, program.version, userId, `override:${activity.n}`,
+    null, { worksiteId: input.worksiteId, year: input.year, month: input.month, week: input.week, plannedQuantity: input.plannedQuantity },
+    `Meta por faena fijada para actividad ${activity.n} (faena ${input.worksiteId}, ${input.month}/${input.week}).`,
+  )
   return row
 }
 
@@ -111,7 +120,7 @@ export async function deletePdtpActivityOverride(
   scope?: string[] | "all",
 ): Promise<void> {
   const [activity] = await db
-    .select({ programId: pdtpActivities.programId })
+    .select({ programId: pdtpActivities.programId, n: pdtpActivities.n })
     .from(pdtpActivities)
     .where(eq(pdtpActivities.id, input.activityId))
     .limit(1)
@@ -130,7 +139,15 @@ export async function deletePdtpActivityOverride(
       eq(pdtpActivityScheduleOverrides.month, input.month),
       eq(pdtpActivityScheduleOverrides.week, input.week),
     ))
-  void userId
+
+  const [program] = await db.select({ version: pdtpPrograms.version }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+  if (program) {
+    await addPdtpChangeLogEntry(
+      activity.programId, program.version, userId, `override:${activity.n}`,
+      { worksiteId: input.worksiteId, year: input.year, month: input.month, week: input.week }, null,
+      `Meta por faena eliminada para actividad ${activity.n} (faena ${input.worksiteId}, ${input.month}/${input.week}).`,
+    )
+  }
 }
 
 /**

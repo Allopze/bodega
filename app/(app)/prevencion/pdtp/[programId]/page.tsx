@@ -8,13 +8,14 @@ import {
   getPdtpSheetViewByProgram,
   getPdtpProgram,
   getPdtpComplianceIndicators,
+  listPdtpResponsibleCatalog,
+  listPdtpProgramSheets,
 } from "@/lib/services/prevention-pdtp"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { PdtpYearPicker } from "../pdtp-year-picker"
 import { Button } from "@/components/ui/button"
 import { PreventionExportButton } from "@/components/prevention/export-button"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
@@ -57,15 +58,6 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const requestedSheet = Array.isArray(query.hoja) ? query.hoja[0] : query.hoja
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
   const requestedView = Array.isArray(query.vista) ? query.vista[0] : query.vista
-  const requestedYearRaw = Array.isArray(query.anio) ? query.anio[0] : query.anio
-  const parsedYear = requestedYearRaw ? Number.parseInt(requestedYearRaw, 10) : NaN
-  const currentYear = new Date().getFullYear()
-  const minYear = 2024
-  const maxYear = currentYear + 2
-  const selectedYear =
-    Number.isFinite(parsedYear) && parsedYear >= minYear && parsedYear <= maxYear
-      ? parsedYear
-      : program.year
   const actividadError = Array.isArray(query.actividadError) ? query.actividadError[0] : query.actividadError
   const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
@@ -101,6 +93,22 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const canManage = can(session, "prevention:pdtp:manage")
   const exportHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
 
+  const [responsibleCatalog, programSheetsRaw] = canManage && program.status === "draft"
+    ? await Promise.all([listPdtpResponsibleCatalog(), listPdtpProgramSheets(programId)])
+    : [[], []]
+  // listPdtpProgramSheets devuelve plantillas (program_id NULL) Y las copias
+  // program-scoped que createPdtpProgram/importPdtpFromExcel crean con el
+  // mismo `code` — sin dedupe, el <Select> de "Hojas oficiales" repetía cada
+  // código dos veces (key de React duplicada, value de SelectItem ambigua).
+  // La copia program-scoped gana, igual que resolveSheetForProgram.
+  // Map(iterable) mantiene la ÚLTIMA entrada para una key repetida — por
+  // eso ordenamos las plantillas primero: la program-scoped llega después
+  // y sobreescribe, quedando como la única entrada por código.
+  const programSheets = [...new Map(
+    [...programSheetsRaw].sort((a, b) => (a.programId ? 1 : -1) - (b.programId ? 1 : -1))
+      .map((s) => [s.code, s] as const),
+  ).values()]
+
   return (
     <PageContainer>
       <PageHeader
@@ -116,10 +124,6 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         }
         actions={
           <>
-            <PdtpYearPicker
-              current={selectedYear}
-              options={Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i)}
-            />
             {canApprove && (
               <Button asChild variant="secondary" size="sm">
                 <Link href={`/prevencion/pdtp/aprobaciones?programId=${programId}`}>Aprobaciones</Link>
@@ -186,6 +190,8 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
             hoja={sheetCode}
             faena={selectedWorksiteId ?? ""}
             errorMessage={actividadError}
+            responsibleCatalog={responsibleCatalog.map((r) => ({ slug: r.slug, displayName: r.displayName }))}
+            sheetOptions={programSheets.map((s) => ({ code: s.code, label: s.label }))}
           />
         )}
       </div>
