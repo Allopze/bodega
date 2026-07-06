@@ -1,5 +1,3 @@
-"use server"
-
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { resolveEvaluatorRole as resolveEvaluatorRoleCore } from "@/lib/sst/resolve-evaluator-role"
 import type { EvaluatorRole } from "@/lib/sst/types"

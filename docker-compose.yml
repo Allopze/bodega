@@ -42,6 +42,11 @@ services:
       - "127.0.0.1:3001:3000"
     environment:
       - NODE_ENV=production
+      # Next standalone (node server.js) binds to $HOSTNAME; Docker sets that to the
+      # container id, so it only listens on the container's eth0 IP and the internal
+      # healthcheck (wget localhost:3000) gets ECONNREFUSED → container marked unhealthy.
+      # Force bind to all interfaces so loopback works too.
+      - HOSTNAME=0.0.0.0
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - AUTH_SECRET=${AUTH_SECRET:?err}
       - AUTH_URL=${AUTH_URL:?err}

@@ -1,5 +1,3 @@
-"use server"
-
 import type { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 

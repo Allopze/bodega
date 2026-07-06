@@ -113,6 +113,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-detalle", path: "/prevencion/sst-audit-1", auth: true },
   { slug: "prevencion-trabajador-detalle", path: "/prevencion/trabajador/worker-audit-1", auth: true },
   { slug: "prevencion-pdtp", path: "/prevencion/pdtp", auth: true },
+  { slug: "prevencion-pdtp-detalle", path: "/prevencion/pdtp/prog-audit-1", auth: true },
+  { slug: "prevencion-pdtp-editar", path: "/prevencion/pdtp/prog-audit-1/editar", auth: true },
+  { slug: "prevencion-pdtp-nuevo", path: "/prevencion/pdtp/nuevo", auth: true },
   { slug: "prevencion-pdtp-aprobaciones", path: "/prevencion/pdtp/aprobaciones", auth: true },
   { slug: "prevencion-iper", path: "/prevencion/iper", auth: true },
   { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },
@@ -944,6 +947,19 @@ async function prepareDatabase(captureDbUrl: string) {
       estado: "completado",
     },
   ])
+
+  await db.insert(schema.pdtpPrograms).values({
+    id: "prog-audit-1",
+    year: 2026,
+    version: 1,
+    status: "active",
+    title: "Programa de Trabajo Preventivo 2026",
+    elaboratedByName: "Prevencionista Auditor",
+    elaboratedByTitle: "Experto en Prevención",
+    complianceTarget: 0.9,
+    createdAt: now,
+    updatedAt: now,
+  })
 
   await db.insert(schema.ppaSubmissions).values([
     {

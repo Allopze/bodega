@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import { cleanRut } from "@/lib/rut"
 
 export type SeedWorksite = {
   id: string
@@ -36,16 +37,21 @@ export function loadSeedWorkerData(sourcePath = path.join(__dirname, SOURCE_FILE
   const seenRuts = new Set<string>()
 
   const workers = parsedRows.flatMap((row) => {
-    const normalizedRut = normalizeRut(row.rut)
-    if (seenRuts.has(normalizedRut)) return []
-    seenRuts.add(normalizedRut)
+    // El RUT se guarda en su forma canónica (ver lib/rut.ts, audit A-15): todo
+    // lookup (findWorkerByRut, chequeo de duplicados al crear trabajador) limpia
+    // el RUT ingresado con cleanRut antes de comparar. Guardar el valor crudo del
+    // markdown (con puntos) rompía esa comparación para los 146 trabajadores
+    // sembrados, y el PPA público nunca los encontraba por RUT.
+    const rut = cleanRut(row.rut)
+    if (seenRuts.has(rut)) return []
+    seenRuts.add(rut)
 
     const worksiteId = worksiteIdByName.get(row.worksiteName)
     if (!worksiteId) throw new Error(`Faena no encontrada para trabajador ${row.rut}`)
 
     return [{
       id: `wrk-${slugify(row.rut)}`,
-      rut: row.rut,
+      rut,
       firstName: row.firstName,
       lastName: row.lastName,
       worksiteName: row.worksiteName,
@@ -98,10 +104,6 @@ function buildWorksites(rows: ParsedWorkerRow[]): SeedWorksite[] {
     name,
     code: `FA-${String(index + 1).padStart(3, "0")}`,
   }))
-}
-
-function normalizeRut(rut: string) {
-  return rut.replace(/\./g, "").toUpperCase()
 }
 
 function slugify(value: string) {

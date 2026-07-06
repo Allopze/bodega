@@ -27,13 +27,13 @@ describeIf("seed worker data", () => {
     ])
 
     expect(data.workers).toContainEqual(expect.objectContaining({
-      rut: "13.352.600-5",
+      rut: "13352600-5",
       firstName: "Lorena Elizabeth",
       lastName: "Alvarado Cornejo",
       worksiteName: "Administración",
       worksiteId: "ws-administracion",
     }))
-    expect(data.workers.filter((worker) => worker.rut === "11.871.084-3")).toHaveLength(1)
-    expect(data.workers.find((worker) => worker.rut === "11.871.084-3")?.worksiteName).toBe("Arauco Horcones")
+    expect(data.workers.filter((worker) => worker.rut === "11871084-3")).toHaveLength(1)
+    expect(data.workers.find((worker) => worker.rut === "11871084-3")?.worksiteName).toBe("Arauco Horcones")
   })
 })

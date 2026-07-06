@@ -1,267 +1,128 @@
-# Auditoría Integral: Plataforma Chome
+# Prompt de Auditoría Integral para la Plataforma Chome
 
-Eres un auditor senior (Staff Eng / Security / SRE / QA / DevOps / PM combinado). Tu tarea es auditar el siguiente SaaS interno construido en Next.js.
+Este documento contiene un prompt altamente estructurado y detallado para que un Modelo de Lenguaje Grande (LLM) actúe como un auditor senior y realice un análisis exhaustivo del código, seguridad, base de datos y arquitectura de la **Plataforma Chome**.
 
-## Instrucciones generales
-
-- No hagas concesiones. Reporta TODO hallazgo sin filtrar.
-- Clasifica cada hallazgo como: **Crítico**, **Alto**, **Medio** o **Mejora**.
-- Propón remediación concreta para cada hallazgo, no solo diagnósticos.
-- Distingue entre hallazgos accionables desde código vs. los que requieren acción humana/infraestructura.
+Para utilizar este prompt, cópialo y pégalo en una sesión de chat con el LLM auditor, junto con el acceso a la base de código (o los archivos específicos que se deseen revisar).
 
 ---
 
-## Contexto del producto
+```markdown
+# PROMPT DE AUDITORÍA TÉCNICA E INTEGRAL: PLATAFORMA CHOME
 
-**Nombre:** Plataforma Chome  
-**Empresa:** Servicios Industriales Chome Limitada (Chile)  
-**Propósito:** Centralizar la gestión operacional de Chome por faena: adquisiciones, bodega, prevención, flota, reportes y trazabilidad. Controla cada ítem (ej: casco, guante, botas) desde que se solicita hasta que se entrega al trabajador.
+## 1. Rol y Objetivos
 
-**Flujo principal:**
+Actúa como un **Auditor Técnico Senior (Staff Engineer / Security Researcher / SRE / Lead QA)**. Tu tarea consiste en auditar exhaustivamente la aplicación **Plataforma Chome**, un SaaS interno para la gestión de operaciones y abastecimiento por faena.
+
+Debes realizar un análisis riguroso y sin concesiones. Reporta todo hallazgo técnico, bug lógico, vulnerabilidad de seguridad o desviación arquitectónica que encuentres en los archivos proporcionados.
+
+Para cada hallazgo debes proveer:
+1. **Severidad:** Clasificación estricta en **Crítico**, **Alto**, **Medio** o **Baja / Mejora**.
+2. **Descripción del Problema:** Detalle técnico de qué está mal, citando archivos, funciones o líneas específicas de código.
+3. **Impacto:** Consecuencia operacional, de seguridad o de rendimiento si el problema no se corrige.
+4. **Remediación Concreta:** Fragmento de código de reemplazo, cambio de configuración o procedimiento exacto para solucionarlo.
+
+---
+
+## 2. Contexto de la Aplicación y Lógica de Negocio
+
+### Propósito del Sistema
+La **Plataforma Chome** centraliza la operación por faena (adquisiciones, bodega, entregas, prevención, flota, combustibles, reportes y trazabilidad) para **Servicios Industriales Chome Limitada (Chile)**. Gestiona de punta a punta cada ítem solicitado (ej. cascos, guantes, repuestos) para asegurar control absoluto del stock y evitar pérdidas físicas.
+
+### Flujo Principal de Abastecimiento (Operaciones)
+El flujo operacional se modela como:
 ```
-Solicitud → Aprobación → Orden de Compra → Recepción (oficina + faena) → Entrega a trabajador
+Solicitud → Aprobación → Orden de Compra (OC) → Recepción Oficina → Recepción Faena → Entrega a Trabajador
 ```
 
-**Máquina de estados del ítem (unidad central de control):**
-```
-draft → requested → approved → in_purchase_order → purchased → partially_received → received → partially_delivered → delivered
-```
-Con estados de rechazo: `cancelled`, `rejected`, `postponed`.
+### Máquina de Estados del Ítem (Unidad Central de Control)
+Cada ítem en una solicitud tiene su propio estado, lo que previene "ítems perdidos" al gestionar recepciones o entregas parciales:
+- **Estados:** `draft` → `requested` → `approved` → `in_purchase_order` → `purchased` → `partially_received` → `received` → `partially_delivered` → `delivered`
+- **Estados de Rechazo/Retraso:** `cancelled`, `rejected`, `postponed` (postergado, almacenable para reanudación posterior).
+- **Estados de Solicitud (Rollup):** `draft` → `submitted` → `in_review` → `partially_approved` → `approved` → `in_purchasing` → `closed` (el cierre se calcula cuando todos sus ítems están entregados o cancelados).
+- **Estados de OC:** `draft` → `issued` → `sent` → `supplier_confirmed` → `partially_received` → `received` → `closed`
 
-**Estados de solicitud:** draft → submitted → in_review → partially_approved → approved → in_purchasing → closed  
-**Estados de OC:** draft → issued → sent → supplier_confirmed → partially_received → received → closed
+### Roles y Control de Acceso Basado en Roles (RBAC con Scoping por Faena)
+El sistema implementa RBAC donde los usuarios del módulo operativo tienen scope limitado a sus faenas asignadas, excepto los roles corporativos globales.
+- **Roles Globales:** `administrador`, `jefa_chome`, `secretaria`, `prevencionista` (prevencionista oficina), `jefe_mantencion`. Ven todas las faenas.
+- **Roles Scoped:** `prevencionista_faena` (u otros solicitantes). Solo ven y operan datos vinculados a sus faenas autorizadas.
+- **Bodega Descentralizada:** No hay bodega central; el stock vive y se gestiona directamente a nivel de cada faena.
 
-### Usuarios y roles (RBAC con scope por faena)
+---
 
-| Rol | Alcance | Permisos |
+## 3. Stack Tecnológico
+
+| Capa | Tecnología | Características y Convenios |
 |---|---|---|
-| Administrador | Todas las faenas | Control total, ~23 permisos |
-| Jefatura | Todas las faenas | Aprueba, ve compras/reportes |
-| Secretaría | Todas las faenas | Aprueba, crea OCs, recibe, admin maestros |
-| Prevencionista oficina | Todas las faenas | Aprueba EPP, recibe en oficina, admin maestros |
-| Prevencionista faena | Solo faenas asignadas | Crea solicitudes, recibe en faena, ve stock |
-
-El stock vive a nivel de faena (no hay bodega centralizada). Cada faena es su propia bodega.
-
-### Módulos del sistema
-
-1. **Dashboard** — cola de trabajo, KPIs del pipeline
-2. **Solicitudes** — pedidos multi-ítem, atributos (talla/color), urgencia, borradores, duplicar como plantilla
-3. **Aprobaciones** — por ítem individual (no toda la solicitud), modificación auditada de cantidades, motivo registrado, bloqueo EPP sin prevencionista
-4. **Órdenes de Compra** — consolida ítems aprobados, selección de proveedor, PDF imprimible A4, adjuntar cotizaciones
-5. **Recepción (2 etapas)** — oficina (checkpoint admin, no genera stock) → faena (genera stock + kardex)
-6. **Bodega** — stock por faena, alertas de mínimo, kardex histórico, ajustes con motivo, devoluciones
-7. **Entregas** — entrega a trabajador, cierra el ciclo del ítem
-8. **Trazabilidad** — matriz producto × faena con cantidades en cada estado, filtrable, exportable a XLSX
-9. **Reportes** — múltiples tipos, exportación XLSX (ExcelJS)
-10. **Administración** — usuarios (CRUD + invitación email), faenas, trabajadores, productos, proveedores, configuración, auditoría
-
-### Funcionalidades transversales
-
-- Auditoría log: cada cambio de estado registrado (quién, qué, estado anterior/nuevo, motivo)
-- Códigos secuenciales: SOL-2026-0042, OC-2026-0017, REC-2026-0005
-- Archivos adjuntos por tipo de entidad, almacenados en `/storage/`
-- Notificaciones: campana con polling
-- Rate limiting en login (Postgres, IP + email)
-- Exportación XLSX en todos los reportes
+| **Framework** | Next.js 16.2.x (App Router) | Usa `proxy.ts` como middleware de enrutamiento y CSP. |
+| **Lenguaje** | TypeScript | Modo `strict` y `noUncheckedIndexedAccess` habilitados. |
+| **Base de Datos** | PostgreSQL | Acceso mediante pool (`postgres` / `drizzle-orm/postgres-js`). |
+| **ORM** | Drizzle ORM | Estructurado en `db/schema/` con migraciones versionadas y control estricto del diario (`meta/_journal.json`). |
+| **Autenticación** | NextAuth v5 (beta 31) | Autenticación basada en Credentials y tokens JWT con refresco de permisos desde BD en cada request. |
+| **Estilos & UI** | Tailwind CSS v4 + Radix UI | Componentes bajo `components/ui/` y diseño responsivo en español. |
+| **Data Fetching** | TanStack React Query v5 | Gestión del estado del lado del cliente. |
+| **Validación** | Zod v4 | Validación estricta tanto en Server Actions como en API routes. |
+| **Exportación** | ExcelJS / xlsx | Exportaciones obligatoriamente en formato **XLSX** (nunca CSV). |
+| **Testing** | Vitest + Playwright + PGlite | Tests unitarios y de integración con Postgres en memoria (PGlite). |
 
 ---
 
-## Stack técnico
+## 4. Estructura de Archivos Clave
 
-| Capa | Tecnología | Versión |
-|---|---|---|
-| Framework | Next.js (App Router) | 16.2.7 |
-| Lenguaje | TypeScript (strict) | 5.x |
-| Base de datos | PostgreSQL | vía `postgres` + `drizzle-orm/postgres-js` |
-| ORM | Drizzle ORM | 0.45.x |
-| Autenticación | NextAuth v5 (Credentials, JWT) | 5.0.0-beta.31 |
-| Estilos | Tailwind CSS v4 + tw-animate-css | 4.x |
-| UI Primitives | Radix UI (~14 paquetes) | latest |
-| Íconos | Phosphor Icons | latest |
-| Fuentes | Geist Sans, Geist Mono, Source Serif 4 | Google Fonts |
-| Data fetching | TanStack React Query v5 | 5.x |
-| Validación | Zod v4 | 4.x |
-| Exportación | ExcelJS | latest |
-| Hashing | bcryptjs | latest |
-| Testing | Vitest + Playwright + Testing Library | latest |
-| Linting | ESLint 9 (flat config) | 9.x |
-| Docker | Dockerfile multistage | — |
-| CI | GitHub Actions | — |
+- **`app/(app)/`**: Páginas autenticadas envueltas por `AppShell`.
+- **`app/(app)/<area>/actions.ts`**: Server Actions específicas de cada módulo (contienen la frontera lógica de mutación de datos).
+- **`lib/services/`**: Lógica de negocio pura (servicios de stock, órdenes de compra, recepciones, entregas, etc.).
+- **`lib/auth/`**: Configuración de NextAuth, definición de permisos y helpers de scope (`can.ts`, `scope.ts`).
+- **`db/schema/`**: Definición de tablas, relaciones y constraints CHECK de Drizzle.
+- **`modules/`**: Registro estático de navegación y permisos (`registry.ts`, `permissions.ts`). No debe contener lógica de negocio.
 
 ---
 
-## Estructura del proyecto (árbol relevante)
+## 5. Reglas y Directrices Críticas de Auditoría
 
-```
-├── app/
-│   ├── (app)/                    # Rutas autenticadas
-│   │   ├── admin/                # 7 secciones admin
-│   │   ├── aprobaciones/
-│   │   ├── bodega/
-│   │   ├── compras/
-│   │   ├── dashboard/
-│   │   ├── entregas/
-│   │   ├── perfil/
-│   │   ├── prevencion/
-│   │   ├── recepcion/
-│   │   ├── reportes/
-│   │   ├── repuestos/
-│   │   ├── servicios/
-│   │   ├── solicitudes/
-│   │   └── trazabilidad/
-│   ├── (auth)/                   # Login, registro
-│   ├── (print)/                  # PDFs
-│   └── api/                      # API routes
-├── lib/
-│   ├── auth/                     # NextAuth config, RBAC, permisos
-│   ├── email/                    # Email (nodemailer/Brevo)
-│   ├── security/                 # CSP, rate-limit, CSRF
-│   ├── services/                 # Lógica de negocio (items, requests, stock, etc.)
-│   ├── validation/               # Schemas Zod
-│   ├── storage/                  # File uploads
-│   ├── reports/                  # Reportes XLSX
-│   ├── sst/                      # State machine (item-state.ts, canTransition)
-│   ├── hooks/                    # React hooks globales
-│   ├── testing/                  # Helpers de testing
-│   └── utils.ts, audit.ts, constants.ts, ...
-├── db/
-│   ├── schema/                   # Drizzle schema (tablas, relaciones, enums)
-│   ├── migrations/               # Migraciones versionadas
-│   └── seed.ts                   # Seed: roles, permisos, datos catálogo
-├── modules/
-│   ├── registry.ts               # Registry de módulos (nav + permisos)
-│   ├── permissions.ts            # Permisos derivados
-│   ├── manifest-types.ts         # Tipos del manifest
-│   └── */manifest.ts             # Manifests individuales
-├── components/
-│   ├── ui/                       # UI primitives
-│   ├── layout/                   # Sidebar, header, nav
-│   └── admin/, states/, ...
-├── e2e/                          # Playwright tests
-├── scripts/                      # Scripts auxiliares
-└── storage/                      # Almacenamiento local de archivos
+Audita el código buscando vulnerabilidades, errores de diseño o violaciones de las siguientes directrices establecidas para el proyecto:
+
+### A. Seguridad y Autorización (Access Control)
+1. **Validación del Scope de Faenas (Crítico):** Los roles no globales deben estar limitados por faena. Busca cualquier Server Action, API Route o consulta SQL donde un usuario scoped pueda leer o modificar registros de una faena que no tiene asignada (ataques IDOR / Fuga de Scope). Verifica el uso correcto de `worksiteScopeSql` y `canAccessWorksite`.
+2. **CSRF y Seguridad de Server Actions:** Asegúrate de que todas las Server Actions verifiquen la sesión del usuario mediante `guardPermission` o `guardAuth` y que no expongan acciones públicas sin controles de tasa o validaciones rigurosas.
+3. **Inyección SQL con Drizzle ORM:** Revisa el uso de fragmentos de SQL crudo (`sql` template literal o `sql.raw`). Asegúrate de que ningún input del usuario sea concatenado directamente dentro de estas cláusulas.
+4. **Path Traversal en Storage de Archivos:** El almacenamiento de archivos adjuntos se gestiona localmente en `/storage/`. Audita las descargas y subidas de archivos en `lib/storage/` y endpoints de attachments. Debe usarse `path.posix.basename` y validaciones estrictas para evitar saltos de directorio (`../`).
+5. **Fuga de PII (Información Personal Sensible):** Revisa el manejo del RUT chileno y los datos de trabajadores. Verifica que el endpoint público de búsqueda (ej. para formularios PPA de trabajadores) aplique rate limiting persistente en base de datos para mitigar ataques de enumeración y que el logger del sistema redacte información sensible.
+6. **Mapeo NAT y Bloqueo de Disponibilidad:** Revisa los servicios de rate limiting. El rate limit por IP en redes compartidas de faena (NAT) puede causar denegación de servicio (DoS) a usuarios legítimos. Recomienda rate limits combinados (IP + RUT / Identificador).
+
+### B. Integridad de Base de Datos y Concurrencia
+1. **Concurrencia y Race Conditions en Inventario:** La mutación de stock debe ser atómica y tolerante a condiciones de carrera. Verifica que las transacciones en `lib/services/stock.ts` o `receiving.ts` utilicen bloqueos a nivel de fila (`FOR UPDATE`) o sentencias SQL atómicas con guardas anti-negativo (`quantity + delta >= 0` a nivel de `WHERE` o constraints `CHECK`).
+2. **Generación de Códigos Secuenciales (SOL-, OC-, REC-):** Audita que la asignación de números de folios secuenciales no sufra de colisiones bajo alta concurrencia. Debe apoyarse en secuencias de base de datos o bloqueos transaccionales estrictos.
+3. **Consistencia de Drizzle Kit y Migraciones:** Nunca se debe editar a mano el archivo `meta/_journal.json` ni los archivos `.sql` ya generados. Cualquier cambio en BD debe originarse de `db/schema/*.ts`. Revisa que no existan discrepancias entre schemas de TS y el diario de migraciones.
+
+### C. Arquitectura y Fronteras de Código (Server vs. Client)
+1. **Fuga de Módulos de Servidor al Navegador (Turbopack Build Issues):** Busca acoplamientos donde componentes cliente (`"use client"`) importen directa o indirectamente (a través de archivos barrel como `prevention-documents-library.ts` o `@/lib/services/sst`) módulos que dependen de bases de datos (`@/db`), sistemas de archivos (`node:fs`) o criptografía del servidor (`node:crypto`). Esto rompe el build de producción de Next.js.
+2. **Reglas de Maquetación de Páginas (Page Layout):**
+   - Las páginas autenticadas en `app/(app)/` deben usar `<PageContainer>` y `<PageHeader>` para integrarse con la barra de navegación del shell.
+   - **No** deben agregar inputs de búsqueda independientes en la página si la barra de búsqueda global `TopBar` ya está activa para esa ruta (para evitar buscadores dobles e inertes).
+   - Las páginas que usen filtrado en el servidor deben registrar su ruta en `ROUTES_WITH_OWN_SEARCH` de `components/layout/top-bar.tsx`.
+3. **Arquitectura de Búsqueda:** La búsqueda general debe ser server-side y sincronizada con la URL. Revisa que las DataTables con búsqueda en el servidor tengan habilitado `disableInternalSearch` para evitar filtrados redundantes o incorrectos client-side.
+
+### D. Rendimiento y Código Muerto
+1. **Consultas N+1:** Revisa que los componentes de servidor o servicios no ejecuten consultas secuenciales dentro de bucles (`map`, `forEach`). Se deben priorizar joins o consultas agrupadas (`inArray`).
+2. **Exportaciones XLSX Eficientes:** Asegúrate de que las exportaciones masivas a XLSX utilicen buffers optimizados (ej. `exceljs` streaming) y se apliquen los filtros y alcances de permisos de forma equivalente a las consultas en pantalla.
+3. **Código Huérfano:** Reporta archivos basura (`package copy.json`, etc.) o funciones declaradas sin uso.
+
+---
+
+## 6. Entregables Esperados
+
+Genera un reporte técnico estructurado bajo las siguientes secciones:
+
+1. **Resumen Ejecutivo:** Evaluación general de la robustez del proyecto.
+2. **Veredicto de Producción:** Elige categóricamente entre:
+   - `🟢 Listo para producción`
+   - `🟡 Listo con observaciones (no hay bloqueos críticos pero hay deuda técnica/seguridad menor)`
+   - `🔴 No listo para producción (existen fallos de compilación, de seguridad crítica, o pérdida de datos)`
+3. **Puntuación Global:** Nota técnica ponderada de 1 a 100.
+4. **Tabla Resumen de Hallazgos:** Una tabla con las columnas: `ID`, `Severidad`, `Categoría`, `Archivo Afectado`, `Descripción Corta`.
+5. **Detalle de Hallazgos:** Desarrolla cada hallazgo listado con su descripción, impacto y remediación exacta de código.
+6. **Roadmap de Deuda Técnica:** Lista de refactorizaciones y mejoras de testing priorizadas para las siguientes fases.
 ```
 
-**Regla importante:** La lógica de negocio VIVA está en `lib/` + `app/`. Los `modules/` solo contienen manifests con navegación, permisos y grants — NO tienen implementación de negocio (una migración modular está pausada).
-
 ---
-
-## Áreas de auditoría solicitadas
-
-### 1. Seguridad
-- Autenticación (NextAuth con Credentials + JWT)
-- RBAC: ¿realmente se respeta el scope por faena en todas las acciones?
-- Protección contra CSRF en Server Actions
-- Manejo de sesión, cookies, expiración
-- Headers de seguridad (CSP, HSTS, X-Frame-Options, etc.)
-- Rate limiting en login/registro
-- Validación Zod en inputs: ¿es suficiente o hay bypass?
-- Seguridad en archivos adjuntos (subida, descarga, content-type, path traversal)
-- Manejo de RUT chileno (Rol Único Tributario, PII)
-- SQL injection a pesar de ORM
-- Exposición de información sensible en logs, errores, respuestas API
-- Configuración de CORS
-- Manejo de secretos en CI/env
-
-### 2. Arquitectura y código
-- Estructura de capas (services/actions/UI): ¿separación limpia?
-- Server Components vs Client Components: ¿frontera correcta?
-- State machine de ítems: ¿cubre todos los casos? ¿transiciones válidas?
-- Manejo de errores en Server Actions
-- Tipado estricto de TypeScript
-- Código muerto, módulos congelados
-- Complejidad ciclomática en servicios
-- Patrones de mutación de datos (transacciones, locks)
-
-### 3. Base de datos
-- Consistencia del schema Drizzle vs migraciones
-- Integridad referencial y constraints CHECK
-- Transacciones: ¿se usa `db.transaction` donde debería?
-- Índices, performance de queries
-- Manejo de secuencias (códigos SOL-, OC-, REC-)
-- Migraciones: ¿son reversibles? ¿se prueban?
-- Conexión pooling
-
-### 4. Rendimiento y escalabilidad
-- N+1 queries en server components o páginas
-- Optimización de imágenes y fuentes
-- Bundle size de JS
-- Caching (React Query, server cache)
-- Manejo de archivos grandes adjuntos
-- Consultas pesadas en reportes/trazabilidad
-
-### 5. DevOps, despliegue y observabilidad
-- Dockerfile: ¿producción-ready? ¿multi-stage?
-- CI/CD: GitHub Actions, cache, tiempos
-- Logging estructurado
-- Health checks
-- Backup y restauración de BD
-- Manejo de variables de entorno (.env.example, documentación)
-- Plan de SLOs, alertas, runbook
-
-### 6. Frontend / UX
-- Estados de carga, error y vacío en todas las vistas
-- Accesibilidad (WCAG)
-- Feedback al usuario en operaciones asíncronas
-- Responsive design
-- Consistencia visual (design tokens)
-- Mensajes de error amigables
-
-### 7. Testing y calidad
-- Cobertura de unit tests (Vitest)
-- Cobertura de E2E (Playwright)
-- Tests de transiciones de estado
-- Tests de permisos RBAC
-- Tests de integración con BD real
-- Linting y typecheck en CI
-
-### 8. Documentación y DX
-- README: inicialización, configuración, flujo de datos reales
-- Documentación técnica (arquitectura, diseño, planificación)
-- Documentación de seguridad (CSRF, CSP, rate-limit)
-- Comentarios de código y JSDoc
-
----
-
-## Alcance de la auditoría
-
-Debes revisar:
-
-1. **Código fuente completo:** `app/`, `lib/`, `db/`, `modules/`, `components/`
-2. **Schema y migraciones:** `db/schema/`, `db/migrations/`
-3. **Configuración:** `next.config.ts`, `tsconfig.json`, `drizzle.config.ts`, `Dockerfile`, `package.json`
-4. **Tests:** `lib/__tests__/`, `e2e/`, `vitest.config.ts`, `playwright.config.ts`
-5. **CI/CD:** `.github/workflows/`
-6. **Documentación:** `docs/`, `README.md`, `AGENTS.md`, `CLAUDE.md`
-7. **Archivos de auditoría existentes:** `AUDITORIA_INTEGRAL_CHOME.md`, `docs/security/CSRF.md`
-
----
-
-## Entregable esperado
-
-Un documento de auditoría completo con:
-
-1. **Resumen ejecutivo** — estado general del proyecto
-2. **Decisión de producción** — ✅ Listo / 🟡 Listo con observaciones / 🔴 No listo
-3. **Puntuación global** sobre 100
-4. **Hallazgos por categoría**, cada uno con:
-   - ID único (ej: S-01, A-03, DB-02)
-   - Severidad (Crítico / Alto / Medio / Mejora)
-   - Descripción del problema
-   - Impacto
-   - Remedio concreto (código, config, o acción humana)
-   - Archivo(s) afectado(s)
-5. **Deuda técnica priorizada**
-6. **Roadmap técnico recomendado**
-7. **Checklist de remediación inmediata** (si aplica)
-
----
-
-## Notas adicionales
-
-- Este es un SaaS B2B interno con ~6-50 usuarios concurrentes, multi-faena, multi-rol, con datos PII (RUT chileno) y manejo de facturación (PDF/XML).
-- La BD es PostgreSQL, no SQLite ni mock. Los tests de integración usan PGlite (Postgres embebido en memoria).
-- El código está en TypeScript strict mode.
-- Ya existe una auditoría previa (ver `auditoria/AUDITORIA_INTEGRAL_CHOME.md`). Puedes usarla como referencia, pero debes hacer tu propia revisión independiente y no asumir que los hallazgos anteriores siguen siendo válidos o fueron corregidos.
-- Sé específico: nombra archivos exactos, líneas y fragmentos de código cuando sea posible.
+*Documento autogenerado para el control de calidad del repositorio Plataforma Chome.*

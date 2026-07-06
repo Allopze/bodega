@@ -17,7 +17,13 @@ import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
-import { PreventionExportButton } from "@/components/prevention/export-button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DotsThree, DownloadSimple, PencilSimple } from "@phosphor-icons/react/dist/ssr"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
@@ -129,12 +135,29 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                 <Link href={`/prevencion/pdtp/aprobaciones?programId=${programId}`}>Aprobaciones</Link>
               </Button>
             )}
-            {canManage && program.status === "draft" && (
-              <Button asChild variant="secondary" size="sm">
-                <Link href={`/prevencion/pdtp/${programId}/editar`}>Editar programa</Link>
-              </Button>
-            )}
-            <PreventionExportButton href={exportHref} label="Exportar programa" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="secondary" size="sm" aria-label="Más acciones">
+                  <DotsThree size={16} weight="bold" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <a href={exportHref} download className="flex items-center gap-2">
+                    <DownloadSimple size={14} />
+                    Exportar programa
+                  </a>
+                </DropdownMenuItem>
+                {canManage && program.status === "draft" && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/prevencion/pdtp/${programId}/editar`} className="flex items-center gap-2">
+                      <PencilSimple size={14} />
+                      Editar programa
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         }
       />
@@ -150,9 +173,13 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         {/* Compliance indicators */}
         {indicators && <PdtpIndicatorsPanel data={indicators} />}
 
-        <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} programId={programId} />
-        <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} />
-        <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={programId} />
+        <div className="flex flex-wrap items-start gap-6">
+          <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} programId={programId} />
+          {worksites.length > 1 && (
+            <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} />
+          )}
+          <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={programId} />
+        </div>
 
         {overrideError && (
           <p className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">

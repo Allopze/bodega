@@ -59,3 +59,22 @@ export function deriveActivityStatus(
   // Planned this month, not executed, no earlier unexecuted months
   return "pending"
 }
+
+/**
+ * Count how many past months have planned but zero executed activity.
+ * Used to derive badge severity (e.g. "Atrasado · 2 meses").
+ * Returns 0 if status is not "overdue".
+ */
+export function countOverdueMonths(
+  monthlyPlanned: number[],
+  monthlyExecuted: number[],
+  period: PdtpPeriod,
+): number {
+  let count = 0
+  for (let i = 0; i < period.month - 1; i++) {
+    const planned = monthlyPlanned[i] ?? 0
+    const executed = monthlyExecuted[i] ?? 0
+    if (planned > 0 && executed === 0) count++
+  }
+  return count
+}

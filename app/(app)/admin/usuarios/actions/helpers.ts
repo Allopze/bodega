@@ -1,5 +1,3 @@
-"use server"
-
 import { requirePermission } from "@/lib/auth/can"
 
 export async function requireAdminPermission() {

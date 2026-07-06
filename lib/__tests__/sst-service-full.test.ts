@@ -437,7 +437,11 @@ describe("saveResponses", () => {
 
     expect(onConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({
       target: expect.any(Array),
-      set: expect.objectContaining({ estado: "cumple" }),
+      set: expect.objectContaining({
+        estado: expect.any(Object),
+        observacion: expect.any(Object),
+        accionCorrectiva: expect.any(Object),
+      }),
     }))
   })
 

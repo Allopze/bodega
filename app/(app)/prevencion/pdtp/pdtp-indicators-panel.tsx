@@ -92,38 +92,55 @@ export function PdtpIndicatorsPanel({ data }: { data: PdtpComplianceIndicators }
         </div>
       </div>
 
-      {/* Monthly grid */}
-      <TableRoot>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="pl-1 pr-3">Mes</TableHead>
-              <TableHead className="text-right">Prog.</TableHead>
-              <TableHead className="text-right">Ejec.</TableHead>
-              <TableHead className="text-right">%</TableHead>
-              <TableHead>Meta</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {monthly.map((m) => {
-              const meetsTarget = m.percent !== null && m.percent >= target
-              return (
-                <TableRow key={m.month}>
-                  <TableCell className="py-1.5 pl-1 pr-3 text-xs font-medium text-[var(--color-text-subtle)]">{MONTH_LABELS[m.month - 1]}</TableCell>
-                  <TableCellNum className="px-2 py-1.5 text-xs">{m.planned}</TableCellNum>
-                  <TableCellNum className="px-2 py-1.5 text-xs">{m.executed}</TableCellNum>
-                  <TableCellNum className={cn("px-2 py-1.5 text-xs font-semibold", meetsTarget ? "text-[var(--color-success)]" : m.executed > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]")}>
-                    {fmtPct(m.percent)}
-                  </TableCellNum>
-                  <TableCell className="px-2 py-1.5">
-                    {meetsTarget && <CheckCircle size={13} className="text-[var(--color-success)]" />}
-                  </TableCell>
+      {/* Monthly grid — collapsible */}
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            className="shrink-0 rotate-0 transition-transform duration-200 group-open:rotate-90"
+            aria-hidden
+          >
+            <path d="M4 2.5L8.5 6L4 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+          Ver desglose mensual
+        </summary>
+        <div className="mt-2">
+          <TableRoot>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-1 pr-3">Mes</TableHead>
+                  <TableHead className="text-right">Prog.</TableHead>
+                  <TableHead className="text-right">Ejec.</TableHead>
+                  <TableHead className="text-right">%</TableHead>
+                  <TableHead>Meta</TableHead>
                 </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </TableRoot>
+              </TableHeader>
+              <TableBody>
+                {monthly.map((m) => {
+                  const meetsTarget = m.percent !== null && m.percent >= target
+                  return (
+                    <TableRow key={m.month}>
+                      <TableCell className="py-1.5 pl-1 pr-3 text-xs font-medium text-[var(--color-text-subtle)]">{MONTH_LABELS[m.month - 1]}</TableCell>
+                      <TableCellNum className="px-2 py-1.5 text-xs">{m.planned}</TableCellNum>
+                      <TableCellNum className="px-2 py-1.5 text-xs">{m.executed}</TableCellNum>
+                      <TableCellNum className={cn("px-2 py-1.5 text-xs font-semibold", meetsTarget ? "text-[var(--color-success)]" : m.executed > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]")}>
+                        {fmtPct(m.percent)}
+                      </TableCellNum>
+                      <TableCell className="px-2 py-1.5">
+                        {meetsTarget && <CheckCircle size={13} className="text-[var(--color-success)]" />}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </TableRoot>
+        </div>
+      </details>
     </div>
   )
 }
+
