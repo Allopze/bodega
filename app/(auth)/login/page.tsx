@@ -66,7 +66,7 @@ export default async function LoginPage() {
                 Servicios Chome
               </p>
               <p className="text-xs font-mono uppercase tracking-wider text-white/45 leading-tight mt-0.5">
-                Solicitudes y Bodega
+                Plataforma Chome
               </p>
             </div>
           </div>
@@ -75,7 +75,7 @@ export default async function LoginPage() {
         {/* Zona inferior — solo eyebrow */}
         <div className="relative z-10 px-12 pb-12">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/50">
-            Solicitudes y Bodega
+            Plataforma Chome
           </p>
         </div>
       </aside>

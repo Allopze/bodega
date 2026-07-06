@@ -92,7 +92,7 @@ Sustituir **todo el `<aside>…</aside>`** (líneas 20–89) por:
           Chome
         </p>
         <p className="text-[10px] font-mono uppercase tracking-wider text-white/45 leading-tight mt-0.5">
-          Solicitudes y Bodega
+          Plataforma Chome
         </p>
       </div>
     </div>
@@ -101,7 +101,7 @@ Sustituir **todo el `<aside>…</aside>`** (líneas 20–89) por:
   {/* Zona inferior — solo eyebrow */}
   <div className="relative z-10 px-12 pb-12">
     <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/50">
-      Solicitudes y Bodega
+      Plataforma Chome
     </p>
   </div>
 </aside>
@@ -140,7 +140,7 @@ Confirmar visualmente:
 - ✅ Degradado radial verde (más oscuro en el centro-izquierda, más vivo arriba-derecha)
 - ✅ Textura de puntos tenue sobre el fondo
 - ✅ Logo gigante semitransparente visible abajo-derecha (apenas perceptible, ~5% opacidad)
-- ✅ Logo 36×36 + "Chome" + "Solicitudes y Bodega" en la esquina superior izquierda
+- ✅ Logo 36×36 + "Chome" + "Plataforma Chome" en la esquina superior izquierda
 - ✅ Solo el eyebrow "SOLICITUDES Y BODEGA" en la zona inferior
 - ❌ Ausencia del ledger numerado (01/02/03)
 - ❌ Ausencia del titular "Control total del abastecimiento."

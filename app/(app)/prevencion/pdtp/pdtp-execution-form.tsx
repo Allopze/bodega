@@ -12,11 +12,12 @@ type ExecState = { ok: boolean; message?: string; fieldErrors?: Record<string, s
 type PdtpExecutionFormProps = {
   activityId: string
   worksiteId: string
+  year?: number
   defaultMonth?: number
   defaultWeek?: number
 }
 
-export function PdtpExecutionForm({ activityId, worksiteId, defaultMonth, defaultWeek }: PdtpExecutionFormProps) {
+export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek }: PdtpExecutionFormProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [state, formAction] = React.useActionState<ExecState, FormData>(
     async (_prev, formData) => {
@@ -59,7 +60,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, defaultMonth, defaul
     >
       <input type="hidden" name="activityId" value={activityId} />
       <input type="hidden" name="worksiteId" value={worksiteId} />
-      <input type="hidden" name="year" value="2026" />
+      <input type="hidden" name="year" value={year ?? new Date().getFullYear()} />
       <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
         Mes
         <Select name="month" defaultValue={String(defaultMonth ?? 1)}>

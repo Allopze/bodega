@@ -4,60 +4,18 @@ import { useState, useTransition, useRef, useId } from "react"
 import { useRouter } from "next/navigation"
 import { CalendarBlank, CheckCircle, IdentificationBadge, MapPin, UserFocus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
-import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import { createEvaluationAction } from "@/app/(app)/prevencion/actions"
-import type { SelectOption } from "@/lib/sst/types"
-
-interface WorkerOption {
-  id: string
-  name: string
-  rut: string
-  worksiteId: string
-}
-
-interface WorksiteOption {
-  id: string
-  name: string
-}
-
-interface DefinicionOption {
-  code: string
-  title: string
-  tipo: "nuevo" | "seguimiento"
-}
-
-interface Props {
-  workers: WorkerOption[]
-  worksites: WorksiteOption[]
-  definiciones: DefinicionOption[]
-  cargoOptions: SelectOption[]
-}
-
-const MOTIVO_OPTIONS = [
-  { value: "control_periodico",              label: "Control periódico" },
-  { value: "post_incidente_persona",         label: "Post incidente — persona" },
-  { value: "post_incidente_material",        label: "Post incidente — material" },
-  { value: "post_incidente_ambiental",       label: "Post incidente — ambiental" },
-  { value: "cuasi_accidente",                label: "Cuasi accidente" },
-  { value: "incumplimiento_procedimiento",   label: "Incumplimiento de procedimiento" },
-  { value: "reincidencia",                   label: "Reincidencia" },
-  { value: "reincorporacion",                label: "Reincorporación" },
-  { value: "otro",                           label: "Otro" },
-]
-
-const today = new Date().toISOString().slice(0, 10)
-
-function getEvaluationTypeLabel(definition: DefinicionOption) {
-  if (definition.tipo === "seguimiento") return "Control de seguimiento"
-  return "Trabajador nuevo"
-}
+import { SummaryItem } from "./nueva-evaluacion-form-summary"
+import { CargosSelector } from "./nueva-evaluacion-form-cargos"
+import { SeguimientoSection } from "./nueva-evaluacion-form-seguimiento"
+import type { Props } from "./nueva-evaluacion-form.types"
+import { today, getEvaluationTypeLabel } from "./nueva-evaluacion-form.types"
 
 export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOptions }: Props) {
   const router = useRouter()
@@ -91,10 +49,6 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   const defId      = `${uid}-definicion`
   const siteId     = `${uid}-worksite`
   const fechaId    = `${uid}-fecha`
-  const motivoId   = `${uid}-motivo`
-  const motivoOtroId = `${uid}-motivo-otro`
-  const descId     = `${uid}-desc`
-  const patenteId  = `${uid}-patente`
 
   const selectedDef = definiciones.find((d) => d.code === definicionCode)
   const isSeguimiento = selectedDef?.tipo === "seguimiento"
@@ -133,7 +87,6 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
 
     if (Object.keys(next).length === 0) return true
 
-    // Focus the first invalid control
     if (next.workerId)    { workerRef.current?.focus();     return false }
     if (next.definicion)  { definicionRef.current?.focus(); return false }
     if (next.worksiteId)  { worksiteRef.current?.focus();   return false }
@@ -296,115 +249,33 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
         </div>
 
         {/* Cargos */}
-        <div className="rounded-(--radius-lg) border border-(--color-border) p-3 sm:p-4">
-          <p
-            className="text-sm font-medium text-[var(--color-text)] mb-1.5"
-            id={`${uid}-cargos-label`}
-          >
-            Cargos del trabajador
-            <span className="ml-0.5 text-danger" aria-hidden>*</span>
-          </p>
-          <div
-            ref={cargosRef}
-            role="group"
-            aria-labelledby={`${uid}-cargos-label`}
-            className="flex flex-wrap gap-2 focus:outline-none"
-            tabIndex={-1}
-          >
-            {cargoOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => toggleCargo(opt.value)}
-                aria-pressed={selectedCargos.includes(opt.value)}
-                className={[
-                  "inline-flex h-8 items-center gap-1.5 rounded-(--radius) border px-3 text-sm font-medium",
-                  "transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out)] ",
-                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-                  selectedCargos.includes(opt.value)
-                    ? "bg-(--color-primary) text-white border-(--color-primary) shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]"
-                    : "bg-(--color-surface) text-(--color-text) border-(--color-border) hover:border-(--color-border-strong) hover:bg-(--color-surface-2)",
-                ].join(" ")}
-              >
-                {selectedCargos.includes(opt.value) && <CheckCircle size={14} weight="fill" aria-hidden="true" />}
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          {errors.cargos && (
-            <p className="mt-1.5 text-xs text-danger leading-tight" role="alert">
-              {errors.cargos}
-            </p>
-          )}
-        </div>
+        <CargosSelector
+          uid={uid}
+          cargoOptions={cargoOptions}
+          selectedCargos={selectedCargos}
+          cargosRef={cargosRef}
+          onToggle={toggleCargo}
+          error={errors.cargos}
+        />
 
         {/* Seguimiento-specific fields */}
         {isSeguimiento && (
-          <>
-            <Field
-              label="Motivo del seguimiento"
-              htmlFor={motivoId}
-              required
-              error={errors.motivo}
-            >
-              <Select value={motivo} onValueChange={(v) => { setMotivo(v); setErrors((e) => ({ ...e, motivo: "" })) }}>
-                <SelectTrigger id={motivoId} ref={motivoRef} aria-invalid={!!errors.motivo}>
-                  <SelectValue placeholder="Selecciona motivo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOTIVO_OPTIONS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-
-            {motivo === "otro" && (
-              <Field
-                label="Especifica el motivo"
-                htmlFor={motivoOtroId}
-              >
-                <Input
-                  id={motivoOtroId}
-                  value={motivoOtro}
-                  onChange={(e) => setMotivoOtro(e.target.value)}
-                  placeholder="Describe el motivo…"
-                  maxLength={200}
-                />
-              </Field>
-            )}
-
-            <Field
-              label="Descripción del evento"
-              htmlFor={descId}
-              helper="Opcional — describe el evento que origina el seguimiento"
-            >
-              <Textarea
-                id={descId}
-                value={descripcionEvento}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="Describe el evento que origina el seguimiento…"
-                maxLength={500}
-                rows={3}
-              />
-            </Field>
-
-            <Field
-              label="Patente del equipo"
-              htmlFor={patenteId}
-              helper="Opcional — p. ej. ABCD12"
-            >
-              <Input
-                id={patenteId}
-                value={equipoPatente}
-                onChange={(e) => setPatente(e.target.value)}
-                placeholder="Ej. ABCD12"
-                maxLength={20}
-              />
-            </Field>
-          </>
+          <SeguimientoSection
+            motivo={motivo}
+            motivoOtro={motivoOtro}
+            descripcionEvento={descripcionEvento}
+            equipoPatente={equipoPatente}
+            errors={errors}
+            motivoRef={motivoRef}
+            uid={uid}
+            onMotivoChange={(v) => { setMotivo(v); setErrors((e) => ({ ...e, motivo: "" })) }}
+            onMotivoOtroChange={setMotivoOtro}
+            onDescChange={setDesc}
+            onPatenteChange={setPatente}
+          />
         )}
 
+        {/* Summary */}
         <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) p-3 sm:p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Resumen antes de crear</p>
           <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
@@ -447,31 +318,5 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
 
       </FieldGroup>
     </form>
-  )
-}
-
-function SummaryItem({
-  icon,
-  label,
-  value,
-  muted,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  muted: boolean
-}) {
-  return (
-    <div className="flex min-w-0 items-start gap-2 rounded-(--radius) bg-(--color-surface) px-3 py-2">
-      <span className={muted ? "mt-0.5 shrink-0 text-text-faint" : "mt-0.5 shrink-0 text-(--color-primary)"}>
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">{label}</p>
-        <p className={muted ? "truncate text-sm text-text-subtle" : "truncate text-sm font-medium text-(--color-text)"}>
-          {value}
-        </p>
-      </div>
-    </div>
   )
 }

@@ -1,4 +1,4 @@
-# Design System — Chome Solicitudes y Bodega
+# Design System — Plataforma Chome
 
 ## Dirección visual
 

@@ -79,6 +79,7 @@ describe("cancelRequest", () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockRequirePermission.mockResolvedValue(makeSession())
+    mockRequireAuth.mockResolvedValue(makeSession())
   })
 
   it("returns error if permission denied", async () => {

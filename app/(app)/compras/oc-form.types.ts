@@ -33,4 +33,6 @@ export interface OcItemRow extends PendingItemOption {
   unitPrice:        number
   discount:         number
   targetSupplierId: string
+  /** Per-item supplier override set by the user. When empty, falls back to suggestedSupplierId or global supplierId. */
+  itemSupplierOverrideId?: string
 }

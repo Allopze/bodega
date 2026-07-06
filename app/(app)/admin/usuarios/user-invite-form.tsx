@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Check, Copy, Envelope } from "@phosphor-icons/react"
+import { Check } from "@phosphor-icons/react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
@@ -11,28 +11,15 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { inviteUser } from "./actions"
-
-interface Role { id: string; name: string; label: string }
-interface Worksite { id: string; name: string; code: string }
-
-interface UserInviteFormProps {
-  open: boolean
-  onClose: () => void
-  allRoles: Role[]
-  allWorksites: Worksite[]
-}
-
-interface PendingInvite {
-  email:    string
-  inviteUrl: string
-}
+import { PendingInvitePanel } from "./user-invite-form-pending"
+import type { PendingInvite, UserInviteFormProps } from "./user-invite-form.types"
 
 export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserInviteFormProps) {
   const [selectedRoles, setSelectedRoles] = React.useState<string[]>([])
   const [selectedWsIds, setSelectedWsIds] = React.useState<string[]>([])
   const [primaryWorksiteId, setPrimaryWorksiteId] = React.useState("")
-  const [pending, setPending] = React.useState<PendingInvite | null>(null)
-  const [copied, setCopied]   = React.useState(false)
+    const [pending, setPending] = React.useState<PendingInvite | null>(null)
+  const [_copied, setCopied]   = React.useState(false)
 
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -41,12 +28,8 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
         toast.success(result.message ?? "Invitación creada")
         const data = result.data as { email?: string; inviteUrl?: string } | undefined
         if (data?.inviteUrl) {
-          // The action returned a non-empty inviteUrl only when SMTP is
-          // not configured. Keep the form open and surface the link in a
-          // deliberate, dismissable panel instead of a transient toast.
           const matchedEmail = data.email ?? result.message?.match(/a\s+(\S+@\S+)/i)?.[1] ?? ""
           setPending({ email: matchedEmail, inviteUrl: data.inviteUrl })
-          // Reset role/worksite selections so the form is ready for a new invite.
           setSelectedRoles([])
           setSelectedWsIds([])
           setPrimaryWorksiteId("")
@@ -73,20 +56,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
       if (!next.includes(primaryWorksiteId)) setPrimaryWorksiteId(next[0] ?? "")
       return next
     })
-  }
-
-  async function copyInvite() {
-    if (!pending) return
-    try {
-      await navigator.clipboard.writeText(pending.inviteUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      toast.error("No se pudo copiar al portapapeles")
-    }
-  }
-
-  return (
+  }  return (
     <Sheet open={open} onOpenChange={(v) => {
       if (!v) {
         setPending(null)
@@ -96,69 +66,11 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
     }}>
       <SheetContent>
         {pending ? (
-          <>
-            <SheetHeader>
-              <div>
-                <SheetTitle>Invitación pendiente</SheetTitle>
-                <SheetDescription>
-                  SMTP no está configurado. Comparte este enlace con {pending.email || "el destinatario"} por un canal seguro.
-                </SheetDescription>
-              </div>
-              <SheetCloseButton onClick={() => { setPending(null); setCopied(false); onClose() }} />
-            </SheetHeader>
-
-            <SheetBody>
-              <div
-                role="status"
-                aria-live="polite"
-                className="rounded-(--radius) border border-(--color-warning-line) bg-(--color-warning-tint) p-4"
-              >
-                <div className="flex items-start gap-2">
-                  <Envelope size={16} weight="bold" className="mt-0.5 text-(--color-warning)" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-(--color-text)">
-                      Enlace de registro
-                    </p>
-                    <p className="mt-1 text-xs text-(--color-text-muted)">
-                      Caduca automáticamente. No lo pegues en canales públicos.
-                    </p>
-                    <div className="mt-3 flex items-stretch gap-2">
-                      <code className="flex-1 break-all rounded-(--radius-sm) border border-(--color-border) bg-surface px-2 py-1.5 text-xs font-mono text-(--color-text)">
-                        {pending.inviteUrl}
-                      </code>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={copyInvite}
-                        aria-label="Copiar enlace al portapapeles"
-                      >
-                        {copied ? <Check size={14} /> : <Copy size={14} />}
-                        {copied ? "Copiado" : "Copiar"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </SheetBody>
-
-            <SheetFooter>
-              <Button
-                type="button"
-                variant="primary"
-                onClick={() => { setPending(null); setCopied(false) }}
-              >
-                Crear otra invitación
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => { setPending(null); setCopied(false); onClose() }}
-              >
-                Cerrar
-              </Button>
-            </SheetFooter>
-          </>
+          <PendingInvitePanel
+            pending={pending}
+            onCreateAnother={() => { setPending(null); setCopied(false) }}
+            onClose={() => { setPending(null); setCopied(false); onClose() }}
+          />
         ) : (
           <form action={formAction} className="flex flex-col flex-1 min-h-0">
             {selectedRoles.map((roleId) => (

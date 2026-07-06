@@ -8,7 +8,7 @@
 import { Resend } from "resend"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
 
-const FROM = "Chome Plataforma <plataforma@portalchome.cl>"
+const FROM = "Plataforma Chome <plataforma@portalchome.cl>"
 
 export function getAppBaseUrl() {
   return (
@@ -50,10 +50,10 @@ export async function sendInvitationEmail(input: InvitationEmailInput): Promise<
 
   return sendEmail({
     to,
-    subject: "Invitación a Chome Plataforma",
-    text: `${invitedByName ? `${invitedByName} te ha invitado a` : "Has sido invitado a"} Chome Plataforma.\n\nAccede aquí: ${inviteUrl}\n\nSi no esperabas esta invitación, ignora este correo.`,
+    subject: "Invitación a Plataforma Chome",
+    text: `${invitedByName ? `${invitedByName} te ha invitado a` : "Has sido invitado a"} Plataforma Chome.\n\nAccede aquí: ${inviteUrl}\n\nSi no esperabas esta invitación, ignora este correo.`,
     html: `
-      <p>${byLine} <strong>Chome Plataforma</strong>.</p>
+      <p>${byLine} <strong>Plataforma Chome</strong>.</p>
       <p><a href="${inviteUrl}" style="display:inline-block;padding:10px 20px;background:#17422b;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Aceptar invitación</a></p>
       <p style="color:#6b7280;font-size:13px">Si no esperabas esta invitación, ignora este correo.</p>
     `,

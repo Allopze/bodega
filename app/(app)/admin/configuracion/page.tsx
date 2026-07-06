@@ -24,7 +24,7 @@ export default async function ConfiguracionPage() {
     <PageContainer>
       <PageHeader
         title="Configuración del Sistema"
-        description="Ajustar parámetros globales de Chome Solicitudes y Bodega."
+        description="Ajustar parámetros globales de Plataforma Chome."
         breadcrumb={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Administración", href: "/admin" },

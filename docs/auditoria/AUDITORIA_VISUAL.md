@@ -1,4 +1,4 @@
-# Auditoría Visual Completa — Chome Solicitudes y Bodega
+# Auditoría Visual Completa — Plataforma Chome
 
 **Fecha:** 2026-06-23
 **Viewport:** Desktop 1440×1000

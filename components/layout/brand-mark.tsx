@@ -19,6 +19,9 @@ const TITLE_CLASSES = {
   lg:   "text-lg",
 } as const
 
+const BRAND_TITLE = "Plataforma Chome"
+const BRAND_SUBTITLE = "Gestión operacional"
+
 export function BrandMark({
   variant    = "dark",
   size       = 32,
@@ -35,7 +38,7 @@ export function BrandMark({
     <div className="flex items-center gap-2.5">
       <Image
         src={LOGO_SRC[variant]}
-        alt="Chome"
+        alt={BRAND_TITLE}
         width={size}
         height={size}
         unoptimized
@@ -51,11 +54,11 @@ export function BrandMark({
           ) : (
             <>
               <p className={`font-sans font-semibold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
-                Chome
+                {BRAND_TITLE}
               </p>
               {subtitle === true && (
                 <p className={`text-[11px] font-mono uppercase tracking-wider ${subtitleColor} leading-tight mt-0.5`}>
-                  Solicitudes y Bodega
+                  {BRAND_SUBTITLE}
                 </p>
               )}
             </>

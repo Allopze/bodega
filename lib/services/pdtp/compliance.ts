@@ -19,11 +19,20 @@ export type PdtpComplianceIndicators = {
   annual: { planned: number; executed: number; percent: number | null }
 }
 
-export async function getPdtpComplianceIndicators(year: number, worksiteId?: string): Promise<PdtpComplianceIndicators | null> {
-  const programs = await db.select().from(pdtpPrograms)
-    .where(eq(pdtpPrograms.year, year)).orderBy(desc(pdtpPrograms.version)).limit(10)
-  const program = programs.find((p) => p.status === "active") ?? programs[0]
+export async function getPdtpComplianceIndicators(yearOrProgramId: number | string, worksiteId?: string): Promise<PdtpComplianceIndicators | null> {
+  let program: typeof pdtpPrograms.$inferSelect | null = null
+
+  if (typeof yearOrProgramId === "string") {
+    const [found] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, yearOrProgramId)).limit(1)
+    program = found ?? null
+  } else {
+    const programs = await db.select().from(pdtpPrograms)
+      .where(eq(pdtpPrograms.year, yearOrProgramId)).orderBy(desc(pdtpPrograms.version)).limit(10)
+    program = programs.find((p) => p.status === "active") ?? programs[0] ?? null
+  }
+
   if (!program) return null
+  const year = program.year
 
   const activityRows = await db.select({ id: pdtpActivities.id }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))

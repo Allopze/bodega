@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm"
+import { and, eq, isNull, or, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities } from "@/db/schema"
+import { pdtpActivities, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
 import { addPdtpChangeLogEntry, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
 
 export type PdtpActivityUpdateInput = {
@@ -109,21 +109,58 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   }
 
   for (const sheetCode of input.sheetCodes) {
-    // H-M5: calcular displayOrder como MAX+1 por hoja para que las
-    // actividades agregadas manualmente aparezcan al final de la hoja
-    // en orden de inserción (en vez de mezclarse con las oficiales
-    // por número de actividad).
+    const [sheet] = await db.select().from(pdtpSheets)
+      .where(and(
+        eq(pdtpSheets.code, sheetCode),
+        or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, input.programId)),
+      ))
+      .limit(1)
+    if (!sheet) throw new Error(`Hoja PDTP no encontrada: ${sheetCode}.`)
+
     const [{ maxOrder } = { maxOrder: 0 }] = await db
       .select({ maxOrder: sql<number>`COALESCE(MAX(${pdtpSheetActivities.displayOrder}), 0)` })
       .from(pdtpSheetActivities)
-      .where(eq(pdtpSheetActivities.sheetCode, sheetCode))
+      .where(eq(pdtpSheetActivities.sheetId, sheet.id))
     const nextOrder = Number(maxOrder) + 1
     await db.insert(pdtpSheetActivities).values({
-      id: pdtpSheetActivityId(input.programId, sheetCode, newN), sheetCode, activityId,
+      id: pdtpSheetActivityId(input.programId, sheetCode, newN), sheetId: sheet.id, sheetCode, activityId,
       sheetRow: nextOrder, displayOrder: nextOrder,
     }).onConflictDoNothing()
   }
 
   await addPdtpChangeLogEntry(input.programId, program.version, userId, `activity:${newN}`, null, { n: newN, activity: input.activity, sheetCodes: input.sheetCodes }, `Actividad ${newN} agregada manualmente.`)
   return created
+}
+
+export async function deletePdtpActivity(activityId: string, userId: string) {
+  const [activity] = await db.select().from(pdtpActivities).where(eq(pdtpActivities.id, activityId)).limit(1)
+  if (!activity) throw new Error("Actividad PDTP no encontrada.")
+
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "draft") throw new Error("Solo se pueden eliminar actividades de programas en estado borrador (draft).")
+
+  await db.delete(pdtpActivities).where(eq(pdtpActivities.id, activityId))
+  await addPdtpChangeLogEntry(activity.programId, program.version, userId, `activity:${activity.n}`, { n: activity.n, activity: activity.activity }, null, `Actividad ${activity.n} eliminada.`)
+}
+
+export async function reorderPdtpActivities(programId: string, orderedIds: string[], userId: string) {
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "draft") throw new Error("Solo se pueden reordenar actividades de programas en estado borrador (draft).")
+
+  const activities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId))
+  const seen = new Set(activities.map((a) => a.id))
+  if (orderedIds.length !== seen.size || orderedIds.some((id) => !seen.has(id))) {
+    throw new Error("La lista de orden no coincide con las actividades del programa.")
+  }
+
+  const now = new Date().toISOString()
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.update(pdtpActivities)
+      .set({ n: i + 1, updatedAt: now })
+      .where(eq(pdtpActivities.id, orderedIds[i]!))
+  }
+
+  await addPdtpChangeLogEntry(programId, program.version, userId, "activity:reorder", null, { orderedIds }, "Actividades reordenadas.")
 }

@@ -57,7 +57,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
   sendEmail({
     to:      user.email,
-    subject: "Restablecer contraseña — Chome Solicitudes y Bodega",
+    subject: "Restablecer contraseña — Plataforma Chome",
     text:    `Hola ${safeName},\n\nRecibiste este email porque solicitaste restablecer tu contraseña.\n\nHaz clic en el siguiente enlace (válido por 1 hora):\n${resetUrl}\n\nSi no solicitaste este cambio, puedes ignorar este email.`,
     html:    `
       <p>Hola <strong>${safeName}</strong>,</p>

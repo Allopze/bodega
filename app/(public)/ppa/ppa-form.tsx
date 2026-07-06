@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { CheckCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,268 +11,41 @@ import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { toast } from "@/lib/toast"
-import { cn } from "@/lib/utils"
-import { evaluatePpa } from "@/lib/ppa/evaluation"
-import { PPA_STOP_REASON_LABELS, type PpaAnswers, type PpaStopReason } from "@/lib/ppa/types"
-import { submitPpaAction, findWorkerByRutAction } from "./actions"
-import { usePpaOfflineQueue } from "@/lib/pwa/hooks"
+import { PPA_STOP_REASON_LABELS } from "@/lib/ppa/types"
 import { OfflineBanner } from "@/components/pwa/offline-banner"
+import { SiNo } from "./ppa-form-sino"
+import { usePpaForm } from "./ppa-form.hooks"
+import type { PpaFormProps } from "./ppa-form.types"
 
-interface Option { value: string; label: string }
+export { type PpaFormProps } from "./ppa-form.types"
 
-interface Props {
-  worksites: { id: string; name: string }[]
-  initialWorksiteId: string
-  hasFaenaParam: boolean
-  tipoTrabajoOptions: Option[]
-  controlOptions: Option[]
-  complementarias: { key: string; label: string }[]
-}
-function SiNo({
-  value, onChange, name, dangerOn,
-}: {
-  value: "" | "si" | "no"
-  onChange: (v: "si" | "no") => void
-  name: string
-  /** Marca una respuesta como "de riesgo" (detiene el trabajo) → afordancia roja. */
-  dangerOn?: "si" | "no"
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      {(["si", "no"] as const).map((opt) => {
-        const active = value === opt
-        const danger = active && dangerOn === opt
-        return (
-          <button
-            key={opt}
-            type="button"
-            data-pressable
-            aria-pressed={active}
-            onClick={() => onChange(opt)}
-            className={cn(
-              "rounded-md border px-4 py-3 text-base font-medium capitalize",
-              active
-                ? danger
-                  ? "border-[var(--color-danger)] bg-[var(--color-danger)] text-white"
-                  : "border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-ink,white)]"
-                : "border-[var(--color-border)] bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-2)]",
-            )}
-            data-testid={`${name}-${opt}`}
-          >
-            {opt === "si" ? "Sí" : "No"}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+export function PpaForm(props: PpaFormProps) {
+  const {
+    worksiteId, setWorksiteId,
+    rutSearch, setRutSearch,
+    searchingWorker,
+    matchedWorker,
+    manual,
+    workerName, setWorkerName,
+    workerRut, setWorkerRut,
+    workerCompany, setWorkerCompany,
+    tipoTrabajo, setTipoTrabajo,
+    cambioPlanificado, setCambioPlanificado,
+    cambioDescripcion, setCambioDescripcion,
+    peligroNoControlado, setPeligroNoControlado,
+    peligroDescripcion, setPeligroDescripcion,
+    controles, toggleControl,
+    seguroComenzar, setSeguroComenzar,
+    comp, setComp,
+    confirmOpen, setConfirmOpen,
+    stopReasons, pending,
+    paramWorksiteName, online,
+    err,
+    handleVerifyRut, onSubmit, toggleManual, doSubmit, resetIdentity,
+  } = usePpaForm(props)
 
-export function PpaForm({
-  worksites, initialWorksiteId, hasFaenaParam,
-  tipoTrabajoOptions, controlOptions, complementarias,
-}: Props) {
-  const router = useRouter()
-  const [pending, startTransition] = React.useTransition()
-  const { online, enqueue } = usePpaOfflineQueue()
-
-  const [worksiteId, setWorksiteId] = React.useState(initialWorksiteId)
-  const [rutSearch, setRutSearch] = React.useState("")
-  const [searchingWorker, setSearchingWorker] = React.useState(false)
-  const [matchedWorker, setMatchedWorker] = React.useState<
-    { id: string; name: string; position: string | null; worksiteName: string } | null
-  >(null)
-  const [workerId, setWorkerId] = React.useState("")
-  const [manual, setManual] = React.useState(false)
-  const [workerName, setWorkerName] = React.useState("")
-  const [workerRut, setWorkerRut] = React.useState("")
-  const [workerCompany, setWorkerCompany] = React.useState("")
-
-  const [tipoTrabajo, setTipoTrabajo] = React.useState("")
-  const [cambioPlanificado, setCambioPlanificado] = React.useState<"" | "si" | "no">("")
-  const [cambioDescripcion, setCambioDescripcion] = React.useState("")
-  const [peligroNoControlado, setPeligroNoControlado] = React.useState<"" | "si" | "no">("")
-  const [peligroDescripcion, setPeligroDescripcion] = React.useState("")
-  const [controles, setControles] = React.useState<string[]>([])
-  const [seguroComenzar, setSeguroComenzar] = React.useState<"" | "si" | "no">("")
-  const [comp, setComp] = React.useState<Record<string, string>>({})
-
-  const [errors, setErrors] = React.useState<Record<string, string[]>>({})
-  const [confirmOpen, setConfirmOpen] = React.useState(false)
-  const [stopReasons, setStopReasons] = React.useState<PpaStopReason[]>([])
-
-  function resetIdentity() {
-    setMatchedWorker(null)
-    setWorkerId("")
-    if (!hasFaenaParam) {
-      setWorksiteId("")
-    }
-  }
-
-  async function handleVerifyRut() {
-    if (!rutSearch) return
-    setSearchingWorker(true)
-    resetIdentity()
-    try {
-      const res = await findWorkerByRutAction(rutSearch)
-      if (res.ok && res.worker) {
-        setMatchedWorker({
-          id: res.worker.id,
-          name: res.worker.name,
-          position: res.worker.position,
-          worksiteName: res.worker.worksiteName,
-        })
-        setWorkerId(res.worker.id)
-        if (!hasFaenaParam) {
-          setWorksiteId(res.worker.worksiteId) // faena derivada del RUT
-        }
-        setWorkerRut(rutSearch)
-        toast.success("Trabajador verificado.")
-      } else {
-        toast.error(res.message ?? "No se encontró el trabajador.")
-      }
-    } catch {
-      toast.error("Error al buscar el trabajador.")
-    } finally {
-      setSearchingWorker(false)
-    }
-  }
-
+  const { worksites, hasFaenaParam, tipoTrabajoOptions, controlOptions, complementarias } = props
   const isVerifyButtonDisabled = !rutSearch || searchingWorker
-  // Faena fijada por QR/enlace (`?faena=`); en modo RUT la faena se deriva del trabajador.
-  const paramWorksiteName = hasFaenaParam
-    ? worksites.find((w) => w.id === worksiteId)?.name ?? ""
-    : ""
-
-  function toggleControl(value: string) {
-    setControles((prev) =>
-      prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value],
-    )
-  }
-
-  function clientValidate(): boolean {
-    const e: Record<string, string[]> = {}
-    if (!worksiteId) e.worksiteId = ["Selecciona la faena."]
-    if (manual) {
-      if (workerName.trim().length < 2) e.workerName = ["Indica tu nombre."]
-    } else if (!workerId) {
-      e.workerId = ["Debes verificar tu RUT antes de enviar."]
-    }
-    if (!tipoTrabajo) e.tipoTrabajo = ["Selecciona el tipo de trabajo."]
-    if (!cambioPlanificado) e.cambioPlanificado = ["Responde esta pregunta."]
-    if (!peligroNoControlado) e.peligroNoControlado = ["Responde esta pregunta."]
-    if (!seguroComenzar) e.seguroComenzar = ["Responde esta pregunta."]
-    setErrors(e)
-    return Object.keys(e).length === 0
-  }
-
-  function buildAnswers(): PpaAnswers {
-    return {
-      tipoTrabajo,
-      cambioPlanificado: cambioPlanificado as "si" | "no",
-      cambioDescripcion: cambioDescripcion || undefined,
-      peligroNoControlado: peligroNoControlado as "si" | "no",
-      peligroDescripcion: peligroDescripcion || undefined,
-      controles,
-      seguroComenzar: seguroComenzar as "si" | "no",
-      complementarias: comp,
-    }
-  }
-
-  function buildPayload() {
-    const name = manual ? workerName.trim() : (matchedWorker?.name ?? "")
-    const rut = manual ? workerRut.trim() : rutSearch.trim()
-    return {
-      worksiteId,
-      workerId: manual ? undefined : workerId || undefined,
-      workerName: name,
-      workerRut: rut || undefined,
-      workerCompany: workerCompany || undefined,
-      tipoTrabajo,
-      cambioPlanificado: cambioPlanificado as "si" | "no",
-      cambioDescripcion,
-      peligroNoControlado: peligroNoControlado as "si" | "no",
-      peligroDescripcion,
-      controles,
-      seguroComenzar: seguroComenzar as "si" | "no",
-      complementarias: comp,
-    }
-  }
-
-  function doSubmit() {
-    setConfirmOpen(false)
-    const payload = buildPayload()
-
-    startTransition(async () => {
-      // ── Offline path: queue in IndexedDB ──────────────────────────
-      if (!online) {
-        try {
-          await enqueue(payload)
-        } catch {
-          toast.error("No se pudo guardar offline. Verifica el almacenamiento del navegador.")
-          return
-        }
-        toast.success(
-          "PPA guardado offline. Se enviará automáticamente cuando vuelva la conexión.",
-          { duration: 6000 },
-        )
-        router.push("/ppa?saved=offline")
-        return
-      }
-
-      // ── Online path: submit directly to server ────────────────────
-      try {
-        const res = await submitPpaAction(payload)
-
-        if (res.ok && res.data?.token) {
-          router.push(`/ppa/result/${res.data.token}`)
-        } else {
-          if (res.fieldErrors) setErrors(res.fieldErrors)
-          toast.error(res.message ?? "No se pudo enviar el PPA.")
-        }
-      } catch (e) {
-        // Network error while supposedly online → queue for retry.
-        // Only queue on actual network failures (TypeError = fetch failed),
-        // not on server-side validation errors.
-        const isNetworkError = e instanceof TypeError && /fetch|network/i.test(e.message)
-        if (!isNetworkError) {
-          toast.error(e instanceof Error ? e.message : "No se pudo enviar el PPA.")
-          return
-        }
-        try {
-          await enqueue(payload)
-        } catch {
-          toast.error("Error de red y no se pudo guardar offline. Intenta más tarde.")
-          return
-        }
-        toast.warning(
-          "Error de red. Tu PPA se ha guardado localmente y se enviará cuando vuelva la conexión.",
-          { duration: 6000 },
-        )
-        router.push("/ppa?saved=offline")
-      }
-    })
-  }
-
-  function onSubmit(ev: React.FormEvent) {
-    ev.preventDefault()
-    if (!clientValidate()) {
-      toast.error("Faltan respuestas obligatorias.")
-      return
-    }
-
-    // Confirmación antes de enviar una respuesta crítica que detiene el trabajo.
-    const evaluation = evaluatePpa(buildAnswers())
-    if (evaluation.stop) {
-      setStopReasons(evaluation.reasons)
-      setConfirmOpen(true)
-      return
-    }
-
-    doSubmit()
-  }
-
-  const err = (k: string) => errors[k]?.[0]
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
@@ -363,7 +135,7 @@ export function PpaForm({
         <button
           type="button"
           className="self-start text-sm font-medium text-[var(--color-primary)] underline"
-          onClick={() => { setManual((m) => !m); setErrors({}); setMatchedWorker(null); setWorkerId("") }}
+          onClick={toggleManual}
         >
           {manual ? "Volver a verificación por RUT" : "No estoy en la lista (identificación manual)"}
         </button>

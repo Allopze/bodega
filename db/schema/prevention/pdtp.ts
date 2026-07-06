@@ -121,23 +121,26 @@ export const pdtpChangeLog = pgTable("pdtp_change_log", {
 ])
 
 export const pdtpSheets = pgTable("pdtp_sheets", {
-  code:              text("code").primaryKey(),
+  id:                text("id").primaryKey(),
+  code:              text("code").notNull(),
+  programId:         text("program_id").references(() => pdtpPrograms.id),
   label:             text("label").notNull(),
   area:              text("area").notNull(),
   defaultScopeRoles: jsonb("default_scope_roles").notNull(),
 }, (table) => [
-  uniqueIndex("pdtp_sheets_label_unique").on(table.label),
+  uniqueIndex("pdtp_sheets_program_code_unique").on(table.programId, table.code),
 ])
 
 export const pdtpSheetActivities = pgTable("pdtp_sheet_activities", {
   id:           text("id").primaryKey(),
-  sheetCode:    text("sheet_code").notNull().references(() => pdtpSheets.code, { onDelete: "cascade" }),
+  sheetId:      text("sheet_id").notNull().references(() => pdtpSheets.id, { onDelete: "cascade" }),
+  sheetCode:    text("sheet_code").notNull(),
   activityId:   text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
   sheetRow:     integer("sheet_row").notNull(),
   displayOrder: integer("display_order").notNull(),
 }, (table) => [
-  uniqueIndex("pdtp_sheet_activities_sheet_activity_unique").on(table.sheetCode, table.activityId),
-  index("pdtp_sheet_activities_sheet_order_idx").on(table.sheetCode, table.displayOrder),
+  uniqueIndex("pdtp_sheet_activities_sheet_activity_unique").on(table.sheetId, table.activityId),
+  index("pdtp_sheet_activities_sheet_order_idx").on(table.sheetId, table.displayOrder),
 ])
 
 export const pdtpActivityScheduleOverrides = pgTable("pdtp_activity_schedule_overrides", {
@@ -166,6 +169,7 @@ export const pdtpProgramsRelations = relations(pdtpPrograms, ({ many, one }) => 
   approvedByLegalUser: one(users, { fields: [pdtpPrograms.approvedByLegalUserId], references: [users.id] }),
   activities: many(pdtpActivities),
   changeLog: many(pdtpChangeLog),
+  sheets: many(pdtpSheets),
 }))
 
 export const pdtpActivitiesRelations = relations(pdtpActivities, ({ one, many }) => ({
@@ -191,12 +195,13 @@ export const pdtpChangeLogRelations = relations(pdtpChangeLog, ({ one }) => ({
   changedByUser: one(users, { fields: [pdtpChangeLog.changedByUserId], references: [users.id] }),
 }))
 
-export const pdtpSheetsRelations = relations(pdtpSheets, ({ many }) => ({
+export const pdtpSheetsRelations = relations(pdtpSheets, ({ many, one }) => ({
+  program: one(pdtpPrograms, { fields: [pdtpSheets.programId], references: [pdtpPrograms.id] }),
   activities: many(pdtpSheetActivities),
 }))
 
 export const pdtpSheetActivitiesRelations = relations(pdtpSheetActivities, ({ one }) => ({
-  sheet: one(pdtpSheets, { fields: [pdtpSheetActivities.sheetCode], references: [pdtpSheets.code] }),
+  sheet: one(pdtpSheets, { fields: [pdtpSheetActivities.sheetId], references: [pdtpSheets.id] }),
   activity: one(pdtpActivities, { fields: [pdtpSheetActivities.activityId], references: [pdtpActivities.id] }),
 }))
 

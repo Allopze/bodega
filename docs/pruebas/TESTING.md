@@ -1,4 +1,4 @@
-# Testing — Chome Solicitudes y Bodega
+# Testing — Plataforma Chome
 
 Este documento describe los tipos de prueba disponibles, cómo ejecutarlos y el
 flujo completo para validar la aplicación.

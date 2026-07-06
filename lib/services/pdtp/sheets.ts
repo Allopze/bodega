@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, isNull, or } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
 import { SHEET_EXPORT_NAMES, MONTH_LABELS } from "./constants"
@@ -15,11 +15,6 @@ export type PdtpSheetView = {
     totalExecuted: number
     monthlyPlanned: number[]
     monthlyExecuted: number[]
-    /**
-     * Ejecuciones registradas para la faena (vacío si no hay faena
-     * seleccionada o si el catálogo no se cargó). Incluye evidencia
-     * para que la UI pueda renderizar miniaturas.
-     */
     executions: Array<{
       id: string
       year: number
@@ -35,24 +30,24 @@ export type PdtpSheetView = {
   monthlyTotals: Array<{ month: number; planned: number; executed: number; percent: number | null }>
 }
 
-export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, worksiteId?: string): Promise<PdtpSheetView | null> {
-  // Preferir el programa activo del año. Si no hay uno activo (ej. se
-  // está editando un nuevo borrador o la versión activa fue cerrada),
-  // caer al más reciente por versión para mantener visibilidad de los
-  // borradores en curso. Esto evita el bug previo donde un v2 en
-  // 'draft' shadow-eaba al v1 'active' y `markPdtpExecution` fallaba
-  // con "Solo se pueden registrar ejecuciones contra programas PDTP
-  // en estado activo".
-  const programs = await db.select().from(pdtpPrograms)
-    .where(eq(pdtpPrograms.year, year))
-  const program = programs.find((p) => p.status === "active") ?? programs[0]
+/**
+ * Vista de hoja PDTP por programId. Busca la hoja (template o program-scoped)
+ * y filtra las actividades al programa indicado.
+ */
+export async function getPdtpSheetViewByProgram(programId: string, sheetCode: PdtpSheetCode, worksiteId?: string): Promise<PdtpSheetView | null> {
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) return null
 
-  const [sheet] = await db.select().from(pdtpSheets).where(eq(pdtpSheets.code, sheetCode)).limit(1)
+  const [sheet] = await db.select().from(pdtpSheets)
+    .where(and(
+      eq(pdtpSheets.code, sheetCode),
+      or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, programId)),
+    ))
+    .limit(1)
   if (!sheet) return null
 
   const memberships = await db.select().from(pdtpSheetActivities)
-    .where(eq(pdtpSheetActivities.sheetCode, sheetCode))
+    .where(eq(pdtpSheetActivities.sheetId, sheet.id))
     .orderBy(pdtpSheetActivities.displayOrder)
   if (memberships.length === 0) {
     return { program, sheet, activities: [], monthlyTotals: emptyMonthlyTotals() }
@@ -60,8 +55,11 @@ export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, w
 
   const activityIds = memberships.map((m) => m.activityId)
   const [activityRows, { scheduleRows, executionRows }] = await Promise.all([
-    db.select().from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)),
-    loadProgramScheduleAndExecutions(activityIds, year, worksiteId),
+    db.select().from(pdtpActivities).where(and(
+      inArray(pdtpActivities.id, activityIds),
+      eq(pdtpActivities.programId, programId),
+    )),
+    loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId),
   ])
 
   const activityById = new Map(activityRows.map((a) => [a.id, a]))
@@ -123,10 +121,12 @@ export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, w
   return { program, sheet, activities, monthlyTotals }
 }
 
-export async function buildPdtpExport({ year, sheetCode, worksiteId }: {
-  year: number; sheetCode: PdtpSheetCode; worksiteId?: string
+export async function buildPdtpExport({ programId, year, sheetCode, worksiteId }: {
+  programId?: string; year: number; sheetCode: PdtpSheetCode; worksiteId?: string
 }): Promise<ReportData> {
-  const view = await getPdtpSheetView(year, sheetCode, worksiteId)
+  const view = programId
+    ? await getPdtpSheetViewByProgram(programId, sheetCode, worksiteId)
+    : await getPdtpSheetView(year, sheetCode, worksiteId)
   if (!view) {
     return { filenameBase: `pdtp-sg-sst-${year}-${sheetCode}`, worksheetName: SHEET_EXPORT_NAMES[sheetCode], headers: [], rows: [] }
   }
@@ -140,4 +140,15 @@ export async function buildPdtpExport({ year, sheetCode, worksiteId }: {
   })
 
   return { filenameBase: `pdtp-sg-sst-${year}-${sheetCode}`, worksheetName: SHEET_EXPORT_NAMES[sheetCode], headers, rows }
+}
+
+/**
+ * Backward-compatible: busca por año. Usa el programa activo o el más reciente.
+ */
+export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, worksiteId?: string): Promise<PdtpSheetView | null> {
+  const programs = await db.select().from(pdtpPrograms)
+    .where(eq(pdtpPrograms.year, year))
+  const program = programs.find((p) => p.status === "active") ?? programs[0]
+  if (!program) return null
+  return getPdtpSheetViewByProgram(program.id, sheetCode, worksiteId)
 }

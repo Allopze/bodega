@@ -1,4 +1,4 @@
-# Documentación — Chome Solicitudes y Bodega
+# Documentación — Plataforma Chome
 
 Índice general de la documentación del proyecto.
 

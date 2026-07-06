@@ -56,9 +56,9 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
   }
 
   for (const [code, meta] of Object.entries(SHEET_META) as Array<[PdtpSheetCode, typeof SHEET_META[PdtpSheetCode]]>) {
-    await database.insert(pdtpSheets).values({ code, label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles }).onConflictDoUpdate({
-      target: pdtpSheets.code,
-      set: { label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles },
+    await database.insert(pdtpSheets).values({ id: code, code, label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles }).onConflictDoUpdate({
+      target: [pdtpSheets.id],
+      set: { code, label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles },
     })
   }
 
@@ -100,11 +100,11 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
       const activityId = activityIdByNumber.get(activityNumber)
       if (!activityId) throw new Error(`La hoja ${sheetCode} referencia actividad PDTP inexistente: ${activityNumber}.`)
       await database.insert(pdtpSheetActivities).values({
-        id: pdtpSheetActivityId(program.id, sheetCode, activityNumber), sheetCode, activityId,
+        id: pdtpSheetActivityId(program.id, sheetCode, activityNumber), sheetId: sheetCode, sheetCode, activityId,
         sheetRow: index + 1, displayOrder: index + 1,
       }).onConflictDoUpdate({
-        target: [pdtpSheetActivities.sheetCode, pdtpSheetActivities.activityId],
-        set: { sheetRow: index + 1, displayOrder: index + 1 },
+        target: [pdtpSheetActivities.sheetId, pdtpSheetActivities.activityId],
+        set: { sheetRow: index + 1, displayOrder: index + 1, sheetCode },
       })
     }
   }

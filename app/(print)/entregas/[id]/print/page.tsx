@@ -177,7 +177,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
         </div>
 
         <div className="footer">
-          Documento generado por Chome Solicitudes y Bodega — {new Date().toLocaleDateString("es-CL")}
+          Documento generado por Plataforma Chome — {new Date().toLocaleDateString("es-CL")}
         </div>
       </body>
     </html>

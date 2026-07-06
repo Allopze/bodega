@@ -1,4 +1,4 @@
-# Plan de Trabajo Preventivo SG-SST 2026 — Implementación en Chome Bodega
+# Plan de Trabajo Preventivo SG-SST 2026 — Implementación en Plataforma Chome
 
 > **Documento:** Plan de Trabajo Preventivo SG-SST 2026 (basado en `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`)
 > **Repositorio base:** `/home/allopze/dev/chome/bodega` (Next.js App Router + Drizzle/Postgres + Auth.js)

@@ -30,6 +30,7 @@ export function useOcForm({
   const [selectedItems, setSelectedItems] = React.useState<Set<string>>(new Set())
   const [unitPrices,   setUnitPrices]   = React.useState<Record<string, number>>({})
   const [discounts,    setDiscounts]    = React.useState<Record<string, number>>({})
+  const [itemSuppliers, setItemSuppliers] = React.useState<Record<string, string>>({})
   const [search,       setSearch]       = React.useState("")
 
   const [state, action] = useActionState<ActionState, FormData>(createOrderAction, INITIAL_STATE)
@@ -46,7 +47,7 @@ export function useOcForm({
     if (nextSupplier?.paymentTerms) setPaymentTerms(nextSupplier.paymentTerms)
     setUnitPrices((prev) => {
       const updates = applySuggestedPrices(pendingItems, nextSupplierId, (item) =>
-        itemSupplierId(item, nextSupplierId),
+        resolveItemSupplierId(item, nextSupplierId),
       )
       return { ...prev, ...updates }
     })
@@ -56,8 +57,33 @@ export function useOcForm({
     handleSupplierChange(nextSupplierId)
   }
 
+  function resolveItemSupplierId(item: PendingItemOption, globalSupplierId = supplierId) {
+    return itemSuppliers[item.id] || item.suggestedSupplierId || globalSupplierId || ""
+  }
+
+  function setItemSupplier(itemId: string, supplierId: string) {
+    setItemSuppliers((prev) => {
+      const next = { ...prev }
+      if (supplierId) next[itemId] = supplierId
+      else delete next[itemId]
+      return next
+    })
+    // When changing a per-item supplier, also auto-apply the supplier's catalog price if available
+    const item = pendingItems.find((i) => i.id === itemId)
+    if (item && supplierId) {
+      const catalogPrice: number | undefined = item.supplierPrices[supplierId]
+      if (catalogPrice !== undefined) {
+        setUnitPrices((prev) => ({
+          ...prev,
+          [itemId]: catalogPrice,
+        }))
+      }
+    }
+  }
+
   function setDefaultPriceForItem(item: PendingItemOption) {
-    const price = suggestedPrice(item, itemSupplierId(item, supplierId))
+    const supplierForItem = resolveItemSupplierId(item)
+    const price = suggestedPrice(item, supplierForItem)
     if (price === undefined) return
     setUnitPrices((prev) => (
       prev[item.id] === undefined || prev[item.id] === 0
@@ -67,7 +93,8 @@ export function useOcForm({
   }
 
   function itemPrice(item: PendingItemOption) {
-    return unitPrices[item.id] ?? suggestedPrice(item, itemSupplierId(item, supplierId)) ?? 0
+    const supplierForItem = resolveItemSupplierId(item)
+    return unitPrices[item.id] ?? suggestedPrice(item, supplierForItem) ?? 0
   }
 
   function itemDiscount(itemId: string) {
@@ -177,9 +204,10 @@ export function useOcForm({
     .filter((i) => selectedItems.has(i.id))
     .map((i) => ({
       ...i,
-      unitPrice: itemPrice(i),
-      discount:  itemDiscount(i.id),
-      targetSupplierId: itemSupplierId(i, supplierId),
+      unitPrice:               itemPrice(i),
+      discount:                itemDiscount(i.id),
+      targetSupplierId:        resolveItemSupplierId(i),
+      itemSupplierOverrideId:  itemSuppliers[i.id],
     }))
 
   const totals = computeOrderTotals(includedItems)
@@ -202,15 +230,15 @@ export function useOcForm({
   return {
     // State
     supplierId, worksiteId, paymentTerms, estDelivery, address, notes,
-    selectedItems, unitPrices, discounts, search, state, modeFilter,
+    selectedItems, unitPrices, discounts, itemSuppliers, search, state, modeFilter,
     // Setters
     setPaymentTerms, setEstDelivery, setAddress, setNotes,
-    setWorksiteId, setSearch, setSupplierId,
+    setWorksiteId, setSearch, setSupplierId, setItemSupplier,
     // Derived
     filteredByWorksite, filteredItems, worksiteModes, includedItems, totals, supplierGroupCount, itemsJson,
     // Handlers
     handleSupplierChange, onSupplierValueChange,
-    setDefaultPriceForItem,
+    setDefaultPriceForItem, resolveItemSupplierId,
     itemPrice, itemDiscount, setItemPrice, setItemDiscount,
     toggleItem, toggleAll, handleModeChange,
     // Props passthrough

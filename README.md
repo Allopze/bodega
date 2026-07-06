@@ -1,6 +1,6 @@
-# Chome Solicitudes y Bodega
+# Plataforma Chome
 
-Sistema interno para solicitudes por faena, aprobaciones, órdenes de compra, recepcion y bodega.
+Plataforma interna para gestionar la operación por faena: solicitudes, aprobaciones, compras, recepción, stock, entregas, prevención, flota, reportes y trazabilidad.
 
 ## Puesta en marcha
 
@@ -44,7 +44,7 @@ SMTP_HOST=smtp.tudominio.cl
 SMTP_PORT=587
 SMTP_USER=usuario
 SMTP_PASS=clave
-SMTP_FROM="Chome Solicitudes y Bodega <bodega@tudominio.cl>"
+SMTP_FROM="Plataforma Chome <bodega@tudominio.cl>"
 SMTP_SECURE=false
 SMTP_EHLO_NAME=localhost
 APP_URL=https://bodega.chome.dev

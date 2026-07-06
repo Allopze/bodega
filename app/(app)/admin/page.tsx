@@ -122,7 +122,7 @@ export default async function AdminPage() {
     <PageContainer>
       <PageHeader
         title="Panel de Administración"
-        description="Configura los parámetros, catálogos y accesos de Chome Solicitudes y Bodega."
+        description="Configura los parámetros, catálogos y accesos de Plataforma Chome."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },

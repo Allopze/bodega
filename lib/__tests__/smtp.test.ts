@@ -78,7 +78,7 @@ describe("sendInvitationEmail", () => {
       invitedByName: "Admin User",
     })
     expect(result).toEqual({ sent: true })
-    expect(mockSend.mock.calls[0]![0].subject).toBe("Invitación a Chome Plataforma")
+    expect(mockSend.mock.calls[0]![0].subject).toBe("Invitación a Plataforma Chome")
     expect(mockSend.mock.calls[0]![0].html).toContain("abc")
   })
 

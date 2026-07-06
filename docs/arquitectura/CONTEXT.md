@@ -1,4 +1,4 @@
-# Glosario — Chome Solicitudes y Bodega
+# Glosario — Plataforma Chome
 
 Términos del dominio usados en el código, los commits y la documentación.
 Cuando un término aparezca en el código, debe coincidir con la definición aquí.

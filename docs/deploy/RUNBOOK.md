@@ -1,6 +1,6 @@
 # Runbook operativo
 
-Guia breve para operar Chome Solicitudes y Bodega en produccion.
+Guia breve para operar Plataforma Chome en produccion.
 
 ## Objetivos iniciales
 

@@ -1,4 +1,4 @@
-# Plan MVP Chome Solicitudes y Bodega
+# Plan MVP Plataforma Chome
 
 ## Resumen
 Construir un MVP web interno en **Next.js + TypeScript + PostgreSQL**, enfocado en resolver el problema central: ningún ítem aprobado puede perderse entre solicitud, compra, recepción, entrega y factura.

@@ -1,34 +1,27 @@
 import type { Metadata } from "next"
-import type { ReactNode } from "react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { asc, eq, inArray } from "drizzle-orm"
 import {
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   DownloadSimple,
   GasPump,
-  Info,
   Package,
   ShieldWarning,
   ShoppingCart,
   Truck,
   Warning,
 } from "@phosphor-icons/react/dist/ssr"
-import { db } from "@/db"
-import { fuelVehicles, suppliers, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
-import { getAnalyticsDashboard, normalizeAnalyticsFilters, type AnalyticsAlertSeverity } from "@/lib/services/analytics"
+import { getAnalyticsDashboard, normalizeAnalyticsFilters } from "@/lib/services/analytics"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { AnalyticsFiltersBar } from "./analytics-filters"
 import { ModuleSpendChart, MonthlySpendChart, RankingBarChart } from "./analytics-charts"
+import { KpiCard } from "./analytics-kpi-card"
+import { RankingTable, SeverityBadge, EmptyText } from "./analytics-ranking-table"
+import { getFilterOptions, getParam } from "./analytics-page.helpers"
 
 export const metadata: Metadata = { title: "Analítica" }
 
@@ -294,148 +287,4 @@ export default async function AnaliticaPage({
   )
 }
 
-function KpiCard({
-  icon,
-  label,
-  value,
-  detail,
-  trend,
-  tone = "neutral",
-  glossary,
-}: {
-  icon: ReactNode
-  label: string
-  value: string
-  detail: string
-  trend?: number | null
-  tone?: "neutral" | "signal"
-  glossary?: string
-}) {
-  return (
-    <Card className={tone === "signal" ? "ring-1 ring-[var(--color-signal-line)]" : undefined}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]">
-            {icon}
-          </span>
-          {typeof trend === "number" && (
-            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${trend >= 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-success)]"}`}>
-              {trend >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-              {Math.abs(trend)}%
-            </span>
-          )}
-          {glossary && (
-            <span className="group relative">
-              <Info size={14} className="text-[var(--color-text-subtle)] cursor-help" />
-              <span className="pointer-events-none absolute bottom-full right-0 mb-1 w-56 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs leading-5 text-[var(--color-text-muted)] shadow-[var(--shadow-card)] opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                {glossary}
-              </span>
-            </span>
-          )}
-        </div>
-        <p className="mt-4 text-xs font-medium uppercase text-[var(--color-text-subtle)]">{label}</p>
-        <p className="mt-1 truncate text-xl font-semibold tracking-normal text-[var(--color-text)]">{value}</p>
-        <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">{detail}</p>
-      </CardContent>
-    </Card>
-  )
-}
 
-function RankingTable({
-  title,
-  headers,
-  rows,
-  empty,
-}: {
-  title: string
-  headers: string[]
-  rows: ReactNode[][]
-  empty: string
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {rows.length > 0 ? (
-          <TableRoot className="shadow-none">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {headers.map((header, index) => (
-                    <TableHead key={header} className={index === headers.length - 1 ? "text-right" : undefined}>{header}</TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.slice(0, 8).map((row, rowIndex) => (
-                  <TableRow key={`${title}-${rowIndex}`}>
-                    {row.map((cell, cellIndex) => {
-                      const isLast = cellIndex === row.length - 1
-                      const Cell = isLast ? TableCellNum : TableCell
-                      return <Cell key={cellIndex}>{cell}</Cell>
-                    })}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableRoot>
-        ) : (
-          <EmptyText text={empty} />
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function SeverityBadge({ severity }: { severity: AnalyticsAlertSeverity }) {
-  if (severity === "critical") return <Badge variant="signal" size="sm" dot>Crítica</Badge>
-  if (severity === "high") return <Badge variant="warning" size="sm" dot>Alta</Badge>
-  if (severity === "medium") return <Badge variant="default" size="sm">Media</Badge>
-  return <Badge variant="outline" size="sm">Baja</Badge>
-}
-
-function EmptyText({ text }: { text: string }) {
-  return (
-    <div className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-      {text}
-    </div>
-  )
-}
-
-async function getFilterOptions(session: Awaited<ReturnType<typeof requirePermission>>) {
-  const isGlobal = isGlobalRole(session)
-  const wsIds = visibleWorksiteIds(session)
-  const worksiteWhere = isGlobal
-    ? eq(worksites.isActive, true)
-    : wsIds.length > 0
-      ? inArray(worksites.id, wsIds)
-      : inArray(worksites.id, ["__none__"])
-
-  const [worksiteRows, supplierRows, vehicleRows] = await Promise.all([
-    db.select({ id: worksites.id, name: worksites.name })
-      .from(worksites)
-      .where(worksiteWhere)
-      .orderBy(asc(worksites.name)),
-    db.select({ id: suppliers.id, name: suppliers.name })
-      .from(suppliers)
-      .where(eq(suppliers.isActive, true))
-      .orderBy(asc(suppliers.name)),
-    db.select({ id: fuelVehicles.id, name: fuelVehicles.plate, plate: fuelVehicles.plate })
-      .from(fuelVehicles)
-      .where(eq(fuelVehicles.isActive, true))
-      .orderBy(asc(fuelVehicles.plate)),
-  ])
-
-  return {
-    worksites: worksiteRows,
-    suppliers: supplierRows,
-    vehicles: vehicleRows,
-  }
-}
-
-function getParam(params: Record<string, string | string[] | undefined>, key: string) {
-  const value = params[key]
-  return typeof value === "string" && value.trim() ? value : undefined
-}

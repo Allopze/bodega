@@ -1,4 +1,4 @@
-# Threat Model — Chome Solicitudes y Bodega
+# Threat Model — Plataforma Chome
 
 **Methodology:** STRIDE (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege)  
 **Last updated:** 2026-06-20  

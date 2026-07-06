@@ -12,42 +12,23 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { cn, formatQty } from "@/lib/utils"
+import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
+import type {
+  DeliveryWorksiteOption,
+  DeliveryWorkerOption,
+  DeliverableEppOption,
+  DeliveryReturnProductOption,
+} from "./delivery-form.types"
+import { DeliveryFormReturn } from "./delivery-form-return"
 
-export interface DeliveryWorksiteOption {
-  id: string
-  name: string
-}
-
-export interface DeliveryWorkerOption {
-  id: string
-  worksiteId: string
-  name: string
-  rut: string | null
-  position: string | null
-}
-
-export interface DeliverableEppOption {
-  requestItemId: string
-  requestCode: string
-  worksiteId: string
-  productName: string
-  productSku: string | null
-  quantity: number
-  deliveredQuantity: number
-  remainingQuantity: number
-  stockQuantity: number
-  unitOfMeasure: string
-}
-
-export interface DeliveryReturnProductOption {
-  id: string
-  name: string
-  sku: string | null
-  unitOfMeasure: string
-}
+export type {
+  DeliveryWorksiteOption,
+  DeliveryWorkerOption,
+  DeliverableEppOption,
+  DeliveryReturnProductOption,
+} from "./delivery-form.types"
 
 export function DeliveryForm({
   worksites,
@@ -258,90 +239,13 @@ export function DeliveryForm({
           </div>
 
           {/* ── Columna derecha: devolución (con morph) ── */}
-          <div
-            ref={returnSectionRef}
-            className={cn(
-              "flex flex-col gap-4 overflow-hidden transition-all duration-300 ease-[var(--ease-out)]",
-              showReturn
-                ? "max-h-[2000px] opacity-100 lg:animate-in lg:fade-in-0 lg:slide-in-from-right-4"
-                : "max-h-0 opacity-0 pointer-events-none",
-            )}
-          >
-            <div className="hidden lg:block">
-              <h2 className="text-base font-semibold text-(--color-text)">Devolver EPP antiguo</h2>
-              <p className="mt-1 text-sm text-(--color-text-muted)">
-                Registra la devolución del EPP antiguo del trabajador.
-              </p>
-            </div>
-
-            <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 flex flex-col gap-4">
-              <p className="text-sm font-medium text-[var(--color-text)]">Datos del EPP devuelto</p>
-
-              <Field label="Producto (catálogo)" htmlFor="returnProductId">
-                <Select searchable value={returnProductId} onValueChange={setReturnProductId}>
-                  <SelectTrigger id="returnProductId">
-                    <SelectValue placeholder="Selecciona producto devuelto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(returnProducts ?? []).map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.sku ? `${p.sku} · ` : ""}{p.name} · {p.unitOfMeasure}
-                      </SelectItem>
-                    ))}
-                    {(!returnProducts || returnProducts.length === 0) && (
-                      <SelectItem value="__none__" disabled>Sin productos disponibles</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                <input type="hidden" name="returnProductId" value={returnProductId} />
-              </Field>
-
-              <Field label="O descríbelo" htmlFor="returnProductNameFree" helper="Si no está en el catálogo">
-                <Input
-                  id="returnProductNameFree"
-                  name="returnProductNameFree"
-                  placeholder="Ej: Casco de seguridad marca X"
-                  disabled={!!returnProductId}
-                />
-              </Field>
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Field label="Cantidad" htmlFor="returnQuantity">
-                  <Input
-                    id="returnQuantity"
-                    name="returnQuantity"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    className="tabular-nums"
-                  />
-                </Field>
-
-                <Field label="Motivo" htmlFor="returnReason">
-                  <Select name="returnReason">
-                    <SelectTrigger id="returnReason">
-                      <SelectValue placeholder="Selecciona motivo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="desgastado">Desgastado</SelectItem>
-                      <SelectItem value="dañado">Dañado</SelectItem>
-                      <SelectItem value="vencido">Vencido</SelectItem>
-                      <SelectItem value="otro">Otro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-
-              <Field label="Notas" htmlFor="returnNotes">
-                <Textarea
-                  id="returnNotes"
-                  name="returnNotes"
-                  rows={2}
-                  placeholder="Condición del EPP devuelto, observaciones..."
-                />
-              </Field>
-            </div>
-          </div>
+          <DeliveryFormReturn
+            showReturn={showReturn}
+            returnProductId={returnProductId}
+            setReturnProductId={setReturnProductId}
+            returnProducts={returnProducts}
+            returnSectionRef={returnSectionRef}
+          />
         </div>
 
         {state.ok === false && state.message && state !== INITIAL_STATE && (

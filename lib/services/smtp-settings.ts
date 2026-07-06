@@ -7,7 +7,7 @@
 import { sendEmail } from "@/lib/email/smtp"
 
 export const RESEND_FROM = "plataforma@portalchome.cl"
-export const RESEND_FROM_DISPLAY = `Chome Plataforma <${RESEND_FROM}>`
+export const RESEND_FROM_DISPLAY = `Plataforma Chome <${RESEND_FROM}>`
 
 export type ResendStatus = {
   configured: boolean
@@ -29,10 +29,10 @@ export async function testResendConnection(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const result = await sendEmail({
     to,
-    subject: "Correo de prueba — Chome Plataforma",
-    text: "Este es un correo de prueba enviado desde Chome Plataforma para verificar que Resend está correctamente configurado.",
+    subject: "Correo de prueba — Plataforma Chome",
+    text: "Este es un correo de prueba enviado desde Plataforma Chome para verificar que Resend está correctamente configurado.",
     html: `
-      <p>Este es un correo de prueba enviado desde <strong>Chome Plataforma</strong>.</p>
+      <p>Este es un correo de prueba enviado desde <strong>Plataforma Chome</strong>.</p>
       <p style="color:#6b7280;font-size:13px">Puedes ignorar este mensaje.</p>
     `,
   })

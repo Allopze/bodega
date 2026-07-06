@@ -1,4 +1,4 @@
-# Auditoría de Lógica, Bugs y Funcionalidades Faltantes: Chome Solicitudes y Bodega
+# Auditoría de Lógica, Bugs y Funcionalidades Faltantes: Plataforma Chome
 
 > Auditoría funcional (lógica de negocio, flujos, consistencia de datos, casos borde).
 > **No** es una auditoría de seguridad/DevOps. Fecha: 2026-07-03. Rama: `feat/shell-cohesion`.
@@ -467,7 +467,7 @@ Era la contraparte funcional de [BUG-02]: faltaba la capacidad de entregar el sa
 
 ## 13. Conclusión
 
-Chome Solicitudes y Bodega tiene un **núcleo transaccional sólido**: stock y kardex son atómicos, no admiten negativos ni sobre-entregas/sobre-recepciones, y la concurrencia está bien serializada. El flujo principal `Solicitud → Aprobación → OC → Recepción → Entrega` funciona de punta a punta y está razonablemente testeado (unit + E2E). `typecheck`, `test` y `build` pasan en verde.
+Plataforma Chome tiene un **núcleo transaccional sólido**: stock y kardex son atómicos, no admiten negativos ni sobre-entregas/sobre-recepciones, y la concurrencia está bien serializada. El flujo principal `Solicitud → Aprobación → OC → Recepción → Entrega` funciona de punta a punta y está razonablemente testeado (unit + E2E). `typecheck`, `test` y `build` pasan en verde.
 
 La remediación del 2026-07-04 cerró las incoherencias principales: timeline de ítem, entrega parcial, cierre de OC parcial con split de saldo, reanudación de postergados, "En OC" con OCs anuladas, rollup prematuro, rol de prevencionista y cancelación con motivo de solicitudes enviadas.
 

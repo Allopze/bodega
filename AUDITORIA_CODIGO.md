@@ -1,6 +1,6 @@
 # Auditoría de Código
 
-> Auditoría técnica integral de la webapp **Chome Solicitudes y Bodega**.
+> Auditoría técnica integral de la webapp **Plataforma Chome**.
 > Realizada el **2026-07-03** sobre la rama `feat/shell-cohesion` (working tree incluido).
 > Método: lectura de código + ejecución real de `typecheck`, `lint`, `test`, `build` + `npm audit`.
 

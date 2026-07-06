@@ -13,8 +13,15 @@ import {
   rejectPdtpExecution,
   updatePdtpActivity,
   addPdtpActivity,
+  deletePdtpActivity,
+  reorderPdtpActivities,
   setPdtpActivityOverride,
   deletePdtpActivityOverride,
+  createPdtpProgram,
+  updatePdtpProgram,
+  deletePdtpProgram as deletePdtpProgramService,
+  createPdtpSheet,
+  deletePdtpSheet as deletePdtpSheetService,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
@@ -23,6 +30,13 @@ import {
   pdtpActivityUpdateSchema,
   pdtpActivityAddSchema,
   pdtpActivityOverrideSchema,
+  pdtpProgramCreateSchema,
+  pdtpProgramUpdateSchema,
+  pdtpProgramDeleteSchema,
+  pdtpSheetCreateSchema,
+  pdtpSheetDeleteSchema,
+  pdtpActivityDeleteSchema,
+  pdtpActivityReorderSchema,
 } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/pdtp"
@@ -224,6 +238,167 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
   }
   revalidatePath(REVALIDATE)
   return backTo()
+}
+
+// ── WS5: Program CRUD ───────────────────────────────────────────────────────
+
+export async function createPdtpProgramAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState & { programId?: string }> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return { ok: false, message: "No tienes permisos para crear programas PDTP." }
+  }
+
+  try {
+    const parsed = pdtpProgramCreateSchema.parse({
+      year: formData.get("year"),
+      title: formData.get("title"),
+      copySheetsFromProgramId: formData.get("copySheetsFromProgramId") || undefined,
+    })
+    const program = await createPdtpProgram({
+      year: parsed.year,
+      title: parsed.title,
+      userId: session.user.id,
+      copySheetsFromProgramId: parsed.copySheetsFromProgramId,
+    })
+    revalidatePath(REVALIDATE)
+    return { ok: true, programId: program.id }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function updatePdtpProgramAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return { ok: false, message: "No tienes permisos para editar programas PDTP." }
+  }
+
+  try {
+    const parsed = pdtpProgramUpdateSchema.parse({
+      programId: formData.get("programId"),
+      title: formData.get("title") || undefined,
+      complianceTarget: formData.get("complianceTarget") || undefined,
+    })
+    await updatePdtpProgram(parsed.programId!, parsed, session.user.id)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function deletePdtpProgramAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return { ok: false, message: "No tienes permisos para eliminar programas PDTP." }
+  }
+
+  try {
+    const parsed = pdtpProgramDeleteSchema.parse({ programId: formData.get("programId") })
+    await deletePdtpProgramService(parsed.programId, session.user.id)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+// ── WS6: Sheet management ────────────────────────────────────────────────────
+
+export async function createPdtpSheetAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return { ok: false, message: "No tienes permisos para crear hojas PDTP." }
+  }
+
+  try {
+    const parsed = pdtpSheetCreateSchema.parse({
+      programId: formData.get("programId"),
+      code: formData.get("code"),
+      label: formData.get("label"),
+      area: formData.get("area"),
+    })
+    await createPdtpSheet(parsed)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function deletePdtpSheetAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return { ok: false, message: "No tienes permisos para eliminar hojas PDTP." }
+  }
+
+  try {
+    const parsed = pdtpSheetDeleteSchema.parse({
+      sheetId: formData.get("sheetId"),
+      programId: formData.get("programId"),
+    })
+    await deletePdtpSheetService(parsed.sheetId, parsed.programId)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+// ── WS7: Activity delete + reorder ───────────────────────────────────────────
+
+export async function deletePdtpActivityAction(input: unknown): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return { ok: false, message: "No tienes permisos para eliminar actividades PDTP." }
+  }
+
+  try {
+    const parsed = pdtpActivityDeleteSchema.parse(input)
+    await deletePdtpActivity(parsed.activityId, session.user.id)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function reorderPdtpActivitiesAction(input: unknown): Promise<ActionState> {
+  const { session, error } = await guardAuth()
+  if (error) return error
+  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
+    return { ok: false, message: "No tienes permisos para reordenar actividades PDTP." }
+  }
+
+  try {
+    const parsed = pdtpActivityReorderSchema.parse(input)
+    await reorderPdtpActivities(parsed.programId, parsed.orderedIds, session.user.id)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
 }
 
 export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {

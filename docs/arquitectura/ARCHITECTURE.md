@@ -1,4 +1,4 @@
-# Arquitectura — Chome Solicitudes y Bodega
+# Arquitectura — Plataforma Chome
 
 Documento técnico completo de la arquitectura del sistema.
 
@@ -90,7 +90,7 @@ si vuelve a quedar desactualizado.
 ## Estructura del proyecto
 
 ```
-chome-solicitudes-bodega/
+plataforma-chome/
 ├── app/                              # Next.js App Router
 │   ├── layout.tsx                    # Root layout (fuentes, metadata, HTML lang="es-CL")
 │   ├── globals.css                   # Estilos globales + design tokens (OKLCH)

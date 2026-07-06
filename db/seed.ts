@@ -1,5 +1,5 @@
 /**
- * Bootstrap seed — Chome Solicitudes y Bodega
+ * Bootstrap seed — Plataforma Chome
  * Creates only system roles, permissions, and base catalog data.
  * Operational/test data should be entered through the app flows.
  * Run with: npx tsx db/seed.ts
@@ -93,7 +93,7 @@ function sourceNote(item: EppCatalogItem) {
 }
 
 async function main() {
-  console.log("Inicializando datos base de Chome Solicitudes y Bodega...")
+  console.log("Inicializando datos base de Plataforma Chome...")
 
   // A-16: SEED_DRY_RUN valida todas las entradas del seed (config, parsing del
   // markdown de trabajadores, catálogo EPP, política de contraseña) y reporta

@@ -169,6 +169,13 @@
       "when": 1783229165200,
       "tag": "0023_rich_human_torch",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783296422392,
+      "tag": "0024_strong_polaris",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-# Despliegue — Chome Solicitudes y Bodega
+# Despliegue — Plataforma Chome
 
 Guía completa para desplegar la aplicación en producción.
 

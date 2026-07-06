@@ -3,7 +3,7 @@ import type { ReportData, ReportSheet } from "./types"
 
 export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()
-  workbook.creator = "Chome Solicitudes y Bodega"
+  workbook.creator = "Plataforma Chome"
   workbook.created = new Date()
 
   const sheets = report.sheets?.length ? report.sheets : [{

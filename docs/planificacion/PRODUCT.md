@@ -1,9 +1,9 @@
-# Chome Solicitudes y Bodega
+# Plataforma Chome
 
-Sistema interno de abastecimiento para **Servicios Industriales Chome Limitada**, una
-empresa chilena de servicios industriales. Reemplaza el proceso manual basado en Excel
-con una plataforma web que garantiza que ningún ítem se pierda entre la solicitud y la
-entrega.
+Plataforma interna de gestión operacional para **Servicios Industriales Chome Limitada**,
+una empresa chilena de servicios industriales. Reemplaza procesos manuales basados en
+Excel con una plataforma web para coordinar adquisiciones, bodega, prevención, flota,
+reportes y trazabilidad por faena.
 
 ---
 
@@ -14,7 +14,7 @@ generaba una orden de compra con cascos y botas, y nadie sabía que los guantes 
 cayeron. No había trazabilidad, ni inventario centralizado, ni forma de auditar qué pasó
 con cada ítem.
 
-**Chome Solicitudes y Bodega** resuelve esto con control por ítem individual a través de
+**Plataforma Chome** resuelve esto con control por ítem individual a través de
 todo el pipeline: solicitud → aprobación → orden de compra → recepción → entrega.
 
 ---

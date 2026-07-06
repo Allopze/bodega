@@ -49,7 +49,8 @@ export async function GET(request: NextRequest) {
 
   try {
     if (worksiteId) assertWorksiteAccess(worksiteId, worksiteIds)
-    const report = await buildPdtpExport({ year, sheetCode, worksiteId })
+    const programId = url.searchParams.get("programId") || undefined
+    const report = await buildPdtpExport({ programId, year, sheetCode, worksiteId })
     const xlsx = await buildXlsxBuffer(report)
 
     return new NextResponse(xlsx, {

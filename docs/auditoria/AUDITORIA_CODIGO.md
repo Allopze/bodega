@@ -1,6 +1,6 @@
 # Auditoría de Código
 
-> Aplicación auditada: **Chome Solicitudes y Bodega** — sistema interno (Next.js 16 / React 19 / Drizzle + PostgreSQL / NextAuth v5) para solicitudes por faena, aprobaciones, órdenes de compra, recepción, bodega, prevención (SST) y PPA.
+> Aplicación auditada: **Plataforma Chome** — sistema interno (Next.js 16 / React 19 / Drizzle + PostgreSQL / NextAuth v5) para solicitudes por faena, aprobaciones, órdenes de compra, recepción, bodega, prevención (SST) y PPA.
 > Rama auditada: `feat/sst-prevencion-module` (con cambios sin commitear en el árbol de trabajo).
 > Fecha auditoría inicial: 2026-06-22. Fecha de aplicación de fixes: 2026-06-22. Metodología: auditoría sobre el repositorio real (no solo documentación), ejecutando `typecheck`, `lint`, `test` y `build`.
 >

@@ -52,9 +52,9 @@ export function OcForm({
           </Select>
         </Field>
 
-        <Field label="Proveedor por defecto" required htmlFor="supplierId">
+        <Field label="Proveedor por defecto" htmlFor="supplierId">
           <Select value={f.supplierId} onValueChange={f.onSupplierValueChange}>
-            <SelectTrigger id="supplierId"><SelectValue placeholder="Selecciona proveedor" /></SelectTrigger>
+            <SelectTrigger id="supplierId"><SelectValue placeholder="Selecciona proveedor (opcional)" /></SelectTrigger>
             <SelectContent>
               {f.suppliers.map((s: SupplierOption) => (
                 <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
@@ -109,7 +109,6 @@ export function OcForm({
           filteredItems={f.filteredItems}
           filteredByWorksite={f.filteredByWorksite}
           selectedItems={f.selectedItems}
-          supplierId={f.supplierId}
           suppliers={f.suppliers}
           worksiteId={f.worksiteId}
           search={f.search}
@@ -123,6 +122,8 @@ export function OcForm({
           itemDiscount={f.itemDiscount}
           setItemPrice={f.setItemPrice}
           setItemDiscount={f.setItemDiscount}
+          resolveItemSupplierId={f.resolveItemSupplierId}
+          setItemSupplier={f.setItemSupplier}
         />
 
         {/* Error */}
@@ -144,7 +145,7 @@ export function OcForm({
             label={`Crear OC (${f.includedItems.length} ítem${f.includedItems.length !== 1 ? "s" : ""})`}
             loadingLabel="Creando..."
             variant="primary"
-            disabled={f.includedItems.length === 0 || !f.supplierId || !f.worksiteId}
+            disabled={f.includedItems.length === 0 || !f.worksiteId}
           />
         </div>
       </div>

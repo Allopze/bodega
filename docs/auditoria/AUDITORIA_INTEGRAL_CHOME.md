@@ -1,4 +1,4 @@
-# Auditoría Integral: Chome Solicitudes y Bodega
+# Auditoría Integral: Plataforma Chome
 
 > Auditoría técnica basada exclusivamente en evidencia observable en el repositorio.
 > Fecha: 2026-06-23 · Rama auditada: `feat/sst-prevencion-module` · Commit base: `75ca96d`
@@ -8,7 +8,7 @@
 
 ## 1. Resumen ejecutivo
 
-**Chome Solicitudes y Bodega** es un SaaS interno B2B técnicamente maduro y notablemente bien construido para su tamaño. La capa de seguridad, RBAC y el núcleo transaccional (stock, kardex, máquina de estados, recepción en dos etapas) están implementados con un rigor que excede lo habitual en software interno de este alcance.
+**Plataforma Chome** es un SaaS interno B2B técnicamente maduro y notablemente bien construido para su tamaño. La capa de seguridad, RBAC y el núcleo transaccional (stock, kardex, máquina de estados, recepción en dos etapas) están implementados con un rigor que excede lo habitual en software interno de este alcance.
 
 **Fortalezas verificadas (no inferidas):**
 
@@ -405,7 +405,7 @@ Intento de seed en prod con bypass debe exigir cambio de clave o fallar.
 
 ## 11. Conclusión
 
-Chome Solicitudes y Bodega es un sistema **técnicamente sólido y maduro**, con un núcleo de seguridad, RBAC, máquina de estados e integridad transaccional que está claramente por encima del promedio para un SaaS interno de este alcance. No se identificaron hallazgos **Críticos** ni **Altos** confirmados en las áreas bloqueantes (RBAC, scope por faena, stock, kardex, auth, CSRF, transacciones).
+Plataforma Chome es un sistema **técnicamente sólido y maduro**, con un núcleo de seguridad, RBAC, máquina de estados e integridad transaccional que está claramente por encima del promedio para un SaaS interno de este alcance. No se identificaron hallazgos **Críticos** ni **Altos** confirmados en las áreas bloqueantes (RBAC, scope por faena, stock, kardex, auth, CSRF, transacciones).
 
 - **Calificación global:** 8/10.
 - **Decisión de producción:** 🟡 Listo para producción con observaciones.

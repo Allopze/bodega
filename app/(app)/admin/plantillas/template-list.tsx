@@ -207,7 +207,7 @@ function TemplateCard({
 
 function PreviewBlock({ template }: { template: TemplateItem }) {
   const previewVars: Record<string, string> = {
-    app_name:    "Chome Bodega",
+    app_name:    "Plataforma Chome",
     sender_name: "Administrador",
     user_name:   "Juan Pérez",
     title:       "Notificación de prueba",

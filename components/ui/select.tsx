@@ -2,36 +2,19 @@
 
 import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"
-import { CaretDown, CaretUp, Check, MagnifyingGlass } from "@phosphor-icons/react"
+import { CaretDown, Check, MagnifyingGlass } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
+import { SelectSearchableContext, SelectFilterContext, getNodeText } from "./select-context"
+import { SelectScrollDownButton, SelectScrollUpButton } from "./select-parts"
 
-const SelectGroup = SelectPrimitive.Group
-const SelectValue = SelectPrimitive.Value
-
-// ─── Search contexts ────────────────────────────────────────────────
-// SelectSearchableContext: shared between Trigger and Content when a
-// <Select searchable> is used.  The Trigger renders the search input;
-// the Content reads the query to filter items.
-const SelectSearchableContext = React.createContext<{
-  query:   string
-  setQuery: React.Dispatch<React.SetStateAction<string>>
-  open:    boolean
-} | null>(null)
-
-// SelectFilterContext: always provided by SelectContent so that
-// SelectItem can filter itself.  When searchable, the value comes from
-// the Trigger's input; otherwise from the Content's own search bar.
-const SelectFilterContext = React.createContext("")
-
-function getNodeText(node: React.ReactNode): string {
-  if (node == null || typeof node === "boolean") return ""
-  if (typeof node === "string" || typeof node === "number") return String(node)
-  if (Array.isArray(node)) return node.map(getNodeText).join("")
-  if (React.isValidElement(node)) {
-    return getNodeText((node.props as { children?: React.ReactNode }).children)
-  }
-  return ""
-}
+export {
+  SelectGroup,
+  SelectValue,
+  SelectScrollUpButton,
+  SelectScrollDownButton,
+  SelectLabel,
+  SelectSeparator,
+} from "./select-parts"
 
 // ─── Select (wrapper around Radix Root) ─────────────────────────────
 function Select({
@@ -79,13 +62,11 @@ const SelectTrigger = React.forwardRef<
 
   React.useEffect(() => {
     if (searchCtx?.open) {
-      // Wait for Radix open animation before focusing
       const id = requestAnimationFrame(() => inputRef.current?.focus())
       return () => cancelAnimationFrame(id)
     }
   }, [searchCtx?.open])
 
-  // Capture-phase listener to block Radix typeahead before it sees keystrokes
   React.useEffect(() => {
     const el = inputRef.current
     if (!el || !searchCtx?.open) return
@@ -106,7 +87,6 @@ const SelectTrigger = React.forwardRef<
         "border border-[var(--color-border)] bg-[var(--color-surface)]",
         "px-3.5 py-1.5 text-sm text-[var(--color-text)]",
         "transition-[border-color,box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-        // Emil: press feedback — trigger is a pressable element
         "active:scale-[0.99]",
         "hover:border-[var(--color-border-strong)]",
         "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)]",
@@ -147,35 +127,6 @@ const SelectTrigger = React.forwardRef<
 })
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
 
-// ─── Scroll buttons ─────────────────────────────────────────────────
-const SelectScrollUpButton = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.ScrollUpButton>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollUpButton>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.ScrollUpButton
-    ref={ref}
-    className={cn("flex cursor-default items-center justify-center py-1", className)}
-    {...props}
-  >
-    <CaretUp className="h-4 w-4" />
-  </SelectPrimitive.ScrollUpButton>
-))
-SelectScrollUpButton.displayName = SelectPrimitive.ScrollUpButton.displayName
-
-const SelectScrollDownButton = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.ScrollDownButton>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollDownButton>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.ScrollDownButton
-    ref={ref}
-    className={cn("flex cursor-default items-center justify-center py-1", className)}
-    {...props}
-  >
-    <CaretDown className="h-4 w-4" />
-  </SelectPrimitive.ScrollDownButton>
-))
-SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayName
-
 // ─── SelectContent ──────────────────────────────────────────────────
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
@@ -183,17 +134,13 @@ const SelectContent = React.forwardRef<
 >(({ className, children, position = "popper", ...props }, ref) => {
   const searchCtx = React.useContext(SelectSearchableContext)
 
-  // When searchable, the query lives in the Trigger's input.
-  // Otherwise, Content manages its own search bar.
   const [localQuery, setLocalQuery] = React.useState("")
   const query   = searchCtx ? searchCtx.query : localQuery
-  const _setQuery = searchCtx ? searchCtx.setQuery : setLocalQuery
 
   const searchInputRef     = React.useRef<HTMLInputElement>(null)
   const stoleInitialFocusRef = React.useRef(false)
 
   function handleContentFocus(event: React.FocusEvent<HTMLDivElement>) {
-    // When searchable, the Trigger input owns focus — don't steal it.
     if (searchCtx) return
     if (stoleInitialFocusRef.current || event.target === searchInputRef.current) return
     stoleInitialFocusRef.current = true
@@ -239,7 +186,7 @@ const SelectContent = React.forwardRef<
               onChange={(e) => setLocalQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
               placeholder="Buscar..."
-          aria-label="Buscar en opciones"
+              aria-label="Buscar en opciones"
               className="h-5 w-full bg-transparent text-sm text-(--color-text) outline-none placeholder:text-text-subtle"
             />
           </div>
@@ -262,19 +209,6 @@ const SelectContent = React.forwardRef<
   )
 })
 SelectContent.displayName = SelectPrimitive.Content.displayName
-
-// ─── SelectLabel ────────────────────────────────────────────────────
-const SelectLabel = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Label>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.Label
-    ref={ref}
-    className={cn("px-2 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] uppercase tracking-wide", className)}
-    {...props}
-  />
-))
-SelectLabel.displayName = SelectPrimitive.Label.displayName
 
 // ─── SelectItem ─────────────────────────────────────────────────────
 const SelectItem = React.forwardRef<
@@ -313,20 +247,7 @@ const SelectItem = React.forwardRef<
 })
 SelectItem.displayName = SelectPrimitive.Item.displayName
 
-// ─── SelectSeparator ────────────────────────────────────────────────
-const SelectSeparator = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Separator>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.Separator
-    ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-[var(--color-border)]", className)}
-    {...props}
-  />
-))
-SelectSeparator.displayName = SelectPrimitive.Separator.displayName
-
 export {
-  Select, SelectGroup, SelectValue, SelectTrigger,
-  SelectContent, SelectLabel, SelectItem, SelectSeparator,
+  Select, SelectTrigger,
+  SelectContent, SelectItem,
 }

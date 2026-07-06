@@ -55,8 +55,8 @@ export function OcFormSummary({
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-[var(--color-text-muted)]">Proveedor</span>
-          <span className={supplierId ? "text-[var(--color-success-ink)]" : "text-[var(--color-warning-ink)]"}>
-            {supplierId ? "Listo" : "Falta"}
+          <span className={(supplierId || includedItems.every((i) => i.targetSupplierId)) ? "text-[var(--color-success-ink)]" : "text-[var(--color-warning-ink)]"}>
+            {supplierId || includedItems.every((i) => i.targetSupplierId) ? "Listo" : "Falta"}
           </span>
         </div>
         <div className="flex items-center justify-between gap-3">

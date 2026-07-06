@@ -13,7 +13,7 @@
 
 ## Contexto
 
-Chome Solicitudes y Bodega es un sistema procure-to-pay maduro (Next.js 16 App Router,
+Plataforma Chome es un sistema procure-to-pay maduro (Next.js 16 App Router,
 SQLite/Drizzle, NextAuth v5, RBAC). El objetivo a largo plazo es convertirlo en un
 software completo de prevención de riesgos, sumando módulos de Incidentes/Accidentes,
 Inspecciones/Checklists, Matriz de riesgos (IPER) y Capacitaciones/EPP compliance.

@@ -1,38 +1,29 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { Suspense } from "react"
 import { db } from "@/db"
 import { inventoryMovements, worksites } from "@/db/schema"
 import { and, eq, asc, inArray, sql, count } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
-import { can } from "@/lib/auth/can"
+import { requirePermission, can } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { ServerPagination } from "@/components/ui/server-pagination"
 import { resolvePagination } from "@/lib/pagination"
-import { EmptyState } from "@/components/ui/empty-state"
 import { SkeletonPage } from "@/components/ui/skeleton"
-import { ArrowRight, Package, Warehouse, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Warehouse } from "@phosphor-icons/react/dist/ssr"
 import { ReturnPanel } from "./return-panel"
+import { WarehouseHeaderMetrics } from "./bodega-header-metrics"
+import { StockSection, KardexSection } from "./bodega-sections"
 import { AdjustPanel } from "./adjust-panel"
 import { PhysicalInventoryPanel } from "./physical-inventory-panel"
-import { StockTable } from "./stock-table"
-import { KardexTable } from "./kardex-table"
 import type { ReturnPanelStockOption } from "./return-panel"
 import type { AdjustPanelStockOption } from "./adjust-panel"
 import type { PhysicalInventoryStockOption } from "./physical-inventory-panel"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
-
-export const metadata: Metadata = { title: "Bodega" }
-
 import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 
-interface WorksiteOption {
-  id: string
-  name: string
-}
+export const metadata: Metadata = { title: "Bodega" }
 
 export default async function BodegaPage({
   searchParams,
@@ -123,7 +114,7 @@ export default async function BodegaPage({
     )
   }
 
-  const worksiteOptions: WorksiteOption[] = allWorksites.map((w) => ({ id: w.id, name: w.name }))
+  const worksiteOptions = allWorksites.map((w) => ({ id: w.id, name: w.name }))
   const visibleStockRows = stockRows
   const visibleMovements = recentMovements
   const stockWithQuantity = visibleStockRows.filter((item) => item.quantity > 0)
@@ -220,138 +211,4 @@ export default async function BodegaPage({
   )
 }
 
-function WarehouseHeaderMetrics({
-  worksiteCount,
-  worksitesWithStock,
-  productsWithStock,
-  lowStockCount,
-  movementCount,
-}: {
-  worksiteCount: number
-  worksitesWithStock: number
-  productsWithStock: number
-  lowStockCount: number
-  movementCount: number
-}) {
-  const stats: Array<{ label: string; value: string; tone?: "signal" }> = [
-    { label: "Faenas con stock", value: `${worksitesWithStock}/${worksiteCount}` },
-    { label: "Productos activos", value: productsWithStock.toLocaleString("es-CL") },
-    { label: "Bajo mínimo", value: lowStockCount.toLocaleString("es-CL"), tone: lowStockCount > 0 ? "signal" : undefined },
-    { label: "Movimientos", value: movementCount.toLocaleString("es-CL") },
-  ]
 
-  return (
-    <div className="flex items-center gap-3 whitespace-nowrap text-xs">
-      {stats.map((stat, i) => (
-        <div key={stat.label} className="flex items-center gap-2">
-          {i > 0 && (
-            <span className="text-[var(--color-border-strong)]" aria-hidden>·</span>
-          )}
-          <span className="text-[var(--color-text-muted)]">{stat.label}</span>
-          <span
-            className={[
-              "font-mono font-semibold tabular-nums",
-              stat.tone === "signal" ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
-            ].join(" ")}
-          >
-            {stat.value}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function StockSection({ worksites, stockByWorksite, initialWorksiteId, receivingHref, canExportStock }: {
-  worksites: WorksiteOption[]
-  stockByWorksite: Record<string, WorksiteStockWithProduct[]>
-  initialWorksiteId?: string
-  receivingHref?: string
-  canExportStock?: boolean
-}) {
-  const sortedWorksites = [...worksites].sort((a, b) => {
-    const aHasStock = (stockByWorksite[a.id] ?? []).some((item) => item.quantity > 0)
-    const bHasStock = (stockByWorksite[b.id] ?? []).some((item) => item.quantity > 0)
-    if (a.id === initialWorksiteId) return -1
-    if (b.id === initialWorksiteId) return 1
-    if (aHasStock !== bHasStock) return aHasStock ? -1 : 1
-    return a.name.localeCompare(b.name, "es")
-  })
-  const worksitesWithStock = sortedWorksites
-    .map((ws) => ({
-      ...ws,
-      items: (stockByWorksite[ws.id] ?? []).filter((item) => item.quantity > 0),
-    }))
-    .filter((ws) => ws.items.length > 0)
-  const worksitesWithoutStock = sortedWorksites.filter((ws) => !worksitesWithStock.some((stocked) => stocked.id === ws.id))
-
-  if (worksites.length === 0) {
-    return (
-      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <EmptyState
-          icon={<Warehouse size={24} />}
-          title="Sin faenas asignadas"
-          description="Tu cuenta no tiene faenas habilitadas para consultar stock."
-        />
-      </section>
-    )
-  }
-
-  if (worksitesWithStock.length === 0) {
-    return (
-      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <EmptyState
-          icon={<Package size={24} />}
-          title="Sin stock registrado"
-          description="Los ingresos de recepción aparecerán aquí cuando una orden de compra llegue a faena."
-          action={receivingHref ? (
-            <Link
-              href={receivingHref}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]"
-            >
-              Ver recepciones
-              <ArrowRight size={14} aria-hidden />
-            </Link>
-          ) : undefined}
-        />
-      </section>
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      <StockTable worksites={worksitesWithStock} canExport={canExportStock} />
-
-      {worksitesWithoutStock.length > 0 && (
-        <section className="border-t border-[var(--color-border)] pt-4">
-          <div className="flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
-            <WarningCircle size={14} />
-            <span className="font-medium">Sin stock:</span>
-            <span>{worksitesWithoutStock.map((ws) => ws.name).join(", ")}</span>
-          </div>
-        </section>
-      )}
-    </div>
-  )
-}
-
-function KardexSection({
-  movements,
-  worksites,
-  canExport,
-  pagination,
-  hrefForPage,
-}: {
-  movements: InventoryMovementWithRelations[]
-  worksites: WorksiteOption[]
-  canExport: boolean
-  pagination: ReturnType<typeof resolvePagination>
-  hrefForPage: (page: number) => string
-}) {
-  return (
-    <>
-      <KardexTable movements={movements} worksites={worksites} canExport={canExport} />
-      <ServerPagination pagination={pagination} hrefForPage={hrefForPage} />
-    </>
-  )
-}

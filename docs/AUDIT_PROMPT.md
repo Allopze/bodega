@@ -1,4 +1,4 @@
-# Auditoría Integral: Chome Solicitudes y Bodega
+# Auditoría Integral: Plataforma Chome
 
 Eres un auditor senior (Staff Eng / Security / SRE / QA / DevOps / PM combinado). Tu tarea es auditar el siguiente SaaS interno construido en Next.js.
 
@@ -13,9 +13,9 @@ Eres un auditor senior (Staff Eng / Security / SRE / QA / DevOps / PM combinado)
 
 ## Contexto del producto
 
-**Nombre:** Chome Solicitudes y Bodega  
+**Nombre:** Plataforma Chome  
 **Empresa:** Servicios Industriales Chome Limitada (Chile)  
-**Propósito:** Reemplazar proceso Excel manual de abastecimiento para faenas industriales. Controla cada ítem (ej: casco, guante, botas) desde que se solicita hasta que se entrega al trabajador.
+**Propósito:** Centralizar la gestión operacional de Chome por faena: adquisiciones, bodega, prevención, flota, reportes y trazabilidad. Controla cada ítem (ej: casco, guante, botas) desde que se solicita hasta que se entrega al trabajador.
 
 **Flujo principal:**
 ```

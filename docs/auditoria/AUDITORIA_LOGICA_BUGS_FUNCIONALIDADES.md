@@ -1,4 +1,4 @@
-# Auditoría de Lógica, Bugs y Funcionalidades Faltantes: Chome Solicitudes y Bodega
+# Auditoría de Lógica, Bugs y Funcionalidades Faltantes: Plataforma Chome
 
 > Auditoría funcional centrada en lógica de negocio, bugs, consistencia de datos
 > (stock/kardex/estados) y funcionalidades faltantes. **No** es una auditoría de
@@ -14,7 +14,7 @@
 
 ## 1. Resumen ejecutivo
 
-Chome Solicitudes y Bodega **sí implementa de punta a punta** el flujo central
+Plataforma Chome **sí implementa de punta a punta** el flujo central
 `Solicitud → Aprobación (por ítem) → Orden de Compra → Recepción oficina →
 Recepción faena → Entrega (faena/trabajador)`. La capa de servicios (`lib/services`)
 concentra correctamente toda la mutación de estado y stock, con buenas prácticas
@@ -737,7 +737,7 @@ Leyenda: `[x]` cumple · `[~]` cumple parcialmente / con observación.
 
 ## 13. Conclusión
 
-Chome Solicitudes y Bodega es un producto **funcionalmente sólido en su núcleo**: el
+Plataforma Chome es un producto **funcionalmente sólido en su núcleo**: el
 flujo de abastecimiento está implementado de extremo a extremo, con una arquitectura
 de servicios disciplinada (toda mutación de stock/estado en transacciones atómicas
 con locks y constraints de BD), recepción en dos etapas correcta, prevención de doble

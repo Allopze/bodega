@@ -1,4 +1,4 @@
-# Auditoría por Módulos — Chome Solicitudes y Bodega
+# Auditoría por Módulos — Plataforma Chome
 
 ## 1. Resumen ejecutivo
 

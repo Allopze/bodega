@@ -8,7 +8,7 @@
 
 ## 1. Resumen ejecutivo
 
-El sistema **Chome Solicitudes y Bodega** está en un estado funcional avanzado. El flujo principal del negocio (Solicitud → Aprobación → OC → Recepción → Stock → Entrega) está **completo y operable** desde la creación de solicitudes hasta la entrega a trabajadores, con trazabilidad, auditoría y notificaciones integradas.
+El sistema **Plataforma Chome** está en un estado funcional avanzado. El flujo principal del negocio (Solicitud → Aprobación → OC → Recepción → Stock → Entrega) está **completo y operable** desde la creación de solicitudes hasta la entrega a trabajadores, con trazabilidad, auditoría y notificaciones integradas.
 
 **Estado general:**
 - **Flujo principal completo:** El ciclo vida de un ítem desde solicitud hasta entrega funciona de punta a punta sin salir de la aplicación.

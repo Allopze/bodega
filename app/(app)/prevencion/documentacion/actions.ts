@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
 import type { Session } from "next-auth"
-import { guardPermission } from "@/lib/auth/can"
+import { requireAuth, can, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { getDocumentBundle } from "@/lib/services/prevention-documents-library"
 import {
   createDocument,
   uploadDocumentVersion,
@@ -18,6 +19,9 @@ import {
   moveDocumentToFolder,
   listDocumentCategories,
 } from "@/lib/services/prevention-documents-library"
+import { db } from "@/db"
+import { users, worksites } from "@/db/schema"
+import { inArray } from "drizzle-orm"
 import {
   sstDocumentCreateSchema,
   sstDocumentArchiveSchema,
@@ -267,4 +271,50 @@ export async function moveSstDocumentAction(input: { id: string; folderId?: stri
 export async function revalidateBiblioteca(documentId?: string) {
   revalidatePath(REVALIDATE)
   if (documentId) revalidatePath(`${REVALIDATE}/${documentId}`)
+}
+
+export async function getDocumentDetailAction(documentId: string) {
+  let session
+  try { session = await requireAuth() }
+  catch { return { error: "No autenticado" } }
+  if (!can(session, "prevention:docs:view")) return { error: "Sin permisos" }
+
+  const scope = resolveWorksiteScope(session)
+  const bundle = await getDocumentBundle(documentId, scope)
+  if (!bundle) return { error: "Documento no encontrado" }
+
+  const userIds = Array.from(new Set([
+    bundle.doc.uploadedBy,
+    ...bundle.versions.map((v) => v.uploadedBy),
+  ].filter(Boolean) as string[]))
+
+  const worksiteIds = Array.from(new Set([
+    bundle.doc.worksiteId ?? "",
+  ].filter(Boolean) as string[]))
+
+  const [userRows, worksiteRows] = await Promise.all([
+    userIds.length
+      ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds))
+      : Promise.resolve([] as Array<{ id: string; name: string; email: string }>),
+    worksiteIds.length
+      ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, worksiteIds))
+      : Promise.resolve([] as Array<{ id: string; name: string }>),
+  ])
+
+  const userMap = Object.fromEntries(userRows.map((u) => [u.id, u]))
+  const worksiteMap = Object.fromEntries(worksiteRows.map((w) => [w.id, w]))
+
+  return {
+    bundle,
+    userMap,
+    worksiteMap,
+    canManage: can(session, "prevention:docs:manage"),
+    canApprove: false,
+    canArchive: can(session, "prevention:docs:archive"),
+    canAck: false,
+    canLink: false,
+    currentUserId: session.user.id,
+    currentUserName: userMap[session.user.id]?.name ?? session.user.email ?? "Yo",
+    error: undefined as string | undefined,
+  }
 }

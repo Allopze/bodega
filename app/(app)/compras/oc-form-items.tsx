@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatQty, formatCLP } from "@/lib/utils"
-import { priceHint, suggestedSupplierLabel, itemSupplierId } from "./oc-form.helpers"
+import { priceHint, suggestedSupplierLabel } from "./oc-form.helpers"
 import type { SupplierOption, PendingItemOption } from "./oc-form.types"
 
 const MODE_LABELS: Record<string, string> = {
@@ -19,7 +20,6 @@ interface OcFormItemsProps {
   filteredItems:      PendingItemOption[]
   filteredByWorksite: PendingItemOption[]
   selectedItems:      Set<string>
-  supplierId:         string
   suppliers:          SupplierOption[]
   worksiteId:         string
   search:             string
@@ -33,12 +33,15 @@ interface OcFormItemsProps {
   itemDiscount:       (itemId: string) => number
   setItemPrice:       (itemId: string, value: string) => void
   setItemDiscount:    (itemId: string, value: string) => void
+  resolveItemSupplierId: (item: PendingItemOption) => string
+  setItemSupplier:    (itemId: string, supplierId: string) => void
 }
 
 export function OcFormItems({
-  filteredItems, filteredByWorksite, selectedItems, supplierId, suppliers,
+  filteredItems, filteredByWorksite, selectedItems, suppliers,
   worksiteId, search, worksiteModes, modeFilter, onModeChange, onToggle, onToggleAll, onSearchChange,
   itemPrice, itemDiscount, setItemPrice, setItemDiscount,
+  resolveItemSupplierId, setItemSupplier,
 }: OcFormItemsProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -96,12 +99,13 @@ export function OcFormItems({
       ) : (
         <div className="border border-[var(--color-border)] rounded-[var(--radius)] divide-y divide-[var(--color-border)] overflow-hidden">
           {filteredItems.map((item) => {
-            const isSelected  = selectedItems.has(item.id)
-            const price       = itemPrice(item)
-            const disc        = itemDiscount(item.id)
-            const subtotal    = item.quantity * price * (1 - disc / 100)
-            const hint        = priceHint(item, itemSupplierId(item, supplierId))
-            const supLabel    = suggestedSupplierLabel(item, suppliers)
+            const isSelected   = selectedItems.has(item.id)
+            const price        = itemPrice(item)
+            const disc         = itemDiscount(item.id)
+            const subtotal     = item.quantity * price * (1 - disc / 100)
+            const supplierForItem = resolveItemSupplierId(item)
+            const hint         = priceHint(item, supplierForItem)
+            const supLabel     = suggestedSupplierLabel(item, suppliers)
 
             return (
               <div
@@ -145,6 +149,21 @@ export function OcFormItems({
 
                 {isSelected && (
                   <div className="flex items-start gap-2 shrink-0">
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor={`supplier-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
+                        Proveedor
+                      </label>
+                      <Select value={supplierForItem} onValueChange={(v) => setItemSupplier(item.id, v)}>
+                        <SelectTrigger id={`supplier-${item.id}`} className="h-7 w-36 text-xs">
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {suppliers.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="flex flex-col gap-1">
                       <label htmlFor={`price-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
                         Precio unit.

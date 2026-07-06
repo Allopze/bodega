@@ -1,6 +1,6 @@
-# Chome Solicitudes y Bodega — Documentación del Proyecto
+# Plataforma Chome — Documentación del Proyecto
 
-> **Nombre interno:** `chome-solicitudes-bodega`
+> **Nombre interno:** `plataforma-chome`
 > **Dominio:** Sistema ERP interno para gestión de adquisiciones, bodega, prevención de riesgos y flota vehicular de la empresa Chome.
 
 ---

@@ -17,38 +17,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { createProduct, updateProduct } from "./actions"
 import { cn } from "@/lib/utils"
-
-interface Category  { id: string; name: string; slug: string }
-interface Supplier  { id: string; name: string }
-interface AttributeRow { id?: string; name: string; type: "text" | "select" | "number"; isRequired: boolean; options: string; sortOrder: number }
-interface SupplierRow  { id?: string; supplierId: string; supplierName: string; unitPrice: string; isPreferred: boolean; notes: string }
-
-interface ProductForEdit {
-  id:                 string
-  sku:                string
-  name:               string
-  description:        string | null
-  categoryId:         string
-  unitOfMeasure:      string
-  isEpp:              boolean
-  requiresPrevencion: boolean
-  referencePrice:     number | null
-  notes:              string | null
-  isActive:           boolean
-  attributes:         AttributeRow[]
-  suppliers:          SupplierRow[]
-}
-
-interface ProductFormProps {
-  open:          boolean
-  onClose:       () => void
-  categories:    Category[]
-  allSuppliers:  Supplier[]
-  editProduct?:  ProductForEdit | null
-  variant?:      "sheet" | "embedded"
-}
-
-const UOM_OPTIONS = ["unidad", "par", "caja", "paquete", "rollo", "metro", "kg", "litro", "juego", "set"]
+import type { AttributeRow, SupplierRow, ProductFormProps } from "./product-form.types"
+import { UOM_OPTIONS } from "./product-form.types"
 
 export function ProductForm({ open, onClose, categories, allSuppliers, editProduct, variant = "sheet" }: ProductFormProps) {
   const isEdit = !!editProduct

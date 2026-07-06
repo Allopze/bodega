@@ -1,4 +1,4 @@
-# Styling — Chome Solicitudes y Bodega
+# Styling — Plataforma Chome
 
 Stack: **Next.js 15 + Tailwind CSS v4** (`@import "tailwindcss"` en `app/globals.css`).
 

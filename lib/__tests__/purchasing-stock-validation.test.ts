@@ -49,9 +49,8 @@ describe("Purchasing validation schemas", () => {
         .toThrow()
     })
 
-    it("rejects missing supplierId", () => {
-      expect(() => createOrderSchema.parse({ ...validInput, supplierId: "" }))
-        .toThrow()
+    it("accepts empty supplierId when items have their own supplier", () => {
+      expect(() => createOrderSchema.parse({ ...validInput, supplierId: "" })).not.toThrow()
     })
 
     it("accepts free-text products (no productId)", () => {

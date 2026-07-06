@@ -28,10 +28,10 @@ const myriad = localFont({
 
 export const metadata: Metadata = {
   title: {
-    default: "Chome Solicitudes y Bodega",
-    template: "%s — Chome Solicitudes y Bodega",
+    default: "Plataforma Chome",
+    template: "%s — Plataforma Chome",
   },
-  description: "Sistema de abastecimiento, órdenes de compra y bodega — Chome",
+  description: "Plataforma interna para operación, trazabilidad, prevención y gestión por faena — Chome",
   robots: { index: false, follow: false },
 }
 

@@ -1,6 +1,6 @@
 # Protección CSRF
 
-> Auditoría S-12 / S-05. Documenta cómo se mitiga CSRF en Chome Solicitudes y Bodega.
+> Auditoría S-12 / S-05. Documenta cómo se mitiga CSRF en Plataforma Chome.
 
 **Last updated:** 2026-06-19
 

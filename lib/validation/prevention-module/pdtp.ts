@@ -77,3 +77,40 @@ export const pdtpActivityOverrideSchema = z.object({
   week: z.coerce.number().int().min(1).max(4),
   plannedQuantity: z.coerce.number().min(0),
 })
+
+export const pdtpProgramCreateSchema = z.object({
+  year: z.coerce.number().int().min(2024, "El año debe ser al menos 2024"),
+  title: z.string().trim().min(1, "Título requerido").max(200, "Máximo 200 caracteres"),
+  copySheetsFromProgramId: z.string().optional(),
+})
+
+export const pdtpProgramUpdateSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  title: z.string().trim().min(1).max(200).optional(),
+  complianceTarget: z.coerce.number().min(0).max(1).optional(),
+})
+
+export const pdtpProgramDeleteSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+})
+
+export const pdtpSheetCreateSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  code: z.string().trim().min(1, "Código requerido").max(50).regex(/^[a-z0-9_]+$/, "Solo letras minúsculas, números y guiones bajos"),
+  label: z.string().trim().min(1, "Etiqueta requerida").max(200),
+  area: z.string().trim().min(1, "Área requerida").max(100),
+})
+
+export const pdtpSheetDeleteSchema = z.object({
+  sheetId: z.string().min(1, "Hoja requerida"),
+  programId: z.string().min(1, "Programa requerido"),
+})
+
+export const pdtpActivityDeleteSchema = z.object({
+  activityId: z.string().min(1, "Actividad requerida"),
+})
+
+export const pdtpActivityReorderSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  orderedIds: z.array(z.string().min(1)).min(1, "Al menos una actividad"),
+})

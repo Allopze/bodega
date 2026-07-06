@@ -86,7 +86,7 @@ export const createOrderItemSchema = z.object({
 
 export const createOrderSchema = z.object({
   worksiteId:        z.string().min(1, "Selecciona una faena"),
-  supplierId:        z.string().min(1, "Selecciona un proveedor"),
+  supplierId:        z.string().optional().or(z.literal("")),
   paymentTerms:      z.string().max(120).nullable().optional().or(z.literal("")),
   estimatedDelivery: z.string().nullable().optional().or(z.literal("")),
   deliveryAddress:   z.string().max(240).nullable().optional().or(z.literal("")),
