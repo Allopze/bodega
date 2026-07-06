@@ -4,8 +4,6 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { resolveEvaluatorRole as resolveEvaluatorRoleCore } from "@/lib/sst/resolve-evaluator-role"
 import type { EvaluatorRole } from "@/lib/sst/types"
 
-export const REVALIDATE = "/prevencion"
-
 /** Convert WorksiteScope to string[] | 'all' */
 export function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
   if (scope.mode === "all") return "all"

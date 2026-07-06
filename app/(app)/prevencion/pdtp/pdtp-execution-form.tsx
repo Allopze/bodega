@@ -2,7 +2,18 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
+import { Field } from "@/components/ui/field"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { PencilSimple } from "@phosphor-icons/react"
 import { markPdtpExecutionFormAction } from "./actions"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -19,6 +30,7 @@ type PdtpExecutionFormProps = {
 
 export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek }: PdtpExecutionFormProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const [open, setOpen] = React.useState(false)
   const [state, formAction] = React.useActionState<ExecState, FormData>(
     async (_prev, formData) => {
       const { toast } = await import("@/lib/toast")
@@ -46,6 +58,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
         toast.error(result.message ?? "Error al registrar la ejecución PDTP.")
       } else {
         toast.success("Ejecución PDTP registrada.")
+        setOpen(false)
       }
       return result
     },
@@ -54,85 +67,113 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
   const [pending, startTransition] = React.useTransition()
 
   return (
-    <form
-      action={(fd) => startTransition(() => formAction(fd))}
-      className="flex flex-wrap items-end gap-2"
-    >
-      <input type="hidden" name="activityId" value={activityId} />
-      <input type="hidden" name="worksiteId" value={worksiteId} />
-      <input type="hidden" name="year" value={year ?? new Date().getFullYear()} />
-      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-        Mes
-        <Select name="month" defaultValue={String(defaultMonth ?? 1)}>
-          <SelectTrigger
-            className="h-8 w-24 text-sm"
-            error={!!state?.fieldErrors?.month}
-            aria-invalid={!!state?.fieldErrors?.month}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MONTH_LABELS.map((label, index) => (
-              <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </label>
-      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-        Semana
-        <Select name="week" defaultValue={String(defaultWeek ?? 1)}>
-          <SelectTrigger
-            className="h-8 w-16 text-sm"
-            error={!!state?.fieldErrors?.week}
-            aria-invalid={!!state?.fieldErrors?.week}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {[1, 2, 3, 4].map((week) => (
-              <SelectItem key={week} value={String(week)}>{week}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </label>
-      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-        Cantidad
-        <input
-          name="executedQuantity"
-          type="number"
-          min="0"
-          step="0.25"
-          defaultValue="1"
-          className="h-8 w-20 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-          aria-invalid={!!state?.fieldErrors?.executedQuantity}
-        />
-      </label>
-      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-        Observación
-        <input
-          name="evidenceText"
-          type="text"
-          placeholder="Opcional"
-          className="h-8 w-40 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-        />
-      </label>
-      <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-        Evidencia
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,application/pdf"
-          className="text-xs text-[var(--color-text)]"
-        />
-      </label>
-      <Button type="submit" size="sm" variant="secondary" disabled={pending}>
-        {pending ? "Guardando…" : "Guardar"}
-      </Button>
-      {state && !state.ok && state.message ? (
-        <span className="basis-full text-xs text-[var(--color-danger)]" role="alert">
-          {state.message}
-        </span>
-      ) : null}
-    </form>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" variant="secondary">
+          <PencilSimple size={13} className="mr-1" />
+          Registrar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Registrar ejecución</DialogTitle>
+          <DialogDescription>
+            Ingresa la cantidad ejecutada para el período indicado. Puedes adjuntar evidencia fotográfica o un PDF.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          action={(fd) => startTransition(() => formAction(fd))}
+          className="flex flex-col gap-4"
+        >
+          <input type="hidden" name="activityId" value={activityId} />
+          <input type="hidden" name="worksiteId" value={worksiteId} />
+          <input type="hidden" name="year" value={year ?? new Date().getFullYear()} />
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Mes" htmlFor="exec-month">
+              <Select name="month" defaultValue={String(defaultMonth ?? 1)}>
+                <SelectTrigger
+                  id="exec-month"
+                  className="h-9 text-sm"
+                  error={!!state?.fieldErrors?.month}
+                  aria-invalid={!!state?.fieldErrors?.month}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MONTH_LABELS.map((label, index) => (
+                    <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Semana" htmlFor="exec-week">
+              <Select name="week" defaultValue={String(defaultWeek ?? 1)}>
+                <SelectTrigger
+                  id="exec-week"
+                  className="h-9 text-sm"
+                  error={!!state?.fieldErrors?.week}
+                  aria-invalid={!!state?.fieldErrors?.week}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4].map((week) => (
+                    <SelectItem key={week} value={String(week)}>{week}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Cantidad" htmlFor="exec-qty">
+              <input
+                id="exec-qty"
+                name="executedQuantity"
+                type="number"
+                min="0"
+                step="0.25"
+                defaultValue="1"
+                className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+                aria-invalid={!!state?.fieldErrors?.executedQuantity}
+              />
+            </Field>
+          </div>
+
+          <Field label="Observación" htmlFor="exec-obs">
+            <input
+              id="exec-obs"
+              name="evidenceText"
+              type="text"
+              placeholder="Opcional"
+              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+            />
+          </Field>
+
+          <Field label="Evidencia (foto o PDF)" htmlFor="exec-file">
+            <input
+              ref={fileInputRef}
+              id="exec-file"
+              type="file"
+              accept="image/jpeg,image/png,application/pdf"
+              className="text-xs text-[var(--color-text)]"
+            />
+          </Field>
+
+          {state && !state.ok && state.message && (
+            <p className="text-xs text-[var(--color-danger)]" role="alert">
+              {state.message}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={pending}>
+              Cancelar
+            </Button>
+            <Button type="submit" size="sm" disabled={pending}>
+              {pending ? "Guardando…" : "Guardar ejecución"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

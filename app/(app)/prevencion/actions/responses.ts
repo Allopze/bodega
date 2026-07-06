@@ -9,7 +9,8 @@ import { getEvaluation, saveResponses } from "@/lib/services/sst"
 import type { ActionState } from "@/lib/validation/sst"
 import type { sstResponsesBatchSchema } from "@/lib/validation/sst"
 import type { z } from "zod"
-import { scopeToIds, REVALIDATE } from "./helpers"
+import { scopeToIds } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 export async function saveResponsesAction(
   evaluationId: string,

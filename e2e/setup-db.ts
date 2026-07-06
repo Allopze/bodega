@@ -124,6 +124,10 @@ async function main() {
     { id: "p-prev-docs-e", name: "prevention:docs:export", module: "prevention", description: "Exportar documentación (XLSX)" },
     { id: "p-prev-docs-sens", name: "prevention:docs:manage_sensitive", module: "prevention", description: "Gestionar documentos sensibles" },
     { id: "p-prev-docs-rest", name: "prevention:docs:manage_restricted", module: "prevention", description: "Gestionar documentos restringidos" },
+    { id: "p-prev-pdtp-view", name: "prevention:pdtp:view", module: "prevention", description: "Ver Programa de Trabajo Preventivo SG-SST" },
+    { id: "p-prev-pdtp-manage", name: "prevention:pdtp:manage", module: "prevention", description: "Gestionar catálogo, cronograma y ejecuciones del PDTP" },
+    { id: "p-prev-pdtp-approve", name: "prevention:pdtp:approve", module: "prevention", description: "Aprobar el PDTP como jefatura de prevención" },
+    { id: "p-prev-pdtp-sign-legal", name: "prevention:pdtp:sign_legal", module: "prevention", description: "Firmar el PDTP como Gerencia Legal" },
   ]
 
   await db.insert(schema.permissions).values(permissions)

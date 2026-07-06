@@ -17,7 +17,8 @@ import {
   uniqueIds,
   userHasAdministratorRole,
 } from "../actions.helpers"
-import { requireAdminPermission, REVALIDATE } from "./helpers"
+import { requireAdminPermission } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 export async function updateUser(
   _prev: ActionState,

@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
+import { Field } from "@/components/ui/field"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import {
   Dialog,
@@ -13,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Sliders } from "@phosphor-icons/react"
+import { Tooltip } from "@/components/ui/tooltip"
 import { setPdtpActivityOverrideFormAction } from "./actions"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -47,10 +49,17 @@ export function PdtpOverrideForm(props: Props) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" size="sm" variant="ghost" title="Fijar meta por faena">
-          <Sliders size={13} className="mr-1" />
-          Meta faena
-        </Button>
+        <Tooltip side="top" content="Fijar meta por faena">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0"
+            aria-label="Fijar meta por faena"
+          >
+            <Sliders size={14} />
+          </Button>
+        </Tooltip>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -79,10 +88,9 @@ export function PdtpOverrideForm(props: Props) {
           <input type="hidden" name="faena" value={worksiteId} />
 
           <div className="grid grid-cols-3 gap-3">
-            <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-              Mes
+            <Field label="Mes" htmlFor="ovr-month">
               <Select name="month" defaultValue={String(defaultMonth)}>
-                <SelectTrigger className="h-9 text-sm">
+                <SelectTrigger id="ovr-month" className="h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -91,11 +99,10 @@ export function PdtpOverrideForm(props: Props) {
                   ))}
                 </SelectContent>
               </Select>
-            </label>
-            <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-              Semana
+            </Field>
+            <Field label="Semana" htmlFor="ovr-week">
               <Select name="week" defaultValue={String(defaultWeek)}>
-                <SelectTrigger className="h-9 text-sm">
+                <SelectTrigger id="ovr-week" className="h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -104,10 +111,10 @@ export function PdtpOverrideForm(props: Props) {
                   ))}
                 </SelectContent>
               </Select>
-            </label>
-            <label className="grid gap-1 text-xs text-[var(--color-text-subtle)]">
-              Cantidad
+            </Field>
+            <Field label="Cantidad" htmlFor="ovr-qty">
               <input
+                id="ovr-qty"
                 name="plannedQuantity"
                 type="number"
                 min="0"
@@ -115,7 +122,7 @@ export function PdtpOverrideForm(props: Props) {
                 defaultValue={initial}
                 className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
               />
-            </label>
+            </Field>
           </div>
           <p className="text-[11px] text-[var(--color-text-subtle)]">
             Define 0 para borrar el override y volver al plan global del catálogo.

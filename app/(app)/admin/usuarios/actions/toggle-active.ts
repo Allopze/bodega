@@ -12,7 +12,8 @@ import {
   canManageAdministratorRole,
   userHasAdministratorRole,
 } from "../actions.helpers"
-import { requireAdminPermission, REVALIDATE } from "./helpers"
+import { requireAdminPermission } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 class LastAdminGuardError extends Error {}
 

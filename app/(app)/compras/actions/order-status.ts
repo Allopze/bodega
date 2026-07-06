@@ -11,7 +11,8 @@ import { getUserIdsWithPermission, notifyManyUser, notifyAfterCommit } from "@/l
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
 import { assertOrderAccess } from "../actions.helpers"
-import { dbErrMsg, serviceWorksiteScope, REVALIDATE } from "./helpers"
+import { dbErrMsg, serviceWorksiteScope } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 // ── Issue OC (draft → issued) ─────────────────────────────────────────────────
 

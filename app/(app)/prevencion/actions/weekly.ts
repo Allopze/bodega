@@ -6,7 +6,8 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getWeeklyEvaluations, markWeekCompleted } from "@/lib/services/sst"
 import type { ActionState } from "@/lib/validation/sst"
 import { sstWeeklyEvaluations } from "@/db/schema/sst"
-import { scopeToIds, REVALIDATE } from "./helpers"
+import { scopeToIds } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 export async function getWeeklyEvaluationsAction(
   evaluationId: string,

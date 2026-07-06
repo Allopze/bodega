@@ -20,7 +20,8 @@ import {
   uniqueIds,
   hashStr,
 } from "../actions.helpers"
-import { requireAdminPermission, REVALIDATE } from "./helpers"
+import { requireAdminPermission } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 export async function createUser(
   _prev: ActionState,

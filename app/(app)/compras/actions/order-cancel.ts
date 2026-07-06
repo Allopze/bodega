@@ -9,7 +9,8 @@ import { cancelOrder, closeOrder, deleteOrder, isOrderDeletable } from "@/lib/se
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
 import { assertOrderAccess } from "../actions.helpers"
-import { dbErrMsg, serviceWorksiteScope, REVALIDATE } from "./helpers"
+import { dbErrMsg, serviceWorksiteScope } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 // ── Close order (supplier_confirmed/partially_received/received → closed) ─────
 

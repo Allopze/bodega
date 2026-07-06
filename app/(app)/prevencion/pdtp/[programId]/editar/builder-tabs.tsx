@@ -6,6 +6,9 @@ import { useActionState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Field, FieldGroup } from "@/components/ui/field"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { SubmitButton } from "@/components/admin/submit-button"
 import {
   Dialog,
   DialogContent,
@@ -26,8 +29,6 @@ import {
 
 import type { pdtpPrograms, pdtpSheets, pdtpActivities, pdtpActivitySchedule } from "@/db/schema"
 
-const TABS = ["Metadatos", "Hojas", "Objetivos", "Actividades", "Planificación"] as const
-
 type PdtpBuilderTabsProps = {
   program: typeof pdtpPrograms.$inferSelect
   sheets: Array<typeof pdtpSheets.$inferSelect>
@@ -38,49 +39,38 @@ type PdtpBuilderTabsProps = {
 }
 
 export function PdtpBuilderTabs({ program, sheets, activities, schedule, userId, canDelete }: PdtpBuilderTabsProps) {
-  const [activeTab, setActiveTab] = React.useState<string>("Metadatos")
-
   return (
-    <div className="space-y-4">
-      <div className="flex gap-1 border-b border-[var(--color-border)]">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab
-                ? "border-b-2 border-[var(--color-primary)] text-[var(--color-text)]"
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+    <Tabs defaultValue="metadatos">
+      <TabsList className="w-full justify-start">
+        <TabsTrigger value="metadatos">Metadatos</TabsTrigger>
+        <TabsTrigger value="hojas">Hojas</TabsTrigger>
+        <TabsTrigger value="objetivos">Objetivos</TabsTrigger>
+        <TabsTrigger value="actividades">Actividades</TabsTrigger>
+        <TabsTrigger value="planificacion">Planificación</TabsTrigger>
+      </TabsList>
 
-      {activeTab === "Metadatos" && (
+      <TabsContent value="metadatos">
         <MetadataTab program={program} canDelete={canDelete} />
-      )}
-      {activeTab === "Hojas" && (
+      </TabsContent>
+      <TabsContent value="hojas">
         <SheetsTab programId={program.id} sheets={sheets} userId={userId} />
-      )}
-      {activeTab === "Objetivos" && (
+      </TabsContent>
+      <TabsContent value="objetivos">
         <ObjetivosTab programId={program.id} activities={activities} />
-      )}
-      {activeTab === "Actividades" && (
+      </TabsContent>
+      <TabsContent value="actividades">
         <ActividadesTab programId={program.id} activities={activities} />
-      )}
-      {activeTab === "Planificación" && (
+      </TabsContent>
+      <TabsContent value="planificacion">
         <PlanificacionTab programId={program.id} year={program.year} activities={activities} schedule={schedule} />
-      )}
-    </div>
+      </TabsContent>
+    </Tabs>
   )
 }
 
 function MetadataTab({ program, canDelete }: { program: typeof pdtpPrograms.$inferSelect; canDelete: boolean }) {
   const router = useRouter()
-  const [updateState, updateAction, updatePending] = useActionState(updatePdtpProgramAction, null)
+  const [updateState, updateAction] = useActionState(updatePdtpProgramAction, null)
   const [deleteState, deleteAction, deletePending] = useActionState(deletePdtpProgramAction, null)
 
   // Bug A: llamar router.refresh()/push() en el cuerpo del componente los
@@ -100,42 +90,36 @@ function MetadataTab({ program, canDelete }: { program: typeof pdtpPrograms.$inf
       <form action={updateAction} className="max-w-md space-y-4">
         <input type="hidden" name="programId" value={program.id} />
 
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text)]">Título</label>
-          <Input name="title" defaultValue={program.title} required className="mt-1" />
-        </div>
+        <FieldGroup className="gap-4">
+          <Field label="Título" htmlFor="meta-title" required>
+            <Input id="meta-title" name="title" defaultValue={program.title} required />
+          </Field>
 
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text)]">Año</label>
-          <Input name="year" value={program.year} disabled className="mt-1 bg-[var(--color-surface-2)]" />
-        </div>
+          <Field label="Año" htmlFor="meta-year">
+            <Input id="meta-year" name="year" value={program.year} disabled className="bg-[var(--color-surface-2)]" />
+          </Field>
 
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text)]">Meta de cumplimiento</label>
-          <Input
-            name="complianceTarget"
-            type="number"
-            step="0.01"
-            min="0"
-            max="1"
-            defaultValue={program.complianceTarget}
+          <Field
+            label="Meta de cumplimiento"
+            htmlFor="meta-compliance"
             required
-            className="mt-1"
-          />
-          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-            Valor entre 0 y 1. Ej: 0.90 = 90% de cumplimiento esperado.
-          </p>
-        </div>
+            helper="Valor entre 0 y 1. Ej: 0.90 = 90% de cumplimiento esperado."
+            error={updateState?.message && !updateState.ok ? updateState.message : undefined}
+          >
+            <Input
+              id="meta-compliance"
+              name="complianceTarget"
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              defaultValue={program.complianceTarget}
+              required
+            />
+          </Field>
+        </FieldGroup>
 
-        {updateState?.message && !updateState.ok && (
-          <p className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
-            {updateState.message}
-          </p>
-        )}
-
-        <Button type="submit" disabled={updatePending} size="sm">
-          {updatePending ? "Guardando..." : "Guardar cambios"}
-        </Button>
+        <SubmitButton label="Guardar cambios" loadingLabel="Guardando..." size="sm" />
       </form>
 
       <ImportExcelSection programId={program.id} />
@@ -221,24 +205,16 @@ function CreateSheetForm({ programId }: { programId: string }) {
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="programId" value={programId} />
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-[var(--color-text-subtle)]">Código</label>
-          <Input name="code" required className="mt-1 h-8" placeholder="mi_hoja" />
-        </div>
-        <div>
-          <label className="text-xs text-[var(--color-text-subtle)]">Área</label>
-          <Input name="area" required className="mt-1 h-8" placeholder="prevencion" />
-        </div>
+        <Field label="Código" htmlFor="sheet-code" required>
+          <Input id="sheet-code" name="code" required placeholder="mi_hoja" />
+        </Field>
+        <Field label="Área" htmlFor="sheet-area" required>
+          <Input id="sheet-area" name="area" required placeholder="prevencion" />
+        </Field>
       </div>
-      <div>
-        <label className="text-xs text-[var(--color-text-subtle)]">Etiqueta</label>
-        <Input name="label" required className="mt-1 h-8" placeholder="Mi hoja personalizada" />
-      </div>
-      {state?.message && !state.ok && (
-        <p className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
-          {state.message}
-        </p>
-      )}
+      <Field label="Etiqueta" htmlFor="sheet-label" required error={state?.message && !state.ok ? state.message : undefined}>
+        <Input id="sheet-label" name="label" required placeholder="Mi hoja personalizada" />
+      </Field>
       <Button type="submit" size="sm" disabled={pending}>
         {pending ? "Creando..." : "Crear hoja"}
       </Button>
@@ -469,25 +445,22 @@ function EditActivityDialog({ activity, onClose, onSaved }: {
         <DialogHeader>
           <DialogTitle>Editar actividad N°{activity?.n}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs text-[var(--color-text-subtle)]">Actividad</label>
-            <Textarea value={activityText} onChange={(e) => setActivityText(e.target.value)} rows={3} className="mt-1" />
-          </div>
-          <div>
-            <label className="text-xs text-[var(--color-text-subtle)]">Programa</label>
-            <Input value={program} onChange={(e) => setProgram(e.target.value)} className="mt-1" />
-          </div>
-          <div>
-            <label className="text-xs text-[var(--color-text-subtle)]">Notas</label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="mt-1" />
-          </div>
+        <FieldGroup className="gap-3">
+          <Field label="Actividad" htmlFor="edit-activity">
+            <Textarea id="edit-activity" value={activityText} onChange={(e) => setActivityText(e.target.value)} rows={3} />
+          </Field>
+          <Field label="Programa" htmlFor="edit-program">
+            <Input id="edit-program" value={program} onChange={(e) => setProgram(e.target.value)} />
+          </Field>
+          <Field label="Notas" htmlFor="edit-notes">
+            <Textarea id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </Field>
           {error && (
             <p className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
               {error}
             </p>
           )}
-        </div>
+        </FieldGroup>
         <DialogFooter>
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>Cancelar</Button>
           <Button type="button" size="sm" onClick={handleSave} disabled={pending}>{pending ? "Guardando..." : "Guardar"}</Button>

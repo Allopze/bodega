@@ -19,7 +19,8 @@ import type { ActionState } from "@/lib/validation/sst"
 import type { SstEvaluation } from "@/db/schema/sst"
 import type { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/validation/sst"
 import type { z } from "zod"
-import { scopeToIds, REVALIDATE, resolveEvaluatorRole } from "./helpers"
+import { scopeToIds, resolveEvaluatorRole } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 // ── createEvaluationAction ────────────────────────────────────────────────────
 

@@ -7,7 +7,8 @@ import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createOrdersBySupplier } from "@/lib/services/purchasing"
 import { logger } from "@/lib/logger"
 import { createOrderSchema, type ActionState } from "@/lib/validation/operations"
-import { dbErrMsg, REVALIDATE } from "./helpers"
+import { dbErrMsg } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 export async function createOrderAction(
   _prev: ActionState,

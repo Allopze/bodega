@@ -7,7 +7,8 @@ import { saveActionPlanItem, deleteActionPlanItem } from "@/lib/services/sst"
 import type { ActionState } from "@/lib/validation/sst"
 import type { sstActionPlanItemSchema } from "@/lib/validation/sst"
 import type { z } from "zod"
-import { scopeToIds, REVALIDATE } from "./helpers"
+import { scopeToIds } from "./helpers"
+import { REVALIDATE } from "./revalidate"
 
 export async function saveActionPlanItemAction(
   input: z.infer<typeof sstActionPlanItemSchema>,

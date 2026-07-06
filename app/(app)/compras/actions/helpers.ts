@@ -3,8 +3,6 @@
 import type { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 
-export const REVALIDATE = "/compras"
-
 export function dbErrMsg(e: unknown, fallback: string): string {
   if (!(e instanceof Error)) return fallback
   // DrizzleQueryError wraps the real DB error in .cause
