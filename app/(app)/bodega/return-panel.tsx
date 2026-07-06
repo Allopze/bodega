@@ -40,7 +40,7 @@ export function ReturnPanel({
   const [productId,  setProductId]  = React.useState<string>("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
-  const [state, action] = useActionState<ActionState, FormData>(returnStockAction, INITIAL_STATE)
+  const [state, action, pending] = useActionState<ActionState, FormData>(returnStockAction, INITIAL_STATE)
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -157,7 +157,7 @@ export function ReturnPanel({
             label="Registrar devolución"
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={!worksiteId || !productId}
+            disabled={!worksiteId || !productId || pending}
           />
         </div>
       </form>

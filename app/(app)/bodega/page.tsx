@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { Suspense } from "react"
 import { db } from "@/db"
 import { inventoryMovements, worksites } from "@/db/schema"
 import { and, eq, asc, inArray, sql, count } from "drizzle-orm"
@@ -9,7 +8,6 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { resolvePagination } from "@/lib/pagination"
-import { SkeletonPage } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Warehouse } from "@phosphor-icons/react/dist/ssr"
 import { ReturnPanel } from "./return-panel"
@@ -172,25 +170,21 @@ export default async function BodegaPage({
       />
       <div className={(showReturnPanel || showAdjustPanel || showPhysicalInventoryPanel) ? "grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start" : "flex flex-col gap-8"}>
         <div className="min-w-0 space-y-8">
-          <Suspense fallback={<SkeletonPage rows={6} />}>
-            <StockSection
-              worksites={worksiteOptions}
-              stockByWorksite={stockByWorksite}
-              initialWorksiteId={initialWorksiteId}
-              receivingHref={canViewReceiving ? "/recepcion" : undefined}
-              canExportStock={canExportStock}
-            />
-          </Suspense>
+          <StockSection
+            worksites={worksiteOptions}
+            stockByWorksite={stockByWorksite}
+            initialWorksiteId={initialWorksiteId}
+            receivingHref={canViewReceiving ? "/recepcion" : undefined}
+            canExportStock={canExportStock}
+          />
 
-          <Suspense fallback={<SkeletonPage rows={6} />}>
-            <KardexSection
-              movements={visibleMovements as InventoryMovementWithRelations[]}
-              worksites={worksiteOptions}
-              canExport={canExportStock}
-              pagination={kardexPagination}
-              hrefForPage={kardexHref}
-            />
-          </Suspense>
+          <KardexSection
+            movements={visibleMovements as InventoryMovementWithRelations[]}
+            worksites={worksiteOptions}
+            canExport={canExportStock}
+            pagination={kardexPagination}
+            hrefForPage={kardexHref}
+          />
         </div>
 
         {(showReturnPanel || showAdjustPanel || showPhysicalInventoryPanel) && (

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Tooltip } from "@/components/ui/tooltip"

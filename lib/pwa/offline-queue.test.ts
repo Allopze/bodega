@@ -9,7 +9,6 @@ import {
   deletePpa,
   countPendingPpas,
   getAllPpas,
-  type QueuedPpa,
 } from "./offline-queue"
 
 beforeEach(async () => {
@@ -116,7 +115,7 @@ describe("offline-queue", () => {
     })
 
     it("counts only pending items", async () => {
-      const a = await enqueuePpa({})
+      await enqueuePpa({})
       const b = await enqueuePpa({})
       await updatePpaStatus(b.id, { status: "synced" })
 

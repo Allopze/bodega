@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback, useMemo } from "react"
-import type { ChecklistSection, ChecklistDefinition } from "@/lib/sst/types"
+import type { ChecklistDefinition } from "@/lib/sst/types"
 import type { SectionAccess } from "@/lib/sst/checklist"
 import type { SstWeeklyEvaluation } from "@/db/schema/sst"
 import { getApplicableSections } from "./helpers"

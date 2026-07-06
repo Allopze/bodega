@@ -124,7 +124,7 @@ export function PhysicalInventoryPanel({
         </Field>
 
         {state.ok === false && state.message && state !== INITIAL_STATE && (
-          <p className="text-sm text-danger flex items-center gap-1.5">
+          <p className="text-sm text-[var(--color-danger)] flex items-center gap-1.5">
             <Warning size={14} /> {state.message}
           </p>
         )}

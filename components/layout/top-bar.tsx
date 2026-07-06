@@ -49,7 +49,7 @@ export function TopBar({
   // These routes have their own per-screen search bar (URL-synced,
   // server-side). The top-bar in-memory search is inert there — hide it so
   // users don't see two search inputs with different behaviours.
-  const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion"]
+  const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/bodega"]
   const hideSearch = ROUTES_WITH_OWN_SEARCH.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 
   return (

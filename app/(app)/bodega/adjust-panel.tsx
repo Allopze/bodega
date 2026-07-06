@@ -40,7 +40,7 @@ export function AdjustPanel({
   const [productId,  setProductId]  = React.useState<string>("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
-  const [state, action] = useActionState<ActionState, FormData>(adjustStockAction, INITIAL_STATE)
+  const [state, action, pending] = useActionState<ActionState, FormData>(adjustStockAction, INITIAL_STATE)
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -159,7 +159,7 @@ export function AdjustPanel({
         </Field>
 
         {state.ok === false && state.message && state !== INITIAL_STATE && (
-          <p className="text-sm text-danger flex items-center gap-1.5">
+          <p className="text-sm text-[var(--color-danger)] flex items-center gap-1.5">
             <Warning size={14} /> {state.message}
           </p>
         )}
@@ -169,7 +169,7 @@ export function AdjustPanel({
             label="Registrar ajuste"
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={!worksiteId || !productId}
+            disabled={!worksiteId || !productId || pending}
           />
         </div>
       </form>
