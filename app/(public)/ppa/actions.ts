@@ -73,7 +73,7 @@ export async function findWorkerByRutAction(
   rut: string,
 ): Promise<{
   ok: boolean
-  worker?: { id: string; name: string; position: string | null; worksiteId: string; worksiteName: string }
+  worker?: { id: string; name: string; rut: string | null; position: string | null; worksiteId: string; worksiteName: string }
   message?: string
 }> {
   if (!rut) return { ok: false, message: "Ingresa tu RUT." }
@@ -109,6 +109,7 @@ export async function findWorkerByRutAction(
       worker: {
         id: worker.id,
         name: `${worker.firstName} ${worker.lastName}`,
+        rut: worker.rut,
         position: worker.position,
         worksiteId: worker.worksiteId,
         worksiteName: worker.worksiteName ?? "",

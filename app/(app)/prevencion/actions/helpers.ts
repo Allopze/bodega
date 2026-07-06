@@ -1,7 +1,8 @@
 "use server"
 
-import type { guardAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { resolveEvaluatorRole as resolveEvaluatorRoleCore } from "@/lib/sst/resolve-evaluator-role"
+import type { EvaluatorRole } from "@/lib/sst/types"
 
 export const REVALIDATE = "/prevencion"
 
@@ -12,28 +13,12 @@ export function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): stri
   return scope.ids
 }
 
-/**
- * Determina el EvaluatorRole del usuario autenticado basándose en sus permisos.
- * - conductor_lider: tiene sst:evaluate_acompanamiento pero NO sst:create
- * - admin_contrato:  tiene sst:create y su rol en DB es rol-admin-contrato
- * - prevencionista_faena: tiene sst:create (fallback)
- */
+/** Wraps the shared resolveEvaluatorRole for action-layer consumers. */
 export function resolveEvaluatorRole(
-  session: Awaited<ReturnType<typeof guardAuth>>["session"] extends infer S
-    ? S extends null
-      ? never
-      : NonNullable<S>
-    : never,
-): import("@/lib/sst/types").EvaluatorRole | undefined {
-  const perms = session.user.permissions ?? []
-  const roleNames: string[] = session.user.roles ?? []
-
-  if (perms.includes("sst:evaluate_acompanamiento") && !perms.includes("sst:create")) {
-    return "conductor_lider"
-  }
-  if (perms.includes("sst:create")) {
-    if (roleNames.includes("admin_contrato")) return "admin_contrato"
-    return "prevencionista_faena"
-  }
-  return undefined
+  session: { user: { permissions?: string[]; roles?: string[] } },
+): EvaluatorRole | undefined {
+  return resolveEvaluatorRoleCore({
+    permissions: session.user.permissions ?? [],
+    roles: (session.user.roles ?? []) as string[],
+  })
 }

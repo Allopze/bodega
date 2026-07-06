@@ -5,20 +5,20 @@ import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { evaluatePpa } from "@/lib/ppa/evaluation"
 import type { PpaAnswers, PpaStopReason } from "@/lib/ppa/types"
-import { submitPpaAction, findWorkerByRutAction } from "./actions"
+import { ppaSubmitSchema } from "@/lib/validation/ppa"
+import { submitPpaAction } from "./actions"
 import { usePpaOfflineQueue } from "@/lib/pwa/hooks"
+import { usePpaIdentity } from "./use-ppa-identity"
 import type { PpaFormProps } from "./ppa-form.types"
 
 interface UsePpaFormReturn {
-  // State
   worksiteId: string
   setWorksiteId: (v: string) => void
   rutSearch: string
   setRutSearch: (v: string) => void
   searchingWorker: boolean
-  matchedWorker: { id: string; name: string; position: string | null; worksiteName: string } | null
+  matchedWorker: { id: string; name: string; rut: string | null; position: string | null; worksiteName: string } | null
   manual: boolean
-  setManual: (v: boolean) => void
   workerName: string
   setWorkerName: (v: string) => void
   workerRut: string
@@ -49,7 +49,6 @@ interface UsePpaFormReturn {
   paramWorksiteName: string
   online: boolean
   err: (k: string) => string | undefined
-  // Handlers
   handleVerifyRut: () => Promise<void>
   onSubmit: (ev: React.FormEvent) => void
   toggleManual: () => void
@@ -65,16 +64,11 @@ export function usePpaForm({
   const { online, enqueue } = usePpaOfflineQueue()
 
   const [worksiteId, setWorksiteId] = React.useState(initialWorksiteId)
-  const [rutSearch, setRutSearch] = React.useState("")
-  const [searchingWorker, setSearchingWorker] = React.useState(false)
-  const [matchedWorker, setMatchedWorker] = React.useState<{
-    id: string; name: string; position: string | null; worksiteName: string
-  } | null>(null)
-  const [workerId, setWorkerId] = React.useState("")
-  const [manual, setManual] = React.useState(false)
-  const [workerName, setWorkerName] = React.useState("")
-  const [workerRut, setWorkerRut] = React.useState("")
-  const [workerCompany, setWorkerCompany] = React.useState("")
+
+  const identity = usePpaIdentity({
+    hasFaenaParam,
+    onWorksiteChange: setWorksiteId,
+  })
 
   const [tipoTrabajo, setTipoTrabajo] = React.useState("")
   const [cambioPlanificado, setCambioPlanificado] = React.useState<"" | "si" | "no">("")
@@ -89,39 +83,6 @@ export function usePpaForm({
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [stopReasons, setStopReasons] = React.useState<PpaStopReason[]>([])
 
-  function resetIdentity() {
-    setMatchedWorker(null)
-    setWorkerId("")
-    if (!hasFaenaParam) setWorksiteId("")
-  }
-
-  async function handleVerifyRut() {
-    if (!rutSearch) return
-    setSearchingWorker(true)
-    resetIdentity()
-    try {
-      const res = await findWorkerByRutAction(rutSearch)
-      if (res.ok && res.worker) {
-        setMatchedWorker({
-          id: res.worker.id,
-          name: res.worker.name,
-          position: res.worker.position,
-          worksiteName: res.worker.worksiteName,
-        })
-        setWorkerId(res.worker.id)
-        if (!hasFaenaParam) setWorksiteId(res.worker.worksiteId)
-        setWorkerRut(rutSearch)
-        toast.success("Trabajador verificado.")
-      } else {
-        toast.error(res.message ?? "No se encontró el trabajador.")
-      }
-    } catch {
-      toast.error("Error al buscar el trabajador.")
-    } finally {
-      setSearchingWorker(false)
-    }
-  }
-
   const paramWorksiteName = hasFaenaParam
     ? worksites.find((w) => w.id === worksiteId)?.name ?? ""
     : ""
@@ -130,22 +91,6 @@ export function usePpaForm({
     setControles((prev) =>
       prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value],
     )
-  }
-
-  function clientValidate(): boolean {
-    const e: Record<string, string[]> = {}
-    if (!worksiteId) e.worksiteId = ["Selecciona la faena."]
-    if (manual) {
-      if (workerName.trim().length < 2) e.workerName = ["Indica tu nombre."]
-    } else if (!workerId) {
-      e.workerId = ["Debes verificar tu RUT antes de enviar."]
-    }
-    if (!tipoTrabajo) e.tipoTrabajo = ["Selecciona el tipo de trabajo."]
-    if (!cambioPlanificado) e.cambioPlanificado = ["Responde esta pregunta."]
-    if (!peligroNoControlado) e.peligroNoControlado = ["Responde esta pregunta."]
-    if (!seguroComenzar) e.seguroComenzar = ["Responde esta pregunta."]
-    setErrors(e)
-    return Object.keys(e).length === 0
   }
 
   function buildAnswers(): PpaAnswers {
@@ -162,14 +107,14 @@ export function usePpaForm({
   }
 
   function buildPayload() {
-    const name = manual ? workerName.trim() : (matchedWorker?.name ?? "")
-    const rut = manual ? workerRut.trim() : rutSearch.trim()
+    const name = identity.manual ? identity.workerName.trim() : (identity.matchedWorker?.name ?? "")
+    const rut = identity.manual ? identity.workerRut.trim() : identity.rutSearch.trim()
     return {
       worksiteId,
-      workerId: manual ? undefined : workerId || undefined,
+      workerId: identity.manual ? undefined : identity.workerId || undefined,
       workerName: name,
       workerRut: rut || undefined,
-      workerCompany: workerCompany || undefined,
+      workerCompany: identity.workerCompany || undefined,
       tipoTrabajo,
       cambioPlanificado: cambioPlanificado as "si" | "no",
       cambioDescripcion,
@@ -232,7 +177,10 @@ export function usePpaForm({
 
   function onSubmit(ev: React.FormEvent) {
     ev.preventDefault()
-    if (!clientValidate()) {
+    const payload = buildPayload()
+    const parsed = ppaSubmitSchema.safeParse(payload)
+    if (!parsed.success) {
+      setErrors(parsed.error.flatten().fieldErrors as Record<string, string[]>)
       toast.error("Faltan respuestas obligatorias.")
       return
     }
@@ -245,24 +193,17 @@ export function usePpaForm({
     doSubmit()
   }
 
-  function toggleManual() {
-    setManual((m) => !m)
-    setErrors({})
-    setMatchedWorker(null)
-    setWorkerId("")
-  }
-
   const err = (k: string) => errors[k]?.[0]
 
   return {
     worksiteId, setWorksiteId,
-    rutSearch, setRutSearch,
-    searchingWorker,
-    matchedWorker,
-    manual, setManual,
-    workerName, setWorkerName,
-    workerRut, setWorkerRut,
-    workerCompany, setWorkerCompany,
+    rutSearch: identity.rutSearch, setRutSearch: identity.setRutSearch,
+    searchingWorker: identity.searchingWorker,
+    matchedWorker: identity.matchedWorker,
+    manual: identity.manual,
+    workerName: identity.workerName, setWorkerName: identity.setWorkerName,
+    workerRut: identity.workerRut, setWorkerRut: identity.setWorkerRut,
+    workerCompany: identity.workerCompany, setWorkerCompany: identity.setWorkerCompany,
     tipoTrabajo, setTipoTrabajo,
     cambioPlanificado, setCambioPlanificado,
     cambioDescripcion, setCambioDescripcion,
@@ -275,8 +216,10 @@ export function usePpaForm({
     stopReasons, pending,
     paramWorksiteName, online,
     err,
-  // Handlers
-  handleVerifyRut, onSubmit, toggleManual, resetIdentity,
-  doSubmit,
+    handleVerifyRut: identity.handleVerifyRut,
+    onSubmit,
+    toggleManual: identity.toggleManual,
+    resetIdentity: identity.resetIdentity,
+    doSubmit,
   }
 }

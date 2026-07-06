@@ -115,6 +115,10 @@ async function syncAllPending(): Promise<QueuedPpa[]> {
 
   // Single batched notification after all items synced
   if (syncedCount > 0) {
+    // Link to last result for single sync, to main form for multiple
+    const notificationUrl = syncedCount === 1 && lastToken
+      ? `/ppa/result/${lastToken}`
+      : "/ppa"
     showSyncNotification({
       title: syncedCount === 1
         ? "PPA enviado"
@@ -122,7 +126,7 @@ async function syncAllPending(): Promise<QueuedPpa[]> {
       body: syncedCount === 1
         ? "Tu evaluación offline se sincronizó correctamente."
         : `${syncedCount} evaluaciones offline se sincronizaron correctamente.`,
-      url: lastToken ? `/ppa/result/${lastToken}` : "/ppa",
+      url: notificationUrl,
     })
   }
 

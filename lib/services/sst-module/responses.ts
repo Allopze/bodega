@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { sql } from "drizzle-orm"
 import { db } from "@/db"
 import { sstResponses } from "@/db/schema/sst"
 import { nanoid } from "@/lib/id"
@@ -14,9 +15,22 @@ export async function saveResponses(evaluationId: string, responses: z.infer<typ
   if (data.some((resp) => resp.evaluationId !== evaluationId)) throw new Error("La respuesta no corresponde a la evaluación indicada.")
   await db.transaction(async (tx) => {
     await assertEditable(evaluationId, tx)
-    for (const resp of data) {
-      await tx.insert(sstResponses).values({ id: nanoid(), evaluationId: resp.evaluationId, seccionId: resp.seccionId, itemId: resp.itemId, estado: resp.estado ?? null, observacion: resp.observacion ?? null, accionCorrectiva: resp.accionCorrectiva ?? null })
-        .onConflictDoUpdate({ target: [sstResponses.evaluationId, sstResponses.seccionId, sstResponses.itemId], set: { estado: resp.estado ?? null, observacion: resp.observacion ?? null, accionCorrectiva: resp.accionCorrectiva ?? null } })
-    }
+    if (data.length === 0) return
+    await tx.insert(sstResponses).values(data.map((resp) => ({
+      id: nanoid(),
+      evaluationId: resp.evaluationId,
+      seccionId: resp.seccionId,
+      itemId: resp.itemId,
+      estado: resp.estado ?? null,
+      observacion: resp.observacion ?? null,
+      accionCorrectiva: resp.accionCorrectiva ?? null,
+    }))).onConflictDoUpdate({
+      target: [sstResponses.evaluationId, sstResponses.seccionId, sstResponses.itemId],
+      set: {
+        estado: sql`excluded.estado`,
+        observacion: sql`excluded.observacion`,
+        accionCorrectiva: sql`excluded.accion_correctiva`,
+      },
+    })
   })
 }

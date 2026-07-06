@@ -8,6 +8,7 @@ import { workers, worksites } from "@/db/schema/worksites"
 import { eq, desc } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { resolveEvaluatorRole } from "@/lib/sst/resolve-evaluator-role"
 import { WorkerEvaluations } from "./worker-evaluations"
 
 export const metadata: Metadata = { title: "Evaluaciones del Trabajador - SST" }
@@ -87,20 +88,13 @@ export default async function WorkerEvaluationsPage({ params }: Props) {
     canDelete: can(session, "sst:manage"),
   }
 
-  // Determine current user's role to see if they can create a specific evaluation type
-  const userRoles = session.user.roles ?? []
+  // Determine current user's evaluator role
   const userPermissions = session.user.permissions ?? []
-  let userEvaluatorRole: 'prevencionista_faena' | 'admin_contrato' | 'conductor_lider' | undefined = undefined
-
-  if (userPermissions.includes('sst:evaluate_acompanamiento') && !userPermissions.includes('sst:create')) {
-    userEvaluatorRole = 'conductor_lider'
-  } else if (userPermissions.includes('sst:create')) {
-    if (userRoles.includes('admin_contrato')) {
-      userEvaluatorRole = 'admin_contrato'
-    } else {
-      userEvaluatorRole = 'prevencionista_faena'
-    }
-  }
+  const userRoles = session.user.roles ?? []
+  const userEvaluatorRole = resolveEvaluatorRole({
+    permissions: userPermissions,
+    roles: userRoles as string[],
+  })
 
   return (
     <PageContainer>

@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { eq, and, inArray, desc } from "drizzle-orm"
+import { eq, and, inArray, desc, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { sstEvaluations, sstResponses, sstScheduledFollowups, sstWeeklyEvaluations, sstActionPlan, type SstEvaluation } from "@/db/schema/sst"
 import { workers, worksites } from "@/db/schema/worksites"
@@ -91,6 +91,30 @@ export interface WorkerEvaluationGroup {
 export async function listEvaluationsGroupedByWorker(worksiteIds: string[] | "all", limit = 50, offset = 0): Promise<WorkerEvaluationGroup[]> {
   if (worksiteIds !== "all" && worksiteIds.length === 0) return []
   const scopeCond = worksiteIds !== "all" ? inArray(sstEvaluations.worksiteId, worksiteIds) : undefined
+
+  // Phase 1: paginate by worker, using MAX(createdAt) to order by most recently evaluated
+  const ranked = db
+    .select({
+      workerId: sstEvaluations.workerId,
+      maxCreatedAt: sql<string>`MAX(${sstEvaluations.createdAt})`.as("max_created_at"),
+    })
+    .from(sstEvaluations)
+    .where(scopeCond)
+    .groupBy(sstEvaluations.workerId)
+    .as("ranked")
+
+  const paginated = await db
+    .select({ workerId: ranked.workerId })
+    .from(ranked)
+    .orderBy(desc(ranked.maxCreatedAt))
+    .limit(limit)
+    .offset(offset)
+
+  if (paginated.length === 0) return []
+
+  const workerIds = paginated.map((w) => w.workerId)
+
+  // Phase 2: fetch all evaluations for those workers
   const rows = await db.select({
     id: sstEvaluations.id, worksiteId: sstEvaluations.worksiteId, workerId: sstEvaluations.workerId,
     createdBy: sstEvaluations.createdBy, definicionCode: sstEvaluations.definicionCode,
@@ -104,7 +128,9 @@ export async function listEvaluationsGroupedByWorker(worksiteIds: string[] | "al
     observacionesGenerales: sstEvaluations.observacionesGenerales, schemaJson: sstEvaluations.schemaJson,
     createdAt: sstEvaluations.createdAt, updatedAt: sstEvaluations.updatedAt,
     workerFirstName: workers.firstName, workerLastName: workers.lastName, workerRut: workers.rut, worksiteName: worksites.name,
-  }).from(sstEvaluations).leftJoin(workers, eq(sstEvaluations.workerId, workers.id)).leftJoin(worksites, eq(sstEvaluations.worksiteId, worksites.id)).where(scopeCond).orderBy(desc(sstEvaluations.createdAt))
+  }).from(sstEvaluations).leftJoin(workers, eq(sstEvaluations.workerId, workers.id)).leftJoin(worksites, eq(sstEvaluations.worksiteId, worksites.id))
+    .where(inArray(sstEvaluations.workerId, workerIds))
+    .orderBy(desc(sstEvaluations.createdAt))
 
   const groupMap = new Map<string, WorkerEvaluationGroup>()
   for (const r of rows) {
@@ -113,7 +139,7 @@ export async function listEvaluationsGroupedByWorker(worksiteIds: string[] | "al
     if (existing) existing.evaluations.push(ev)
     else groupMap.set(r.workerId, { workerId: r.workerId, workerName: `${r.workerFirstName ?? ""} ${r.workerLastName ?? ""}`.trim(), workerRut: r.workerRut ?? "", worksiteId: r.worksiteId, worksiteName: r.worksiteName ?? "", evaluations: [ev] })
   }
-  return [...groupMap.values()].slice(offset, offset + limit)
+  return [...groupMap.values()]
 }
 
 export async function closeEvaluation(id: string, input: z.infer<typeof sstCloseEvaluationSchema>, worksiteIds: string[] | "all"): Promise<SstEvaluation> {
