@@ -61,7 +61,8 @@ to avoid duplicate UI and broken spacing.
 
 The `TopBar` (`components/layout/top-bar.tsx`) already renders a global search
 input ("Filtrar en esta página...") on **every route** except those that need
-server-side search: `/solicitudes`, `/aprobaciones`, `/compras`, `/recepcion`.
+server-side search: `/solicitudes`, `/aprobaciones`, `/compras`, `/recepcion`,
+`/prevencion/ppa`.
 
 - If your page needs client-side filtering of an already-loaded list, use the
   `searchQuery` from `useSafeShellHeader()` — the TopBar feeds it.
@@ -151,7 +152,7 @@ The `TopBar` (`components/layout/top-bar.tsx`) renders a search input
 ("Filtrar en esta página...") that writes to `searchQuery` in
 `ShellHeaderContext`. This input is visible on **every route** except those
 listed in `ROUTES_WITH_OWN_SEARCH` (`/solicitudes`, `/aprobaciones`,
-`/compras`, `/recepcion`).
+`/compras`, `/recepcion`, `/prevencion/ppa`).
 
 ## DataTable auto-connects to TopBar
 
