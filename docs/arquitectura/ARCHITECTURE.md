@@ -164,7 +164,7 @@ plataforma-chome/
 │   ├── migrations/                   # 19 migraciones SQL versionadas (0000..0018; ver
 │   │                                 # db/migrations/README.md sobre el baseline 2026-06-25)
 │   ├── index.ts                      # Singleton Drizzle + postgres-js
-│   └── seed.ts                       # Seed inicial (roles, permisos, catálogo EPP)
+│   └── seed.ts                       # Seed inicial (trabajadores, catálogo EPP)
 ├── lib/
 │   ├── auth/                         # NextAuth config, RBAC, permisos, visibilidad
 │   │   ├── auth.ts                   # Configuración NextAuth (credentials, JWT)
@@ -561,7 +561,7 @@ Suite Vitest y Playwright. E2E con BD Postgres desechable `postgres:///bodega_e2
 ```bash
 npm install          # Instala dependencias
 npm run db:migrate   # Aplica migraciones versionadas
-npm run db:seed      # Crea roles, permisos y catálogo EPP base
+npm run db:seed      # Crea faenas/trabajadores y catálogo EPP base
 npm run dev          # Dev server en :3001
 npm run build        # Build de producción
 npm test             # Unit tests

@@ -39,7 +39,7 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:3001:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=production
       # Next standalone (node server.js) binds to $HOSTNAME; Docker sets that to the
@@ -78,12 +78,12 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/migrate.mjs"]
 
-  # One-shot, MANUAL: bootstrap seed (system roles, permissions, base catalog).
+  # One-shot, MANUAL: bootstrap seed (worksites/workers and EPP catalog).
   # Not part of the default `up` (guarded by the `seed` profile). Run explicitly:
   #   docker compose run --rm seed
   # Uses the `build` stage — not `prod` — because db/seed.ts needs the TypeScript
   # source, db/schema, lib/ and the `tsx` devDependency that the slim prod image
-  # deliberately omits. NODE_ENV=production forces SEED_ADMIN_PASSWORD to be set.
+  # deliberately omits.
   seed:
     profiles: ["seed"]
     build:
@@ -96,9 +96,6 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-      - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-}
-      - SEED_ADMIN_NAME=${SEED_ADMIN_NAME:-}
-      - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:?err}
     command: ["npx", "tsx", "db/seed.ts"]
 
   db:

@@ -32,8 +32,8 @@
 #      - Rotar el secret en el orquestador.
 #      - Reiniciar el contenedor para que tome el nuevo valor.
 #
-#   4. SEED_ADMIN_PASSWORD:
-#      - Solo si fue fijada por SEED_ADMIN_PASSWORD en seed.
+#   4. Passwords de usuarios:
+#      - Rotar desde la app o mediante el flujo de recuperación/registro.
 #      - Re-hashear y actualizar vía admin/usuarios (no por SQL directo).
 #
 # Post-rotación:

@@ -36,12 +36,11 @@ Guía completa para desplegar la aplicación en producción.
 | `SMTP_SECURE` | `port === 465` | Forzar TLS implícito |
 | `SMTP_DISABLED` | `false` | Desactiva envío de correo |
 
-### Seed (solo para bootstrap inicial)
+### Seed (maestros base)
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `SEED_ADMIN_PASSWORD` | — | Password del admin seed (**requerida** en producción) |
-| `SEED_DRY_RUN` | `false` | Valida entradas sin escribir (A-16) |
+| `SEED_DRY_RUN` | `false` | Valida trabajadores y catálogo EPP sin escribir |
 
 ### Fail-fast
 

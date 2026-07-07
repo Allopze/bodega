@@ -5,7 +5,7 @@ const allowedEnvFiles = new Set([".env.example"])
 const sensitiveKeys = new Set([
   "AUTH_SECRET",
   "SMTP_PASS",
-  "SEED_ADMIN_PASSWORD",
+  "POSTGRES_PASSWORD",
 ])
 
 function getTrackedFiles() {

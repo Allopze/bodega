@@ -8,7 +8,7 @@
  * To add a new module's permissions:
  *   1. Create the manifest with `permissions`, `permissionMeta`, and `defaultGrants`
  *   2. Register it in `modules/registry.ts`
- *   3. Done. The seed, bootstrap, and admin UI pick them up automatically.
+ *   3. Done. The auth bootstrap and admin UI pick them up automatically.
  */
 import { permissions, rolePermissions, roles } from "../../db/schema"
 import { registry } from "../../modules/registry"

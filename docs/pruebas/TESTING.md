@@ -364,7 +364,7 @@ cp .env.example .env        # ajusta si existe; si no, crea .env con:
                             # AUTH_SECRET=<un-secreto-aleatorio>
                             # NEXTAUTH_SECRET=<el-mismo-secreto>
 npm run db:migrate          # aplica migraciones
-npm run db:seed             # crea roles, permisos y datos base
+npm run db:seed             # crea faenas/trabajadores y catálogo EPP base
 npm run dev                 # http://localhost:3000
 ```
 
@@ -450,8 +450,8 @@ npm run dev                 # http://localhost:3000
 ### 5.3. Datos de prueba rápidos (seed)
 
 Si necesitas datos de prueba pre-poblados, puedes editar `db/seed.ts` y volver a
-ejecutar `npm run db:seed`. El seed actual solo crea roles y permisos del sistema;
-los datos operativos deben crearse desde la UI.
+ejecutar `npm run db:seed`. El seed actual solo crea faenas/trabajadores y el
+catálogo EPP; usuarios y datos operativos deben crearse desde la UI.
 
 ---
 

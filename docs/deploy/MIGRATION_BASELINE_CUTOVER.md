@@ -10,8 +10,9 @@
 > triggers idempotentes que el esquema TS no captura (`next_document_code`,
 > `set_updated_at` + triggers, `cleanup_old_audit_log`,
 > `archive_old_inventory_movements` y la tabla `inventory_movements_archive`).
-> El RBAC **no** está en el baseline: viene de `npm run db:seed`
-> (`lib/auth/system-rbac.ts` + `defaultGrants` de los manifests de módulo).
+> El seed operativo ya no crea RBAC ni usuarios: solo carga faenas/trabajadores
+> y el catálogo EPP. El bootstrap de usuarios debe hacerse desde los flujos de
+> registro/administración vigentes.
 
 ## Estado actual
 
@@ -24,8 +25,7 @@
 - BD fresca aplicada con el runner real (`scripts/migrate.mjs`) reproduce el
   esquema actual de dev (comparación de firmas normalizadas: columnas,
   constraints, índices, funciones, triggers).
-- `db:seed` corre limpio sobre el baseline (permisos, roles, role-permissions,
-  admin, faenas, catálogo EPP).
+- `db:seed` corre limpio sobre el baseline (faenas, trabajadores y catálogo EPP).
 - `drizzle-kit generate` reporta "No schema changes" → el baseline reproduce
   exactamente `db/schema`, así que las migraciones futuras funcionan normal.
 
@@ -46,18 +46,16 @@ psql "<PROD_DATABASE_URL>" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;
 # 3) Aplicar el baseline (crea esquema + funciones/triggers, registra 1 migración)
 DATABASE_URL="<PROD_DATABASE_URL>" npm run db:migrate
 
-# 4) Sembrar RBAC + catálogo base
-DATABASE_URL="<PROD_DATABASE_URL>" SEED_ADMIN_PASSWORD="<clave-fuerte>" npm run db:seed
+# 4) Sembrar faenas/trabajadores + catálogo EPP
+DATABASE_URL="<PROD_DATABASE_URL>" npm run db:seed
 ```
 
 ### Después del cutover
 
 - Los deploys normales (`deploy.yml` → `db:migrate`) quedan como **no-op** hasta
   la próxima migración real.
-- **Sesiones**: como la estrategia es JWT con el id de usuario embebido, tras
-  recrear la BD hay que **cerrar sesión y volver a entrar** (o reiniciar el
-  servidor) para tomar el usuario/permisos recién sembrados. Si un usuario "no
-  ve" módulos tras el reseed, casi siempre es esto.
+- **Usuarios**: tras recrear la BD, crear o invitar usuarios desde los flujos
+  vigentes de la app. El seed no crea cuentas ni permisos.
 
 ## Migraciones futuras (flujo normal restablecido)
 

@@ -452,19 +452,23 @@ export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
     return backTo("No tienes permisos para agregar actividades PDTP.")
   }
 
+  // H-M2: aceptar múltiples responsables y hojas. Iteramos sobre todos los
+  // entries del FormData con keys `responsibleSlugs[*]` y `sheetCodes[*]`.
+  // `getAll()` devuelve los valores en orden de aparición; filtramos vacíos.
+  // Estos checks van FUERA del try: `redirect()` lanza internamente para
+  // interrumpir el render, y si backTo() se llama dentro del try, el catch
+  // de abajo la reatrapa y produce un segundo redirect con el mensaje de
+  // error doblemente codificado.
+  const responsibleSlugs = fd.getAll("responsibleSlugs[]").map(String).filter(Boolean)
+  const sheetCodes = fd.getAll("sheetCodes[]").map(String).filter(Boolean)
+  if (responsibleSlugs.length === 0) {
+    return backTo("Debes indicar al menos un responsable.")
+  }
+  if (sheetCodes.length === 0) {
+    return backTo("Debes indicar al menos una hoja.")
+  }
+
   try {
-    // H-M2: aceptar múltiples responsables y hojas. Iteramos sobre
-    // todos los entries del FormData con keys `responsibleSlugs[*]`
-    // y `sheetCodes[*]`. `getAll()` devuelve los valores en orden
-    // de aparición; filtramos vacíos.
-    const responsibleSlugs = fd.getAll("responsibleSlugs[]").map(String).filter(Boolean)
-    const sheetCodes = fd.getAll("sheetCodes[]").map(String).filter(Boolean)
-    if (responsibleSlugs.length === 0) {
-      return backTo("Debes indicar al menos un responsable.")
-    }
-    if (sheetCodes.length === 0) {
-      return backTo("Debes indicar al menos una hoja.")
-    }
     const parsed = pdtpActivityAddSchema.parse({
       programId: fd.get("programId"),
       objectiveOrder: fd.get("objectiveOrder"),

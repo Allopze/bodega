@@ -52,8 +52,19 @@ npm run build
 # El output standalone de Next no incluye assets estáticos ni public/.
 # Sin esto los chunks de cliente dan 404, la página no hidrata y el form de
 # login cae a un submit GET nativo (queda en /login en vez de /dashboard).
+#
+# rm -rf antes del cp: si .next/standalone/public/ ya existe (Next copia ahí
+# los assets referenciados por import estático durante el build), `cp -r
+# public .next/standalone/public` anida todo el árbol como
+# .next/standalone/public/public/ en vez de fusionarlo — manifest.json, sw.js
+# y demás quedan en una ruta que Next nunca sirve como estático, caen al
+# router de la app, 404, y el proxy redirige a /login. rm -rf + cp -r deja
+# siempre una copia limpia y completa de public/ tal cual está en el repo.
 cp -r .next/static .next/standalone/.next/static
-[ -d public ] && cp -r public .next/standalone/public
+if [ -d public ]; then
+  rm -rf .next/standalone/public
+  cp -r public .next/standalone/public
+fi
 
 DATABASE_URL="$DB_URL" \
 AUTH_SECRET="$AUTH_SECRET_VALUE" \

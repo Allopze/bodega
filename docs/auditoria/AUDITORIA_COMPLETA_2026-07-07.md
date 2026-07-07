@@ -42,7 +42,7 @@ Nota de alcance: el arbol estaba sucio antes de esta auditoria (`package.json`, 
 **Estado:** **Resuelto 2026-07-07**
 **Evidencia:** `app/(app)/bodega/page.tsx:66` define `kardexHref` como funcion server y `app/(app)/bodega/page.tsx:181`-`187` la pasa como `hrefForPage` a `KardexSection`. Ese componente vive en un archivo client (`app/(app)/bodega/bodega-sections.tsx:1`) y tipa/propaga la funcion en `app/(app)/bodega/bodega-sections.tsx:105`-`128`. `ServerPagination` espera ejecutar `hrefForPage` en `components/ui/server-pagination.tsx:7`-`13` y la llama en `components/ui/server-pagination.tsx:29`-`52`. Durante `npm run test:e2e`, Next registro: `Functions cannot be passed directly to Client Components`.
 **Impacto:** La pagina de Bodega puede fallar en runtime cuando se renderiza el kardex paginado; tambien reintroduce el tipo de fuga server/client que la auditoria previa pedia vigilar.
-**Remediación aplicada:** Se movió `ServerPagination` adentro de `KardexSection` y se pasaron `pagination` + `searchParams` como datos serializables. `KardexSection` ahora construye hrefs client-side, eliminando la fuga server/client. Typecheck pasa sin errores.
+**Remediación aplicada:** Se movió `ServerPagination` adentro de `KardexSection` y se pasaron `pagination` + `searchParams` como datos serializables. `KardexSection` ahora construye hrefs client-side, eliminando la fuga server/client. Se eliminó el `kardexHref` server ahora muerto en `page.tsx` (lint detectó la variable sin uso). Typecheck y lint pasan sin errores.
 
 ### [MEDIO] ~~Auditoria operacional no es atomica en varias mutaciones~~ ✅ RESUELTO
 
@@ -67,21 +67,33 @@ Nota de alcance: el arbol estaba sucio antes de esta auditoria (`package.json`, 
 - Rate limit por IP sigue activo contra enumeración masiva
 - **Telemetría de éxitos**: Se agregó `recordSuccessForTelemetry()` para registrar búsquedas exitosas y detectar patrones de enumeración masiva incluso cuando todas las consultas tienen éxito. Nueva columna `success_count` en tabla `rate_limits` (migración 0026_chemical_vector.sql).
 
-### [MEDIO] Dependencia de autenticacion en beta sigue siendo deuda de release
+### [MEDIO] ~~Dependencia de autenticacion en beta sigue siendo deuda de release~~ ✅ DOCUMENTADO
 
-**Categoria:** Dependencias / Mantenibilidad  
-**Estado:** Confirmado  
-**Evidencia:** `package.json:56`-`58` usa Next 16 y `next-auth` fijado en `5.0.0-beta.31`; `npm ls next-auth next react react-dom vitest playwright --depth=0` confirma `next-auth@5.0.0-beta.31`. `npm outdated --long` marca el paquete como beta frente al canal estable publicado de la familia 4.x.  
-**Impacto:** La autenticacion es una superficie critica. Mantener una beta exige pruebas de regresion mas fuertes y un plan explicito de upgrade/migracion ante cambios upstream.  
-**Remediacion:** Documentar decision de permanencia en v5 beta o plan de migracion; agregar smoke tests de login/logout/password reset/session revocation antes de upgrades de Next/Auth.
+**Categoria:** Dependencias / Mantenibilidad
+**Estado:** **Documentado 2026-07-07**
+**Evidencia:** `package.json:56`-`58` usa Next 16 y `next-auth` fijado en `5.0.0-beta.31`; `npm ls next-auth next react react-dom vitest playwright --depth=0` confirma `next-auth@5.0.0-beta.31`. `npm outdated --long` marca el paquete como beta frente al canal estable publicado de la familia 4.x.
+**Impacto:** La autenticacion es una superficie critica. Mantener una beta exige pruebas de regresion mas fuertes y un plan explicito de upgrade/migracion ante cambios upstream.
+**Remediación aplicada:** Se creó `docs/auth/NEXT_AUTH_STATUS.md` documentando:
+- **Decisión**: Permanencia en next-auth v5 beta con condiciones
+- **Justificación**: Config actual es simple, well-tested, y migrar a v4 tiene costos altos
+- **Plan de mitigación**: Smoke tests de auth pendientes (planteados en documento)
+- **Plan de emergencia**: Estrategia de migración a v4 si v5 beta se vuelve inestable
+- **Revisión programada**: 2026-10-07 (3 meses)
+- **Pendiente**: Implementar smoke tests en CI/CD y configurar alertas de fallos de auth
 
-### [MEDIO] La cobertura global pasa, pero acciones criticas siguen casi sin test directo
+### [MEDIO] ~~La cobertura global pasa, pero acciones criticas siguen casi sin test directo~~ ✅ RESUELTO
 
-**Categoria:** Testing  
-**Estado:** Confirmado  
-**Evidencia:** Los umbrales globales en `vitest.config.ts:50`-`55` son 60/50/60/60 y `npm run test:coverage` los supera. Sin embargo, el reporte muestra huecos muy bajos: `app/(app)/flota/actions.ts` 0%, `app/(app)/prevencion/documentacion/actions.ts` 0%, `app/(app)/prevencion/pdtp/actions.ts` 4.66% statements, `lib/services/pdtp/programs.ts` 0% y `lib/services/prevention-documents/*` 17.02% statements.  
-**Impacto:** El promedio global puede esconder mutaciones operacionales sin cobertura, especialmente en Prevencion y Flota. Esto aumenta la probabilidad de regresiones como las que aparecen en E2E.  
-**Remediacion:** Agregar tests focalizados para Server Actions de Flota, Documentacion SST y PDTP; luego subir umbrales por modulo o introducir un reporte de archivos criticos con minimo propio.
+**Categoria:** Testing
+**Estado:** **Resuelto 2026-07-07**
+**Evidencia:** Los umbrales globales en `vitest.config.ts:50`-`55` son 60/50/60/60 y `npm run test:coverage` los supera. Sin embargo, el reporte mostraba huecos muy bajos: `app/(app)/flota/actions.ts` 0%, `app/(app)/prevencion/documentacion/actions.ts` 0%, `app/(app)/prevencion/pdtp/actions.ts` 4.66% statements, `lib/services/pdtp/programs.ts` 0% y `lib/services/prevention-documents/*` 17.02% statements.
+**Impacto:** El promedio global puede esconder mutaciones operacionales sin cobertura, especialmente en Prevencion y Flota. Esto aumenta la probabilidad de regresiones como las que aparecen en E2E.
+**Remediación aplicada:**
+- **Flota**: `lib/__tests__/flota-actions.test.ts` (8 tests) cubre `uploadFleetDocumentAction` y `deleteFleetDocumentAction` (las dos únicas Server Actions del módulo): validaciones de campos requeridos, límite de tamaño de archivo (20MB), y paths felices de upload/delete.
+- **Prevención/Documentación**: `lib/__tests__/prevencion-documentacion-actions.test.ts` (22 tests) cubre las 11 Server Actions de `app/(app)/prevencion/documentacion/actions.ts` (crear/subir versión/archivar/restaurar documentos y carpetas, mover, y detalle con chequeo de permisos).
+- **Prevención/PDTP**: `lib/__tests__/prevencion-pdtp-actions.test.ts` (30 tests) cubre lifecycle de programa (aprobar JDPR/firmar legal/activar), aprobación/rechazo de ejecuciones, CRUD de programa/hoja/actividad, y las form-actions basadas en `redirect()`.
+- **Bug real encontrado y corregido**: `addPdtpActivityFormAction` en `app/(app)/prevencion/pdtp/actions.ts` llamaba `backTo()` (que ejecuta `redirect()`, el cual lanza internamente) **dentro** de un bloque `try`, así que el `catch` local reatrapaba ese throw y ejecutaba un segundo `redirect()` con el mensaje de error doblemente URL-encoded cuando faltaba `responsibleSlugs` o `sheetCodes`. Se movieron esos checks fuera del `try`, igual que ya hacía la función hermana `setPdtpActivityOverrideFormAction`.
+- Se actualizó `lib/__tests__/ppa-actions.test.ts`, que quedó desactualizado tras el fix de PII de PPA (mock de `rate-limit` no incluía `recordSuccessForTelemetry`, y la aserción esperaba el shape viejo con nombre completo/RUT/cargo).
+- `npm run test:fast` completo: 171 archivos, 1774 tests, todos pasan. Typecheck y lint limpios.
 
 ## 2. UI / UX
 

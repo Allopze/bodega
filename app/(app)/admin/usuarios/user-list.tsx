@@ -4,7 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { useEffect } from "react"
 import { toast } from "@/lib/toast"
-import { EnvelopeSimple, Plus, PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { EnvelopeSimple, Plus, PencilSimple, ToggleLeft, ToggleRight, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { UserForm } from "./user-form"
 import { UserInviteForm } from "./user-invite-form"
@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils"
-import { toggleUserActive } from "./actions"
+import { deleteUser, toggleUserActive } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
 interface Role    { id: string; name: string; label: string }
@@ -54,7 +54,7 @@ const COLUMNS = [
   { key: "worksiteCount", label: "Faenas",sortable: true, numeric: true, width: "w-20" },
   { key: "isActive",  label: "Estado",    sortable: true  },
   { key: "createdAt", label: "Alta",      sortable: true  },
-  { key: "",          label: "",          sortable: false, width: "w-24" },
+  { key: "",          label: "",          sortable: false, width: "w-32" },
 ]
 
 export function UserList({ users, allRoles, allPermissions, allWorksites }: UserListProps) {
@@ -62,6 +62,7 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
   const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)
   const [toggleState, toggleAction] = useActionState(toggleUserActive, INITIAL_STATE)
+  const [deleteState, deleteAction] = useActionState(deleteUser, INITIAL_STATE)
 
   useEffect(() => {
     if (toggleState.message) {
@@ -69,6 +70,13 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
       else toast.error(toggleState.message)
     }
   }, [toggleState])
+
+  useEffect(() => {
+    if (deleteState.message) {
+      if (deleteState.ok) toast.success(deleteState.message)
+      else toast.error(deleteState.message)
+    }
+  }, [deleteState])
 
   function openCreate() { setEditUser(null); setSheetOpen(true) }
   function openEdit(u: UserRow) { setEditUser(u); setSheetOpen(true) }
@@ -164,6 +172,24 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
                       }
                     </button>
                   </form>
+                  <form
+                    action={deleteAction}
+                    onSubmit={(event) => {
+                      if (!window.confirm(`Eliminar usuario ${u.name}? Esta acción no se puede deshacer.`)) {
+                        event.preventDefault()
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="id" value={u.id} />
+                    <button
+                      type="submit"
+                      className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] transition-colors duration-[var(--duration-fast)] "
+                      title="Eliminar"
+                      aria-label={`Eliminar usuario ${u.name}`}
+                    >
+                      <Trash size={16} />
+                    </button>
+                  </form>
                 </div>
               </TableCell>
             </TableRow>
@@ -229,6 +255,24 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
                       ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
                       : <ToggleLeft size={20} />
                     }
+                  </button>
+                </form>
+                <form
+                  action={deleteAction}
+                  onSubmit={(event) => {
+                    if (!window.confirm(`Eliminar usuario ${u.name}? Esta acción no se puede deshacer.`)) {
+                      event.preventDefault()
+                    }
+                  }}
+                >
+                  <input type="hidden" name="id" value={u.id} />
+                  <button
+                    type="submit"
+                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] transition-colors duration-[var(--duration-fast)] "
+                    title="Eliminar"
+                    aria-label={`Eliminar usuario ${u.name}`}
+                  >
+                    <Trash size={16} />
                   </button>
                 </form>
               </div>

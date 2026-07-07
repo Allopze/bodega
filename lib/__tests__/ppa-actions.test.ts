@@ -4,6 +4,7 @@ const mockFindWorkerByRut = vi.hoisted(() => vi.fn())
 const mockCreatePpaSubmission = vi.hoisted(() => vi.fn())
 const mockCheckRateLimit = vi.hoisted(() => vi.fn())
 const mockRecordFailure = vi.hoisted(() => vi.fn())
+const mockRecordSuccessForTelemetry = vi.hoisted(() => vi.fn())
 const mockHeaders = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/services/ppa", () => ({
@@ -14,6 +15,7 @@ vi.mock("@/lib/services/ppa", () => ({
 vi.mock("@/lib/services/rate-limit", () => ({
   checkRateLimit: mockCheckRateLimit,
   recordFailure: mockRecordFailure,
+  recordSuccessForTelemetry: mockRecordSuccessForTelemetry,
 }))
 
 vi.mock("next/headers", () => ({
@@ -42,6 +44,7 @@ describe("findWorkerByRutAction", () => {
     })
     mockCheckRateLimit.mockResolvedValue({ allowed: true, waitTimeRemainingMs: 0 })
     mockRecordFailure.mockResolvedValue(undefined)
+    mockRecordSuccessForTelemetry.mockResolvedValue(undefined)
   })
 
   it("retorna error si el RUT no está presente", async () => {
@@ -75,23 +78,28 @@ describe("findWorkerByRutAction", () => {
     expect(mockFindWorkerByRut).not.toHaveBeenCalled()
   })
 
-  it("retorna el trabajador si existe", async () => {
+  it("retorna el trabajador si existe, con PII minimizado", async () => {
     mockFindWorkerByRut.mockResolvedValueOnce({
       id: "work-1",
       firstName: "Juan",
       lastName: "Pérez",
+      rut: "12345678-5",
       position: "Operador",
       worksiteId: "ws-1",
       worksiteName: "Obra Central",
     })
     const res = await findWorkerByRutAction("12345678-5")
     expect(res.ok).toBe(true)
+    // PII minimizado: nombre enmascarado (primer nombre + inicial apellido),
+    // sin RUT, sin cargo, sin nombre de faena. Solo id y worksiteId, que el
+    // flujo necesita para preseleccionar la faena.
     expect(res.worker).toEqual({
       id: "work-1",
-      name: "Juan Pérez",
-      position: "Operador",
+      name: "Juan P.",
+      rut: null,
+      position: null,
       worksiteId: "ws-1",
-      worksiteName: "Obra Central",
+      worksiteName: "",
     })
   })
 })

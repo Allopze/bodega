@@ -63,18 +63,6 @@ export default async function BodegaPage({
     pageSize: KARDEX_PAGE_SIZE,
   })
 
-  const kardexHref = (page: number) => {
-    const params = new URLSearchParams()
-    for (const [key, value] of Object.entries(sp)) {
-      if (key === "kardex_page" || value === undefined) continue
-      if (Array.isArray(value)) { for (const v of value) params.append(key, v) }
-      else params.set(key, value)
-    }
-    if (page > 1) params.set("kardex_page", String(page))
-    const q = params.toString()
-    return q ? `/bodega?${q}` : "/bodega"
-  }
-
   const [allWorksites, stockRows, recentMovements] = await Promise.all([
     db
       .select({ id: worksites.id, name: worksites.name })

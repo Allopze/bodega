@@ -9,6 +9,7 @@ const mockCanManageUserInAdminScope = vi.hoisted(() => vi.fn(() => true))
 const mockUserHasAdministratorRole = vi.hoisted(() => vi.fn(() => false))
 const mockCanManageAdministratorRole = vi.hoisted(() => vi.fn(() => true))
 const mockFindFirstUser = vi.hoisted(() => vi.fn())
+const mockRecordAudit = vi.hoisted(() => vi.fn())
 
 vi.mock("@/db", () => {
   const db = {
@@ -20,6 +21,7 @@ vi.mock("@/db", () => {
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })),
     delete: vi.fn(() => ({ where: vi.fn() })),
     transaction: vi.fn(async <T,>(fn: (tx: typeof db) => T): Promise<T> => fn(db)),
+    execute: vi.fn(() => Promise.resolve()),
     select: vi.fn(() => ({ from: vi.fn(() => ({ innerJoin: vi.fn(() => ({ where: vi.fn(() => Promise.resolve([])) })) })) })),
   }
   return { db }
@@ -45,7 +47,7 @@ vi.mock("@/lib/auth/password-setup", () => ({
   displayNameFromEmail: vi.fn((e: string) => e.split("@")[0]),
 }))
 vi.mock("@/lib/audit", () => ({
-  recordAudit: vi.fn(),
+  recordAudit: mockRecordAudit,
   recordStatusChange: vi.fn(),
 }))
 vi.mock("@/lib/email/smtp", () => ({
@@ -66,7 +68,7 @@ vi.mock("@/app/(app)/admin/usuarios/actions.helpers", () => ({
   hashStr: vi.fn(() => 42),
 }))
 
-import { inviteUser, createUser, updateUser, toggleUserActive } from "@/app/(app)/admin/usuarios/actions"
+import { inviteUser, createUser, updateUser, toggleUserActive, deleteUser } from "@/app/(app)/admin/usuarios/actions"
 import type { ActionState } from "@/lib/validation/masters"
 
 const prevState: ActionState = { ok: false, message: "" }
@@ -293,5 +295,58 @@ describe("toggleUserActive", () => {
     const res = await toggleUserActive(prevState, fd)
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Solo un administrador")
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// deleteUser
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("deleteUser", () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockRequirePermission.mockResolvedValue(makeSession())
+    mockFindFirstUser.mockResolvedValue({ id: "u-1", email: "target@chome.cl", name: "Target", isActive: false })
+  })
+
+  function deleteForm(id = "u-1") {
+    const fd = new FormData()
+    fd.set("id", id)
+    return fd
+  }
+
+  it("returns error if permission denied", async () => {
+    mockRequirePermission.mockRejectedValueOnce(new Error("no"))
+    const res = await deleteUser(prevState, deleteForm())
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Sin permisos")
+  })
+
+  it("returns error if actor cannot manage target user scope", async () => {
+    mockCanManageUserInAdminScope.mockResolvedValueOnce(false)
+    const res = await deleteUser(prevState, deleteForm())
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("No tienes acceso")
+  })
+
+  it("does not allow deleting the current session user", async () => {
+    const res = await deleteUser(prevState, deleteForm("user-1"))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("No puedes eliminar tu propia cuenta")
+  })
+
+  it("deletes a manageable user and records audit", async () => {
+    const res = await deleteUser(prevState, deleteForm())
+    expect(res.ok).toBe(true)
+    expect(res.message).toContain("Usuario eliminado")
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "delete",
+        entityType: "user",
+        entityId: "u-1",
+        oldState: expect.objectContaining({ email: "target@chome.cl" }),
+      }),
+      expect.anything(),
+    )
   })
 })
