@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
-import * as XLSX from "xlsx"
+import ExcelJS from "exceljs"
 import { guardPermission } from "@/lib/auth/can"
 import { importPdtpFromExcel } from "@/lib/services/prevention-pdtp"
 import { logger } from "@/lib/logger"
@@ -49,8 +49,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, cellFormula: true })
+    const arrayBuffer = await file.arrayBuffer()
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(arrayBuffer)
     const result = await importPdtpFromExcel({ programId, workbook, userId: guard.session.user.id })
     return NextResponse.json({
       ok: true,

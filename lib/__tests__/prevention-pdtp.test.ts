@@ -71,7 +71,7 @@ beforeEach(async () => {
 describe("prevention PDTP service", () => {
   const loadCatalog = async () => {
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
-    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
     return loadPdtpCatalog({
       year: 2026,
@@ -94,7 +94,7 @@ describe("prevention PDTP service", () => {
 
   it("loads the XLSX catalog idempotently into the PDTP program tables", async () => {
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
-    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     const first = await loadPdtpCatalog({
@@ -128,7 +128,7 @@ describe("prevention PDTP service", () => {
 
   it("returns a read-only sheet view with monthly planned totals", async () => {
     const { loadPdtpCatalog, getPdtpSheetView } = await import("@/lib/services/prevention-pdtp")
-    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     await loadPdtpCatalog({
@@ -240,7 +240,7 @@ describe("prevention PDTP service", () => {
 
   it("builds an XLSX report payload for the selected sheet and worksite", async () => {
     const { loadPdtpCatalog, buildPdtpExport } = await import("@/lib/services/prevention-pdtp")
-    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     await loadPdtpCatalog({
@@ -355,7 +355,7 @@ describe("prevention PDTP service", () => {
   it("activating a new version deactivates the old one", async () => {
     const { approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram, getActivePdtpProgram } = await import("@/lib/services/prevention-pdtp")
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
-    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     // v1 → active
@@ -655,7 +655,7 @@ describe("prevention PDTP service", () => {
 
   it("getPdtpSheetView prefiere el programa activo sobre el más reciente por versión", async () => {
     const { loadPdtpCatalog, getPdtpSheetView, approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
-    const workbook = readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     // v1 → activar

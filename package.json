@@ -91,8 +91,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",
-    "vitest": "^4.1.8",
-    "xlsx": "^0.18.5"
+    "vitest": "^4.1.8"
   },
   "overrides": {
     "@esbuild-kit/core-utils": {

@@ -81,11 +81,6 @@ export function getInitials(name: string): string {
   return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase()
 }
 
-/** Sanitize a header value for safe use in HTTP Content-Disposition headers. */
-export function sanitizeHeaderValue(value: string) {
-  return value.replace(/["\r\n]/g, "_")
-}
-
 /** Escape special HTML characters to prevent XSS in email templates and notifications. */
 export function escapeHtml(value: string): string {
   return value

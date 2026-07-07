@@ -9,7 +9,7 @@ const workbookPath = path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO
 const outputPath = path.resolve(process.cwd(), "db/seed/pdtp-catalog-2026.json")
 
 async function main() {
-  const workbook = readPdtpWorkbook(workbookPath)
+  const workbook = await readPdtpWorkbook(workbookPath)
   const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
   await fs.writeFile(outputPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8")

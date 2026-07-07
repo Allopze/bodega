@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx"
+import ExcelJS from "exceljs"
 
 const OFFICIAL_SHEETS = [
   ["PDTP GENERAL", "pdtp_general"],
@@ -28,7 +28,7 @@ const MONTHS = [
 
 export type PdtpSheetCode = typeof OFFICIAL_SHEETS[number][1]
 
-export type PdtpWorkbook = XLSX.WorkBook
+export type PdtpWorkbook = ExcelJS.Workbook
 
 export type PdtpObjective = {
   order: number
@@ -70,12 +70,14 @@ type ActivityCandidate = {
   plannedStartIndex: number
 }
 
-export function readPdtpWorkbook(filePath: string): PdtpWorkbook {
-  return XLSX.readFile(filePath, { cellDates: true, cellFormula: true })
+export async function readPdtpWorkbook(filePath: string): Promise<PdtpWorkbook> {
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.readFile(filePath)
+  return workbook
 }
 
 export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCatalog {
-  const general = workbook.Sheets["PDTP GENERAL"]
+  const general = workbook.getWorksheet("PDTP GENERAL")
   if (!general) throw new Error("No se encontro la hoja PDTP GENERAL en el libro PDTP.")
 
   const generalRows = sheetRows(general)
@@ -88,11 +90,15 @@ export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCata
     const candidate = parseActivityRow(row, index + 1)
     if (!candidate) continue
 
-    const objectiveCell = normalizeCell(row[0])
-    if (objectiveCell && !isNumericText(objectiveCell)) {
+    const objectiveCell = normalizeWhitespace(normalizeCell(row[0]))
+    // Las celdas fusionadas (merged cells) en Excel hacen que SheetJS y
+    // ExcelJS se comporten distinto: SheetJS solo reporta el valor en la
+    // primera fila de la fusion; ExcelJS lo reporta en todas. Evitamos
+    // objetivos duplicados comparando con el ultimo objetivo conocido.
+    if (objectiveCell && !isNumericText(objectiveCell) && (!currentObjective || objectiveCell !== currentObjective.name)) {
       currentObjective = {
         order: objectives.length + 1,
-        name: normalizeWhitespace(objectiveCell),
+        name: objectiveCell,
         activityNumbers: [],
       }
       objectives.push(currentObjective)
@@ -164,11 +170,11 @@ function extractSheetMembership(workbook: PdtpWorkbook): Record<PdtpSheetCode, n
   const membership = {} as Record<PdtpSheetCode, number[]>
 
   for (const [sheetName, code] of OFFICIAL_SHEETS) {
-    const sheet = workbook.Sheets[sheetName]
-    if (!sheet) throw new Error(`No se encontro la hoja ${sheetName} en el libro PDTP.`)
+    const worksheet = workbook.getWorksheet(sheetName)
+    if (!worksheet) throw new Error(`No se encontro la hoja ${sheetName} en el libro PDTP.`)
 
     const numbers: number[] = []
-    for (const [index, row] of sheetRows(sheet).entries()) {
+    for (const [index, row] of sheetRows(worksheet).entries()) {
       const candidate = parseActivityRow(row, index + 1)
       if (candidate) numbers.push(candidate.n)
     }
@@ -190,7 +196,7 @@ function extractSchedule(row: unknown[], plannedStartIndex: number): PdtpSchedul
       month: Math.floor(sequence / 4) + 1,
       week: (sequence % 4) + 1,
       plannedQuantity: quantity,
-      sourceColumn: XLSX.utils.encode_col(plannedIndex),
+      sourceColumn: encodeColumn(plannedIndex),
     })
   }
 
@@ -226,17 +232,52 @@ function parseActivityRow(row: unknown[], sourceSheetRow: number): ActivityCandi
   return null
 }
 
-function sheetRows(sheet: XLSX.WorkSheet): unknown[][] {
-  return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" }) as unknown[][]
+function sheetRows(worksheet: ExcelJS.Worksheet): unknown[][] {
+  const rows: unknown[][] = []
+
+  // First pass: determine max column count across all rows
+  let maxCol = 0
+  worksheet.eachRow({ includeEmpty: true }, (row) => {
+    row.eachCell({ includeEmpty: true }, (_cell, colNumber) => {
+      if (colNumber > maxCol) maxCol = colNumber
+    })
+  })
+
+  if (maxCol === 0) return rows
+
+  // Second pass: build rectangular array with consistent width
+  worksheet.eachRow({ includeEmpty: true }, (row) => {
+    const values: unknown[] = []
+    for (let c = 1; c <= maxCol; c++) {
+      const cell = row.getCell(c)
+      values.push(cell.value ?? "")
+    }
+    rows.push(values)
+  })
+
+  return rows
 }
 
 function normalizeCell(value: unknown): string {
   if (value === null || value === undefined) return ""
   if (value instanceof Date) return value.toISOString()
   if (typeof value === "object") {
-    if ("text" in value && typeof value.text === "string") return value.text
-    if ("result" in value) return String(value.result ?? "")
-    if ("v" in value) return String(value.v ?? "")
+    // ExcelJS formula: { formula: "...", result: value }
+    if ("result" in value) {
+      const result = (value as { result: unknown }).result
+      if (result !== null && result !== undefined) return String(result)
+      return ""
+    }
+    // ExcelJS rich text: { richText: [{ text: "..." }] }
+    if ("richText" in value && Array.isArray((value as { richText: Array<{ text: string }> }).richText)) {
+      return (value as { richText: Array<{ text: string }> }).richText.map((r) => r.text).join("")
+    }
+    // ExcelJS hyperlink: { text: "display", hyperlink: "url" }
+    if ("text" in value && typeof (value as { text: string }).text === "string") {
+      return (value as { text: string }).text
+    }
+    // ExcelJS error: { error: "#REF!" }
+    if ("error" in value) return String((value as { error: string }).error)
   }
   return String(value)
 }
@@ -255,6 +296,17 @@ function numericValue(value: unknown): number | null {
   if (!text) return null
   const parsed = Number(text)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+/** Convert 0-based column index to Excel column letter (0=A, 1=B, ..., 25=Z, 26=AA). */
+function encodeColumn(colIndex: number): string {
+  let n = colIndex
+  let result = ""
+  while (n >= 0) {
+    result = String.fromCharCode((n % 26) + 65) + result
+    n = Math.floor(n / 26) - 1
+  }
+  return result
 }
 
 export const pdtpMonthNames = MONTHS
