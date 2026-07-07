@@ -11,7 +11,7 @@
  */
 
 const CACHE_NAME = "ppa-v2"
-const SHELL_URLS = ["/ppa", "/ppa/result"]
+const SHELL_URLS = ["/ppa"]
 const MAX_CACHE_ENTRIES = 60 // FIFO eviction cap to prevent unbounded growth
 
 /* ── Install ──────────────────────────────────────────────────────────────── */

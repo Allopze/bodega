@@ -614,7 +614,7 @@ test.describe("PPA Digital — SW cache eviction", () => {
     })
 
     // The cache should have entries but not be unbounded.
-    // We loaded /ppa ~5 times + the SW precaches /ppa and /ppa/result,
+    // We loaded /ppa ~5 times + the SW precaches /ppa,
     // so we expect some entries but definitely under MAX_CACHE_ENTRIES (60).
     expect(cacheSize).toBeGreaterThan(0)
     expect(cacheSize).toBeLessThanOrEqual(60)
