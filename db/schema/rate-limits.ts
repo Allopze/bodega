@@ -14,5 +14,6 @@ export const rateLimits = pgTable("rate_limits", {
   key: text("key").primaryKey(),
   count: integer("count").notNull().default(0),
   lockUntil: bigint("lock_until", { mode: "number" }).notNull().default(0),
+  successCount: integer("success_count").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })

@@ -4,12 +4,12 @@ import Link from "next/link"
 import { EmptyState } from "@/components/ui/empty-state"
 import { StockTable } from "./stock-table"
 import { KardexTable } from "./kardex-table"
-import { ServerPagination } from "@/components/ui/server-pagination"
 import { ArrowRight, Package, Warehouse, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
-import type { resolvePagination } from "@/lib/pagination"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { filterStockItems, filterMovements } from "./filters"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import type { PaginationState } from "@/lib/pagination"
 
 interface WorksiteOption {
   id: string
@@ -107,13 +107,13 @@ export function KardexSection({
   worksites,
   canExport,
   pagination,
-  hrefForPage,
+  searchParams,
 }: {
   movements: InventoryMovementWithRelations[]
   worksites: WorksiteOption[]
   canExport: boolean
-  pagination: ReturnType<typeof resolvePagination>
-  hrefForPage: (page: number) => string
+  pagination: PaginationState
+  searchParams: Record<string, string | string[] | undefined>
 }) {
   const { searchQuery } = useSafeShellHeader()
   // ponytail: kardex is server-paginated, so this only filters the movements
@@ -122,10 +122,22 @@ export function KardexSection({
   // textSearchSql) if that gap becomes a real complaint.
   const filteredMovements = filterMovements(movements, searchQuery)
 
+  const kardexHref = (page: number) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (key === "kardex_page" || value === undefined) continue
+      if (Array.isArray(value)) { for (const v of value) params.append(key, v) }
+      else params.set(key, value)
+    }
+    if (page > 1) params.set("kardex_page", String(page))
+    const q = params.toString()
+    return q ? `/bodega?${q}` : "/bodega"
+  }
+
   return (
     <>
       <KardexTable movements={filteredMovements} worksites={worksites} canExport={canExport} />
-      <ServerPagination pagination={pagination} hrefForPage={hrefForPage} />
+      <ServerPagination pagination={pagination} hrefForPage={kardexHref} />
     </>
   )
 }

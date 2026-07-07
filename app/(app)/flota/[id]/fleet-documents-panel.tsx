@@ -62,7 +62,7 @@ export function FleetDocumentsPanel({
 
   return (
     <>
-      <h2 className="mb-3 text-sm font-semibold">Documentos</h2>
+      <h3 className="mb-3 text-sm font-semibold">Documentos del vehículo</h3>
 
       {documents.length > 0 && (
         <div className="mb-4 space-y-2">

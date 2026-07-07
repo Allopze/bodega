@@ -44,12 +44,12 @@ export function TrazabilidadFilters({ worksites, current }: TrazabilidadFiltersP
   return (
     <div className="mb-4 flex flex-wrap items-end gap-3">
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-[var(--color-text-muted)]">Faena</label>
+        <label htmlFor="trazabilidad-faena-filter" className="text-xs font-medium text-[var(--color-text-muted)]">Faena</label>
         <Select
           defaultValue={current.faena ?? "all"}
           onValueChange={(v) => setFilter("faena", v === "all" ? "" : v)}
         >
-          <SelectTrigger className="w-56"><SelectValue placeholder="Todas las faenas" /></SelectTrigger>
+          <SelectTrigger id="trazabilidad-faena-filter" className="w-56" aria-label="Filtrar por faena"><SelectValue placeholder="Todas las faenas" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las faenas</SelectItem>
             {worksites.map((w) => (
@@ -60,12 +60,12 @@ export function TrazabilidadFilters({ worksites, current }: TrazabilidadFiltersP
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-[var(--color-text-muted)]">Estado</label>
+        <label htmlFor="trazabilidad-estado-filter" className="text-xs font-medium text-[var(--color-text-muted)]">Estado</label>
         <Select
           defaultValue={current.estado ?? "all"}
           onValueChange={(v) => setFilter("estado", v === "all" ? "" : v)}
         >
-          <SelectTrigger className="w-56"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
+          <SelectTrigger id="trazabilidad-estado-filter" className="w-56" aria-label="Filtrar por estado"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
             {FILTER_ESTADOS.map((e) => (

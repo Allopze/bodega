@@ -102,7 +102,7 @@ export async function setEmailsEnabled(
       },
     })
 
-  recordAudit({
+  await recordAudit({
     userId,
     userEmail,
     action: "update",
@@ -176,7 +176,7 @@ export async function setPdfMaxSizeMb(
       },
     })
 
-  recordAudit({
+  await recordAudit({
     userId,
     userEmail,
     action: "update",
@@ -228,7 +228,7 @@ export async function setCompanyProfile(
     )
   )
 
-  recordAudit({
+  await recordAudit({
     userId,
     userEmail,
     action:     "update",

@@ -69,7 +69,7 @@ export default async function DashboardPage() {
         <p className="text-eyebrow">Tablero</p>
         <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-h1 text-[var(--color-text)]">Hola, {firstName}</h1>
+            <h2 className="text-xl font-semibold text-[var(--color-text)]">Hola, {firstName}</h2>
             {tasks.length > 0 ? (
               <p className="mt-2 text-h2 text-[var(--color-text)]">
                 Tienes{" "}

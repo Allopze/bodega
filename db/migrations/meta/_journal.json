@@ -183,6 +183,13 @@
       "when": 1783301451478,
       "tag": "0025_fast_cammi",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783459271953,
+      "tag": "0026_chemical_vector",
+      "breakpoints": true
     }
   ]
 }

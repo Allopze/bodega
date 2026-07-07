@@ -58,7 +58,7 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
-                  aria-label="Comprobante"
+                  aria-label={`Comprobante de entrega ${delivery.code}`}
                 >
                   <FileText size={12} />
                   Comprobante
@@ -128,7 +128,7 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
-                  aria-label="Comprobante"
+                  aria-label={`Comprobante de entrega ${delivery.code}`}
                 >
                   <FileText size={12} />
                   Comprobante

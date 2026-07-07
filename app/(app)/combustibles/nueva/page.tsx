@@ -3,6 +3,7 @@ import { db } from "@/db"
 import { fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { NewFuelLoadForm } from "./new-fuel-load-form"
 
 export default async function NuevaCargaPage() {
@@ -17,6 +18,10 @@ export default async function NuevaCargaPage() {
 
   return (
     <PageContainer>
+      <PageHeader
+        title="Nueva carga de combustible"
+        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Nueva carga" }]} />}
+      />
       <NewFuelLoadForm
         data={{
           vehicles: vehicles.map(v => ({ id: v.id, plate: v.plate, type: v.type })),

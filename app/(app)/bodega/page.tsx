@@ -183,7 +183,7 @@ export default async function BodegaPage({
             worksites={worksiteOptions}
             canExport={canExportStock}
             pagination={kardexPagination}
-            hrefForPage={kardexHref}
+            searchParams={sp}
           />
         </div>
 

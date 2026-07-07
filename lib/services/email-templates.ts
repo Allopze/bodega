@@ -161,7 +161,7 @@ export async function updateTemplate(
       },
     })
 
-  recordAudit({
+  await recordAudit({
     userId,
     userEmail,
     action:     "update",
@@ -208,7 +208,7 @@ export async function resetTemplate(
       },
     })
 
-  recordAudit({
+  await recordAudit({
     userId,
     userEmail,
     action:     "update",

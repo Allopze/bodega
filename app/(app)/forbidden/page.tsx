@@ -1,8 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ShieldWarning } from "@phosphor-icons/react/dist/ssr"
 import { PageContainer } from "@/components/ui/page-container"
-import { EmptyState } from "@/components/ui/empty-state"
+import { PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 
 export const metadata: Metadata = { title: "Sin acceso" }
@@ -15,21 +14,18 @@ export const metadata: Metadata = { title: "Sin acceso" }
 export default function ForbiddenPage() {
   return (
     <PageContainer>
-      <EmptyState
-        as="h1"
-        icon={<ShieldWarning size={24} />}
-        title="No tienes acceso a esta sección"
+      <PageHeader
+        title="Sin acceso"
         description="Tu cuenta no cuenta con los permisos necesarios. Si crees que es un error, pide a un administrador que revise tus roles o el alcance de tus faenas."
-        tone="warning"
-        action={
-          <Button asChild>
-            <Link href="/dashboard">Volver al panel</Link>
-          </Button>
-        }
-        secondaryAction={
-          <Button asChild variant="secondary">
-            <Link href="/solicitudes">Ver mis solicitudes</Link>
-          </Button>
+        actions={
+          <>
+            <Button asChild>
+              <Link href="/dashboard">Volver al panel</Link>
+            </Button>
+            <Button asChild variant="secondary">
+              <Link href="/solicitudes">Ver mis solicitudes</Link>
+            </Button>
+          </>
         }
       />
     </PageContainer>

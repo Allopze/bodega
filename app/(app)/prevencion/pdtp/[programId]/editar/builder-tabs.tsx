@@ -91,7 +91,7 @@ function MetadataTab({ program, canDelete }: { program: typeof pdtpPrograms.$inf
         <input type="hidden" name="programId" value={program.id} />
 
         <FieldGroup className="gap-4">
-          <Field label="Título" htmlFor="meta-title" required>
+          <Field label="Título del programa" htmlFor="meta-title" required>
             <Input id="meta-title" name="title" defaultValue={program.title} required />
           </Field>
 

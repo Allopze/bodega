@@ -1,0 +1,1 @@
+ALTER TABLE "rate_limits" ADD COLUMN "success_count" integer DEFAULT 0 NOT NULL;

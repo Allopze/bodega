@@ -93,6 +93,30 @@ export async function recordSuccess(key: string): Promise<void> {
 }
 
 /**
+ * Record a successful lookup for telemetry without clearing rate limit.
+ * Used for public surfaces (e.g. PPA worker lookup) to detect bulk enumeration
+ * even when all lookups succeed. Adds to a separate success counter.
+ */
+export async function recordSuccessForTelemetry(key: string): Promise<void> {
+  await db
+    .insert(rateLimits)
+    .values({
+      key,
+      count: 0, // Don't increment failure counter
+      lockUntil: 0,
+      successCount: 1,
+      updatedAt: new Date().toISOString(),
+    })
+    .onConflictDoUpdate({
+      target: rateLimits.key,
+      set: {
+        successCount: sql`COALESCE(${rateLimits.successCount}, 0) + 1`,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+}
+
+/**
  * Remove expired locks AND stale unlocked counters.
  *
  * 1. Expired locks: lockUntil > 0 AND lockUntil < now.

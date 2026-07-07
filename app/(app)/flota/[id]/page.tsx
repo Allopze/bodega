@@ -82,7 +82,7 @@ export default async function FlotaVehiclePage({
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Documentos</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Documentos del vehículo</CardTitle></CardHeader>
         <CardContent>
           <FleetDocumentsPanel
             vehicleId={vehicle.id}

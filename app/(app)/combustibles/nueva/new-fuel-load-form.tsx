@@ -11,8 +11,6 @@ import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { PageContainer } from "@/components/ui/page-container"
 import { toast } from "@/lib/toast"
 
 interface NewFuelLoadData {
@@ -55,13 +53,7 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
   const formatCLP = (n: number) => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n)
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Nueva carga de combustible"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Nueva carga" }]} />}
-      />
-
-      <form action={formAction} className="space-y-6">
+    <form action={formAction} className="space-y-6">
         <input type="hidden" name="autoCalc" value="true" />
         <input type="hidden" name="iecFixed" value={iecFixed} />
         <input type="hidden" name="iecVariable" value={iecVariable} />
@@ -211,6 +203,5 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
           <Button type="submit" disabled={isPending}>{isPending ? "Guardando..." : "Registrar carga"}</Button>
         </div>
       </form>
-    </PageContainer>
-  )
+    )
 }

@@ -6,7 +6,7 @@ import { ppaSubmitSchema, type ActionState } from "@/lib/validation/ppa"
 import { z } from "zod"
 import { logger } from "@/lib/logger"
 import { headers } from "next/headers"
-import { checkRateLimit, recordFailure } from "@/lib/services/rate-limit"
+import { checkRateLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
 import { cleanRut, validateRut } from "@/lib/rut"
 
 /**
@@ -73,7 +73,7 @@ export async function findWorkerByRutAction(
   rut: string,
 ): Promise<{
   ok: boolean
-  worker?: { id: string; name: string; rut: string | null; position: string | null; worksiteId: string; worksiteName: string }
+  worker?: { id: string; name: string; rut: null; position: null; worksiteId: string; worksiteName: "" }
   message?: string
 }> {
   if (!rut) return { ok: false, message: "Ingresa tu RUT." }
@@ -104,15 +104,24 @@ export async function findWorkerByRutAction(
       await recordFailure(lookupLimitKey, { maxAttempts: 10 })
       return { ok: false, message: "No se encontró ningún trabajador activo con este RUT." }
     }
+    // ponytail: minimizar PII expuesto en acción pública - solo primer nombre + inicial
+    // apellido para identificación básica. No devolver RUT (ya lo tiene quien busca),
+    // cargo completo, ni nombre de faena (se infiere del select).
+    const maskedName = `${worker.firstName} ${worker.lastName?.[0]}.`
+
+    // Registrar éxito para telemetría: permite detectar enumeración masiva
+    // incluso cuando todas las búsquedas son exitosas
+    await recordSuccessForTelemetry(lookupLimitKey)
+
     return {
       ok: true,
       worker: {
         id: worker.id,
-        name: `${worker.firstName} ${worker.lastName}`,
-        rut: worker.rut,
-        position: worker.position,
+        name: maskedName,
+        rut: null, // No devolver RUT en respuesta pública
+        position: null, // No devolver cargo en respuesta pública
         worksiteId: worker.worksiteId,
-        worksiteName: worker.worksiteName ?? "",
+        worksiteName: "", // No devolver nombre de faena en respuesta pública
       },
     }
   } catch (e) {
