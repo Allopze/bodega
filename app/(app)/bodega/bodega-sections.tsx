@@ -8,6 +8,8 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { ArrowRight, Package, Warehouse, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 import type { resolvePagination } from "@/lib/pagination"
+import { useSafeShellHeader } from "@/components/layout/header-context"
+import { filterStockItems, filterMovements } from "./filters"
 
 interface WorksiteOption {
   id: string
@@ -21,6 +23,8 @@ export function StockSection({ worksites, stockByWorksite, initialWorksiteId, re
   receivingHref?: string
   canExportStock?: boolean
 }) {
+  const { searchQuery } = useSafeShellHeader()
+
   const sortedWorksites = [...worksites].sort((a, b) => {
     const aHasStock = (stockByWorksite[a.id] ?? []).some((item) => item.quantity > 0)
     const bHasStock = (stockByWorksite[b.id] ?? []).some((item) => item.quantity > 0)
@@ -29,13 +33,16 @@ export function StockSection({ worksites, stockByWorksite, initialWorksiteId, re
     if (aHasStock !== bHasStock) return aHasStock ? -1 : 1
     return a.name.localeCompare(b.name, "es")
   })
-  const worksitesWithStock = sortedWorksites
-    .map((ws) => ({
-      ...ws,
-      items: (stockByWorksite[ws.id] ?? []).filter((item) => item.quantity > 0),
-    }))
+  // Faenas that genuinely have stock — independent of the search query, so
+  // the "Sin stock" footer below never mislabels a faena that has stock but
+  // didn't match the current search.
+  const worksitesWithAnyStock = sortedWorksites
+    .map((ws) => ({ ...ws, items: (stockByWorksite[ws.id] ?? []).filter((item) => item.quantity > 0) }))
     .filter((ws) => ws.items.length > 0)
-  const worksitesWithoutStock = sortedWorksites.filter((ws) => !worksitesWithStock.some((stocked) => stocked.id === ws.id))
+  const worksitesWithoutStock = sortedWorksites.filter((ws) => !worksitesWithAnyStock.some((stocked) => stocked.id === ws.id))
+  const worksitesWithStock = worksitesWithAnyStock
+    .map((ws) => ({ ...ws, items: filterStockItems(ws.items, searchQuery) }))
+    .filter((ws) => ws.items.length > 0)
 
   if (worksites.length === 0) {
     return (
@@ -52,20 +59,28 @@ export function StockSection({ worksites, stockByWorksite, initialWorksiteId, re
   if (worksitesWithStock.length === 0) {
     return (
       <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <EmptyState
-          icon={<Package size={24} />}
-          title="Sin stock registrado"
-          description="Los ingresos de recepción aparecerán aquí cuando una orden de compra llegue a faena."
-          action={receivingHref ? (
-            <Link
-              href={receivingHref}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]"
-            >
-              Ver recepciones
-              <ArrowRight size={14} aria-hidden />
-            </Link>
-          ) : undefined}
-        />
+        {searchQuery.trim() ? (
+          <EmptyState
+            icon={<Package size={24} />}
+            title="Sin coincidencias"
+            description={`Ningún producto en stock coincide con "${searchQuery.trim()}".`}
+          />
+        ) : (
+          <EmptyState
+            icon={<Package size={24} />}
+            title="Sin stock registrado"
+            description="Los ingresos de recepción aparecerán aquí cuando una orden de compra llegue a faena."
+            action={receivingHref ? (
+              <Link
+                href={receivingHref}
+                className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]"
+              >
+                Ver recepciones
+                <ArrowRight size={14} aria-hidden />
+              </Link>
+            ) : undefined}
+          />
+        )}
       </section>
     )
   }
@@ -100,9 +115,16 @@ export function KardexSection({
   pagination: ReturnType<typeof resolvePagination>
   hrefForPage: (page: number) => string
 }) {
+  const { searchQuery } = useSafeShellHeader()
+  // ponytail: kardex is server-paginated, so this only filters the movements
+  // already loaded on the current page — a match on an older page won't show
+  // up. Move to a server-side ilike (like lib/adquisiciones/list-query.ts's
+  // textSearchSql) if that gap becomes a real complaint.
+  const filteredMovements = filterMovements(movements, searchQuery)
+
   return (
     <>
-      <KardexTable movements={movements} worksites={worksites} canExport={canExport} />
+      <KardexTable movements={filteredMovements} worksites={worksites} canExport={canExport} />
       <ServerPagination pagination={pagination} hrefForPage={hrefForPage} />
     </>
   )
