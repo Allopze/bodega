@@ -13,6 +13,7 @@ import {
   toTitleCase,
   getInitials,
   escapeHtml,
+  matchesQuery,
 } from "@/lib/utils"
 
 describe("cn()", () => {
@@ -168,5 +169,32 @@ describe("escapeHtml()", () => {
 
   it("handles empty string", () => {
     expect(escapeHtml("")).toBe("")
+  })
+})
+
+describe("matchesQuery()", () => {
+  it("matches everything when the query is empty", () => {
+    expect(matchesQuery("", ["Cemento"])).toBe(true)
+    expect(matchesQuery("   ", ["Cemento"])).toBe(true)
+  })
+
+  it("matches a case-insensitive substring", () => {
+    expect(matchesQuery("cem", ["Cemento Portland"])).toBe(true)
+  })
+
+  it("matches accented characters regardless of query accents", () => {
+    expect(matchesQuery("direccion", ["Dirección Norte"])).toBe(true)
+  })
+
+  it("returns false when no value matches", () => {
+    expect(matchesQuery("fierro", ["Cemento", "Portland"])).toBe(false)
+  })
+
+  it("skips null/undefined values without throwing", () => {
+    expect(matchesQuery("cem", [null, undefined, "Cemento"])).toBe(true)
+  })
+
+  it("matches against any of several values", () => {
+    expect(matchesQuery("norte", ["Cemento", "Faena Norte"])).toBe(true)
   })
 })

@@ -22,6 +22,18 @@ export function formatQty(n: number, unit?: string): string {
   return unit ? `${formatted} ${unit}` : formatted
 }
 
+/** Lowercase (es-CL) and strip diacritics, so accented and unaccented text compare equal. */
+function foldForSearch(value: string): string {
+  return value.toLocaleLowerCase("es-CL").normalize("NFD").replace(/[̀-ͯ]/g, "")
+}
+
+/** Case- and accent-insensitive (es-CL) substring match against any of the given values. Empty query matches everything. */
+export function matchesQuery(query: string, values: Array<string | null | undefined>): boolean {
+  const normalized = foldForSearch(query.trim())
+  if (!normalized) return true
+  return values.some((value) => value != null && foldForSearch(value).includes(normalized))
+}
+
 /** Generate a slug-style code from a string */
 export function toCode(str: string): string {
   return str
