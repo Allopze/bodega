@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { usePersistedViewMode } from "@/components/prevention/view-mode-toggle"
 import { buildFolderOptionLabels } from "@/lib/services/prevention-documents/labels"
+import { matchesQuery } from "@/lib/utils"
 import type { DocumentRow, FolderRow, MenuState } from "./documentacion-view.types"
 import { DRAG_MIME } from "./documentacion-view.types"
 import {
@@ -34,7 +35,6 @@ export interface DocumentacionViewState {
   selectedCount: number
   folderOptionLabels: { id: string; label: string }[]
   bulkDownloadHref: string
-  normalizedSearchQuery: string
   filteredFolders: FolderRow[]
   filteredDocuments: DocumentRow[]
   isFiltering: boolean
@@ -265,11 +265,11 @@ export function useDocumentacionView(
 
   // ── Filtering ────────────────────────────────────────────────────────────
 
-  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase("es-CL")
-  const matchesSearch = React.useCallback((values: Array<string | null | undefined>) => {
-    if (!normalizedSearchQuery) return true
-    return values.some((value) => value?.toLocaleLowerCase("es-CL").includes(normalizedSearchQuery))
-  }, [normalizedSearchQuery])
+  const matchesSearch = React.useCallback(
+    (values: Array<string | null | undefined>) => matchesQuery(searchQuery, values),
+    [searchQuery],
+  )
+  const isFilteringQuery = searchQuery.trim().length > 0
 
   const filteredFolders = React.useMemo(
     () => folders.filter((folder) => matchesSearch([folder.name, folder.worksiteName])),
@@ -285,7 +285,7 @@ export function useDocumentacionView(
     ])),
     [documents, matchesSearch],
   )
-  const isFiltering = normalizedSearchQuery.length > 0
+  const isFiltering = isFilteringQuery
   const hasContent = filteredFolders.length > 0 || filteredDocuments.length > 0
 
   // ── Drag handlers ────────────────────────────────────────────────────────
