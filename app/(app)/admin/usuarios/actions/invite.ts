@@ -57,13 +57,16 @@ export async function inviteUser(
   const inviteUrl = `${getAppBaseUrl()}/registro?token=${encodeURIComponent(token)}`
   const expiresAt = new Date(Date.now() + d.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
   const invitationId = nanoid()
+  const now = new Date().toISOString()
 
   await db.transaction(async (tx) => {
     await tx.update(userInvitations)
-      .set({ acceptedAt: new Date().toISOString() })
+      .set({ replacedAt: now, replacedByInvitationId: invitationId })
       .where(and(
         eq(userInvitations.email, d.email),
         isNull(userInvitations.acceptedAt),
+        isNull(userInvitations.cancelledAt),
+        isNull(userInvitations.replacedAt),
       ))
 
     await tx.insert(userInvitations).values({
@@ -75,6 +78,8 @@ export async function inviteUser(
       worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
       invitedByUserId: session.user.id,
       expiresAt,
+      lastSentAt: now,
+      sendCount: 1,
     })
   })
 
@@ -104,9 +109,7 @@ export async function inviteUser(
     newState: { email: d.email, roles: d.roleIds, expiresAt, smtpSent: !pendingInviteUrl },
   })
 
-  if (!pendingInviteUrl) {
-    revalidatePath(REVALIDATE)
-  }
+  revalidatePath(REVALIDATE)
   return {
     ok: true,
     message: deliveryMessage,

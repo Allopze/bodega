@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { userInvitations } from "@/db/schema"
 import { getUserCount, hashInvitationToken } from "@/lib/auth/bootstrap"
+import { isInvitationUsable } from "@/lib/auth/invitations"
 import { RegisterForm } from "./register-form"
 
 export const metadata: Metadata = {
@@ -39,8 +40,14 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
 
       if (!invitation) {
         inviteError = "Invitación inválida o ya utilizada."
-        } else if (new Date(invitation.expiresAt) < new Date()) {
-        inviteError = "La invitación expiró. Solicita una nueva al administrador."
+      } else if (!isInvitationUsable(invitation)) {
+        if (invitation.cancelledAt) {
+          inviteError = "La invitación fue cancelada. Solicita una nueva al administrador."
+        } else if (invitation.replacedAt) {
+          inviteError = "La invitación fue reemplazada. Usa el enlace más reciente."
+        } else {
+          inviteError = "La invitación expiró. Solicita una nueva al administrador."
+        }
       } else {
         initialEmail = invitation.email
         initialName = invitation.name ?? ""

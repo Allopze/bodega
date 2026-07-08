@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, boolean, timestamp, uniqueIndex, integer } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
 import { worksites } from "./worksites"
 
@@ -36,6 +36,13 @@ export const userInvitations = pgTable("user_invitations", {
   invitedByUserId:     text("invited_by_user_id").references(() => users.id, { onDelete: "set null" }),
   expiresAt:           text("expires_at").notNull(),
   acceptedAt:          text("accepted_at"),
+  cancelledAt:         text("cancelled_at"),
+  cancelledByUserId:   text("cancelled_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  cancelReason:        text("cancel_reason"),
+  replacedAt:          text("replaced_at"),
+  replacedByInvitationId: text("replaced_by_invitation_id"),
+  lastSentAt:          text("last_sent_at"),
+  sendCount:           integer("send_count").notNull().default(0),
   createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 

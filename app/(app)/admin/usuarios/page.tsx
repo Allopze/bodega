@@ -7,6 +7,7 @@ import { requirePermission, can } from "@/lib/auth/can"
 import { visibleUserIdsForAdminScope } from "@/lib/auth/admin-user-scope"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
+import { getInvitationStatus, parseInvitationJson } from "@/lib/auth/invitations"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { UserList } from "./user-list"
@@ -40,6 +41,7 @@ export default async function UsuariosPage() {
     : visibleUserIds.length > 0
       ? and(inArray(worksiteUsers.userId, visibleUserIds), worksiteScopeSql(session, worksiteUsers.worksiteId))
       : sql`false`
+  const canManageAdmins = can(session, "admin:manage_admins")
 
   // Load all users — DataTable handles client-side filtering + pagination via TopBar search
   const allUsers = await db.query.users.findMany({
@@ -81,8 +83,68 @@ export default async function UsuariosPage() {
     where: worksiteUsersScope,
   })
 
+  // Load available roles + active worksites for the form selects and invitation row shaping
+  const allRolesData     = await db.query.roles.findMany({ orderBy: (r, { asc }) => [asc(r.label)] })
+  const allPermissionsData = await db.query.permissions.findMany({
+    orderBy: (p, { asc }) => [asc(p.module), asc(p.name)],
+  })
+  const allWorksitesData = await db.query.worksites.findMany({
+    where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)),
+    orderBy: (w, { asc }) => [asc(w.name)],
+  })
+
+  const invitationRowsRaw = await db.query.userInvitations.findMany({
+    orderBy: (i, { desc }) => [desc(i.createdAt)],
+    limit: 500,
+  })
+
+  const roleLabelById = new Map(allRolesData.map((role) => [role.id, role.label]))
+  const worksiteById = new Map(allWorksitesData.map((worksite) => [worksite.id, worksite]))
+  const visibleUserEmails = new Set(allUsers.map((user) => user.email.toLowerCase()))
+  const invitationEmails = [...new Set(invitationRowsRaw.map((invitation) => invitation.email.toLowerCase()))]
+  const usersForInvitationEmails = invitationEmails.length
+    ? await db
+        .select({ email: users.email })
+        .from(users)
+        .where(inArray(users.email, invitationEmails))
+    : []
+  const existingUserEmailsForInvitations = new Set(usersForInvitationEmails.map((user) => user.email.toLowerCase()))
+  const inviterIds = [...new Set(invitationRowsRaw.map((invitation) => invitation.invitedByUserId).filter(Boolean) as string[])]
+  const inviterRows = inviterIds.length
+    ? await db.query.users.findMany({ where: inArray(users.id, inviterIds) })
+    : []
+  const inviterNameById = new Map(inviterRows.map((user) => [user.id, user.name]))
+
+  const invitationRows = invitationRowsRaw.flatMap((invitation) => {
+    const invitationEmail = invitation.email.toLowerCase()
+    if (existingUserEmailsForInvitations.has(invitationEmail) && !visibleUserEmails.has(invitationEmail)) return []
+
+    const roleIds = parseInvitationJson<string[]>(invitation.roleIdsJson, [])
+    if (!canManageAdmins && roleIds.some((roleId) => allRolesData.find((role) => role.id === roleId)?.name === "administrador")) return []
+
+    const worksiteAssignments = parseInvitationJson<{ worksiteId: string; isPrimary: boolean }[]>(invitation.worksiteAssignmentsJson, [])
+    const visibleAssignments = worksiteAssignments.filter((assignment) => worksiteById.has(assignment.worksiteId))
+    if (worksiteAssignments.length > 0 && visibleAssignments.length === 0) return []
+
+    return [{
+      id: invitation.id,
+      email: invitation.email,
+      name: invitation.name,
+      status: getInvitationStatus(invitation),
+      roleLabels: roleIds.map((roleId) => roleLabelById.get(roleId)).filter(Boolean) as string[],
+      worksiteCount: visibleAssignments.length,
+      invitedByName: invitation.invitedByUserId ? inviterNameById.get(invitation.invitedByUserId) ?? null : null,
+      expiresAt: invitation.expiresAt,
+      createdAt: invitation.createdAt,
+      acceptedAt: invitation.acceptedAt,
+      cancelledAt: invitation.cancelledAt,
+      cancelReason: invitation.cancelReason,
+      lastSentAt: invitation.lastSentAt,
+      sendCount: invitation.sendCount,
+    }]
+  }).slice(0, 100)
+
   // Assemble user rows
-  const canManageAdmins = can(session, "admin:manage_admins")
   const userRows = allUsers.flatMap((u) => {
     const uRoles = allUserRoleRows.filter((r) => r.userId === u.id)
     const uPermissions = allUserPermissionRows.filter((p) => p.userId === u.id)
@@ -106,16 +168,6 @@ export default async function UsuariosPage() {
     }]
   })
 
-  // Load available roles + active worksites for the form selects
-  const allRolesData     = await db.query.roles.findMany({ orderBy: (r, { asc }) => [asc(r.label)] })
-  const allPermissionsData = await db.query.permissions.findMany({
-    orderBy: (p, { asc }) => [asc(p.module), asc(p.name)],
-  })
-  const allWorksitesData = await db.query.worksites.findMany({
-    where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)),
-    orderBy: (w, { asc }) => [asc(w.name)],
-  })
-
   return (
     <PageContainer>
       <PageHeader
@@ -131,6 +183,7 @@ export default async function UsuariosPage() {
       />
       <UserList
         users={userRows}
+        invitations={invitationRows}
         allRoles={allRolesData
           .filter((r) => canManageAdmins || r.name !== "administrador")
           .map((r) => ({ id: r.id, name: r.name, label: r.label }))}

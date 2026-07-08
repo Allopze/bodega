@@ -118,6 +118,62 @@ describe("registerUser — hardening (M1)", () => {
     expect(assigned.map((r) => r.roleId)).toEqual(["rol-sec"])
   })
 
+  it("rejects a cancelled invitation token", async () => {
+    await seedExistingUser()
+    const token = "invitacion-cancelada-123"
+    await inMemoryDb.insert(schema.userInvitations).values({
+      id: "inv-cancelled",
+      email: "cancelado@chome.cl",
+      tokenHash: hashInvitationToken(token),
+      roleIdsJson: "[]",
+      worksiteAssignmentsJson: "[]",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      cancelledAt: new Date().toISOString(),
+      cancelReason: "Solicitud duplicada",
+    })
+
+    const res = await registerUser(INITIAL, form({
+      name: "Cancelado",
+      email: "cancelado@chome.cl",
+      password: "segura123",
+      confirmPassword: "segura123",
+      token,
+    }))
+
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.token).toEqual(["Invitación inválida o ya utilizada"])
+    const rows = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "cancelado@chome.cl"))
+    expect(rows).toHaveLength(0)
+  })
+
+  it("rejects a replaced invitation token", async () => {
+    await seedExistingUser()
+    const token = "invitacion-reemplazada-123"
+    await inMemoryDb.insert(schema.userInvitations).values({
+      id: "inv-replaced",
+      email: "reemplazado@chome.cl",
+      tokenHash: hashInvitationToken(token),
+      roleIdsJson: "[]",
+      worksiteAssignmentsJson: "[]",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      replacedAt: new Date().toISOString(),
+      replacedByInvitationId: "inv-newer",
+    })
+
+    const res = await registerUser(INITIAL, form({
+      name: "Reemplazado",
+      email: "reemplazado@chome.cl",
+      password: "segura123",
+      confirmPassword: "segura123",
+      token,
+    }))
+
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.token).toEqual(["Invitación inválida o ya utilizada"])
+    const rows = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "reemplazado@chome.cl"))
+    expect(rows).toHaveLength(0)
+  })
+
   it("locks the account after repeated invalid-token attempts (rate-limit engages)", async () => {
     await seedExistingUser()
     const attempt = () => registerUser(INITIAL, form({

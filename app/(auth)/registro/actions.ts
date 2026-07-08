@@ -5,6 +5,7 @@ import { and, count, eq, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { userInvitations, userRoles, users, worksiteUsers } from "@/db/schema"
 import { ensureSystemRbac, hashInvitationToken } from "@/lib/auth/bootstrap"
+import { isInvitationUsable } from "@/lib/auth/invitations"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
@@ -118,8 +119,8 @@ export async function registerUser(
           validationFailure = { ok: false, fieldErrors: { token: ["Invitación inválida o ya utilizada"] } }
           throw new RegistrationRollback()
         }
-        if (new Date(invitation.expiresAt).getTime() < Date.now()) {
-          validationFailure = { ok: false, fieldErrors: { token: ["La invitación expiró"] } }
+        if (!isInvitationUsable(invitation)) {
+          validationFailure = { ok: false, fieldErrors: { token: ["Invitación inválida o ya utilizada"] } }
           throw new RegistrationRollback()
         }
         if (invitation.email !== data.email) {

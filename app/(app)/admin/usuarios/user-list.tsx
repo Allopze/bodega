@@ -8,6 +8,7 @@ import { EnvelopeSimple, Plus, PencilSimple, ToggleLeft, ToggleRight, Trash } fr
 import { DataTable } from "@/components/admin/data-table"
 import { UserForm } from "./user-form"
 import { UserInviteForm } from "./user-invite-form"
+import { UserInvitationsPanel, type InvitationRow } from "./user-invitations-panel"
 import { Avatar } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -43,6 +44,7 @@ interface UserRow {
 
 interface UserListProps {
   users:        UserRow[]
+  invitations:  InvitationRow[]
   allRoles:     Role[]
   allPermissions: Permission[]
   allWorksites: Worksite[]
@@ -57,7 +59,7 @@ const COLUMNS = [
   { key: "",          label: "",          sortable: false, width: "w-32" },
 ]
 
-export function UserList({ users, allRoles, allPermissions, allWorksites }: UserListProps) {
+export function UserList({ users, invitations, allRoles, allPermissions, allWorksites }: UserListProps) {
   const [sheetOpen, setSheetOpen]   = React.useState(false)
   const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)
@@ -280,6 +282,8 @@ export function UserList({ users, allRoles, allPermissions, allWorksites }: User
           )
         }}
       />
+
+      <UserInvitationsPanel invitations={invitations} />
 
       <UserForm
         open={sheetOpen}

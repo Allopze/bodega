@@ -9,16 +9,23 @@ const mockCanManageUserInAdminScope = vi.hoisted(() => vi.fn(() => true))
 const mockUserHasAdministratorRole = vi.hoisted(() => vi.fn(() => false))
 const mockCanManageAdministratorRole = vi.hoisted(() => vi.fn(() => true))
 const mockFindFirstUser = vi.hoisted(() => vi.fn())
+const mockFindFirstInvitation = vi.hoisted(() => vi.fn())
+const mockFindManyRoles = vi.hoisted(() => vi.fn<() => Array<{ id: string; name: string; label: string }>>(() => []))
 const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockUpdateReturning = vi.hoisted(() => vi.fn(() => Promise.resolve([{ id: "updated-row" }])))
+const mockUpdateWhere = vi.hoisted(() => vi.fn(() => ({ returning: mockUpdateReturning })))
+const mockUpdateSet = vi.hoisted(() => vi.fn(() => ({ where: mockUpdateWhere })))
+const mockInsertValues = vi.hoisted(() => vi.fn())
 
 vi.mock("@/db", () => {
   const db = {
     query: {
       users: { findFirst: mockFindFirstUser },
-      roles: { findMany: vi.fn(() => []) },
+      userInvitations: { findFirst: mockFindFirstInvitation },
+      roles: { findMany: mockFindManyRoles },
     },
-    insert: vi.fn(() => ({ values: vi.fn() })),
-    update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })),
+    insert: vi.fn(() => ({ values: mockInsertValues })),
+    update: vi.fn(() => ({ set: mockUpdateSet })),
     delete: vi.fn(() => ({ where: vi.fn() })),
     transaction: vi.fn(async <T,>(fn: (tx: typeof db) => T): Promise<T> => fn(db)),
     execute: vi.fn(() => Promise.resolve()),
@@ -43,7 +50,8 @@ vi.mock("@/lib/auth/bootstrap", () => ({
   hashInvitationToken: vi.fn(() => "hashed-token-xxx"),
 }))
 vi.mock("@/lib/auth/password-setup", () => ({
-  createPendingPasswordMarker: vi.fn(() => "$$pending$$"),
+  createPendingPasswordMarker: vi.fn(() => "pending-password:test"),
+  isPasswordSetupPending: vi.fn((hashedPassword: string) => hashedPassword.startsWith("pending-password:")),
   displayNameFromEmail: vi.fn((e: string) => e.split("@")[0]),
 }))
 vi.mock("@/lib/audit", () => ({
@@ -68,7 +76,15 @@ vi.mock("@/app/(app)/admin/usuarios/actions.helpers", () => ({
   hashStr: vi.fn(() => 42),
 }))
 
-import { inviteUser, createUser, updateUser, toggleUserActive, deleteUser } from "@/app/(app)/admin/usuarios/actions"
+import {
+  inviteUser,
+  createUser,
+  updateUser,
+  toggleUserActive,
+  deleteUser,
+  cancelInvitation,
+  resendInvitation,
+} from "@/app/(app)/admin/usuarios/actions"
 import type { ActionState } from "@/lib/validation/masters"
 
 const prevState: ActionState = { ok: false, message: "" }
@@ -131,6 +147,10 @@ describe("inviteUser", () => {
     const res = await inviteUser(prevState, makeFormData())
     expect(res.ok).toBe(true)
     expect(res.message).toContain("Invitación enviada a test@chome.cl")
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      replacedAt: expect.any(String),
+      replacedByInvitationId: expect.any(String),
+    }))
   })
 
   it("handles SMTP not configured gracefully", async () => {
@@ -348,5 +368,166 @@ describe("deleteUser", () => {
       }),
       expect.anything(),
     )
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// invitations management
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("cancelInvitation", () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockRequirePermission.mockResolvedValue(makeSession())
+    mockFindFirstInvitation.mockResolvedValue({
+      id: "inv-1",
+      email: "pending@chome.cl",
+      name: "Pending User",
+      acceptedAt: null,
+      cancelledAt: null,
+      replacedAt: null,
+      roleIdsJson: "[]",
+      worksiteAssignmentsJson: "[]",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      createdAt: new Date().toISOString(),
+    })
+  })
+
+  function cancelForm(fields: Record<string, unknown> = {}) {
+    const fd = new FormData()
+    fd.set("id", "inv-1")
+    fd.set("reason", "Correo equivocado")
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === null || v === undefined) fd.delete(k)
+      else fd.set(k, String(v))
+    }
+    return fd
+  }
+
+  it("denies without admin:users", async () => {
+    mockRequirePermission.mockRejectedValueOnce(new Error("no"))
+    const res = await cancelInvitation(prevState, cancelForm())
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Sin permisos")
+  })
+
+  it("validates reason length", async () => {
+    const short = await cancelInvitation(prevState, cancelForm({ reason: "x" }))
+    expect(short.ok).toBe(false)
+    expect(short.fieldErrors?.reason?.[0]).toContain("motivo")
+
+    const res = await cancelInvitation(prevState, cancelForm({ reason: "x".repeat(501) }))
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.reason?.[0]).toContain("500")
+  })
+
+  it("returns stale failure and skips audit when guarded cancel updates no rows", async () => {
+    mockUpdateReturning.mockResolvedValueOnce([])
+
+    const res = await cancelInvitation(prevState, cancelForm())
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe("La invitación ya no está pendiente")
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
+
+  it("denies admin-role invitation cancellation when actor cannot manage admins", async () => {
+    mockCanManageAdministratorRole.mockReturnValueOnce(false)
+    mockFindFirstInvitation.mockResolvedValueOnce({
+      id: "inv-admin",
+      email: "admin-invitado@chome.cl",
+      name: "Admin Invitado",
+      roleIdsJson: JSON.stringify(["rol-admin"]),
+      worksiteAssignmentsJson: "[]",
+      acceptedAt: null,
+      cancelledAt: null,
+      replacedAt: null,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      createdAt: new Date().toISOString(),
+    })
+    mockFindManyRoles.mockResolvedValueOnce([{ id: "rol-admin", name: "administrador", label: "Administrador" }])
+
+    const res = await cancelInvitation(prevState, cancelForm({ id: "inv-admin", reason: "Acceso incorrecto" }))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Solo un administrador")
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+})
+
+describe("resendInvitation", () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockRequirePermission.mockResolvedValue(makeSession())
+    mockFindFirstInvitation.mockResolvedValue({
+      id: "inv-1",
+      email: "pending@chome.cl",
+      name: "Pending User",
+      roleIdsJson: "[\"role-admin\"]",
+      worksiteAssignmentsJson: "[{\"worksiteId\":\"ws-1\",\"isPrimary\":true}]",
+      invitedByUserId: "admin-old",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      createdAt: new Date().toISOString(),
+      acceptedAt: null,
+      cancelledAt: null,
+      replacedAt: null,
+      sendCount: 2,
+    })
+    mockFindFirstUser.mockResolvedValue({
+      id: "u-pending",
+      email: "pending@chome.cl",
+      hashedPassword: "pending-password:test",
+    })
+  })
+
+  it("returns data.inviteUrl containing /registro?token= when SMTP unavailable", async () => {
+    const { sendInvitationEmail } = await import("@/lib/email/smtp")
+    vi.mocked(sendInvitationEmail).mockResolvedValueOnce({ sent: false, reason: "SMTP not configured" })
+
+    const fd = new FormData()
+    fd.set("id", "inv-1")
+    const res = await resendInvitation(prevState, fd)
+
+    expect(res.ok).toBe(true)
+    expect(res.data?.inviteUrl).toEqual(expect.stringContaining("/registro?token="))
+  })
+
+  it("returns stale failure and does not insert or audit when guarded resend updates no rows", async () => {
+    mockUpdateReturning.mockResolvedValueOnce([])
+
+    const fd = new FormData()
+    fd.set("id", "inv-1")
+    const res = await resendInvitation(prevState, fd)
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe("La invitación ya no está pendiente")
+    expect(mockInsertValues).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
+
+  it("denies admin-role invitation resend when actor cannot manage admins", async () => {
+    mockCanManageAdministratorRole.mockReturnValueOnce(false)
+    mockFindFirstInvitation.mockResolvedValueOnce({
+      id: "inv-admin",
+      email: "admin-invitado@chome.cl",
+      name: "Admin Invitado",
+      roleIdsJson: JSON.stringify(["rol-admin"]),
+      worksiteAssignmentsJson: "[]",
+      acceptedAt: null,
+      cancelledAt: null,
+      replacedAt: null,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      createdAt: new Date().toISOString(),
+      sendCount: 0,
+    })
+    mockFindManyRoles.mockResolvedValueOnce([{ id: "rol-admin", name: "administrador", label: "Administrador" }])
+
+    const fd = new FormData()
+    fd.set("id", "inv-admin")
+    const res = await resendInvitation(prevState, fd)
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Solo un administrador")
+    expect(mockInsertValues).not.toHaveBeenCalled()
   })
 })
