@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
 import { desc, count, inArray, eq, and, or, ilike, sql } from "drizzle-orm"
-import { requireAuth, can, canAccessWorksite } from "@/lib/auth/can"
+import { requireAuth, can, canAccessWorksite, isGlobalRole } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
@@ -30,17 +30,22 @@ export default async function SolicitudesPage({
   const sp = await searchParams
   const viewAll = can(session, "requests:view_all")
 
-  // Build worksite filter — solicitantes see only their worksites
+  // Build worksite filter — solicitantes see only their worksites.
+  // Global roles without view_all (p. ej. jefe_mantencion) no tienen faenas
+  // asignadas: se filtran solo por requesterId, nunca por worksite (si no, la
+  // lista sale vacía). Los roles scoped sí se acotan a sus faenas asignadas.
   const userWorksiteIds = session.user.worksiteIds ?? []
 
   const filterConditions = viewAll
     ? undefined
-    : and(
-        eq(purchaseRequests.requesterId, session.user.id),
-        userWorksiteIds.length > 0
-          ? inArray(purchaseRequests.worksiteId, userWorksiteIds)
-          : sql`false`
-      )
+    : isGlobalRole(session)
+      ? eq(purchaseRequests.requesterId, session.user.id)
+      : and(
+          eq(purchaseRequests.requesterId, session.user.id),
+          userWorksiteIds.length > 0
+            ? inArray(purchaseRequests.worksiteId, userWorksiteIds)
+            : sql`false`
+        )
 
   // URL-synced search & filters (server-side, so search finds records on any page)
   const listParams = parseListParams(sp)

@@ -20,7 +20,14 @@ export const TERMINAL_STATES: ItemStatus[] = [
   "delivered",
 ]
 
-/** State transition map — which transitions are allowed from each state */
+/**
+ * State transition map — which transitions are allowed from each state (flujo hacia adelante).
+ *
+ * Excepción de rollback (B-2): al anular/eliminar una OC, `cancelOrder`/`deleteOrder`
+ * revierten los ítems `in_purchase_order`/`purchased` → `pending_purchase` mediante SQL
+ * directo con guarda `WHERE status IN (...)`. Es un rollback intencional que no pasa por
+ * `canTransition`; por eso `purchased` no lista `pending_purchase` aquí.
+ */
 export const ALLOWED_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
   draft:              ["requested"],
   requested:          ["approved", "rejected", "returned"],

@@ -97,6 +97,12 @@ export const OC_PRINT_STYLES = `
     color: #647067;
   }
 
+  .print-error {
+    margin-left: 6px;
+    font-size: 9pt;
+    color: #b91c1c;
+  }
+
   .sheet {
     width: 210mm;
     padding: 12mm;
@@ -468,6 +474,10 @@ export const OC_PRINT_STYLES = `
     }
 
     .print-filename {
+      display: none;
+    }
+
+    .print-error {
       display: none;
     }
   }

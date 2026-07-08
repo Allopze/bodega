@@ -45,11 +45,13 @@ export const receiptItems = pgTable("receipt_items", {
   check("receipt_items_status_valid", sql`
     ${table.status} IN ('received', 'partially_received', 'rejected', 'damaged', 'pending')
   `),
-  // Invariant: quantityReceived > 0; rejected/damaged counters non-negative
+  // Invariant: contadores no negativos y al menos uno positivo. quantityReceived
+  // puede ser 0 cuando la línea llegó 100% rechazada/dañada (M-3).
   check("receipt_items_quantities_valid", sql`
-    ${table.quantityReceived} > 0
+    ${table.quantityReceived} >= 0
     AND ${table.quantityRejected} >= 0
     AND ${table.quantityDamaged} >= 0
+    AND (${table.quantityReceived} + ${table.quantityRejected} + ${table.quantityDamaged}) > 0
   `),
 ])
 

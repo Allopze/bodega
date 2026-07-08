@@ -45,7 +45,7 @@ const SheetContent = React.forwardRef<
         "border-0 sm:border sm:border-[var(--color-border)]",
         "rounded-none sm:rounded-[var(--radius-2xl)]",
         "shadow-[var(--shadow-lg)]",
-        "flex flex-col",
+        "flex flex-col overflow-hidden",
         // Entry/exit: slide from bottom on mobile, scale + fade on desktop
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",

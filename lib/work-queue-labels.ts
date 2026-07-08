@@ -32,7 +32,7 @@ export function requestStatusLabel(status: string): string {
     approved:           "Aprobada para compra",
     rejected:           "Rechazada",
     returned:           "Requiere corrección",
-    in_purchasing:      "En compra",
+    in_purchasing:      "En proceso",
     closed:             "Cerrada",
     cancelled:          "Cancelada",
   }

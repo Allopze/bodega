@@ -13,9 +13,11 @@ export function PrintTrigger({
   suggestedFilename: string
 }) {
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleDownload() {
     setLoading(true)
+    setError(null)
     try {
       const res = await fetch(pdfHref)
       if (!res.ok) throw new Error(`Error ${res.status}`)
@@ -28,8 +30,8 @@ export function PrintTrigger({
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-    } catch {
-      // Silently reset — the user can retry.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo generar el PDF")
     } finally {
       setLoading(false)
     }
@@ -60,6 +62,11 @@ export function PrintTrigger({
         Volver a la OC
       </a>
       <span className="print-filename">Nombre del archivo: {suggestedFilename}</span>
+      {error && (
+        <span className="print-error" role="status">
+          No se pudo generar el PDF ({error}). Intenta nuevamente.
+        </span>
+      )}
     </div>
   )
 }

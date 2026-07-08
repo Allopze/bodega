@@ -19,7 +19,7 @@ import type { Session } from "next-auth"
 
 const mockState = vi.hoisted(() => ({
   requestResult: undefined as {
-    id: string; requesterId: string; worksiteId: string
+    id: string; requesterId: string; worksiteId: string; status: string
   } | undefined,
 }))
 
@@ -78,12 +78,13 @@ function makeSession(overrides: Partial<Session["user"]> = {}): Session {
 }
 
 function makeRequest(overrides: Partial<{
-  id: string; requesterId: string; worksiteId: string
+  id: string; requesterId: string; worksiteId: string; status: string
 }> = {}): typeof mockState.requestResult {
   return {
     id: "req-123",
     requesterId: "u-requester",
     worksiteId: "ws-1",
+    status: "draft",
     ...overrides,
   }
 }
@@ -194,6 +195,31 @@ describe("deleteRequestAction — permission & authorization", () => {
       const result = await deleteRequestAction({ ok: false, message: "" }, makeFormData())
       expect(result.ok).toBe(false)
       expect(result.message).toBe("Solo puedes eliminar tus propias solicitudes")
+    })
+
+    it("rejects owner (without requests:delete) deleting a request in approval pipeline (B-1)", async () => {
+      mockAuthFn.mockResolvedValue(makeSession({
+        permissions: ["requests:view_own"],
+        worksiteIds: ["ws-1"],
+      }))
+      // submitted no es owner-deletable: requiere el permiso privilegiado.
+      mockState.requestResult = makeRequest({ requesterId: "u-test", status: "submitted" })
+      const result = await deleteRequestAction({ ok: false, message: "" }, makeFormData())
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("requiere permiso")
+      expect(mockDeleteRequest).not.toHaveBeenCalled()
+    })
+
+    it("allows privileged deleter (requests:delete) to delete a submitted request", async () => {
+      mockAuthFn.mockResolvedValue(makeSession({
+        roles: ["secretaria"],
+        permissions: ["requests:delete", "requests:view_all"],
+        worksiteIds: [],
+      }))
+      mockState.requestResult = makeRequest({ requesterId: "u-other", status: "submitted" })
+      mockDeleteRequest.mockResolvedValue(undefined)
+      const result = await deleteRequestAction({ ok: false, message: "" }, makeFormData())
+      expect(result.ok).toBe(true)
     })
 
     it("allows jefa_chome (requests:delete) to delete another user's request", async () => {

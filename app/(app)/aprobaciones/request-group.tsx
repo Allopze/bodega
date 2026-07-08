@@ -15,7 +15,7 @@ import { useBulkApproveAction } from "./use-approval-actions"
 import { updateDeliveryModeAction } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
-export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequest; canApproveEpp: boolean }) {
+export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { request: ApprovalRequest; canApproveEpp: boolean; canSetDispatch: boolean }) {
   const [collapsed, setCollapsed] = React.useState(false)
   const { bulkState, bulkAction } = useBulkApproveAction()
   const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
@@ -74,7 +74,7 @@ export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequ
             {request.pendingCount} pendiente{request.pendingCount !== 1 ? "s" : ""}
           </span>
 
-          {canApproveEpp && (
+          {canSetDispatch && (
             <form ref={modeFormRef} action={modeAction} className="flex items-center gap-1">
               <input type="hidden" name="requestId" value={request.id} />
               <Select

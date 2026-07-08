@@ -6,6 +6,7 @@ import { db } from "@/db"
 import { purchaseRequests } from "@/db/schema"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { deleteRequest } from "@/lib/services/requests-delete"
+import { isOwnerDeletable } from "@/lib/services/requests-delete.constants"
 import { type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 
@@ -31,6 +32,11 @@ export async function deleteRequestAction(_prev: ActionState, formData: FormData
   const canDeleteAny = can(session, "requests:delete")
   if (!isOwner && !canDeleteAny) {
     return { ok: false, message: "Solo puedes eliminar tus propias solicitudes" }
+  }
+  // B-1: sin el permiso privilegiado, el dueño solo puede eliminar solicitudes
+  // que no están en el pipeline de aprobación (draft/returned/rejected/cancelled).
+  if (!canDeleteAny && !isOwnerDeletable(request.status)) {
+    return { ok: false, message: "Esta solicitud está en revisión; requiere permiso para eliminarla" }
   }
   if (!canAccessWorksite(session, request.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }

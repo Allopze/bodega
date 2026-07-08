@@ -20,6 +20,30 @@ import { cn } from "@/lib/utils"
 import type { AttributeRow, SupplierRow, ProductFormProps } from "./product-form.types"
 import { UOM_OPTIONS } from "./product-form.types"
 
+const EPP_ATTRIBUTE_PRESETS: AttributeRow[] = [
+  {
+    name: "Talla",
+    type: "select",
+    isRequired: true,
+    options: "XS, S, M, L, XL, 2XL, 3XL",
+    sortOrder: 0,
+  },
+  {
+    name: "Talla calzado",
+    type: "select",
+    isRequired: true,
+    options: "36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46",
+    sortOrder: 0,
+  },
+  {
+    name: "Color",
+    type: "select",
+    isRequired: true,
+    options: "Amarillo, Azul, Blanco, Gris, Negro, Naranja, Rojo, Verde",
+    sortOrder: 0,
+  },
+]
+
 export function ProductForm({ open, onClose, categories, allSuppliers, editProduct, variant = "sheet" }: ProductFormProps) {
   const isEdit = !!editProduct
   const action = isEdit ? updateProduct : createProduct
@@ -41,6 +65,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
   const [uom,        setUom]        = React.useState(editProduct?.unitOfMeasure ?? "unidad")
   const [attrs,      setAttrs]      = React.useState<AttributeRow[]>(editProduct?.attributes ?? [])
   const [suppRows,   setSuppRows]   = React.useState<SupplierRow[]>(editProduct?.suppliers ?? [])
+  const [isEpp,      setIsEpp]      = React.useState(editProduct?.isEpp ?? false)
 
   function addAttr() {
     setAttrs((prev) => [...prev, { name: "", type: "text", isRequired: false, options: "", sortOrder: prev.length }])
@@ -48,6 +73,17 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
   function removeAttr(i: number) { setAttrs((prev) => prev.filter((_, idx) => idx !== i)) }
   function updateAttr(i: number, patch: Partial<AttributeRow>) {
     setAttrs((prev) => prev.map((a, idx) => idx === i ? { ...a, ...patch } : a))
+  }
+  function addPresetAttr(preset: AttributeRow) {
+    setAttrs((prev) => {
+      const existingIndex = prev.findIndex((a) => a.name.trim().toLowerCase() === preset.name.toLowerCase())
+      const nextPreset = { ...preset, sortOrder: existingIndex >= 0 ? prev[existingIndex].sortOrder : prev.length }
+      if (existingIndex >= 0) {
+        return prev.map((a, idx) => idx === existingIndex ? { ...a, ...nextPreset } : a)
+      }
+      return [...prev, nextPreset]
+    })
+    setIsEpp(true)
   }
 
   function addSupp(supplierId: string) {
@@ -65,6 +101,8 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
     <form
       action={formAction}
       className={cn(
+        "flex min-h-0 flex-col",
+        variant !== "embedded" && "h-full max-h-[inherit] overflow-hidden",
         variant === "embedded" &&
           "overflow-hidden rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]",
       )}
@@ -170,7 +208,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
               </Field>
 
               <div className="flex flex-col gap-2">
-                <Checkbox id="p-epp" name="isEpp" value="on" defaultChecked={editProduct?.isEpp ?? false} label="Es EPP" />
+                <Checkbox id="p-epp" name="isEpp" value="on" checked={isEpp} onChange={(event) => setIsEpp(event.target.checked)} label="Es EPP" />
                 <Checkbox id="p-prev" name="requiresPrevencion" value="on" defaultChecked={editProduct?.requiresPrevencion ?? false} label="Requiere aprobación de Prevención" />
                 <Checkbox id="p-active" name="isActive" value="on" defaultChecked={editProduct?.isActive ?? true} label="Producto activo" />
               </div>
@@ -182,6 +220,16 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
             <p className="text-sm text-text-muted mb-4">
               Los atributos definen los campos adicionales que se solicitan al incluir este producto en una solicitud (talla, color, modelo, medida, etc.).
             </p>
+            <div className="mb-4 rounded-(--radius) border border-border bg-surface-2 p-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-subtle">Atajos para EPP</p>
+              <div className="flex flex-wrap gap-2">
+                {EPP_ATTRIBUTE_PRESETS.map((preset) => (
+                  <Button key={preset.name} type="button" variant="secondary" size="sm" onClick={() => addPresetAttr(preset)}>
+                    <Plus size={13} />{preset.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
             {attrs.length === 0 && (
               <p className="text-sm text-text-subtle mb-4">Sin atributos definidos.</p>
             )}

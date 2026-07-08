@@ -9,19 +9,13 @@ import { approveItem, rejectItem, returnItem } from "@/lib/services/item-state"
 import { notifySafe, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
+import { canApproveEpp, DISPATCH_DECIDER_ROLES } from "./roles"
 
 const REVALIDATE = "/aprobaciones"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const EPP_APPROVER_ROLES = new Set(["administrador", "jefa_chome", "secretaria", "prevencionista"])
-
-// Delivery mode (dispatch route) is a logistics call: secretaría / jefatura / admin only.
-const DISPATCH_DECIDER_ROLES = new Set(["administrador", "jefa_chome", "secretaria"])
-
-function canApproveEpp(roles: string[]): boolean {
-  return roles.some((r) => EPP_APPROVER_ROLES.has(r))
-}
+// Los conjuntos de roles (EPP / despacho) viven en ./roles para ser compartidos
+// con page.tsx y evitar divergencias UI↔backend (ver H-1).
 
 function getRoleContext(roles: string[]): string {
   return roles[0] ?? "unknown"

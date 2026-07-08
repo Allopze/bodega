@@ -49,6 +49,7 @@ export function ProductList({ products, categories, allSuppliers }: {
   const [productSheetOpen, setProductSheetOpen] = React.useState(false)
   const [editProductFull,  setEditProductFull]  = React.useState<Awaited<ReturnType<typeof getProductForEdit>>>(null)
   const [loadingEditId,    setLoadingEditId]    = React.useState<string | null>(null)
+  const [productFormKey,   setProductFormKey]   = React.useState(0)
   const [,                 startTransition]     = React.useTransition()
 
   useEffect(() => {
@@ -60,6 +61,7 @@ export function ProductList({ products, categories, allSuppliers }: {
 
   function openNewProduct() {
     setEditProductFull(null)
+    setProductFormKey((key) => key + 1)
     setProductSheetOpen(true)
   }
 
@@ -70,6 +72,7 @@ export function ProductList({ products, categories, allSuppliers }: {
       setLoadingEditId(null)
       if (product) {
         setEditProductFull(product)
+        setProductFormKey((key) => key + 1)
         setProductSheetOpen(true)
       } else {
         toast.error("No se pudo cargar el producto")
@@ -252,8 +255,12 @@ export function ProductList({ products, categories, allSuppliers }: {
       />
 
       <ProductForm
+        key={`${editProductFull?.id ?? "nuevo"}-${productFormKey}`}
         open={productSheetOpen}
-        onClose={() => setProductSheetOpen(false)}
+        onClose={() => {
+          setProductSheetOpen(false)
+          setEditProductFull(null)
+        }}
         categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))}
         allSuppliers={allSuppliers}
         editProduct={editProductFull}

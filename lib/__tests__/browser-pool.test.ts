@@ -50,6 +50,7 @@ beforeEach(() => {
   disconnectListeners.length = 0
   mockBrowser = makeMockBrowser(disconnectListeners)
   mockLaunch.mockReset()
+  delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mockLaunch.mockResolvedValue(mockBrowser as any)
   poolModule._resetPoolForTesting()
@@ -63,6 +64,15 @@ describe("browser pool", () => {
       expect(mockLaunch).not.toHaveBeenCalled()
       await poolModule.withBrowserContext({}, async () => "ok")
       expect(mockLaunch).toHaveBeenCalledOnce()
+    })
+
+    it("uses the runtime Chromium executable when configured", async () => {
+      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/usr/bin/chromium-browser"
+      await poolModule.withBrowserContext({}, async () => "ok")
+      expect(mockLaunch).toHaveBeenCalledWith({
+        timeout: 30_000,
+        executablePath: "/usr/bin/chromium-browser",
+      })
     })
 
     it("reuses the same browser for multiple sequential requests", async () => {

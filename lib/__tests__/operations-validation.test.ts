@@ -131,6 +131,20 @@ describe("receiptSchema", () => {
       items: [{ ...validReceipt.items[0], quantityReceived: Number.POSITIVE_INFINITY }],
     }).success).toBe(false)
   })
+
+  it("accepts a fully-rejected line with quantityReceived 0 (M-3)", () => {
+    expect(receiptSchema.safeParse({
+      ...validReceipt,
+      items: [{ ...validReceipt.items[0], quantityReceived: 0, quantityRejected: 5 }],
+    }).success).toBe(true)
+  })
+
+  it("rejects a line with all quantities at 0 (M-3)", () => {
+    expect(receiptSchema.safeParse({
+      ...validReceipt,
+      items: [{ ...validReceipt.items[0], quantityReceived: 0, quantityRejected: 0, quantityDamaged: 0 }],
+    }).success).toBe(false)
+  })
 })
 
 describe("dispatchSchema", () => {

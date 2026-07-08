@@ -25,6 +25,7 @@ const mockDb = {
   insert: vi.fn(() => ({ values: mockInsertValues })),
   update: vi.fn(() => ({ set: mockUpdateSet })),
   delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+  transaction: vi.fn(async (callback: (tx: typeof mockDb) => Promise<void>) => callback(mockDb)),
 }
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
@@ -137,6 +138,16 @@ describe("admin/productos actions", () => {
       expect(r.ok).toBe(false)
     })
 
+    it("returns domain validation messages when required product fields are absent", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      const { createProduct } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProduct({ ok: false }, new FormData())
+      expect(r.ok).toBe(false)
+      expect(r.fieldErrors?.sku).toContain("SKU requerido")
+      expect(r.fieldErrors?.name).toContain("Nombre requerido")
+      expect(r.fieldErrors?.categoryId).toContain("Selecciona una categoría")
+    })
+
     it("rejects duplicate SKU", async () => {
       mockAuthFn.mockResolvedValue(makeSession("admin:products"))
       mockDb.query.products.findFirst.mockResolvedValue({ id: "existing", sku: "C-001" })
@@ -144,6 +155,41 @@ describe("admin/productos actions", () => {
       const fd = new FormData(); fd.set("name", "Casco"); fd.set("sku", "C-001"); fd.set("categoryId", "cat-1"); fd.set("unitOfMeasure", "unidad")
       const r = await createProduct({ ok: false }, fd)
       expect(r.ok).toBe(false); expect(r.fieldErrors?.sku).toBeDefined()
+    })
+
+    it("normalizes EPP talla/color options as JSON for request dropdowns", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      const { createProduct } = await import("@/app/(app)/admin/productos/actions")
+      const fd = new FormData()
+      fd.set("name", "Guante nitrilo")
+      fd.set("sku", "EPP-GUANTE-001")
+      fd.set("categoryId", "cat-epp")
+      fd.set("unitOfMeasure", "par")
+      fd.set("isEpp", "on")
+      fd.set("attributesJson", JSON.stringify([
+        { name: "Talla", type: "select", isRequired: true, options: "S, M, L, XL", sortOrder: 0 },
+        { name: "Color", type: "select", isRequired: false, options: "Negro\nAzul", sortOrder: 1 },
+      ]))
+
+      const r = await createProduct({ ok: false }, fd)
+
+      expect(r.ok).toBe(true)
+      expect(mockInsertValues).toHaveBeenCalledWith(expect.arrayContaining([
+        expect.objectContaining({ name: "Talla", options: JSON.stringify(["S", "M", "L", "XL"]) }),
+        expect.objectContaining({ name: "Color", options: JSON.stringify(["Negro", "Azul"]) }),
+      ]))
+    })
+  })
+
+  describe("updateProduct", () => {
+    it("returns domain validation messages when the submitted form is incomplete", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      const { updateProduct } = await import("@/app/(app)/admin/productos/actions")
+      const r = await updateProduct({ ok: false }, new FormData())
+      expect(r.ok).toBe(false)
+      expect(r.fieldErrors?.sku).toContain("SKU requerido")
+      expect(r.fieldErrors?.name).toContain("Nombre requerido")
+      expect(r.fieldErrors?.categoryId).toContain("Selecciona una categoría")
     })
   })
 })

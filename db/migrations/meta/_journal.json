@@ -204,6 +204,20 @@
       "when": 1783486913502,
       "tag": "0028_strong_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1783537513876,
+      "tag": "0029_outgoing_moondragon",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783540346701,
+      "tag": "0030_curvy_meggan",
+      "breakpoints": true
     }
   ]
 }

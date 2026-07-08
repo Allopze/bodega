@@ -49,7 +49,11 @@ async function getBrowser(): Promise<Browser> {
     launchPromise = (async () => {
       // Lazy import keeps playwright-core out of the module graph at startup.
       const { chromium } = await import("playwright")
-      const b = await chromium.launch({ timeout: LAUNCH_TIMEOUT_MS })
+      const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      const b = await chromium.launch({
+        timeout: LAUNCH_TIMEOUT_MS,
+        ...(executablePath ? { executablePath } : {}),
+      })
       b.on("disconnected", () => {
         launchPromise = null
       })

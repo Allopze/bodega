@@ -119,6 +119,7 @@ describe("buildWorkTasks", () => {
       "receiving:register_office",
       "receiving:register_faena",
       "warehouse:register_movement",
+      "deliveries:create",
     ],
     worksiteIds: [],
     isGlobal: true,
@@ -284,6 +285,28 @@ describe("buildWorkTasks", () => {
     }
     const tasks = buildWorkTasks(globalActor, snapshot)
     expect(tasks.some((t) => t.type === "warehouse_delivery")).toBe(true)
+  })
+
+  it("does not generate delivery tasks without deliveries:create (M-2)", () => {
+    // warehouse:register_movement por sí solo no basta: /entregas exige deliveries:create.
+    const warehouseOnlyActor: WorkActor = {
+      userId: "u-2",
+      permissions: ["warehouse:register_movement", "warehouse:view_stock"],
+      worksiteIds: [],
+      isGlobal: true,
+    }
+    const snapshot: WorkQueueSnapshot = {
+      requests: [],
+      items: [{
+        id: "item-1", requestId: "req-1", requestCode: "SOL-001",
+        worksiteId: "ws-1", worksiteName: "Faena", requesterId: "u-1",
+        productName: "Casco", status: "received", urgency: "normal",
+        createdAt: "2026-01-01", quantity: 10, unitOfMeasure: "unidad", hasStock: true,
+      }],
+      orders: [],
+    }
+    const tasks = buildWorkTasks(warehouseOnlyActor, snapshot)
+    expect(tasks.some((t) => t.type === "warehouse_delivery")).toBe(false)
   })
 
   it("does not generate tasks for inactive statuses", () => {

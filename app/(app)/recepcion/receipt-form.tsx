@@ -53,11 +53,15 @@ export function ReceiptForm({
   const [notes,   setNotes]   = React.useState<string>("")
   const [stage,   setStage]   = React.useState<ReceiptStage>(officeAvailable ? "office" : "faena")
   const [qtys,    setQtys]    = React.useState<Record<string, number>>({})
+  const [rejs,    setRejs]    = React.useState<Record<string, number>>({})
+  const [dmgs,    setDmgs]    = React.useState<Record<string, number>>({})
 
   const [state, action] = useActionState<ActionState, FormData>(registerReceiptAction, INITIAL_STATE)
 
   React.useEffect(() => {
     setQtys(Object.fromEntries(items.map((i) => [i.id, getRemaining(i, stage)])))
+    setRejs({})
+    setDmgs({})
   }, [items, stage, getRemaining])
 
   React.useEffect(() => {
@@ -70,14 +74,16 @@ export function ReceiptForm({
     items.map((i) => ({
       purchaseOrderItemId: i.id,
       quantityReceived:    qtys[i.id]     ?? 0,
-      quantityRejected:    0,
-      quantityDamaged:     0,
+      quantityRejected:    rejs[i.id]     ?? 0,
+      quantityDamaged:     dmgs[i.id]     ?? 0,
       notes:               null,
     }))
   )
   const stageLabel = stage === "office" ? "Oficina" : "Faena"
   const pendingLineCount = items.filter((item) => getRemaining(item, stage) > 0).length
-  const receivingLineCount = items.filter((item) => (qtys[item.id] ?? getRemaining(item, stage)) > 0).length
+  const receivingLineCount = items.filter(
+    (item) => ((qtys[item.id] ?? getRemaining(item, stage)) + (rejs[item.id] ?? 0) + (dmgs[item.id] ?? 0)) > 0,
+  ).length
 
   return (
     <form action={action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -142,11 +148,13 @@ export function ReceiptForm({
             Ítems de la OC {orderCode}
           </h2>
 
-        <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] divide-y divide-[var(--color-border)] overflow-hidden">
+        <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] divide-y divide-[var(--color-border)] overflow-x-auto">
           {/* Header */}
-          <div className="grid grid-cols-[1fr_120px] gap-4 px-4 py-2 bg-[var(--color-surface-2)] text-xs font-medium text-[var(--color-text-muted)]">
+          <div className="grid min-w-[440px] grid-cols-[minmax(0,1fr)_84px_84px_84px] gap-3 px-4 py-2 bg-[var(--color-surface-2)] text-xs font-medium text-[var(--color-text-muted)]">
             <span>Producto</span>
             <span className="text-right">Recibido</span>
+            <span className="text-right">Rechazado</span>
+            <span className="text-right">Dañado</span>
           </div>
 
           {items.map((item) => {
@@ -154,7 +162,7 @@ export function ReceiptForm({
             const pending   = remaining > 0
 
             return (
-              <div key={item.id} className={`grid grid-cols-[1fr_120px] gap-4 px-4 py-3 ${!pending ? "opacity-50" : ""}`}>
+              <div key={item.id} className={`grid min-w-[440px] grid-cols-[minmax(0,1fr)_84px_84px_84px] gap-3 px-4 py-3 ${!pending ? "opacity-50" : ""}`}>
                 <div>
                   <div className="flex items-center gap-2">
                     {item.productSku && (
@@ -184,10 +192,37 @@ export function ReceiptForm({
                   disabled={!pending}
                   aria-label={`Cantidad a recibir de ${item.productName}`}
                 />
+
+                <Input
+                  id={`receiptRej-${item.id}`}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={rejs[item.id] ?? 0}
+                  onChange={(e) => setRejs((p) => ({ ...p, [item.id]: parseFloat(e.target.value) || 0 }))}
+                  className="h-7 text-sm tabular-nums text-right"
+                  disabled={!pending}
+                  aria-label={`Cantidad rechazada de ${item.productName}`}
+                />
+
+                <Input
+                  id={`receiptDmg-${item.id}`}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={dmgs[item.id] ?? 0}
+                  onChange={(e) => setDmgs((p) => ({ ...p, [item.id]: parseFloat(e.target.value) || 0 }))}
+                  className="h-7 text-sm tabular-nums text-right"
+                  disabled={!pending}
+                  aria-label={`Cantidad dañada de ${item.productName}`}
+                />
               </div>
             )
           })}
         </div>
+        <p className="text-xs text-[var(--color-text-subtle)]">
+          Registra en <strong>Rechazado</strong> o <strong>Dañado</strong> lo que llegó pero no ingresa a stock. Una línea 100% rechazada va con Recibido en 0.
+        </p>
         </div>
 
         {/* Notes */}

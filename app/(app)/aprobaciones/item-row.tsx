@@ -122,7 +122,7 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
         )}
         {action === "idle" && !canApprove && (
           <span className="text-[11px] text-[var(--color-text-subtle)] italic shrink-0 max-w-[140px] text-right leading-tight">
-            Requiere Jefatura o Secretaría
+            Requiere Jefatura, Secretaría o Prevención
           </span>
         )}
       </div>
