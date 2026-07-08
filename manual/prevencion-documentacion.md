@@ -8,10 +8,11 @@ pendientes.
 
 - `Documentacion`
 - `Nuevo documento`
-- `Revisiones`
-- `Vencimientos`
 - `Papelera`
 - `Detalle documental`
+
+Las rutas historicas `Revisiones` y `Vencimientos` redirigen hoy a
+`Documentacion`; el control se hace desde la biblioteca principal y sus filtros.
 
 ## Como entrar
 
@@ -45,20 +46,11 @@ sistema recrea la estructura dentro de la ubicacion actual.
 - Usa `Ver / previsualizar` o `Descargar archivo`.
 - Si tu rol lo permite, puedes `Archivar` el documento o `Subir versión`.
 
-## Revisiones
+## Revisiones y vencimientos
 
-La pantalla `Revisiones` muestra documentos que necesitan revision o control.
-
-- Abrela para revisar pendientes.
-- Entra al documento y valida si necesita correccion o aprobacion.
-
-## Vencimientos
-
-La pantalla `Vencimientos` sirve para vigilar documentos proximos a vencer.
-
-- Revisa las fechas.
-- Prioriza los documentos mas cercanos al vencimiento.
-- Actualiza o renueva el archivo cuando corresponda.
+Usa la biblioteca principal para buscar documentos que requieren control,
+revision o renovacion. Si intentas abrir `Revisiones` o `Vencimientos`, la
+plataforma te llevara de vuelta a `Documentacion`.
 
 ## Papelera
 

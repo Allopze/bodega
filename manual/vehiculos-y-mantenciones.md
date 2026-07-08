@@ -16,7 +16,7 @@ combustible, mantenciones e imputaciones.
 2. Pulsa `Gestionar vehiculos`.
 3. En `Combustibles > Vehiculos`, pulsa `Nuevo vehículo`.
 4. Completa patente y datos del vehiculo.
-4. Guarda.
+5. Guarda.
 
 ## Mantenciones
 

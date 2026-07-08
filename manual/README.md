@@ -13,6 +13,7 @@ conocimientos tecnicos.
 ## Indice
 
 - [Guia general](./guia-general.md)
+- [Guias por rol](./roles.md)
 - [Dashboard](./dashboard.md)
 - [Administracion](./admin.md)
 - [Solicitudes, aprobaciones, compras y recepcion](./adquisiciones.md)

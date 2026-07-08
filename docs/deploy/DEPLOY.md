@@ -21,20 +21,20 @@ Guía completa para desplegar la aplicación en producción.
 |---|---|---|
 | `DATABASE_URL` | URL de conexión a PostgreSQL | `postgres://user:pass@host:5432/bodega` |
 | `AUTH_SECRET` | Secreto para firmar JWTs (`openssl rand -base64 32`) | — |
-| `NEXTAUTH_URL` | URL base de la app (para Origin check) | `https://bodega.chome.dev` |
+| `AUTH_URL` | URL publica base de la app | `https://bodega.chome.dev` |
 | `STORAGE_PATH` | Ruta absoluta del volumen persistente para adjuntos | `/srv/bodega/storage` |
 
-### SMTP (opcional pero recomendado)
+`APP_URL` o `NEXTAUTH_URL` tambien son aceptadas por partes del runtime, pero
+Docker Compose exige `AUTH_URL`.
+
+### Correo con Resend (opcional pero recomendado)
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `SMTP_HOST` | — | Host del servidor de correo |
-| `SMTP_PORT` | 587 | Puerto SMTP |
-| `SMTP_USER` | — | Usuario de autenticación |
-| `SMTP_PASS` | — | Contraseña de autenticación |
-| `SMTP_FROM` | = `SMTP_USER` | Remitente de correos |
-| `SMTP_SECURE` | `port === 465` | Forzar TLS implícito |
-| `SMTP_DISABLED` | `false` | Desactiva envío de correo |
+| `RESEND_API_KEY` | — | API key de Resend para invitaciones, recuperación y notificaciones por correo |
+
+El interruptor global de correos vive en la configuracion del sistema. Sin
+`RESEND_API_KEY`, los envios quedan como no-op y la app sigue arrancando.
 
 ### Seed (maestros base)
 
@@ -77,7 +77,8 @@ docker build --target prod -t bodega:latest .
 docker run -d --name bodega \
   -e DATABASE_URL=postgres://user:pass@host:5432/bodega \
   -e AUTH_SECRET=$(openssl rand -base64 32) \
-  -e NEXTAUTH_URL=https://bodega.chome.dev \
+  -e AUTH_URL=https://bodega.chome.dev \
+  -e RESEND_API_KEY=re_... \
   -e STORAGE_PATH=/app/storage \
   -v bodega-storage:/app/storage \
   -p 3000:3000 \
@@ -113,7 +114,7 @@ El workflow `deploy.yml` ejecuta migraciones **antes** del rollout del contenedo
 push to main
   → build-and-push (Docker image → GHCR)
   → migrate (aplica drizzle-kit migrate contra PRODUCTION_DATABASE_URL)
-  → [deploy] (comentado — configurable por plataforma)
+  → deploy (SSH al servidor, reinicia app y valida healthcheck)
 ```
 
 La migración corre como un job separado con `environment: production` (requiere
@@ -311,7 +312,8 @@ services:
     environment:
       - DATABASE_URL=postgres://user:pass@db:5432/bodega
       - AUTH_SECRET=${AUTH_SECRET}
-      - NEXTAUTH_URL=https://bodega.chome.dev
+      - AUTH_URL=https://bodega.chome.dev
+      - RESEND_API_KEY=${RESEND_API_KEY}
       - STORAGE_PATH=/app/storage
     volumes:
       - storage:/app/storage

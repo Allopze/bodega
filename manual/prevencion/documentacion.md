@@ -29,6 +29,7 @@ carpetas.
 
 ## Guias relacionadas
 
-- [Revisiones](./documentacion/revisiones.md)
-- [Vencimientos](./documentacion/vencimientos.md)
 - [Papelera](./documentacion/papelera.md)
+
+Nota: `Revisiones` y `Vencimientos` existen como rutas de compatibilidad y
+redirigen a esta biblioteca principal.

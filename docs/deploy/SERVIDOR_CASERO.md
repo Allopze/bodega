@@ -27,8 +27,8 @@ en un estado intermedio si falla la compilación.
 GitHub/main
   → GitHub Actions construye imagen prod
   → Push a GHCR: ghcr.io/<usuario>/<repo>:<sha>
+  → GitHub Actions corre migraciones contra PRODUCTION_DATABASE_URL
   → Servidor hace pull del tag
-  → Servidor corre migrate
   → docker compose up -d --no-deps app
   → healthcheck
 ```
@@ -118,6 +118,7 @@ cd /server/plataforma
 docker compose pull app migrate
 docker compose up -d db
 docker compose run --rm migrate
+docker compose run --rm seed
 docker compose up -d app
 
 curl -f http://localhost:3000/api/health
@@ -125,6 +126,9 @@ docker compose ps
 ```
 
 Si `curl` responde `200`, la app está arriba y conectada a la base de datos.
+El seed carga datos maestros base (faenas/trabajadores y catálogo EPP); el
+primer usuario administrador se crea desde `/registro` cuando la base está
+vacía.
 
 ---
 
@@ -170,10 +174,13 @@ Con esto, un push a `main` ejecuta:
 
 1. Build de imagen `prod`.
 2. Push a `ghcr.io`.
-3. Migraciones.
-4. Deploy por SSH.
+3. Migraciones desde GitHub Actions contra `PRODUCTION_DATABASE_URL`.
+4. Deploy por SSH en `DEPLOY_PATH`.
 5. Healthcheck.
 6. Rollback automático si falla.
+
+Nota: el workflow trae default interno `/srv/bodega` si `DEPLOY_PATH` no está
+definido. Para seguir esta guía, define `DEPLOY_PATH=/server/plataforma`.
 
 ---
 

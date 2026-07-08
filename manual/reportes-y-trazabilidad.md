@@ -37,7 +37,7 @@ relacionados.
 
 ## Exportar trazabilidad
 
-Usa `Exportar Excel` para descargar la matriz de trazabilidad.
+Usa `Exportar Excel` para descargar la matriz de trazabilidad en formato XLSX.
 
 ## Consejo practico
 
