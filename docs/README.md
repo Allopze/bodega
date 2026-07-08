@@ -21,6 +21,8 @@ docs/
 │   └── EPP_PROVEEDORES_ESTRUCTURADO.md ← Datos maestros de proveedores y catálogo
 │   (el reporte de auditoría vive en: auditoria/AUDITORIA_INTEGRAL_CHOME.md)
 ├── deploy/
+│   ├── DEPLOY.md                       ← Despliegue Docker/CI/CD
+│   ├── SERVIDOR_CASERO.md              ← Deploy paso a paso en servidor propio
 │   └── RUNBOOK.md                      ← Backups, restore, monitoreo e incidentes
 ├── security/
 │   └── CSRF.md                         ← Modelo de protección CSRF (Server Actions)
@@ -70,6 +72,10 @@ docs/
 
 ## Operacion
 
+**[DEPLOY.md](deploy/DEPLOY.md)** — Despliegue con Docker, migraciones, CI/CD, healthcheck y variables de producción.
+
+**[SERVIDOR_CASERO.md](deploy/SERVIDOR_CASERO.md)** — Procedimiento recomendado para actualizar la app en un servidor propio usando imágenes Docker preconstruidas, GHCR, migraciones, healthcheck y rollback.
+
 **[RUNBOOK.md](deploy/RUNBOOK.md)** — Procedimientos operativos para backups, restauracion, monitoreo, Sentry, SLO/RPO/RTO e incidentes.
 
 ---
@@ -94,6 +100,7 @@ docs/
 | Conocer los roles y permisos | [PRODUCT.md](planificacion/PRODUCT.md) |
 | Ver todas las funcionalidades | [chome_feature_list.md](planificacion/chome_feature_list.md) |
 | Ejecutar pruebas | [TESTING.md](pruebas/TESTING.md) |
+| Desplegar en servidor casero | [SERVIDOR_CASERO.md](deploy/SERVIDOR_CASERO.md) |
 | Revisar seguridad | [AUDITORIA_INTEGRAL_CHOME.md](auditoria/AUDITORIA_INTEGRAL_CHOME.md) · [security/CSRF.md](security/CSRF.md) |
 | Ver catálogo de proveedores | [EPP_PROVEEDORES_ESTRUCTURADO.md](auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md) |
 

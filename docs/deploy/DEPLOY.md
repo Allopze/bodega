@@ -52,6 +52,11 @@ BD que no responde.
 
 ## Docker (producción)
 
+Para un servidor propio/casero, usar la guía operativa paso a paso:
+[SERVIDOR_CASERO.md](SERVIDOR_CASERO.md). Ese flujo usa imágenes
+preconstruidas, migraciones antes del rollout, `up -d --no-deps app`,
+healthcheck y rollback.
+
 ### Dockerfile
 
 El proyecto incluye un Dockerfile multi-stage con tres targets:
