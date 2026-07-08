@@ -11,10 +11,17 @@
  * the slot is cleared so the next request triggers a fresh launch.
  */
 
+import { existsSync } from "node:fs"
 import type { Browser, BrowserContext } from "playwright"
 
 const MAX_CONCURRENT = Number(process.env.PDF_MAX_CONCURRENT ?? "2")
 const LAUNCH_TIMEOUT_MS = 30_000
+const SYSTEM_CHROMIUM_PATHS = [
+  "/usr/bin/chromium-browser",
+  "/usr/bin/chromium",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/google-chrome",
+]
 
 // Promise-lock prevents parallel launch races when multiple requests arrive
 // before the browser is ready.
@@ -23,6 +30,12 @@ let launchPromise: Promise<Browser> | null = null
 // Simple semaphore tracking live context count + overflow waiters.
 let active = 0
 const waiters: Array<() => void> = []
+
+function resolveChromiumExecutablePath(): string | undefined {
+  const configuredPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  if (configuredPath) return configuredPath
+  return SYSTEM_CHROMIUM_PATHS.find((path) => existsSync(path))
+}
 
 function acquire(): Promise<void> {
   return new Promise((resolve) => {
@@ -49,7 +62,7 @@ async function getBrowser(): Promise<Browser> {
     launchPromise = (async () => {
       // Lazy import keeps playwright-core out of the module graph at startup.
       const { chromium } = await import("playwright")
-      const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      const executablePath = resolveChromiumExecutablePath()
       const b = await chromium.launch({
         timeout: LAUNCH_TIMEOUT_MS,
         ...(executablePath ? { executablePath } : {}),

@@ -10,7 +10,7 @@ import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 import { saveDraft, submitRequest, cancelRequest, deleteRequestAction, resubmitReturnedItemAction } from "./actions"
 import {
   blankItem, blankItemForType, buildAttrsFromProduct, buildRequestSummaryIssues,
-  equipmentFromAttributes, requestStatusLabel,
+  equipmentFromAttributes, parseAttributeOptions, requestStatusLabel,
 } from "./request-form.helpers"
 
 const AUTOSAVE_INTERVAL_MS = 60_000
@@ -73,7 +73,7 @@ export function useRequestForm({
             return {
               attributeId: a.attributeId, attributeName: a.attributeName, value: a.value,
               isRequired: prodAttr?.isRequired ?? false, type: prodAttr?.type ?? "text",
-              options: prodAttr?.options ? (JSON.parse(prodAttr.options) as string[]) : [],
+              options: parseAttributeOptions(prodAttr?.options),
             }
           }),
         }

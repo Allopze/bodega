@@ -77,7 +77,8 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
   function addPresetAttr(preset: AttributeRow) {
     setAttrs((prev) => {
       const existingIndex = prev.findIndex((a) => a.name.trim().toLowerCase() === preset.name.toLowerCase())
-      const nextPreset = { ...preset, sortOrder: existingIndex >= 0 ? prev[existingIndex].sortOrder : prev.length }
+      const existing = existingIndex >= 0 ? prev[existingIndex] : undefined
+      const nextPreset = { ...preset, sortOrder: existing?.sortOrder ?? prev.length }
       if (existingIndex >= 0) {
         return prev.map((a, idx) => idx === existingIndex ? { ...a, ...nextPreset } : a)
       }

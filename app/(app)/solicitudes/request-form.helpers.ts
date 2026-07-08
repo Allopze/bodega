@@ -32,10 +32,23 @@ export function blankItemForType(key: string, requestType: string): ItemRow {
   return requestType === "servicios" ? { ...blankItem(key), unitOfMeasure: "servicio" } : blankItem(key)
 }
 
+export function parseAttributeOptions(options: string | null | undefined): string[] {
+  if (!options) return []
+  try {
+    const parsed = JSON.parse(options)
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean)
+    }
+  } catch {
+    // Legacy product attributes stored comma/newline text before normalization.
+  }
+  return options.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
+}
+
 export function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
   return prod.attributes.map((a) => ({
     attributeId: a.id, attributeName: a.name, value: "", isRequired: a.isRequired,
-    type: a.type, options: a.options ? (JSON.parse(a.options) as string[]) : [],
+    type: a.type, options: parseAttributeOptions(a.options),
   }))
 }
 
