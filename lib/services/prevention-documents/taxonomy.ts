@@ -37,8 +37,8 @@ export async function upsertDocumentCategory(input: unknown) {
     target: sstDocumentCategories.slug,
     set: { name: data.name, description: data.description || null, sortOrder: data.sortOrder, isActive: data.isActive, updatedAt: now },
   })
-  const [row] = await db.select().from(sstDocumentCategories).where(eq(sstDocumentCategories.slug, data.slug))
-  return row
+  const rows = await db.select().from(sstDocumentCategories).where(eq(sstDocumentCategories.slug, data.slug))
+  return rows[0]
 }
 
 export async function upsertDocumentType(input: unknown) {
@@ -68,8 +68,8 @@ export async function upsertDocumentType(input: unknown) {
       isActive: data.isActive, updatedAt: now,
     },
   })
-  const [row] = await db.select().from(sstDocumentTypes).where(eq(sstDocumentTypes.id, id))
-  return row
+  const rows = await db.select().from(sstDocumentTypes).where(eq(sstDocumentTypes.id, id))
+  return rows[0]
 }
 
 export const DEFAULT_CATEGORIES: Array<{ slug: string; name: string; description: string; sortOrder: number }> = [
@@ -96,4 +96,26 @@ export async function seedDefaultCategories() {
       set: { name: c.name, description: c.description, sortOrder: c.sortOrder, isActive: true, updatedAt: now },
     })
   }
+}
+
+export async function setDocumentCategoryActive(slug: string, isActive: boolean) {
+  const now = new Date().toISOString()
+  const [row] = await db
+    .update(sstDocumentCategories)
+    .set({ isActive, updatedAt: now })
+    .where(eq(sstDocumentCategories.slug, slug))
+    .returning()
+  if (!row) throw new Error("Categoría documental no encontrada")
+  return row
+}
+
+export async function setDocumentTypeActive(id: string, isActive: boolean) {
+  const now = new Date().toISOString()
+  const [row] = await db
+    .update(sstDocumentTypes)
+    .set({ isActive, updatedAt: now })
+    .where(eq(sstDocumentTypes.id, id))
+    .returning()
+  if (!row) throw new Error("Tipo documental no encontrado")
+  return row
 }

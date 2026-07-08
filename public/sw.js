@@ -10,7 +10,7 @@
  * layer (lib/pwa/offline-queue.ts), not here.
  */
 
-const CACHE_NAME = "ppa-v2"
+const CACHE_NAME = "ppa-v3"
 const SHELL_URLS = ["/ppa"]
 const MAX_CACHE_ENTRIES = 60 // FIFO eviction cap to prevent unbounded growth
 

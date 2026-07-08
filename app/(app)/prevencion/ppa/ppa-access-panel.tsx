@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import QRCode from "qrcode"
+import { jsPDF } from "jspdf"
 import { QrCode, Copy, DownloadSimple } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
@@ -47,10 +48,30 @@ export function PpaAccessPanel({ worksites }: { worksites: { id: string; name: s
 
   function downloadQr() {
     if (!qr) return
-    const a = document.createElement("a")
-    a.href = qr
-    a.download = worksiteId ? `ppa-qr-${worksiteId}.png` : "ppa-qr-general.png"
-    a.click()
+    const doc = new jsPDF({ format: "letter" })
+    const pageW = doc.internal.pageSize.getWidth()
+
+    // Title — faena name
+    doc.setFontSize(20)
+    doc.text(faenaName, pageW / 2, 30, { align: "center" })
+
+    // Subtitle
+    doc.setFontSize(12)
+    doc.text("Formulario PPA Digital", pageW / 2, 40, { align: "center" })
+
+    // QR code — large and centered
+    const qrSize = 80
+    const qrX = (pageW - qrSize) / 2
+    doc.addImage(qr, "PNG", qrX, 52, qrSize, qrSize)
+
+    // Link below QR
+    doc.setFontSize(10)
+    doc.text("Enlace de acceso:", pageW / 2, 148, { align: "center" })
+    doc.setFontSize(8)
+    doc.text(link, pageW / 2, 155, { align: "center" })
+
+    const filename = worksiteId ? `ppa-acceso-${worksiteId}.pdf` : "ppa-acceso-general.pdf"
+    doc.save(filename)
   }
 
   return (

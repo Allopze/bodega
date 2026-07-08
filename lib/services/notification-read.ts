@@ -4,7 +4,7 @@
 
 import { eq, and, desc, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { notifications } from "@/db/schema"
+import { notifications, users } from "@/db/schema"
 
 export interface NotificationRow {
   id:         string
@@ -70,4 +70,76 @@ export async function cleanupOldNotifications(days = 90): Promise<void> {
   await db
     .delete(notifications)
     .where(and(eq(notifications.isRead, true), sql`${notifications.createdAt} < ${cutoff.toISOString()}`))
+}
+
+export interface AdminNotificationRow extends NotificationRow {
+  userEmail: string | null
+  userName: string | null
+}
+
+/** Admin: list latest notifications with user relation for diagnostic purposes. */
+export async function listNotificationsForAdmin(
+  filters: { userId?: string; isRead?: boolean; limit?: number } = {},
+): Promise<AdminNotificationRow[]> {
+  const limit = filters.limit ?? 500
+  const conditions = []
+  if (filters.userId) conditions.push(eq(notifications.userId, filters.userId))
+  if (filters.isRead !== undefined) conditions.push(eq(notifications.isRead, filters.isRead))
+
+  const rows = await db
+    .select({
+      id: notifications.id,
+      type: notifications.type,
+      title: notifications.title,
+      body: notifications.body,
+      entityHref: notifications.entityHref,
+      isRead: notifications.isRead,
+      createdAt: notifications.createdAt,
+      userEmail: users.email,
+      userName: users.name,
+    })
+    .from(notifications)
+    .leftJoin(users, eq(notifications.userId, users.id))
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit)
+
+  return rows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    title: r.title,
+    body: r.body,
+    entityHref: r.entityHref,
+    isRead: r.isRead,
+    createdAt: r.createdAt,
+    userEmail: r.userEmail,
+    userName: r.userName,
+  }))
+}
+
+export interface NotificationStats {
+  unreadCount: number
+  totalRecent: number
+  oldestReadDate: string | null
+}
+
+/** Admin: notification counters for the maintenance page. */
+export async function getNotificationMaintenanceStats(): Promise<NotificationStats> {
+  const recentRows = await db
+    .select({
+      id: notifications.id,
+      isRead: notifications.isRead,
+      createdAt: notifications.createdAt,
+    })
+    .from(notifications)
+    .orderBy(desc(notifications.createdAt))
+    .limit(1000)
+
+  const unreadCount = recentRows.filter((r) => !r.isRead).length
+  const totalRecent = recentRows.length
+  const oldestRead = recentRows
+    .filter((r) => r.isRead)
+    .reduce<string | null>((acc, r) => (acc === null || r.createdAt < acc ? r.createdAt : acc), null)
+
+  return { unreadCount, totalRecent, oldestReadDate: oldestRead }
 }

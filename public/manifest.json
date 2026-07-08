@@ -6,8 +6,8 @@
   "scope": "/ppa",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#ffffff",
-  "theme_color": "#218649",
+  "background_color": "#34A853",
+  "theme_color": "#34A853",
   "icons": [
     {
       "src": "/ppa-icon-192.png",

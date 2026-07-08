@@ -37,6 +37,62 @@ describe("system-rbac → manifest parity", () => {
     expect(SYSTEM_ROLE_PERMISSIONS.length).toBeGreaterThan(50)
   })
 
+  // New admin areas declared in PLAN_ADMINISTRACION_FALTANTES must exist in the
+  // derived permission set, in the admin module manifest, and be granted to the
+  // expected non-admin roles.
+  const expectedAdminPermissions = [
+    "admin:roles",
+    "admin:cost_centers",
+    "admin:product_catalogs",
+    "admin:document_taxonomy",
+    "admin:pdtp_catalog",
+    "admin:fleet_catalog",
+    "admin:security",
+    "admin:folios",
+    "admin:notifications",
+    "admin:ops_settings",
+  ] as const
+
+  it("declares every new admin permission in the registry", () => {
+    const names = new Set(SYSTEM_PERMISSIONS.map((p) => p.name))
+    for (const permission of expectedAdminPermissions) {
+      expect(names.has(permission), `missing permission: ${permission}`).toBe(true)
+    }
+  })
+
+  it("administrador receives every new admin permission", () => {
+    const perms = rolePermissions("rol-admin")
+    for (const permission of expectedAdminPermissions) {
+      expect(perms, `admin missing ${permission}`).toContain(permission)
+    }
+  })
+
+  it("grants cost centers and product catalogs to secretaria", () => {
+    const perms = rolePermissions("rol-sec")
+    expect(perms).toContain("admin:cost_centers")
+    expect(perms).toContain("admin:product_catalogs")
+  })
+
+  it("grants jefa_chome the operational admin catalogs", () => {
+    const perms = rolePermissions("rol-jefa")
+    expect(perms).toContain("admin:cost_centers")
+    expect(perms).toContain("admin:product_catalogs")
+    expect(perms).toContain("admin:pdtp_catalog")
+    expect(perms).toContain("admin:fleet_catalog")
+    expect(perms).toContain("admin:notifications")
+  })
+
+  it("grants prevencionista the SST taxonomy and PDTP catalogs", () => {
+    const perms = rolePermissions("rol-prev")
+    expect(perms).toContain("admin:document_taxonomy")
+    expect(perms).toContain("admin:pdtp_catalog")
+  })
+
+  it("grants jefe_mantencion the fleet catalog", () => {
+    const perms = rolePermissions("rol-jefe-mant")
+    expect(perms).toContain("admin:fleet_catalog")
+  })
+
   // Admin must have all permissions
   it("administrador has every permission", () => {
     const adminPerms = SYSTEM_ROLE_PERMISSIONS

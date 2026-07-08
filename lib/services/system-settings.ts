@@ -15,6 +15,200 @@ export interface CompanyProfile {
   website:          string
 }
 
+/** Persistent keys for advanced operational parameters (admin:ops_settings). */
+export const OPS_SETTING_KEYS = {
+  exportMaxRows:             "ops.export.max_rows",
+  notificationRetentionDays: "ops.notifications.retention_days",
+  feedbackAttachmentMaxMb:  "ops.feedback.attachment_max_mb",
+  pdtpEvidenceMaxMb:         "ops.pdtp.evidence_max_mb",
+  pdtpEvidenceRetentionDays: "ops.pdtp.evidence_retention_days",
+} as const
+
+export const DEFAULT_OPS_SETTINGS = {
+  exportMaxRows:              10_000,
+  notificationRetentionDays:  90,
+  feedbackAttachmentMaxMb:    20,
+  pdtpEvidenceMaxMb:           25,
+  pdtpEvidenceRetentionDays:  365,
+} as const
+
+export interface OperationalSettings {
+  exportMaxRows:              number
+  notificationRetentionDays:  number
+  feedbackAttachmentMaxMb:    number
+  pdtpEvidenceMaxMb:           number
+  pdtpEvidenceRetentionDays:  number
+}
+
+const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: number }> = {
+  exportMaxRows:              { min: 100,    max: 100_000 },
+  notificationRetentionDays:  { min: 7,      max: 3650 },
+  feedbackAttachmentMaxMb:    { min: 1,      max: 100 },
+  pdtpEvidenceMaxMb:           { min: 1,      max: 100 },
+  pdtpEvidenceRetentionDays:  { min: 30,     max: 3650 },
+}
+
+async function readSystemSetting(key: string): Promise<string | null> {
+  try {
+    const row = await db.query.systemSettings.findFirst({
+      where: eq(systemSettings.key, key),
+    })
+    return row?.value ?? null
+  } catch (err) {
+    logger.error(`Error reading setting ${key}:`, err)
+    return null
+  }
+}
+
+function parseIntStrict(value: string | null | undefined, fallback: number): number {
+  if (value === null || value === undefined) return fallback
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.trunc(n)
+}
+
+export async function getOperationalSettings(): Promise<OperationalSettings> {
+  const stored = await Promise.all(
+    (Object.keys(OPS_SETTING_KEYS) as Array<keyof OperationalSettings>).map((k) =>
+      readSystemSetting(OPS_SETTING_KEYS[k]),
+    ),
+  )
+  const raw = Object.fromEntries(
+    (Object.keys(OPS_SETTING_KEYS) as Array<keyof OperationalSettings>).map((k, i) => [k, stored[i]]),
+  ) as Record<keyof OperationalSettings, string | null>
+
+  const settings: OperationalSettings = {
+    exportMaxRows:              parseIntStrict(raw.exportMaxRows,              DEFAULT_OPS_SETTINGS.exportMaxRows),
+    notificationRetentionDays:  parseIntStrict(raw.notificationRetentionDays,  DEFAULT_OPS_SETTINGS.notificationRetentionDays),
+    feedbackAttachmentMaxMb:    parseIntStrict(raw.feedbackAttachmentMaxMb,    DEFAULT_OPS_SETTINGS.feedbackAttachmentMaxMb),
+    pdtpEvidenceMaxMb:           parseIntStrict(raw.pdtpEvidenceMaxMb,           DEFAULT_OPS_SETTINGS.pdtpEvidenceMaxMb),
+    pdtpEvidenceRetentionDays:  parseIntStrict(raw.pdtpEvidenceRetentionDays,  DEFAULT_OPS_SETTINGS.pdtpEvidenceRetentionDays),
+  }
+
+  for (const k of Object.keys(settings) as Array<keyof OperationalSettings>) {
+    const range = OPS_VALIDATION[k]
+    if (settings[k] < range.min) settings[k] = range.min
+    if (settings[k] > range.max) settings[k] = range.max
+  }
+  return settings
+}
+
+export interface AuditActor {
+  userId: string
+  userEmail?: string
+}
+
+export async function updateOperationalSettings(
+  input: unknown,
+  actor: AuditActor,
+): Promise<OperationalSettings> {
+  const partial = (input ?? {}) as Partial<Record<keyof OperationalSettings, unknown>>
+  const merged: OperationalSettings = { ...(await getOperationalSettings()) }
+  const changes: { key: string; before: number; after: number }[] = []
+
+  for (const k of Object.keys(OPS_SETTING_KEYS) as Array<keyof OperationalSettings>) {
+    const raw = partial[k]
+    if (raw === undefined || raw === null) continue
+    const candidate = Number(raw)
+    if (!Number.isFinite(candidate)) {
+      throw new Error(`El valor para ${k} no es un número válido`)
+    }
+    const range = OPS_VALIDATION[k]
+    if (candidate < range.min || candidate > range.max) {
+      throw new Error(
+        `El valor para ${k} debe estar entre ${range.min} y ${range.max}`,
+      )
+    }
+    const next = Math.trunc(candidate)
+    if (next !== merged[k]) {
+      changes.push({ key: k, before: merged[k], after: next })
+      merged[k] = next
+    }
+  }
+
+  if (changes.length === 0) {
+    return merged
+  }
+
+  const now = new Date().toISOString()
+  for (const change of changes) {
+    await db
+      .insert(systemSettings)
+      .values({
+        key: OPS_SETTING_KEYS[change.key as keyof OperationalSettings],
+        value: String(change.after),
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value: String(change.after), updatedAt: now },
+      })
+  }
+
+  await recordAudit({
+    userId: actor.userId,
+    userEmail: actor.userEmail,
+    action: "update",
+    entityType: "operational_settings",
+    entityId:   "batch",
+    oldState:   Object.fromEntries(changes.map((c) => [c.key, c.before])),
+    newState:   Object.fromEntries(changes.map((c) => [c.key, c.after])),
+  })
+
+  return merged
+}
+
+export interface FleetAdminSettings {
+  warningDays: number
+  defaultVehicleStatus: string
+}
+
+const DEFAULT_FLEET_ADMIN_SETTINGS: FleetAdminSettings = {
+  warningDays: 30,
+  defaultVehicleStatus: "operativo",
+}
+
+export async function getFleetAdminSettings(): Promise<FleetAdminSettings> {
+  const [warnRaw, statusRaw] = await Promise.all([
+    readSystemSetting("fleet.document.warning_days"),
+    readSystemSetting("fleet.default_vehicle_status"),
+  ])
+  const warningParsed = parseIntStrict(warnRaw, DEFAULT_FLEET_ADMIN_SETTINGS.warningDays)
+  return {
+    warningDays: warningParsed >= 1 && warningParsed <= 365 ? warningParsed : DEFAULT_FLEET_ADMIN_SETTINGS.warningDays,
+    defaultVehicleStatus: statusRaw ?? DEFAULT_FLEET_ADMIN_SETTINGS.defaultVehicleStatus,
+  }
+}
+
+/** Generic single-number system setting setter (validates min/max if provided). */
+export async function updateSystemSettingNumber(input: {
+  key: string
+  value: number | string
+  min?: number
+  max?: number
+}): Promise<void> {
+  if (typeof input.value === "number") {
+    if (input.min !== undefined && input.value < input.min) {
+      throw new Error(`El valor para ${input.key} debe ser ≥ ${input.min}`)
+    }
+    if (input.max !== undefined && input.max > 0 && input.value > input.max) {
+      throw new Error(`El valor para ${input.key} debe ser ≤ ${input.max}`)
+    }
+  }
+  const now = new Date().toISOString()
+  await db
+    .insert(systemSettings)
+    .values({
+      key: input.key,
+      value: String(input.value),
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: String(input.value), updatedAt: now },
+    })
+}
+
 const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
   name:             "Servicios Industriales Chome Limitada",
   rut:              "78.023.530-6",

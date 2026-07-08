@@ -1,5 +1,7 @@
-import { sql } from "drizzle-orm"
+import { sql, asc } from "drizzle-orm"
 import type { DB } from "@/db"
+import { codeSequences } from "@/db/schema"
+import { db } from "@/db"
 import { generateCode } from "@/lib/id"
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0]
@@ -36,4 +38,40 @@ export async function nextCodeTx(tx: Tx, prefix: string, year = new Date().getFu
     throw new Error(`Failed to reserve next code for ${prefix}-${sequenceYear}`)
   }
   return generateCode(prefix, row.next_document_code, year)
+}
+
+/** Admin: list persisted sequence rows (sorted by prefix and year). */
+export async function listCodeSequences() {
+  return db.select().from(codeSequences).orderBy(asc(codeSequences.prefix), asc(codeSequences.year))
+}
+
+/** Admin: overwrite the nextValue for a (prefix, year) pair, auditing before/after. */
+export async function setCodeSequenceNextValue(input: {
+  prefix: string
+  year: number
+  nextValue: number
+}): Promise<{ before: number; after: number }> {
+  if (input.nextValue < 1) throw new Error("El siguiente folio debe ser mayor o igual a 1")
+  const now = new Date().toISOString()
+  const existingRows = await db
+    .select()
+    .from(codeSequences)
+    .where(sql`${codeSequences.prefix} = ${input.prefix} AND ${codeSequences.year} = ${input.year}`)
+    .limit(1)
+  const before = existingRows[0]?.nextValue ?? 0
+
+  await db
+    .insert(codeSequences)
+    .values({
+      prefix: input.prefix,
+      year: input.year,
+      nextValue: input.nextValue,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [codeSequences.prefix, codeSequences.year],
+      set: { nextValue: input.nextValue, updatedAt: now },
+    })
+
+  return { before, after: input.nextValue }
 }

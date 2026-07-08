@@ -4,7 +4,7 @@
  */
 import { db } from "@/db"
 import { rateLimits } from "@/db/schema"
-import { and, eq, gt, lt, sql } from "drizzle-orm"
+import { and, desc, eq, gt, lt, sql } from "drizzle-orm"
 
 const LIMIT_ATTEMPTS = 5
 const LOCK_TIME = 15 * 60 * 1000 // 15 minutes
@@ -141,4 +141,24 @@ export async function pruneExpiredLocks(): Promise<void> {
       eq(rateLimits.lockUntil, 0),
       lt(rateLimits.updatedAt, cutoff),
     ))
+}
+
+/** List rate-limit records for the admin diagnostic table. */
+export async function listRateLimitRecords(limit = 500) {
+  return db.select().from(rateLimits).orderBy(desc(rateLimits.updatedAt)).limit(limit)
+}
+
+/** Clear a single rate-limit record by its composite key. */
+export async function clearRateLimitRecord(key: string): Promise<number> {
+  const rows = await db
+    .delete(rateLimits)
+    .where(eq(rateLimits.key, key))
+    .returning({ key: rateLimits.key })
+  return rows.length
+}
+
+/** Count of records matching a predicate (for batch delete UI hints). */
+export async function countRateLimitRecords(): Promise<number> {
+  const rows = await db.select({ key: rateLimits.key }).from(rateLimits)
+  return rows.length
 }
