@@ -14,7 +14,18 @@ import { Button } from "@/components/ui/button"
 import { usePpaOfflineQueue } from "@/lib/pwa/hooks"
 import { requestNotificationPermission, getNotificationPermission, isIosSafari } from "@/lib/pwa/notifications"
 
-export function OfflineSavedMessage() {
+interface OfflineSavedMessageProps {
+  /**
+   * Cuando se pasa (uso inline desde ppa-form.tsx tras un submit offline sin
+   * navegar), "Realizar otro PPA" resetea estado local en vez de navegar —
+   * router.push seguiría dependiendo de un roundtrip de red que puede no
+   * existir aún. Sin este prop (acceso directo a /ppa?saved=offline por link
+   * o refresh de página), sí navega vía router.push normalmente.
+   */
+  onRequestNew?: () => void
+}
+
+export function OfflineSavedMessage({ onRequestNew }: OfflineSavedMessageProps = {}) {
   const router = useRouter()
   const { online, pendingCount, triggerSync, syncing } = usePpaOfflineQueue()
   const [notifPermission, setNotifPermission] = React.useState<NotificationPermission>(() =>
@@ -106,7 +117,7 @@ export function OfflineSavedMessage() {
       )}
 
       <div className="mt-8 text-center">
-        <Button variant="secondary" onClick={() => router.push("/ppa")}>
+        <Button variant="secondary" onClick={onRequestNew ?? (() => router.push("/ppa"))}>
           Realizar otro PPA
         </Button>
       </div>

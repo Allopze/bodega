@@ -48,6 +48,7 @@ interface UsePpaFormReturn {
   pending: boolean
   paramWorksiteName: string
   online: boolean
+  savedOffline: boolean
   err: (k: string) => string | undefined
   handleVerifyRut: () => Promise<void>
   onSubmit: (ev: React.FormEvent) => void
@@ -82,6 +83,7 @@ export function usePpaForm({
   const [errors, setErrors] = React.useState<Record<string, string[]>>({})
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [stopReasons, setStopReasons] = React.useState<PpaStopReason[]>([])
+  const [savedOffline, setSavedOffline] = React.useState(false)
 
   const paramWorksiteName = hasFaenaParam
     ? worksites.find((w) => w.id === worksiteId)?.name ?? ""
@@ -126,6 +128,18 @@ export function usePpaForm({
     }
   }
 
+  // Muestra la confirmación de guardado offline sin navegar. router.push a
+  // "/ppa?saved=offline" requiere un roundtrip RSC al servidor para el nuevo
+  // searchParam — sin red ese roundtrip falla, cae a navegación de documento
+  // completo, y el Service Worker (que solo cachea "/ppa" sin query) sirve su
+  // fallback offline genérico en vez del formulario/confirmación real. Un
+  // flag de estado local evita la navegación por completo (no se usa
+  // history.pushState: escribir el historial fuera de next/navigation puede
+  // desincronizar el estado interno del router de App Router).
+  function showOfflineSaved() {
+    setSavedOffline(true)
+  }
+
   function doSubmit() {
     setConfirmOpen(false)
     const payload = buildPayload()
@@ -142,7 +156,7 @@ export function usePpaForm({
           "PPA guardado offline. Se enviará automáticamente cuando vuelva la conexión.",
           { duration: 6000 },
         )
-        router.push("/ppa?saved=offline")
+        showOfflineSaved()
         return
       }
 
@@ -170,7 +184,7 @@ export function usePpaForm({
           "Error de red. Tu PPA se ha guardado localmente y se enviará cuando vuelva la conexión.",
           { duration: 6000 },
         )
-        router.push("/ppa?saved=offline")
+        showOfflineSaved()
       }
     })
   }
@@ -215,6 +229,7 @@ export function usePpaForm({
     errors, confirmOpen, setConfirmOpen,
     stopReasons, pending,
     paramWorksiteName, online,
+    savedOffline,
     err,
     handleVerifyRut: identity.handleVerifyRut,
     onSubmit,

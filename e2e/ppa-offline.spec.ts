@@ -69,7 +69,7 @@ test.describe("PPA Digital — modo offline", () => {
     await expect(page.getByRole("button", { name: /Guardar offline/ })).toBeVisible()
   })
 
-  test("submit offline encola en IndexedDB y redirige a ?saved=offline", async ({ page, context }) => {
+  test("submit offline encola en IndexedDB y muestra confirmación inline", async ({ page, context }) => {
     // Load page normally
     await page.goto("/ppa")
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
@@ -81,8 +81,12 @@ test.describe("PPA Digital — modo offline", () => {
     // Click submit — should queue offline
     await page.getByRole("button", { name: /Guardar offline/ }).click()
 
-    // Should redirect to the offline saved confirmation page
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() shows the confirmation via local state, not
+    // navigation — router.push("/ppa?saved=offline") would need an RSC
+    // roundtrip that can't complete offline, and the SW (which only caches
+    // "/ppa" without query) would serve its generic offline fallback HTML
+    // instead of the real confirmation. The URL stays "/ppa".
+    await expect(page).toHaveURL(/\/ppa$/, { timeout: 10_000 })
 
     // The confirmation page should be visible. Match the heading exactly —
     // the sonner toast fired by doSubmit() carries the same "guardado
@@ -117,7 +121,9 @@ test.describe("PPA Digital — modo offline", () => {
     await fillManualPpaForm(page)
 
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // Should show the pending count section
     await expect(page.getByText(/pendiente.*de envío/)).toBeVisible()
@@ -136,16 +142,16 @@ test.describe("PPA Digital — modo offline", () => {
     await fillManualPpaForm(page)
 
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
-    // Restore network so the form can load
-    await context.setOffline(false)
-
-    // Click "Realizar otro PPA"
+    // "Realizar otro PPA" resets local state (resetForNewSubmission) instead
+    // of navigating, so this works even while still offline — no network
+    // roundtrip needed.
     await page.getByRole("button", { name: "Realizar otro PPA" }).click()
 
-    // Should navigate back to the form
-    await expect(page).toHaveURL(/\/ppa$/)
+    // Should show the empty form again
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
   })
 })
@@ -159,7 +165,9 @@ test.describe("PPA Digital — sincronización tras reconexión", () => {
     await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // Step 2: Restore network — auto-sync should trigger after ~1s
     await context.setOffline(false)
@@ -189,17 +197,20 @@ test.describe("PPA Digital — sincronización tras reconexión", () => {
     // Submit first PPA offline
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
-    // Navigate back to form for second PPA
-    // Note: navigating while offline requires SW cache; restore briefly to load the form
-    await context.setOffline(false)
+    // "Realizar otro PPA" resets local state (resetForNewSubmission) instead
+    // of navigating, so the second submission stays offline throughout —
+    // no network roundtrip needed to get back to the empty form.
     await page.getByRole("button", { name: "Realizar otro PPA" }).click()
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
-    await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // Should show 2 pending
     await expect(page.getByText(/2 PPAs pendientes/)).toBeVisible()
@@ -306,7 +317,7 @@ test.describe("PPA Digital — verificación de RUT", () => {
     await expect(verifyBtn).toBeDisabled()
   })
 
-  test("verificar con RUT exitoso muestra trabajador y faena", async ({ page }) => {
+  test("verificar con RUT exitoso muestra trabajador verificado", async ({ page }) => {
     await page.goto("/ppa")
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
 
@@ -316,14 +327,12 @@ test.describe("PPA Digital — verificación de RUT", () => {
 
     // findWorkerByRutAction minimiza PII en la respuesta pública: el nombre
     // llega enmascarado (primer nombre + inicial apellido) y worksiteName
-    // vacío, así que el bloque "Faena: ..." del panel Verificado no se
-    // renderiza (ppa-form.tsx condiciona en matchedWorker.worksiteName).
-    // worksiteId sí se propaga, por eso el <select> de faena se preselecciona.
+    // vacío. En el flujo !manual (este test) no hay ningún <select> de faena
+    // visible en absoluto — solo aparece en modo manual (identificación
+    // manual) — así que el nombre de faena no puede verificarse visualmente
+    // aquí; worksiteId sí se propaga internamente para el submit.
     await expect(page.getByText(/Verificado:/)).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText(/Trabajador E\./)).toBeVisible()
-
-    // Faena field should appear (derived from RUT via worksiteId, not worksiteName)
-    await expect(page.getByText(FAENA)).toBeVisible()
   })
 
   test("envío con error de validación del server action muestra toast de error", async ({ page }) => {
@@ -376,7 +385,9 @@ test.describe("PPA Digital — notificaciones offline", () => {
     await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // The notification permission section should be visible
     await expect(
@@ -402,7 +413,9 @@ test.describe("PPA Digital — notificaciones offline", () => {
     await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // Grant notification permission via CDP (simulates user clicking "Allow")
     await context.grantPermissions(["notifications"])
@@ -440,7 +453,9 @@ test.describe("PPA Digital — notificaciones offline", () => {
     await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // Click "Activar notificaciones" — in headless Chrome without granted permission,
     // Notification.requestPermission() resolves to "denied"
@@ -462,7 +477,9 @@ test.describe("PPA Digital — notificaciones offline", () => {
     await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // The notification permission section should NOT appear
     // (Notification.permission is already "granted", not "default")
@@ -486,7 +503,9 @@ test.describe("PPA Digital — notificaciones offline", () => {
     await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // The notification permission section should NOT appear
     await expect(
@@ -504,7 +523,9 @@ test.describe("PPA Digital — auto-sync backoff", () => {
     await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // Step 2: Restore network but block the submit action API
     await context.setOffline(false)
@@ -544,7 +565,9 @@ test.describe("PPA Digital — auto-sync backoff", () => {
     await context.setOffline(true)
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // Step 2: Go online but block API to trigger a failed auto-sync attempt
     await context.setOffline(false)
@@ -589,17 +612,20 @@ test.describe("PPA Digital — auto-sync backoff", () => {
 
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
-    // Step 2: Navigate back, submit second PPA
-    await context.setOffline(false)
+    // Step 2: submit second PPA, still offline throughout (resetForNewSubmission
+    // is a local state reset, not navigation — no network roundtrip needed).
     await page.getByRole("button", { name: "Realizar otro PPA" }).click()
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
-    await context.setOffline(true)
 
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // Should show 2 pending
     await expect(page.getByText(/2 PPAs pendientes/)).toBeVisible()
@@ -730,7 +756,9 @@ test.describe("PPA Digital — resilience", () => {
 
     // Submit should still work (offline queue)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
-    await expect(page).toHaveURL(/\?saved=offline/, { timeout: 10_000 })
+    // showOfflineSaved() confirms via local state, not navigation — the URL
+    // stays "/ppa" (see the first test in this file for the full rationale).
+    await expect(page.getByText("PPA guardado offline", { exact: true })).toBeVisible({ timeout: 10_000 })
   })
 
   test("el banner offline se muestra cuando la red cae", async ({ page, context }) => {

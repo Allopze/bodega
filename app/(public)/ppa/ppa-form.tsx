@@ -13,13 +13,24 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { PPA_STOP_REASON_LABELS } from "@/lib/ppa/types"
 import { OfflineBanner } from "@/components/pwa/offline-banner"
+import { OfflineSavedMessage } from "./offline-saved"
 import { SiNo } from "./ppa-form-sino"
 import { usePpaForm } from "./ppa-form.hooks"
 import type { PpaFormProps } from "./ppa-form.types"
 
 export { type PpaFormProps } from "./ppa-form.types"
 
+// "Realizar otro PPA" necesita limpiar estado repartido entre usePpaForm y
+// usePpaIdentity (p.ej. "manual" y los campos de identificación manual). En
+// vez de exponer un reset campo a campo en dos hooks, un remount vía `key`
+// reinicia ambos desde cero — el estado post-reset es genuino, no una
+// aproximación parcial.
 export function PpaForm(props: PpaFormProps) {
+  const [formKey, setFormKey] = React.useState(0)
+  return <PpaFormInner key={formKey} {...props} onRequestNewSubmission={() => setFormKey((k) => k + 1)} />
+}
+
+function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void }) {
   const {
     worksiteId, setWorksiteId,
     rutSearch, setRutSearch,
@@ -39,13 +50,19 @@ export function PpaForm(props: PpaFormProps) {
     comp, setComp,
     confirmOpen, setConfirmOpen,
     stopReasons, pending,
-    paramWorksiteName, online,
+    paramWorksiteName, online, savedOffline,
     err,
     handleVerifyRut, onSubmit, toggleManual, doSubmit, resetIdentity,
   } = usePpaForm(props)
 
-  const { worksites, hasFaenaParam, tipoTrabajoOptions, controlOptions, complementarias } = props
+  const { worksites, hasFaenaParam, tipoTrabajoOptions, controlOptions, complementarias, onRequestNewSubmission } = props
   const isVerifyButtonDisabled = !rutSearch || searchingWorker
+
+  // El submit offline muestra la confirmación inline en vez de navegar — ver
+  // el comentario de showOfflineSaved() en ppa-form.hooks.ts para el porqué.
+  if (savedOffline) {
+    return <OfflineSavedMessage onRequestNew={onRequestNewSubmission} />
+  }
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
