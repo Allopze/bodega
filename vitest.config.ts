@@ -18,7 +18,6 @@ export default defineConfig({
     setupFiles:  ["./components/__tests__/setup.ts"],
     env: {
       DATABASE_URL: "postgres:///bodega_test",
-      PGHOST:       "/var/run/postgresql",
     },
     fileParallelism: false,
     testTimeout: 20_000,
