@@ -46,10 +46,17 @@ export function parseAttributeOptions(options: string | null | undefined): strin
 }
 
 export function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
-  return prod.attributes.map((a) => ({
-    attributeId: a.id, attributeName: a.name, value: "", isRequired: a.isRequired,
-    type: a.type, options: parseAttributeOptions(a.options),
-  }))
+  return prod.attributes.map((a) => {
+    const options = parseAttributeOptions(a.options)
+    return {
+      attributeId: a.id,
+      attributeName: a.name,
+      value: options.length === 1 ? (options[0] ?? "") : "",
+      isRequired: a.isRequired,
+      type: a.type,
+      options,
+    }
+  })
 }
 
 export function requestStatusLabel(status: string): string {

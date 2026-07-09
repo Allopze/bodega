@@ -1,4 +1,5 @@
 import type { ProductOption } from "./request-form.types"
+import { groupProductVariants } from "@/lib/products/variant-grouping"
 
 export function normalizePickerText(value: string) {
   return value
@@ -17,4 +18,8 @@ export function filterProductsForPicker(products: ProductOption[], query: string
     const sku = normalizePickerText(product.sku)
     return name.includes(needle) || sku.includes(needle)
   })
+}
+
+export function groupProductsForPicker(products: ProductOption[], query: string) {
+  return groupProductVariants(filterProductsForPicker(products, query))
 }

@@ -14,14 +14,8 @@ import { ItemEditorEquipment } from "./item-editor-equipment"
 import { ItemEditorSupplier } from "./item-editor-supplier"
 import { ItemEditorCotizaciones } from "./item-editor-cotizaciones"
 import { ItemEditorAttributes } from "./item-editor-attributes"
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-export const URGENCY_OPTS = [
-  { value: "normal",   label: "Normal"   },
-  { value: "high",     label: "Alta"     },
-  { value: "critical", label: "Crítica"  },
-]
+import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
+import { URGENCY_OPTS } from "./request-form.constants"
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -49,6 +43,10 @@ export function ItemEditor({
   onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
 }: ItemEditorProps) {
   const isQuotationType    = QUOTATION_TYPES.has(requestType ?? "")
+  const selectedProduct = item.productId ? products.find((product) => product.id === item.productId) : null
+  const variants = selectedProduct
+    ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
+    : []
 
   return (
     <div className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4 space-y-4">
@@ -125,6 +123,25 @@ export function ItemEditor({
           </button>
         )}
       </div>
+
+      {selectedProduct && variants.length > 1 && (
+        <div className="ml-8 max-w-sm">
+          <Field label="Características" htmlFor={`variant-${item._key}`}>
+            <Select value={selectedProduct.id} onValueChange={onSelectProduct} disabled={readOnly}>
+              <SelectTrigger id={`variant-${item._key}`} className="h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {variants.map((variant) => (
+                  <SelectItem key={variant.id} value={variant.id}>
+                    {formatProductVariant(variant.attributes, variant.sku)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+      )}
 
       {/* Quantity + unit + (urgency for catalog types only) */}
       <div className={`ml-8 grid gap-3 ${isQuotationType ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>

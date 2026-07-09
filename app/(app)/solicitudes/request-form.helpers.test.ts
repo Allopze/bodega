@@ -26,4 +26,14 @@ describe("buildAttrsFromProduct", () => {
       expect.objectContaining({ attributeName: "Color", options: ["Negro", "Azul"] }),
     ])
   })
+
+  it("preselects the sole attribute values of a catalog variant", () => {
+    const product: ProductOption = {
+      id: "casco-amarillo", sku: "CAS-AMA", name: "Casco", isEpp: true,
+      unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, preferredSupplierId: null,
+      attributes: [{ id: "color", name: "Color", type: "select", isRequired: true, options: '["Amarillo"]' }],
+    }
+
+    expect(buildAttrsFromProduct(product)[0]).toMatchObject({ attributeName: "Color", value: "Amarillo" })
+  })
 })

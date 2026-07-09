@@ -16,7 +16,12 @@ export default async function ProductosPage() {
 
   const [allProducts, allCategories, allSuppliers] = await Promise.all([
     db.query.products.findMany({
-      with: { category: true },
+      with: {
+        category: true,
+        productAttributes: {
+          orderBy: (attribute, { asc }) => [asc(attribute.sortOrder)],
+        },
+      },
       orderBy: (p, { asc }) => [asc(p.name)],
     }),
     db.query.productCategories.findMany({
@@ -48,6 +53,11 @@ export default async function ProductosPage() {
           isEpp: p.isEpp, requiresPrevencion: p.requiresPrevencion,
           referencePrice: p.referencePrice,
           isActive: p.isActive, createdAt: p.createdAt,
+          attributes: p.productAttributes.map((attribute) => ({
+            name: attribute.name,
+            sortOrder: attribute.sortOrder,
+            options: attribute.options,
+          })),
         }))}
         categories={allCategories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion, sortOrder: c.sortOrder }))}
         allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}

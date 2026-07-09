@@ -15,7 +15,8 @@ import {
   DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { ItemEditor, URGENCY_OPTS } from "./item-editor"
+import { ItemEditor } from "./item-editor"
+import { URGENCY_OPTS } from "./request-form.constants"
 import { formatDate } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"

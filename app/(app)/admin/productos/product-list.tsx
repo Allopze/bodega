@@ -14,6 +14,8 @@ import { formatCLP } from "@/lib/utils"
 import { toggleProductActive, getProductForEdit } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { ProductImportPanel } from "./product-import-panel"
+import type { ProductAttributeSummary } from "./product-list.helpers"
+import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
 
 interface ProductRow {
   id: string; sku: string; name: string
@@ -21,17 +23,27 @@ interface ProductRow {
   isEpp: boolean; requiresPrevencion: boolean
   referencePrice: number | null
   isActive: boolean; createdAt: string
+  attributes: ProductAttributeSummary[]
 }
 interface CategoryItem {
   id: string; name: string; slug: string
   isEpp: boolean; requiresPrevencion: boolean; sortOrder: number
 }
 interface SupplierItem { id: string; name: string }
+interface ProductFamilyRow {
+  id: string
+  name: string
+  variants: ProductRow[]
+  sku: string
+  categoryName: string
+  variantSearchText: string
+}
 
 const COLUMNS = [
   { key: "sku",          label: "SKU",       sortable: true, width: "w-36" },
   { key: "name",         label: "Nombre",    sortable: true  },
   { key: "categoryName", label: "Categoría", sortable: true  },
+  { key: "attributeNames", label: "Características", sortable: false, width: "w-48" },
   { key: "referencePrice", label: "Precio ref.", sortable: true, numeric: true, width: "w-28" },
   { key: "isActive",     label: "Estado",    sortable: true, width: "w-24"  },
   { key: "",             label: "",          sortable: false, width: "w-20"  },
@@ -52,7 +64,20 @@ export function ProductList({ products, categories, allSuppliers }: {
   const [editProductFull,  setEditProductFull]  = React.useState<Awaited<ReturnType<typeof getProductForEdit>>>(null)
   const [loadingEditId,    setLoadingEditId]    = React.useState<string | null>(null)
   const [productFormKey,   setProductFormKey]   = React.useState(0)
+  const [selectedVariantByFamily, setSelectedVariantByFamily] = React.useState<Record<string, string>>({})
   const [,                 startTransition]     = React.useTransition()
+  const productFamilies = React.useMemo<ProductFamilyRow[]>(() => groupProductVariants(products).map((family) => ({
+    ...family,
+    sku: family.variants.map((variant) => variant.sku).join(" "),
+    categoryName: family.variants.map((variant) => variant.categoryName).join(" "),
+    variantSearchText: family.variants.map((variant) => formatProductVariant(variant.attributes, variant.sku)).join(" "),
+  })), [products])
+
+  function selectedVariant(family: ProductFamilyRow): ProductRow {
+    const variant = family.variants.find((item) => item.id === selectedVariantByFamily[family.id]) ?? family.variants[0]
+    if (!variant) throw new Error(`La familia ${family.name} no tiene variantes`)
+    return variant
+  }
 
   useEffect(() => {
     if (toggleState.message) {
@@ -103,8 +128,8 @@ export function ProductList({ products, categories, allSuppliers }: {
 
       <DataTable
         columns={COLUMNS}
-        rows={products as unknown as Record<string, unknown>[]}
-        searchKeys={["sku", "name", "categoryName"]}
+        rows={productFamilies as unknown as Record<string, unknown>[]}
+        searchKeys={["sku", "name", "categoryName", "variantSearchText"]}
         pageSize={25}
 
         emptyTitle="Sin productos"
@@ -125,9 +150,10 @@ export function ProductList({ products, categories, allSuppliers }: {
           </div>
         )}
         renderRow={(row) => {
-          const p = row as unknown as ProductRow
+          const family = row as unknown as ProductFamilyRow
+          const p = selectedVariant(family)
           return (
-            <TableRow key={p.id}>
+            <TableRow key={family.id}>
               <TableCell>
                 <span className="font-mono text-xs">{p.sku}</span>
               </TableCell>
@@ -139,6 +165,20 @@ export function ProductList({ products, categories, allSuppliers }: {
                 </div>
               </TableCell>
               <TableCell className="text-sm text-[var(--color-text-muted)]">{p.categoryName}</TableCell>
+              <TableCell className="text-sm text-[var(--color-text-muted)]">
+                {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
+                  <select
+                    aria-label={`Características de ${family.name}`}
+                    value={p.id}
+                    onChange={(event) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: event.target.value }))}
+                    className="h-8 max-w-52 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+                  >
+                    {family.variants.map((variant) => (
+                      <option key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</option>
+                    ))}
+                  </select>
+                )}
+              </TableCell>
               <TableCellNum>
                 {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
               </TableCellNum>
@@ -171,9 +211,10 @@ export function ProductList({ products, categories, allSuppliers }: {
           )
         }}
         renderMobileCard={(row) => {
-          const p = row as unknown as ProductRow
+          const family = row as unknown as ProductFamilyRow
+          const p = selectedVariant(family)
           return (
-            <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+            <article key={family.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{p.sku}</p>
@@ -197,6 +238,23 @@ export function ProductList({ products, categories, allSuppliers }: {
                   <dt className="text-[var(--color-text-subtle)]">Precio ref.</dt>
                   <dd className="font-mono tabular-nums text-[var(--color-text)]">
                     {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
+                  </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-[var(--color-text-subtle)]">Características</dt>
+                  <dd className="text-[var(--color-text-muted)]">
+                    {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
+                      <select
+                        aria-label={`Características de ${family.name}`}
+                        value={p.id}
+                        onChange={(event) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: event.target.value }))}
+                        className="mt-1 h-8 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+                      >
+                        {family.variants.map((variant) => (
+                          <option key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</option>
+                        ))}
+                      </select>
+                    )}
                   </dd>
                 </div>
               </dl>

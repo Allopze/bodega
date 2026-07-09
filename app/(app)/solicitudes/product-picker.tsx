@@ -4,7 +4,7 @@ import * as React from "react"
 import { MagnifyingGlass } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import type { ProductOption } from "./request-form.types"
-import { filterProductsForPicker } from "./product-picker.helpers"
+import { groupProductsForPicker } from "./product-picker.helpers"
 
 interface ProductPickerProps {
   products:          ProductOption[]
@@ -46,14 +46,14 @@ export function ProductPicker({
   const labelId      = React.useId()
   const optionId     = (i: number) => `${listboxId}-opt-${i}`
 
-  const filtered = React.useMemo(() => {
-    return filterProductsForPicker(products, query)
+  const groups = React.useMemo(() => {
+    return groupProductsForPicker(products, query)
   }, [query, products])
 
   // The "use free text" option sits at the end of the list when the user
   // typed something that didn't match any product.
-  const hasFreeTextOption = query.trim().length > 0 && filtered.length === 0
-  const totalOptions      = filtered.length + (hasFreeTextOption ? 1 : 0)
+  const hasFreeTextOption = query.trim().length > 0 && groups.length === 0
+  const totalOptions      = groups.length + (hasFreeTextOption ? 1 : 0)
 
   // Keep activeIndex in range when the result set changes.
   // Derived state — recompute during render instead of firing a setState
@@ -112,7 +112,8 @@ export function ProductPicker({
     if (event.key === "Enter") {
       if (!open) return
       event.preventDefault()
-      if (filtered[safeActiveIndex]) selectProduct(filtered[safeActiveIndex].id)
+      const variantId = groups[safeActiveIndex]?.variants[0]?.id
+      if (variantId) selectProduct(variantId)
       else if (hasFreeTextOption) selectFreeText()
       return
     }
@@ -182,14 +183,18 @@ export function ProductPicker({
             "shadow-[var(--shadow-md)] py-1",
           )}
         >
-          {filtered.map((p, i) => (
+          {groups.map((group, i) => (
             <li
-              key={p.id}
+              key={group.id}
               id={optionId(i)}
               role="option"
               aria-selected={i === safeActiveIndex}
               tabIndex={-1}
-              onMouseDown={(e) => { e.preventDefault(); selectProduct(p.id) }}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                const variantId = group.variants[0]?.id
+                if (variantId) selectProduct(variantId)
+              }}
               onMouseEnter={() => setActiveIndex(i)}
               className={cn(
                 "flex items-center gap-2 px-3 py-2 cursor-pointer text-left",
@@ -199,23 +204,25 @@ export function ProductPicker({
                   : "hover:bg-[var(--color-surface-2)]",
               )}
             >
-              <span className="font-mono text-[11px] text-[var(--color-text-subtle)] shrink-0">{p.sku}</span>
-              <span className="text-sm truncate">{p.name}</span>
+              <span className="font-mono text-[11px] text-[var(--color-text-subtle)] shrink-0">
+                {group.variants.length === 1 ? group.variants[0]?.sku : `${group.variants.length} variantes`}
+              </span>
+              <span className="text-sm truncate">{group.name}</span>
             </li>
           ))}
           {hasFreeTextOption && (
             <li
-              id={optionId(filtered.length)}
+              id={optionId(groups.length)}
               role="option"
-              aria-selected={safeActiveIndex === filtered.length}
+              aria-selected={safeActiveIndex === groups.length}
               tabIndex={-1}
               onMouseDown={(e) => { e.preventDefault(); selectFreeText() }}
-              onMouseEnter={() => setActiveIndex(filtered.length)}
+              onMouseEnter={() => setActiveIndex(groups.length)}
               className={cn(
                 "flex flex-col gap-0.5 px-3 py-2 cursor-pointer",
                 "border-t border-[var(--color-border)]",
                 "transition-colors duration-[var(--duration-fast)]",
-                safeActiveIndex === filtered.length
+                safeActiveIndex === groups.length
                   ? "bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]"
                   : "hover:bg-[var(--color-surface-2)]",
               )}

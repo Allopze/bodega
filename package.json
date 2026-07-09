@@ -31,6 +31,7 @@
     "test:coverage": "vitest run --coverage",
     "analyze": "next experimental-analyze",
     "release": "tsx scripts/release.ts",
+    "deploy:prod": "bash scripts/deploy-prod.sh",
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
