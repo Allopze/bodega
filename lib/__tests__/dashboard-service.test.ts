@@ -248,6 +248,7 @@ describe("getWorkQueueSnapshot", () => {
         issuedAt: "2024-01-02", sentAt: null, totalAmount: 150000, itemCount: 3,
       }]},
       { data: [] },
+      { data: [{ orderId: "oc-1", count: 3 }] },
     )
 
     const result = await getWorkQueueSnapshot(session)
