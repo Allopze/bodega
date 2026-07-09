@@ -50,6 +50,8 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - AUTH_SECRET=${AUTH_SECRET:?err}
       - AUTH_SECRET_PREVIOUS=${AUTH_SECRET_PREVIOUS:-}
+      - APP_URL=${APP_URL:?err}
+      - PDF_RENDER_ORIGIN=${PDF_RENDER_ORIGIN:-http://127.0.0.1:3000}
       - AUTH_URL=${AUTH_URL:?err}
       - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-/usr/bin/chromium-browser}
       # Outbound mail runs on Resend (lib/email/smtp.ts). Without this key the app

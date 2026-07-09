@@ -2,6 +2,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { loadActaData } from "../document"
 import { withBrowserContext } from "@/lib/pdf/browser-pool"
+import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -33,7 +34,7 @@ export async function GET(
   const data = await loadActaData(id, session)
   if (!data) return new Response("No encontrado", { status: 404 })
 
-  const origin = process.env.APP_URL ?? new URL(req.url).origin
+  const origin = resolvePdfRenderOrigin(req)
   const printUrl = `${origin}/sst/${id}/print`
   const cookie = req.headers.get("cookie") ?? ""
 

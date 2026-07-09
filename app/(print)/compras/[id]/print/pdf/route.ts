@@ -4,6 +4,7 @@ import { purchaseOrders } from "@/db/schema"
 import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { withBrowserContext } from "@/lib/pdf/browser-pool"
+import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
 import { ocPdfFilename } from "../filename"
 
 export const runtime = "nodejs"
@@ -43,7 +44,7 @@ export async function GET(
     return new Response("No encontrado", { status: 404 })
   }
 
-  const origin = process.env.APP_URL ?? new URL(req.url).origin
+  const origin = resolvePdfRenderOrigin(req)
   const printUrl = `${origin}/compras/${id}/print`
   const cookie = req.headers.get("cookie") ?? ""
 
