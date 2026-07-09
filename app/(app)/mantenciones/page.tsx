@@ -61,7 +61,7 @@ export default async function MantencionesPage({
         description="Registro operativo de servicios, costos, kilometraje, horómetro y documentos de flota."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Vehículos", href: "/" },
+            { label: "Control operacional", href: "/" },
             { label: "Mantenciones" },
           ]} />
         }

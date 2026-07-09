@@ -12,7 +12,7 @@ export const flotaModule = {
 
   nav: [
     {
-      areaId: "vehiculos",
+      areaId: "control-operacional",
       items: [
         {
           label:    "Flota",

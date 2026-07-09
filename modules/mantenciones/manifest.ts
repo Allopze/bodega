@@ -16,7 +16,7 @@ export const mantencionesModule = {
 
   nav: [
     {
-      areaId: "vehiculos",
+      areaId: "control-operacional",
       items: [
         {
           label:    "Mantenciones",

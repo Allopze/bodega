@@ -106,7 +106,7 @@ export default async function AdminPage() {
       href:        "/admin/flota-catalogos",
       icon:        Gear,
       permission:  "admin:fleet_catalog",
-      group:       "vehiculos",
+      group:       "control-operacional",
     },
     {
       title:       "Configuración",
@@ -192,8 +192,8 @@ export default async function AdminPage() {
       description: "Catálogos maestros para documentación, SST y programa preventivo.",
     },
     {
-      key:         "vehiculos",
-      title:       "Vehículos",
+      key:         "control-operacional",
+      title:       "Control operacional",
       description: "Datos maestros de flota, combustible y mantenciones.",
     },
     {

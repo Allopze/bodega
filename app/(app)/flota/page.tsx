@@ -81,7 +81,7 @@ export default async function FlotaPage({
         description="Catálogo operativo de vehículos con costo de combustible, mantenciones e imputaciones."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Vehículos", href: "/" },
+            { label: "Control operacional", href: "/" },
             { label: "Flota" },
           ]} />
         }

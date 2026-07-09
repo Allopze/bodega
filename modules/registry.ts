@@ -56,7 +56,7 @@ export const registry = [
   feedbackModule,
   // ── Combustibles ────────────────────────────────────────────────────────
   combustiblesModule,
-  // ── Vehículos ───────────────────────────────────────────────────────────
+  // ── Control operacional ─────────────────────────────────────────────────
   flotaModule,
   mantencionesModule,
   // ── Prevención ampliada: IPER, incidentes, capacitaciones ────────────────

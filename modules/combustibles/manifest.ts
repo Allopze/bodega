@@ -23,7 +23,7 @@ export const combustiblesModule = {
   },
   nav: [
     {
-      areaId: "vehiculos",
+      areaId: "control-operacional",
       items: [
         {
           label: "Combustibles",

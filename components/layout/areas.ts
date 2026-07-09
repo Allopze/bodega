@@ -22,7 +22,7 @@ export interface AreaDef {
 
 export const AREAS: AreaDef[] = [
   { id: "adquisiciones", label: "Adquisiciones", iconName: "Stack",     order: 10 },
-  { id: "vehiculos",  label: "Vehículos",   iconName: "Car",       order: 15 },
+  { id: "control-operacional", label: "Control operacional", iconName: "Car", order: 15 },
   { id: "bodega",      label: "Bodega",      iconName: "Warehouse", order: 20 },
   { id: "reportes",    label: "Reportes",    iconName: "ChartBar",  order: 30 },
   // ── Próximas áreas (descomenta al registrar sus módulos) ──────────────────
