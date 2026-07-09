@@ -31,7 +31,7 @@ async function loadOrderWithRelations(id: string) {
         orderBy: (i, { asc }) => [asc(i.sortOrder)],
         with: {
           requestItem: {
-            with: { request: true },
+            with: { request: true, attributes: true },
           },
         },
       },

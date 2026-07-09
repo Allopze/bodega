@@ -514,6 +514,22 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  await db.insert(schema.requestItemAttributes).values([
+    {
+      id: "req-item-oc-e2e-size",
+      requestItemId: "req-item-oc-e2e",
+      attributeId: null,
+      attributeName: "Talla",
+      value: "L",
+    },
+    {
+      id: "req-item-oc-e2e-color",
+      requestItemId: "req-item-oc-e2e",
+      attributeId: null,
+      attributeName: "Color",
+      value: "Azul",
+    },
+  ])
   await db.insert(schema.purchaseOrders).values({
     id: "oc-e2e",
     code: "OC-2026-0001",

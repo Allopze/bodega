@@ -91,6 +91,9 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                 const product = item.productId ? productMap[item.productId] : null
                 const name    = product?.name ?? item.productNameFree ?? "Producto sin nombre"
                 const sku     = product?.sku ?? ""
+                const attributes = item.requestItem?.attributes.filter((attribute) =>
+                  attribute.attributeName.trim() && attribute.value.trim(),
+                ) ?? []
 
                 return (
                   <tr key={item.id}>
@@ -98,6 +101,11 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                     <td className="mono">{sku}</td>
                     <td>
                       <span className="item-name">{name}</span>
+                      {attributes.map((attribute) => (
+                        <div key={attribute.id} className="item-note">
+                          {attribute.attributeName}: {attribute.value}
+                        </div>
+                      ))}
                       {item.notes && <div className="item-note">{item.notes}</div>}
                     </td>
                     <td className="text-right mono">{formatDecimal(item.quantity)}</td>

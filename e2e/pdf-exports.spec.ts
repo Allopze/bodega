@@ -125,6 +125,8 @@ test.describe("PDF exports — content integrity", () => {
     // The OC fixture is a single-item order and must fit in exactly 1 page.
     expect(pageCount).toBe(1)
     expect(text).toMatch(/ORDEN DE COMPRA/i)
+    expect(text).toContain("Talla: L")
+    expect(text).toContain("Color: Azul")
   })
 
   test("PO PDF: no blank trailing page (size sanity)", async ({
