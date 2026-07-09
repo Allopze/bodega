@@ -22,8 +22,13 @@ export function ShellHeaderProvider({ children }: { children: React.ReactNode })
   const [header, setHeader] = React.useState<ShellHeaderState>({})
   const [searchQuery, setSearchQuery] = React.useState("")
 
+  const value = React.useMemo(
+    () => ({ header, setHeader, searchQuery, setSearchQuery }),
+    [header, searchQuery],
+  )
+
   return (
-    <ShellHeaderContext.Provider value={{ header, setHeader, searchQuery, setSearchQuery }}>
+    <ShellHeaderContext.Provider value={value}>
       {children}
     </ShellHeaderContext.Provider>
   )

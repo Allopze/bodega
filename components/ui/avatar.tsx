@@ -51,7 +51,10 @@ const SIZE_CLASSES = {
 export function Avatar({ name, hue, size = "default", className }: AvatarProps) {
   const initials = getInitials(name)
   // Deterministic hue from name if not provided; medium lightness, medium chroma
-  const h = hue ?? (Array.from(name).reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360)
+  const h = React.useMemo(
+    () => hue ?? (Array.from(name).reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360),
+    [name, hue],
+  )
   // Background: medium lightness, low-medium chroma — avoids garish extremes (impeccable law)
   const bg    = `oklch(0.72 0.09 ${h})`
   const color = `oklch(0.28 0.06 ${h})`

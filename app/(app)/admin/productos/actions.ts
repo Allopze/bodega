@@ -7,9 +7,46 @@ import { products, productAttributes, productSuppliers, productCategories } from
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
+import { importProductsFromXlsx } from "@/lib/services/product-xlsx-import"
 import { productSchema, productCategorySchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/productos"
+
+function formString(formData: FormData, name: string) {
+  const value = formData.get(name)
+  return typeof value === "string" ? value : ""
+}
+
+function normalizeSelectOptions(options: string | null | undefined): string | null {
+  if (!options) return null
+
+  let values: unknown[] | null = null
+  try {
+    const parsed = JSON.parse(options)
+    if (Array.isArray(parsed)) values = parsed
+  } catch {
+    values = null
+  }
+
+  const rawItems = values ?? options.split(/[\n,]/)
+  const items = rawItems
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+    .filter((item, index, arr) => arr.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === index)
+
+  return items.length > 0 ? JSON.stringify(items) : null
+}
+
+function displayOptionsText(options: string | null): string {
+  if (!options) return ""
+  try {
+    const parsed = JSON.parse(options)
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item)).join(", ")
+  } catch {
+    // Keep legacy comma/newline text editable as-is.
+  }
+  return options
+}
 
 // ── Product Categories ────────────────────────────────────────────────────────
 
@@ -46,7 +83,7 @@ export async function updateCategory(_prev: ActionState, formData: FormData): Pr
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = productCategorySchema.safeParse({
-    id:                 formData.get("id"),
+    id:                 formString(formData, "id"),
     name:               formData.get("name"),
     slug:               formData.get("slug"),
     isEpp:              formData.get("isEpp") === "on",
@@ -82,15 +119,15 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   try { suppliersRaw  = JSON.parse(formData.get("suppliersJson")  as string ?? "[]") } catch { /* empty */ }
 
   const parsed = productSchema.safeParse({
-    sku:                formData.get("sku"),
-    name:               formData.get("name"),
-    description:        formData.get("description") || "",
-    categoryId:         formData.get("categoryId"),
-    unitOfMeasure:      formData.get("unitOfMeasure") || "unidad",
+    sku:                formString(formData, "sku"),
+    name:               formString(formData, "name"),
+    description:        formString(formData, "description"),
+    categoryId:         formString(formData, "categoryId"),
+    unitOfMeasure:      formString(formData, "unitOfMeasure") || "unidad",
     isEpp:              formData.get("isEpp") === "on",
     requiresPrevencion: formData.get("requiresPrevencion") === "on",
     referencePrice:     formData.get("referencePrice") || null,
-    notes:              formData.get("notes") || "",
+    notes:              formString(formData, "notes"),
     isActive:           formData.get("isActive") === "on",
     attributes:         attributesRaw,
     suppliers:          suppliersRaw,
@@ -121,7 +158,8 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
         d.attributes.map((a) => ({
           id: nanoid(), productId: id, categoryId: null,
           name: a.name, type: a.type, isRequired: a.isRequired,
-          options: a.options ?? null, sortOrder: a.sortOrder,
+          options: a.type === "select" ? normalizeSelectOptions(a.options) : null,
+          sortOrder: a.sortOrder,
         }))
       )
     }
@@ -156,16 +194,16 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   try { suppliersRaw  = JSON.parse(formData.get("suppliersJson")  as string ?? "[]") } catch { /* empty */ }
 
   const parsed = productSchema.safeParse({
-    id:                 formData.get("id"),
-    sku:                formData.get("sku"),
-    name:               formData.get("name"),
-    description:        formData.get("description") || "",
-    categoryId:         formData.get("categoryId"),
-    unitOfMeasure:      formData.get("unitOfMeasure") || "unidad",
+    id:                 formString(formData, "id"),
+    sku:                formString(formData, "sku"),
+    name:               formString(formData, "name"),
+    description:        formString(formData, "description"),
+    categoryId:         formString(formData, "categoryId"),
+    unitOfMeasure:      formString(formData, "unitOfMeasure") || "unidad",
     isEpp:              formData.get("isEpp") === "on",
     requiresPrevencion: formData.get("requiresPrevencion") === "on",
     referencePrice:     formData.get("referencePrice") || null,
-    notes:              formData.get("notes") || "",
+    notes:              formString(formData, "notes"),
     isActive:           formData.get("isActive") === "on",
     attributes:         attributesRaw,
     suppliers:          suppliersRaw,
@@ -202,7 +240,8 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
         d.attributes.map((a, i) => ({
           id: nanoid(), productId: d.id!,
           categoryId: null, name: a.name, type: a.type,
-          isRequired: a.isRequired, options: a.options ?? null,
+          isRequired: a.isRequired,
+          options: a.type === "select" ? normalizeSelectOptions(a.options) : null,
           sortOrder: a.sortOrder ?? i,
         }))
       )
@@ -265,7 +304,7 @@ export async function getProductForEdit(id: string) {
       name:       a.name,
       type:       a.type as "text" | "select" | "number",
       isRequired: a.isRequired,
-      options:    a.options ?? "",
+      options:    displayOptionsText(a.options),
       sortOrder:  a.sortOrder,
     })),
     suppliers: product.productSuppliers.map((ps) => ({
@@ -294,4 +333,54 @@ export async function toggleProductActive(_prev: ActionState, formData: FormData
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: activate ? "Producto activado" : "Producto desactivado" }
+}
+
+export async function importProductsXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:products") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const file = formData.get("file")
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+  }
+
+  const fileName = file.name.toLocaleLowerCase("es-CL")
+  if (!fileName.endsWith(".xlsx")) {
+    return { ok: false, fieldErrors: { file: ["El archivo debe estar en formato .xlsx"] } }
+  }
+
+  const maxBytes = 5 * 1024 * 1024
+  if (file.size > maxBytes) {
+    return { ok: false, fieldErrors: { file: ["El archivo no puede superar 5 MB"] } }
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const result = await importProductsFromXlsx(buffer)
+  if (result.errors.length > 0) {
+    return {
+      ok: false,
+      message: "No se pudo importar el XLSX",
+      data: {
+        errors: result.errors.slice(0, 20),
+        totalErrors: result.errors.length,
+      },
+    }
+  }
+
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "create",
+    entityType: "product",
+    entityId: "xlsx",
+    newState: { ...result },
+  })
+
+  revalidatePath(REVALIDATE)
+  return {
+    ok: true,
+    message: `Importación lista: ${result.created} creados, ${result.updated} actualizados`,
+    data: { ...result },
+  }
 }

@@ -1,10 +1,11 @@
+import * as React from "react"
 import { CheckCircle, Circle, Clock } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
 import type { RequestProgress } from "@/lib/work-queue"
 
 const STAGES = ["Solicitado", "Aprobación", "Compra", "Recepción", "Entrega"]
 
-export function RequestProgressPanel({ progress }: { progress: RequestProgress }) {
+const RequestProgressPanelInner = React.memo(function RequestProgressPanelInner({ progress }: { progress: RequestProgress }) {
   const currentIndex = Math.max(0, STAGES.indexOf(progress.currentStage))
   const completed = new Set(progress.completedStages)
 
@@ -65,4 +66,6 @@ export function RequestProgressPanel({ progress }: { progress: RequestProgress }
       </div>
     </section>
   )
-}
+})
+
+export const RequestProgressPanel = RequestProgressPanelInner

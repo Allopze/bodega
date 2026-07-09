@@ -1,5 +1,5 @@
 import Link from "next/link"
-import type { ReactNode } from "react"
+import { memo, type ReactNode } from "react"
 import { CaretLeft, CaretRight } from "@phosphor-icons/react/dist/ssr"
 import { buildPageWindow, type PaginationState } from "@/lib/pagination"
 import { cn } from "@/lib/utils"
@@ -10,7 +10,7 @@ type ServerPaginationProps = {
   className?: string
 }
 
-export function ServerPagination({ pagination, hrefForPage, className }: ServerPaginationProps) {
+export const ServerPagination = memo(function ServerPagination({ pagination, hrefForPage, className }: ServerPaginationProps) {
   if (pagination.totalPages <= 1) return null
 
   return (
@@ -57,7 +57,7 @@ export function ServerPagination({ pagination, hrefForPage, className }: ServerP
       </div>
     </nav>
   )
-}
+})
 
 function PageLink({
   children,

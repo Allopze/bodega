@@ -47,6 +47,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
   `),
   index("inventory_movements_worksite_performed_at_idx").on(table.worksiteId, table.performedAt),
   index("inventory_movements_product_performed_at_idx").on(table.productId, table.performedAt),
+  index("idx_inventory_mov_worksite_prod_type").on(table.worksiteId, table.productId, table.type),
 ])
 
 export const physicalInventoryCounts = pgTable("physical_inventory_counts", {

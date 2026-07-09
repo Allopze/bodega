@@ -27,7 +27,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/audit", () => ({
   recordAudit: mockRecordAudit,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { createWorker, updateWorker, toggleWorkerActive } from "@/app/(app)/admin/trabajadores/actions"
 import type { ActionState } from "@/lib/validation/operations"

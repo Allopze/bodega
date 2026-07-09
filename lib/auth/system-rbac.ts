@@ -25,7 +25,6 @@ export const SYSTEM_ROLES = [
   { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas", isGlobal: true },
   { id: "rol-cond-lider", name: "conductor_lider", label: "Conductor líder", description: "Evalúa el acompañamiento en terreno (Punto 3) de trabajadores nuevos en sus faenas asignadas", isGlobal: false },
   { id: "rol-admin-contrato", name: "admin_contrato", label: "Administrador de contrato / Supervisor de faena", description: "Evalúa SST (secciones 1-2) de trabajadores nuevos y antiguos en sus faenas asignadas", isGlobal: false },
-  { id: "rol-sup-faena", name: "supervisor_faena", label: "Supervisor de faena", description: "Ejecuta actividades preventivas, reportes operacionales e inspecciones en sus faenas asignadas", isGlobal: false },
   { id: "rol-jt", name: "jefe_terreno", label: "Jefe de terreno", description: "Lidera actividades de terreno, alcotest, emergencias y bitacora preventiva en sus faenas asignadas", isGlobal: false },
   { id: "rol-cphs", name: "cphs", label: "Comité Paritario de Higiene y Seguridad", description: "Miembro del Comite Paritario de Higiene y Seguridad con acceso a programa, reuniones e indicadores", isGlobal: false },
 ] satisfies Array<typeof roles.$inferInsert>

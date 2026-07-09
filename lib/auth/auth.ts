@@ -40,6 +40,18 @@ if (authUrl) {
   process.env.AUTH_URL ??= authUrl
 }
 
+function parseSecretList(value: string | undefined): string[] {
+  return value
+    ?.split(",")
+    .map((secret) => secret.trim())
+    .filter(Boolean) ?? []
+}
+
+const authSecrets = [
+  process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  ...parseSecretList(process.env.AUTH_SECRET_PREVIOUS ?? process.env.NEXTAUTH_SECRET_PREVIOUS),
+].filter((secret): secret is string => Boolean(secret))
+
 /** Load user with full roles/permissions from DB */
 async function getUserWithAuth(email: string) {
   const user = await db.query.users.findFirst({
@@ -58,6 +70,7 @@ async function getUserWithAuth(email: string) {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
+  ...(authSecrets.length > 0 ? { secret: authSecrets } : {}),
 
   providers: [
     Credentials({

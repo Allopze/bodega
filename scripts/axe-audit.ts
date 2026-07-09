@@ -99,7 +99,7 @@ async function login(page: import("@playwright/test").Page) {
 async function main() {
   const browser = await chromium.launch()
   const context = await browser.newContext({
-    viewport: { width: 1440, height: 900 },
+    viewport: { width: 1920, height: 1080 },
     locale: "es-CL",
   })
   const page = await context.newPage()

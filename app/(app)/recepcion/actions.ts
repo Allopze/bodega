@@ -78,9 +78,12 @@ export async function registerReceiptAction(
     return { ok: false, message: "No tienes acceso a la faena de esta OC" }
   }
 
-  const nonZeroItems = items.filter((i) => i.quantityReceived > 0)
+  // Una línea cuenta si trae recibido, rechazado o dañado (M-3: rechazo total).
+  const nonZeroItems = items.filter(
+    (i) => i.quantityReceived + (i.quantityRejected ?? 0) + (i.quantityDamaged ?? 0) > 0,
+  )
   if (nonZeroItems.length === 0) {
-    return { ok: false, message: "Ingresa al menos una cantidad recibida mayor a 0" }
+    return { ok: false, message: "Ingresa al menos una cantidad (recibida, rechazada o dañada)" }
   }
 
   let receiptId: string

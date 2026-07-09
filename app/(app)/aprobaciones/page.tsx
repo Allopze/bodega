@@ -15,6 +15,7 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, textSearchSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import type { FilterOption } from "@/components/adquisiciones/list-filters"
 import { ApprovalPanel } from "./approval-panel"
+import { canApproveEpp, canSetDispatch } from "./roles"
 import type { ApprovalItem, ApprovalRequest } from "./types"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
@@ -40,8 +41,9 @@ export default async function AprobacionesPage({
       : sql`false`
   const requestFilter = and(
     inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
-    // Repuestos are approved via their own quotation flow, not this per-item queue
-    sql`${purchaseRequests.requestType} != 'repuestos'`,
+    // Repuestos y servicios se aprueban por su propio flujo de cotizaciones
+    // (selectQuotation aprueba los ítems), no por esta cola ítem-a-ítem.
+    sql`${purchaseRequests.requestType} NOT IN ('repuestos', 'servicios')`,
     worksiteScope,
     selectedRequestId ? eq(purchaseRequests.id, selectedRequestId) : undefined,
     sql`exists (
@@ -112,7 +114,7 @@ export default async function AprobacionesPage({
             ]} />
           }
         />
-        <ApprovalPanel requests={[]} canApproveEpp={false} worksiteOptions={worksiteOptions} />
+        <ApprovalPanel requests={[]} canApproveEpp={false} canSetDispatch={false} worksiteOptions={worksiteOptions} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -270,7 +272,9 @@ export default async function AprobacionesPage({
       />
       <ApprovalPanel
         requests={displayedRows}
-        canApproveEpp={session.user.roles.some((r) => ["administrador", "jefa_chome", "secretaria"].includes(r))}
+        // Fuente única de verdad compartida con el backend (./roles) — evita H-1.
+        canApproveEpp={canApproveEpp(session.user.roles)}
+        canSetDispatch={canSetDispatch(session.user.roles)}
         worksiteOptions={worksiteOptions}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />

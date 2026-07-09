@@ -18,7 +18,7 @@ const mockRegisterWorksiteDelivery = vi.hoisted(() => vi.fn())
 const mockClosePhysicalInventoryCount = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/services/stock", () => ({ applyMovement: mockApplyMovement }))
 vi.mock("@/lib/services/deliveries", () => ({
   registerWorksiteDelivery: mockRegisterWorksiteDelivery,

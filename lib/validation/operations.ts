@@ -100,11 +100,15 @@ export type CreateOrderItemFormData = z.infer<typeof createOrderItemSchema>
 // ── Receipt ──────────────────────────────────────────────────────────────────
 export const receiptItemSchema = z.object({
   purchaseOrderItemId: z.string().min(1, "Ítem de OC requerido"),
-  quantityReceived:    positiveQuantitySchema,
+  // Recibido puede ser 0 cuando toda la línea llegó rechazada/dañada (M-3).
+  quantityReceived:    nonNegativeQuantitySchema.default(0),
   quantityRejected:    nonNegativeQuantitySchema.default(0),
   quantityDamaged:     nonNegativeQuantitySchema.default(0),
   notes:               z.string().max(300).nullable().optional().or(z.literal("")),
-})
+}).refine(
+  (d) => d.quantityReceived + d.quantityRejected + d.quantityDamaged > 0,
+  { message: "Registra al menos una cantidad (recibida, rechazada o dañada)", path: ["quantityReceived"] },
+)
 
 export const receiptSchema = z.object({
   purchaseOrderId:  z.string().min(1, "OC no especificada"),

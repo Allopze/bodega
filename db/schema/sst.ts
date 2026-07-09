@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm"
-import { pgTable, text, timestamp, real, boolean, integer, jsonb, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, real, boolean, integer, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core"
 import { worksites, workers } from "./worksites"
 import { users } from "./users"
 
@@ -34,7 +34,10 @@ export const sstEvaluations = pgTable("sst_evaluations", {
   schemaJson:             text("schema_json"),                       // snapshot of ChecklistDefinition at close time
   createdAt:              timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:              timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
-})
+}, (table) => [
+  index("idx_sst_worksite_estado").on(table.worksiteId, table.estado, table.createdAt),
+  index("idx_sst_worker").on(table.workerId, table.createdAt),
+])
 
 /* ── SST Responses ───────────────────────────────────────────────────────── */
 // One row per checklist item per evaluation (upsert on evaluationId + seccionId + itemId).
@@ -61,7 +64,9 @@ export const sstScheduledFollowups = pgTable("sst_scheduled_followups", {
   cumple:          boolean("cumple"),
   observaciones:   text("observaciones"),
   realizado:       boolean("realizado").notNull().default(false),
-})
+}, (table) => [
+  index("idx_sst_followup_eval").on(table.evaluationId),
+])
 
 /* ── SST Action Plan ─────────────────────────────────────────────────────── */
 // Corrective action items per evaluation.

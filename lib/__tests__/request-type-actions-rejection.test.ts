@@ -25,7 +25,7 @@ vi.mock("@/db", () => ({
   },
 }))
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 // PersistDraft delegates to these for quotation types; we never reach them
 // because the permission gate fires first.

@@ -7,6 +7,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   products,
+  purchaseOrderItems,
   purchaseOrders,
   purchaseRequestItems,
   purchaseRequests,
@@ -113,7 +114,6 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         sentAt:       purchaseOrders.sentAt,
         totalAmount:  purchaseOrders.totalAmount,
         deliveryMode: purchaseOrders.deliveryMode,
-        itemCount:    sql<number>`(SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = ${purchaseOrders.id})`,
       })
       .from(purchaseOrders)
       .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
@@ -132,6 +132,20 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
       .from(worksiteStock)
       .where(sql`${worksiteStock.quantity} > 0`),
   ])
+
+  // Fetch item counts in bulk instead of per-row subquery
+  const orderIds = orderRows.map((r) => r.id)
+  const itemCountRows = orderIds.length > 0
+    ? await db
+        .select({
+          orderId: purchaseOrderItems.purchaseOrderId,
+          count: sql<number>`COUNT(*)::int`,
+        })
+        .from(purchaseOrderItems)
+        .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
+        .groupBy(purchaseOrderItems.purchaseOrderId)
+    : []
+  const itemCountByOrder = new Map(itemCountRows.map((r) => [r.orderId, r.count]))
 
   const itemStatusesByRequest = new Map<string, string[]>()
   for (const item of itemRows) {
@@ -171,7 +185,7 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
 
   const orders: WorkOrderRow[] = orderRows.map((order) => ({
     ...order,
-    itemCount: order.itemCount,
+    itemCount: itemCountByOrder.get(order.id) ?? 0,
   }))
 
   return { requests, items, orders }

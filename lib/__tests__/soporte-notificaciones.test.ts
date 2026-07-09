@@ -21,7 +21,7 @@ const mockNotifyManyUser = vi.hoisted(() => vi.fn())
 const mockNotifyAfterCommit = vi.hoisted(() => vi.fn((fn: () => void) => fn()))
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/services/feedback", () => ({
   createReport: mockCreateReport,
   updateReportStatus: mockUpdateReportStatus,

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm"
-import { pgTable, text, timestamp, boolean, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core"
 import { worksites, workers } from "./worksites"
 import { users } from "./users"
 
@@ -49,7 +49,11 @@ export const ppaSubmissions = pgTable("ppa_submissions", {
 
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
-})
+}, (table) => [
+  index("idx_ppa_worksite_estado").on(table.worksiteId, table.estado),
+  index("idx_ppa_created").on(table.createdAt),
+  index("idx_ppa_worker").on(table.workerId, table.worksiteId),
+])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const ppaSubmissionsRelations = relations(ppaSubmissions, ({ one }) => ({

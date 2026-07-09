@@ -19,7 +19,7 @@ vi.mock("@/lib/services/rate-limit", () => ({
   clearRateLimitRecord: mockClearRateLimitRecord,
   pruneExpiredLocks: mockPruneExpiredLocks,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import {
   clearRateLimitKeyAction,

@@ -19,7 +19,7 @@ interface Props {
  * `localStorage` per user, so different sessions on the same machine keep
  * independent preferences.
  */
-export function ViewModeToggle({ userId, value, onChange, className }: Props) {
+const ViewModeToggleInner = React.memo(function ViewModeToggleInner({ userId, value, onChange, className }: Props) {
   const items: { mode: DocumentViewMode; label: string; icon: React.ReactNode }[] = [
     { mode: "list", label: "Cambiar a vista de lista", icon: <ListBullets size={16} weight="regular" /> },
     { mode: "grid", label: "Cambiar a vista de cuadrícula", icon: <SquaresFour size={16} weight="regular" /> },
@@ -65,7 +65,7 @@ export function ViewModeToggle({ userId, value, onChange, className }: Props) {
       })}
     </div>
   )
-}
+})
 
 /**
  * Hydrate the persisted view mode for a given user. Returns the initial mode
@@ -73,6 +73,8 @@ export function ViewModeToggle({ userId, value, onChange, className }: Props) {
  * to `localStorage`. Consumers should call this once at the top of the
  * client view to keep SSR and the first client render in sync.
  */
+
+export const ViewModeToggle = ViewModeToggleInner
 export function usePersistedViewMode(userId: string): [DocumentViewMode, (next: DocumentViewMode) => void] {
   const [mode, setMode] = React.useState<DocumentViewMode>("list")
 

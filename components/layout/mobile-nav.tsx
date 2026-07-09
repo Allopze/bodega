@@ -20,7 +20,7 @@ interface MobileNavProps {
 }
 
 /** Navegación móvil: columna única en acordeón (área activa expandida). */
-export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: MobileNavProps) {
+const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteName, badgeCounts, onNavigate }: MobileNavProps) {
   const pathname = usePathname()
   const areas = React.useMemo(() => getVisibleAreas(session), [session])
   const routeArea = findActiveArea(areas, pathname)
@@ -99,7 +99,9 @@ export function MobileNav({ session, worksiteName, badgeCounts, onNavigate }: Mo
       )}
     </div>
   )
-}
+})
+
+export const MobileNav = MobileNavInner
 
 function AreaAccordion({
   area,
@@ -145,3 +147,4 @@ function AreaAccordion({
     </Collapsible.Root>
   )
 }
+

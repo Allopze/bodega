@@ -46,6 +46,15 @@ function vehicleIdFromPlate(plate: string): string {
 async function main() {
   const filePath = path.join(process.cwd(), "storage", "patentes_chile.json")
   const rows = JSON.parse(await readFile(filePath, "utf8")) as PatenteChileRow[]
+
+  // Requiere un worksiteId (worksiteId es NOT NULL en fuelVehicles)
+  const worksiteId = process.env.FUEL_VEHICLE_WORKSITE_ID ?? process.argv[2]
+  if (!worksiteId) {
+    console.error("Uso: npx tsx scripts/import-patentes-chile.ts <worksiteId>")
+    console.error("  o define FUEL_VEHICLE_WORKSITE_ID en .env.local")
+    process.exit(1)
+  }
+
   const client = postgres(process.env.DATABASE_URL!, { max: 1 })
   const db = drizzle(client, { schema })
 
@@ -63,6 +72,7 @@ async function main() {
         brand: row.marca.trim(),
         model: row.modelo.trim(),
         year: row.año ?? row.anio ?? null,
+        worksiteId,
         isActive: true,
         notes: row.numero_motor ? `Numero motor: ${row.numero_motor.trim()}` : null,
       } satisfies typeof schema.fuelVehicles.$inferInsert

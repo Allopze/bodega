@@ -26,7 +26,7 @@ vi.mock("@/db", () => ({
   },
 }))
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 const mockCancelOrder = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/services/purchasing", () => ({

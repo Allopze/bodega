@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, like, lte, or, sql, type SQL } from "drizzle-orm"
+import { and, count, desc, eq, gte, inArray, isNull, like, lte, or, sql, type SQL, isNotNull } from "drizzle-orm"
 import { db } from "@/db"
 import {
   sstDocuments,
@@ -76,16 +76,38 @@ export async function getDashboardCounters(scope: WorksiteScope): Promise<Dashbo
     ? or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId))
     : undefined
 
-  const all = await db
-    .select({ id: sstDocuments.id, status: sstDocuments.status, expiresAt: sstDocuments.expiresAt, currentVersionId: sstDocuments.currentVersionId, requiresAcknowledgment: sstDocuments.requiresAcknowledgment })
-    .from(sstDocuments).where(baseWhere)
+  const statusCountRows = await db
+    .select({ status: sstDocuments.status, count: count() })
+    .from(sstDocuments)
+    .where(and(baseWhere, isNotNull(sstDocuments.status)))
+    .groupBy(sstDocuments.status)
+
+  const vigentesRows = await db
+    .select({
+      expiresAt: sstDocuments.expiresAt,
+      requiresAcknowledgment: sstDocuments.requiresAcknowledgment,
+      currentVersionId: sstDocuments.currentVersionId,
+    })
+    .from(sstDocuments)
+    .where(and(baseWhere, inArray(sstDocuments.status, ["vigente", "aprobado"])))
+    .limit(5000)
 
   const byStatus: Record<SstDocumentStatus, number> = { borrador: 0, en_revision: 0, observado: 0, aprobado: 0, vigente: 0, vencido: 0, reemplazado: 0, archivado: 0 }
+
+  for (const r of statusCountRows) {
+    const s = r.status as SstDocumentStatus
+    byStatus[s] = r.count
+  }
+
+  const total = statusCountRows.reduce((acc, r) => acc + r.count, 0)
   let expiring7 = 0, expiring15 = 0, expiring30 = 0, ackPending = 0
 
-  for (const d of all) {
-    const eff = effectiveStatus(d.status as SstDocumentStatus, d.expiresAt)
-    byStatus[eff] = (byStatus[eff] ?? 0) + 1
+  for (const d of vigentesRows) {
+    const eff = effectiveStatus("vigente" as SstDocumentStatus, d.expiresAt)
+    if (eff !== "vigente") {
+      byStatus["vigente"] = Math.max(0, byStatus["vigente"] - 1)
+      byStatus["vencido"] = (byStatus["vencido"] ?? 0) + 1
+    }
     const days = daysUntil(d.expiresAt)
     if (days !== null && eff === "vigente") {
       if (days <= 7) expiring7 += 1
@@ -96,7 +118,7 @@ export async function getDashboardCounters(scope: WorksiteScope): Promise<Dashbo
   }
 
   return {
-    total: all.length, byStatus,
+    total, byStatus,
     expiringSoon: { within7: expiring7, within15: expiring15, within30: expiring30 },
     pendingReview: byStatus.en_revision, observed: byStatus.observado, ackPending,
   }

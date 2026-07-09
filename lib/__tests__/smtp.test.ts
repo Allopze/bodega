@@ -7,6 +7,13 @@ vi.mock("@/lib/services/system-settings", () => ({
   getEmailsEnabled: vi.fn(async () => true),
 }))
 
+vi.mock("@/lib/services/email-templates", () => ({
+  renderTemplate: vi.fn(async (_key: string, vars: Record<string, string>) => ({
+    subject: `Invitación a ${vars.app_name ?? "Plataforma Chome"}`,
+    html:    `<p>${vars.sender_name ? `<strong>${vars.sender_name}</strong> te ha invitado a` : "Has sido invitado a"} <strong>${vars.app_name ?? "Plataforma Chome"}</strong>.</p><p><a href="${vars.invite_url ?? ""}">Aceptar invitación</a></p>`,
+  })),
+}))
+
 const { mockSend, mockBatchSend } = vi.hoisted(() => ({
   mockSend: vi.fn(),
   mockBatchSend: vi.fn(),

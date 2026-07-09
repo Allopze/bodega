@@ -1,6 +1,7 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
+  revalidateTag("badge-counts", { expire: 0 })
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
@@ -52,7 +53,9 @@ export async function resubmitReturnedItemAction(
   try {
     await submitItem(itemId, session.user.id, { userEmail: session.user.email ?? undefined })
     revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
     revalidatePath(`${REVALIDATE}/${row.requestId}`)
+  revalidateTag("badge-counts", { expire: 0 })
     return { ok: true, message: "Ítem re-enviado a aprobación" }
   } catch (e) {
     logger.error("[resubmitReturnedItemAction]", e)

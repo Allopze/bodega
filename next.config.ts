@@ -14,6 +14,15 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "6mb",
+    },
+  },
+  images: {
+    formats: ["image/avif", "image/webp"],
+    deviceSizes: [360, 480, 640, 750, 828, 1080, 1200, 1920],
+  },
   allowedDevOrigins: ["bodega.allopze.dev", "bodega.chome.dev"],
   async headers() {
     return [

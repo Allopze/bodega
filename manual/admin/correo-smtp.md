@@ -13,3 +13,11 @@ historica se llama `correo-smtp`, el envio actual usa Resend y la variable
 
 Si no hay `RESEND_API_KEY`, la plataforma puede funcionar, pero no enviara
 invitaciones ni correos de recuperacion.
+
+## Tipos de correo enviados
+
+- **Invitaciones**: usan la plantilla `invitation` (editable desde Plantillas de
+correo). Se envian al crear usuarios, invitar o reenviar invitaciones.
+- **Notificaciones**: usan la plantilla `notification`. Se envian automaticamente
+al crear notificaciones en la plataforma (aprobaciones, rechazos, nuevas
+solicitudes, etc.). Cada usuario puede desactivar los correos desde su perfil.

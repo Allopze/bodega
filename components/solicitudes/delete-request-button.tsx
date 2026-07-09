@@ -22,7 +22,7 @@ interface DeleteRequestButtonProps {
   redirectTo?:     string
 }
 
-export function DeleteRequestButton({
+const DeleteRequestButtonInner = React.memo(function DeleteRequestButtonInner({
   requestId,
   requestCode,
   requestStatus,
@@ -84,4 +84,6 @@ export function DeleteRequestButton({
       />
     </>
   )
-}
+})
+
+export const DeleteRequestButton = DeleteRequestButtonInner

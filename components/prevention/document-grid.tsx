@@ -3,7 +3,7 @@
 import * as React from "react"
 import { getFileIcon, type FileIconDescriptor } from "@/lib/prevention/file-icon"
 import { cn } from "@/lib/utils"
-import { DocumentTile, type DocumentTileProps } from "./document-tile"
+import { DocumentTile } from "./document-tile"
 
 export type GridFolder = {
   id: string
@@ -49,6 +49,107 @@ export type DocumentGridProps = {
   resolveDocumentIcon?: (doc: GridDocument) => FileIconDescriptor
 }
 
+// ── Memoized tile wrappers ─────────────────────────────────────────────────────
+
+const FolderTile = React.memo(function FolderTile({
+  folder,
+  selected,
+  selectionActive,
+  canSelect,
+  canManage,
+  dragOver,
+  toggleFolder,
+  openFolder,
+  onFolderContextMenu,
+  onFolderAction,
+  onFolderDragStart,
+  onFolderDragOver,
+  onFolderDragLeave,
+  onFolderDrop,
+}: {
+  folder: GridFolder
+  selected: boolean
+  selectionActive: boolean
+  canSelect: boolean
+  canManage: boolean
+  dragOver: boolean
+  toggleFolder: (id: string) => void
+  openFolder: (id: string) => void
+  onFolderContextMenu: (event: React.MouseEvent, id: string) => void
+  onFolderAction: (event: React.MouseEvent, id: string) => void
+  onFolderDragStart?: (event: React.DragEvent, id: string) => void
+  onFolderDragOver?: (event: React.DragEvent, id: string) => void
+  onFolderDragLeave?: (event: React.DragEvent, id: string) => void
+  onFolderDrop?: (event: React.DragEvent, id: string) => void
+}) {
+  return (
+    <li>
+      <DocumentTile
+        kind="folder"
+        name={folder.name}
+        selected={selected}
+        selectionActive={selectionActive}
+        canSelect={canSelect}
+        onSelect={() => toggleFolder(folder.id)}
+        onOpen={() => openFolder(folder.id)}
+        onContextMenu={(event) => onFolderContextMenu(event, folder.id)}
+        onAction={(event) => onFolderAction(event, folder.id)}
+        draggable={canManage}
+        onDragStart={onFolderDragStart ? (event) => onFolderDragStart(event, folder.id) : undefined}
+        dragOver={dragOver}
+        onDragOver={onFolderDragOver ? (event) => onFolderDragOver(event, folder.id) : undefined}
+        onDragLeave={onFolderDragLeave ? (event) => onFolderDragLeave(event, folder.id) : undefined}
+        onDrop={onFolderDrop ? (event) => onFolderDrop(event, folder.id) : undefined}
+      />
+    </li>
+  )
+})
+
+const DocumentItem = React.memo(function DocumentItem({
+  doc,
+  selected,
+  selectionActive,
+  canSelect,
+  canManage,
+  fileMeta,
+  toggleDocument,
+  openDocument,
+  onDocumentContextMenu,
+  onDocumentAction,
+  onDocumentDragStart,
+}: {
+  doc: GridDocument
+  selected: boolean
+  selectionActive: boolean
+  canSelect: boolean
+  canManage: boolean
+  fileMeta: FileIconDescriptor
+  toggleDocument: (id: string) => void
+  openDocument: (id: string) => void
+  onDocumentContextMenu: (event: React.MouseEvent, id: string) => void
+  onDocumentAction: (event: React.MouseEvent, id: string) => void
+  onDocumentDragStart?: (event: React.DragEvent, id: string) => void
+}) {
+  return (
+    <li>
+      <DocumentTile
+        kind="document"
+        name={doc.title}
+        selected={selected}
+        selectionActive={selectionActive}
+        canSelect={canSelect}
+        onSelect={() => toggleDocument(doc.id)}
+        onOpen={() => openDocument(doc.id)}
+        onContextMenu={(event) => onDocumentContextMenu(event, doc.id)}
+        onAction={(event) => onDocumentAction(event, doc.id)}
+        draggable={canManage}
+        onDragStart={onDocumentDragStart ? (event) => onDocumentDragStart(event, doc.id) : undefined}
+        fileMeta={fileMeta}
+      />
+    </li>
+  )
+})
+
 /**
  * Two-state grid view of folders + documents in the current scope.
  * Folders come first (matches the previous list ordering); both kinds
@@ -90,52 +191,41 @@ export function DocumentGrid(props: DocumentGridProps) {
         className,
       )}
     >
-      {folders.map((folder) => {
-        const tileProps: DocumentTileProps = {
-          kind: "folder",
-          name: folder.name,
-          selected: selectedFolderIds.has(folder.id),
-          selectionActive,
-          canSelect,
-          onSelect: () => toggleFolder(folder.id),
-          onOpen: () => openFolder(folder.id),
-          onContextMenu: (event) => onFolderContextMenu(event, folder.id),
-          onAction: (event) => onFolderAction(event, folder.id),
-          draggable: canManage,
-          onDragStart: onFolderDragStart ? (event) => onFolderDragStart(event, folder.id) : undefined,
-          dragOver: dragOverFolderId === folder.id,
-          onDragOver: onFolderDragOver ? (event) => onFolderDragOver(event, folder.id) : undefined,
-          onDragLeave: onFolderDragLeave ? (event) => onFolderDragLeave(event, folder.id) : undefined,
-          onDrop: onFolderDrop ? (event) => onFolderDrop(event, folder.id) : undefined,
-        }
-        return (
-          <li key={`folder-${folder.id}`}>
-            <DocumentTile {...tileProps} />
-          </li>
-        )
-      })}
-      {documents.map((doc) => {
-        const fileMeta = resolveDocumentIcon(doc)
-        const tileProps: DocumentTileProps = {
-          kind: "document",
-          name: doc.title,
-          selected: selectedDocumentIds.has(doc.id),
-          selectionActive,
-          canSelect,
-          onSelect: () => toggleDocument(doc.id),
-          onOpen: () => openDocument(doc.id),
-          onContextMenu: (event) => onDocumentContextMenu(event, doc.id),
-          onAction: (event) => onDocumentAction(event, doc.id),
-          draggable: canManage,
-          onDragStart: onDocumentDragStart ? (event) => onDocumentDragStart(event, doc.id) : undefined,
-          fileMeta,
-        }
-        return (
-          <li key={`doc-${doc.id}`}>
-            <DocumentTile {...tileProps} />
-          </li>
-        )
-      })}
+      {folders.map((folder) => (
+        <FolderTile
+          key={`folder-${folder.id}`}
+          folder={folder}
+          selected={selectedFolderIds.has(folder.id)}
+          selectionActive={selectionActive}
+          canSelect={canSelect}
+          canManage={canManage}
+          dragOver={dragOverFolderId === folder.id}
+          toggleFolder={toggleFolder}
+          openFolder={openFolder}
+          onFolderContextMenu={onFolderContextMenu}
+          onFolderAction={onFolderAction}
+          onFolderDragStart={onFolderDragStart}
+          onFolderDragOver={onFolderDragOver}
+          onFolderDragLeave={onFolderDragLeave}
+          onFolderDrop={onFolderDrop}
+        />
+      ))}
+      {documents.map((doc) => (
+        <DocumentItem
+          key={`doc-${doc.id}`}
+          doc={doc}
+          selected={selectedDocumentIds.has(doc.id)}
+          selectionActive={selectionActive}
+          canSelect={canSelect}
+          canManage={canManage}
+          fileMeta={resolveDocumentIcon(doc)}
+          toggleDocument={toggleDocument}
+          openDocument={openDocument}
+          onDocumentContextMenu={onDocumentContextMenu}
+          onDocumentAction={onDocumentAction}
+          onDocumentDragStart={onDocumentDragStart}
+        />
+      ))}
     </ul>
   )
 }

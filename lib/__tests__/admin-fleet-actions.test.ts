@@ -19,7 +19,7 @@ vi.mock("@/lib/services/system-settings", () => ({
   getFleetAdminSettings: mockGetFleetAdminSettings,
   updateSystemSettingNumber: mockUpdateSystemSettingNumber,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { saveFleetAdminSettingsAction } from "@/app/(app)/admin/flota-catalogos/actions"
 import type { ActionState } from "@/lib/validation/masters"

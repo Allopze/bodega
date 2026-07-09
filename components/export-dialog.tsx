@@ -24,7 +24,7 @@ interface ExportDialogProps {
   tone?: "neutral" | "signal"
 }
 
-export function ExportDialog({ tipo, label, worksites, statuses, tone = "neutral" }: ExportDialogProps) {
+const ExportDialogInner = React.memo(function ExportDialogInner({ tipo, label, worksites, statuses, tone = "neutral" }: ExportDialogProps) {
   const [from, setFrom] = React.useState("")
   const [to, setTo] = React.useState("")
   const [faena, setFaena] = React.useState("")
@@ -145,4 +145,6 @@ export function ExportDialog({ tipo, label, worksites, statuses, tone = "neutral
       </DialogContent>
     </Dialog>
   )
-}
+})
+
+export const ExportDialog = ExportDialogInner

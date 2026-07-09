@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import * as React from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 
@@ -6,7 +6,7 @@ export interface SummaryStat {
   key:    string
   label:  string
   value:  string | number
-  icon?:  ReactNode
+  icon?:  React.ReactNode
   /** If set, the cell becomes a link (e.g. a pre-filtered view). */
   href?:  string
   /** "signal" turns orange only when the numeric value is > 0 (alerts / criticals). */
@@ -24,7 +24,7 @@ export interface SummaryStat {
  * Pensado para usarse entre el PageHeader y la tabla. No renderiza nada si no
  * hay stats; deja el caso vacío (0 filas) al EmptyState de la tabla.
  */
-export function SummaryBar({ stats, className }: { stats: SummaryStat[]; className?: string }) {
+const SummaryBarInner = React.memo(function SummaryBarInner({ stats, className }: { stats: SummaryStat[]; className?: string }) {
   if (stats.length === 0) return null
 
   return (
@@ -36,8 +36,10 @@ export function SummaryBar({ stats, className }: { stats: SummaryStat[]; classNa
       </div>
     </div>
   )
-}
+})
 
+
+export const SummaryBar = SummaryBarInner
 function StatCell({ stat }: { stat: SummaryStat }) {
   const numeric = typeof stat.value === "number" ? stat.value : Number.parseFloat(String(stat.value)) || 0
   const isZero = typeof stat.value === "number" && stat.value === 0

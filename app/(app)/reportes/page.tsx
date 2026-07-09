@@ -27,11 +27,12 @@ export default async function Page() {
   const wsIds = visibleWorksiteIds(session)
   const requestWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`)
   const orderWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`)
+  // Un usuario scoped solo ve recepciones de sus faenas — nunca las de worksiteId NULL (B-6).
   const receiptWsFilter = isGlobal
     ? undefined
     : (wsIds.length > 0
-        ? sql`(${receipts.worksiteId} IS NULL OR ${inArray(receipts.worksiteId, wsIds)})`
-        : sql`${receipts.worksiteId} IS NULL AND 1 = 0`)
+        ? inArray(receipts.worksiteId, wsIds)
+        : sql`false`)
 
   const activeWorksites = await db
     .select({ id: worksites.id, name: worksites.name })

@@ -23,7 +23,7 @@ vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn() },
 }))
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import {
   createMaintenanceRecordAction,

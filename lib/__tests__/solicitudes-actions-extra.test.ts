@@ -55,7 +55,7 @@ vi.mock("@/lib/request-types", () => ({
   permissionForRequestType: vi.fn(() => "requests:view_own"),
   QUOTATION_TYPES: new Set(["repuestos", "servicios"]),
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { cancelRequest, resubmitReturnedItemAction, deleteRequestAction } from "@/app/(app)/solicitudes/actions"
 import type { ActionState } from "@/lib/validation/operations"

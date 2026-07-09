@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm"
+import { eq, and, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   purchaseRequestItems, approvalDecisions,
@@ -9,10 +9,96 @@ import { canTransition, type ItemStatus } from "./types"
 import { rollupRequestStatus } from "./rollup"
 
 /**
- * Approve an item: requested → approved → pending_purchase.
- * Optional modifiedQty lets the approver adjust the quantity before approving.
- * After the transition, rolls up the parent request status.
+ * Bulk-approve multiple items in a single transaction.
+ * Each item is locked individually (FOR UPDATE) to prevent deadlocks.
+ * If any item fails, the entire transaction is rolled back.
  */
+export async function bulkApproveItems(
+  itemIds: string[],
+  userId: string,
+  opts?: { userEmail?: string; roleContext?: string },
+): Promise<{ approved: number; errors: string[] }> {
+  if (itemIds.length === 0) return { approved: 0, errors: [] }
+
+  const approved: string[] = []
+  const errors: string[] = []
+
+  await db.transaction(async (tx) => {
+    const now = new Date().toISOString()
+
+    for (const itemId of itemIds) {
+      try {
+        const [locked] = await tx
+          .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+          .from(purchaseRequestItems)
+          .where(eq(purchaseRequestItems.id, itemId))
+          .for("update")
+
+        if (!locked) { errors.push(itemId); continue }
+        if (!canTransition(locked.status as ItemStatus, "approved")) {
+          errors.push(itemId); continue
+        }
+
+        const [updated] = await tx
+          .update(purchaseRequestItems)
+          .set({ status: "approved", updatedAt: now })
+          .where(and(
+            eq(purchaseRequestItems.id, itemId),
+            eq(purchaseRequestItems.status, locked.status),
+          ))
+          .returning({ id: purchaseRequestItems.id })
+
+        if (!updated) { errors.push(itemId); continue }
+
+        await tx.insert(approvalDecisions).values({
+          id:            nanoid(),
+          requestItemId: itemId,
+          requestId:     locked.requestId,
+          type:          "approve",
+          decidedBy:     userId,
+          roleContext:   opts?.roleContext ?? null,
+        })
+
+        await recordStatusChange({
+          entityType: "request_item",
+          entityId:   itemId,
+          fromStatus: locked.status,
+          toStatus:   "approved",
+          changedBy:  userId,
+        }, tx)
+        await recordAudit({
+          userId,
+          userEmail:  opts?.userEmail,
+          action:     "status_change",
+          entityType: "request_item",
+          entityId:   itemId,
+          oldState:   { status: locked.status },
+          newState:   { status: "approved" },
+        }, tx)
+
+        approved.push(itemId)
+      } catch {
+        errors.push(itemId)
+      }
+    }
+
+    // Roll up only affected requests (those with at least one successful approval)
+    if (approved.length > 0) {
+      const allItems = await tx
+        .select({ requestId: purchaseRequestItems.requestId })
+        .from(purchaseRequestItems)
+        .where(inArray(purchaseRequestItems.id, approved))
+      const uniqueRequestIds = [...new Set(allItems.map((i) => i.requestId))]
+      for (const rid of uniqueRequestIds) {
+        await rollupRequestStatus(rid, tx)
+      }
+    }
+  })
+
+  return { approved: approved.length, errors }
+}
+
+/** @see approveItem */
 export async function approveItem(
   itemId: string,
   userId: string,

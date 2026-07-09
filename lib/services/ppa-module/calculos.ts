@@ -1,4 +1,5 @@
 import { eq, and, or, inArray, desc, ilike, gte, lte, sql } from "drizzle-orm"
+import type { PgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import { ppaSubmissions } from "@/db/schema/ppa"
 import { worksites } from "@/db/schema/worksites"
@@ -40,6 +41,29 @@ function buildPpaConditions(filters: PpaListFilters) {
   return conditions
 }
 
+// Columns needed for the PPA list view — excludes large JSONB blobs.
+const LIST_COLUMNS = {
+  id: ppaSubmissions.id,
+  worksiteId: ppaSubmissions.worksiteId,
+  workerId: ppaSubmissions.workerId,
+  workerName: ppaSubmissions.workerName,
+  workerRut: ppaSubmissions.workerRut,
+  workerCompany: ppaSubmissions.workerCompany,
+  manualIdentificacion: ppaSubmissions.manualIdentificacion,
+  tipoTrabajo: ppaSubmissions.tipoTrabajo,
+  esCritica: ppaSubmissions.esCritica,
+  resultado: ppaSubmissions.resultado,
+  estado: ppaSubmissions.estado,
+  publicToken: ppaSubmissions.publicToken,
+  publicTokenRevokedAt: ppaSubmissions.publicTokenRevokedAt,
+  reviewedBy: ppaSubmissions.reviewedBy,
+  fuiAlLugar: ppaSubmissions.fuiAlLugar,
+  decision: ppaSubmissions.decision,
+  reviewedAt: ppaSubmissions.reviewedAt,
+  createdAt: ppaSubmissions.createdAt,
+  updatedAt: ppaSubmissions.updatedAt,
+} satisfies Record<string, PgColumn>
+
 export async function listPpa(
   filters: PpaListFilters,
   limit = 50,
@@ -50,18 +74,18 @@ export async function listPpa(
 
   if (filters.search) {
     const rows = await db
-      .select({ submission: ppaSubmissions, worksiteName: worksites.name })
+      .select({ ...LIST_COLUMNS, worksiteName: worksites.name })
       .from(ppaSubmissions)
       .leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(ppaSubmissions.createdAt))
       .limit(limit)
       .offset(offset)
-    return rows.map((r) => ({ ...r.submission, worksiteName: r.worksiteName }))
+    return rows as unknown as PpaRow[]
   }
 
   const submissions = await db
-    .select()
+    .select(LIST_COLUMNS)
     .from(ppaSubmissions)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(ppaSubmissions.createdAt))
@@ -78,7 +102,7 @@ export async function listPpa(
     : []
   const wsMap = new Map(wsRows.map((w) => [w.id, w.name]))
 
-  return submissions.map((s) => ({ ...s, worksiteName: wsMap.get(s.worksiteId) ?? null }))
+  return submissions.map((s) => ({ ...s, worksiteName: wsMap.get(s.worksiteId) ?? null })) as unknown as PpaRow[]
 }
 
 export async function countPpa(filters: PpaListFilters): Promise<number> {

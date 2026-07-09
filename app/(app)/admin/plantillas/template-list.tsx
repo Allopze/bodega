@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import type { ActionState } from "@/lib/validation/masters"
+import { replaceVariables } from "@/lib/services/email-template-render"
 import { updateTemplateAction, resetTemplateAction } from "./actions"
 
 interface TemplateItem {
@@ -205,23 +206,46 @@ function TemplateCard({
   )
 }
 
-function PreviewBlock({ template }: { template: TemplateItem }) {
-  const previewVars: Record<string, string> = {
-    app_name:    "Plataforma Chome",
-    sender_name: "Administrador",
-    user_name:   "Juan Pérez",
-    title:       "Notificación de prueba",
-    body:        "Este es el cuerpo de la notificación.",
-    href:        "https://app.chome.cl/dashboard",
-    invite_url:  "https://app.chome.cl/invitar/abc123",
-  }
+const PREVIEW_VARS: Record<string, string> = {
+  app_name:    "Plataforma Chome",
+  sender_name: "Administrador",
+  user_name:   "Juan Pérez",
+  title:       "Solicitud de compra #001",
+  body:        "Se ha creado una nueva solicitud de compra que requiere tu aprobación.",
+  href:        "https://app.chome.cl/solicitudes/abc123",
+  invite_url:  "https://app.chome.cl/invitar/abc123",
+}
 
-  const preview = template.subject.replace(/\{\{(\w+)\}\}/g, (_, key) => previewVars[key] ?? `{{${key}}}`)
+function PreviewBlock({ template }: { template: TemplateItem }) {
+  const subjectPreview = replaceVariables(template.subject, PREVIEW_VARS)
+  const bodyPreview = replaceVariables(template.bodyHtml, PREVIEW_VARS)
+  const isFullHtml = /<!DOCTYPE|<html/i.test(template.bodyHtml)
 
   return (
-    <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-      <p className="mb-1 text-xs font-semibold text-[var(--color-text-subtle)]">Vista previa del asunto:</p>
-      <p className="text-sm text-[var(--color-text)]">{preview}</p>
+    <div className="space-y-3">
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+        <p className="mb-1 text-xs font-semibold text-[var(--color-text-subtle)]">Vista previa del asunto:</p>
+        <p className="text-sm text-[var(--color-text)]">{subjectPreview}</p>
+      </div>
+      {isFullHtml && (
+        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+          <p className="mb-2 text-xs font-semibold text-[var(--color-text-subtle)]">Vista previa del correo:</p>
+          <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-white">
+            <iframe
+              title="Vista previa del correo"
+              sandbox="allow-same-origin"
+              srcDoc={bodyPreview}
+              className="h-[400px] w-full border-0"
+            />
+          </div>
+        </div>
+      )}
+      {!isFullHtml && (
+        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+          <p className="mb-2 text-xs font-semibold text-[var(--color-text-subtle)]">Vista previa del contenido:</p>
+          <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-white p-4" dangerouslySetInnerHTML={{ __html: bodyPreview }} />
+        </div>
+      )}
     </div>
   )
 }

@@ -21,7 +21,7 @@ const mockResetTemplate = vi.hoisted(() => vi.fn())
 const mockSeedDefaultTemplates = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/services/system-settings", () => ({
   setCompanyProfile: mockSetCompanyProfile,
   setPdfMaxSizeMb: mockSetPdfMaxSizeMb,

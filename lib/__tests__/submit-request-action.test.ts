@@ -45,7 +45,7 @@ vi.mock("@/db", () => ({
     }),
   },
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/services/notifications", () => ({
   notifyManyUser: vi.fn(),
   getUserIdsWithPermission: vi.fn().mockResolvedValue([]),

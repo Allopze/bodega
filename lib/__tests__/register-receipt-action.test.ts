@@ -17,7 +17,7 @@ const mockDbState = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("@/lib/services/receiving", () => ({ registerReceipt: mockRegisterReceipt }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: mockRedirect }))
 vi.mock("@/db", () => ({
   db: {

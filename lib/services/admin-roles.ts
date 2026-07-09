@@ -102,49 +102,52 @@ export async function updateRoleWithPermissions(
   id: string,
   input: RoleInput,
   _actor: AdminActor,
-  client: Tx | typeof db = db,
+  client?: Tx | typeof db,
 ): Promise<RoleWithPermissions> {
   await assertRoleCanBeModified(id)
 
-  // Protected roles must keep at least one permission.
-  const [current] = await (client as typeof db).select().from(roles).where(eq(roles.id, id)).limit(1)
-  if (!current) throw new Error("Rol no encontrado")
-  if (PROTECTED_ROLE_SLUGS.has(current.name) && input.permissionIds.length === 0) {
-    throw new Error("El rol administrador debe conservar al menos un permiso")
-  }
+  const work = async (tx: Tx | typeof db) => {
+    const [current] = await tx.select().from(roles).where(eq(roles.id, id)).limit(1)
+    if (!current) throw new Error("Rol no encontrado")
+    if (PROTECTED_ROLE_SLUGS.has(current.name) && input.permissionIds.length === 0) {
+      throw new Error("El rol administrador debe conservar al menos un permiso")
+    }
 
-  const slug = toSlug(input.name) || current.name
-  if (slug !== current.name) {
-    const conflict = await (client as typeof db).query.roles.findFirst({ where: eq(roles.name, slug) })
-    if (conflict && conflict.id !== id) throw new Error(`Ya existe un rol con el slug "${slug}"`)
-  }
+    const slug = toSlug(input.name) || current.name
+    if (slug !== current.name) {
+      const conflict = await tx.query.roles.findFirst({ where: eq(roles.name, slug) })
+      if (conflict && conflict.id !== id) throw new Error(`Ya existe un rol con el slug "${slug}"`)
+    }
 
-  await (client as typeof db)
-    .update(roles)
-    .set({
+    await tx
+      .update(roles)
+      .set({
+        name: slug,
+        label: input.label.trim(),
+        description: input.description ?? null,
+        isGlobal: input.isGlobal,
+      })
+      .where(eq(roles.id, id))
+
+    await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, id))
+    if (input.permissionIds.length > 0) {
+      await tx.insert(rolePermissions).values(
+        input.permissionIds.map((permissionId) => ({ roleId: id, permissionId })),
+      )
+    }
+
+    return {
+      id,
       name: slug,
       label: input.label.trim(),
       description: input.description ?? null,
       isGlobal: input.isGlobal,
-    })
-    .where(eq(roles.id, id))
-
-  // Replace permission grants atomically.
-  await (client as typeof db).delete(rolePermissions).where(eq(rolePermissions.roleId, id))
-  if (input.permissionIds.length > 0) {
-    await (client as typeof db).insert(rolePermissions).values(
-      input.permissionIds.map((permissionId) => ({ roleId: id, permissionId })),
-    )
+      permissionIds: input.permissionIds,
+    }
   }
 
-  return {
-    id,
-    name: slug,
-    label: input.label.trim(),
-    description: input.description ?? null,
-    isGlobal: input.isGlobal,
-    permissionIds: input.permissionIds,
-  }
+  if (client) return work(client)
+  return db.transaction(work)
 }
 
 /** Validate that every provided id resolves to a real permission. */

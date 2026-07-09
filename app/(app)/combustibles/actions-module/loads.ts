@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/db"
-import { fuelLoads } from "@/db/schema"
+import { fuelLoads, fuelVehicles } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
@@ -101,6 +101,18 @@ export async function createFuelLoadAction(
     return { ok: false, message: "No puedes registrar cargas para esta faena" }
   }
 
+  // Validación cruzada: la faena de la carga debe coincidir con la faena del vehículo
+  const vehicle = await db.query.fuelVehicles.findFirst({
+    where: eq(fuelVehicles.id, parsed.data.vehicleId),
+    with: { worksite: true },
+  })
+  if (vehicle && vehicle.worksite && vehicle.worksiteId !== parsed.data.worksiteId) {
+    return {
+      ok: false,
+      message: `La faena de la carga no coincide con la faena del vehículo. El vehículo ${vehicle.plate} pertenece a "${vehicle.worksite.name}", pero seleccionaste otra faena. Verifica los datos.`,
+    }
+  }
+
   try {
     const id = nanoid()
     await db.insert(fuelLoads).values({
@@ -145,6 +157,22 @@ export async function updateFuelLoadAction(
   }
   if (!canAccessWorksite(session, existing.worksiteId)) {
     return { ok: false, message: "Sin acceso a la faena de esta carga" }
+  }
+
+  // Validación cruzada: si cambió el vehículo, verificar que su faena coincida
+  const newVehicleId = String(formData.get("vehicleId") ?? existing.vehicleId)
+  const newWorksiteId = String(formData.get("worksiteId") ?? existing.worksiteId)
+  if (newVehicleId !== existing.vehicleId || newWorksiteId !== existing.worksiteId) {
+    const vehicle = await db.query.fuelVehicles.findFirst({
+      where: eq(fuelVehicles.id, newVehicleId),
+      with: { worksite: true },
+    })
+    if (vehicle && vehicle.worksite && vehicle.worksiteId !== newWorksiteId) {
+      return {
+        ok: false,
+        message: `La faena de la carga no coincide con la faena del vehículo. El vehículo ${vehicle.plate} pertenece a "${vehicle.worksite.name}". Verifica los datos.`,
+      }
+    }
   }
 
   const loadDate = String(formData.get("loadDate") ?? existing.loadDate)

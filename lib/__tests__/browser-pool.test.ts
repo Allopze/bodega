@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { existsSync } from "node:fs"
 
 // ── Playwright mock ───────────────────────────────────────────────────────────
 
@@ -43,6 +44,9 @@ const mockLaunch = vi.fn()
 vi.mock("playwright", () => ({
   chromium: { launch: mockLaunch },
 }))
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(),
+}))
 
 import * as poolModule from "@/lib/pdf/browser-pool"
 
@@ -50,6 +54,9 @@ beforeEach(() => {
   disconnectListeners.length = 0
   mockBrowser = makeMockBrowser(disconnectListeners)
   mockLaunch.mockReset()
+  vi.mocked(existsSync).mockReset()
+  vi.mocked(existsSync).mockReturnValue(false)
+  delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mockLaunch.mockResolvedValue(mockBrowser as any)
   poolModule._resetPoolForTesting()
@@ -63,6 +70,24 @@ describe("browser pool", () => {
       expect(mockLaunch).not.toHaveBeenCalled()
       await poolModule.withBrowserContext({}, async () => "ok")
       expect(mockLaunch).toHaveBeenCalledOnce()
+    })
+
+    it("uses the runtime Chromium executable when configured", async () => {
+      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/usr/bin/chromium-browser"
+      await poolModule.withBrowserContext({}, async () => "ok")
+      expect(mockLaunch).toHaveBeenCalledWith({
+        timeout: 30_000,
+        executablePath: "/usr/bin/chromium-browser",
+      })
+    })
+
+    it("falls back to a system Chromium executable when the runtime env var is missing", async () => {
+      vi.mocked(existsSync).mockImplementation((path) => path === "/usr/bin/chromium")
+      await poolModule.withBrowserContext({}, async () => "ok")
+      expect(mockLaunch).toHaveBeenCalledWith({
+        timeout: 30_000,
+        executablePath: "/usr/bin/chromium",
+      })
     })
 
     it("reuses the same browser for multiple sequential requests", async () => {

@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, real, timestamp, check } from "drizzle-orm/pg-core"
+import { pgTable, text, real, timestamp, check, index } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers } from "./worksites"
 import { products } from "./products"
@@ -22,11 +22,11 @@ export const receipts = pgTable("receipts", {
   notes:              text("notes"),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  // Invariant: locationType must be office or faena; status open or closed
   check("receipts_location_status_valid", sql`
     ${table.locationType} IN ('office', 'faena')
     AND ${table.status} IN ('open', 'closed')
   `),
+  index("idx_receipts_po").on(table.purchaseOrderId),
 ])
 
 /* ── Receipt Items ───────────────────────────────────────────────────────── */
@@ -45,12 +45,15 @@ export const receiptItems = pgTable("receipt_items", {
   check("receipt_items_status_valid", sql`
     ${table.status} IN ('received', 'partially_received', 'rejected', 'damaged', 'pending')
   `),
-  // Invariant: quantityReceived > 0; rejected/damaged counters non-negative
+  // Invariant: contadores no negativos y al menos uno positivo. quantityReceived
+  // puede ser 0 cuando la línea llegó 100% rechazada/dañada (M-3).
   check("receipt_items_quantities_valid", sql`
-    ${table.quantityReceived} > 0
+    ${table.quantityReceived} >= 0
     AND ${table.quantityRejected} >= 0
     AND ${table.quantityDamaged} >= 0
+    AND (${table.quantityReceived} + ${table.quantityRejected} + ${table.quantityDamaged}) > 0
   `),
+  index("idx_receipt_items_po_item").on(table.purchaseOrderItemId),
 ])
 
 /* ── Deliveries (Entregas a Faena / Trabajador) ──────────────────────────── */
@@ -71,8 +74,8 @@ export const deliveries = pgTable("deliveries", {
   notes:           text("notes"),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  // Invariant: destinationType must be faena (worksite-level delivery) or worker (individual delivery)
   check("deliveries_destination_type_valid", sql`${table.destinationType} IN ('faena', 'worker')`),
+  index("idx_deliveries_worksite_date").on(table.worksiteId, table.deliveredAt),
 ])
 
 /* ── Delivery Items ───────────────────────────────────────────────────────── */
@@ -92,8 +95,8 @@ export const deliveryItems = pgTable("delivery_items", {
   returnReason:          text("return_reason"),   // desgastado | dañado | vencido | otro
   returnNotes:           text("return_notes"),
 }, (table) => [
-  // Invariant: delivered quantity must be strictly positive
   check("delivery_items_quantity_positive", sql`${table.quantity} > 0`),
+  index("idx_delivery_items_request").on(table.requestItemId),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

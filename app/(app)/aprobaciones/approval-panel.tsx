@@ -10,10 +10,12 @@ import type { ApprovalRequest } from "./types"
 export function ApprovalPanel({
   requests,
   canApproveEpp,
+  canSetDispatch,
   worksiteOptions = [],
 }: {
   requests:        ApprovalRequest[]
   canApproveEpp:   boolean
+  canSetDispatch:  boolean
   worksiteOptions?: FilterOption[]
 }) {
   return (
@@ -39,7 +41,7 @@ export function ApprovalPanel({
         </div>
       ) : (
         requests.map((req) => (
-          <RequestGroup key={req.id} request={req} canApproveEpp={canApproveEpp} />
+          <RequestGroup key={req.id} request={req} canApproveEpp={canApproveEpp} canSetDispatch={canSetDispatch} />
         ))
       )}
     </div>

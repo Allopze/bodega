@@ -2,6 +2,7 @@ import type { Session } from "next-auth"
 import { and, count, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
+import { can } from "@/lib/auth/can"
 import { textSearchSql } from "@/lib/adquisiciones/list-query"
 import { formatDate } from "@/lib/utils"
 import { REQUEST_TYPE_LABELS, URGENCY_LABELS, requestStatusLabel } from "./labels"
@@ -9,8 +10,12 @@ import { buildWorksiteFilter, buildDateFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
 
 export async function solicitudesList(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
+  // Espeja el filtro de la pantalla: quien solo tiene view_own exporta únicamente
+  // sus propias solicitudes, no las de sus compañeros de faena (H-3).
+  const ownOnly = !can(session, "requests:view_all")
   const where = and(
     buildWorksiteFilter(session, purchaseRequests.worksiteId),
+    ownOnly && session?.user?.id ? eq(purchaseRequests.requesterId, session.user.id) : undefined,
     buildDateFilter(filters, purchaseRequests.createdAt),
     filters.status ? eq(purchaseRequests.status, filters.status) : undefined,
     filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined,

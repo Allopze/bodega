@@ -12,7 +12,7 @@ export const fuelVehicles = pgTable("fuel_vehicles", {
   brand:     text("brand"),                           // Marca
   model:     text("model"),                           // Modelo
   year:      integer("year"),                         // Año
-  worksiteId: text("worksite_id").references(() => worksites.id),  // Faena asignada (nullable)
+  worksiteId: text("worksite_id").notNull().references(() => worksites.id),  // Faena asignada
   responsibleUserId: text("responsible_user_id").references(() => users.id),
   operationalStatus: text("operational_status").notNull().default("operativo"),
   soapExpiresAt: text("soap_expires_at"),

@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 // Mock de dependencias
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: vi.fn(async () => ({

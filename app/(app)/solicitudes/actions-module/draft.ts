@@ -1,6 +1,7 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
+  revalidateTag("badge-counts", { expire: 0 })
 import type { Session } from "next-auth"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
@@ -25,6 +26,7 @@ export async function saveDraft(
   if (!result.ok) return result
 
   revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
   return { ok: true, message: "Borrador guardado", requestId: result.requestId, lastSavedAt: new Date().toISOString() }
 }
 

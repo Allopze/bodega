@@ -15,9 +15,9 @@ import { useBulkApproveAction } from "./use-approval-actions"
 import { updateDeliveryModeAction } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
-export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequest; canApproveEpp: boolean }) {
+export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { request: ApprovalRequest; canApproveEpp: boolean; canSetDispatch: boolean }) {
   const [collapsed, setCollapsed] = React.useState(false)
-  const { bulkState, bulkAction } = useBulkApproveAction()
+  const { bulkState, bulkAction, bulkPending } = useBulkApproveAction()
   const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
   const modeFormRef = React.useRef<HTMLFormElement>(null)
   // Controlled value: React 19 auto-resets *uncontrolled* form fields after a successful
@@ -74,7 +74,7 @@ export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequ
             {request.pendingCount} pendiente{request.pendingCount !== 1 ? "s" : ""}
           </span>
 
-          {canApproveEpp && (
+          {canSetDispatch && (
             <form ref={modeFormRef} action={modeAction} className="flex items-center gap-1">
               <input type="hidden" name="requestId" value={request.id} />
               <Select
@@ -111,7 +111,7 @@ export function RequestGroup({ request, canApproveEpp }: { request: ApprovalRequ
               />
             </form>
           )}
-          {allApproved && (
+          {!bulkPending && allApproved && (
             <span className="text-xs text-[var(--color-success)] font-medium">Todos aprobados</span>
           )}
         </div>

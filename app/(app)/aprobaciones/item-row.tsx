@@ -18,7 +18,17 @@ type ItemAction = "idle" | "approving" | "rejecting"
 
 export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canApprove?: boolean }) {
   const [action, setAction] = React.useState<ItemAction>("idle")
-  const { approveState, approveAction, rejectState, rejectAction, decided } = useItemActions()
+  const { approveState, approveAction, approvePending, rejectState, rejectAction, rejectPending, decided } = useItemActions()
+  const prevDecidedRef = React.useRef(decided)
+
+  React.useEffect(() => {
+    const wasPending = prevDecidedRef.current === null
+    const nowResolved = decided !== null
+    if (wasPending && nowResolved) {
+      setAction("idle")
+    }
+    prevDecidedRef.current = decided
+  }, [decided])
 
   if (decided) {
     const label = decided === "approved" ? "Aprobado" : "Rechazado"
@@ -37,6 +47,8 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
       </li>
     )
   }
+
+  const showLoading = approvePending || rejectPending
 
   return (
     <li className="rounded-[var(--radius-xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden">
@@ -98,7 +110,7 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
           )}
         </div>
 
-        {action === "idle" && canApprove && (
+        {action === "idle" && !showLoading && canApprove && (
           <div className="flex items-center gap-1.5 shrink-0">
             <Button
               variant="secondary"
@@ -120,9 +132,9 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
             </Button>
           </div>
         )}
-        {action === "idle" && !canApprove && (
+        {action === "idle" && !canApprove && !showLoading && (
           <span className="text-[11px] text-[var(--color-text-subtle)] italic shrink-0 max-w-[140px] text-right leading-tight">
-            Requiere Jefatura o Secretaría
+            Requiere Jefatura, Secretaría o Prevención
           </span>
         )}
       </div>

@@ -1,6 +1,6 @@
 "use server"
 
-import { revalidatePath }    from "next/cache"
+import { revalidatePath, revalidateTag }    from "next/cache"
 import { db } from "@/db"
 import { deliveryItems, inventoryMovements, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
 import { and, eq, inArray } from "drizzle-orm"
@@ -106,6 +106,7 @@ export async function dispatchAction(
     }, serviceWorksiteScope(session))
 
     revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
     revalidatePath("/entregas")
     revalidatePath("/trazabilidad")
     return { ok: true, message: `Entrega registrada: ${qty} unidades` }
@@ -145,6 +146,7 @@ export async function setMinStockAction(
 
     await db.update(worksiteStock).set({ minStock }).where(eq(worksiteStock.id, stockId))
     revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
     return { ok: true, message: `Stock mínimo actualizado a ${minStock}` }
   } catch (e) {
     logger.error("[setMinStockAction]", e)
@@ -201,6 +203,7 @@ export async function adjustStockAction(
     })
 
     revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
     const sign = direction === "ingreso" ? "+" : "-"
     return { ok: true, message: `Ajuste registrado: ${sign}${quantity} unidades` }
   } catch (e) {
@@ -278,6 +281,7 @@ export async function returnStockAction(
     })
 
     revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
     return { ok: true, message: `Devolución registrada: ${quantity} unidades` }
   } catch (e) {
     logger.error("[returnStockAction]", e)
@@ -329,6 +333,7 @@ export async function closePhysicalInventoryCountAction(
     )
 
     revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
     revalidatePath("/trazabilidad")
     return {
       ok: true,

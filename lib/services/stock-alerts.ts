@@ -38,23 +38,25 @@ export async function getStockAlerts(): Promise<StockAlert[]> {
     .innerJoin(products, eq(worksiteStock.productId, products.id))
     .where(
       sql`${worksiteStock.minStock} > 0
-          AND ${worksiteStock.quantity} < ${worksiteStock.minStock} * ${WARNING_RATIO}`,
+          AND ${worksiteStock.quantity} <= ${worksiteStock.minStock} * 2.0`,
     )
 
-  return rows.map((row) => {
-    const deficit = row.minStock - row.currentQty
-    return {
-      worksiteId:   row.worksiteId,
-      worksiteName: row.worksiteName,
-      productId:    row.productId,
-      productName:  row.productName,
-      productSku:   row.productSku,
-      currentQty:   row.currentQty,
-      minStock:     row.minStock,
-      deficit:      Math.max(0, deficit),
-      severity:     row.currentQty < row.minStock ? "critical" : "warning",
-    } satisfies StockAlert
-  })
+  return rows
+    .filter((row) => row.currentQty < row.minStock * WARNING_RATIO)
+    .map((row) => {
+      const deficit = row.minStock - row.currentQty
+      return {
+        worksiteId:   row.worksiteId,
+        worksiteName: row.worksiteName,
+        productId:    row.productId,
+        productName:  row.productName,
+        productSku:   row.productSku,
+        currentQty:   row.currentQty,
+        minStock:     row.minStock,
+        deficit,
+        severity:     deficit > 0 ? "critical" : "warning",
+      } satisfies StockAlert
+    })
 }
 
 export async function getCriticalStockAlertCount(): Promise<number> {

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/field"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChartBar, Truck, Buildings, GasPump, CalendarBlank } from "@phosphor-icons/react"
-import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "../fuel-charts"
+import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "../fuel-charts-lazy"
 
 interface ReportRow {
   group: string | null

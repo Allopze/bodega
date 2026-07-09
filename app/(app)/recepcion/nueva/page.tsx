@@ -43,6 +43,12 @@ export default async function NuevaRecepcionPage({
   if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
     redirect("/recepcion")
   }
+  // Si la OC es directo_faena, la etapa oficina se deshabilita; un receptor que
+  // solo tiene register_office (p. ej. prevencionista) no podría hacer nada aquí.
+  const canOfficeForOrder = canOffice && order.deliveryMode !== "directo_faena"
+  if (!canOfficeForOrder && !canFaena) {
+    redirect("/recepcion")
+  }
 
   const productIds = order.items
     .map((i) => i.productId)
@@ -92,7 +98,7 @@ export default async function NuevaRecepcionPage({
         orderCode={order.code}
         orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
         items={items}
-        canOffice={canOffice && order.deliveryMode !== "directo_faena"}
+        canOffice={canOfficeForOrder}
         canFaena={canFaena}
         deliveryMode={order.deliveryMode as "via_oficina" | "directo_faena"}
       />

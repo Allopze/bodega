@@ -35,7 +35,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
 }, (table) => [
   // Invariant: requestType, urgency and status must be from the canonical lists
   check("purchase_requests_type_urgency_status_valid", sql`
-    ${table.requestType} IN ('epp', 'stock', 'mantencion', 'otro', 'repuestos', 'servicios')
+    ${table.requestType} IN ('epp', 'otro', 'repuestos', 'servicios')
     AND ${table.urgency} IN ('normal', 'high', 'critical')
     AND ${table.status} IN (
       'draft', 'submitted', 'in_review', 'partially_approved', 'approved',
@@ -106,9 +106,9 @@ export const approvalDecisions = pgTable("approval_decisions", {
   modifiedQty:    real("modified_qty"),              // if quantity was modified during approval
   roleContext:    text("role_context"),               // 'jefa_chome' | 'secretaria' | 'prevencionista' | 'jefe_mantencion' | 'admin'
 }, (table) => [
-  // Invariant: modifiedQty is nullable but when set must be > 0; type from canonical decision types
   check("approval_decisions_modified_qty_positive", sql`${table.modifiedQty} IS NULL OR ${table.modifiedQty} > 0`),
   check("approval_decisions_type_valid", sql`${table.type} IN ('approve', 'reject', 'return', 'modify')`),
+  index("idx_approval_decisions_item").on(table.requestItemId),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

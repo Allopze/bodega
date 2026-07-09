@@ -20,16 +20,17 @@ interface EntityTimelineProps {
   events:     TimelineEvent[]
 }
 
-export function EntityTimeline({ entityType, events }: EntityTimelineProps) {
-  function getStatusLabel(status: string) {
-    if (entityType === "request") {
-      return REQUEST_STATE_META[status as RequestStatus]?.label ?? status
-    }
-    if (entityType === "item") {
-      return ITEM_STATE_META[status as ItemStatus]?.label ?? status
-    }
-    return OC_STATE_META[status as OcStatus]?.label ?? status
+function getStatusLabel(status: string, entityType: "request" | "oc" | "item") {
+  if (entityType === "request") {
+    return REQUEST_STATE_META[status as RequestStatus]?.label ?? status
   }
+  if (entityType === "item") {
+    return ITEM_STATE_META[status as ItemStatus]?.label ?? status
+  }
+  return OC_STATE_META[status as OcStatus]?.label ?? status
+}
+
+const EntityTimelineInner = React.memo(function EntityTimelineInner({ entityType, events }: EntityTimelineProps) {
 
   return (
     <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
@@ -51,8 +52,8 @@ export function EntityTimeline({ entityType, events }: EntityTimelineProps) {
         ) : (
           <div className="relative border-l border-[var(--color-border)] ml-3 pl-6 space-y-6">
             {events.map((event) => {
-              const labelFrom = event.fromStatus ? getStatusLabel(event.fromStatus) : null
-              const labelTo   = getStatusLabel(event.toStatus)
+              const labelFrom = event.fromStatus ? getStatusLabel(event.fromStatus, entityType) : null
+              const labelTo   = getStatusLabel(event.toStatus, entityType)
               
               return (
                 <div key={event.id} className="relative group">
@@ -98,4 +99,6 @@ export function EntityTimeline({ entityType, events }: EntityTimelineProps) {
       </div>
     </section>
   )
-}
+})
+
+export const EntityTimeline = EntityTimelineInner

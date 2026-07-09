@@ -67,7 +67,7 @@ vi.mock("@/db", () => ({
     select: mockDbSelect,
   },
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import {
   createEvaluationAction,

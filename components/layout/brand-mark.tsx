@@ -1,3 +1,4 @@
+import * as React from "react"
 import Image from "next/image"
 
 interface BrandMarkProps {
@@ -22,7 +23,7 @@ const TITLE_CLASSES = {
 const BRAND_TITLE = "Plataforma Chome"
 const BRAND_SUBTITLE = "Gestión operacional"
 
-export function BrandMark({
+const BrandMarkInner = React.memo(function BrandMarkInner({
   variant    = "dark",
   size       = 32,
   subtitle   = false,
@@ -67,4 +68,6 @@ export function BrandMark({
       )}
     </div>
   )
-}
+})
+
+export const BrandMark = BrandMarkInner

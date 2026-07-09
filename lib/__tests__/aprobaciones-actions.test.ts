@@ -45,7 +45,7 @@ vi.mock("@/lib/services/notifications", () => ({
   notifySafe: mockNotifySafe,
   notifyAfterCommit: mockNotifyAfterCommit,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { approveItemAction, rejectItemAction, returnItemAction, updateDeliveryModeAction } from "@/app/(app)/aprobaciones/actions"
 import type { ActionState } from "@/lib/validation/operations"

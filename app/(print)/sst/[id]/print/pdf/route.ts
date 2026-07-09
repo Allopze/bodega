@@ -41,7 +41,7 @@ export async function GET(
     { extraHTTPHeaders: cookie ? { cookie } : {} },
     async (ctx) => {
       const page = await ctx.newPage()
-      await page.goto(printUrl, { waitUntil: "networkidle" })
+      await page.goto(printUrl, { waitUntil: "domcontentloaded", timeout: 30_000 })
       return page.pdf({ format: "A4", printBackground: true })
     },
   )

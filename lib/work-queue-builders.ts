@@ -122,7 +122,10 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
     }
   }
 
-  if (hasPermission(actor, "warehouse:register_movement")) {
+  // La tarea enruta a /entregas (entrega de EPP a trabajador), que exige
+  // deliveries:create para enviarse. Gatear por warehouse:register_movement
+  // producía tareas que el usuario no podía completar (p. ej. solicitante_faena).
+  if (hasPermission(actor, "deliveries:create")) {
     for (const item of snapshot.items.filter((item) => DELIVERY_ITEM_STATUSES.has(item.status) && item.hasStock && canSeeWorksite(actor, item.worksiteId))) {
       tasks.push({
         id:          `delivery:${item.id}`,

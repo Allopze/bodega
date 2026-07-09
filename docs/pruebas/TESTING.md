@@ -176,7 +176,7 @@ Playwright captura trace y video automáticamente en caso de falla.
 El script `scripts/capture-all-routes.ts` genera capturas PNG full-page de las
 pantallas navegables de la app en dos viewports:
 
-- Desktop: 1440 × 1000
+- Desktop: 1920 × 1080
 - Mobile: 390 × 844
 
 También escribe un `manifest.json` con rutas, URLs finales, estado HTTP y ruta

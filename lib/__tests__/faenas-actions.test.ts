@@ -31,7 +31,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/audit", () => ({
   recordAudit: mockRecordAudit,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { createWorksite, updateWorksite, toggleWorksiteActive } from "@/app/(app)/admin/faenas/actions"
 import type { ActionState } from "@/lib/validation/operations"

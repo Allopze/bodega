@@ -63,6 +63,25 @@ export async function recordStatusChange(params: StatusChangeParams, client: Aud
   })
 }
 
+/**
+ * Bulk-insert multiple status changes in a single round-trip.
+ * Use for loops of recordStatusChange to reduce DB overhead.
+ */
+export async function recordStatusChanges(paramsList: StatusChangeParams[], client: AuditDb = db): Promise<void> {
+  if (paramsList.length === 0) return
+  await client.insert(statusHistory).values(
+    paramsList.map((params) => ({
+      id:         nanoid(),
+      entityType: params.entityType,
+      entityId:   params.entityId,
+      fromStatus: params.fromStatus,
+      toStatus:   params.toStatus,
+      changedBy:  params.changedBy,
+      reason:     params.reason,
+    })),
+  )
+}
+
 /* ── DB-03: Archival / retention ─────────────────────────────────────────────
  *
  * DS N°44/2024 + Ley 16.744: occupational safety records must be kept ≥ 5 years.

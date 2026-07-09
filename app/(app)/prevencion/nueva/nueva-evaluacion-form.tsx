@@ -16,6 +16,7 @@ import { CargosSelector } from "./nueva-evaluacion-form-cargos"
 import { SeguimientoSection } from "./nueva-evaluacion-form-seguimiento"
 import type { Props } from "./nueva-evaluacion-form.types"
 import { today, getEvaluationTypeLabel } from "./nueva-evaluacion-form.types"
+import { resolveSelectedWorkerWorksite } from "./nueva-evaluacion-form.helpers"
 
 export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOptions }: Props) {
   const router = useRouter()
@@ -60,11 +61,9 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
 
   function handleWorkerSelect(wid: string) {
     setWorkerId(wid)
-    setErrors((prev) => ({ ...prev, workerId: "" }))
-    const worker = workers.find((w) => w.id === wid)
-    if (worker && !worksiteId) {
-      setWorksiteId(worker.worksiteId)
-    }
+    const nextWorksiteId = resolveSelectedWorkerWorksite(workers, wid, worksiteId)
+    setWorksiteId(nextWorksiteId)
+    setErrors((prev) => ({ ...prev, workerId: "", worksiteId: "" }))
   }
 
   function toggleCargo(value: string) {
@@ -232,10 +231,10 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
               htmlFor={siteId}
               required
               error={errors.worksiteId}
-              helper={selectedWorker?.worksiteId === worksiteId ? "Se completó automáticamente desde el trabajador seleccionado." : undefined}
+              helper={selectedWorker?.worksiteId === worksiteId ? "Se asigna automáticamente desde el trabajador seleccionado." : undefined}
             >
               <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setErrors((e) => ({ ...e, worksiteId: "" })) }}>
-                <SelectTrigger id={siteId} ref={worksiteRef} aria-invalid={!!errors.worksiteId}>
+                <SelectTrigger id={siteId} ref={worksiteRef} aria-invalid={!!errors.worksiteId} disabled={!!selectedWorker}>
                   <SelectValue placeholder="Selecciona faena" />
                 </SelectTrigger>
                 <SelectContent>

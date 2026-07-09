@@ -19,6 +19,10 @@ export async function getFleetOverview(session: Session) {
       ? inArray(fuelVehicles.worksiteId, scopedWorksites)
       : sql`false`
 
+  const sinceDate = new Date()
+  sinceDate.setFullYear(sinceDate.getFullYear() - 1)
+  const since = sinceDate.toISOString()
+
   const [vehicles, fuelRows, maintenanceRows] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
@@ -35,7 +39,10 @@ export async function getFleetOverview(session: Session) {
         lastHourMeterReading: sql<number>`MAX(${fuelLoads.hourMeterReading}) FILTER (WHERE ${fuelLoads.hourMeterReading} IS NOT NULL)`,
       })
       .from(fuelLoads)
-      .where(scopedWorksites === null ? undefined : scopedWorksites.length > 0 ? inArray(fuelLoads.worksiteId, scopedWorksites) : sql`false`)
+      .where(and(
+        sql`${fuelLoads.loadDate} >= ${since.slice(0, 10)}`,
+        scopedWorksites === null ? undefined : scopedWorksites.length > 0 ? inArray(fuelLoads.worksiteId, scopedWorksites) : sql`false`,
+      ))
       .groupBy(fuelLoads.vehicleId),
     db
       .select({
@@ -46,6 +53,7 @@ export async function getFleetOverview(session: Session) {
       })
       .from(maintenanceRecords)
       .where(and(
+        sql`${maintenanceRecords.maintenanceDate} >= ${since.slice(0, 10)}`,
         sql`${maintenanceRecords.status} <> 'cancelled'`,
         scopedWorksites === null ? undefined : scopedWorksites.length > 0 ? inArray(maintenanceRecords.worksiteId, scopedWorksites) : sql`false`,
       ))
@@ -102,7 +110,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     with: { worksite: true, responsibleUser: true },
   })
   if (!vehicle) return null
-  if (scopedWorksites !== null && (!vehicle.worksiteId || !scopedWorksites.includes(vehicle.worksiteId))) {
+  if (scopedWorksites !== null && !scopedWorksites.includes(vehicle.worksiteId)) {
     return null
   }
 
@@ -170,7 +178,7 @@ export async function uploadFleetDocument(
     columns: { id: true, worksiteId: true },
   })
   if (!vehicle) throw new Error("Vehículo no encontrado")
-  if (worksiteIds !== "all" && (!vehicle.worksiteId || !worksiteIds.includes(vehicle.worksiteId))) {
+  if (worksiteIds !== "all" && !worksiteIds.includes(vehicle.worksiteId)) {
     throw new Error("Sin acceso a la faena de este vehículo")
   }
 
@@ -214,7 +222,7 @@ export async function deleteFleetDocument(
     columns: { id: true, worksiteId: true },
   })
   if (!vehicle) throw new Error("Vehículo no encontrado")
-  if (worksiteIds !== "all" && (!vehicle.worksiteId || !worksiteIds.includes(vehicle.worksiteId))) {
+  if (worksiteIds !== "all" && !worksiteIds.includes(vehicle.worksiteId)) {
     throw new Error("Sin acceso a la faena de este vehículo")
   }
 

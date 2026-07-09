@@ -4,6 +4,7 @@ import * as React from "react"
 import { MagnifyingGlass } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import type { ProductOption } from "./request-form.types"
+import { filterProductsForPicker } from "./product-picker.helpers"
 
 interface ProductPickerProps {
   products:          ProductOption[]
@@ -46,12 +47,7 @@ export function ProductPicker({
   const optionId     = (i: number) => `${listboxId}-opt-${i}`
 
   const filtered = React.useMemo(() => {
-    const trimmed = query.trim()
-    if (!trimmed) return products.slice(0, 50)
-    const needle = trimmed.toLowerCase()
-    return products.filter(
-      (p) => p.name.toLowerCase().includes(needle) || p.sku.toLowerCase().includes(needle),
-    )
+    return filterProductsForPicker(products, query)
   }, [query, products])
 
   // The "use free text" option sits at the end of the list when the user

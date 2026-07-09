@@ -7,6 +7,7 @@ import type { Permission } from "@/modules/permissions"
 const mockRevalidatePath = vi.fn()
 vi.mock("next/cache", () => ({
   revalidatePath: (...args: unknown[]) => mockRevalidatePath(...args),
+  revalidateTag: vi.fn(),
 }))
 
 // Emulate Next.js redirect behavior which throws a specific redirect error

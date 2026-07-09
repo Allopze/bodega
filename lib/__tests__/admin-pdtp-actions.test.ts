@@ -20,9 +20,9 @@ vi.mock("@/lib/services/pdtp/admin-catalogs", () => ({
   upsertPdtpResponsible: mockUpsertResponsible,
   upsertPdtpSheet: mockUpsertSheet,
   parseDefaultScopeRoles: mockParseDefaultScopeRoles,
-  listRoleSlugs: vi.fn(() => ["administrador", "prevencionista", "supervisor_faena"]),
+  listRoleSlugs: vi.fn(() => ["administrador", "prevencionista", "jefe_terreno"]),
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import {
   savePdtpResponsibleAction,

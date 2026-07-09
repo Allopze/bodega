@@ -1,27 +1,21 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { approveItem, rejectItem, returnItem } from "@/lib/services/item-state"
+import { approveItem, bulkApproveItems, rejectItem, returnItem } from "@/lib/services/item-state"
 import { notifySafe, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
+import { canApproveEpp, DISPATCH_DECIDER_ROLES } from "./roles"
 
 const REVALIDATE = "/aprobaciones"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const EPP_APPROVER_ROLES = new Set(["administrador", "jefa_chome", "secretaria", "prevencionista"])
-
-// Delivery mode (dispatch route) is a logistics call: secretaría / jefatura / admin only.
-const DISPATCH_DECIDER_ROLES = new Set(["administrador", "jefa_chome", "secretaria"])
-
-function canApproveEpp(roles: string[]): boolean {
-  return roles.some((r) => EPP_APPROVER_ROLES.has(r))
-}
+// Los conjuntos de roles (EPP / despacho) viven en ./roles para ser compartidos
+// con page.tsx y evitar divergencias UI↔backend (ver H-1).
 
 function getRoleContext(roles: string[]): string {
   return roles[0] ?? "unknown"
@@ -72,6 +66,7 @@ export async function approveItemAction(
       roleContext: getRoleContext(session.user.roles),
     })
     revalidatePath(REVALIDATE)
+    revalidateTag("badge-counts", { expire: 0 })
 
     // S-05: notify only after the approveItem transaction has committed.
     if (itemBefore?.request?.requesterId) {
@@ -133,6 +128,7 @@ export async function rejectItemAction(
       roleContext: getRoleContext(session.user.roles),
     })
     revalidatePath(REVALIDATE)
+    revalidateTag("badge-counts", { expire: 0 })
 
     // S-05: notify only after the rejectItem transaction has committed.
     if (itemBefore?.request?.requesterId) {
@@ -191,6 +187,7 @@ export async function returnItemAction(
       roleContext: getRoleContext(session.user.roles),
     })
     revalidatePath(REVALIDATE)
+    revalidateTag("badge-counts", { expire: 0 })
     return { ok: true, message: "Ítem devuelto al solicitante" }
   } catch (e) {
     logger.error("[returnItemAction]", e)
@@ -213,8 +210,7 @@ export async function bulkApproveRequestAction(
 
   const roleContext = getRoleContext(session.user.roles)
   const userCanApproveEpp = canApproveEpp(session.user.roles)
-  let approved = 0
-  const errors: string[] = []
+
   const scopedItems = await db.query.purchaseRequestItems.findMany({
     where: inArray(purchaseRequestItems.id, itemIds),
     with: { request: { columns: { worksiteId: true, requestType: true } } },
@@ -229,29 +225,22 @@ export async function bulkApproveRequestAction(
       .map((item) => item.id),
   )
 
-  for (const id of itemIds) {
-    if (!allowedItemIds.has(id)) {
-      errors.push(id)
-      continue
-    }
-    try {
-      await approveItem(id, session.user.id, {
-        userEmail:   session.user.email ?? undefined,
-        roleContext,
-      })
-      approved++
-    } catch (e) {
-      errors.push(id)
-      logger.error(`[bulkApproveRequestAction] item ${id}:`, e)
-    }
-  }
+  const filtered = itemIds.filter((id) => allowedItemIds.has(id))
+  const skipped = itemIds.filter((id) => !allowedItemIds.has(id))
+
+  const { approved, errors: approveErrors } = await bulkApproveItems(filtered, session.user.id, {
+    userEmail: session.user.email ?? undefined,
+    roleContext,
+  })
 
   revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
 
-  if (errors.length > 0) {
+  const totalErrors = skipped.length + approveErrors.length
+  if (totalErrors > 0) {
     return {
       ok:      false,
-      message: `${approved} ítem(s) aprobado(s), ${errors.length} con error`,
+      message: `${approved} ítem(s) aprobado(s), ${totalErrors} con error`,
     }
   }
   return { ok: true, message: `${approved} ítem(s) aprobado(s)` }
@@ -289,6 +278,7 @@ export async function updateDeliveryModeAction(
 
   await db.update(purchaseRequests).set({ deliveryMode: mode }).where(eq(purchaseRequests.id, requestId))
   revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
   return {
     ok: true,
     message: mode === "directo_faena" ? "Despacho directo a faena" : "Despacho vía oficina",

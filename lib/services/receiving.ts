@@ -119,17 +119,26 @@ export async function registerReceipt(
           ? lockedOcItem.quantity - (lockedOcItem.quantityReceived ?? 0)
           : (lockedOcItem.quantityOfficeReceived ?? 0) - (lockedOcItem.quantityReceived ?? 0)
 
-      if (!Number.isFinite(qtyRec) || qtyRec <= 0) {
-        throw new Error("Received quantity must be greater than 0")
-      }
-      if (qtyRec > remaining) {
-        throw new Error(`Received quantity exceeds pending quantity for item ${ri.purchaseOrderItemId}`)
+      if (!Number.isFinite(qtyRec) || qtyRec < 0) {
+        throw new Error("Received quantity cannot be negative")
       }
       if (qtyRej < 0 || qtyDmg < 0) {
         throw new Error("Rejected and damaged quantities cannot be negative")
       }
+      // M-3: una línea 100% rechazada/dañada llega con qtyRec = 0. Se acepta
+      // mientras haya alguna cantidad (recibida, rechazada o dañada); no suma
+      // stock ni avanza el ítem de solicitud.
+      if (qtyRec + qtyRej + qtyDmg <= 0) {
+        throw new Error("Registra al menos una cantidad (recibida, rechazada o dañada)")
+      }
+      if (qtyRec > remaining) {
+        throw new Error(`Received quantity exceeds pending quantity for item ${ri.purchaseOrderItemId}`)
+      }
 
       const totalNowReceived = currentReceived + qtyRec
+      const lineStatus = qtyRec === 0
+        ? (qtyDmg > qtyRej ? "damaged" : "rejected")
+        : (totalNowReceived >= lockedOcItem.quantity ? "received" : "partially_received")
       await tx.insert(receiptItems).values({
         id:                  nanoid(),
         receiptId,
@@ -137,36 +146,40 @@ export async function registerReceipt(
         quantityReceived:    qtyRec,
         quantityRejected:    qtyRej,
         quantityDamaged:     qtyDmg,
-        status:              totalNowReceived >= lockedOcItem.quantity ? "received" : "partially_received",
+        status:              lineStatus,
         notes:               ri.notes ?? null,
       })
 
-      await tx
-        .update(purchaseOrderItems)
-        .set(input.stage === "office"
-          ? { quantityOfficeReceived: totalNowReceived }
-          : { quantityReceived: totalNowReceived })
-        .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
+      // Sin cantidad buena recibida no hay avance de OC, stock ni ítem: solo queda
+      // el registro del rechazo/daño en receiptItems.
+      if (qtyRec > 0) {
+        await tx
+          .update(purchaseOrderItems)
+          .set(input.stage === "office"
+            ? { quantityOfficeReceived: totalNowReceived }
+            : { quantityReceived: totalNowReceived })
+          .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
 
-      if (input.stage === "faena" && lockedOcItem.requestItemId) {
-        const fullReceived = totalNowReceived >= lockedOcItem.quantity
-        await receiveItemTx(tx, lockedOcItem.requestItemId, input.receivedBy, {
-          fullReceived,
-          userEmail: input.userEmail,
-        })
-
-        if (worksiteId && lockedOcItem.productId) {
-          await applyMovementTx(tx, {
-            worksiteId,
-            productId:   lockedOcItem.productId,
-            type:        "ingreso_oc",
-            quantity:    qtyRec,
-            referenceType: "purchase_order",
-            referenceId: input.purchaseOrderId,
-            performedBy: input.receivedBy,
-            userEmail:   input.userEmail,
-            notes:       `Recepción ${txCode} — guía ${input.dispatchGuideNo ?? "s/n"}`,
+        if (input.stage === "faena" && lockedOcItem.requestItemId) {
+          const fullReceived = totalNowReceived >= lockedOcItem.quantity
+          await receiveItemTx(tx, lockedOcItem.requestItemId, input.receivedBy, {
+            fullReceived,
+            userEmail: input.userEmail,
           })
+
+          if (worksiteId && lockedOcItem.productId) {
+            await applyMovementTx(tx, {
+              worksiteId,
+              productId:   lockedOcItem.productId,
+              type:        "ingreso_oc",
+              quantity:    qtyRec,
+              referenceType: "purchase_order",
+              referenceId: input.purchaseOrderId,
+              performedBy: input.receivedBy,
+              userEmail:   input.userEmail,
+              notes:       `Recepción ${txCode} — guía ${input.dispatchGuideNo ?? "s/n"}`,
+            })
+          }
         }
       }
     }

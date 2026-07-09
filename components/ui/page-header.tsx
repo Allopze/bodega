@@ -70,7 +70,7 @@ interface BreadcrumbsProps {
   className?: string
 }
 
-export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
+const BreadcrumbsInner = React.memo(function BreadcrumbsInner({ items, className }: BreadcrumbsProps) {
   return (
     <nav aria-label="Navegación estructural" className={cn("flex items-center gap-1.5", className)}>
       {items.map((item, i) => (
@@ -94,4 +94,6 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
       ))}
     </nav>
   )
-}
+})
+
+export const Breadcrumbs = BreadcrumbsInner

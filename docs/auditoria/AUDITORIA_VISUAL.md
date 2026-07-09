@@ -1,7 +1,7 @@
 # Auditoría Visual Completa — Plataforma Chome
 
 **Fecha:** 2026-06-23
-**Viewport:** Desktop 1440×1000
+**Viewport:** Desktop 1920×1080
 **Herramientas:** Playwright (captura) + @axe-core/playwright 4.11 (accesibilidad)
 **Base de datos:** `bodega_capture` (seed aislado con datos de prueba)
 **Usuario:** admin.audit@chome.cl (rol administrador, todas las faenas)
@@ -274,7 +274,7 @@ Tablas con un `<th>` vacío (sin texto), típicamente la columna de acciones o c
 - **Header:** Fijo con buscador global, notificaciones y menú de usuario (avatar con iniciales "AA").
 - **Breadcrumbs:** No presentes (navegación por sidebar únicamente).
 - **Skip to content:** Enlace "Saltar al contenido" presente en todas las páginas (buen patrón a11y).
-- **Responsividad:** No evaluada en esta pasada (solo desktop 1440px).
+- **Responsividad:** No evaluada en esta pasada (solo desktop 1920px).
 
 ### 4.2 Login / Auth
 

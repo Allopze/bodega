@@ -51,7 +51,7 @@ export async function GET(
     { extraHTTPHeaders: cookie ? { cookie } : {} },
     async (ctx) => {
       const page = await ctx.newPage()
-      await page.goto(printUrl, { waitUntil: "networkidle" })
+      await page.goto(printUrl, { waitUntil: "domcontentloaded", timeout: 30_000 })
       // Generate A4 PDF.  The @page CSS sets 12mm page margins; the sheet is
       // 186mm wide (210mm − 24mm) in print media, so it fits exactly inside
       // the content area — no right-side clipping, no content flush to edges.

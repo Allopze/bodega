@@ -17,7 +17,7 @@ export type { ColumnDef, DataTableProps } from "./data-table.types"
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function DataTable<T extends Record<string, unknown>>({
+const DataTableInner = <T extends Record<string, unknown>>({
   columns,
   rows,
   searchKeys,
@@ -34,7 +34,7 @@ export function DataTable<T extends Record<string, unknown>>({
   actions,
   loading = false,
   disableInternalSearch = false,
-}: DataTableProps<T>) {
+}: DataTableProps<T>) => {
   const { searchQuery } = useSafeShellHeader()
 
   // If explicit search prop is given, use it. Otherwise, fall back to header context search.
@@ -83,7 +83,7 @@ export function DataTable<T extends Record<string, unknown>>({
   )
 
   // ── Sort toggle ──────────────────────────────────────────────────────────────
-  function toggleSort(key: string) {
+  const toggleSort = React.useCallback((key: string) => {
     if (sortKey !== key) {
       setSortKey(key)
       setSortDir("asc")
@@ -94,7 +94,7 @@ export function DataTable<T extends Record<string, unknown>>({
       setSortDir(null)
     }
     setPage(1)
-  }
+  }, [sortKey, sortDir])
 
   return (
     <div className={cn("flex flex-col", className)}>
@@ -219,6 +219,8 @@ export function DataTable<T extends Record<string, unknown>>({
     </div>
   )
 }
+
+export const DataTable = React.memo(DataTableInner) as typeof DataTableInner
 
 // ── Sort icon helper ──────────────────────────────────────────────────────────
 function SortIcon({ colKey, sortKey, sortDir }: {

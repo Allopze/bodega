@@ -9,8 +9,31 @@ recepciones en faena, entregas de EPP, stock y actividades preventivas.
 2. Revisa tareas y alertas de tu faena.
 3. Abre `Prevencion` para revisar evaluaciones SST.
 4. Abre `PPA Digital` para revisar casos de tu faena.
-5. Abre `Recepcion` si hay productos por recibir en faena.
-6. Abre `Bodega` si necesitas revisar stock.
+5. Abre `Solicitudes` si necesitas pedir EPP, materiales o servicios para tu
+   faena.
+6. Abre `Recepcion` si hay productos por recibir en faena.
+7. Abre `Bodega` si necesitas revisar stock.
+
+## Solicitudes
+
+Usa `Solicitudes` cuando necesites pedir EPP, materiales, repuestos o servicios
+para tu faena.
+
+1. Entra a `Solicitudes`.
+2. Pulsa `Nueva solicitud`.
+3. Elige tu faena, tipo de solicitud, urgencia y fecha requerida.
+4. Agrega los items necesarios.
+5. Completa descripcion, cantidad, unidad y observaciones.
+6. Pulsa `Guardar borrador` si aun falta informacion.
+7. Pulsa `Enviar a aprobación` cuando la solicitud este lista.
+
+Para revisar una solicitud ya enviada:
+
+1. Entra a `Solicitudes`.
+2. Busca por texto, estado o faena.
+3. Abre la solicitud.
+4. Revisa si esta pendiente, aprobada, rechazada, en compra o recibida.
+5. Si fue rechazada, lee el motivo antes de crear otra solicitud.
 
 ## Evaluaciones SST
 

@@ -9,16 +9,11 @@ interface OnboardingHintProps {
   body: string
 }
 
-export function OnboardingHint({ storageKey, title, body }: OnboardingHintProps) {
-  const [visible, setVisible] = React.useState(false)
-
-  React.useEffect(() => {
-    try {
-      if (!localStorage.getItem(storageKey)) setVisible(true)
-    } catch {
-      // localStorage unavailable (SSR guard, private mode)
-    }
-  }, [storageKey])
+const OnboardingHintInner = React.memo(function OnboardingHintInner({ storageKey, title, body }: OnboardingHintProps) {
+  const [visible, setVisible] = React.useState(() => {
+    try { return localStorage.getItem(storageKey) ? false : true }
+    catch { return false }
+  })
 
   function dismiss() {
     try { localStorage.setItem(storageKey, "1") } catch { /* ignore */ }
@@ -44,4 +39,6 @@ export function OnboardingHint({ storageKey, title, body }: OnboardingHintProps)
       </button>
     </div>
   )
-}
+})
+
+export const OnboardingHint = OnboardingHintInner

@@ -59,7 +59,7 @@ function requireCaptureDatabaseUrl() {
   return databaseUrl
 }
 
-const desktop = { name: "desktop", width: 1440, height: 1000 }
+const desktop = { name: "desktop", width: 1920, height: 1080 }
 const mobile = { name: "mobile", width: 390, height: 844 }
 
 const routeTargets: RouteTarget[] = [
@@ -117,21 +117,20 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-pdtp-editar", path: "/prevencion/pdtp/prog-audit-1/editar", auth: true },
   { slug: "prevencion-pdtp-nuevo", path: "/prevencion/pdtp/nuevo", auth: true },
   { slug: "prevencion-pdtp-aprobaciones", path: "/prevencion/pdtp/aprobaciones", auth: true },
+  // ── Prevención: submódulos P3 sin page.tsx (omitidos intencionalmente) ──
+  //   /prevencion/incidentes/[id] y /[id]/procedimiento
+  //   /prevencion/capacitaciones/matriz
+  //   /prevencion/inspecciones/[id]
+  //   /prevencion/equipos/reportes y /checklists
+  //   /prevencion/epp/matriz y /stock
+  //   /prevencion/salud/protocolos
+  // Re-agregar cuando los módulos P3 estén implementados.
   { slug: "prevencion-iper", path: "/prevencion/iper", auth: true },
   { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },
-  { slug: "prevencion-incidentes-detalle", path: "/prevencion/incidentes/inc-audit-1", auth: true },
-  { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true },
   { slug: "prevencion-capacitaciones", path: "/prevencion/capacitaciones", auth: true },
-  { slug: "prevencion-capacitaciones-matriz", path: "/prevencion/capacitaciones/matriz", auth: true },
   { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
-  { slug: "prevencion-inspecciones-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true },
-  { slug: "prevencion-equipos-reportes", path: "/prevencion/equipos/reportes", auth: true },
-  { slug: "prevencion-equipos-checklists", path: "/prevencion/equipos/checklists", auth: true },
   { slug: "prevencion-alcotest", path: "/prevencion/alcotest", auth: true },
-  { slug: "prevencion-epp-matriz", path: "/prevencion/epp/matriz", auth: true },
-  { slug: "prevencion-epp-stock", path: "/prevencion/epp/stock", auth: true },
   { slug: "prevencion-salud", path: "/prevencion/salud", auth: true },
-  { slug: "prevencion-salud-protocolos", path: "/prevencion/salud/protocolos", auth: true },
   { slug: "prevencion-emergencias", path: "/prevencion/emergencias", auth: true },
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
@@ -1643,50 +1642,61 @@ async function login(context: BrowserContext) {
 }
 
 async function captureRoute(context: BrowserContext, viewport: string, route: RouteTarget): Promise<CaptureResult> {
-  const page = await context.newPage()
   const requestedUrl = `${baseUrl}${route.path}`
   const relativeScreenshot = path.join("audit", "screenshots", "2026-06-09-playwright", `${viewport}-${route.slug}.png`)
   const screenshot = path.join(root, relativeScreenshot)
 
-  try {
-    const response = await page.goto(requestedUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
-    await settle(page)
-    await page.screenshot({ path: screenshot, fullPage: true })
-    const status = response?.status() ?? null
-    const finalUrl = page.url()
-    await page.close()
-    return {
-      viewport,
-      slug: route.slug,
-      path: route.path,
-      requestedUrl,
-      finalUrl,
-      status,
-      ok: isExpectedStatus(status, route),
-      screenshot: relativeScreenshot,
-      notes: route.notes,
-    }
-  } catch (error) {
+  const maxRetries = 2
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const page = await context.newPage()
+
     try {
+      const response = await page.goto(requestedUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
+      await settle(page)
       await page.screenshot({ path: screenshot, fullPage: true })
-    } catch {
-      // Ignore secondary screenshot failure.
-    }
-    const finalUrl = page.url()
-    await page.close()
-    return {
-      viewport,
-      slug: route.slug,
-      path: route.path,
-      requestedUrl,
-      finalUrl,
-      status: null,
-      ok: false,
-      screenshot: relativeScreenshot,
-      error: error instanceof Error ? error.message : String(error),
-      notes: route.notes,
+      const status = response?.status() ?? null
+      const finalUrl = page.url()
+      await page.close()
+      return {
+        viewport,
+        slug: route.slug,
+        path: route.path,
+        requestedUrl,
+        finalUrl,
+        status,
+        ok: isExpectedStatus(status, route),
+        screenshot: relativeScreenshot,
+        notes: route.notes,
+      }
+    } catch (error) {
+      await page.close().catch(() => undefined)
+
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      const isConnectionError = errorMsg.includes("ERR_CONNECTION_REFUSED") || errorMsg.includes("ERR_CONNECTION_RESET")
+
+      if (isConnectionError && attempt < maxRetries) {
+        console.log(`  Retry ${attempt + 1}/${maxRetries} for ${route.slug} (${errorMsg})`)
+        await new Promise((resolve) => setTimeout(resolve, 2_000))
+        continue
+      }
+
+      return {
+        viewport,
+        slug: route.slug,
+        path: route.path,
+        requestedUrl,
+        finalUrl: requestedUrl,
+        status: null,
+        ok: false,
+        screenshot: relativeScreenshot,
+        error: errorMsg,
+        notes: route.notes,
+      }
     }
   }
+
+  // Unreachable, but TypeScript needs a return.
+  throw new Error("Unexpected exit from retry loop")
 }
 
 async function settle(page: Page) {

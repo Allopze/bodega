@@ -1,5 +1,5 @@
-import { pgTable, text, boolean, timestamp } from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+import { pgTable, text, boolean, timestamp, index } from "drizzle-orm/pg-core"
+import { relations, sql } from "drizzle-orm"
 import { worksiteStock } from "./stock"
 
 /* ── Worksites (Faenas) ─────────────────────────────────────────────────── */
@@ -12,7 +12,9 @@ export const worksites = pgTable("worksites", {
   isActive:  boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  index("idx_worksites_active").on(table.isActive).where(sql`${table.isActive} = true`),
+])
 
 /* ── Suppliers (Proveedores) ─────────────────────────────────────────────── */
 export const suppliers = pgTable("suppliers", {
