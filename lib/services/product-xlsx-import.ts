@@ -77,7 +77,11 @@ export interface ProductImportResult {
 
 export async function parseProductImportWorkbook(buffer: Buffer): Promise<ParsedProductImport> {
   const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer as never)
+  try {
+    await workbook.xlsx.load(buffer as never)
+  } catch {
+    return { items: [], errors: ["El archivo no es un XLSX válido o está dañado."] }
+  }
 
   const sheet = workbook.worksheets[0]
   if (!sheet) return { items: [], errors: ["El archivo no contiene hojas."] }
