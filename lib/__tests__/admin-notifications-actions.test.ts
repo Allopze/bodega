@@ -21,7 +21,7 @@ vi.mock("@/lib/services/notification-read", () => ({
 vi.mock("@/lib/services/system-settings", () => ({
   getOperationalSettings: mockGetOperational,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { cleanupReadNotificationsAction } from "@/app/(app)/admin/notificaciones/actions"
 import type { ActionState } from "@/lib/validation/masters"

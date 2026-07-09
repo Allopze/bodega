@@ -19,7 +19,7 @@ vi.mock("@/lib/services/system-settings", () => ({
   getOperationalSettings: mockGetOrganicSettings,
   updateOperationalSettings: mockUpdateOpsSettings,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { saveOperationalSettingsAction } from "@/app/(app)/admin/parametros-operativos/actions"
 import type { ActionState } from "@/lib/validation/masters"

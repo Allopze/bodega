@@ -16,7 +16,7 @@ vi.mock("@/lib/services/deliveries", () => ({
   registerWorkerEppDelivery: mockRegisterWorker,
   registerWorksiteDelivery: mockRegisterWorksite,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { registerWorkerDeliveryAction } from "@/app/(app)/entregas/actions"
 

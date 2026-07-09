@@ -28,7 +28,7 @@ vi.mock("@/lib/id", () => ({ nanoid: vi.fn(() => "fuel-1") }))
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn() } }))
 vi.mock("@/lib/combustibles/queries", () => ({ buildFuelLoadsWhere: vi.fn(() => undefined) }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { deleteFuelLoadAction, registerFuelLoadAction, createFuelSupplierAction, deleteFuelSupplierAction } from "@/app/(app)/combustibles/actions"
 import type { ActionState } from "@/lib/validation/masters"

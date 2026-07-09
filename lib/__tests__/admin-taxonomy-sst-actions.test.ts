@@ -25,7 +25,7 @@ vi.mock("@/lib/services/prevention-documents/taxonomy", () => ({
   setDocumentTypeActive: mockSetTypeActive,
   seedDefaultCategories: mockSeedDefault,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import {
   saveDocumentCategoryAction,

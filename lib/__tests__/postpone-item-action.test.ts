@@ -56,7 +56,7 @@ vi.mock("@/db", () => ({
   },
 }))
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 const mockPostponeItem = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/services/item-state", () => ({ postponeItem: mockPostponeItem }))

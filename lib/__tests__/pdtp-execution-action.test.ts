@@ -23,7 +23,7 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
   updatePdtpActivity: vi.fn(),
   addPdtpActivity: vi.fn(),
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }))
 
 const session = {

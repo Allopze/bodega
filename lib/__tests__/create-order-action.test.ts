@@ -26,7 +26,7 @@ vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("@/lib/services/purchasing", () => ({
   createOrdersBySupplier: mockCreateOrders,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/db", () => ({
   db: {
     query: {

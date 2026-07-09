@@ -27,7 +27,7 @@ vi.mock("@/db", () => ({
     })),
   },
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { correctCodeSequenceAction } from "@/app/(app)/admin/folios/actions"
 import type { ActionState } from "@/lib/validation/masters"

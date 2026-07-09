@@ -62,7 +62,7 @@ vi.mock("@/lib/email/smtp", () => ({
   getAppBaseUrl: vi.fn(() => "http://localhost:3000"),
   sendInvitationEmail: vi.fn(() => Promise.resolve({ sent: true })),
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/id", () => ({ nanoid: vi.fn(() => `uid-${Math.random().toString(36).slice(2, 8)}`) }))
 
 vi.mock("@/app/(app)/admin/usuarios/actions.helpers", () => ({

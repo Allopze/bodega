@@ -38,7 +38,7 @@ vi.mock("bcryptjs", () => ({
   hash: mockBcryptHash,
 }))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
-vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }))
+vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath, revalidateTag: vi.fn() }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 
 // ── Import action AFTER mocks ──────────────────────────────────────────────

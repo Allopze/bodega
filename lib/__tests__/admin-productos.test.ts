@@ -29,7 +29,7 @@ const mockDb = {
 }
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 vi.mock("@/db", () => ({ db: mockDb }))
 

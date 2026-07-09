@@ -40,7 +40,7 @@ vi.mock("@/db", () => ({
   },
 }))
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/services/requests-delete", () => ({ deleteRequest: mockDeleteRequest }))
 
 // ── Import after mocks ─────────────────────────────────────────────────────────

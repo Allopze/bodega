@@ -22,6 +22,7 @@ const mockNotFound = vi.hoisted(() => vi.fn(() => { throw new Error("NEXT_NOT_FO
 // ── Module mocks (hoisted) ─────────────────────────────────────────────────────
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: mockRedirect, notFound: mockNotFound }))
 
 // ── Solicitudes page: mock DB and components to avoid rendering side effects ──

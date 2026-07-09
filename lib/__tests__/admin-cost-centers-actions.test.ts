@@ -25,7 +25,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/audit", () => ({
   recordAudit: mockRecordAudit,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import {
   createCostCenterAction,

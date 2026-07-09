@@ -16,7 +16,7 @@ const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 
 const mockInsertValues = vi.fn().mockResolvedValue(undefined)

@@ -34,7 +34,7 @@ vi.mock("@/lib/services/admin-roles", () => ({
   createRoleWithPermissions: mockCreateRoleWithPermissions,
   updateRoleWithPermissions: mockUpdateRoleWithPermissions,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { saveRoleAction } from "@/app/(app)/admin/roles/actions"
 import type { ActionState } from "@/lib/validation/masters"

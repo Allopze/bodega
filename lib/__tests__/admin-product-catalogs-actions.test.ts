@@ -27,7 +27,7 @@ vi.mock("@/db", () => ({
     update: mockUpdate,
   },
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import {
   saveProductUnitAction,

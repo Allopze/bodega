@@ -52,7 +52,7 @@ vi.mock("@/lib/services/notifications", () => ({
   notifyAfterCommit: vi.fn((fn: () => unknown) => fn()),
 }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: vi.fn(() => { throw new Error("NEXT_REDIRECT") }) }))
 vi.mock("@/app/(app)/compras/actions.helpers", () => ({
 
