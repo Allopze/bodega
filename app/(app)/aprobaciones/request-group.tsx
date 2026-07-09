@@ -17,7 +17,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 
 export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { request: ApprovalRequest; canApproveEpp: boolean; canSetDispatch: boolean }) {
   const [collapsed, setCollapsed] = React.useState(false)
-  const { bulkState, bulkAction } = useBulkApproveAction()
+  const { bulkState, bulkAction, bulkPending } = useBulkApproveAction()
   const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
   const modeFormRef = React.useRef<HTMLFormElement>(null)
   // Controlled value: React 19 auto-resets *uncontrolled* form fields after a successful
@@ -111,7 +111,7 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
               />
             </form>
           )}
-          {allApproved && (
+          {!bulkPending && allApproved && (
             <span className="text-xs text-[var(--color-success)] font-medium">Todos aprobados</span>
           )}
         </div>

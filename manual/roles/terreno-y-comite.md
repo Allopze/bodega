@@ -1,7 +1,7 @@
 # Guia para roles de terreno y comite
 
 Esta guia sirve para `Administrador de contrato / Supervisor de faena`,
-`Supervisor de faena`, `Jefe de terreno`, `Conductor lider` y miembros del
+`Jefe de terreno`, `Conductor lider` y miembros del
 `Comite Paritario`.
 
 Cada cuenta puede ver cosas distintas, pero la forma de trabajar es parecida:

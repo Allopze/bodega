@@ -328,7 +328,7 @@ function normalizeSheetCode(value: string | undefined): PdtpSheetCode | null {
 
 function defaultSheetForRoles(roles: string[]): PdtpSheetCode {
   if (roles.includes("cphs")) return "cphs"
-  if (roles.includes("supervisor_faena") || roles.includes("jefe_terreno")) return "sup_jt"
+  if (roles.includes("jefe_terreno")) return "sup_jt"
   if (roles.includes("admin_contrato")) return "prf_adm_contrato"
   if (roles.includes("prevencionista_faena")) return "prf"
   if (roles.includes("jefa_chome")) return "subgerente"

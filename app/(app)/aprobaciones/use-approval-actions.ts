@@ -8,10 +8,10 @@ import { approveItemAction, rejectItemAction, bulkApproveRequestAction } from ".
 import type { ActionState } from "@/lib/validation/operations"
 
 export function useItemActions() {
-  const [approveState, approveAction] = useActionState<ActionState, FormData>(
+  const [approveState, approveAction, approvePending] = useActionState<ActionState, FormData>(
     approveItemAction, INITIAL_STATE,
   )
-  const [rejectState, rejectAction] = useActionState<ActionState, FormData>(
+  const [rejectState, rejectAction, rejectPending] = useActionState<ActionState, FormData>(
     rejectItemAction, INITIAL_STATE,
   )
   const decided =
@@ -35,11 +35,11 @@ export function useItemActions() {
     }
   }, [rejectState])
 
-  return { approveState, approveAction, rejectState, rejectAction, decided }
+  return { approveState, approveAction, approvePending, rejectState, rejectAction, rejectPending, decided }
 }
 
 export function useBulkApproveAction() {
-  const [bulkState, bulkAction] = useActionState<ActionState, FormData>(
+  const [bulkState, bulkAction, bulkPending] = useActionState<ActionState, FormData>(
     bulkApproveRequestAction, INITIAL_STATE,
   )
 
@@ -51,5 +51,5 @@ export function useBulkApproveAction() {
     }
   }, [bulkState])
 
-  return { bulkState, bulkAction }
+  return { bulkState, bulkAction, bulkPending }
 }

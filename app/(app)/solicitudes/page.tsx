@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
+import { purchaseRequests, purchaseRequestItems, worksites, users } from "@/db/schema"
 import { desc, count, inArray, eq, and, or, ilike, sql } from "drizzle-orm"
 import { requireAuth, can, canAccessWorksite, isGlobalRole } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -144,12 +144,17 @@ export default async function SolicitudesPage({
 
   const requestIds = pageRequests.map((r) => r.id)
   const wsIds      = [...new Set(pageRequests.map((r) => r.worksiteId))]
+  const requesterIds = [...new Set(pageRequests.map((r) => r.requesterId))]
 
   // Batch load related data — only for the current page
-  const [wsRows, itemCounts] = await Promise.all([
+  const [wsRows, requesterRows, itemCounts] = await Promise.all([
     db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
       .where(inArray(worksites.id, wsIds)),
+
+    db.select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .where(inArray(users.id, requesterIds)),
 
     db.select({ requestId: purchaseRequestItems.requestId, total: count() })
       .from(purchaseRequestItems)
@@ -158,6 +163,7 @@ export default async function SolicitudesPage({
   ])
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
+  const userMap = Object.fromEntries(requesterRows.map((u) => [u.id, u.name ?? u.email ?? u.id]))
   const cntMap = Object.fromEntries(itemCounts.map((c) => [c.requestId, c.total]))
 
   const rows = pageRequests.map((r) => ({
@@ -171,6 +177,7 @@ export default async function SolicitudesPage({
     submittedAt:    r.submittedAt,
     createdAt:      r.createdAt,
     requesterId:    r.requesterId,
+    requesterName:  userMap[r.requesterId] ?? r.requesterId,
   }))
 
   const canDeleteAny = can(session, "requests:delete")

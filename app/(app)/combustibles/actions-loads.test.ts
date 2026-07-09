@@ -25,6 +25,9 @@ vi.mock("@/db", () => ({
       fuelLoads: {
         findFirst: (...args: unknown[]) => mockFindLoad(...args),
       },
+      fuelVehicles: {
+        findFirst: vi.fn(async () => ({ id: "v-1", worksiteId: "ws-1", plate: "XX-XX-01", worksite: { name: "Faena Test" } })),
+      },
       systemSettings: { findFirst: vi.fn(async () => null) },
     },
   },

@@ -63,7 +63,6 @@ export async function validateRoleWorksiteRules(
     "prevencionista_faena",
     "conductor_lider",
     "admin_contrato",
-    "supervisor_faena",
     "jefe_terreno",
     "cphs",
   ]

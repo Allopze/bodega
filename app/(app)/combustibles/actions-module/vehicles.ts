@@ -15,8 +15,7 @@ import {
 import type { ActionState } from "@/lib/validation/masters"
 import { dbErrMsg } from "./loads"
 
-function canManageFuelVehicleWorksite(session: Session, worksiteId: string | null | undefined): boolean {
-  if (!worksiteId) return false
+function canManageFuelVehicleWorksite(session: Session, worksiteId: string): boolean {
   return canAccessWorksite(session, worksiteId)
 }
 

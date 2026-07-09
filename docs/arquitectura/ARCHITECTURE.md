@@ -396,7 +396,6 @@ agregaron los módulos de prevención/mantención/combustibles; fuente de verdad
 | `jefe_mantencion` | Todas las faenas | Gestión de mantención de flota/equipos |
 | `conductor_lider` | Solo faenas asignadas | Evaluaciones SST de conductores |
 | `admin_contrato` | Solo faenas asignadas | Administrador de contrato / Supervisor de faena |
-| `supervisor_faena` | Solo faenas asignadas | Supervisor de faena |
 | `jefe_terreno` | Solo faenas asignadas | Jefe de terreno |
 | `cphs` | Solo faenas asignadas | Comité Paritario de Higiene y Seguridad |
 

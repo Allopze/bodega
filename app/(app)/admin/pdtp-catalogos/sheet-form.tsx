@@ -43,7 +43,6 @@ const ROLE_OPTIONS = [
   "secretaria",
   "prevencionista",
   "jefe_mantencion",
-  "supervisor_faena",
   "jefe_terreno",
   "cphs",
   "prevencionista_faena",

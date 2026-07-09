@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
       ])
 
       const vehicleMap = new Map(allVehicles.map((v: { plate: string; id: string }) => [v.plate.toUpperCase(), v.id]))
+      const vehicleWorksiteMap = new Map(allVehicles.map((v: { id: string; worksiteId: string }) => [v.id, v.worksiteId]))
       const supplierMap = new Map(allSuppliers.map((s: { name: string; id: string }) => [s.name.toUpperCase(), s.id]))
       const worksiteMap = new Map(allWorksites.map((w: { name: string; id: string }) => [w.name.toUpperCase(), w.id]))
 
@@ -172,7 +173,7 @@ export async function POST(req: NextRequest) {
         // Auto-crear entidades faltantes si está habilitado
         if (!vehicleId && createMissing) {
           const id = nanoid()
-          await tx.insert(fuelVehicles).values({ id, plate: load.vehicle, type: "camion", isActive: true })
+          await tx.insert(fuelVehicles).values({ id, plate: load.vehicle, type: "camion", worksiteId, isActive: true })
           vehicleId = id
           vehicleMap.set(load.vehicle.toUpperCase(), id)
           created.push({ type: "vehículo", name: load.vehicle })
@@ -190,6 +191,13 @@ export async function POST(req: NextRequest) {
         }
         if (!supplierId) {
           importErrors.push({ rowIndex: load.rowIndex, field: "PROVEEDOR", message: `"${load.supplier}" no encontrado` })
+          continue
+        }
+
+        // Validación cruzada (H8): la faena de la carga debe coincidir con la faena del vehículo existente
+        const vehicleWorksite = vehicleWorksiteMap.get(vehicleId)
+        if (vehicleWorksite && vehicleWorksite !== worksiteId) {
+          importErrors.push({ rowIndex: load.rowIndex, field: "VEHICULO", message: `La faena de la carga no coincide con la faena del vehículo "${load.vehicle}". El vehículo pertenece a otra faena. Verifica los datos.` })
           continue
         }
 

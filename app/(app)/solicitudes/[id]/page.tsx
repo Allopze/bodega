@@ -5,9 +5,10 @@ import {
   purchaseRequests,
   worksites, products, productAttributes,
   statusHistory, users, suppliers, productSuppliers,
+  approvalDecisions, purchaseRequestItems,
   repuestoQuotations, serviceQuotations,
 } from "@/db/schema"
-import { and, asc, desc, eq } from "drizzle-orm"
+import { and, asc, desc, eq, sql } from "drizzle-orm"
 import { can, requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { QUOTATION_TYPES } from "@/lib/request-types"
@@ -22,6 +23,7 @@ import { DuplicateButton } from "./duplicate-button"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
 import { buildRequestProgress } from "@/lib/work-queue"
+import { RequestPeoplePanel } from "../request-people-panel"
 
 export const metadata: Metadata = { title: "Solicitud de compra" }
 
@@ -94,7 +96,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     createdAt:        q.createdAt,
   }))
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, allSuppliers, maxFileSizeMb] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
@@ -125,6 +127,24 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         ),
       )
       .orderBy(desc(statusHistory.changedAt)),
+    db
+      .select({
+        id:             approvalDecisions.id,
+        type:           approvalDecisions.type,
+        decidedAt:      approvalDecisions.decidedAt,
+        reason:         approvalDecisions.reason,
+        modifiedQty:    approvalDecisions.modifiedQty,
+        roleContext:    approvalDecisions.roleContext,
+        decidedByName:  users.name,
+        decidedByEmail: users.email,
+        itemName:       sql<string>`coalesce(${products.name}, ${purchaseRequestItems.productNameFree}, 'Ítem solicitado')`,
+      })
+      .from(approvalDecisions)
+      .leftJoin(users, eq(approvalDecisions.decidedBy, users.id))
+      .leftJoin(purchaseRequestItems, eq(approvalDecisions.requestItemId, purchaseRequestItems.id))
+      .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
+      .where(eq(approvalDecisions.requestId, request.id))
+      .orderBy(desc(approvalDecisions.decidedAt)),
     db.select().from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
     getPdfMaxSizeMb(),
   ])
@@ -226,6 +246,13 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       />
       <div className="space-y-6">
         <RequestProgressPanel progress={progress} />
+        <RequestPeoplePanel
+          requesterName={request.requester?.name}
+          requesterEmail={request.requester?.email}
+          createdAt={request.createdAt}
+          submittedAt={request.submittedAt}
+          decisions={approvalDecisionRows}
+        />
         {isQuotation && request.requestType === "repuestos" && (
           <QuotationPanel
             requestId={request.id}

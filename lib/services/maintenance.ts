@@ -125,7 +125,7 @@ export async function createMaintenanceRecord(session: Session, input: CreateMai
   const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, input.vehicleId) })
   if (!vehicle) throw new Error("Vehículo no encontrado")
 
-  const worksiteId = input.worksiteId || vehicle.worksiteId || null
+  const worksiteId = input.worksiteId || vehicle.worksiteId
   if (!isGlobalRole(session) && worksiteId && !visibleWorksiteIds(session).includes(worksiteId)) {
     throw new Error("No puedes registrar mantenciones para esta faena")
   }
@@ -175,7 +175,7 @@ export async function updateMaintenanceRecord(session: Session, id: string, inpu
   if (!vehicle) throw new Error("Vehículo no encontrado")
 
   // …y la faena destino tras la edición.
-  const worksiteId = input.worksiteId || vehicle.worksiteId || null
+  const worksiteId = input.worksiteId || vehicle.worksiteId
   if (!isGlobalRole(session) && worksiteId && !visibleWorksiteIds(session).includes(worksiteId)) {
     throw new Error("No puedes asignar mantenciones a esta faena")
   }

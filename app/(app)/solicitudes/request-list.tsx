@@ -34,12 +34,14 @@ export interface RequestRow {
   submittedAt:   string | null
   createdAt:     string
   requesterId:   string
+  requesterName: string
 }
 
 const COLUMNS = [
   { key: "code",          label: "Código",     sortable: true,  width: "w-36" },
   { key: "requestType",   label: "Tipo",       sortable: true,  width: "w-28" },
   { key: "worksiteName",  label: "Faena",      sortable: true  },
+  { key: "requesterName", label: "Solicita",   sortable: true  },
   { key: "urgency",       label: "Urgencia",   sortable: true,  width: "w-28" },
   { key: "itemCount",     label: "Ítems",      sortable: true,  numeric: true, width: "w-20" },
   { key: "status",        label: "Estado",     sortable: true,  width: "w-36" },
@@ -182,7 +184,7 @@ export function RequestList({
       <DataTable
         columns={COLUMNS}
         rows={requests as unknown as Record<string, unknown>[]}
-        searchKeys={["code", "worksiteName", "status", "requestType"]}
+        searchKeys={["code", "worksiteName", "requesterName", "status", "requestType"]}
         disableInternalSearch
         pageSize={25}
         emptyTitle="Sin solicitudes"
@@ -209,10 +211,14 @@ export function RequestList({
                   <StateBadge state={r.status} entity="request" size="sm" />
                 </div>
 
-                <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 text-xs">
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:grid-cols-4">
                   <div>
                     <dt className="text-[var(--color-text-subtle)]">Faena</dt>
                     <dd className="text-[var(--color-text-muted)] truncate">{r.worksiteName}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[var(--color-text-subtle)]">Solicita</dt>
+                    <dd className="text-[var(--color-text-muted)] truncate">{r.requesterName}</dd>
                   </div>
                   <div>
                     <dt className="text-[var(--color-text-subtle)]">Ítems</dt>
@@ -260,6 +266,9 @@ export function RequestList({
               </TableCell>
               <TableCell className="text-sm text-[var(--color-text-muted)]">
                 {r.worksiteName}
+              </TableCell>
+              <TableCell className="text-sm text-[var(--color-text-muted)]">
+                {r.requesterName}
               </TableCell>
               <TableCell>
                 <span className={`text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>

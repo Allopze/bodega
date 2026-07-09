@@ -19,26 +19,38 @@ if (!process.env.DATABASE_URL) {
 const client = postgres(process.env.DATABASE_URL!, { max: 1 })
 const db = drizzle(client, { schema })
 
-const FUEL_VEHICLES: (typeof schema.fuelVehicles.$inferInsert)[] = [
-  { id: "fv-camion-01", plate: "XX-XX-01", type: "camion", brand: "Hyundai", model: "HD78", year: 2020, isActive: true },
-  { id: "fv-camion-02", plate: "XX-XX-02", type: "camion", brand: "Hyundai", model: "HD78", year: 2021, isActive: true },
-  { id: "fv-camioneta-01", plate: "XX-XX-03", type: "camioneta", brand: "Toyota", model: "Hilux", year: 2022, isActive: true },
-  { id: "fv-camioneta-02", plate: "XX-XX-04", type: "camioneta", brand: "Toyota", model: "Hilux", year: 2023, isActive: true },
-  { id: "fv-estanque-01", plate: "XX-XX-05", type: "estanque", brand: "Mercedes-Benz", model: "Actros", year: 2019, isActive: true },
-]
-
-const FUEL_SUPPLIERS: (typeof schema.fuelSuppliers.$inferInsert)[] = [
-  { id: "fs-copec", name: "COPEC", rut: "97.080.000-1", contactName: "Área Cuenta Corriente", isActive: true },
-  { id: "fs-aramco", name: "ARAMCO", rut: "76.320.590-7", contactName: "Ventas Corporativas", isActive: true },
-]
-
-const FUEL_SETTINGS: (typeof schema.systemSettings.$inferInsert)[] = [
-  { key: "fuel:iec_fixed_rate", value: "104.67" },     // CLP por litro - IEC Fijo
-  { key: "fuel:iec_variable_rate", value: "82.07" },   // CLP por litro - IEC Variable
-]
-
 async function main() {
   console.log("🔧 Seeding combustibles module...")
+
+  // Resolve a worksite — worksiteId is NOT NULL on fuelVehicles now
+  const worksitesList = await db.query.worksites.findMany({
+    where: eq(schema.worksites.isActive, true),
+    limit: 1,
+  })
+  if (worksitesList.length === 0) {
+    console.error("No hay faenas activas en la base de datos. Crea al menos una faena antes de ejecutar este seed.")
+    process.exit(1)
+  }
+  const worksiteId = worksitesList[0]!.id
+  console.log(`  Usando faena: ${worksitesList[0]!.name} (${worksiteId})`)
+
+  const FUEL_VEHICLES: (typeof schema.fuelVehicles.$inferInsert)[] = [
+    { id: "fv-camion-01", plate: "XX-XX-01", type: "camion", brand: "Hyundai", model: "HD78", year: 2020, worksiteId, isActive: true },
+    { id: "fv-camion-02", plate: "XX-XX-02", type: "camion", brand: "Hyundai", model: "HD78", year: 2021, worksiteId, isActive: true },
+    { id: "fv-camioneta-01", plate: "XX-XX-03", type: "camioneta", brand: "Toyota", model: "Hilux", year: 2022, worksiteId, isActive: true },
+    { id: "fv-camioneta-02", plate: "XX-XX-04", type: "camioneta", brand: "Toyota", model: "Hilux", year: 2023, worksiteId, isActive: true },
+    { id: "fv-estanque-01", plate: "XX-XX-05", type: "estanque", brand: "Mercedes-Benz", model: "Actros", year: 2019, worksiteId, isActive: true },
+  ]
+
+  const FUEL_SUPPLIERS: (typeof schema.fuelSuppliers.$inferInsert)[] = [
+    { id: "fs-copec", name: "COPEC", rut: "97.080.000-1", contactName: "Área Cuenta Corriente", isActive: true },
+    { id: "fs-aramco", name: "ARAMCO", rut: "76.320.590-7", contactName: "Ventas Corporativas", isActive: true },
+  ]
+
+  const FUEL_SETTINGS: (typeof schema.systemSettings.$inferInsert)[] = [
+    { key: "fuel:iec_fixed_rate", value: "104.67" },     // CLP por litro - IEC Fijo
+    { key: "fuel:iec_variable_rate", value: "82.07" },   // CLP por litro - IEC Variable
+  ]
 
   // Seed fuel vehicles
   for (const vehicle of FUEL_VEHICLES) {

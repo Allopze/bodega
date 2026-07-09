@@ -18,6 +18,22 @@ vi.mock("@/db", () => ({
   },
 }))
 
+vi.mock("next-auth", () => ({
+  default: vi.fn(() => ({
+    handlers: {},
+    auth: vi.fn(),
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+  })),
+  CredentialsSignin: class CredentialsSignin extends Error {
+    code: string
+    constructor(message: string) {
+      super(message)
+      this.code = "generic"
+    }
+  },
+}))
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { solicitudesList } from "@/lib/reports/export-module/solicitudes"
@@ -52,7 +68,7 @@ describe("solicitudesList export scoping (H-3)", () => {
       { id: "u-self", name: "Yo", email: "yo@chome.cl", hashedPassword: "x", isActive: true },
       { id: "u-other", name: "Otro", email: "otro@chome.cl", hashedPassword: "x", isActive: true },
     ])
-    await inMemoryDb.insert(schema.worksites).values({ id: "ws-1", name: "Faena Uno", isActive: true })
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-1", name: "Faena Uno", code: "F-UNO", isActive: true })
     await inMemoryDb.insert(schema.purchaseRequests).values([
       { id: "req-self", code: "SOL-SELF", worksiteId: "ws-1", requesterId: "u-self", requestType: "epp", status: "submitted" },
       { id: "req-other", code: "SOL-OTHER", worksiteId: "ws-1", requesterId: "u-other", requestType: "epp", status: "submitted" },
