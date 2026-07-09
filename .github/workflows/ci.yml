@@ -71,6 +71,8 @@ jobs:
           STOCK_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           RATE_LIMIT_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           APPROVALS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          DELIVERIES_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          RECEIVING_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
