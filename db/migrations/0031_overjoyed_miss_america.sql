@@ -1,0 +1,1 @@
+ALTER TABLE "fuel_vehicles" ALTER COLUMN "worksite_id" SET NOT NULL;

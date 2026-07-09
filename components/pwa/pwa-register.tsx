@@ -15,11 +15,13 @@ export function PwaRegister() {
   React.useEffect(() => {
     if (!("serviceWorker" in navigator)) return
 
+    let checkInterval: ReturnType<typeof setInterval> | null = null
+
     navigator.serviceWorker
       .register(SW_URL, { scope: "/ppa" })
       .then((reg) => {
         // Check for updates periodically (every 60 minutes)
-        const checkInterval = setInterval(() => {
+        checkInterval = setInterval(() => {
           reg.update().catch(() => {})
         }, 60 * 60 * 1000)
 
@@ -35,18 +37,14 @@ export function PwaRegister() {
             }
           })
         })
-
-        return () => clearInterval(checkInterval)
       })
       .catch((err) => {
         console.warn("[PWA] SW registration failed:", err)
       })
 
-    // P1-4: do NOT unregister the SW on unmount — the component unmounts
-    // during normal React re-renders / route changes, which would destroy
-    // the SW and break offline support.  The SW lifecycle is managed by
-    // its own install/activate events.
-    return
+    return () => {
+      if (checkInterval !== null) clearInterval(checkInterval)
+    }
   }, [])
 
   return null

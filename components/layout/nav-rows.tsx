@@ -141,7 +141,7 @@ function BranchRow({
  * Lista de ítems de un área (con acordeón para submenús). Reutilizada por el
  * panel desktop, el flyout del rail colapsado y el drawer móvil.
  */
-export function AreaItems({
+const AreaItemsInner = React.memo(function AreaItemsInner({
   area,
   pathname,
   badgeCounts,
@@ -174,4 +174,6 @@ export function AreaItems({
       })}
     </ul>
   )
-}
+})
+
+export const AreaItems = AreaItemsInner

@@ -15,7 +15,7 @@ import { FuelLoadTable } from "./fuel-load-table"
 import { ImportFuelLoadsModal } from "./import-fuel-modal"
 import { FuelDashboardKpis } from "./fuel-kpis"
 import { FuelFilters } from "./fuel-filters"
-import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "./fuel-charts"
+import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "./fuel-charts-lazy"
 import { ExportXlsxButton } from "./export-button"
 
 export const metadata: Metadata = { title: "Combustibles" }

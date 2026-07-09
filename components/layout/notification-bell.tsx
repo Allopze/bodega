@@ -88,10 +88,10 @@ export function NotificationBell() {
               </div>
             ) : data && (
               data.items.map((notif) => (
-                <NotificationRow
+                <NotificationRowItem
                   key={notif.id}
                   notification={notif}
-                  onRead={() => markRead.mutate(notif.id)}
+                  markRead={markRead}
                 />
               ))
             )}
@@ -101,6 +101,21 @@ export function NotificationBell() {
     </PopoverPrimitive.Root>
   )
 }
+
+const NotificationRowItem = React.memo(function NotificationRowItem({
+  notification,
+  markRead,
+}: {
+  notification: NotificationItem
+  markRead: ReturnType<typeof useMarkRead>
+}) {
+  return (
+    <NotificationRow
+      notification={notification}
+      onRead={() => markRead.mutate(notification.id)}
+    />
+  )
+})
 
 function NotificationRow({
   notification,

@@ -31,7 +31,7 @@ export type DocumentTileProps =
  * One tile in the document grid. Folders and documents share the same
  * shape so the grid stays uniform; only the icon and label differ.
  */
-export const DocumentTile = React.forwardRef<HTMLDivElement, DocumentTileProps>(
+export const DocumentTile = React.memo(React.forwardRef<HTMLDivElement, DocumentTileProps>(
   function DocumentTile(props, ref) {
     const { kind, name, selected, selectionActive, canSelect, onSelect, onOpen, onContextMenu, onAction, draggable, onDragStart, dragOver, onDragOver, onDragLeave, onDrop } = props
     const [hovered, setHovered] = React.useState(false)
@@ -118,4 +118,4 @@ export const DocumentTile = React.forwardRef<HTMLDivElement, DocumentTileProps>(
       </div>
     )
   },
-)
+))

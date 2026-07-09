@@ -106,9 +106,9 @@ export const approvalDecisions = pgTable("approval_decisions", {
   modifiedQty:    real("modified_qty"),              // if quantity was modified during approval
   roleContext:    text("role_context"),               // 'jefa_chome' | 'secretaria' | 'prevencionista' | 'jefe_mantencion' | 'admin'
 }, (table) => [
-  // Invariant: modifiedQty is nullable but when set must be > 0; type from canonical decision types
   check("approval_decisions_modified_qty_positive", sql`${table.modifiedQty} IS NULL OR ${table.modifiedQty} > 0`),
   check("approval_decisions_type_valid", sql`${table.type} IN ('approve', 'reject', 'return', 'modify')`),
+  index("idx_approval_decisions_item").on(table.requestItemId),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

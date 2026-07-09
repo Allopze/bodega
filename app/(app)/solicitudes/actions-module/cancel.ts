@@ -1,6 +1,7 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
+  revalidateTag("badge-counts", { expire: 0 })
 import { redirect } from "next/navigation"
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
@@ -101,5 +102,6 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
   })
 
   revalidatePath(REVALIDATE)
+  revalidateTag("badge-counts", { expire: 0 })
   redirect(REVALIDATE)
 }

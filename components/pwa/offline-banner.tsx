@@ -14,7 +14,7 @@ import { ArrowClockwise, WifiHigh, WifiSlash } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { usePpaOfflineQueue } from "@/lib/pwa/hooks"
 
-export function OfflineBanner() {
+const OfflineBannerInner = React.memo(function OfflineBannerInner() {
   const { online, pendingCount, syncing, triggerSync } = usePpaOfflineQueue()
   const [dismissed, setDismissed] = React.useState(false)
 
@@ -99,4 +99,6 @@ export function OfflineBanner() {
   }
 
   return null
-}
+})
+
+export const OfflineBanner = OfflineBannerInner

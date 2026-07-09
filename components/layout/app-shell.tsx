@@ -37,7 +37,7 @@ function subscribePanelCollapsed(onStoreChange: () => void) {
   }
 }
 
-export function AppShell({ session, worksiteName, badgeCounts, children }: AppShellProps) {
+const AppShellInner = React.memo(function AppShellInner({ session, worksiteName, badgeCounts, children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [isClosing,  setIsClosing]  = React.useState(false)
   const panelCollapsed = React.useSyncExternalStore(
@@ -46,15 +46,15 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
     () => false,
   )
 
-  function openDrawer()  { setMobileOpen(true);  setIsClosing(false) }
-  function closeDrawer() {
+  const openDrawer = React.useCallback(() => { setMobileOpen(true); setIsClosing(false) }, [])
+  const closeDrawer = React.useCallback(() => {
     setIsClosing(true)
     setTimeout(() => { setMobileOpen(false); setIsClosing(false) }, 290)
-  }
-  function handlePanelCollapsedChange(collapsed: boolean) {
+  }, [])
+  const handlePanelCollapsedChange = React.useCallback((collapsed: boolean) => {
     localStorage.setItem(PANEL_COLLAPSED_KEY, String(collapsed))
     window.dispatchEvent(new Event(PANEL_COLLAPSED_EVENT))
-  }
+  }, [])
 
   const showDrawer = mobileOpen || isClosing
   const mainRef = React.useRef<HTMLElement>(null)
@@ -121,7 +121,7 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
                   contenido scrollea. En desktop, lg: overrides bloquean el auto-hide. */}
               <TopBar
                 session={session}
-                onMenuToggle={() => mobileOpen ? closeDrawer() : openDrawer()}
+                onMenuToggle={mobileOpen ? closeDrawer : openDrawer}
                 worksiteName={worksiteName}
                 isMenuOpen={mobileOpen}
                 hidden={headerHidden}
@@ -139,4 +139,6 @@ export function AppShell({ session, worksiteName, badgeCounts, children }: AppSh
       </React.Suspense>
     </div>
   )
-}
+})
+
+export const AppShell = AppShellInner

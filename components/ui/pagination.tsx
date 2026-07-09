@@ -12,10 +12,19 @@ interface PaginationProps {
   className?:  string
 }
 
-export function Pagination({ page, total, perPage, onPage, className }: PaginationProps) {
+const PaginationInner = React.memo(function PaginationInner({ page, total, perPage, onPage, className }: PaginationProps) {
   const totalPages = Math.ceil(total / perPage)
   const from = (page - 1) * perPage + 1
   const to   = Math.min(page * perPage, total)
+
+  const goPrev = React.useCallback(() => onPage(page - 1), [onPage, page])
+  const goNext = React.useCallback(() => onPage(page + 1), [onPage, page])
+  const goToPage = React.useCallback(
+    (p: number) => () => onPage(p),
+    [onPage],
+  )
+
+  const pageNums = React.useMemo(() => buildPageNums(page, totalPages), [page, totalPages])
 
   if (totalPages <= 1) return null
 
@@ -30,19 +39,19 @@ export function Pagination({ page, total, perPage, onPage, className }: Paginati
       </p>
       <div className="flex items-center gap-1">
         <PageButton
-          onClick={() => onPage(page - 1)}
+          onClick={goPrev}
           disabled={page <= 1}
           aria-label="Página anterior"
         >
           <CaretLeft size={14} weight="bold" />
         </PageButton>
-        {buildPageNums(page, totalPages).map((p, i) =>
+        {pageNums.map((p, i) =>
           p === "…" ? (
             <span key={`ellipsis-${i}`} className="w-8 text-center text-xs text-[var(--color-text-subtle)]">…</span>
           ) : (
             <PageButton
               key={p}
-              onClick={() => onPage(p as number)}
+              onClick={goToPage(p as number)}
               active={p === page}
               aria-label={`Ir a página ${p}`}
               aria-current={p === page ? "page" : undefined}
@@ -52,7 +61,7 @@ export function Pagination({ page, total, perPage, onPage, className }: Paginati
           )
         )}
         <PageButton
-          onClick={() => onPage(page + 1)}
+          onClick={goNext}
           disabled={page >= totalPages}
           aria-label="Página siguiente"
         >
@@ -61,7 +70,9 @@ export function Pagination({ page, total, perPage, onPage, className }: Paginati
       </div>
     </div>
   )
-}
+})
+
+export const Pagination = PaginationInner
 
 function PageButton({
   children, active, disabled, onClick, ...rest

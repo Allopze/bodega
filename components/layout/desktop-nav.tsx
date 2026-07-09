@@ -19,12 +19,14 @@ interface DesktopNavProps {
   onCollapsedChange: (collapsed: boolean) => void
 }
 
-export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange }: DesktopNavProps) {
+const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCounts, collapsed, onCollapsedChange }: DesktopNavProps) {
   const pathname = usePathname()
   const areas = React.useMemo(() => getVisibleAreas(session), [session])
   const routeArea = findActiveArea(areas, pathname)
   const dashActive = isHrefActive(DASHBOARD_ITEM.href, pathname)
   const DashIcon = NAV_ICONS[DASHBOARD_ITEM.iconName]
+  const showPanel = React.useCallback(() => onCollapsedChange(false), [onCollapsedChange])
+  const hidePanel = React.useCallback(() => onCollapsedChange(true), [onCollapsedChange])
 
   if (collapsed) {
     return (
@@ -83,7 +85,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
           <Tooltip content="Mostrar panel" side="right" delayDuration={250}>
             <button
               type="button"
-              onClick={() => onCollapsedChange(false)}
+              onClick={showPanel}
               aria-label="Mostrar panel"
               className="flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
             >
@@ -105,7 +107,7 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
         <Tooltip content="Ocultar panel" side="right" delayDuration={250}>
           <button
             type="button"
-            onClick={() => onCollapsedChange(true)}
+            onClick={hidePanel}
             aria-label="Ocultar panel"
             className="flex h-7 w-7 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
           >
@@ -163,6 +165,8 @@ export function DesktopNav({ session, badgeCounts, collapsed, onCollapsedChange 
       )}
     </nav>
   )
-}
+})
+
+export const DesktopNav = DesktopNavInner
 
 

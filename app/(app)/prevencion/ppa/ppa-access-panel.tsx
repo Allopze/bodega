@@ -1,8 +1,6 @@
 "use client"
 
 import * as React from "react"
-import QRCode from "qrcode"
-import { jsPDF } from "jspdf"
 import { QrCode, Copy, DownloadSimple } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
@@ -29,9 +27,11 @@ export function PpaAccessPanel({ worksites }: { worksites: { id: string; name: s
   React.useEffect(() => {
     if (!open || !link) { setQr(""); return }
     let active = true
-    QRCode.toDataURL(link, { width: 320, margin: 2 })
-      .then((url) => { if (active) setQr(url) })
-      .catch(() => { if (active) setQr("") })
+    import("qrcode").then((mod) => {
+      (mod.default ?? mod).toDataURL(link, { width: 320, margin: 2 })
+        .then((url: string) => { if (active) setQr(url) })
+        .catch(() => { if (active) setQr("") })
+    })
     return () => { active = false }
   }, [open, link])
 
@@ -46,25 +46,22 @@ export function PpaAccessPanel({ worksites }: { worksites: { id: string; name: s
     }
   }
 
-  function downloadQr() {
+  async function downloadQr() {
     if (!qr) return
+    const { jsPDF } = await import("jspdf")
     const doc = new jsPDF({ format: "letter" })
     const pageW = doc.internal.pageSize.getWidth()
 
-    // Title — faena name
     doc.setFontSize(20)
     doc.text(faenaName, pageW / 2, 30, { align: "center" })
 
-    // Subtitle
     doc.setFontSize(12)
     doc.text("Formulario PPA Digital", pageW / 2, 40, { align: "center" })
 
-    // QR code — large and centered
     const qrSize = 80
     const qrX = (pageW - qrSize) / 2
     doc.addImage(qr, "PNG", qrX, 52, qrSize, qrSize)
 
-    // Link below QR
     doc.setFontSize(10)
     doc.text("Enlace de acceso:", pageW / 2, 148, { align: "center" })
     doc.setFontSize(8)

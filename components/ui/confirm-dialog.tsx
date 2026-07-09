@@ -39,7 +39,7 @@ const variantConfig = {
  *     onConfirm={handleCancel}
  *   />
  */
-export function ConfirmDialog({
+const ConfirmDialogInner = React.memo(function ConfirmDialogInner({
   open,
   onOpenChange,
   title,
@@ -80,4 +80,6 @@ export function ConfirmDialog({
       </DialogContent>
     </Dialog>
   )
-}
+})
+
+export const ConfirmDialog = ConfirmDialogInner

@@ -1,8 +1,9 @@
-import { useActionState, useEffect, useRef, useState, useCallback, startTransition, useTransition } from "react"
+import { useActionState, useEffect, useRef, useState, useCallback, useMemo, startTransition, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { DELETABLE_REQUEST_STATUSES } from "@/lib/services/requests-delete.constants"
 import { INITIAL_STATE } from "@/components/admin/form-state"
+import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./item-editor"
 import type { ActionState } from "@/lib/validation/operations"
 import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"
@@ -18,6 +19,102 @@ const AUTOSAVE_INTERVAL_MS = 60_000
 interface AutosaveSnapshot {
   savedId: string | undefined; itemsJson: string; worksiteId: string
   requestType: string; urgency: string; requiredDate: string; notes: string; canSave: boolean
+}
+
+function useDraftPersistence({
+  isDraft, dirty, hasRealContent,
+  savedId, setSavedId, setDirty, setLastSavedAt,
+  itemsJson, worksiteId, requestType, urgency, requiredDate, notes,
+  items, setItems,
+  draftState, draftAction, draftPending,
+}: {
+  isDraft: boolean; dirty: boolean; hasRealContent: boolean
+  savedId: string | undefined; setSavedId: React.Dispatch<React.SetStateAction<string | undefined>>
+  setDirty: React.Dispatch<React.SetStateAction<boolean>>
+  setLastSavedAt: React.Dispatch<React.SetStateAction<Date | null>>
+  itemsJson: string; worksiteId: string; requestType: string; urgency: string; requiredDate: string; notes: string
+  items: ItemRow[]; setItems: React.Dispatch<React.SetStateAction<ItemRow[]>>
+  draftState: ActionState & { requestId?: string }; draftAction: (fd: FormData) => void; draftPending: boolean
+}): { buildDraftFormData: (overrides?: { id?: string }) => FormData } {
+  const autoSaveRef = useRef(false)
+
+  // ── DraftState watcher (success/error toasts + state reset) ──
+  useEffect(() => {
+    if (draftState.ok) {
+      setDirty(false)
+      setLastSavedAt(new Date())
+      if (draftState.requestId) setSavedId(draftState.requestId)
+      if (autoSaveRef.current) autoSaveRef.current = false
+      else toast.success(draftState.message ?? "Borrador guardado")
+      if (QUOTATION_TYPES.has(requestType)) {
+        setItems((prev: ItemRow[]) => prev.map((item) => item.cotizaciones.length > 0 ? { ...item, cotizaciones: [] } : item))
+      }
+    } else if (draftState.message && !draftState.ok && draftState.message !== "Sin permisos para crear solicitudes") {
+      if (autoSaveRef.current) autoSaveRef.current = false
+      else toast.error(draftState.message)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setState functions are referentially stable
+  }, [draftState, requestType])
+
+  // ── Ref sync — keeps refs in sync with latest state ──
+  const itemsDataRef = useRef(items)
+  useEffect(() => { itemsDataRef.current = items })
+
+  // ── buildDraftFormData (stable with explicit deps) ──
+  const buildDraftFormData = useCallback((overrides?: { id?: string }) => {
+    const fd = new FormData()
+    const id = overrides?.id ?? savedId
+    if (id) fd.set("id", id)
+    fd.set("itemsJson", itemsJson)
+    fd.set("worksiteId", worksiteId); fd.set("requestType", requestType)
+    fd.set("urgency", urgency); fd.set("requiredDate", requiredDate); fd.set("notes", notes)
+    if (QUOTATION_TYPES.has(requestType)) {
+      for (const item of itemsDataRef.current) {
+        const cots = item.cotizaciones
+        if (cots?.length) { for (const cot of cots) fd.append(`cotizacion_${item._key}`, cot.file) }
+      }
+    }
+    return fd
+  }, [savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+
+  // ── Dirty tracking — compare snapshot with previous to detect changes ──
+  const prevSnapshotRef = useRef<string | null>(null)
+  useEffect(() => {
+    const snapshot = JSON.stringify([itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+    if (prevSnapshotRef.current === null) { prevSnapshotRef.current = snapshot; return }
+    if (prevSnapshotRef.current !== snapshot) { prevSnapshotRef.current = snapshot; setDirty(true) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setDirty is a stable setState function
+  }, [itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+
+  // ── Beforeunload guard ──
+  useEffect(() => {
+    if (!isDraft || !dirty || !hasRealContent) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [isDraft, dirty, hasRealContent])
+
+  // ── Ref for stable timer callback (avoids resetting autosave timer) ──
+  const buildDraftRef = useRef(buildDraftFormData)
+  useEffect(() => { buildDraftRef.current = buildDraftFormData })
+
+  // ── Snapshot ref for autosave — captures latest form values ──
+  const snapshotRef = useRef<AutosaveSnapshot>({ savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes, canSave: false })
+  useEffect(() => { snapshotRef.current = { savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes, canSave: Boolean(worksiteId && requiredDate && hasRealContent) } })
+
+  // ── Autosave timer (60s) ──
+  useEffect(() => {
+    if (!isDraft || !dirty || draftPending) return
+    const timer = window.setTimeout(() => {
+      const snap = snapshotRef.current
+      if (!snap.canSave) return
+      autoSaveRef.current = true
+      startTransition(() => draftAction(buildDraftRef.current()))
+    }, AUTOSAVE_INTERVAL_MS)
+    return () => window.clearTimeout(timer)
+  }, [isDraft, dirty, draftPending, draftAction])
+
+  return { buildDraftFormData }
 }
 
 export function useRequestForm({
@@ -82,40 +179,11 @@ export function useRequestForm({
     return [blankItem()]
   })
 
-  const autoSaveRef = useRef(false)
   const [dirty, setDirty] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
 
-  useEffect(() => {
-    if (draftState.ok) {
-      setDirty(false)
-      setLastSavedAt(new Date())
-      if (draftState.requestId) setSavedId(draftState.requestId)
-      if (autoSaveRef.current) autoSaveRef.current = false
-      else toast.success(draftState.message ?? "Borrador guardado")
-      if (QUOTATION_TYPES.has(requestType)) {
-        setItems((prev) => prev.map((item) => item.cotizaciones.length > 0 ? { ...item, cotizaciones: [] } : item))
-      }
-    } else if (draftState.message && !draftState.ok && draftState.message !== "Sin permisos para crear solicitudes") {
-      if (autoSaveRef.current) autoSaveRef.current = false
-      else toast.error(draftState.message)
-    }
-  }, [draftState, requestType])
-
-  useEffect(() => { if (submitState.message && !submitState.ok) toast.error(submitState.message) }, [submitState])
-  useEffect(() => { if (cancelState.message && !cancelState.ok) toast.error(cancelState.message) }, [cancelState])
-
-  useEffect(() => {
-    if (!deleteState.message) return
-    if (deleteState.ok) { toast.success(deleteState.message); router.push("/solicitudes") }
-    else toast.error(deleteState.message)
-  }, [deleteState, router])
-
-  useEffect(() => {
-    if (!resubmitState.message) return
-    if (resubmitState.ok) { toast.success(resubmitState.message); router.refresh() }
-    else if (resubmitState !== INITIAL_STATE) toast.error(resubmitState.message)
-  }, [resubmitState, router])
+  // ── Action-state watchers (toast on error / success) ──
+  useActionWatchers({ submitState, cancelState, deleteState, resubmitState, router })
 
   const prevRequestTypeRef = useRef(requestType)
   useEffect(() => {
@@ -163,65 +231,29 @@ export function useRequestForm({
     }))
   }, [])
 
-  const itemsJson = JSON.stringify(items.map((item) => ({
-    id: item.id, productId: item.productId, productNameFree: item.productNameFree || null,
-    quantity: Number(item.quantity) || 1, unitOfMeasure: item.unitOfMeasure, urgency: item.urgency,
-    requiredDate: requiredDate || null, suggestedSupplierId: item.suggestedSupplierId || null,
-    supplierHint: item.supplierHint || null, notes: item.notes || null,
-    partNumber: item.partNumber || null, location: item.location || null,
-    equipmentName: item.equipmentName || null, patent: item.patent || null,
-    brand: item.brand || null, model: item.model || null,
-    attributes: item.attributes.map((a) => ({ attributeId: a.attributeId, attributeName: a.attributeName, value: a.value })),
-  })))
+  const itemsJson = useMemo(
+    () => JSON.stringify(items.map((item) => ({
+      id: item.id, productId: item.productId, productNameFree: item.productNameFree || null,
+      quantity: Number(item.quantity) || 1, unitOfMeasure: item.unitOfMeasure, urgency: item.urgency,
+      requiredDate: requiredDate || null, suggestedSupplierId: item.suggestedSupplierId || null,
+      supplierHint: item.supplierHint || null, notes: item.notes || null,
+      partNumber: item.partNumber || null, location: item.location || null,
+      equipmentName: item.equipmentName || null, patent: item.patent || null,
+      brand: item.brand || null, model: item.model || null,
+      attributes: item.attributes.map((a) => ({ attributeId: a.attributeId, attributeName: a.attributeName, value: a.value })),
+    }))),
+    [items, requiredDate],
+  )
 
   const hasRealContent = items.some((item) => item.productId || item.productNameFree.trim() !== "")
 
-  const itemsDataRef = useRef(items)
-  useEffect(() => { itemsDataRef.current = items })
-
-  const buildDraftFormData = useCallback((overrides?: { id?: string }) => {
-    const fd = new FormData()
-    const id = overrides?.id ?? savedId
-    if (id) fd.set("id", id)
-    fd.set("itemsJson", itemsJson)
-    fd.set("worksiteId", worksiteId); fd.set("requestType", requestType)
-    fd.set("urgency", urgency); fd.set("requiredDate", requiredDate); fd.set("notes", notes)
-    if (QUOTATION_TYPES.has(requestType)) {
-      for (const item of itemsDataRef.current) {
-        const cots = item.cotizaciones
-        if (cots?.length) { for (const cot of cots) fd.append(`cotizacion_${item._key}`, cot.file) }
-      }
-    }
-    return fd
-  }, [savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
-
-  const prevSnapshotRef = useRef<string | null>(null)
-  useEffect(() => {
-    const snapshot = JSON.stringify([itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
-    if (prevSnapshotRef.current === null) { prevSnapshotRef.current = snapshot; return }
-    if (prevSnapshotRef.current !== snapshot) { prevSnapshotRef.current = snapshot; setDirty(true) }
-  }, [itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
-
-  useEffect(() => {
-    if (!isDraft || !dirty || !hasRealContent) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
-    window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [isDraft, dirty, hasRealContent])
-
-  const snapshotRef = useRef<AutosaveSnapshot>({ savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes, canSave: false })
-  useEffect(() => { snapshotRef.current = { savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes, canSave: Boolean(worksiteId && requiredDate && hasRealContent) } })
-
-  useEffect(() => {
-    if (!isDraft || !dirty || draftPending) return
-    const timer = window.setTimeout(() => {
-      const snap = snapshotRef.current
-      if (!snap.canSave) return
-      autoSaveRef.current = true
-      startTransition(() => draftAction(buildDraftFormData()))
-    }, AUTOSAVE_INTERVAL_MS)
-    return () => window.clearTimeout(timer)
-  }, [isDraft, dirty, draftPending, draftAction, buildDraftFormData])
+  const { buildDraftFormData } = useDraftPersistence({
+    isDraft, dirty, hasRealContent,
+    savedId, setSavedId, setDirty, setLastSavedAt,
+    itemsJson, worksiteId, requestType, urgency, requiredDate, notes,
+    items, setItems,
+    draftState, draftAction, draftPending,
+  })
 
   const readOnly = !isDraft
   const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]

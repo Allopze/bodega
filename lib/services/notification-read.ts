@@ -2,7 +2,7 @@
  * Notification read and mark-as-read operations.
  */
 
-import { eq, and, desc, sql } from "drizzle-orm"
+import { eq, and, desc, sql, count } from "drizzle-orm"
 import { db } from "@/db"
 import { notifications, users } from "@/db/schema"
 
@@ -37,14 +37,14 @@ export async function getNotificationsForUser(
 }
 
 export async function getUnreadCount(userId: string): Promise<number> {
-  const rows = await db.query.notifications.findMany({
-    where: and(
+  const [row] = await db
+    .select({ count: count() })
+    .from(notifications)
+    .where(and(
       eq(notifications.userId, userId),
       eq(notifications.isRead, false),
-    ),
-    columns: { id: true },
-  })
-  return rows.length
+    ))
+  return row?.count ?? 0
 }
 
 export async function markNotificationRead(id: string, userId: string): Promise<void> {
@@ -125,21 +125,25 @@ export interface NotificationStats {
 
 /** Admin: notification counters for the maintenance page. */
 export async function getNotificationMaintenanceStats(): Promise<NotificationStats> {
-  const recentRows = await db
-    .select({
-      id: notifications.id,
-      isRead: notifications.isRead,
-      createdAt: notifications.createdAt,
-    })
+  const [unreadRow] = await db
+    .select({ count: count() })
     .from(notifications)
-    .orderBy(desc(notifications.createdAt))
-    .limit(1000)
+    .where(eq(notifications.isRead, false))
 
-  const unreadCount = recentRows.filter((r) => !r.isRead).length
-  const totalRecent = recentRows.length
-  const oldestRead = recentRows
-    .filter((r) => r.isRead)
-    .reduce<string | null>((acc, r) => (acc === null || r.createdAt < acc ? r.createdAt : acc), null)
+  const [totalRow] = await db
+    .select({ count: count() })
+    .from(notifications)
 
-  return { unreadCount, totalRecent, oldestReadDate: oldestRead }
+  const [oldestReadRow] = await db
+    .select({ createdAt: notifications.createdAt })
+    .from(notifications)
+    .where(eq(notifications.isRead, true))
+    .orderBy(notifications.createdAt)
+    .limit(1)
+
+  return {
+    unreadCount: unreadRow?.count ?? 0,
+    totalRecent: totalRow?.count ?? 0,
+    oldestReadDate: oldestReadRow?.createdAt ?? null,
+  }
 }

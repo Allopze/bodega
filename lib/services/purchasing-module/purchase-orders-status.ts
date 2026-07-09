@@ -6,7 +6,7 @@
 import { eq, and, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
-import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
 
 /* ── Issue OC (draft → issued) ───────────────────────────────────────────────── */
 
@@ -107,15 +107,16 @@ export async function markOrderSent(
           )
         )
 
-      for (const reqItemId of requestItemIds) {
-        await recordStatusChange({
-          entityType: "request_item",
+      await recordStatusChanges(
+        requestItemIds.map((reqItemId) => ({
+          entityType: "request_item" as const,
           entityId:   reqItemId,
           fromStatus: "in_purchase_order",
           toStatus:   "purchased",
           changedBy:  userId,
-        }, tx)
-      }
+        })),
+        tx,
+      )
     }
 
     await recordStatusChange({
@@ -186,15 +187,16 @@ export async function cancelOrder(
           )
         )
 
-      for (const reqItemId of requestItemIds) {
-        await recordStatusChange({
-          entityType: "request_item",
+      await recordStatusChanges(
+        requestItemIds.map((reqItemId) => ({
+          entityType: "request_item" as const,
           entityId:   reqItemId,
           fromStatus: "purchased",
           toStatus:   "pending_purchase",
           changedBy:  userId,
-        }, tx)
-      }
+        })),
+        tx,
+      )
     }
 
     // Update purchaseOrderItems status to cancelled

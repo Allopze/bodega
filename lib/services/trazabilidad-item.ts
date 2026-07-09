@@ -72,145 +72,141 @@ export async function getItemDetail(
       .limit(1),
   ])
 
-  // 3. Fetch item attributes
-  const attrRows = await db
-    .select({ name: requestItemAttributes.attributeName, value: requestItemAttributes.value })
-    .from(requestItemAttributes)
-    .where(eq(requestItemAttributes.requestItemId, itemId))
+  // Steps 3-8 are independent — run them in parallel
+  const [attrRows, approvalRows, ocItemRows, deliveryRows, historyRows] = await Promise.all([
+    db
+      .select({ name: requestItemAttributes.attributeName, value: requestItemAttributes.value })
+      .from(requestItemAttributes)
+      .where(eq(requestItemAttributes.requestItemId, itemId)),
 
-  // 4. Fetch approval decisions
-  const approvalRows = await db
-    .select({
-      id:           approvalDecisions.id,
-      type:         approvalDecisions.type,
-      decidedByName: users.name,
-      decidedByEmail: users.email,
-      decidedAt:    approvalDecisions.decidedAt,
-      reason:       approvalDecisions.reason,
-      modifiedQty:  approvalDecisions.modifiedQty,
-      roleContext:  approvalDecisions.roleContext,
-    })
-    .from(approvalDecisions)
-    .innerJoin(users, eq(approvalDecisions.decidedBy, users.id))
-    .where(eq(approvalDecisions.requestItemId, itemId))
-    .orderBy(asc(approvalDecisions.decidedAt))
+    db
+      .select({
+        id:           approvalDecisions.id,
+        type:         approvalDecisions.type,
+        decidedByName: users.name,
+        decidedByEmail: users.email,
+        decidedAt:    approvalDecisions.decidedAt,
+        reason:       approvalDecisions.reason,
+        modifiedQty:  approvalDecisions.modifiedQty,
+        roleContext:  approvalDecisions.roleContext,
+      })
+      .from(approvalDecisions)
+      .innerJoin(users, eq(approvalDecisions.decidedBy, users.id))
+      .where(eq(approvalDecisions.requestItemId, itemId))
+      .orderBy(asc(approvalDecisions.decidedAt)),
 
-  // 5. Fetch OC items linked to this request item
-  const ocItemRows = await db
-    .select({
-      id:               purchaseOrderItems.id,
-      ocId:             purchaseOrderItems.purchaseOrderId,
-      ocCode:           purchaseOrders.code,
-      ocStatus:         purchaseOrders.status,
-      supplierName:     suppliers.name,
-      quantity:         purchaseOrderItems.quantity,
-      unitPrice:        purchaseOrderItems.unitPrice,
-      quantityReceived: purchaseOrderItems.quantityReceived,
-      quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
-    })
-    .from(purchaseOrderItems)
-    .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
-    .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
-    .where(eq(purchaseOrderItems.requestItemId, itemId))
-    .orderBy(asc(purchaseOrders.createdAt))
+    db
+      .select({
+        id:               purchaseOrderItems.id,
+        ocId:             purchaseOrderItems.purchaseOrderId,
+        ocCode:           purchaseOrders.code,
+        ocStatus:         purchaseOrders.status,
+        supplierName:     suppliers.name,
+        quantity:         purchaseOrderItems.quantity,
+        unitPrice:        purchaseOrderItems.unitPrice,
+        quantityReceived: purchaseOrderItems.quantityReceived,
+        quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
+      })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
+      .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+      .where(eq(purchaseOrderItems.requestItemId, itemId))
+      .orderBy(asc(purchaseOrders.createdAt)),
+
+    db
+      .select({
+        id:               deliveryItems.id,
+        deliveryCode:     deliveries.code,
+        destinationType:  deliveries.destinationType,
+        deliveredByName:  users.name,
+        deliveredAt:      deliveries.deliveredAt,
+        workerName:       workers.firstName,
+        workerLastName:   workers.lastName,
+        worksiteName:     worksites.name,
+        receiverName:     deliveries.receiverName,
+        quantity:         deliveryItems.quantity,
+        returnQuantity:   deliveryItems.returnQuantity,
+        returnReason:     deliveryItems.returnReason,
+        notes:            deliveryItems.notes,
+      })
+      .from(deliveryItems)
+      .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
+      .innerJoin(users, eq(deliveries.deliveredBy, users.id))
+      .leftJoin(workers, eq(deliveries.workerId, workers.id))
+      .leftJoin(worksites, eq(deliveries.worksiteId, worksites.id))
+      .where(eq(deliveryItems.requestItemId, itemId))
+      .orderBy(asc(deliveries.deliveredAt)),
+
+    db
+      .select({
+        id:         statusHistory.id,
+        fromStatus: statusHistory.fromStatus,
+        toStatus:   statusHistory.toStatus,
+        changedBy:  statusHistory.changedBy,
+        changedAt:  statusHistory.changedAt,
+        reason:     statusHistory.reason,
+        userName:   users.name,
+        userEmail:  users.email,
+      })
+      .from(statusHistory)
+      .leftJoin(users, eq(statusHistory.changedBy, users.id))
+      .where(
+        and(
+          eq(statusHistory.entityType, "request_item"),
+          eq(statusHistory.entityId, itemId),
+        ),
+      )
+      .orderBy(desc(statusHistory.changedAt)),
+  ])
 
   const ocItemIds = ocItemRows.map((oi) => oi.id)
 
-  // 6. Fetch receipt items for these OC items
-  const receiptRows = ocItemIds.length > 0
-    ? await db
-        .select({
-          receiptId:        receiptItems.receiptId,
-          receiptCode:      receipts.code,
-          locationType:     receipts.locationType,
-          receivedByName:   users.name,
-          receivedAt:       receipts.receivedAt,
-          quantityReceived: receiptItems.quantityReceived,
-          quantityRejected: receiptItems.quantityRejected,
-          notes:            receiptItems.notes,
-        })
-        .from(receiptItems)
-        .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
-        .innerJoin(users, eq(receipts.receivedBy, users.id))
-        .where(inArray(receiptItems.purchaseOrderItemId, ocItemIds))
-        .orderBy(asc(receipts.receivedAt))
-    : []
-
-  // 7. Fetch delivery items for this request item
-  const deliveryRows = await db
-    .select({
-      id:               deliveryItems.id,
-      deliveryCode:     deliveries.code,
-      destinationType:  deliveries.destinationType,
-      deliveredByName:  users.name,
-      deliveredAt:      deliveries.deliveredAt,
-      workerName:       workers.firstName,
-      workerLastName:   workers.lastName,
-      worksiteName:     worksites.name,
-      receiverName:     deliveries.receiverName,
-      quantity:         deliveryItems.quantity,
-      returnQuantity:   deliveryItems.returnQuantity,
-      returnReason:     deliveryItems.returnReason,
-      notes:            deliveryItems.notes,
-    })
-    .from(deliveryItems)
-    .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
-    .innerJoin(users, eq(deliveries.deliveredBy, users.id))
-    .leftJoin(workers, eq(deliveries.workerId, workers.id))
-    .leftJoin(worksites, eq(deliveries.worksiteId, worksites.id))
-    .where(eq(deliveryItems.requestItemId, itemId))
-    .orderBy(asc(deliveries.deliveredAt))
-
-  // 8. Fetch status history for this item
-  const historyRows = await db
-    .select({
-      id:         statusHistory.id,
-      fromStatus: statusHistory.fromStatus,
-      toStatus:   statusHistory.toStatus,
-      changedBy:  statusHistory.changedBy,
-      changedAt:  statusHistory.changedAt,
-      reason:     statusHistory.reason,
-      userName:   users.name,
-      userEmail:  users.email,
-    })
-    .from(statusHistory)
-    .leftJoin(users, eq(statusHistory.changedBy, users.id))
-    .where(
-      and(
-        eq(statusHistory.entityType, "request_item"),
-        eq(statusHistory.entityId, itemId),
-      ),
-    )
-    .orderBy(desc(statusHistory.changedAt))
-
-  // 9. Fetch inventory movements linked to this product at this worksite
-  const prodId = item.productId
-  const wsId = item.worksiteId
-  const movementRows = prodId
-    ? await db
-        .select({
-          id:            inventoryMovements.id,
-          type:          inventoryMovements.type,
-          quantity:      inventoryMovements.quantity,
-          referenceType: inventoryMovements.referenceType,
-          referenceId:   inventoryMovements.referenceId,
-          performedByName: users.name,
-          performedAt:   inventoryMovements.performedAt,
-          reason:        inventoryMovements.reason,
-          notes:         inventoryMovements.notes,
-          stockAfter:    inventoryMovements.stockAfter,
-        })
-        .from(inventoryMovements)
-        .leftJoin(users, eq(inventoryMovements.performedBy, users.id))
-        .where(
-          and(
-            eq(inventoryMovements.productId, prodId),
-            eq(inventoryMovements.worksiteId, wsId),
-          ),
-        )
-        .orderBy(desc(inventoryMovements.performedAt))
-        .limit(50)
-    : []
+  // Steps 6+9 depend on results from above — run in parallel
+  const [receiptRows, movementRows] = await Promise.all([
+    ocItemIds.length > 0
+      ? db
+          .select({
+            receiptId:        receiptItems.receiptId,
+            receiptCode:      receipts.code,
+            locationType:     receipts.locationType,
+            receivedByName:   users.name,
+            receivedAt:       receipts.receivedAt,
+            quantityReceived: receiptItems.quantityReceived,
+            quantityRejected: receiptItems.quantityRejected,
+            notes:            receiptItems.notes,
+          })
+          .from(receiptItems)
+          .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+          .innerJoin(users, eq(receipts.receivedBy, users.id))
+          .where(inArray(receiptItems.purchaseOrderItemId, ocItemIds))
+          .orderBy(asc(receipts.receivedAt))
+      : [],
+    item.productId
+      ? db
+          .select({
+            id:            inventoryMovements.id,
+            type:          inventoryMovements.type,
+            quantity:      inventoryMovements.quantity,
+            referenceType: inventoryMovements.referenceType,
+            referenceId:   inventoryMovements.referenceId,
+            performedByName: users.name,
+            performedAt:   inventoryMovements.performedAt,
+            reason:        inventoryMovements.reason,
+            notes:         inventoryMovements.notes,
+            stockAfter:    inventoryMovements.stockAfter,
+          })
+          .from(inventoryMovements)
+          .leftJoin(users, eq(inventoryMovements.performedBy, users.id))
+          .where(
+            and(
+              eq(inventoryMovements.productId, item.productId),
+              eq(inventoryMovements.worksiteId, item.worksiteId),
+            ),
+          )
+          .orderBy(desc(inventoryMovements.performedAt))
+          .limit(50)
+      : [],
+  ])
 
   return {
     item: {

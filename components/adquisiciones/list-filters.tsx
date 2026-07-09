@@ -34,13 +34,17 @@ interface ListFiltersProps {
 const ALL = "_all"
 const DEBOUNCE_MS = 350
 
+function createSelectHandler(setParam: (key: string, value: string) => void, key: string) {
+  return (value: string) => setParam(key, value === ALL ? "" : value)
+}
+
 /**
  * URL-synced filter bar for the Adquisiciones list screens. Writes `q`,
  * `estado` and `faena` to the URL (resetting `page`) so the server query
  * applies the filters. The free-text input is debounced; selects update
  * immediately.
  */
-export function ListFilters({
+const ListFiltersInner = React.memo(function ListFiltersInner({
   searchPlaceholder = "Buscar por código...",
   statusOptions,
   urgencyOptions,
@@ -82,6 +86,11 @@ export function ListFilters({
     const id = setTimeout(() => setParam("q", q.trim()), DEBOUNCE_MS)
     return () => clearTimeout(id)
   }, [q, currentQ, setParam])
+
+  const handleEstadoChange = React.useMemo(() => createSelectHandler(setParam, "estado"), [setParam])
+  const handleUrgenciaChange = React.useMemo(() => createSelectHandler(setParam, "urgencia"), [setParam])
+  const handleFaenaChange = React.useMemo(() => createSelectHandler(setParam, "faena"), [setParam])
+  const handleProveedorChange = React.useMemo(() => createSelectHandler(setParam, "proveedor"), [setParam])
 
   const hasActiveFilters = Boolean(currentQ || currentEstado || currentUrgencia || currentFaena || currentProveedor)
 
@@ -129,7 +138,7 @@ export function ListFilters({
         {statusOptions && statusOptions.length > 0 && (
           <Select
             value={currentEstado || ALL}
-            onValueChange={(v) => setParam("estado", v === ALL ? "" : v)}
+            onValueChange={handleEstadoChange}
           >
             <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs" aria-label="Filtrar por estado">
               <SelectValue placeholder="Todos los estados" />
@@ -146,7 +155,7 @@ export function ListFilters({
         {urgencyOptions && urgencyOptions.length > 0 && (
           <Select
             value={currentUrgencia || ALL}
-            onValueChange={(v) => setParam("urgencia", v === ALL ? "" : v)}
+            onValueChange={handleUrgenciaChange}
           >
             <SelectTrigger className="h-8 w-auto min-w-[9rem] text-xs" aria-label="Filtrar por urgencia">
               <SelectValue placeholder="Toda urgencia" />
@@ -163,7 +172,7 @@ export function ListFilters({
         {worksiteOptions && worksiteOptions.length > 0 && (
           <Select
             value={currentFaena || ALL}
-            onValueChange={(v) => setParam("faena", v === ALL ? "" : v)}
+            onValueChange={handleFaenaChange}
           >
             <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs" aria-label="Filtrar por faena">
               <SelectValue placeholder="Todas las faenas" />
@@ -180,7 +189,7 @@ export function ListFilters({
         {supplierOptions && supplierOptions.length > 0 && (
           <Select
             value={currentProveedor || ALL}
-            onValueChange={(v) => setParam("proveedor", v === ALL ? "" : v)}
+            onValueChange={handleProveedorChange}
           >
             <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs" aria-label="Filtrar por proveedor">
               <SelectValue placeholder="Todos los proveedores" />
@@ -223,4 +232,6 @@ export function ListFilters({
       )}
     </div>
   )
-}
+})
+
+export const ListFilters = ListFiltersInner

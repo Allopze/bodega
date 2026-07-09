@@ -25,7 +25,9 @@ interface TopBarProps {
   hidden?:       boolean
 }
 
-export function TopBar({
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/prevencion/ppa"]
+
+const TopBarInner = React.memo(function TopBarInner({
   session,
   onMenuToggle,
   className,
@@ -42,14 +44,13 @@ export function TopBar({
   }, [pathname, setSearchQuery])
 
   // Derive active area + label from the nav tree — no extra plumbing needed
-  const activeNav     = findActiveBreadcrumb(pathname)
+  const activeNav = React.useMemo(() => findActiveBreadcrumb(pathname), [pathname])
   const activeSection = activeNav?.areaLabel ?? null
   const activeLabel   = activeNav?.itemLabel ?? null
 
   // These routes have their own per-screen search bar (URL-synced,
   // server-side). The top-bar in-memory search is inert there — hide it so
   // users don't see two search inputs with different behaviours.
-  const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/prevencion/ppa"]
   const hideSearch = ROUTES_WITH_OWN_SEARCH.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 
   return (
@@ -162,4 +163,6 @@ export function TopBar({
       </div>
     </header>
   )
-}
+})
+
+export const TopBar = TopBarInner
