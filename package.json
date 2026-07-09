@@ -18,6 +18,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env.local db/seed.ts",
+    "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",
     "db:studio": "drizzle-kit studio",
     "e2e:setup": "tsx e2e/setup-db.ts",
     "screenshots": "tsx --env-file=.env.local scripts/capture-all-routes.ts",

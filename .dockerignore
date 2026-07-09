@@ -1,15 +1,18 @@
 node_modules
 .next
 .tmp
+.codegraph
 coverage
 playwright-report
 test-results
 audit
 .DS_Store
 ._*
+**/._*
 .commandcode
 .env*
 *.md
+Registros SG-SST
 # Seed data lives in markdown and must reach the build context despite *.md above.
 !db/seed/trabajadores_por_faena_actualizado.md
 .git

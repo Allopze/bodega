@@ -14,7 +14,12 @@
 import { existsSync } from "node:fs"
 import type { Browser, BrowserContext } from "playwright"
 
-const MAX_CONCURRENT = Number(process.env.PDF_MAX_CONCURRENT ?? "2")
+function readRuntimeEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim()
+  return value || undefined
+}
+
+const MAX_CONCURRENT = Number(readRuntimeEnv("PDF_MAX_CONCURRENT") ?? "2")
 const LAUNCH_TIMEOUT_MS = 30_000
 const SYSTEM_CHROMIUM_PATHS = [
   "/usr/bin/chromium-browser",
@@ -32,7 +37,7 @@ let active = 0
 const waiters: Array<() => void> = []
 
 function resolveChromiumExecutablePath(): string | undefined {
-  const configuredPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  const configuredPath = readRuntimeEnv("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
   if (configuredPath) return configuredPath
   return SYSTEM_CHROMIUM_PATHS.find((path) => existsSync(path))
 }
