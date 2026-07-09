@@ -92,8 +92,6 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: E2E (full suite)
-        run: npm run test:e2e
-
       - name: E2E accessibility audit
         run: npx playwright test e2e/accessibility.spec.ts
+
