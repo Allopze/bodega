@@ -7,6 +7,7 @@ import { products, productAttributes, productSuppliers, productCategories } from
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
+import { importProductsFromXlsx } from "@/lib/services/product-xlsx-import"
 import { productSchema, productCategorySchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/productos"
@@ -332,4 +333,54 @@ export async function toggleProductActive(_prev: ActionState, formData: FormData
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: activate ? "Producto activado" : "Producto desactivado" }
+}
+
+export async function importProductsXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:products") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const file = formData.get("file")
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+  }
+
+  const fileName = file.name.toLocaleLowerCase("es-CL")
+  if (!fileName.endsWith(".xlsx")) {
+    return { ok: false, fieldErrors: { file: ["El archivo debe estar en formato .xlsx"] } }
+  }
+
+  const maxBytes = 5 * 1024 * 1024
+  if (file.size > maxBytes) {
+    return { ok: false, fieldErrors: { file: ["El archivo no puede superar 5 MB"] } }
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const result = await importProductsFromXlsx(buffer)
+  if (result.errors.length > 0) {
+    return {
+      ok: false,
+      message: "No se pudo importar el XLSX",
+      data: {
+        errors: result.errors.slice(0, 20),
+        totalErrors: result.errors.length,
+      },
+    }
+  }
+
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "create",
+    entityType: "product",
+    entityId: "xlsx",
+    newState: { ...result },
+  })
+
+  revalidatePath(REVALIDATE)
+  return {
+    ok: true,
+    message: `Importación lista: ${result.created} creados, ${result.updated} actualizados`,
+    data: { ...result },
+  }
 }

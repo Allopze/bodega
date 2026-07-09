@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState, useEffect } from "react"
 import { toast } from "@/lib/toast"
-import { Plus, PencilSimple, ToggleLeft, ToggleRight, Tag } from "@phosphor-icons/react"
+import { Plus, PencilSimple, ToggleLeft, ToggleRight, Tag, UploadSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { CategoryPanel, type CategoryForEdit } from "./category-panel"
 import { ProductForm } from "./product-form"
@@ -13,6 +13,7 @@ import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { formatCLP } from "@/lib/utils"
 import { toggleProductActive, getProductForEdit } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
+import { ProductImportPanel } from "./product-import-panel"
 
 interface ProductRow {
   id: string; sku: string; name: string
@@ -42,6 +43,7 @@ export function ProductList({ products, categories, allSuppliers }: {
   allSuppliers: SupplierItem[]
 }) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
+  const [importSheetOpen, setImportSheetOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<CategoryForEdit | null>(null)
   const [toggleState,  toggleAction]    = useActionState(toggleProductActive, INITIAL_STATE)
 
@@ -112,11 +114,16 @@ export function ProductList({ products, categories, allSuppliers }: {
             <Plus size={14} />Nuevo producto
           </Button>
         }
-        actions={
-          <Button size="sm" onClick={openNewProduct}>
-            <Plus size={14} />Nuevo producto
-          </Button>
-        }
+        actions={(
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setImportSheetOpen(true)}>
+              <UploadSimple size={14} />Importar XLSX
+            </Button>
+            <Button size="sm" onClick={openNewProduct}>
+              <Plus size={14} />Nuevo producto
+            </Button>
+          </div>
+        )}
         renderRow={(row) => {
           const p = row as unknown as ProductRow
           return (
@@ -252,6 +259,11 @@ export function ProductList({ products, categories, allSuppliers }: {
         open={catSheetOpen}
         onClose={() => setCatSheetOpen(false)}
         editCategory={editCategory}
+      />
+
+      <ProductImportPanel
+        open={importSheetOpen}
+        onClose={() => setImportSheetOpen(false)}
       />
 
       <ProductForm
