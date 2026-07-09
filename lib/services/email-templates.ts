@@ -11,6 +11,7 @@ import { emailTemplates } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
+import { DEFAULT_TEMPLATES, TEMPLATE_KEYS as _TEMPLATE_KEYS, replaceVariables } from "./email-template-render"
 
 export interface EmailTemplate {
   id:        string
@@ -27,38 +28,7 @@ export interface EmailTemplateInput {
   bodyHtml: string
 }
 
-// ── Templates por defecto ────────────────────────────────────────────────────
-
-const DEFAULT_TEMPLATES: Array<{
-  key:      string
-  name:     string
-  subject:  string
-  bodyHtml: string
-}> = [
-  {
-    key: "invitation",
-    name: "Invitación",
-    subject: "Invitación a {{app_name}}",
-    bodyHtml: [
-      "<p>{{sender_name}} te invitó a <strong>{{app_name}}</strong>.</p>",
-      '<p><a href="{{invite_url}}">Completar registro</a></p>',
-      "<p>Si no esperabas esta invitación, puedes ignorar este correo.</p>",
-    ].join("\n"),
-  },
-  {
-    key: "notification",
-    name: "Notificación",
-    subject: "{{title}}",
-    bodyHtml: [
-      "<p>Hola {{user_name}},</p>",
-      "<h3>{{title}}</h3>",
-      "{{#body}}<p>{{body}}</p>{{/body}}",
-      '{{#href}}<p><a href="{{href}}">Ver detalle en {{app_name}}</a></p>{{/href}}',
-    ].join("\n"),
-  },
-]
-
-export const TEMPLATE_KEYS = DEFAULT_TEMPLATES.map((t) => t.key)
+export const TEMPLATE_KEYS = _TEMPLATE_KEYS
 
 // ── Getters ──────────────────────────────────────────────────────────────────
 
@@ -104,28 +74,7 @@ export async function renderTemplate(
   return { subject, html }
 }
 
-/**
- * Simple {{variable}} and {{#var}}...{{/var}} replacement.
- * - {{variable}} → value (escaped)
- * - {{#var}}content{{/var}} → content if variable is truthy, else removed
- */
-function replaceVariables(template: string, variables: Record<string, string>): string {
-  // Conditional blocks: {{#key}}...{{/key}}
-  let result = template.replace(
-    /\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,
-    (_, key: string, content: string) => {
-      return variables[key] ? content : ""
-    },
-  )
 
-  // Simple variable replacement
-  result = result.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
-     const value = variables[key]
-     return value !== undefined ? escapeHtml(value) : `{{${key}}}`
-  })
-
-  return result
-}
 
 // ── Mutations ────────────────────────────────────────────────────────────────
 
@@ -241,11 +190,4 @@ export async function seedDefaultTemplates(): Promise<void> {
   }
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
-}
+

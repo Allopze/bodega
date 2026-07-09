@@ -7,6 +7,7 @@
  */
 import { Resend } from "resend"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
+import { renderTemplate } from "@/lib/services/email-templates"
 
 const FROM = "Plataforma Chome <plataforma@portalchome.cl>"
 
@@ -44,19 +45,23 @@ async function canSend(): Promise<{ ok: true } | { ok: false; reason: string }> 
 
 export async function sendInvitationEmail(input: InvitationEmailInput): Promise<SendResult> {
   const { to, inviteUrl, invitedByName } = input
+
+  const rendered = await renderTemplate("invitation", {
+    sender_name: invitedByName ?? "",
+    app_name:    "Plataforma Chome",
+    invite_url:  inviteUrl,
+  })
+
   const byLine = invitedByName
-    ? `<strong>${invitedByName}</strong> te ha invitado a`
-    : "Has sido invitado a"
+    ? `${invitedByName} te ha invitado a Plataforma Chome.`
+    : "Has sido invitado a Plataforma Chome."
+  const text = `${byLine}\n\nAccede aquí: ${inviteUrl}\n\nSi no esperabas esta invitación, ignora este correo.`
 
   return sendEmail({
     to,
-    subject: "Invitación a Plataforma Chome",
-    text: `${invitedByName ? `${invitedByName} te ha invitado a` : "Has sido invitado a"} Plataforma Chome.\n\nAccede aquí: ${inviteUrl}\n\nSi no esperabas esta invitación, ignora este correo.`,
-    html: `
-      <p>${byLine} <strong>Plataforma Chome</strong>.</p>
-      <p><a href="${inviteUrl}" style="display:inline-block;padding:10px 20px;background:#17422b;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Aceptar invitación</a></p>
-      <p style="color:#6b7280;font-size:13px">Si no esperabas esta invitación, ignora este correo.</p>
-    `,
+    subject: rendered.subject,
+    text,
+    html:    rendered.html,
   })
 }
 
