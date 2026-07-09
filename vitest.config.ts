@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": projectRoot,
+      "next/server": path.join(projectRoot, "node_modules/next/server.js"),
     },
   },
   test: {
@@ -16,24 +17,17 @@ export default defineConfig({
     exclude:     ["node_modules", ".next", ".tmp"],
     setupFiles:  ["./components/__tests__/setup.ts"],
     env: {
-      // BD desechable: ningún test debe tocar la base de dev/prod ('bodega').
-      // Hoy todos usan pglite o mockean @/db; esto evita el footgun si alguno
-      // olvida hacerlo (ver lib/__tests__/db-safety.test.ts).
       DATABASE_URL: "postgres:///bodega_test",
       PGHOST:       "/var/run/postgresql",
     },
-    // Determinista: los archivos que migran pglite saturan CPU en paralelo y
-    // producían timeouts intermitentes. Secuencial + timeouts holgados.
     fileParallelism: false,
     testTimeout: 20_000,
     hookTimeout: 30_000,
+    server: { deps: { inline: ["next-auth"] } },
     coverage: {
       reporter: ["text", "lcov"],
       include:  [
         "lib/**/*.ts",
-        // T-07: start measuring Server Action coverage. Thresholds below are
-        // the combined floor after including largely-untested actions files.
-        // Ratchet these up as action tests are added; long-term target: 70%.
         "app/**/actions.ts",
       ],
       exclude: [
@@ -44,9 +38,6 @@ export default defineConfig({
         "**/*.d.ts",
         "**/node_modules/**",
       ],
-      // T-03: regression floor, set just below the current measured
-      // combined coverage (lib ~94% + uncovered actions files pull it down).
-      // Run `npm test:coverage` after adding action tests to measure and tighten.
       thresholds: {
         statements: 60,
         branches:   50,
