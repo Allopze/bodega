@@ -1,0 +1,1 @@
+ALTER TABLE "epp_import_batches" ADD COLUMN "source_file_data" text NOT NULL;

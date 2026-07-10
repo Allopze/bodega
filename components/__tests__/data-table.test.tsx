@@ -143,4 +143,20 @@ describe("DataTable", () => {
     const sortButtons = screen.getAllByRole("button")
     expect(sortButtons.length).toBeGreaterThanOrEqual(2)
   })
+
+  it("lets dense catalog tables opt into a fixed layout that uses the available width", () => {
+    const { container } = render(
+      withProvider(
+        <DataTable
+          columns={COLUMNS}
+          rows={ROWS}
+          searchKeys={["name"]}
+          tableClassName="table-fixed min-w-0"
+          renderRow={() => null}
+        />,
+      ),
+    )
+
+    expect(container.querySelector("table")).toHaveClass("table-fixed", "min-w-0")
+  })
 })

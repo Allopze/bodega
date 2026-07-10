@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { UploadSimple } from "@phosphor-icons/react"
 import {
   Sheet,
@@ -26,6 +27,7 @@ interface ProductImportPanelProps {
 }
 
 interface ImportResultData {
+  batchId?: string
   totalRows?: number
   created?: number
   updated?: number
@@ -38,6 +40,7 @@ interface ImportResultData {
 export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
   const [state, formAction] = useActionState(importProductsXlsx, INITIAL_STATE)
   const data = state.data as ImportResultData | undefined
+  const router = useRouter()
 
   useEffect(() => {
     if (!state.message) return
@@ -52,7 +55,7 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
           <div>
             <SheetTitle>Importar EPP desde XLSX</SheetTitle>
             <SheetDescription>
-              Carga productos EPP al catálogo. Los SKU existentes se actualizan.
+              Analiza y normaliza el archivo antes de incorporar cualquier EPP al catálogo.
             </SheetDescription>
           </div>
           <SheetCloseButton />
@@ -66,7 +69,7 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
                 htmlFor="product-import-file"
                 required
                 error={state.fieldErrors?.file?.[0]}
-                helper="Columnas reconocidas: SKU, Nombre, Proveedor, Precio, Atributos, Descripción, Categoría, Unidad, Notas."
+                helper="Columnas reconocidas: Nombre, Código, Proveedor, Precio, Atributos, Talla, Color, Marca, Modelo, Descripción, Categoría, Unidad, Notas."
               >
                 <Input
                   id="product-import-file"
@@ -84,14 +87,12 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
 
               {data && state.ok && (
                 <div className="rounded-[var(--radius-lg)] border border-[var(--color-success-line)] bg-[var(--color-success-tint)] p-3 text-sm">
-                  <p className="font-medium text-[var(--color-success)]">Importación completada</p>
+                  <p className="font-medium text-[var(--color-success)]">Análisis listo</p>
                   <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--color-text-muted)]">
                     <SummaryItem label="Filas" value={data.totalRows} />
-                    <SummaryItem label="Creados" value={data.created} />
-                    <SummaryItem label="Actualizados" value={data.updated} />
-                    <SummaryItem label="Proveedores nuevos" value={data.suppliersCreated} />
-                    <SummaryItem label="Categorías nuevas" value={data.categoriesCreated} />
+                    <SummaryItem label="Estado" value="Revisión requerida" />
                   </dl>
+                  {data.batchId && <Button type="button" size="sm" className="mt-3" onClick={() => router.push(`/admin/productos/importar/${data.batchId}`)}>Revisar lote</Button>}
                 </div>
               )}
 
@@ -101,9 +102,26 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
                     Errores encontrados{data.totalErrors ? ` (${data.totalErrors})` : ""}
                   </p>
                   <ul className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
-                    {data.errors.map((error, index) => (
-                      <li key={`${error}-${index}`}>{error}</li>
-                    ))}
+                    {data.errors.map((error) => {
+                      const batchMatch = error.match(/lote ([\w-]+)\.?$/)
+                      const existingBatchId = batchMatch?.[1]
+                      return (
+                        <li key={error}>
+                          <span>{error}</span>
+                          {existingBatchId && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="mt-1"
+                              onClick={() => router.push(`/admin/productos/importar/${existingBatchId}`)}
+                            >
+                              Ir al lote existente
+                            </Button>
+                          )}
+                        </li>
+                      )
+                    })}
                   </ul>
                 </div>
               )}

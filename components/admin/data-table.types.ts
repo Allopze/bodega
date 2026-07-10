@@ -29,6 +29,8 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   pageSize?:    number
   searchPlaceholder?: string
   className?:   string
+  /** Optional table-layout override for dense, responsive catalog views. */
+  tableClassName?: string
   /** Content rendered in the header toolbar (right side) */
   actions?:     React.ReactNode
   /** When true renders skeleton rows instead of EmptyState — prevents "no results" flash during load */

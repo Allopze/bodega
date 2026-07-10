@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveDeliveryAttachmentFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
+import { logger } from "@/lib/logger"
 
 /**
  * S-08: this endpoint serves ONLY delivery proof attachments. Every other
@@ -62,7 +63,8 @@ export async function GET(
         "Cache-Control": "private, max-age=60",
       },
     })
-  } catch {
+  } catch (err) {
+    logger.error(`[attachments/serve] Error al leer archivo adjunto: ${attachment.filePath}`, err)
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 }

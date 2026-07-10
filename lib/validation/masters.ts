@@ -128,7 +128,6 @@ export const productSupplierSchema = z.object({
 // ── Product ───────────────────────────────────────────────────────────────────
 export const productSchema = z.object({
   id:                 z.string().optional(),
-  sku:                z.string().min(1, "SKU requerido").max(40).toUpperCase(),
   name:               z.string().min(2, "Nombre requerido").max(120),
   description:        z.string().max(500).optional().or(z.literal("")),
   categoryId:         z.string().min(1, "Selecciona una categoría"),

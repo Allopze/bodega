@@ -12,6 +12,19 @@ export const productCategories = pgTable("product_categories", {
   sortOrder:           integer("sort_order").notNull().default(0),
 })
 
+/* ── EPP product families ────────────────────────────────────────────────── */
+export const eppProductFamilies = pgTable("epp_product_families", {
+  id:            text("id").primaryKey(),
+  categoryId:    text("category_id").notNull().references(() => productCategories.id),
+  canonicalName: text("canonical_name").notNull(),
+  identityKey:   text("identity_key").notNull().unique(),
+  eppType:       text("epp_type"),
+  brand:         text("brand"),
+  model:         text("model"),
+  createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+})
+
 /* ── Products ────────────────────────────────────────────────────────────── */
 export const products = pgTable("products", {
   id:                  text("id").primaryKey(),
@@ -19,6 +32,7 @@ export const products = pgTable("products", {
   name:                text("name").notNull(),
   description:         text("description"),
   categoryId:          text("category_id").notNull().references(() => productCategories.id),
+  familyId:            text("family_id").references(() => eppProductFamilies.id, { onDelete: "set null" }),
   unitOfMeasure:       text("unit_of_measure").notNull().default("unidad"),
   isEpp:               boolean("is_epp").notNull().default(false),
   requiresPrevencion:  boolean("requires_prevencion").notNull().default(false),
@@ -60,8 +74,14 @@ export const productCategoriesRelations = relations(productCategories, ({ many }
   productAttributes: many(productAttributes),
 }))
 
+export const eppProductFamiliesRelations = relations(eppProductFamilies, ({ one, many }) => ({
+  category: one(productCategories, { fields: [eppProductFamilies.categoryId], references: [productCategories.id] }),
+  products: many(products),
+}))
+
 export const productsRelations = relations(products, ({ one, many }) => ({
   category:          one(productCategories, { fields: [products.categoryId], references: [productCategories.id] }),
+  family:            one(eppProductFamilies, { fields: [products.familyId], references: [eppProductFamilies.id] }),
   productAttributes: many(productAttributes),
   productSuppliers:  many(productSuppliers),
 }))

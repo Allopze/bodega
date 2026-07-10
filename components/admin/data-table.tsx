@@ -31,6 +31,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   pageSize = 20,
   searchPlaceholder = "Buscar...",
   className,
+  tableClassName,
   actions,
   loading = false,
   disableInternalSearch = false,
@@ -122,7 +123,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
 
       {/* Table */}
       <TableRoot className={renderMobileCard ? "hidden md:block" : undefined}>
-        <Table>
+        <Table className={tableClassName}>
           <TableHeader>
             <TableRow>
               {columns.map((col) => (

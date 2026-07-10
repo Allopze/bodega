@@ -35,7 +35,7 @@ export async function persistDraft(
   formData: FormData,
 ): Promise<ActionState & { requestId?: string }> {
   let itemsRaw: unknown[] = []
-  try { itemsRaw = JSON.parse(formData.get("itemsJson") as string ?? "[]") } catch {}
+  try { itemsRaw = JSON.parse(formData.get("itemsJson") as string ?? "[]") } catch { logger.warn("[persistDraft] itemsJson inválido en formData, se usará arreglo vacío") }
 
   const requestTypeRaw = formData.get("requestType") || "epp"
   if (isRequestType(requestTypeRaw) && !can(session, permissionForRequestType(requestTypeRaw, "create"))) {

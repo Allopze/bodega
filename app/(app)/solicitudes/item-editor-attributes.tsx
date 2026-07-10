@@ -7,6 +7,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import type { ItemRow } from "./request-form.types"
+import { getEditableItemAttributes } from "./item-editor-attributes.helpers"
 
 interface Props {
   item: ItemRow
@@ -16,7 +17,8 @@ interface Props {
 }
 
 export function ItemEditorAttributes({ item, readOnly, onUpdate, onUpdateAttr }: Props) {
-  if (item.attributes.length === 0) return null
+  const editableAttributes = getEditableItemAttributes(item.attributes)
+  if (editableAttributes.length === 0) return null
 
   return (
     <div className="ml-8 space-y-3">
@@ -26,28 +28,28 @@ export function ItemEditorAttributes({ item, readOnly, onUpdate, onUpdateAttr }:
         onClick={() => onUpdate({ showAttrs: !item.showAttrs })}
       >
         {item.showAttrs ? <CaretUp size={12} /> : <CaretDown size={12} />}
-        {item.showAttrs ? "Ocultar" : "Mostrar"} atributos
+        {item.showAttrs ? "Ocultar" : "Completar"} detalles
         <span className="ml-1 text-(--color-danger)">
-          {item.attributes.filter((a) => a.isRequired).length > 0 && "(requeridos)"}
+          {editableAttributes.some(({ attribute }) => attribute.isRequired) && "(requeridos)"}
         </span>
       </button>
 
       {item.showAttrs && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {item.attributes.map((attr, i) => (
+          {editableAttributes.map(({ attribute: attr, index }) => (
             <Field
-              key={i}
+              key={attr.attributeId ?? `${attr.attributeName}-${index}`}
               label={attr.attributeName}
               required={attr.isRequired}
-              htmlFor={`attr-${item._key}-${i}`}
+              htmlFor={`attr-${item._key}-${index}`}
             >
               {attr.type === "select" && attr.options.length > 0 ? (
                 <Select
                   value={attr.value}
-                  onValueChange={(v) => onUpdateAttr(i, v)}
+                  onValueChange={(v) => onUpdateAttr(index, v)}
                   disabled={readOnly}
                 >
-                  <SelectTrigger id={`attr-${item._key}-${i}`} className="h-8 text-sm">
+                  <SelectTrigger id={`attr-${item._key}-${index}`} className="h-8 text-sm">
                     <SelectValue placeholder="Seleccionar..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -58,11 +60,11 @@ export function ItemEditorAttributes({ item, readOnly, onUpdate, onUpdateAttr }:
                 </Select>
               ) : (
                 <Input
-                  id={`attr-${item._key}-${i}`}
+                  id={`attr-${item._key}-${index}`}
                   className="h-8 text-sm"
                   placeholder={`${attr.attributeName}...`}
                   value={attr.value}
-                  onChange={(e) => onUpdateAttr(i, e.target.value)}
+                  onChange={(e) => onUpdateAttr(index, e.target.value)}
                   disabled={readOnly}
                 />
               )}

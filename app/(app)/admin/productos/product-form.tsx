@@ -68,7 +68,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
   const [isEpp,      setIsEpp]      = React.useState(editProduct?.isEpp ?? false)
 
   function addAttr() {
-    setAttrs((prev) => [...prev, { name: "", type: "text", isRequired: false, options: "", sortOrder: prev.length }])
+    setAttrs((prev) => [...prev, { id: crypto.randomUUID(), name: "", type: "text", isRequired: false, options: "", sortOrder: prev.length }])
   }
   function removeAttr(i: number) { setAttrs((prev) => prev.filter((_, idx) => idx !== i)) }
   function updateAttr(i: number, patch: Partial<AttributeRow>) {
@@ -78,7 +78,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
     setAttrs((prev) => {
       const existingIndex = prev.findIndex((a) => a.name.trim().toLowerCase() === preset.name.toLowerCase())
       const existing = existingIndex >= 0 ? prev[existingIndex] : undefined
-      const nextPreset = { ...preset, sortOrder: existing?.sortOrder ?? prev.length }
+      const nextPreset = { ...preset, id: existing?.id ?? crypto.randomUUID(), sortOrder: existing?.sortOrder ?? prev.length }
       if (existingIndex >= 0) {
         return prev.map((a, idx) => idx === existingIndex ? { ...a, ...nextPreset } : a)
       }
@@ -90,7 +90,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
   function addSupp(supplierId: string) {
     const sup = allSuppliers.find((s) => s.id === supplierId)
     if (!sup || suppRows.find((r) => r.supplierId === supplierId)) return
-    setSuppRows((prev) => [...prev, { supplierId: sup.id, supplierName: sup.name, unitPrice: "", isPreferred: false, notes: "" }])
+    setSuppRows((prev) => [...prev, { id: crypto.randomUUID(), supplierId: sup.id, supplierName: sup.name, unitPrice: "", isPreferred: false, notes: "" }])
   }
   function removeSupp(i: number) { setSuppRows((prev) => prev.filter((_, idx) => idx !== i)) }
   function updateSupp(i: number, patch: Partial<SupplierRow>) {
@@ -164,11 +164,14 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
           {/* ── General tab ── */}
           <TabsContent value="general">
             <FieldGroup className="gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="SKU" htmlFor="p-sku" required error={state.fieldErrors?.sku?.[0]}>
-                  <Input id="p-sku" name="sku" defaultValue={editProduct?.sku ?? ""} placeholder="EPP-CASCO-001" error={!!state.fieldErrors?.sku} className="font-mono" />
-                </Field>
-                <Field label="Categoría" htmlFor="p-cat" required error={state.fieldErrors?.categoryId?.[0]}>
+              {isEdit && (
+                <div className="rounded-(--radius) bg-(--color-surface-2) px-3 py-2 text-sm">
+                  <span className="text-(--color-text-subtle)">SKU asignado: </span>
+                  <span className="font-mono font-medium text-(--color-text)">{editProduct.sku}</span>
+                </div>
+              )}
+
+              <Field label="Categoría" htmlFor="p-cat" required error={state.fieldErrors?.categoryId?.[0]}>
                   <Select value={categoryId} onValueChange={setCategoryId}>
                     <SelectTrigger id="p-cat" error={!!state.fieldErrors?.categoryId}>
                       <SelectValue placeholder="Seleccionar..." />
@@ -179,8 +182,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                       ))}
                     </SelectContent>
                   </Select>
-                </Field>
-              </div>
+              </Field>
 
               <Field label="Nombre" htmlFor="p-name" required error={state.fieldErrors?.name?.[0]}>
                 <Input id="p-name" name="name" defaultValue={editProduct?.name ?? ""} placeholder="Casco de seguridad blanco clase A" error={!!state.fieldErrors?.name} />
@@ -236,7 +238,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
             )}
             <div className="flex flex-col gap-3 mb-4">
               {attrs.map((attr, i) => (
-                <div key={i} className="flex gap-2 items-start p-3 rounded-(--radius) border border-border bg-surface-2">
+                <div key={attr.id} className="flex gap-2 items-start p-3 rounded-(--radius) border border-border bg-surface-2">
                   <div className="flex-1 grid grid-cols-2 gap-2">
                     <Field label="Nombre" htmlFor={`attr-name-${i}`} required>
                       <Input id={`attr-name-${i}`} value={attr.name} onChange={(e) => updateAttr(i, { name: e.target.value })} placeholder="Talla" />
@@ -281,7 +283,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
             )}
             <div className="flex flex-col gap-3 mb-4">
               {suppRows.map((sr, i) => (
-                <div key={i} className="flex gap-2 items-start p-3 rounded-(--radius) border border-border bg-surface-2">
+                <div key={sr.id} className="flex gap-2 items-start p-3 rounded-(--radius) border border-border bg-surface-2">
                   <div className="flex-1 grid grid-cols-2 gap-2">
                     <div className="col-span-2">
                       <p className="text-sm font-medium text-text">{sr.supplierName}</p>

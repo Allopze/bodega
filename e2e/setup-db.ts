@@ -128,6 +128,9 @@ async function main() {
     { id: "p-prev-pdtp-manage", name: "prevention:pdtp:manage", module: "prevention", description: "Gestionar catálogo, cronograma y ejecuciones del PDTP" },
     { id: "p-prev-pdtp-approve", name: "prevention:pdtp:approve", module: "prevention", description: "Aprobar el PDTP como jefatura de prevención" },
     { id: "p-prev-pdtp-sign-legal", name: "prevention:pdtp:sign_legal", module: "prevention", description: "Firmar el PDTP como Gerencia Legal" },
+    { id: "p-adm-epp-up", name: "admin:epp_import_upload", module: "admin", description: "Cargar archivos de importación EPP" },
+    { id: "p-adm-epp-rv", name: "admin:epp_import_review", module: "admin", description: "Revisar y resolver importaciones EPP" },
+    { id: "p-adm-epp-cf", name: "admin:epp_import_confirm", module: "admin", description: "Confirmar importaciones EPP" },
   ]
 
   await db.insert(schema.permissions).values(permissions)

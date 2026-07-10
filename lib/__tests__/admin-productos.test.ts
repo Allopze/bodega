@@ -13,6 +13,7 @@ import type { Session } from "next-auth"
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockCancelEppImportBatch = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const mockInsertValues = vi.fn().mockResolvedValue(undefined)
 const mockUpdateSetWhere = vi.fn().mockResolvedValue(undefined)
 const mockUpdateSet = vi.fn(() => ({ where: mockUpdateSetWhere }))
@@ -31,6 +32,7 @@ const mockDb = {
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
+vi.mock("@/lib/services/epp-import", () => ({ cancelEppImportBatch: mockCancelEppImportBatch }))
 vi.mock("@/db", () => ({ db: mockDb }))
 
 function makeSession(perm: string): Session {
@@ -143,18 +145,18 @@ describe("admin/productos actions", () => {
       const { createProduct } = await import("@/app/(app)/admin/productos/actions")
       const r = await createProduct({ ok: false }, new FormData())
       expect(r.ok).toBe(false)
-      expect(r.fieldErrors?.sku).toContain("SKU requerido")
+      expect(r.fieldErrors?.sku).toBeUndefined()
       expect(r.fieldErrors?.name).toContain("Nombre requerido")
       expect(r.fieldErrors?.categoryId).toContain("Selecciona una categoría")
     })
 
-    it("rejects duplicate SKU", async () => {
+    it("generates a SKU and ignores any value submitted by the user", async () => {
       mockAuthFn.mockResolvedValue(makeSession("admin:products"))
-      mockDb.query.products.findFirst.mockResolvedValue({ id: "existing", sku: "C-001" })
       const { createProduct } = await import("@/app/(app)/admin/productos/actions")
-      const fd = new FormData(); fd.set("name", "Casco"); fd.set("sku", "C-001"); fd.set("categoryId", "cat-1"); fd.set("unitOfMeasure", "unidad")
+      const fd = new FormData(); fd.set("name", "Casco"); fd.set("sku", "CUALQUIER-COSA"); fd.set("categoryId", "cat-1"); fd.set("unitOfMeasure", "unidad")
       const r = await createProduct({ ok: false }, fd)
-      expect(r.ok).toBe(false); expect(r.fieldErrors?.sku).toBeDefined()
+      expect(r.ok).toBe(true)
+      expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ sku: expect.stringMatching(/^PRD-[A-Z0-9]{6}$/) }))
     })
 
     it("normalizes EPP talla/color options as JSON for request dropdowns", async () => {
@@ -162,7 +164,6 @@ describe("admin/productos actions", () => {
       const { createProduct } = await import("@/app/(app)/admin/productos/actions")
       const fd = new FormData()
       fd.set("name", "Guante nitrilo")
-      fd.set("sku", "EPP-GUANTE-001")
       fd.set("categoryId", "cat-epp")
       fd.set("unitOfMeasure", "par")
       fd.set("isEpp", "on")
@@ -187,9 +188,52 @@ describe("admin/productos actions", () => {
       const { updateProduct } = await import("@/app/(app)/admin/productos/actions")
       const r = await updateProduct({ ok: false }, new FormData())
       expect(r.ok).toBe(false)
-      expect(r.fieldErrors?.sku).toContain("SKU requerido")
+      expect(r.fieldErrors?.sku).toBeUndefined()
       expect(r.fieldErrors?.name).toContain("Nombre requerido")
       expect(r.fieldErrors?.categoryId).toContain("Selecciona una categoría")
+    })
+  })
+
+  // ── cancelEppImportBatchAction ─────────────────────────────────────────
+
+  describe("cancelEppImportBatchAction", () => {
+    it("denies without admin:epp_import_confirm", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("other:perm"))
+      const { cancelEppImportBatchAction } = await import("@/app/(app)/admin/productos/actions")
+      const fd = new FormData(); fd.set("batchId", "batch-1")
+      const r = await cancelEppImportBatchAction({ ok: false }, fd)
+      expect(r.ok).toBe(false); expect(r.message).toContain("Sin permisos")
+    })
+
+    it("rejects missing batchId", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:epp_import_confirm"))
+      const { cancelEppImportBatchAction } = await import("@/app/(app)/admin/productos/actions")
+      const r = await cancelEppImportBatchAction({ ok: false }, new FormData())
+      expect(r.ok).toBe(false); expect(r.message).toBe("Lote requerido")
+    })
+
+    it("cancels the batch and records an audit on happy path", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:epp_import_confirm"))
+      const { cancelEppImportBatchAction } = await import("@/app/(app)/admin/productos/actions")
+      const fd = new FormData(); fd.set("batchId", "batch-casco-123")
+      const r = await cancelEppImportBatchAction({ ok: false }, fd)
+      expect(r.ok).toBe(true)
+      expect(r.message).toContain("Lote cancelado")
+      expect(mockCancelEppImportBatch).toHaveBeenCalledWith("batch-casco-123")
+      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: "update", entityType: "epp_import_batch", entityId: "batch-casco-123",
+        oldState: { status: "review" }, newState: { status: "cancelled" },
+      }))
+    })
+
+    it("returns an error when the underlying service throws", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:epp_import_confirm"))
+      mockCancelEppImportBatch.mockRejectedValueOnce(new Error("Batch not found"))
+      const { cancelEppImportBatchAction } = await import("@/app/(app)/admin/productos/actions")
+      const fd = new FormData(); fd.set("batchId", "batch-nonexistent")
+      const r = await cancelEppImportBatchAction({ ok: false }, fd)
+      expect(r.ok).toBe(false)
+      expect(r.message).toBe("Batch not found")
     })
   })
 })

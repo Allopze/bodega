@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveInvoiceAttachmentFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
+import { logger } from "@/lib/logger"
 
 
 export async function GET(
@@ -53,7 +54,8 @@ export async function GET(
         "Cache-Control": "private, max-age=60",
       },
     })
-  } catch {
+  } catch (err) {
+    logger.error(`[invoices/serve] Error al leer archivo de factura: ${invoice.filePath}`, err)
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 }

@@ -126,7 +126,7 @@ export function ItemEditor({
 
       {selectedProduct && variants.length > 1 && (
         <div className="ml-8 max-w-sm">
-          <Field label="Características" htmlFor={`variant-${item._key}`}>
+          <Field label="Variante" htmlFor={`variant-${item._key}`}>
             <Select value={selectedProduct.id} onValueChange={onSelectProduct} disabled={readOnly}>
               <SelectTrigger id={`variant-${item._key}`} className="h-8 text-sm">
                 <SelectValue />

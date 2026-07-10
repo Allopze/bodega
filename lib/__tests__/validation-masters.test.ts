@@ -300,22 +300,21 @@ describe("productSchema", () => {
     expect(result.success).toBe(true)
   })
 
-  it("uppercases the SKU", () => {
+  it("does not expose a manually supplied SKU", () => {
     const result = productSchema.parse({
       sku: "epp-001",
       name: "Casco",
       categoryId: "cat-1",
     })
-    expect(result.sku).toBe("EPP-001")
+    expect(result).not.toHaveProperty("sku")
   })
 
-  it("rejects empty SKU", () => {
+  it("does not require a SKU", () => {
     const result = productSchema.safeParse({
-      sku: "",
       name: "Casco",
       categoryId: "cat-1",
     })
-    expect(result.success).toBe(false)
+    expect(result.success).toBe(true)
   })
 
   it("rejects missing categoryId", () => {

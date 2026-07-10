@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useActionState, useEffect } from "react"
+import Link from "next/link"
 import { toast } from "@/lib/toast"
 import { Plus, PencilSimple, ToggleLeft, ToggleRight, Tag, UploadSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
@@ -30,6 +31,19 @@ interface CategoryItem {
   isEpp: boolean; requiresPrevencion: boolean; sortOrder: number
 }
 interface SupplierItem { id: string; name: string }
+interface RecentBatch {
+  id: string
+  fileName: string
+  status: string
+  createdAt: string
+  rowCount: number | null
+}
+
+const STATUS_LABELS: Record<string, { label: string; variant: "info" | "warning" | "success" | "danger" | "default" }> = {
+  review: { label: "En revisión", variant: "warning" },
+  confirmed: { label: "Confirmado", variant: "success" },
+  cancelled: { label: "Cancelado", variant: "default" },
+}
 interface ProductFamilyRow {
   id: string
   name: string
@@ -40,19 +54,20 @@ interface ProductFamilyRow {
 }
 
 const COLUMNS = [
-  { key: "sku",          label: "SKU",       sortable: true, width: "w-36" },
-  { key: "name",         label: "Nombre",    sortable: true  },
-  { key: "categoryName", label: "Categoría", sortable: true  },
-  { key: "attributeNames", label: "Características", sortable: false, width: "w-48" },
+  { key: "sku",          label: "SKU",       sortable: true, width: "w-32" },
+  { key: "name",         label: "Nombre",    sortable: true, width: "w-[30%]" },
+  { key: "categoryName", label: "Categoría", sortable: true, width: "w-[20%]" },
+  { key: "attributeNames", label: "Características", sortable: false, width: "w-44" },
   { key: "referencePrice", label: "Precio ref.", sortable: true, numeric: true, width: "w-28" },
   { key: "isActive",     label: "Estado",    sortable: true, width: "w-24"  },
   { key: "",             label: "",          sortable: false, width: "w-20"  },
 ]
 
-export function ProductList({ products, categories, allSuppliers }: {
-  products:     ProductRow[]
-  categories:   CategoryItem[]
-  allSuppliers: SupplierItem[]
+export function ProductList({ products, categories, allSuppliers, recentBatches }: {
+  products:      ProductRow[]
+  categories:    CategoryItem[]
+  allSuppliers:  SupplierItem[]
+  recentBatches?: RecentBatch[]
 }) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
   const [importSheetOpen, setImportSheetOpen] = React.useState(false)
@@ -130,6 +145,7 @@ export function ProductList({ products, categories, allSuppliers }: {
         columns={COLUMNS}
         rows={productFamilies as unknown as Record<string, unknown>[]}
         searchKeys={["sku", "name", "categoryName", "variantSearchText"]}
+        tableClassName="table-fixed min-w-0"
         pageSize={25}
 
         emptyTitle="Sin productos"
@@ -155,16 +171,18 @@ export function ProductList({ products, categories, allSuppliers }: {
           return (
             <TableRow key={family.id}>
               <TableCell>
-                <span className="font-mono text-xs">{p.sku}</span>
+                <span className="block font-mono text-xs leading-4 line-clamp-2 break-words" title={p.sku}>{p.sku}</span>
               </TableCell>
               <TableCell>
-                <p className="text-sm font-medium text-[var(--color-text)]">{p.name}</p>
+                <p className="line-clamp-2 text-sm font-medium text-[var(--color-text)]" title={p.name}>{p.name}</p>
                 <div className="flex gap-1 mt-0.5">
                   {p.isEpp           && <Badge variant="info"    size="sm">EPP</Badge>}
                   {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
                 </div>
               </TableCell>
-              <TableCell className="text-sm text-[var(--color-text-muted)]">{p.categoryName}</TableCell>
+              <TableCell className="text-sm text-[var(--color-text-muted)]">
+                <span className="block truncate" title={p.categoryName}>{p.categoryName}</span>
+              </TableCell>
               <TableCell className="text-sm text-[var(--color-text-muted)]">
                 {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
                   <select
@@ -281,6 +299,42 @@ export function ProductList({ products, categories, allSuppliers }: {
           )
         }}
       />
+
+      {/* Recent import batches */}
+      {recentBatches && recentBatches.length > 0 && (
+        <div className="mt-6 pt-5 border-t border-[var(--color-border)]">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-eyebrow">
+              Importaciones recientes ({recentBatches.length})
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {recentBatches.map((batch) => {
+              const statusInfo = STATUS_LABELS[batch.status] ?? { label: batch.status, variant: "default" as const }
+              return (
+                <div key={batch.id} className="group flex items-center justify-between w-full gap-2 px-4 py-3 text-sm rounded-[var(--radius-md)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] transition-colors duration-[var(--duration-fast)]">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[var(--color-text)] truncate font-medium">{batch.fileName}</p>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                      <Badge variant={statusInfo.variant} size="sm">{statusInfo.label}</Badge>
+                      {batch.rowCount != null && <span>{batch.rowCount} filas</span>}
+                      <span>{new Date(batch.createdAt).toLocaleDateString("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                    </div>
+                  </div>
+                  {batch.status === "review" && (
+                    <Link
+                      href={`/admin/productos/importar/${batch.id}`}
+                      className="shrink-0 text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1"
+                    >
+                      Revisar
+                    </Link>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Category management inline list */}
       {categories.length > 0 && (

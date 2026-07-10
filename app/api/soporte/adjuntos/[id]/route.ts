@@ -11,6 +11,8 @@ import { can } from "@/lib/auth/can"
 import { resolveStorageDir } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
 
+import { logger } from "@/lib/logger"
+
 const FEEDBACK_PREFIX = "storage/feedback/"
 
 export async function GET(
@@ -66,7 +68,8 @@ export async function GET(
         "Cache-Control": "private, max-age=60",
       },
     })
-  } catch {
+  } catch (err) {
+    logger.error(`[soporte/serve] Error al leer archivo adjunto: ${storageName}`, err)
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 }

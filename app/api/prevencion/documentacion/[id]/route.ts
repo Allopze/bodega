@@ -84,7 +84,8 @@ export async function GET(request: Request, ctx: RouteCtx) {
         "Cache-Control": "private, max-age=30",
       },
     })
-  } catch {
+  } catch (err) {
+    logger.error(`[documentacion/serve] Error al leer archivo: ${version.filePath}`, err)
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 }

@@ -7,10 +7,22 @@ import { products, productAttributes, productSuppliers, productCategories } from
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
-import { importProductsFromXlsx } from "@/lib/services/product-xlsx-import"
+import { logger } from "@/lib/logger"
+import { cancelEppImportBatch, confirmEppImportBatch, reviewEppImportRow, stageEppImportXlsx } from "@/lib/services/epp-import"
 import { productSchema, productCategorySchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/productos"
+
+async function generateUniqueProductSku(isEpp: boolean) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const suffix = nanoid(6).toUpperCase().replace(/[^A-Z0-9]/g, "X")
+    const sku = `${isEpp ? "EPP" : "PRD"}-${suffix}`
+    const existing = await db.query.products.findFirst({ where: eq(products.sku, sku) })
+    if (!existing) return sku
+  }
+
+  throw new Error("No se pudo generar un SKU único")
+}
 
 function formString(formData: FormData, name: string) {
   const value = formData.get(name)
@@ -115,11 +127,10 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   // Parse attributes from JSON-encoded hidden input
   let attributesRaw: unknown[] = []
   let suppliersRaw:  unknown[] = []
-  try { attributesRaw = JSON.parse(formData.get("attributesJson") as string ?? "[]") } catch { /* empty */ }
-  try { suppliersRaw  = JSON.parse(formData.get("suppliersJson")  as string ?? "[]") } catch { /* empty */ }
+  try { attributesRaw = JSON.parse(formData.get("attributesJson") as string ?? "[]") } catch { logger.warn("[createProduct] attributesJson inválido, se usará arreglo vacío") }
+  try { suppliersRaw  = JSON.parse(formData.get("suppliersJson")  as string ?? "[]") } catch { logger.warn("[createProduct] suppliersJson inválido, se usará arreglo vacío") }
 
   const parsed = productSchema.safeParse({
-    sku:                formString(formData, "sku"),
     name:               formString(formData, "name"),
     description:        formString(formData, "description"),
     categoryId:         formString(formData, "categoryId"),
@@ -135,14 +146,12 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
 
-  const skuConflict = await db.query.products.findFirst({ where: eq(products.sku, d.sku) })
-  if (skuConflict) return { ok: false, fieldErrors: { sku: ["Este SKU ya existe"] } }
-
   const id = nanoid()
+  const sku = await generateUniqueProductSku(d.isEpp)
 
   await db.transaction(async (tx) => {
     await tx.insert(products).values({
-      id, sku: d.sku, name: d.name,
+      id, sku, name: d.name,
       description: d.description || null,
       categoryId: d.categoryId,
       unitOfMeasure: d.unitOfMeasure,
@@ -177,10 +186,10 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     }
   })
 
-  await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "product", entityId: id, entityCode: d.sku, newState: { sku: d.sku, name: d.name, categoryId: d.categoryId } })
+  await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "product", entityId: id, entityCode: sku, newState: { sku, name: d.name, categoryId: d.categoryId } })
 
   revalidatePath(REVALIDATE)
-  return { ok: true as const, message: `Producto ${d.sku} creado` }
+  return { ok: true as const, message: `Producto ${sku} creado` }
 }
 
 export async function updateProduct(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -190,12 +199,11 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
 
   let attributesRaw: unknown[] = []
   let suppliersRaw:  unknown[] = []
-  try { attributesRaw = JSON.parse(formData.get("attributesJson") as string ?? "[]") } catch { /* empty */ }
-  try { suppliersRaw  = JSON.parse(formData.get("suppliersJson")  as string ?? "[]") } catch { /* empty */ }
+  try { attributesRaw = JSON.parse(formData.get("attributesJson") as string ?? "[]") } catch { logger.warn("[updateProduct] attributesJson inválido, se usará arreglo vacío") }
+  try { suppliersRaw  = JSON.parse(formData.get("suppliersJson")  as string ?? "[]") } catch { logger.warn("[updateProduct] suppliersJson inválido, se usará arreglo vacío") }
 
   const parsed = productSchema.safeParse({
     id:                 formString(formData, "id"),
-    sku:                formString(formData, "sku"),
     name:               formString(formData, "name"),
     description:        formString(formData, "description"),
     categoryId:         formString(formData, "categoryId"),
@@ -213,15 +221,13 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   if (!d.id) return { ok: false, message: "ID requerido" }
   const productId = d.id // narrowed to string by the guard above
 
-  const skuConflict = await db.query.products.findFirst({ where: eq(products.sku, d.sku) })
-  if (skuConflict && skuConflict.id !== productId) return { ok: false, fieldErrors: { sku: ["Este SKU ya existe"] } }
-
   const current = await db.query.products.findFirst({ where: eq(products.id, productId) })
   if (!current) return { ok: false, message: "Producto no encontrado" }
+  const sku = current.sku
 
   await db.transaction(async (tx) => {
     await tx.update(products).set({
-      sku: d.sku, name: d.name,
+      sku, name: d.name,
       description: d.description || null,
       categoryId: d.categoryId,
       unitOfMeasure: d.unitOfMeasure,
@@ -262,16 +268,16 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     }
   })
 
-  await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "product", entityId: productId, entityCode: d.sku, oldState: { name: current.name, isActive: current.isActive }, newState: { name: d.name, isActive: d.isActive } })
+  await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "product", entityId: productId, entityCode: sku, oldState: { name: current.name, isActive: current.isActive }, newState: { name: d.name, isActive: d.isActive } })
 
   revalidatePath(REVALIDATE)
-  return { ok: true as const, message: `Producto ${d.sku} actualizado` }
+  return { ok: true as const, message: `Producto ${sku} actualizado` }
 }
 
 // ── Read for edit ─────────────────────────────────────────────────────────────
 
 export async function getProductForEdit(id: string) {
-  try { await requirePermission("admin:products") }
+  try { await requirePermission("admin:epp_import_review") }
   catch { return null }
 
   const product = await db.query.products.findFirst({
@@ -337,7 +343,7 @@ export async function toggleProductActive(_prev: ActionState, formData: FormData
 
 export async function importProductsXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("admin:products") }
+  try { session = await requirePermission("admin:epp_import_upload") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const file = formData.get("file")
@@ -355,32 +361,60 @@ export async function importProductsXlsx(_prev: ActionState, formData: FormData)
     return { ok: false, fieldErrors: { file: ["El archivo no puede superar 5 MB"] } }
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const result = await importProductsFromXlsx(buffer)
-  if (result.errors.length > 0) {
+  const result = await stageEppImportXlsx({ buffer: Buffer.from(await file.arrayBuffer()), fileName: file.name, userId: session.user.id })
+  if (!result.ok) {
     return {
       ok: false,
-      message: "No se pudo importar el XLSX",
+      message: "No se pudo analizar el XLSX",
       data: {
-        errors: result.errors.slice(0, 20),
-        totalErrors: result.errors.length,
+        errors: result.errors.slice(0, 20), totalErrors: result.errors.length,
       },
     }
   }
-
-  await recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "create",
-    entityType: "product",
-    entityId: "xlsx",
-    newState: { ...result },
-  })
-
-  revalidatePath(REVALIDATE)
   return {
     ok: true,
-    message: `Importación lista: ${result.created} creados, ${result.updated} actualizados`,
-    data: { ...result },
+    message: `Lote de ${result.rowCount} filas listo para revisión`,
+    data: { batchId: result.batchId, totalRows: result.rowCount },
   }
+}
+
+export async function reviewEppImportRowAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try { await requirePermission("admin:epp_import_review") }
+  catch { return { ok: false, message: "Sin permisos" } }
+  const batchId = formString(formData, "batchId")
+  const rowId = formString(formData, "rowId")
+  const decision = formString(formData, "decision")
+  if (!batchId || !rowId || !["create", "update", "skip"].includes(decision)) return { ok: false, message: "Decisión de revisión inválida" }
+  try {
+    await reviewEppImportRow({ batchId, rowId, decision: decision as "create" | "update" | "skip", targetProductId: formString(formData, "targetProductId") || null, normalizedJson: formString(formData, "normalizedJson") || undefined, reason: formString(formData, "reason") || null })
+    return { ok: true, message: "Fila revisada" }
+  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo revisar la fila" } }
+}
+
+export async function cancelEppImportBatchAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:epp_import_confirm") }
+  catch { return { ok: false, message: "Sin permisos" } }
+  const batchId = formString(formData, "batchId")
+  if (!batchId) return { ok: false, message: "Lote requerido" }
+  try {
+    await cancelEppImportBatch(batchId)
+    await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "epp_import_batch", entityId: batchId, oldState: { status: "review" }, newState: { status: "cancelled" }, reason: "Cancelación manual de importación EPP" })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Lote cancelado. Puedes volver a importar el archivo." }
+  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo cancelar el lote" } }
+}
+
+export async function confirmEppImportBatchAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:epp_import_confirm") }
+  catch { return { ok: false, message: "Sin permisos" } }
+  const batchId = formString(formData, "batchId")
+  if (!batchId) return { ok: false, message: "Lote requerido" }
+  try {
+    const result = await confirmEppImportBatch(batchId, session.user.id)
+    await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "epp_import_batch", entityId: batchId, newState: result, reason: "Confirmación humana de importación EPP" })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: `Lote confirmado: ${result.created} creados, ${result.updated} actualizados`, data: result }
+  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo confirmar el lote" } }
 }
