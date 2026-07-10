@@ -32,15 +32,20 @@ type Step = "form" | "preview" | "done"
 
 interface Worksite { id: string; name: string }
 
-export function ImportWizard({ worksites }: { worksites: Worksite[] }) {
+function importErrorKey(error: { rowIndex: number; field: string; message: string }) {
+  return `${error.rowIndex}-${error.field}-${error.message}`
+}
+
+export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: Worksite[]; canImportAllWorksites: boolean }) {
   const [step, setStep] = useState<Step>("form")
   const [file, setFile] = useState<File | null>(null)
   const [dragActive, setDragActive] = useState(false)
-  const [worksiteId, setWorksiteId] = useState(worksites[0]?.id ?? "")
+  const [worksiteId, setWorksiteId] = useState(canImportAllWorksites ? "all" : worksites[0]?.id ?? "")
   const [periodoDesde, setPeriodoDesde] = useState("")
   const [periodoHasta, setPeriodoHasta] = useState("")
   const [notas, setNotas] = useState("")
   const [loading, setLoading] = useState(false)
+  const [downloadingReport, setDownloadingReport] = useState<"TCT" | "TAE" | null>(null)
   const [preview, setPreview] = useState<ConsumptionPreviewData | null>(null)
   const [confirmDuplicates, setConfirmDuplicates] = useState(false)
   const [result, setResult] = useState<ConsumptionImportResult | null>(null)
@@ -116,6 +121,32 @@ export function ImportWizard({ worksites }: { worksites: Worksite[] }) {
     }
   }
 
+  async function downloadCopecReport(cardType: "TCT" | "TAE") {
+    if (!periodoDesde || !periodoHasta) return
+    setDownloadingReport(cardType)
+    try {
+      const response = await fetch(`/api/combustibles/copec/report?tipo=${cardType}&desde=${periodoDesde}&hasta=${periodoHasta}`)
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { message?: string } | null
+        throw new Error(body?.message ?? `Copec no pudo generar el reporte ${cardType}`)
+      }
+      const blob = await response.blob()
+      const contentDisposition = response.headers.get("content-disposition") ?? ""
+      const fileName = contentDisposition.match(/filename="?([^";]+)"?/i)?.[1] ?? `copec-${cardType}-${periodoDesde}-${periodoHasta}.xlsx`
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = fileName
+      link.click()
+      URL.revokeObjectURL(url)
+      toast.success(`Reporte ${cardType} descargado`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `No fue posible descargar el reporte ${cardType}`)
+    } finally {
+      setDownloadingReport(null)
+    }
+  }
+
   const hasDuplicateWarning = preview && (preview.archivoDuplicado || preview.loteDuplicado)
   const canConfirm = !!preview && preview.totales.totalFilas > 0 && (!hasDuplicateWarning || confirmDuplicates)
 
@@ -132,8 +163,8 @@ export function ImportWizard({ worksites }: { worksites: Worksite[] }) {
             <div className="text-sm text-left p-3 bg-[var(--color-warning-tint)] rounded-md max-w-md mx-auto">
               <p className="font-medium text-[var(--color-warning)] mb-1">{result.errors.length} filas omitidas por errores:</p>
               <div className="max-h-32 overflow-y-auto space-y-0.5 text-muted-foreground">
-                {result.errors.slice(0, 20).map((e, i) => (
-                  <p key={i}>• Fila {e.rowIndex} — {e.field}: {e.message}</p>
+                {result.errors.slice(0, 20).map((error) => (
+                  <p key={importErrorKey(error)}>• Fila {error.rowIndex} — {error.field}: {error.message}</p>
                 ))}
               </div>
             </div>
@@ -173,9 +204,16 @@ export function ImportWizard({ worksites }: { worksites: Worksite[] }) {
           {preview.errores.length > 0 && (
             <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm max-h-40 overflow-y-auto">
               <p className="font-medium mb-1">Filas con errores (no se importarán):</p>
-              {preview.errores.slice(0, 30).map((e, i) => (
-                <p key={i} className="text-[var(--color-danger)]">Fila {e.rowIndex} — {e.field}: {e.message}</p>
+              {preview.errores.slice(0, 30).map((error) => (
+                <p key={importErrorKey(error)} className="text-[var(--color-danger)]">Fila {error.rowIndex} — {error.field}: {error.message}</p>
               ))}
+            </div>
+          )}
+
+          {worksiteId === "all" && preview.patentesSinVehiculo > 0 && (
+            <div className="flex items-start gap-2 rounded-md bg-[var(--color-warning-tint)] p-3 text-sm">
+              <WarningCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-warning)]" />
+              <p>{preview.patentesSinVehiculo} patente(s) no están vinculadas a un vehículo y se omitirán en esta importación general.</p>
             </div>
           )}
 
@@ -218,9 +256,11 @@ export function ImportWizard({ worksites }: { worksites: Worksite[] }) {
             <Select value={worksiteId} onValueChange={setWorksiteId}>
               <SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
               <SelectContent>
+                {canImportAllWorksites && <SelectItem value="all">Todas las faenas (según patente)</SelectItem>}
                 {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            {worksiteId === "all" && <p className="text-xs text-muted-foreground">Cada consumo se asignará a la faena del vehículo registrado.</p>}
           </div>
           <div className="grid gap-1.5">
             <Label className="text-xs">Período desde</Label>
@@ -273,19 +313,11 @@ export function ImportWizard({ worksites }: { worksites: Worksite[] }) {
         </details>
 
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" asChild disabled={!periodoDesde || !periodoHasta}>
-            <a href={periodoDesde && periodoHasta
-              ? `/api/combustibles/copec/report?tipo=TCT&desde=${periodoDesde}&hasta=${periodoHasta}`
-              : "#"}>
-              Descargar TCT desde Copec
-            </a>
+          <Button type="button" variant="secondary" onClick={() => downloadCopecReport("TCT")} disabled={!periodoDesde || !periodoHasta || !!downloadingReport}>
+            {downloadingReport === "TCT" ? "Descargando TCT…" : "Descargar TCT desde Copec"}
           </Button>
-          <Button variant="secondary" asChild disabled={!periodoDesde || !periodoHasta}>
-            <a href={periodoDesde && periodoHasta
-              ? `/api/combustibles/copec/report?tipo=TAE&desde=${periodoDesde}&hasta=${periodoHasta}`
-              : "#"}>
-              Descargar TAE desde Copec
-            </a>
+          <Button type="button" variant="secondary" onClick={() => downloadCopecReport("TAE")} disabled={!periodoDesde || !periodoHasta || !!downloadingReport}>
+            {downloadingReport === "TAE" ? "Descargando TAE…" : "Descargar TAE desde Copec"}
           </Button>
           <Button onClick={handlePreview} disabled={loading}>
             {loading ? "Leyendo..." : "Revisar"}

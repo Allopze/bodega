@@ -13,6 +13,7 @@ import { Avatar } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
 import { deleteUser, toggleUserActive } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -63,6 +64,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
   const [sheetOpen, setSheetOpen]   = React.useState(false)
   const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)
+  const [deleteUserConfirm, setDeleteUserConfirm] = React.useState<UserRow | null>(null)
   const [toggleState, toggleAction] = useActionState(toggleUserActive, INITIAL_STATE)
   const [deleteState, deleteAction] = useActionState(deleteUser, INITIAL_STATE)
 
@@ -174,24 +176,15 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                       }
                     </button>
                   </form>
-                  <form
-                    action={deleteAction}
-                    onSubmit={(event) => {
-                      if (!window.confirm(`Eliminar usuario ${u.name}? Esta acción no se puede deshacer.`)) {
-                        event.preventDefault()
-                      }
-                    }}
+                  <button
+                    type="button"
+                    onClick={() => setDeleteUserConfirm(u)}
+                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] transition-colors duration-[var(--duration-fast)] "
+                    title="Eliminar"
+                    aria-label={`Eliminar usuario ${u.name}`}
                   >
-                    <input type="hidden" name="id" value={u.id} />
-                    <button
-                      type="submit"
-                      className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] transition-colors duration-[var(--duration-fast)] "
-                      title="Eliminar"
-                      aria-label={`Eliminar usuario ${u.name}`}
-                    >
-                      <Trash size={16} />
-                    </button>
-                  </form>
+                    <Trash size={16} />
+                  </button>
                 </div>
               </TableCell>
             </TableRow>
@@ -259,27 +252,34 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                     }
                   </button>
                 </form>
-                <form
-                  action={deleteAction}
-                  onSubmit={(event) => {
-                    if (!window.confirm(`Eliminar usuario ${u.name}? Esta acción no se puede deshacer.`)) {
-                      event.preventDefault()
-                    }
-                  }}
+                <button
+                  type="button"
+                  onClick={() => setDeleteUserConfirm(u)}
+                  className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] transition-colors duration-[var(--duration-fast)] "
+                  title="Eliminar"
+                  aria-label={`Eliminar usuario ${u.name}`}
                 >
-                  <input type="hidden" name="id" value={u.id} />
-                  <button
-                    type="submit"
-                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] transition-colors duration-[var(--duration-fast)] "
-                    title="Eliminar"
-                    aria-label={`Eliminar usuario ${u.name}`}
-                  >
-                    <Trash size={16} />
-                  </button>
-                </form>
+                  <Trash size={16} />
+                </button>
               </div>
             </article>
           )
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleteUserConfirm !== null}
+        onOpenChange={(open) => { if (!open) setDeleteUserConfirm(null) }}
+        title={`¿Eliminar usuario ${deleteUserConfirm?.name ?? ""}?`}
+        description="Esta acción no se puede deshacer. El usuario perderá acceso al sistema."
+        confirmLabel="Eliminar"
+        variant="destructive"
+        onConfirm={() => {
+          if (!deleteUserConfirm) return
+          const fd = new FormData()
+          fd.set("id", deleteUserConfirm.id)
+          deleteAction(fd)
+          setDeleteUserConfirm(null)
         }}
       />
 

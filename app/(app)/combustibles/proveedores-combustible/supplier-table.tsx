@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Trash } from "@phosphor-icons/react"
 import { EditSupplierDialog } from "./edit-supplier-dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { deleteFuelSupplierAction } from "../actions"
 import { toast } from "@/lib/toast"
 
@@ -21,10 +22,11 @@ interface SupplierRow {
 
 export function SupplierCatalogTable({ suppliers }: { suppliers: SupplierRow[] }) {
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
 
   async function handleDelete(id: string) {
-    if (!confirm("¿Desactivar este proveedor?")) return
     setDeleting(id)
+    setConfirmId(null)
     const result = await deleteFuelSupplierAction(id)
     if (result.ok) toast.success(result.message)
     else toast.error(result.message)
@@ -68,10 +70,21 @@ export function SupplierCatalogTable({ suppliers }: { suppliers: SupplierRow[] }
                 <TableCell>
                   <div className="flex gap-1">
                     <EditSupplierDialog supplier={s} />
-                    <Button variant="ghost" size="sm" onClick={() => handleDelete(s.id)} disabled={deleting === s.id || !s.isActive}>
+                    <Button variant="ghost" size="sm" onClick={() => setConfirmId(s.id)} disabled={deleting === s.id || !s.isActive}>
                       <Trash className="h-4 w-4" />
                     </Button>
                   </div>
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmId(null) }}
+        title="¿Desactivar proveedor?"
+        description="El proveedor quedará inactivo y no aparecerá en las listas de selección. Esta acción no elimina sus registros históricos."
+        confirmLabel="Desactivar"
+        variant="warning"
+        loading={deleting !== null}
+        onConfirm={() => confirmId && handleDelete(confirmId)}
+      />
                 </TableCell>
               </TableRow>
             ))

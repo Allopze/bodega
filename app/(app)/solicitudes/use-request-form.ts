@@ -86,14 +86,6 @@ function useDraftPersistence({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- setDirty is a stable setState function
   }, [itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
 
-  // ── Beforeunload guard ──
-  useEffect(() => {
-    if (!isDraft || !dirty || !hasRealContent) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
-    window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [isDraft, dirty, hasRealContent])
-
   // ── Ref for stable timer callback (avoids resetting autosave timer) ──
   const buildDraftRef = useRef(buildDraftFormData)
   useEffect(() => { buildDraftRef.current = buildDraftFormData })
@@ -255,6 +247,32 @@ export function useRequestForm({
     draftState, draftAction, draftPending,
   })
 
+  // ── Beforeunload guard (tab close / reload only) ──
+  const beforeUnloadRef = useRef<((e: BeforeUnloadEvent) => void) | null>(null)
+  useEffect(() => {
+    if (!isDraft || !dirty || !hasRealContent) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
+    beforeUnloadRef.current = warn
+    window.addEventListener("beforeunload", warn)
+    return () => {
+      window.removeEventListener("beforeunload", warn)
+      beforeUnloadRef.current = null
+    }
+  }, [isDraft, dirty, hasRealContent])
+
+  /**
+   * Navigates back without triggering beforeunload (used after the user confirms
+   * the leave-confirmation dialog). Removes the listener first, then navigates,
+   * so the native browser dialog doesn't appear twice.
+   */
+  const silentNavBack = useCallback(() => {
+    if (beforeUnloadRef.current) {
+      window.removeEventListener("beforeunload", beforeUnloadRef.current)
+      beforeUnloadRef.current = null
+    }
+    window.history.back()
+  }, [])
+
   const readOnly = !isDraft
   const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]
   const requiredDateError = draftState.fieldErrors?.requiredDate?.[0] ?? submitState.fieldErrors?.requiredDate?.[0]
@@ -276,6 +294,6 @@ export function useRequestForm({
     isSaving, isSubmitting, isDeleting, draftPending, resubmitPending,
     addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct, updateAttr,
     buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction, resubmitAction,
-    startSaveTransition, startSubmitTransition, startDeleteTransition,
+    startSaveTransition, startSubmitTransition, startDeleteTransition, silentNavBack,
   }
 }

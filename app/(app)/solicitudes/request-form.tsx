@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useState } from "react"
 import { ArrowLeft, Info, Plus, Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
@@ -198,6 +199,7 @@ function SummarySidebar({
 
 export function RequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userPermissions = [] }: RequestFormProps) {
   const form = useRequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userPermissions })
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
 
   return (
     <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
@@ -232,7 +234,10 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
           />
           {form.isDraft && (
             <div className="flex items-center justify-between pt-2 border-t border-[var(--color-border)]">
-              <Button type="button" variant="ghost" size="sm" onClick={() => window.history.back()}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => {
+                if (form.dirty) setLeaveConfirmOpen(true)
+                else form.silentNavBack()
+              }}>
                 <ArrowLeft size={14} /> Volver
               </Button>
               <div className="flex items-center gap-3">
@@ -313,6 +318,21 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
               </Dialog>
             )}
           </div>
+        )}
+
+        {form.isDraft && (
+          <ConfirmDialog
+            open={leaveConfirmOpen}
+            onOpenChange={setLeaveConfirmOpen}
+            title="¿Salir sin guardar?"
+            description="Tienes cambios sin guardar. Si sales ahora, se perderán. Guarda el borrador antes de salir si quieres conservarlos."
+            confirmLabel="Salir sin guardar"
+            variant="warning"
+            onConfirm={() => {
+              setLeaveConfirmOpen(false)
+              form.silentNavBack()
+            }}
+          />
         )}
 
         {form.isEdit && form.canDeleteRequest && (

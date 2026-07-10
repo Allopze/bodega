@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { deleteFuelLoadAction, registerFuelLoadAction } from "../actions"
 
@@ -55,6 +56,7 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
   const [iecTotal, _setIecTotal] = useState(load.iecTotal)
   const [ivaAmount, setIvaAmount] = useState(load.ivaAmount)
   const [totalAmount, setTotalAmount] = useState(load.totalAmount)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
   useEffect(() => {
     // IEC components are preserved from the existing load (rates aren't available client-side).
@@ -77,7 +79,7 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
   const formatCLP = (n: number) => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n)
 
   async function handleDelete() {
-    if (!confirm("¿Eliminar esta carga?")) return
+    setConfirmDeleteOpen(false)
     const result = await deleteFuelLoadAction(load.id)
     if (result.ok) {
       toast.success(result.message)
@@ -226,7 +228,17 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
 
         {isEditable && (
           <div className="flex justify-between">
-            <Button type="button" variant="destructive" onClick={handleDelete}>Eliminar</Button>
+            <Button type="button" variant="destructive" onClick={() => setConfirmDeleteOpen(true)}>Eliminar</Button>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="¿Eliminar carga de combustible?"
+        description="Esta acción no se puede deshacer. La carga y sus montos asociados serán eliminados permanentemente."
+        confirmLabel="Eliminar"
+        variant="destructive"
+        loading={isPending}
+        onConfirm={handleDelete}
+      />
             <div className="flex gap-3">
               <Button type="button" variant="secondary" onClick={() => router.back()}>Cancelar</Button>
               <Button type="submit" disabled={isPending}>{isPending ? "Guardando..." : "Guardar cambios"}</Button>

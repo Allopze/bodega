@@ -63,7 +63,7 @@ export default async function ImportarConsumosPage() {
 
         <TabsContent value="consumos">
           <div className="mb-8">
-            <ImportWizard worksites={worksitesList} />
+            <ImportWizard worksites={worksitesList} canImportAllWorksites={canImportOperations} />
           </div>
           <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Historial de importaciones</h2>
           <ImportBatchHistory batches={batches} />

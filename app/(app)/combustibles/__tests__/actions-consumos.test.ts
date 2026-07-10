@@ -3,14 +3,19 @@ import ExcelJS from "exceljs"
 
 const mockRequirePermission = vi.fn()
 const mockCanAccessWorksite = vi.fn()
+const mockIsGlobalRole = vi.fn()
 const mockFindFirstBatch = vi.fn()
+const mockFindManyFuelVehicles = vi.fn()
 const mockTransaction = vi.fn()
 const mockRecordAudit = vi.fn()
 const mockMkdirp = vi.fn()
 const mockWriteBuffer = vi.fn()
 
 vi.mock("@/lib/auth/can", () => ({ requirePermission: (...a: unknown[]) => mockRequirePermission(...a) }))
-vi.mock("@/lib/auth/scope", () => ({ canAccessWorksite: (...a: unknown[]) => mockCanAccessWorksite(...a) }))
+vi.mock("@/lib/auth/scope", () => ({
+  canAccessWorksite: (...a: unknown[]) => mockCanAccessWorksite(...a),
+  isGlobalRole: (...a: unknown[]) => mockIsGlobalRole(...a),
+}))
 vi.mock("@/lib/id", () => ({ nanoid: () => "id-new" }))
 vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => mockRecordAudit(...a) }))
 vi.mock("@/lib/storage/helpers", () => ({
@@ -22,7 +27,7 @@ vi.mock("@/db", () => ({
   db: {
     query: {
       fuelImportBatches: { findFirst: (...a: unknown[]) => mockFindFirstBatch(...a) },
-      fuelVehicles: { findMany: vi.fn().mockResolvedValue([]) },
+      fuelVehicles: { findMany: (...a: unknown[]) => mockFindManyFuelVehicles(...a) },
     },
     transaction: (...a: unknown[]) => mockTransaction(...a),
   },
@@ -79,7 +84,9 @@ describe("confirmConsumptionImportAction", () => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue(session)
     mockCanAccessWorksite.mockReturnValue(true)
+    mockIsGlobalRole.mockReturnValue(true)
     mockFindFirstBatch.mockResolvedValue(undefined)  // no duplicates by default
+    mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-1" }])
   })
 
   it("imports valid rows, matches an existing vehicle by plate, and audits the batch", async () => {
@@ -109,6 +116,7 @@ describe("confirmConsumptionImportAction", () => {
   it("leaves vehicleId null when the plate has no matching fuel vehicle", async () => {
     const tx = makeTx()
     tx.query.fuelVehicles.findMany.mockResolvedValue([])
+    mockFindManyFuelVehicles.mockResolvedValue([])
     mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
 
     const file = await makeXlsxFile(validRows)
@@ -118,6 +126,31 @@ describe("confirmConsumptionImportAction", () => {
     if (!res.ok) return
     const recordsInsert = tx._insertedRows[1]!.values as Array<{ vehicleId: string | null }>
     expect(recordsInsert[0]!.vehicleId).toBeNull()
+  })
+
+  it("imports a first general file into one batch per vehicle worksite", async () => {
+    const tx = makeTx()
+    tx.query.fuelVehicles.findMany.mockResolvedValue([
+      { id: "veh-1", plate: "ABCD12", worksiteId: "ws-1" },
+      { id: "veh-2", plate: "EFGH34", worksiteId: "ws-2" },
+    ])
+    mockFindManyFuelVehicles.mockResolvedValue([
+      { id: "veh-1", plate: "ABCD12", worksiteId: "ws-1" },
+      { id: "veh-2", plate: "EFGH34", worksiteId: "ws-2" },
+    ])
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+    const file = await makeXlsxFile([
+      ...validRows,
+      { "Patente": "EFGH34", "N° Tarjetas": 1, "N° Transacciones": 3, "Cantidad (Unidad)": 50, "Monto ($)": 45000, "Rendimiento Promedio": 4.1 },
+    ])
+
+    const res = await confirmConsumptionImportAction(makeFormData(file, { worksiteId: "all" }))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.imported).toBe(2)
+    expect(tx.insert).toHaveBeenCalledTimes(4)
+    expect(mockRecordAudit).toHaveBeenCalledTimes(2)
   })
 
   it("rejects when the same file was already imported (hash duplicate)", async () => {

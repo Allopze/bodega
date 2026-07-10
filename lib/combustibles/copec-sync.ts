@@ -5,11 +5,15 @@ import { fuelConsumptionRecords, fuelImportBatches, fuelVehicles, systemSettings
 import { nanoid } from "@/lib/id"
 import { parseConsumptionExcel, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
-import { downloadCopecReport } from "@/lib/combustibles/copec-reports"
+import {
+  downloadCopecReport,
+  isCopecReportUnavailableError,
+} from "@/lib/combustibles/copec-reports"
 
 const STATE_KEY = "combustibles.copec.sync"
 const START_KEY = "COPEC_SYNC_START_DATE"
 const DEFAULT_START = "2020-01-01"
+const DEFAULT_MAX_PERIOD_DAYS = 31
 
 interface SyncState { cursor: string | null; lastRunAt: string | null; pending: string[]; }
 
@@ -27,19 +31,62 @@ async function saveState(next: SyncState) {
 
 function yesterday(): string { const d = new Date(); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10) }
 
-export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; pending: number; reports: string[] }> {
+function addDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00.000Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function maxPeriodDays(): number {
+  const configured = Number(process.env.COPEC_REPORT_MAX_DAYS)
+  return Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_MAX_PERIOD_DAYS
+}
+
+export interface CopecSyncPeriod { from: string; to: string }
+
+/** Divide el histórico en el máximo de días que el portal puede descargar. */
+export function buildCopecSyncPeriods(from: string, to: string, maxDays = maxPeriodDays()): CopecSyncPeriod[] {
+  if (from > to) return []
+  const periods: CopecSyncPeriod[] = []
+  for (let cursor = from; cursor <= to; cursor = addDays(cursor, maxDays)) {
+    const end = addDays(cursor, maxDays - 1)
+    periods.push({ from: cursor, to: end < to ? end : to })
+  }
+  return periods
+}
+
+export async function getCopecSyncPlan(): Promise<{ from: string; to: string; periods: CopecSyncPeriod[]; pending: number }> {
   const current = await state()
   const from = current.cursor ?? process.env[START_KEY]?.trim() ?? DEFAULT_START
   const to = yesterday()
-  if (from > to) return { from, to, imported: 0, pending: current.pending.length, reports: [] }
+  return { from, to, periods: buildCopecSyncPeriods(from, to), pending: current.pending.length }
+}
+
+interface PeriodSyncResult {
+  imported: number
+  pending: number
+  reports: string[]
+  unavailable: string[]
+}
+
+async function importCopecPeriod(from: string, to: string, pending: Set<string>): Promise<PeriodSyncResult> {
   const importer = await db.query.users.findFirst({ where: eq(users.isActive, true), columns: { id: true } })
   if (!importer) throw new Error("No hay un usuario activo para registrar la sincronización Copec")
 
   let imported = 0
-  const pending = new Set(current.pending)
   const reports: string[] = []
+  const unavailable: string[] = []
   for (const cardType of ["TCT", "TAE"] as const) {
-    const report = await downloadCopecReport({ cardType, from, to })
+    let report
+    try {
+      report = await downloadCopecReport({ cardType, from, to })
+    } catch (error) {
+      if (isCopecReportUnavailableError(error)) {
+        unavailable.push(cardType)
+        continue
+      }
+      throw error
+    }
     reports.push(`${cardType}:${report.fileName}`)
     const hash = createHash("sha256").update(report.buffer).digest("hex")
     const parsed = await parseConsumptionExcel(report.buffer)
@@ -65,6 +112,31 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
       imported += rows.length
     }
   }
-  await saveState({ cursor: to, lastRunAt: new Date().toISOString(), pending: [...pending].sort() })
-  return { from, to, imported, pending: pending.size, reports }
+  return { imported, pending: pending.size, reports, unavailable }
+}
+
+export async function syncCopecReportPeriod(period: CopecSyncPeriod): Promise<PeriodSyncResult> {
+  const current = await state()
+  const pending = new Set(current.pending)
+  const result = await importCopecPeriod(period.from, period.to, pending)
+  // Persistimos cada período. Así una primera importación extensa puede
+  // reanudarse y no vuelve a descargar los tramos ya procesados.
+  await saveState({ cursor: addDays(period.to, 1), lastRunAt: new Date().toISOString(), pending: [...pending].sort() })
+  return result
+}
+
+export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; pending: number; reports: string[]; unavailable: string[] }> {
+  const plan = await getCopecSyncPlan()
+  let imported = 0
+  const reports: string[] = []
+  const unavailable: string[] = []
+  let pending = plan.pending
+  for (const period of plan.periods) {
+    const result = await syncCopecReportPeriod(period)
+    imported += result.imported
+    pending = result.pending
+    reports.push(...result.reports)
+    unavailable.push(...result.unavailable.map((cardType) => `${period.from} a ${period.to} (${cardType})`))
+  }
+  return { from: plan.from, to: plan.to, imported, pending, reports, unavailable }
 }

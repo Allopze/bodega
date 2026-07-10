@@ -17,6 +17,20 @@ export interface CopecDownloadedReport {
   contentType: string
 }
 
+/** El portal no genera un archivo para todos los períodos/tarjetas. Este caso
+ * es recuperable durante una sincronización histórica, a diferencia de una
+ * falla de credenciales o de conectividad. */
+export class CopecReportUnavailableError extends Error {
+  constructor(from: string, to: string, cardType: CopecCardType) {
+    super(`Copec no entregó un archivo ${cardType} para el período ${from} a ${to}`)
+    this.name = "CopecReportUnavailableError"
+  }
+}
+
+export function isCopecReportUnavailableError(error: unknown): error is CopecReportUnavailableError {
+  return error instanceof CopecReportUnavailableError
+}
+
 function env(name: string): string {
   const value = process.env[name]?.trim()
   if (!value) throw new Error(`Falta configurar ${name} en el servidor`)
@@ -65,7 +79,7 @@ export async function downloadCopecReport(request: CopecReportRequest): Promise<
     const downloadPromise = page.waitForEvent("download", { timeout: 30_000 }).catch(() => null)
     await page.locator("#Cph1_LinkBtnBuscar").click({ noWaitAfter: true })
     const download = await downloadPromise
-    if (!download) throw new Error("Copec no entregó un archivo descargable para ese período")
+    if (!download) throw new CopecReportUnavailableError(request.from, request.to, request.cardType)
 
     const buffer = await download.createReadStream().then(async (stream) => {
       if (!stream) throw new Error("Copec entregó una descarga vacía")

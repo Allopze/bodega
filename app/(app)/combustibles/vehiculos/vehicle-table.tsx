@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Trash } from "@phosphor-icons/react"
 import { deleteFuelVehicleAction } from "../actions"
 import { EditVehicleDialog } from "./edit-vehicle-dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { FUEL_VEHICLE_TYPE_LABELS } from "@/lib/combustibles/validation"
 
@@ -25,10 +26,11 @@ interface VehicleRow {
 
 export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: VehicleRow[]; worksites: Array<{ id: string; name: string }> }) {
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
 
   async function handleDelete(id: string) {
-    if (!confirm("¿Desactivar este vehículo?")) return
     setDeleting(id)
+    setConfirmId(null)
     const result = await deleteFuelVehicleAction(id)
     if (result.ok) {
       toast.success(result.message)
@@ -82,12 +84,23 @@ export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: Vehicle
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDelete(v.id)}
+                      onClick={() => setConfirmId(v.id)}
                       disabled={deleting === v.id || !v.isActive}
                     >
                       <Trash className="h-4 w-4" />
                     </Button>
                   </div>
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmId(null) }}
+        title="¿Desactivar vehículo?"
+        description="El vehículo quedará inactivo y no aparecerá en las listas de selección. Esta acción no elimina sus cargas ni registros históricos."
+        confirmLabel="Desactivar"
+        variant="warning"
+        loading={deleting !== null}
+        onConfirm={() => confirmId && handleDelete(confirmId)}
+      />
                 </TableCell>
               </TableRow>
             ))

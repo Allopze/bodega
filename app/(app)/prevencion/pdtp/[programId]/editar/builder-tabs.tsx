@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   updatePdtpProgramAction,
   deletePdtpProgramAction,
@@ -308,6 +309,7 @@ function ActividadesTab({ programId, activities }: { programId: string; activiti
   const router = useRouter()
   const [items, setItems] = React.useState(activities)
   const [editing, setEditing] = React.useState<PdtpActivityRow | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null)
   const [busyId, setBusyId] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -335,7 +337,7 @@ function ActividadesTab({ programId, activities }: { programId: string; activiti
   }
 
   async function handleDelete(activityId: string) {
-    if (!confirm("¿Eliminar esta actividad? Se perderá su planificación y ejecuciones registradas.")) return
+    setConfirmDeleteId(null)
     setBusyId(activityId)
     setError(null)
     try {
@@ -387,7 +389,7 @@ function ActividadesTab({ programId, activities }: { programId: string; activiti
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || index === 0} onClick={() => move(index, -1)} aria-label="Subir">↑</Button>
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || index === items.length - 1} onClick={() => move(index, 1)} aria-label="Bajar">↓</Button>
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null} onClick={() => setEditing(activity)}>Editar</Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null} onClick={() => handleDelete(activity.id)}>Eliminar</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null} onClick={() => setConfirmDeleteId(activity.id)}>Eliminar</Button>
                     </div>
                   </td>
                 </tr>
@@ -398,6 +400,17 @@ function ActividadesTab({ programId, activities }: { programId: string; activiti
       )}
 
       <EditActivityDialog activity={editing} onClose={() => setEditing(null)} onSaved={() => router.refresh()} />
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}
+        title="¿Eliminar actividad?"
+        description="Se perderá su planificación y ejecuciones registradas. Esta acción no se puede deshacer."
+        confirmLabel="Eliminar"
+        variant="destructive"
+        loading={busyId !== null}
+        onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+      />
     </div>
   )
 }
