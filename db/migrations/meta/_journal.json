@@ -239,6 +239,20 @@
       "when": 1783638807654,
       "tag": "0033_lucky_jetstream",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1783650684546,
+      "tag": "0034_giant_darwin",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783657483154,
+      "tag": "0035_wandering_switch",
+      "breakpoints": true
     }
   ]
 }

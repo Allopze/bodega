@@ -43,7 +43,8 @@ Jefa Dpto. Prevención, Secretaría y Administrador.
   El rol `administrador` recibe **todos** los permisos automáticamente
   (`system-rbac.ts:67`).
 - Permisos por módulo se declaran en el manifest vía `defaultGrants`
-  (`modules/purchasing/manifest.ts`). RBAC se siembra con `npm run db:seed`,
+  (`modules/purchasing/manifest.ts`). RBAC se sincroniza con
+  `npm run db:sync-rbac` (`scripts/sync-rbac.ts` → `ensureSystemRbac`),
   **nunca** en migraciones (AGENTS.md).
 - Reutilizables: `computeOrderTotals` (`lib/order-totals.ts`) para recalcular
   net/tax/total; `recordAudit` y `recordStatusChange` para auditoría; el patrón de
@@ -59,7 +60,9 @@ Nuevo permiso `purchasing:edit_sent_order` en `modules/purchasing/manifest.ts`:
 - Agregar a `permissions`.
 - `permissionMeta`: `{ id: "p-pur-editsent", description: "Editar ítems de OC ya enviada" }`.
 - `defaultGrants` para `administrador`, `secretaria` y `prevencionista`.
-- Se siembra con `npm run db:seed`.
+- Se aplica con `npm run db:sync-rbac` (no `db:seed` — ese comando solo carga
+  roles/permisos en el bootstrap del primer usuario; los cambios a manifests en
+  una BD ya poblada requieren `db:sync-rbac`, ver `scripts/sync-rbac.ts`).
 
 ### 2. Guard de edición
 

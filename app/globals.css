@@ -83,8 +83,8 @@
 
   --color-text:           oklch(0.180 0.004 90);   /* near black         */
   --color-text-muted:     oklch(0.430 0.005 90);
-  --color-text-subtle:    oklch(0.500 0.005 90);   /* WCAG AA ≥ 4.5:1    */
-  --color-text-faint:     oklch(0.560 0.004 90);   /* WCAG AA ≥ 4.5:1    */
+  --color-text-subtle:    oklch(0.500 0.005 90);   /* WCAG AA >= 4.5:1    */
+  --color-text-faint:     oklch(0.560 0.004 90);   /* WCAG AA >= 4.5:1    */
 
   /* ── Brand surface ── */
   --color-brand-surface:       oklch(1.000 0 0);
@@ -244,6 +244,74 @@ body {
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
+}
+
+/* ─── Sonner: entry, progress bar, exit ────────────────────────── */
+
+/* Container clipping ensures the progress bar respects border-radius */
+[data-sonner-toast] {
+  overflow: clip;
+}
+
+/* ── Entry: fade-in + slide-down ── */
+[data-sonner-toast][data-mounted="true"] {
+  animation: toast-enter 300ms var(--ease-out) both;
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    translate: 0 -8px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* ── Thin progress bar ── */
+[data-sonner-toast]::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  width: 100%;
+  height: 2px;
+  background: var(--color-border-strong);
+  opacity: 0.35;
+  animation: sonner-progress linear var(--progress-duration, 4000ms) forwards;
+  pointer-events: none;
+  border-radius: 0;
+}
+
+/* Pause progress bar on hover (timer pauses too) */
+[data-sonner-toast][data-expanded="true"]::after {
+  animation-play-state: paused;
+}
+
+@keyframes sonner-progress {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+
+/* ── Exit: fade-out + subtle shrink ── */
+[data-sonner-toast][data-removed="true"] {
+  animation: toast-exit 350ms var(--ease-out) both;
+}
+
+[data-sonner-toast][data-removed="true"]::after {
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+@keyframes toast-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
 }
 
 /* ─── Reduced motion ── */

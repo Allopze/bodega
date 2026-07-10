@@ -1,9 +1,10 @@
 import type { Session } from "next-auth"
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetVehicleDocuments,
   fuelLoads,
+  fuelOperationRecords,
   fuelVehicles,
   maintenanceRecords,
 } from "@/db/schema"
@@ -114,7 +115,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     return null
   }
 
-  const [documents, recentLoads, recentMaintenance] = await Promise.all([
+  const [documents, recentLoads, recentMaintenance, recentOperations, operatorCounts] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
       where: eq(fleetVehicleDocuments.vehicleId, id),
       orderBy: [fleetVehicleDocuments.expiresAt],
@@ -129,6 +130,20 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
       orderBy: [maintenanceRecords.maintenanceDate],
       limit: 10,
     }),
+    // Log operacional de combustible: fecha real por carga (a diferencia de
+    // fuelLoads, que solo trae odómetro/horómetro cuando se digitó a mano).
+    db.query.fuelOperationRecords.findMany({
+      where: eq(fuelOperationRecords.vehicleId, id),
+      orderBy: [desc(fuelOperationRecords.fecha)],
+      limit: 20,
+    }),
+    db
+      .select({ operador: fuelOperationRecords.operador, count: sql<number>`COUNT(*)` })
+      .from(fuelOperationRecords)
+      .where(and(eq(fuelOperationRecords.vehicleId, id), isNotNull(fuelOperationRecords.operador)))
+      .groupBy(fuelOperationRecords.operador)
+      .orderBy(desc(sql`COUNT(*)`))
+      .limit(5),
   ])
 
   return {
@@ -136,6 +151,11 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     documents,
     recentLoads,
     recentMaintenance,
+    // Última lectura de horómetro/odómetro con fecha real, y los operadores
+    // más frecuentes — derivados del log operacional de combustible.
+    currentReading: recentOperations[0] ?? null,
+    recentOperations,
+    topOperators: operatorCounts.map((o) => ({ operador: o.operador!, count: Number(o.count) })),
     nextExpiryDate: getNextExpiryDate([
       vehicle.soapExpiresAt,
       vehicle.technicalReviewExpiresAt,

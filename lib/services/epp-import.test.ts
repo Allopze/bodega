@@ -25,6 +25,12 @@ describe("normalizeEppRow", () => {
     const result = normalizeEppRow({ name: "RESPIRADOR M-200", model: "M-200", unitOfMeasure: "unidad" })
     expect(result.attributes.some((attribute) => attribute.name === "Talla")).toBe(false)
   })
+
+  it("matches EPP type regardless of accents in the product name", () => {
+    const result = normalizeEppRow({ name: "PANTALÓN DE TRABAJO", unitOfMeasure: "unidad" })
+    expect(result.eppType).toBe("pantalon")
+    expect(result.issues).toEqual([])
+  })
 })
 
 describe("parseEppWorkbook", () => {

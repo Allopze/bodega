@@ -12,25 +12,35 @@ vi.mock("sonner", () => ({
   toast: mocks.mockToastFn,
 }))
 
-import { toast } from "@/lib/toast"
+import { toast, DEFAULT_TOAST_DURATION } from "@/lib/toast"
 
 describe("toast wrapper", () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it("calls sonner error toast with duration Infinity", () => {
+  it("uses DEFAULT_TOAST_DURATION for error toasts by default", () => {
     toast.error("An error occurred")
     expect(mocks.error).toHaveBeenCalledWith("An error occurred", {
-      duration: Infinity,
+      duration: DEFAULT_TOAST_DURATION,
+      style: { "--progress-duration": `${DEFAULT_TOAST_DURATION}ms` },
     })
   })
 
-  it("calls sonner error toast with duration Infinity, but respects user option overrides", () => {
-    toast.error("An error occurred", { duration: 5000, description: "try again" })
+  it("respects user option overrides for error toasts", () => {
+    toast.error("An error occurred", { duration: 8000, description: "try again" })
     expect(mocks.error).toHaveBeenCalledWith("An error occurred", {
-      duration: 5000,
+      duration: 8000,
       description: "try again",
+      style: { "--progress-duration": "8000ms" },
+    })
+  })
+
+  it("preserves custom style alongside progress bar CSS variable", () => {
+    toast.error("Styled error", { style: { background: "red" } })
+    expect(mocks.error).toHaveBeenCalledWith("Styled error", {
+      duration: DEFAULT_TOAST_DURATION,
+      style: { "--progress-duration": `${DEFAULT_TOAST_DURATION}ms`, background: "red" },
     })
   })
 

@@ -11,10 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Pencil } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
+import { FUEL_VEHICLE_TYPES, FUEL_VEHICLE_TYPE_LABELS } from "@/lib/combustibles/validation"
 
 interface Vehicle {
   id: string
   plate: string
+  code: string | null
   type: string
   brand: string | null
   model: string | null
@@ -25,6 +27,14 @@ interface Vehicle {
 export function EditVehicleDialog({ vehicle, worksites }: { vehicle: Vehicle; worksites: Array<{ id: string; name: string }> }) {
   const [open, setOpen] = useState(false)
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(updateFuelVehicleAction, { ok: false })
+
+  // Los tipos del catálogo real no siempre calzan con la lista canónica (hay
+  // valores legacy libres). Si el vehículo tiene un tipo fuera de la lista, se
+  // agrega como opción para que se pueda ver y conservar al guardar.
+  const typeOptions: Array<{ value: string; label: string }> = FUEL_VEHICLE_TYPES.map((t) => ({ value: t, label: FUEL_VEHICLE_TYPE_LABELS[t] }))
+  if (vehicle.type && !FUEL_VEHICLE_TYPES.includes(vehicle.type as (typeof FUEL_VEHICLE_TYPES)[number])) {
+    typeOptions.unshift({ value: vehicle.type, label: vehicle.type })
+  }
 
   if (state.ok && open) {
     toast.success(state.message ?? "Vehículo actualizado")
@@ -40,18 +50,22 @@ export function EditVehicleDialog({ vehicle, worksites }: { vehicle: Vehicle; wo
         <DialogHeader><DialogTitle>Editar vehículo</DialogTitle></DialogHeader>
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="id" value={vehicle.id} />
-          <div className="space-y-2">
-            <Label>Patente *</Label>
-            <Input name="plate" defaultValue={vehicle.plate} required />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Patente *</Label>
+              <Input name="plate" defaultValue={vehicle.plate} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Código interno</Label>
+              <Input name="code" defaultValue={vehicle.code ?? ""} placeholder="Ej. KA-63" />
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Tipo *</Label>
             <Select name="type" defaultValue={vehicle.type}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="camion">Camión</SelectItem>
-                <SelectItem value="camioneta">Camioneta</SelectItem>
-                <SelectItem value="estanque">Estanque</SelectItem>
+                {typeOptions.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

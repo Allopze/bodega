@@ -5,6 +5,7 @@
  */
 
 import ExcelJS from "exceljs"
+import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber } from "./xlsx-utils"
 
 export interface ParsedFuelLoad {
   rowIndex: number
@@ -170,61 +171,7 @@ export async function parseFuelExcel(fileBuffer: ArrayBuffer): Promise<ImportRes
   return { loads, errors, duplicates }
 }
 
-/** Convierte la primera fila de la hoja en encabezados y el resto en objetos
- *  `{ encabezado: valor }`, replicando el comportamiento de `defval: null`. */
-function sheetToRecords(sheet: ExcelJS.Worksheet): Record<string, unknown>[] {
-  const headers: (string | null)[] = []
-  sheet.getRow(1).eachCell({ includeEmpty: true }, (cell, colNumber) => {
-    const value = normalizeCellValue(cell.value)
-    headers[colNumber] = value === null ? null : String(value)
-  })
-
-  const records: Record<string, unknown>[] = []
-  sheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return
-    const record: Record<string, unknown> = {}
-    for (let col = 1; col < headers.length; col++) {
-      const header = headers[col]
-      if (!header) continue
-      record[header] = normalizeCellValue(row.getCell(col).value)
-    }
-    records.push(record)
-  })
-  return records
-}
-
-/** Reduce un valor de celda de ExcelJS (texto enriquecido, fórmula, hipervínculo,
- *  fecha o primitivo) al valor plano que el resto del parser espera. */
-function normalizeCellValue(value: ExcelJS.CellValue): unknown {
-  if (value === null || value === undefined) return null
-  if (value instanceof Date) return value
-  if (typeof value === "object") {
-    if ("richText" in value && Array.isArray(value.richText)) {
-      return value.richText.map((part) => part.text).join("")
-    }
-    if ("result" in value) return value.result ?? null
-    if ("text" in value) return value.text
-  }
-  return value
-}
-
-/** Normaliza un encabezado de columna: colapsa espacios/saltos de línea,
- *  recorta y pasa a minúsculas, para comparar de forma tolerante. */
-function normKey(key: string): string {
-  return key.replace(/\s+/g, " ").trim().toLowerCase()
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === "number") return value
-  if (typeof value === "string") {
-    const n = parseFloat(value.replace(/[,.](?=\d{3})/g, "").replace(",", "."))
-    return isNaN(n) ? 0 : n
-  }
-  return 0
-}
-
-function nullableNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null
-  const parsed = toNumber(value)
-  return Number.isFinite(parsed) ? parsed : null
-}
+// normKey, sheetToRecords y los parsers numéricos viven en ./xlsx-utils
+// (compartidos con el parser de consumos por patente).
+const toNumber = parseChileanNumber
+const nullableNumber = nullableChileanNumber

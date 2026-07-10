@@ -8,7 +8,8 @@ import { users } from "./users"
 export const fuelVehicles = pgTable("fuel_vehicles", {
   id:        text("id").primaryKey(),
   plate:     text("plate").notNull().unique(),       // Patente
-  type:      text("type").notNull(),                  // camion | camioneta | estanque
+  code:      text("code"),                            // Código interno de equipo (ej. KA-63)
+  type:      text("type").notNull(),                  // camion | camioneta | estanque | ... (texto libre, ver validation.ts)
   brand:     text("brand"),                           // Marca
   model:     text("model"),                           // Modelo
   year:      integer("year"),                         // Año
@@ -29,6 +30,7 @@ export const fuelVehicles = pgTable("fuel_vehicles", {
   index("fuel_vehicles_responsible_idx").on(table.responsibleUserId),
   index("fuel_vehicles_status_idx").on(table.operationalStatus),
   index("fuel_vehicles_type_idx").on(table.type),
+  index("fuel_vehicles_code_idx").on(table.code),
 ])
 
 export const fleetVehicleDocuments = pgTable("fleet_vehicle_documents", {

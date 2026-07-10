@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles } from "@/db/schema"
 import { eq } from "drizzle-orm"
@@ -128,13 +129,21 @@ export async function createFuelLoadAction(
       entityId: id,
       newState: { ...parsed.data, worksiteId: parsed.data.worksiteId },
     })
-
-    revalidatePath(REVALIDATE)
-    return { ok: true, message: "Carga registrada", data: { id } }
   } catch (e) {
     logger.error("createFuelLoad error", { error: e })
     return { ok: false, message: await dbErrMsg(e, "Error al registrar carga") }
   }
+
+  // redirect() fuera del try/catch: lanza una excepción de control de flujo
+  // interna de Next que un catch genérico interceptaría y trataría como
+  // error. Se navega server-side en vez de que el cliente haga router.push
+  // tras leer el estado: la acción vive en /combustibles/nueva y revalida
+  // /combustibles (otra ruta) — en Next.js 16 cualquier revalidatePath en una
+  // action re-renderiza la ruta ACTUAL en la misma respuesta, lo que remonta
+  // el formulario cliente antes de que el useEffect llegue a disparar el
+  // push. redirect() evita la carrera por completo.
+  revalidatePath(REVALIDATE)
+  redirect(REVALIDATE)
 }
 
 export async function updateFuelLoadAction(

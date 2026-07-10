@@ -27,6 +27,8 @@ const dynamicSamples: Record<string, string> = {
   "/trazabilidad/[itemId]": "/trazabilidad/req-item-audit-1",
   "/combustibles/[id]": "/combustibles/fuel-audit-1",
   "/combustibles/cuenta-corriente/[id]": "/combustibles/cuenta-corriente/cc-audit-1",
+  "/combustibles/importar/[id]": "/combustibles/importar/fuel-import-audit-1",
+  "/combustibles/importar/operaciones/[id]": "/combustibles/importar/operaciones/fuel-op-audit-1",
   "/entregas/[id]/print": "/entregas/del-audit-1/print",
   "/flota/[id]": "/flota/fuel-veh-audit-1",
   "/prevencion/pdtp/[programId]": "/prevencion/pdtp/prog-audit-1",

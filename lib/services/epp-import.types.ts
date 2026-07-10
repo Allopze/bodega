@@ -20,7 +20,7 @@ export interface NormalizedEppRow {
 
 export const UNIT_ALIASES: Record<string, string> = { uni: "unidad", un: "unidad", unidad: "unidad", par: "par", pares: "par", caja: "caja", pack: "paquete", paquete: "paquete", set: "set", juego: "juego" }
 export const COLOR_ALIASES: Record<string, string> = { blanco: "Blanco", negra: "Negro", negro: "Negro", azul: "Azul", "azul marino": "Azul marino", rojo: "Rojo", roja: "Rojo", amarillo: "Amarillo", amarilla: "Amarillo", verde: "Verde", gris: "Gris", claro: "Claro", transparente: "Transparente" }
-export const EPP_TYPES = ["casco", "guante", "lente", "antiparra", "botin", "zapato", "chaleco", "mascarilla", "respirador", "arnes", "protector auditivo", "buzo", "traje", "pantalón", "pantalon", "chaqueta"] as const
+export const EPP_TYPES = ["casco", "guante", "lente", "antiparra", "botin", "zapato", "chaleco", "mascarilla", "respirador", "arnes", "protector auditivo", "buzo", "traje", "pantalon", "chaqueta"] as const
 export const VALID_UNITS = ["unidad", "par", "caja", "paquete", "set", "juego"] as const
 export const VALID_COLORS = [...new Set(Object.values(COLOR_ALIASES))]
 
@@ -34,9 +34,9 @@ export const RULE_LABELS: Record<string, string> = {
 }
 
 export const HEADER_ALIASES: Record<string, string> = {
-  sku: "sourceCode", codigo: "sourceCode", código: "sourceCode", cod: "sourceCode", "codigo interno": "sourceCode",
-  nombre: "name", producto: "name", descripcion: "description", descripción: "description", detalle: "description",
-  proveedor: "supplierName", precio: "price", valor: "price", unidad: "unitOfMeasure", categoria: "categoryName", categoría: "categoryName",
+  sku: "sourceCode", codigo: "sourceCode", cod: "sourceCode", "codigo interno": "sourceCode",
+  nombre: "name", producto: "name", descripcion: "description", detalle: "description",
+  proveedor: "supplierName", precio: "price", valor: "price", unidad: "unitOfMeasure", categoria: "categoryName",
   atributos: "attributes", atributo: "attributes", talla: "size", color: "color", marca: "brand", modelo: "model", material: "material", notas: "notes", nota: "notes",
 }
 
@@ -99,7 +99,10 @@ export function normalizeEppRow(source: Record<string, string>): NormalizedEppRo
       workingName = removeToken(workingName, sizeMatch)
     }
   }
-  const eppType = EPP_TYPES.find((type) => new RegExp(`\\b${escapeRegex(type)}\\b`, "i").test(workingName)) ?? null
+  const eppType = EPP_TYPES.find((type) => {
+    const normalizedType = cleanText(type)
+    return normalizedType && new RegExp(`\\b${escapeRegex(normalizedType)}\\b`, "i").test(workingName)
+  }) ?? null
   if (!eppType) issues.push({ severity: "blocking", message: "No se pudo identificar un tipo de EPP en el nombre." })
   const unitOfMeasure = normalizeUnit(source.unitOfMeasure)
   if (!unitOfMeasure) issues.push({ severity: "blocking", message: "La unidad de medida no es reconocida." })

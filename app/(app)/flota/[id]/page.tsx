@@ -81,6 +81,44 @@ export default async function FlotaVehiclePage({
         </Card>
       </div>
 
+      {(detail.currentReading || detail.topOperators.length > 0) && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Uso operacional</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-3 text-sm">
+              <Fact label="Código interno" value={vehicle.code ?? "—"} />
+              {detail.currentReading ? (
+                <>
+                  <Fact
+                    label="Última lectura"
+                    value={
+                      detail.currentReading.horometro != null
+                        ? `${detail.currentReading.horometro} ${detail.currentReading.medidoPor === "hora" ? "hr" : detail.currentReading.medidoPor === "km" ? "km" : ""}`.trim()
+                        : "—"
+                    }
+                  />
+                  <Fact label="Fecha de lectura" value={detail.currentReading.fecha} />
+                  <Fact label="Último operador" value={detail.currentReading.operador ?? "—"} />
+                </>
+              ) : (
+                <p className="text-muted-foreground">Sin lecturas del log operacional de combustible.</p>
+              )}
+            </div>
+            {detail.topOperators.length > 0 && (
+              <div className="space-y-1.5 text-sm">
+                <p className="text-muted-foreground mb-1">Operadores más frecuentes</p>
+                {detail.topOperators.map((o) => (
+                  <div key={o.operador} className="flex items-center justify-between gap-3">
+                    <span>{o.operador}</span>
+                    <span className="font-mono text-muted-foreground">{o.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader><CardTitle className="text-base">Documentos del vehículo</CardTitle></CardHeader>
         <CardContent>

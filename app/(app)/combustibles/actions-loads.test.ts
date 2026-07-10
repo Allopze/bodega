@@ -8,8 +8,10 @@ const mockUpdateWhere = vi.fn(async () => undefined)
 const mockUpdateSet = vi.fn(() => ({ where: mockUpdateWhere }))
 const mockInsertValues = vi.fn(async () => undefined)
 const mockRecordAudit = vi.fn()
+const mockRedirect = vi.fn()
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/navigation", () => ({ redirect: (...args: unknown[]) => mockRedirect(...args) }))
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: (...args: unknown[]) => mockRequirePermission(...args),
 }))
@@ -149,7 +151,7 @@ describe("createFuelLoadAction — audit logging", () => {
     mockRecordAudit.mockResolvedValue(undefined)
   })
 
-  it("records an audit entry after successful create", async () => {
+  it("records an audit entry and redirects to /combustibles after successful create", async () => {
     const fd = new FormData()
     fd.set("loadDate", "2026-01-15")
     fd.set("serviceType", "TCT")
@@ -165,11 +167,16 @@ describe("createFuelLoadAction — audit logging", () => {
     fd.set("ivaAmount", "190")
     fd.set("totalAmount", "1208")
 
-    const result = await createFuelLoadAction({ ok: false, message: "" }, fd)
+    // En éxito, createFuelLoadAction navega server-side vía redirect() en vez
+    // de devolver { ok: true } — evita la carrera cliente descrita en su
+    // comentario (Next.js 16 re-renderiza la ruta actual en la respuesta de
+    // la action, lo que remontaba el formulario antes de que un useEffect
+    // alcanzara a disparar router.push).
+    await createFuelLoadAction({ ok: false, message: "" }, fd)
 
-    expect(result.ok).toBe(true)
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "create", entityType: "fuel_load" }),
     )
+    expect(mockRedirect).toHaveBeenCalledWith("/combustibles")
   })
 })

@@ -20,6 +20,9 @@ const MAGIC: Array<{ mime: string; bytes: number[] }> = [
   { mime: "image/png", bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
   // XML — starts with <?xml (after optional UTF-8 BOM EF BB BF)
   { mime: "application/xml", bytes: [0x3c, 0x3f, 0x78, 0x6d, 0x6c] },
+  // XLSX/ZIP — starts with PK\x03\x04 (XLSX is a zip container; the extension
+  // check + exceljs's own structural parsing narrow this down further).
+  { mime: "application/zip", bytes: [0x50, 0x4b, 0x03, 0x04] },
 ]
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -32,6 +35,8 @@ export const MimeType = {
   INVOICE: new Set(["application/pdf", "image/jpeg", "image/png", "application/xml"]),
   /** Cotizaciones: ofertas de proveedores */
   QUOTATION: new Set(["application/pdf", "image/jpeg", "image/png"]),
+  /** Importaciones: planillas XLSX (contenedor zip) */
+  SPREADSHEET: new Set(["application/zip"]),
 } as const
 
 export type MimeTypeSet = ReadonlySet<string>
@@ -116,6 +121,7 @@ export function friendlyName(mime: string): string {
     case "image/jpeg":       return "JPG"
     case "image/png":        return "PNG"
     case "application/xml":  return "XML"
+    case "application/zip":  return "XLSX"
     default:                 return mime
   }
 }

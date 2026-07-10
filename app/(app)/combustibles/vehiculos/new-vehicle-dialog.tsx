@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Plus } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
+import { FUEL_VEHICLE_TYPES, FUEL_VEHICLE_TYPE_LABELS } from "@/lib/combustibles/validation"
 
 export function NewVehicleDialog({ worksites }: { worksites: Array<{ id: string; name: string }> }) {
   const [open, setOpen] = useState(false)
@@ -30,19 +31,23 @@ export function NewVehicleDialog({ worksites }: { worksites: Array<{ id: string;
           <DialogTitle>Nuevo vehículo</DialogTitle>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
-          <div className="space-y-2">
-            <Label>Patente *</Label>
-            <Input name="plate" required placeholder="XX-XX-00" />
-            {state.fieldErrors?.plate && <p className="text-sm text-destructive">{state.fieldErrors.plate[0]}</p>}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Patente *</Label>
+              <Input name="plate" required placeholder="XX-XX-00" />
+              {state.fieldErrors?.plate && <p className="text-sm text-destructive">{state.fieldErrors.plate[0]}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label>Código interno</Label>
+              <Input name="code" placeholder="Ej. KA-63" />
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Tipo *</Label>
             <Select name="type" required>
               <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="camion">Camión</SelectItem>
-                <SelectItem value="camioneta">Camioneta</SelectItem>
-                <SelectItem value="estanque">Estanque</SelectItem>
+                {FUEL_VEHICLE_TYPES.map((t) => <SelectItem key={t} value={t}>{FUEL_VEHICLE_TYPE_LABELS[t]}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

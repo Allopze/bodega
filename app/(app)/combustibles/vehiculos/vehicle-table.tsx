@@ -8,10 +8,12 @@ import { Trash } from "@phosphor-icons/react"
 import { deleteFuelVehicleAction } from "../actions"
 import { EditVehicleDialog } from "./edit-vehicle-dialog"
 import { toast } from "@/lib/toast"
+import { FUEL_VEHICLE_TYPE_LABELS } from "@/lib/combustibles/validation"
 
 interface VehicleRow {
   id: string
   plate: string
+  code: string | null
   type: string
   brand: string | null
   model: string | null
@@ -42,6 +44,7 @@ export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: Vehicle
         <TableHeader>
           <TableRow>
             <TableHead>Patente</TableHead>
+            <TableHead>Código</TableHead>
             <TableHead>Tipo</TableHead>
             <TableHead>Marca</TableHead>
             <TableHead>Modelo</TableHead>
@@ -54,7 +57,7 @@ export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: Vehicle
         <TableBody>
           {vehicles.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                 No hay vehículos registrados
               </TableCell>
             </TableRow>
@@ -62,7 +65,8 @@ export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: Vehicle
             vehicles.map((v) => (
               <TableRow key={v.id}>
                 <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
-                <TableCell className="capitalize">{v.type}</TableCell>
+                <TableCell className="font-mono text-sm">{v.code ?? "—"}</TableCell>
+                <TableCell>{FUEL_VEHICLE_TYPE_LABELS[v.type as keyof typeof FUEL_VEHICLE_TYPE_LABELS] ?? v.type}</TableCell>
                 <TableCell>{v.brand ?? "—"}</TableCell>
                 <TableCell>{v.model ?? "—"}</TableCell>
                 <TableCell>{v.year ?? "—"}</TableCell>

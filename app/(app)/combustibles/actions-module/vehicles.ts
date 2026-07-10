@@ -30,6 +30,7 @@ export async function createFuelVehicleAction(
   const parsed = createFuelVehicleSchema.safeParse({
     plate: formData.get("plate"),
     type: formData.get("type"),
+    code: formData.get("code") || undefined,
     brand: formData.get("brand") || undefined,
     model: formData.get("model") || undefined,
     year: formData.get("year") || undefined,
@@ -70,6 +71,7 @@ export async function updateFuelVehicleAction(
     id,
     plate: formData.get("plate") || undefined,
     type: formData.get("type") || undefined,
+    code: formData.get("code") || undefined,
     brand: formData.get("brand") || undefined,
     model: formData.get("model") || undefined,
     year: formData.get("year") || undefined,

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { LayoutDashboard } from "@phosphor-icons/react"
+import { SquaresFour } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ReportErrorButton } from "@/components/report-error-button"
@@ -21,7 +21,7 @@ export default function DashboardError({
     <div className="flex min-h-[50vh] items-center justify-center p-8">
       <EmptyState
         as="h1"
-        icon={<LayoutDashboard size={24} />}
+        icon={<SquaresFour size={24} />}
         title="Error al cargar el panel"
         description="No se pudieron cargar los indicadores del dashboard. Intenta nuevamente o reporta el error."
         action={
