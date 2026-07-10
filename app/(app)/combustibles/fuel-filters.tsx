@@ -39,7 +39,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
   }
 
   function clearFilters() {
-    router.push("/combustibles")
+    router.push("/combustibles/facturas")
   }
 
   return (

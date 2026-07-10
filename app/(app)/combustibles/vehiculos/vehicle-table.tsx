@@ -7,11 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Trash } from "@phosphor-icons/react"
 import { deleteFuelVehicleAction } from "../actions"
 import { EditVehicleDialog } from "./edit-vehicle-dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
+import { FUEL_VEHICLE_TYPE_LABELS } from "@/lib/combustibles/validation"
 
 interface VehicleRow {
   id: string
   plate: string
+  code: string | null
   type: string
   brand: string | null
   model: string | null
@@ -23,10 +26,11 @@ interface VehicleRow {
 
 export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: VehicleRow[]; worksites: Array<{ id: string; name: string }> }) {
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
 
   async function handleDelete(id: string) {
-    if (!confirm("¿Desactivar este vehículo?")) return
     setDeleting(id)
+    setConfirmId(null)
     const result = await deleteFuelVehicleAction(id)
     if (result.ok) {
       toast.success(result.message)
@@ -42,6 +46,7 @@ export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: Vehicle
         <TableHeader>
           <TableRow>
             <TableHead>Patente</TableHead>
+            <TableHead>Código</TableHead>
             <TableHead>Tipo</TableHead>
             <TableHead>Marca</TableHead>
             <TableHead>Modelo</TableHead>
@@ -54,7 +59,7 @@ export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: Vehicle
         <TableBody>
           {vehicles.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                 No hay vehículos registrados
               </TableCell>
             </TableRow>
@@ -62,7 +67,8 @@ export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: Vehicle
             vehicles.map((v) => (
               <TableRow key={v.id}>
                 <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
-                <TableCell className="capitalize">{v.type}</TableCell>
+                <TableCell className="font-mono text-sm">{v.code ?? "—"}</TableCell>
+                <TableCell>{FUEL_VEHICLE_TYPE_LABELS[v.type as keyof typeof FUEL_VEHICLE_TYPE_LABELS] ?? v.type}</TableCell>
                 <TableCell>{v.brand ?? "—"}</TableCell>
                 <TableCell>{v.model ?? "—"}</TableCell>
                 <TableCell>{v.year ?? "—"}</TableCell>
@@ -78,12 +84,23 @@ export function VehicleCatalogTable({ vehicles, worksites }: { vehicles: Vehicle
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDelete(v.id)}
+                      onClick={() => setConfirmId(v.id)}
                       disabled={deleting === v.id || !v.isActive}
                     >
                       <Trash className="h-4 w-4" />
                     </Button>
                   </div>
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmId(null) }}
+        title="¿Desactivar vehículo?"
+        description="El vehículo quedará inactivo y no aparecerá en las listas de selección. Esta acción no elimina sus cargas ni registros históricos."
+        confirmLabel="Desactivar"
+        variant="warning"
+        loading={deleting !== null}
+        onConfirm={() => confirmId && handleDelete(confirmId)}
+      />
                 </TableCell>
               </TableRow>
             ))

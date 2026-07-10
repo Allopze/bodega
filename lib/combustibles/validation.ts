@@ -30,9 +30,38 @@ export type CreateFuelLoadInput = z.infer<typeof createFuelLoadSchema>
 export type UpdateFuelLoadInput = z.infer<typeof updateFuelLoadSchema>
 
 /* ── Fuel Vehicle ────────────────────────────────────────────────────────── */
+// Tipos sugeridos en los dropdowns. `type` NO es un enum estricto en la BD:
+// el catálogo real ya tiene ~17 valores libres sembrados ("maquina industrial",
+// "tractocamion", "remolque", "casa rodante", etc.) que no calzan con esta
+// lista. Validar como enum rechazaría esos valores al editar un vehículo
+// legacy, por eso `type` se valida como string (ver createFuelVehicleSchema);
+// esta lista solo alimenta los <Select> como opciones canónicas.
+export const FUEL_VEHICLE_TYPES = [
+  "camion", "camioneta", "estanque",
+  "cargador", "tractor", "excavadora", "bulldozer", "minicargador",
+  "retroexcavadora", "hidrolavadora", "tracto", "station_wagon", "camion_3_4",
+] as const
+
+export const FUEL_VEHICLE_TYPE_LABELS: Record<(typeof FUEL_VEHICLE_TYPES)[number], string> = {
+  camion: "Camión",
+  camioneta: "Camioneta",
+  estanque: "Estanque",
+  cargador: "Cargador",
+  tractor: "Tractor",
+  excavadora: "Excavadora",
+  bulldozer: "Bulldozer",
+  minicargador: "Minicargador",
+  retroexcavadora: "Retroexcavadora",
+  hidrolavadora: "Hidrolavadora",
+  tracto: "Tracto",
+  station_wagon: "Station wagon",
+  camion_3_4: "Camión 3/4",
+}
+
 export const createFuelVehicleSchema = z.object({
   plate:     z.string().min(1, "Patente requerida").max(20),
-  type:      z.enum(["camion", "camioneta", "estanque"]),
+  type:      z.string().min(1, "Tipo requerido").max(50),  // texto libre — ver nota en FUEL_VEHICLE_TYPES
+  code:      z.string().max(50).optional(),
   brand:     z.string().max(100).optional(),
   model:     z.string().max(100).optional(),
   year:      z.coerce.number().int().min(1990).max(2030).optional(),

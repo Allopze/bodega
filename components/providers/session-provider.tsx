@@ -1,6 +1,7 @@
 "use client"
 
 import { SessionProvider as NextAuthSessionProvider } from "next-auth/react"
+import { SessionRetryHandler } from "./session-retry-handler"
 
 export function SessionProvider({ children, session }: {
   children: React.ReactNode
@@ -8,6 +9,7 @@ export function SessionProvider({ children, session }: {
 }) {
   return (
     <NextAuthSessionProvider session={session}>
+      <SessionRetryHandler />
       {children}
     </NextAuthSessionProvider>
   )

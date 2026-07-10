@@ -1,0 +1,436 @@
+"use server"
+
+import { createHash } from "node:crypto"
+import path from "node:path"
+import { revalidatePath } from "next/cache"
+import { and, eq, ne } from "drizzle-orm"
+import { db } from "@/db"
+import { fuelOperationBatches, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
+import { requirePermission } from "@/lib/auth/can"
+import { isGlobalRole } from "@/lib/auth/scope"
+import { nanoid } from "@/lib/id"
+import { recordAudit } from "@/lib/audit"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
+import { resolveFuelImportsDir, createFuelImportPath } from "@/lib/storage/config"
+import {
+  parseFuelOperationsExcel,
+  plateMatchKey,
+  matchByNameOrContains,
+  type ImportError,
+} from "@/lib/combustibles/operations-import"
+import type { ActionState } from "@/lib/validation/masters"
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024
+
+/**
+ * Este log operacional abarca varias faenas por archivo (a diferencia del
+ * import de consumos, que declara una sola faena por lote) — se restringe a
+ * roles con visibilidad global para no importar/revertir datos de faenas que
+ * el usuario no puede ver.
+ */
+async function requireGlobalImportSession(permission: "combustibles:import" | "combustibles:revert") {
+  const session = await requirePermission(permission)
+  if (!isGlobalRole(session)) {
+    throw new Error("Esta importación abarca múltiples faenas; requiere acceso global")
+  }
+  return session
+}
+
+function sanitizeFileName(name: string) {
+  return name
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "importacion.xlsx"
+}
+
+async function readImportFile(formData: FormData): Promise<
+  | { ok: true; buffer: Buffer; fileName: string }
+  | { ok: false; message: string }
+> {
+  const file = formData.get("file")
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, message: "Selecciona un archivo XLSX" }
+  }
+  if (!file.name.toLocaleLowerCase("es-CL").endsWith(".xlsx")) {
+    return { ok: false, message: "El archivo debe estar en formato .xlsx" }
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    return { ok: false, message: "El archivo no puede superar 10 MB" }
+  }
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const validation = validateFileBuffer(new Uint8Array(buffer), file.size, MimeType.SPREADSHEET)
+  if (validation.error) return { ok: false, message: validation.error }
+  return { ok: true, buffer, fileName: file.name }
+}
+
+interface Totales {
+  totalFilas: number
+  totalEquipos: number
+  totalLitros: number
+  totalMonto: number
+  periodoDesde: string
+  periodoHasta: string
+}
+
+function computeTotales(rows: Awaited<ReturnType<typeof parseFuelOperationsExcel>>["rows"]): Totales {
+  const fechas = rows.map((r) => r.fecha).sort()
+  return {
+    totalFilas: rows.length,
+    totalEquipos: new Set(rows.map((r) => r.plate)).size,
+    totalLitros: Math.round(rows.reduce((s, r) => s + r.liters, 0) * 10000) / 10000,
+    totalMonto: Math.round(rows.reduce((s, r) => s + (r.monto ?? 0), 0) * 100) / 100,
+    periodoDesde: fechas[0] ?? "",
+    periodoHasta: fechas[fechas.length - 1] ?? "",
+  }
+}
+
+export interface OperationsPreviewData {
+  totales: Totales
+  errores: ImportError[]
+  equiposConVehiculo: number
+  equiposSinVehiculo: number
+  faenasSinMatch: string[]
+  proveedoresSinMatch: string[]
+  archivoDuplicado: boolean
+}
+
+export async function previewOperationsImportAction(
+  formData: FormData,
+): Promise<{ ok: true; data: OperationsPreviewData } | { ok: false; message: string }> {
+  try { await requireGlobalImportSession("combustibles:import") }
+  catch (e) { return { ok: false, message: e instanceof Error ? e.message : "Sin permisos" } }
+
+  const form = await readImportFile(formData)
+  if (!form.ok) return form
+  const { buffer } = form
+
+  const parsed = await parseFuelOperationsExcel(buffer)
+  if (parsed.rows.length === 0 && parsed.errors.length === 0) {
+    return { ok: false, message: "El archivo no contiene filas de datos" }
+  }
+
+  const hashArchivo = createHash("sha256").update(buffer).digest("hex")
+  const archivoDuplicado = await db.query.fuelOperationBatches.findFirst({
+    where: and(eq(fuelOperationBatches.hashArchivo, hashArchivo), ne(fuelOperationBatches.estado, "revertido")),
+  })
+
+  const [allWorksites, allSuppliers, matchedVehicleKeys] = await Promise.all([
+    db.query.worksites.findMany({ columns: { id: true, name: true } }),
+    db.query.fuelSuppliers.findMany({ columns: { id: true, name: true } }),
+    lookupMatchedPlateKeys(parsed.rows.map((r) => r.plate)),
+  ])
+
+  const faenasSinMatch = new Set<string>()
+  const proveedoresSinMatch = new Set<string>()
+  let equiposConVehiculo = 0
+  const equiposVistos = new Set<string>()
+
+  for (const row of parsed.rows) {
+    const key = plateMatchKey(row.plate)
+    if (!equiposVistos.has(row.plate)) {
+      equiposVistos.add(row.plate)
+      if (matchedVehicleKeys.has(key)) equiposConVehiculo++
+    }
+    if (row.faenaNombre && !matchByNameOrContains(row.faenaNombre, allWorksites)) {
+      faenasSinMatch.add(row.faenaNombre)
+    }
+    if (row.proveedorNombre && !matchByNameOrContains(row.proveedorNombre, allSuppliers)) {
+      proveedoresSinMatch.add(row.proveedorNombre)
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      totales: computeTotales(parsed.rows),
+      errores: parsed.errors,
+      equiposConVehiculo,
+      equiposSinVehiculo: equiposVistos.size - equiposConVehiculo,
+      faenasSinMatch: [...faenasSinMatch].sort(),
+      proveedoresSinMatch: [...proveedoresSinMatch].sort(),
+      archivoDuplicado: !!archivoDuplicado,
+    },
+  }
+}
+
+async function lookupMatchedPlateKeys(plates: string[]): Promise<Set<string>> {
+  const uniquePlates = [...new Set(plates)]
+  if (uniquePlates.length === 0) return new Set()
+  const vehicles = await db.query.fuelVehicles.findMany({ columns: { plate: true } })
+  const vehicleKeys = new Set(vehicles.map((v) => plateMatchKey(v.plate)))
+  return new Set(uniquePlates.map(plateMatchKey).filter((k) => vehicleKeys.has(k)))
+}
+
+export interface OperationsImportResultSummary {
+  batchId: string
+  imported: number
+  errors: ImportError[]
+}
+
+export async function confirmOperationsImportAction(
+  formData: FormData,
+): Promise<{ ok: true; data: OperationsImportResultSummary } | { ok: false; message: string }> {
+  let session
+  try { session = await requireGlobalImportSession("combustibles:import") }
+  catch (e) { return { ok: false, message: e instanceof Error ? e.message : "Sin permisos" } }
+
+  const form = await readImportFile(formData)
+  if (!form.ok) return form
+  const { buffer, fileName } = form
+
+  const parsed = await parseFuelOperationsExcel(buffer)
+  if (parsed.rows.length === 0) {
+    return { ok: false, message: "No hay filas válidas para importar" }
+  }
+
+  const hashArchivo = createHash("sha256").update(buffer).digest("hex")
+  const confirmDuplicates = formData.get("confirmDuplicates") === "true"
+  const autoCreateVehicles = formData.get("autoCreateVehicles") === "true"
+
+  if (!confirmDuplicates) {
+    const archivoDuplicado = await db.query.fuelOperationBatches.findFirst({
+      where: and(eq(fuelOperationBatches.hashArchivo, hashArchivo), ne(fuelOperationBatches.estado, "revertido")),
+    })
+    if (archivoDuplicado) return { ok: false, message: `Este archivo ya fue importado como lote ${archivoDuplicado.id}` }
+  }
+
+  const safeName = sanitizeFileName(fileName)
+  const storageName = `${Date.now()}-${nanoid()}-${safeName}`
+  const storageDir = resolveFuelImportsDir()
+  await mkdirp(storageDir)
+  await writeBuffer(path.join(storageDir, storageName), buffer)
+  const archivoPath = createFuelImportPath(storageName)
+
+  const [allWorksites, allSuppliers, existingVehicles] = await Promise.all([
+    db.query.worksites.findMany({ columns: { id: true, name: true } }),
+    db.query.fuelSuppliers.findMany({ columns: { id: true, name: true } }),
+    db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, code: true, type: true, brand: true, model: true, year: true } }),
+  ])
+  const vehicleByKey = new Map(existingVehicles.map((v) => [plateMatchKey(v.plate), v]))
+
+  const batchId = nanoid()
+  const totales = computeTotales(parsed.rows)
+
+  await db.transaction(async (tx) => {
+    await tx.insert(fuelOperationBatches).values({
+      id: batchId,
+      archivoNombre: safeName,
+      archivoPath,
+      hashArchivo,
+      estado: "importado",
+      periodoDesde: totales.periodoDesde,
+      periodoHasta: totales.periodoHasta,
+      totalFilas: totales.totalFilas + parsed.errors.length,
+      filasValidas: totales.totalFilas,
+      filasInvalidas: parsed.errors.length,
+      totalEquipos: totales.totalEquipos,
+      totalLitros: totales.totalLitros,
+      totalMonto: totales.totalMonto,
+      importadoPor: session.user.id,
+      notas: String(formData.get("notas") ?? "").trim() || null,
+    })
+
+    // Autocompletar/crear catálogo de vehículos a partir del log — opt-in
+    // explícito para creación (ver decisión en el plan: no crear ~100
+    // vehículos sin revisión humana por defecto).
+    const seenPlates = new Set<string>()
+    for (const row of parsed.rows) {
+      if (seenPlates.has(row.plate)) continue
+      seenPlates.add(row.plate)
+      const key = plateMatchKey(row.plate)
+      const existing = vehicleByKey.get(key)
+
+      if (existing) {
+        const patch: Partial<typeof fuelVehicles.$inferInsert> = {}
+        if (!existing.code && row.code) patch.code = row.code
+        if (!existing.brand && row.marca) patch.brand = row.marca
+        if (!existing.model && row.modelo) patch.model = row.modelo
+        if (!existing.year && row.anio) patch.year = row.anio
+        if (Object.keys(patch).length > 0) {
+          await tx.update(fuelVehicles).set(patch).where(eq(fuelVehicles.id, existing.id))
+        }
+        continue
+      }
+
+      if (autoCreateVehicles && row.tipo) {
+        const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
+        if (!worksite) continue // sin faena matcheada no se puede crear (worksiteId es NOT NULL)
+        const id = nanoid()
+        await tx.insert(fuelVehicles).values({
+          id,
+          plate: row.plate,
+          code: row.code,
+          type: row.tipo,
+          brand: row.marca,
+          model: row.modelo,
+          year: row.anio,
+          worksiteId: worksite.id,
+        })
+        vehicleByKey.set(key, { id, plate: row.plate, code: row.code, type: row.tipo, brand: row.marca, model: row.modelo, year: row.anio })
+      }
+    }
+
+    await tx.insert(fuelOperationRecords).values(
+      parsed.rows.map((row) => {
+        const vehicle = vehicleByKey.get(plateMatchKey(row.plate))
+        const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
+        const supplier = row.proveedorNombre ? matchByNameOrContains(row.proveedorNombre, allSuppliers) : null
+        return {
+          id: nanoid(),
+          batchId,
+          worksiteId: worksite?.id ?? null,
+          vehicleId: vehicle?.id ?? null,
+          plate: row.plate,
+          code: row.code,
+          faenaNombre: row.faenaNombre,
+          tipo: row.tipo,
+          marca: row.marca,
+          modelo: row.modelo,
+          anio: row.anio,
+          fecha: row.fecha,
+          horaCarga: row.horaCarga,
+          horometro: row.horometro,
+          medidoPor: row.medidoPor,
+          liters: row.liters,
+          operador: row.operador,
+          supervisor: row.supervisor,
+          proveedorNombre: row.proveedorNombre,
+          fuelSupplierId: supplier?.id ?? null,
+          precioLitro: row.precioLitro,
+          monto: row.monto,
+          rendimiento: row.rendimiento,
+          tipoRendimiento: row.tipoRendimiento,
+          rawRow: row.rawRow,
+        }
+      }),
+    )
+  })
+
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "create",
+    entityType: "fuel_operation_batch",
+    entityId: batchId,
+    newState: { periodo: `${totales.periodoDesde}..${totales.periodoHasta}`, ...totales },
+  })
+
+  // Sin revalidatePath aquí a propósito: en Next.js 16, CUALQUIER llamada a
+  // revalidatePath/refresh dentro de una server action fuerza a Next a
+  // re-renderizar y re-transmitir la ruta ACTUAL (donde vive este wizard) en
+  // la misma respuesta — sin importar qué ruta se pase — lo que remonta el
+  // árbol de cliente y pierde el estado local del wizard (paso "done").
+  // Ver node_modules/next/dist/docs/01-app/02-guides/server-actions.md.
+  // Las páginas afectadas (dashboard, vehículos, flota, mantenciones) son
+  // dinámicas (usan sesión/cookies) y se renderizan frescas en cada visita
+  // real, así que no necesitan revalidación explícita aquí.
+
+  return { ok: true, data: { batchId, imported: parsed.rows.length, errors: parsed.errors } }
+}
+
+export async function revertBatchOperationsAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requireGlobalImportSession("combustibles:revert") }
+  catch (e) { return { ok: false, message: e instanceof Error ? e.message : "Sin permisos" } }
+
+  const batchId = String(formData.get("batchId") ?? "")
+  if (!batchId) return { ok: false, message: "Lote requerido" }
+
+  const batch = await db.query.fuelOperationBatches.findFirst({ where: eq(fuelOperationBatches.id, batchId) })
+  if (!batch) return { ok: false, message: "Lote no encontrado" }
+  if (batch.estado === "revertido") return { ok: false, message: "Este lote ya fue revertido" }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(fuelOperationRecords).where(eq(fuelOperationRecords.batchId, batchId))
+    await tx.update(fuelOperationBatches).set({ estado: "revertido", updatedAt: new Date().toISOString() }).where(eq(fuelOperationBatches.id, batchId))
+  })
+
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "delete",
+    entityType: "fuel_operation_batch",
+    entityId: batchId,
+    oldState: { estado: batch.estado },
+    newState: { estado: "revertido" },
+  })
+
+  revalidatePath("/combustibles")
+  revalidatePath("/combustibles/importar")
+  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
+  return { ok: true, message: "Lote revertido: sus registros fueron eliminados del dashboard" }
+}
+
+export async function linkOperationVehicleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("combustibles:manage_vehicles") }
+  catch { return { ok: false, message: "Sin permisos" } }
+  // Los lotes de operaciones son multi-faena: se restringe a roles globales,
+  // igual que el resto del flujo (import/preview/confirm/revert/detalle). Sin
+  // esto, un rol scoped con manage_vehicles podría vincular registros de
+  // faenas que no puede ver invocando la action directamente.
+  if (!isGlobalRole(session)) return { ok: false, message: "Requiere acceso global a todas las faenas" }
+
+  const batchId = String(formData.get("batchId") ?? "")
+  const plate = String(formData.get("plate") ?? "").trim().toUpperCase()
+  const vehicleId = String(formData.get("vehicleId") ?? "")
+  if (!batchId || !plate || !vehicleId) return { ok: false, message: "Datos incompletos" }
+
+  const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, vehicleId) })
+  if (!vehicle) return { ok: false, message: "Vehículo no encontrado" }
+
+  const updated = await db.update(fuelOperationRecords)
+    .set({ vehicleId })
+    .where(and(eq(fuelOperationRecords.batchId, batchId), eq(fuelOperationRecords.plate, plate)))
+    .returning({ id: fuelOperationRecords.id })
+
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "update",
+    entityType: "fuel_operation_record",
+    entityId: batchId,
+    newState: { plate, vehicleId, count: updated.length },
+  })
+
+  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
+  revalidatePath("/combustibles")
+  return { ok: true, message: `${updated.length} registro(s) vinculados a la patente ${vehicle.plate}` }
+}
+
+export async function linkOperationWorksiteAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("combustibles:manage_vehicles") }
+  catch { return { ok: false, message: "Sin permisos" } }
+  // Lote multi-faena: restringido a roles globales (ver linkOperationVehicleAction).
+  if (!isGlobalRole(session)) return { ok: false, message: "Requiere acceso global a todas las faenas" }
+
+  const batchId = String(formData.get("batchId") ?? "")
+  const faenaNombre = String(formData.get("faenaNombre") ?? "")
+  const worksiteId = String(formData.get("worksiteId") ?? "")
+  if (!batchId || !faenaNombre || !worksiteId) return { ok: false, message: "Datos incompletos" }
+
+  const worksite = await db.query.worksites.findFirst({ where: eq(worksites.id, worksiteId) })
+  if (!worksite) return { ok: false, message: "Faena no encontrada" }
+
+  const updated = await db.update(fuelOperationRecords)
+    .set({ worksiteId })
+    .where(and(eq(fuelOperationRecords.batchId, batchId), eq(fuelOperationRecords.faenaNombre, faenaNombre)))
+    .returning({ id: fuelOperationRecords.id })
+
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "update",
+    entityType: "fuel_operation_record",
+    entityId: batchId,
+    newState: { faenaNombre, worksiteId, count: updated.length },
+  })
+
+  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
+  revalidatePath("/combustibles")
+  return { ok: true, message: `${updated.length} registro(s) vinculados a la faena ${worksite.name}` }
+}

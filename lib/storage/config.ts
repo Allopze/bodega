@@ -7,6 +7,7 @@ const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
 const FLEET_DOCUMENT_PREFIX = "storage/flota/"
 const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
+const FUEL_IMPORT_PREFIX = "storage/imports/"
 
 /**
  * Resolves the base storage directory.
@@ -210,4 +211,33 @@ export function resolvePdtpEvidenceFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolvePdtpEvidenceDir(), storageName)
+}
+
+/* ── Importaciones de combustible ────────────────────────────────────────────
+ *
+ * Almacenamiento para el archivo XLSX original de cada lote de importación de
+ * consumos de combustible por patente (trazabilidad — ver AGENTS.md).
+ * El `storageName` es siempre `${timestamp}-${nanoid}-${nombreSanitizado}`;
+ * nunca se acepta el nombre original tal cual para evitar traversal.
+ */
+export function resolveFuelImportsDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "imports")
+}
+
+export function createFuelImportPath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid fuel import file name")
+  }
+  return `${FUEL_IMPORT_PREFIX}${storageName}`
+}
+
+export function resolveFuelImportFile(filePath: string): string | null {
+  if (!filePath.startsWith(FUEL_IMPORT_PREFIX)) {
+    return null
+  }
+  const storageName = filePath.slice(FUEL_IMPORT_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+  return path.join(/*turbopackIgnore: true*/ resolveFuelImportsDir(), storageName)
 }

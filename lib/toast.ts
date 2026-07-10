@@ -1,12 +1,27 @@
+import type { CSSProperties } from "react"
 import { toast as sonnerToast } from "sonner"
 
 /**
- * Wrapper sobre sonner: los toasts de error persisten hasta que el usuario
- * los cierre (H9 — recuperación de errores). Los de éxito conservan la
- * duración por defecto del Toaster. Importar siempre desde aquí, no de "sonner".
+ * Duración por defecto para los toasts de error.
+ * El Toaster base usa 4000ms para success/info/warning.
  */
-const error: typeof sonnerToast.error = (message, options) =>
-  sonnerToast.error(message, { duration: Infinity, ...options })
+export const DEFAULT_TOAST_DURATION = 5000
+
+/**
+ * Wrapper sobre sonner:
+ * - Los toasts de error se cierran automáticamente tras DEFAULT_TOAST_DURATION ms
+ *   y muestran una barra de progreso que indica el tiempo restante.
+ * - Los de éxito/info/warning conservan la duración por defecto del Toaster (4000ms).
+ * Importar siempre desde aquí, no de "sonner".
+ */
+const error: typeof sonnerToast.error = (message, options) => {
+  const duration = options?.duration ?? DEFAULT_TOAST_DURATION
+  return sonnerToast.error(message, {
+    ...options,
+    duration,
+    style: { "--progress-duration": `${duration}ms`, ...options?.style } as CSSProperties,
+  })
+}
 
 export const toast: typeof sonnerToast = Object.assign(
   ((...args: Parameters<typeof sonnerToast>) => sonnerToast(...args)) as typeof sonnerToast,

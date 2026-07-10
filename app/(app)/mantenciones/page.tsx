@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { can, requirePermission } from "@/lib/auth/can"
-import { getMaintenancePageData, getUpcomingMaintenance } from "@/lib/services/maintenance"
+import { getMaintenancePageData, getUpcomingMaintenance, getUsageMaintenanceAlerts } from "@/lib/services/maintenance"
 import { MaintenanceForm } from "./maintenance-form"
 import { MaintenanceRowActions } from "./maintenance-row-actions"
 import { MaintenanceFilters } from "./maintenance-filters"
@@ -41,9 +41,10 @@ export default async function MantencionesPage({
   const vehicleId = typeof sp.vehicle === "string" ? sp.vehicle : undefined
   const worksiteId = typeof sp.faena === "string" ? sp.faena : undefined
   const status = typeof sp.status === "string" ? sp.status : undefined
-  const [data, upcomingData] = await Promise.all([
+  const [data, upcomingData, usageAlerts] = await Promise.all([
     getMaintenancePageData(session, { vehicleId, worksiteId, status }),
     getUpcomingMaintenance(session),
+    getUsageMaintenanceAlerts(session),
   ])
   const canCreate = can(session, "mantenciones:create")
   const canEdit = can(session, "mantenciones:edit")
@@ -116,6 +117,28 @@ export default async function MantencionesPage({
               {upcomingData.overdue.length === 0 && upcomingData.upcoming.length > 0 && (
                 <p className="text-xs text-[var(--color-text-subtle)]">Sin mantenciones vencidas. Las programadas aparecen arriba.</p>
               )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {usageAlerts.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Mantención por uso</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3 text-sm space-y-1">
+              <p className="text-[var(--color-warning-ink)]">
+                Equipos que acumularon uso significativo desde su última mantención completada
+                (según el log operacional de combustible):
+              </p>
+              {usageAlerts.map((a) => (
+                <p key={a.vehicleId} className="text-[var(--color-warning-ink)]">
+                  {a.code ? `${a.code} — ` : ""}{a.plate}: +{formatNumber(a.usageSinceLastMaintenance)} {a.medidoPor === "km" ? "km" : "hr"} desde {a.lastMaintenanceDate}
+                  {" "}(lectura actual {formatNumber(a.currentReading)} al {a.currentReadingDate})
+                </p>
+              ))}
             </div>
           </CardContent>
         </Card>

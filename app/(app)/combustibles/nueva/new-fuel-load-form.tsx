@@ -41,14 +41,14 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
     setTotalAmount(calc.totalAmount)
   }, [liters, baseAmount])
 
+  // En éxito, createFuelLoadAction redirige server-side a /combustibles
+  // (ver actions-module/loads.ts) — este efecto solo necesita mostrar
+  // errores de validación; nunca observará state.ok: true.
   useEffect(() => {
-    if (state.ok) {
-      toast.success(state.message)
-      router.push("/combustibles")
-    } else if (state.message && !state.ok) {
+    if (state.message && !state.ok) {
       toast.error(state.message)
     }
-  }, [state, router])
+  }, [state])
 
   const formatCLP = (n: number) => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n)
 
