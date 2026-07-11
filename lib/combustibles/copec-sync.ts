@@ -15,13 +15,22 @@ const START_KEY = "COPEC_SYNC_START_DATE"
 const DEFAULT_START = "2020-01-01"
 const DEFAULT_MAX_PERIOD_DAYS = 31
 
+const _maxPeriodDays = Number.isInteger(Number(process.env.COPEC_REPORT_MAX_DAYS)) && Number(process.env.COPEC_REPORT_MAX_DAYS) > 0
+  ? Number(process.env.COPEC_REPORT_MAX_DAYS)
+  : DEFAULT_MAX_PERIOD_DAYS
+
 interface SyncState { cursor: string | null; lastRunAt: string | null; pending: string[]; }
 
-async function state(): Promise<SyncState> {
+async function state(): Promise<SyncState & { _version: string }> {
   const row = await db.query.systemSettings.findFirst({ where: eq(systemSettings.key, STATE_KEY) })
-  if (!row) return { cursor: null, lastRunAt: null, pending: [] }
-  try { return { ...{ cursor: null, lastRunAt: null, pending: [] }, ...JSON.parse(row.value) } }
-  catch { return { cursor: null, lastRunAt: null, pending: [] } }
+  if (!row) return { cursor: null, lastRunAt: null, pending: [], _version: "" }
+  try { return { ...{ cursor: null, lastRunAt: null, pending: [], _version: row.updatedAt ?? "" }, ...JSON.parse(row.value) } }
+  catch { return { cursor: null, lastRunAt: null, pending: [], _version: "" } }
+}
+
+export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; cursor: string | null; pending: number }> {
+  const s = await state()
+  return { lastRunAt: s.lastRunAt, cursor: s.cursor, pending: s.pending.length }
 }
 
 async function saveState(next: SyncState) {
@@ -38,8 +47,7 @@ function addDays(value: string, days: number): string {
 }
 
 function maxPeriodDays(): number {
-  const configured = Number(process.env.COPEC_REPORT_MAX_DAYS)
-  return Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_MAX_PERIOD_DAYS
+  return _maxPeriodDays
 }
 
 export interface CopecSyncPeriod { from: string; to: string }
@@ -70,7 +78,10 @@ interface PeriodSyncResult {
 }
 
 async function importCopecPeriod(from: string, to: string, pending: Set<string>): Promise<PeriodSyncResult> {
-  const importer = await db.query.users.findFirst({ where: eq(users.isActive, true), columns: { id: true } })
+  const importerEmail = process.env.COPEC_SYNC_IMPORTER_EMAIL?.trim()
+  const importer = importerEmail
+    ? await db.query.users.findFirst({ where: and(eq(users.email, importerEmail), eq(users.isActive, true)), columns: { id: true } })
+    : null
   if (!importer) throw new Error("No hay un usuario activo para registrar la sincronización Copec")
 
   let imported = 0
@@ -121,7 +132,14 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod): Promise<Pe
   const result = await importCopecPeriod(period.from, period.to, pending)
   // Persistimos cada período. Así una primera importación extensa puede
   // reanudarse y no vuelve a descargar los tramos ya procesados.
-  await saveState({ cursor: addDays(period.to, 1), lastRunAt: new Date().toISOString(), pending: [...pending].sort() })
+  // Si saveState falla, los datos ya están insertados con hash check;
+  // la próxima ejecución re-procesará el período pero el hash check
+  // evitará duplicados.
+  try {
+    await saveState({ cursor: addDays(period.to, 1), lastRunAt: new Date().toISOString(), pending: [...pending].sort() })
+  } catch (err) {
+    console.error("[copec-sync] saveState failed, cursor may be stale on next run", err)
+  }
   return result
 }
 

@@ -5,13 +5,14 @@ import { fuelImportBatches, fuelOperationBatches, worksites } from "@/db/schema"
 import { desc, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { isGlobalRole, resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
+import { getCopecSyncState } from "@/lib/combustibles/copec-sync"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ImportWizard } from "./import-wizard"
 import { ImportBatchHistory } from "./import-batch-history"
 import { OperationsImportWizard } from "./operations-import-wizard"
-import { CopecSyncButton } from "./copec-sync-button"
+import { CopecSyncStatus } from "./copec-sync-status"
 import { OperationsBatchHistory } from "./operations-batch-history"
 
 export const metadata: Metadata = { title: "Importar consumos de combustible" }
@@ -24,7 +25,7 @@ export default async function ImportarConsumosPage() {
   const worksiteScope = resolveWorksiteScope(session)
   const canImportOperations = isGlobalRole(session)
 
-  const [worksitesList, batches, operationBatches] = await Promise.all([
+  const [worksitesList, batches, operationBatches, copecSyncState] = await Promise.all([
     worksiteScope.mode === "none"
       ? Promise.resolve([])
       : db.query.worksites.findMany({
@@ -44,16 +45,20 @@ export default async function ImportarConsumosPage() {
           limit: 50,
         })
       : Promise.resolve([]),
+    getCopecSyncState(),
   ])
 
   return (
     <PageContainer>
       <PageHeader
         title="Importar consumos de combustible"
-        description="Carga reportes de tarjetas de combustible por patente y período, o el log operacional de cargas"
-        actions={<CopecSyncButton />}
+        description="Carga reportes de tarjetas de combustible por patente y periodo, o el log operacional de cargas"
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos" }]} />}
       />
+
+      <div className="mb-6">
+        <CopecSyncStatus initialStatus={copecSyncState} />
+      </div>
 
       <Tabs defaultValue="consumos">
         <TabsList>

@@ -46,7 +46,7 @@ export default async function ImportBatchDetailPage({ params }: { params: Promis
       <PageHeader
         title="Detalle de importación"
         description={`${batch.archivoNombre} — ${batch.periodoDesde} a ${batch.periodoHasta}`}
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos", href: "/combustibles/importar" }, { label: "Detalle" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos", href: "/combustibles/importar" }, { label: batch.archivoNombre }]} />}
         headerActions={<RevertBatchButton batchId={batch.id} canRevert={canRevert} />}
       />
 

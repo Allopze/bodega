@@ -6,16 +6,16 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Upload, FileText, WarningCircle, CheckCircle, ArrowLeft } from "@phosphor-icons/react"
+import { Upload, FileText, WarningCircle, CheckCircle, ArrowLeft, ArrowUp, ArrowDown } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
-import { cn } from "@/lib/utils"
-import { formatCLP, formatQty } from "@/lib/utils"
+import { cn, formatCLP, formatQty } from "@/lib/utils"
 import {
   previewOperationsImportAction,
   confirmOperationsImportAction,
   type OperationsPreviewData,
   type OperationsImportResultSummary,
 } from "../actions-operaciones"
+import { downloadErrorsXlsx, importErrorKey, Stat } from "@/lib/combustibles/wizard-helpers"
 
 type Step = "form" | "preview" | "done"
 
@@ -26,6 +26,8 @@ export function OperationsImportWizard() {
   const [notas, setNotas] = useState("")
   const [autoCreateVehicles, setAutoCreateVehicles] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [columnsOpen, setColumnsOpen] = useState(false)
   const [preview, setPreview] = useState<OperationsPreviewData | null>(null)
   const [confirmDuplicates, setConfirmDuplicates] = useState(false)
   const [result, setResult] = useState<OperationsImportResultSummary | null>(null)
@@ -84,8 +86,16 @@ export function OperationsImportWizard() {
 
   function handleFile(f: File | undefined) {
     if (!f) return
-    if (!/\.xlsx$/i.test(f.name)) { toast.error("El archivo debe ser .xlsx"); return }
+    if (!/\.xlsx$/i.test(f.name)) {
+      setFileError("Solo se aceptan archivos .xlsx")
+      return
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      setFileError("El archivo no puede superar los 5 MB")
+      return
+    }
     setFile(f)
+    setFileError(null)
   }
 
   const canConfirm = !!preview && preview.totales.totalFilas > 0 && (!preview.archivoDuplicado || confirmDuplicates)
@@ -101,11 +111,23 @@ export function OperationsImportWizard() {
           </div>
           {result.errors.length > 0 && (
             <div className="text-sm text-left p-3 bg-[var(--color-warning-tint)] rounded-md max-w-md mx-auto">
-              <p className="font-medium text-[var(--color-warning)] mb-1">{result.errors.length} filas omitidas por errores:</p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="font-medium text-[var(--color-warning)]">{result.errors.length} filas omitidas por errores:</p>
+                <button
+                  type="button"
+                  onClick={() => downloadErrorsXlsx(result.errors, "errores-operaciones.xlsx")}
+                  className="text-xs text-[var(--color-primary)] hover:underline"
+                >
+                  Descargar (.xlsx)
+                </button>
+              </div>
               <div className="max-h-32 overflow-y-auto space-y-0.5 text-muted-foreground">
-                {result.errors.slice(0, 20).map((e, i) => (
-                  <p key={i}>• Fila {e.rowIndex} — {e.field}: {e.message}</p>
+                {result.errors.slice(0, 20).map((e) => (
+                  <p key={importErrorKey(e)}>• Fila {e.rowIndex} — {e.field}: {e.message}</p>
                 ))}
+                {result.errors.length > 20 && (
+                  <p className="text-xs text-muted-foreground">…y {result.errors.length - 20} errores más</p>
+                )}
               </div>
             </div>
           )}
@@ -155,11 +177,25 @@ export function OperationsImportWizard() {
           )}
 
           {preview.errores.length > 0 && (
-            <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm max-h-40 overflow-y-auto">
-              <p className="font-medium mb-1">Filas con errores (no se importarán):</p>
-              {preview.errores.slice(0, 30).map((e, i) => (
-                <p key={i} className="text-[var(--color-danger)]">Fila {e.rowIndex} — {e.field}: {e.message}</p>
-              ))}
+            <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm">
+              <div className="flex items-center justify-between mb-1">
+                <p className="font-medium">Filas con errores (no se importarán):</p>
+                <button
+                  type="button"
+                  onClick={() => downloadErrorsXlsx(preview.errores, "errores-preview-operaciones.xlsx")}
+                  className="text-xs text-[var(--color-primary)] hover:underline"
+                >
+                  Descargar errores (.xlsx)
+                </button>
+              </div>
+              <div className="max-h-40 overflow-y-auto space-y-0.5">
+                {preview.errores.slice(0, 30).map((e) => (
+                  <p key={importErrorKey(e)} className="text-[var(--color-danger)]">Fila {e.rowIndex} — {e.field}: {e.message}</p>
+                ))}
+                {preview.errores.length > 30 && (
+                  <p className="text-xs text-muted-foreground">…y {preview.errores.length - 30} errores más. Usa el botón de arriba para descargar la lista completa.</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -222,34 +258,60 @@ export function OperationsImportWizard() {
           className={cn(
             "flex flex-col items-center justify-center gap-3 cursor-pointer text-center",
             "rounded-[var(--radius-xl)] border-2 border-dashed px-6 py-10",
-            dragActive
-              ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)]"
-              : "border-[var(--color-border)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-surface-2)]",
+            fileError
+              ? "border-[var(--color-danger)] bg-[var(--color-danger-tint)]"
+              : dragActive
+                ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)]"
+                : "border-[var(--color-border)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-surface-2)]",
           )}
         >
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-primary-tint)]">
-            <Upload className="h-6 w-6 text-[var(--color-primary)]" weight="bold" />
+          <div className={cn(
+            "flex h-12 w-12 items-center justify-center rounded-full",
+            fileError ? "bg-[var(--color-danger-tint)]" : "bg-[var(--color-primary-tint)]",
+          )}>
+            {fileError ? (
+              <WarningCircle className="h-6 w-6 text-[var(--color-danger)]" weight="bold" />
+            ) : (
+              <Upload className="h-6 w-6 text-[var(--color-primary)]" weight="bold" />
+            )}
           </div>
           <div>
-            <p className="text-sm font-medium text-[var(--color-text)]">
-              {file ? file.name : <>Arrastra tu archivo aquí o <span className="text-[var(--color-primary)]">haz clic para buscar</span></>}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">Consolidado de cargas de combustible — .xlsx</p>
+            {fileError ? (
+              <p className="text-sm font-medium text-[var(--color-danger)]">{fileError}</p>
+            ) : (
+              <p className="text-sm font-medium text-[var(--color-text)]">
+                {file ? file.name : <>Arrastra tu archivo aquí o <span className="text-[var(--color-primary)]">haz clic para buscar</span></>}
+              </p>
+            )}
+            {!fileError && (
+              <p className="text-xs text-muted-foreground mt-0.5">Consolidado de cargas de combustible — .xlsx</p>
+            )}
           </div>
           <input type="file" accept=".xlsx" onChange={(e) => handleFile(e.target.files?.[0])} className="sr-only" />
         </label>
 
-        <details className="group rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3.5 py-2.5">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
-            <FileText className="h-4 w-4 text-muted-foreground" />
-            Columnas esperadas
-          </summary>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Codigo, Patente, Fecha, Hora Carga, Faena, Tipo Equipo, Marca, Modelo, Año,
-            Horómetro/Odómetro, Medido Por (Km/Hora), LT, Operador, Supervisor Turno,
-            Suministro entregado por, Rendimiento, Tipo de Rendimiento, $/lt, Monto ($)
-          </p>
-        </details>
+        <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)]">
+          <button
+            type="button"
+            onClick={() => setColumnsOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-3.5 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] rounded-t-[var(--radius-lg)]"
+          >
+            <span className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              Columnas esperadas
+            </span>
+            {columnsOpen ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+          </button>
+          {columnsOpen && (
+            <div className="border-t border-[var(--color-border)] px-3.5 py-3">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Codigo, Patente, Fecha, Hora Carga, Faena, Tipo Equipo, Marca, Modelo, Año,
+                Horometro/Odometro, Medido Por (Km/Hora), LT, Operador, Supervisor Turno,
+                Suministro entregado por, Rendimiento, Tipo de Rendimiento, $/lt, Monto ($)
+              </p>
+            </div>
+          )}
+        </section>
 
         <div className="flex justify-end">
           <Button onClick={handlePreview} disabled={loading}>
@@ -258,17 +320,5 @@ export function OperationsImportWizard() {
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function Stat({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2 p-3 rounded-md border border-[var(--color-border)]">
-      {icon}
-      <div>
-        <p className="text-lg font-bold leading-tight">{value}</p>
-        <p className="text-xs text-muted-foreground">{label}</p>
-      </div>
-    </div>
   )
 }

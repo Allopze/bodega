@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { Bug } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -36,7 +35,6 @@ export function ReportErrorButton({
   error,
   variant = "ghost",
 }: ReportErrorButtonProps) {
-  const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [description, setDescription] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
@@ -44,7 +42,7 @@ export function ReportErrorButton({
   const pageUrl = React.useMemo(() => {
     if (typeof window === "undefined") return ""
     return window.location.pathname + window.location.search
-  }, [open])
+  }, [])
 
   const errorDigest = error?.digest
   const errorMessage = error?.message

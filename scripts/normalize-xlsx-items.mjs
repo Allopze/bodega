@@ -183,7 +183,7 @@ for (const item of items) {
   byBaseSku.get(base).push(item)
 }
 
-for (const [baseSku, group] of byBaseSku) {
+for (const [_baseSku, group] of byBaseSku) {
   if (group.length < 2) continue
   const fps = group.map(i => fingerprint(i.nombre, i.proveedor, i.precio, i.attrsRaw))
   const unique = new Set(fps)
@@ -220,7 +220,7 @@ for (const item of items) {
   byProduct.get(fp).push(item)
 }
 
-for (const [fp, group] of byProduct) {
+for (const [_fp, group] of byProduct) {
   if (group.length < 2) continue
   // Different SKUs but same product → remove all copies
   const idxs = group.map(i => i.idx)
