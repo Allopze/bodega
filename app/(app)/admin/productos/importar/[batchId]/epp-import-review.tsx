@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cancelEppImportBatchAction, confirmEppImportBatchAction, reviewEppImportRowAction } from "../../actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { toast } from "@/lib/toast"
-import { VALID_UNITS, VALID_COLORS, EPP_TYPES, RULE_LABELS, type NormalizedEppRow } from "@/lib/services/epp-import.types"
+import { VALID_UNITS, VALID_COLORS, EPP_TYPES, RULE_LABELS, type NormalizedEppRow, type EppAttribute } from "@/lib/services/epp-import.types"
 
 type ReviewRow = {
   id: string; rowNumber: number; originalJson: string; normalizedJson: string; severity: string; decision: string; targetProductId: string | null; reviewReason: string | null
@@ -31,7 +31,13 @@ type EditableNormalized = {
 }
 
 function toEditable(normalized: NormalizedEppRow): EditableNormalized {
-  const findAttr = (prefix: string) => normalized.attributes.find((a) => a.name.startsWith(prefix))?.value ?? null
+  const findAttr = (prefix: string) => {
+    const attr = normalized.attributes.find((a) => a.name.startsWith(prefix))
+    if (!attr) return null
+    // If multi-value, return as comma-separated so buildMultiValueAttr can detect it
+    if (attr.values && attr.values.length > 1) return attr.values.join(", ")
+    return attr.value
+  }
   return {
     name: normalized.name,
     unitOfMeasure: normalized.unitOfMeasure,
@@ -46,12 +52,29 @@ function toEditable(normalized: NormalizedEppRow): EditableNormalized {
   }
 }
 
+function buildMultiValueAttr(name: string, rawValue: string): EppAttribute {
+  if (rawValue.includes(",")) {
+    const values = rawValue.split(",").map((s) => s.trim()).filter(Boolean)
+    return { name, value: values.join(", "), values }
+  }
+  return { name, value: rawValue }
+}
+
 function toNormalizedJson(edit: EditableNormalized, original: NormalizedEppRow): string {
-  const attributes = [
-    ...(edit.color ? [{ name: "Color", value: edit.color }] : []),
-    ...(edit.talla ? [{ name: /^\d{2}$/.test(edit.talla) ? "Talla calzado" : "Talla", value: edit.talla }] : []),
+  // Build talla attribute: detect semicolons for multi-talla
+  let tallaAttr: EppAttribute | null = null
+  if (edit.talla) {
+    const firstVal = edit.talla.split(",")[0]?.trim() ?? ""
+    const tallaName = /^\d{2}$/.test(firstVal) ? "Talla calzado" : "Talla"
+    tallaAttr = buildMultiValueAttr(tallaName, edit.talla)
+  }
+
+  const attributes: EppAttribute[] = [
+    ...(edit.color ? [buildMultiValueAttr("Color", edit.color)] : []),
+    ...(tallaAttr ? [tallaAttr] : []),
     ...(edit.material ? [{ name: "Material", value: edit.material }] : []),
   ]
+
   const normalized: NormalizedEppRow = {
     ...original,
     name: edit.name,

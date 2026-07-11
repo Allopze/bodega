@@ -23,7 +23,7 @@ const PRIORITY_OPTIONS: { value: FeedbackPrioridad; label: string }[] = [
   { value: "baja", label: "Baja" },
   { value: "normal", label: "Normal" },
   { value: "alta", label: "Alta" },
-  { value: "critica", label: "Crítica" },
+  { value: "critica", label: "Crítico" },
 ]
 
 export function ReportForm() {

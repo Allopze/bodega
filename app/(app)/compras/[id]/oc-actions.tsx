@@ -132,7 +132,7 @@ export function OcActions({
             Volver
           </button>
           <SubmitButton
-            label="Cerrar orden"
+            label="Cerrar OC"
             loadingLabel="Cerrando..."
             variant="destructive"
             size="sm"

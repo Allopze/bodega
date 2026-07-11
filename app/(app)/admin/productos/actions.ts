@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { eppProductFamilies, products, productAttributes, productSuppliers, productCategories } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -356,6 +356,34 @@ export async function toggleProductActive(_prev: ActionState, formData: FormData
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: activate ? "Producto activado" : "Producto desactivado" }
+}
+
+export async function bulkToggleProductActiveAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:products") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const idsRaw = formData.get("ids") as string
+  const activate = formData.get("activate") === "true"
+  if (!idsRaw) return { ok: false, message: "IDs requeridos" }
+
+  const ids = idsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+  if (ids.length === 0) return { ok: false, message: "Selecciona al menos un producto" }
+  if (ids.length > 100) return { ok: false, message: "Máximo 100 productos por operación" }
+
+  const now = new Date().toISOString()
+  await db.update(products)
+    .set({ isActive: activate, updatedAt: now })
+    .where(inArray(products.id, ids))
+
+  await recordAudit({
+    userId: session.user.id, userEmail: session.user.email ?? undefined,
+    action: "update", entityType: "product", entityId: `bulk:${ids.join(",")}`,
+    oldState: { isActive: !activate }, newState: { isActive: activate, count: ids.length },
+  })
+
+  revalidatePath(REVALIDATE)
+  return { ok: true, message: `${ids.length} producto${ids.length === 1 ? "" : "s"} ${activate ? "activado" : "desactivado"}${ids.length === 1 ? "" : "s"}` }
 }
 
 export async function importProductsXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {

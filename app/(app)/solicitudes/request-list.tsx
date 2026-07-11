@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
 import { toast } from "@/lib/toast"
+import { urgencyLabel } from "@/lib/urgency-labels"
 import { useActionState, useTransition } from "react"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
@@ -48,12 +49,6 @@ const COLUMNS = [
   { key: "createdAt",     label: "Fecha",      sortable: true,  width: "w-32" },
   { key: "_actions",      label: "",           sortable: false, width: "w-10" },
 ]
-
-const URGENCY_LABELS: Record<string, string> = {
-  normal:   "Normal",
-  high:     "Alta",
-  critical: "Crítica",
-}
 
 const URGENCY_DOT: Record<string, string> = {
   normal:   "text-[var(--color-text-subtle)]",
@@ -204,7 +199,7 @@ export function RequestList({
                       </Badge>
                       <span className={`inline-flex items-center gap-1 text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>
                         <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        {URGENCY_LABELS[r.urgency] ?? r.urgency}
+                        {urgencyLabel(r.urgency)}
                       </span>
                     </div>
                   </div>
@@ -272,7 +267,7 @@ export function RequestList({
               </TableCell>
               <TableCell>
                 <span className={`text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>
-                  {URGENCY_LABELS[r.urgency] ?? r.urgency}
+                  {urgencyLabel(r.urgency)}
                 </span>
               </TableCell>
               <TableCell className="tabular-nums text-sm text-[var(--color-text-muted)] text-right pr-6">

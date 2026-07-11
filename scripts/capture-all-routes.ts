@@ -374,6 +374,30 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Ver auditoría" },
     { id: "p-adm-smtp", name: "admin:smtp", module: "admin", description: "Configurar SMTP" },
     { id: "p-adm-tpl", name: "admin:email_templates", module: "admin", description: "Gestionar plantillas de correo" },
+    { id: "p-adm-roles", name: "admin:roles", module: "admin", description: "Gestionar roles y permisos" },
+    { id: "p-adm-security", name: "admin:security", module: "admin", description: "Configurar seguridad" },
+    { id: "p-adm-folios", name: "admin:folios", module: "admin", description: "Gestionar folios" },
+    { id: "p-adm-notif", name: "admin:notifications", module: "admin", description: "Gestionar notificaciones" },
+    { id: "p-adm-cost", name: "admin:cost_centers", module: "admin", description: "Gestionar centros de costo" },
+    { id: "p-adm-doctax", name: "admin:document_taxonomy", module: "admin", description: "Gestionar taxonomía documental" },
+    { id: "p-adm-fleet", name: "admin:fleet_catalog", module: "admin", description: "Gestionar catálogos de flota" },
+    { id: "p-adm-ops", name: "admin:ops_settings", module: "admin", description: "Gestionar parámetros operativos" },
+    { id: "p-adm-pdtp", name: "admin:pdtp_catalog", module: "admin", description: "Gestionar catálogos PDTP" },
+    { id: "p-adm-epp-up", name: "admin:epp_import_upload", module: "admin", description: "Cargar lotes EPP" },
+    { id: "p-adm-epp-rev", name: "admin:epp_import_review", module: "admin", description: "Revisar lotes EPP" },
+    { id: "p-adm-epp-conf", name: "admin:epp_import_confirm", module: "admin", description: "Confirmar importación EPP" },
+    { id: "p-adm-mngadm", name: "admin:manage_admins", module: "admin", description: "Administrar otros administradores" },
+    // ── Prevención / PDTP / Documentación ──────────────────────────────
+    { id: "p-prev-pdtp-view", name: "prevention:pdtp:view", module: "prevention", description: "Ver PDTP" },
+    { id: "p-prev-pdtp-mng", name: "prevention:pdtp:manage", module: "prevention", description: "Gestionar PDTP" },
+    { id: "p-prev-pdtp-apr", name: "prevention:pdtp:approve", module: "prevention", description: "Aprobar PDTP" },
+    { id: "p-prev-pdtp-sgn", name: "prevention:pdtp:sign_legal", module: "prevention", description: "Firma legal PDTP" },
+    { id: "p-prev-docs-view", name: "prevention:docs:view", module: "prevention", description: "Ver documentación SST" },
+    { id: "p-prev-docs-mng", name: "prevention:docs:manage", module: "prevention", description: "Gestionar documentación SST" },
+    { id: "p-prev-docs-arch", name: "prevention:docs:archive", module: "prevention", description: "Archivar documentación SST" },
+    { id: "p-pur-del", name: "purchasing:delete_order", module: "purchasing", description: "Eliminar OC" },
+    { id: "p-req-del", name: "requests:delete", module: "requests", description: "Eliminar solicitudes" },
+    { id: "p-sst-acomp", name: "sst:evaluate_acompanamiento", module: "sst", description: "Evaluar acompañamiento" },
     { id: "p-del-view", name: "deliveries:view", module: "deliveries", description: "Ver entregas" },
     { id: "p-trz-view", name: "traceability:view", module: "traceability", description: "Ver trazabilidad" },
     { id: "p-rep-create", name: "repuestos:create", module: "repuestos", description: "Crear solicitudes de repuestos" },
@@ -392,12 +416,15 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "p-sst-manage", name: "sst:manage", module: "sst", description: "Gestionar plan de acción SST" },
   ]
 
+  // isGlobal debe alinearse con GLOBAL_ROLES en lib/auth/scope.ts para que
+  // requirePermission + isGlobalRole no redirijan al admin a /forbidden
+  // durante la captura (bug histórico: sin isGlobal el admin veía páginas vacías).
   const roles: (typeof schema.roles.$inferInsert)[] = [
-    { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total para auditoría visual" },
-    { id: "rol-jefa", name: "jefa_chome", label: "Jefatura Chome", description: "Aprueba solicitudes y coordina compras" },
-    { id: "rol-prevencion", name: "prevencionista_faena", label: "Prevencionista faena", description: "Solicita EPP y servicios desde faena" },
-    { id: "rol-bodega", name: "bodega", label: "Encargado bodega", description: "Gestiona recepción, stock y entregas" },
-    { id: "rol-secretaria", name: "secretaria", label: "Secretaría", description: "Apoya compras y documentación" },
+    { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total para auditoría visual", isGlobal: true },
+    { id: "rol-jefa", name: "jefa_chome", label: "Jefatura Chome", description: "Aprueba solicitudes y coordina compras", isGlobal: true },
+    { id: "rol-prevencion", name: "prevencionista_faena", label: "Prevencionista faena", description: "Solicita EPP y servicios desde faena", isGlobal: false },
+    { id: "rol-bodega", name: "bodega", label: "Encargado bodega", description: "Gestiona recepción, stock y entregas", isGlobal: false },
+    { id: "rol-secretaria", name: "secretaria", label: "Secretaría", description: "Apoya compras y documentación", isGlobal: true },
   ]
 
   await db.insert(schema.roles).values(roles)

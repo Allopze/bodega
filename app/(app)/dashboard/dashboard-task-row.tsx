@@ -24,7 +24,7 @@ export const TASK_ICON: Record<WorkTaskType, IconComponent> = {
 }
 
 export const PRIORITY_LABEL: Record<WorkPriority, string> = {
-  critical: "Crítica",
+  critical: "Crítico",
   high:     "Alta",
   normal:   "Normal",
   low:      "Baja",

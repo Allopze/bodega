@@ -53,7 +53,7 @@ export function RankingTable({
 }
 
 export function SeverityBadge({ severity }: { severity: AnalyticsAlertSeverity }) {
-  if (severity === "critical") return <Badge variant="signal" size="sm" dot>Crítica</Badge>
+  if (severity === "critical") return <Badge variant="signal" size="sm" dot>Crítico</Badge>
   if (severity === "high") return <Badge variant="warning" size="sm" dot>Alta</Badge>
   if (severity === "medium") return <Badge variant="default" size="sm">Media</Badge>
   return <Badge variant="outline" size="sm">Baja</Badge>

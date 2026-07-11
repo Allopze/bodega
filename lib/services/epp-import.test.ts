@@ -39,6 +39,102 @@ describe("normalizeEppRow", () => {
     expect(blue.identityKey).not.toBe(red.identityKey)
     expect(blue.familyIdentityKey).toBe(red.familyIdentityKey)
   })
+
+  it("handles multi-talla from comma-separated column", () => {
+    const result = normalizeEppRow({ name: "GUANTE NITRILO AZUL", unitOfMeasure: "unidad", size: "S, M, L, XL" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Azul" },
+      { name: "Talla", value: "S, M, L, XL", values: ["S", "M", "L", "XL"] },
+      { name: "Material", value: "Nitrilo" },
+    ]))
+    expect(result.issues).toEqual([])
+    // canonical name should NOT include sizes
+    expect(result.name).toBe("Guante Nitrilo")
+    // identity key should NOT include multi-talla
+    expect(result.identityKey).not.toContain("talla")
+  })
+
+  it("handles multi-talla calzado from comma-separated column", () => {
+    const result = normalizeEppRow({ name: "BOTIN SEGURIDAD", unitOfMeasure: "par", size: "38, 39, 40, 41, 42" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Talla calzado", value: "38, 39, 40, 41, 42", values: ["38", "39", "40", "41", "42"] },
+    ]))
+    expect(result.issues).toEqual([])
+    // identity key should NOT include multi-talla calzado
+    expect(result.identityKey).not.toContain("talla")
+  })
+
+  it("single talla from column still works (backward compat)", () => {
+    const result = normalizeEppRow({ name: "GUANTE NITRILO AZUL", unitOfMeasure: "unidad", size: "M", color: "Azul" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Azul" },
+      { name: "Talla", value: "M" },
+    ]))
+    // single-talla still includes talla in identity key (backward compat)
+    expect(result.identityKey).toContain("talla=m")
+  })
+
+  it("preserves multi-talla through review round-trip", () => {
+    const original = normalizeEppRow({ name: "GUANTE NITRILO AZUL", unitOfMeasure: "unidad", size: "S, M, L, XL" })
+    const reParsed = normalizeEppRow({ name: "GUANTE NITRILO AZUL", unitOfMeasure: "unidad", size: "S, M, L, XL" })
+
+    expect(original.identityKey).toBe(reParsed.identityKey)
+    expect(original.attributes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Talla", values: ["S", "M", "L", "XL"] }),
+    ]))
+  })
+
+  it("handles multi-color from comma-separated column", () => {
+    const result = normalizeEppRow({ name: "CASCO SEGURIDAD", unitOfMeasure: "unidad", color: "Amarillo, Blanco, Naranjo" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Amarillo, Blanco, Naranjo", values: ["Amarillo", "Blanco", "Naranjo"] },
+    ]))
+    expect(result.issues).toEqual([])
+    expect(result.name).toBe("Casco Seguridad")
+    // identity key should NOT include multi-color
+    expect(result.identityKey).not.toContain("color")
+  })
+
+  it("canonicalizes multi-color values when possible", () => {
+    const result = normalizeEppRow({ name: "GUANTE SEGURIDAD", unitOfMeasure: "unidad", color: "AZUL, ROJO, VERDE" })
+
+    // Colors are canonicalized (azul -> Azul, rojo -> Rojo, verde -> Verde)
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Azul, Rojo, Verde", values: ["Azul", "Rojo", "Verde"] },
+    ]))
+  })
+
+  it("handles multi-color + multi-talla together", () => {
+    const result = normalizeEppRow({
+      name: "GUANTE NITRILO",
+      unitOfMeasure: "unidad",
+      color: "Azul, Rojo, Verde",
+      size: "S, M, L",
+    })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Color", values: ["Azul", "Rojo", "Verde"] }),
+      expect.objectContaining({ name: "Talla", values: ["S", "M", "L"] }),
+    ]))
+    expect(result.issues).toEqual([])
+    // Both multi-value attrs excluded from identity key
+    expect(result.identityKey).not.toContain("color")
+    expect(result.identityKey).not.toContain("talla")
+  })
+
+  it("single color from column still works (backward compat)", () => {
+    const result = normalizeEppRow({ name: "CASCO", unitOfMeasure: "unidad", color: "Azul" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Azul" },
+    ]))
+    // Single color still included in identity key (backward compat)
+    expect(result.identityKey).toContain("color=azul")
+  })
 })
 
 describe("parseEppWorkbook", () => {

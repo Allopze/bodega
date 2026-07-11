@@ -71,7 +71,7 @@ function RequestFormHeader({
             <SelectContent>{requestTypeOpts.map((o) => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
           </Select>
         </Field>
-        <Field label="Urgencia" htmlFor="urgency" helper="Alta y Crítica destacan los ítems en la cola de aprobación.">
+        <Field label="Urgencia" htmlFor="urgency" helper="Alta y Crítico destacan los ítems en la cola de aprobación.">
           <Select value={urgency} onValueChange={onUrgencyChange} disabled={readOnly}>
             <SelectTrigger id="urgency"><SelectValue /></SelectTrigger>
             <SelectContent>{URGENCY_OPTS.map((o) => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>

@@ -1,12 +1,11 @@
 "use client"
 
 import type { FilterOption } from "@/components/adquisiciones/list-filters"
+import { URGENCY_OPTIONS as CANONICAL_URGENCY_OPTIONS, URGENCY_LABELS, urgencyLabel } from "@/lib/urgency-labels"
 
-export const URGENCY_OPTIONS: FilterOption[] = [
-  { value: "normal",   label: "Normal"   },
-  { value: "high",     label: "Urgente"  },
-  { value: "critical", label: "Crítico"  },
-]
+export const URGENCY_OPTIONS: FilterOption[] = CANONICAL_URGENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
+
+export { URGENCY_LABELS, urgencyLabel }
 
 export const REQUEST_TYPE_LABELS: Record<string, string> = {
   epp:  "EPP",
@@ -18,11 +17,7 @@ export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning
   otro: "default",
 }
 
-export const URGENCY_LABEL: Record<string, string> = {
-  normal:   "Normal",
-  high:     "Urgente",
-  critical: "Crítico",
-}
+export const URGENCY_LABEL: Record<string, string> = URGENCY_LABELS
 
 export const URGENCY_CLASS: Record<string, string> = {
   normal:   "text-[var(--color-text-muted)]",

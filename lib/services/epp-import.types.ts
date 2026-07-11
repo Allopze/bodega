@@ -8,7 +8,7 @@
 
 export type ImportSeverity = "info" | "warning" | "blocking"
 export type ImportDecision = "pending" | "create" | "update" | "skip" | "blocked"
-export interface EppAttribute { name: string; value: string }
+export interface EppAttribute { name: string; value: string; values?: string[] }
 export interface ImportCorrection { field: string; from: string | null; to: string | null; ruleId: string; confidence: number }
 export interface NormalizedEppRow {
   sourceCode: string | null; name: string; canonicalName: string; description: string | null; supplierName: string | null; price: number | null
@@ -78,25 +78,54 @@ export async function parseEppWorkbook(buffer: Buffer) {
 export function normalizeEppRow(source: Record<string, string>): NormalizedEppRow {
   const issues: NormalizedEppRow["issues"] = []
   const corrections: EppAttribute[] = parseNamedAttributes(source.attributes)
-  const explicitColor = canonicalColor(source.color)
+  const rawColor = cleanText(source.color)
   const rawName = cleanText(source.name)
   let workingName = rawName
-  const colorsInName = Object.keys(COLOR_ALIASES).filter((color) => new RegExp(`\\b${escapeRegex(color)}\\b`, "i").test(workingName))
-  if (colorsInName.length > 1 && /\//.test(workingName)) issues.push({ severity: "blocking", message: "El nombre contiene colores alternativos incompatibles." })
-  const detectedColor = colorsInName.length === 1 ? canonicalColor(colorsInName[0]) : null
-  if (explicitColor && detectedColor && explicitColor !== detectedColor) issues.push({ severity: "blocking", message: "El color de la columna contradice el color del nombre." })
-  const color = explicitColor ?? detectedColor
-  if (color) {
-    addAttribute(corrections, "Color", color)
-    if (!explicitColor) workingName = removeToken(workingName, colorsInName[0]!)
+
+  // ── Multi-color: comma-separated values in the color column ──────────
+  const multiColorRaw = rawColor ? rawColor.split(",").map((s) => s.trim()).filter(Boolean) : null
+  if (multiColorRaw && multiColorRaw.length > 1) {
+    const normalizedColors = multiColorRaw.map((c) => canonicalColor(c) ?? c).filter(Boolean)
+    const existingColorAttr = findMatchingAttribute(corrections, "Color")
+    if (existingColorAttr) {
+      existingColorAttr.values = normalizedColors
+      existingColorAttr.value = normalizedColors.join(", ")
+    } else {
+      corrections.push({ name: "Color", value: normalizedColors.join(", "), values: normalizedColors })
+    }
+  } else {
+    const explicitColor = canonicalColor(rawColor)
+    const colorsInName = Object.keys(COLOR_ALIASES).filter((color) => new RegExp(`\\b${escapeRegex(color)}\\b`, "i").test(workingName))
+    if (colorsInName.length > 1 && /\//.test(workingName)) issues.push({ severity: "blocking", message: "El nombre contiene colores alternativos incompatibles." })
+    const detectedColor = colorsInName.length === 1 ? canonicalColor(colorsInName[0]) : null
+    if (explicitColor && detectedColor && explicitColor !== detectedColor) issues.push({ severity: "blocking", message: "El color de la columna contradice el color del nombre." })
+    const color = explicitColor ?? detectedColor
+    if (color) {
+      addAttribute(corrections, "Color", color)
+      if (!explicitColor) workingName = removeToken(workingName, colorsInName[0]!)
+    }
   }
   const explicitSize = cleanText(source.size)
-  const sizeMatch = explicitSize || (cleanText(source.model) ? null : extractSize(workingName))
-  if (sizeMatch) {
-    addAttribute(corrections, /^\d{2}$/.test(sizeMatch) ? "Talla calzado" : "Talla", normalizeSize(sizeMatch))
-    if (!explicitSize) {
-      workingName = cleanText(workingName.replace(new RegExp(`\\btalla\\s+${escapeRegex(sizeMatch)}\\b`, "i"), ""))
-      workingName = removeToken(workingName, sizeMatch)
+  // ── Multi-talla: comma-separated values in the size column ────────────
+  const multiTalla = explicitSize ? explicitSize.split(",").map((s) => s.trim()).filter(Boolean) : null
+  if (multiTalla && multiTalla.length > 1) {
+    const attrName = /^\d{2}$/.test(multiTalla[0]!) ? "Talla calzado" : "Talla"
+    const normalizedValues = multiTalla.map((v) => normalizeSize(v))
+    const existingAttr = findMatchingAttribute(corrections, attrName)
+    if (existingAttr) {
+      existingAttr.values = normalizedValues
+      existingAttr.value = normalizedValues.join(", ")
+    } else {
+      corrections.push({ name: attrName, value: normalizedValues.join(", "), values: normalizedValues })
+    }
+  } else {
+    const sizeMatch = explicitSize || (cleanText(source.model) ? null : extractSize(workingName))
+    if (sizeMatch) {
+      addAttribute(corrections, /^\d{2}$/.test(sizeMatch) ? "Talla calzado" : "Talla", normalizeSize(sizeMatch))
+      if (!explicitSize) {
+        workingName = cleanText(workingName.replace(new RegExp(`\\btalla\\s+${escapeRegex(sizeMatch)}\\b`, "i"), ""))
+        workingName = removeToken(workingName, sizeMatch)
+      }
     }
   }
   const eppType = EPP_TYPES.find((type) => {
@@ -147,6 +176,10 @@ function addAttribute(attributes: EppAttribute[], name: string, value: string) {
   if (!attributes.some((attribute) => normalizeKey(attribute.name) === normalizeKey(name))) attributes.push({ name, value })
 }
 
+function findMatchingAttribute(attributes: EppAttribute[], name: string): EppAttribute | undefined {
+  return attributes.find((attribute) => normalizeKey(attribute.name) === normalizeKey(name))
+}
+
 function canonicalColor(value: string | undefined) {
   return COLOR_ALIASES[normalizeKey(value ?? "")] ?? null
 }
@@ -175,7 +208,10 @@ function parsePrice(value: string | undefined) {
 }
 
 function identityKey(row: Pick<NormalizedEppRow, "canonicalName" | "categoryName" | "brand" | "model" | "attributes">) {
-  return [normalizeKey(row.categoryName), normalizeKey(row.canonicalName), normalizeKey(row.brand ?? ""), normalizeKey(row.model ?? ""), ...row.attributes.map((attribute) => `${normalizeKey(attribute.name)}=${normalizeKey(attribute.value)}`).sort()].join("|")
+  // Exclude multi-value attributes (e.g., multiple tallas) from identity key
+  // so they map to the same product
+  const filteredAttrs = row.attributes.filter((attribute) => !attribute.values || attribute.values.length <= 1)
+  return [normalizeKey(row.categoryName), normalizeKey(row.canonicalName), normalizeKey(row.brand ?? ""), normalizeKey(row.model ?? ""), ...filteredAttrs.map((attribute) => `${normalizeKey(attribute.name)}=${normalizeKey(attribute.value)}`).sort()].join("|")
 }
 
 export function buildEppFamilyIdentityKey(row: Pick<NormalizedEppRow, "canonicalName" | "categoryName" | "brand" | "model">) {
@@ -202,13 +238,26 @@ function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
+/** Parse a JSON array of attribute options and check if a value is present. */
+function attrOptionIncludes(options: string | null, value: string): boolean {
+  if (!options) return false
+  try {
+    const parsed = JSON.parse(options)
+    if (Array.isArray(parsed) && parsed.some((opt: string) => normalizeKey(opt) === normalizeKey(value))) return true
+  } catch { /* fall through to string includes */ }
+  return normalizeKey(options).includes(normalizeKey(value))
+}
+
 export function findProductMatches(normalized: NormalizedEppRow, existing: Array<{ id: string; name: string; unitOfMeasure: string; productAttributes: Array<{ name: string; options: string | null }> }>) {
   return existing.map((product) => {
     let score = 0; const reasons: string[] = []
     if (normalizeKey(product.name) === normalizeKey(normalized.name)) { score += 70; reasons.push("Nombre canónico equivalente") }
     if (product.unitOfMeasure === normalized.unitOfMeasure) { score += 10; reasons.push("Unidad equivalente") }
-    const attributes = product.productAttributes.map((attribute) => `${normalizeKey(attribute.name)}:${normalizeKey(attribute.options ?? "")}`)
-    const sameAttributes = normalized.attributes.filter((attribute) => attributes.some((value) => value.includes(`${normalizeKey(attribute.name)}:${normalizeKey(attribute.value)}`))).length
+    const sameAttributes = normalized.attributes.filter((attribute) => {
+      // Check multi-value: does any value in the normalized attribute match an option?
+      const values = attribute.values ?? [attribute.value]
+      return values.some((v) => product.productAttributes.some((pa) => normalizeKey(pa.name) === normalizeKey(attribute.name) && attrOptionIncludes(pa.options, v)))
+    }).length
     if (sameAttributes) { score += Math.min(20, sameAttributes * 10); reasons.push("Atributos equivalentes") }
     return { productId: product.id, score, reasons }
   }).filter((match) => match.score >= 70).sort((a, b) => b.score - a.score).slice(0, 3)

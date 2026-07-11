@@ -123,7 +123,7 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
                 disabled={deletePending}
                 onClick={(e) => { e.stopPropagation(); setDeleteOpen(true) }}
                 className="inline-flex items-center justify-center rounded p-1 text-text-subtle hover:text-danger hover:bg-danger-tint transition-colors disabled:opacity-40"
-                title="Eliminar orden"
+                title="Eliminar OC"
                 aria-label={`Eliminar OC ${row.code}`}
               >
                 <Trash size={15} />
