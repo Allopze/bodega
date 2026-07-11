@@ -1,12 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { useState } from "react"
+import { useActionState, useEffect, useState } from "react"
 import Link from "next/link"
+import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
+import { toast } from "@/lib/toast"
+import { INITIAL_STATE } from "@/components/admin/form-state"
+import { togglePdtpResponsibleActiveAction, togglePdtpSheetActiveAction } from "./actions"
 import { ResponsibleForm, type ResponsibleRow } from "./responsible-form"
 import { SheetForm, type SheetRow } from "./sheet-form"
 
@@ -15,7 +19,8 @@ const RESP_COLUMNS = [
   { key: "roleName", label: "Rol", sortable: true, width: "w-44" },
   { key: "kind", label: "Tipo", sortable: true, width: "w-28" },
   { key: "notes", label: "Notas", sortable: true },
-  { key: "", label: "", sortable: false, width: "w-20" },
+  { key: "isActive", label: "Estado", sortable: true, width: "w-28" },
+  { key: "", label: "", sortable: false, width: "w-24" },
 ]
 
 const SHEET_COLUMNS = [
@@ -24,7 +29,8 @@ const SHEET_COLUMNS = [
   { key: "area", label: "Área", sortable: true, width: "w-32" },
   { key: "programId", label: "Programa", sortable: true, width: "w-44" },
   { key: "scopeChips", label: "Alcance", sortable: false },
-  { key: "", label: "", sortable: false, width: "w-20" },
+  { key: "isActive", label: "Estado", sortable: true, width: "w-28" },
+  { key: "", label: "", sortable: false, width: "w-24" },
 ]
 
 export interface ProgramSummary {
@@ -37,6 +43,7 @@ export interface ProgramSummary {
 }
 
 interface CatalogTabsProps {
+  roleOptions: string[]
   responsibles: ResponsibleRow[]
   sheets: SheetRow[]
   programs: ProgramSummary[]
@@ -48,12 +55,26 @@ const TABS = [
   { key: "programs", label: "Programas activos" },
 ] as const
 
-export function CatalogTabs({ responsibles, sheets, programs }: CatalogTabsProps) {
+export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: CatalogTabsProps) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("responsibles")
   const [respSheetOpen, setRespSheetOpen] = useState(false)
   const [editResp, setEditResp] = useState<ResponsibleRow | null>(null)
   const [sheetSheetOpen, setSheetSheetOpen] = useState(false)
   const [editSheet, setEditSheet] = useState<SheetRow | null>(null)
+
+  const [respToggleState, respToggleAction] = useActionState(togglePdtpResponsibleActiveAction, INITIAL_STATE)
+  const [sheetToggleState, sheetToggleAction] = useActionState(togglePdtpSheetActiveAction, INITIAL_STATE)
+
+  useEffect(() => {
+    if (respToggleState.message) {
+      (respToggleState.ok ? toast.success : toast.error).call(null, respToggleState.message)
+    }
+  }, [respToggleState])
+  useEffect(() => {
+    if (sheetToggleState.message) {
+      (sheetToggleState.ok ? toast.success : toast.error).call(null, sheetToggleState.message)
+    }
+  }, [sheetToggleState])
 
   const respRows = responsibles as (ResponsibleRow & Record<string, unknown>)[]
   const sheetRows = sheets as (SheetRow & Record<string, unknown>)[]
@@ -111,14 +132,32 @@ export function CatalogTabs({ responsibles, sheets, programs }: CatalogTabsProps
                     <TableCell>{<Badge variant="default">{r.kind}</Badge>}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{r.notes || "—"}</TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        onClick={() => { setEditResp(r); setRespSheetOpen(true) }}
-                        className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)]"
-                        aria-label={`Editar ${r.displayName}`}
-                      >
-                        Editar
-                      </button>
+                      {r.isActive
+                        ? <Badge variant="success">Activo</Badge>
+                        : <Badge variant="default">Inactivo</Badge>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => { setEditResp(r); setRespSheetOpen(true) }}
+                          className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                          aria-label={`Editar ${r.displayName}`}
+                        >
+                          <PencilSimple size={15} />
+                        </button>
+                        <form action={respToggleAction}>
+                          <input type="hidden" name="slug" value={r.slug} />
+                          <input type="hidden" name="activate" value={String(!r.isActive)} />
+                          <button
+                            type="submit"
+                            className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                            aria-label={r.isActive ? `Desactivar ${r.displayName}` : `Reactivar ${r.displayName}`}
+                          >
+                            {r.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                          </button>
+                        </form>
+                      </div>
                     </TableCell>
                   </TableRow>
                 </React.Fragment>
@@ -179,14 +218,32 @@ export function CatalogTabs({ responsibles, sheets, programs }: CatalogTabsProps
                       </div>
                     </TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        onClick={() => { setEditSheet(s); setSheetSheetOpen(true) }}
-                        className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)]"
-                        aria-label={`Editar ${s.code}`}
-                      >
-                        Editar
-                      </button>
+                      {s.isActive
+                        ? <Badge variant="success">Activa</Badge>
+                        : <Badge variant="default">Inactiva</Badge>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => { setEditSheet(s); setSheetSheetOpen(true) }}
+                          className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                          aria-label={`Editar ${s.code}`}
+                        >
+                          <PencilSimple size={15} />
+                        </button>
+                        <form action={sheetToggleAction}>
+                          <input type="hidden" name="id" value={s.id} />
+                          <input type="hidden" name="activate" value={String(!s.isActive)} />
+                          <button
+                            type="submit"
+                            className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                            aria-label={s.isActive ? `Desactivar ${s.code}` : `Reactivar ${s.code}`}
+                          >
+                            {s.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                          </button>
+                        </form>
+                      </div>
                     </TableCell>
                   </TableRow>
                 </React.Fragment>
@@ -199,6 +256,7 @@ export function CatalogTabs({ responsibles, sheets, programs }: CatalogTabsProps
             onClose={() => setSheetSheetOpen(false)}
             editSheet={editSheet}
             programs={programs}
+            roleOptions={roleOptions}
           />
         </section>
       )}

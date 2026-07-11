@@ -180,6 +180,22 @@ describe("admin/productos actions", () => {
         expect.objectContaining({ name: "Color", options: JSON.stringify(["Negro", "Azul"]) }),
       ]))
     })
+
+    it("rejects more than one preferred supplier even if the client-side guard is bypassed", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      const { createProduct } = await import("@/app/(app)/admin/productos/actions")
+      const fd = new FormData()
+      fd.set("name", "Casco")
+      fd.set("categoryId", "cat-1")
+      fd.set("suppliersJson", JSON.stringify([
+        { supplierId: "sup-1", isPreferred: true },
+        { supplierId: "sup-2", isPreferred: true },
+      ]))
+      const r = await createProduct({ ok: false }, fd)
+      expect(r.ok).toBe(false)
+      expect(r.fieldErrors?.suppliers).toBeDefined()
+      expect(mockInsertValues).not.toHaveBeenCalled()
+    })
   })
 
   describe("updateProduct", () => {
@@ -191,6 +207,33 @@ describe("admin/productos actions", () => {
       expect(r.fieldErrors?.sku).toBeUndefined()
       expect(r.fieldErrors?.name).toContain("Nombre requerido")
       expect(r.fieldErrors?.categoryId).toContain("Selecciona una categoría")
+    })
+  })
+
+  describe("getProductForEdit", () => {
+    it("allows product managers to load the edit form without import permissions", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      mockDb.query.products.findFirst.mockResolvedValue({
+        id: "prod-1",
+        sku: "PRD-ABC123",
+        name: "Casco",
+        description: null,
+        categoryId: "cat-1",
+        unitOfMeasure: "unidad",
+        isEpp: false,
+        requiresPrevencion: false,
+        referencePrice: null,
+        notes: null,
+        isActive: true,
+        productAttributes: [],
+        productSuppliers: [],
+      })
+      const { getProductForEdit } = await import("@/app/(app)/admin/productos/actions")
+
+      const result = await getProductForEdit("prod-1")
+
+      expect(result?.id).toBe("prod-1")
+      expect(mockAuthFn).toHaveBeenCalled()
     })
   })
 

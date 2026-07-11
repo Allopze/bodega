@@ -98,8 +98,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "combustibles-nueva", path: "/combustibles/nueva", auth: true },
   { slug: "combustibles-detalle", path: "/combustibles/fuel-audit-1", auth: true },
   { slug: "combustibles-reportes", path: "/combustibles/reportes", auth: true },
-  { slug: "combustibles-vehiculos", path: "/combustibles/vehiculos", auth: true },
-  { slug: "combustibles-proveedores", path: "/combustibles/proveedores-combustible", auth: true },
+  { slug: "combustibles-vehiculos-legacy", path: "/combustibles/vehiculos", auth: true, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
+  { slug: "combustibles-proveedores-legacy", path: "/combustibles/proveedores-combustible", auth: true, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
   { slug: "combustibles-cuenta-corriente", path: "/combustibles/cuenta-corriente", auth: true },
   { slug: "combustibles-cc-detalle", path: "/combustibles/cuenta-corriente/cc-audit-1", auth: true },
   { slug: "combustibles-facturas", path: "/combustibles/facturas", auth: true },
@@ -159,6 +159,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-correo-smtp", path: "/admin/correo-smtp", auth: true },
   { slug: "admin-faenas", path: "/admin/faenas", auth: true },
   { slug: "admin-flotas-catalogos", path: "/admin/flota-catalogos", auth: true },
+  { slug: "admin-flota-vehiculos", path: "/admin/flota-catalogos/vehiculos", auth: true },
+  { slug: "admin-flota-proveedores-combustible", path: "/admin/flota-catalogos/proveedores-combustible", auth: true },
   { slug: "admin-folios", path: "/admin/folios", auth: true },
   { slug: "admin-notificaciones", path: "/admin/notificaciones", auth: true },
   { slug: "admin-parametros-operativos", path: "/admin/parametros-operativos", auth: true },
@@ -167,6 +169,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-productos", path: "/admin/productos", auth: true },
   { slug: "admin-productos-nuevo", path: "/admin/productos/nuevo", auth: true },
   { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true, notes: "Esta ruta redirige a /admin/productos." },
+  { slug: "admin-productos-importar", path: "/admin/productos/importar/batch-audit-1", auth: true, notes: "Vista de revisión de lotes EPP importados." },
   { slug: "admin-proveedores", path: "/admin/proveedores", auth: true },
   { slug: "admin-roles", path: "/admin/roles", auth: true },
   { slug: "admin-seguridad", path: "/admin/seguridad", auth: true },
@@ -198,7 +201,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción"] },
   { section: "admin-faenas", fixtures: ["faenas activas"] },
   { section: "admin-plantillas", fixtures: ["plantillas de correo del sistema"] },
-  { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos"] },
+  { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos", "importación EPP"] },
   { section: "admin-proveedores", fixtures: ["proveedores activos con contacto"] },
   { section: "admin-trabajadores", fixtures: ["trabajadores por faena"] },
   { section: "admin-usuarios", fixtures: ["usuarios con roles y faenas"] },
@@ -365,6 +368,7 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "p-adm-ws", name: "admin:worksites", module: "admin", description: "Gestionar faenas" },
     { id: "p-adm-wrk", name: "admin:workers", module: "admin", description: "Gestionar trabajadores" },
     { id: "p-adm-prod", name: "admin:products", module: "admin", description: "Gestionar catálogo" },
+    { id: "p-adm-pcat", name: "admin:product_catalogs", module: "admin", description: "Gestionar catálogos auxiliares de productos" },
     { id: "p-adm-sup", name: "admin:suppliers", module: "admin", description: "Gestionar proveedores" },
     { id: "p-adm-cfg", name: "admin:config", module: "admin", description: "Configurar sistema" },
     { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Ver auditoría" },
@@ -627,6 +631,15 @@ async function prepareDatabase(captureDbUrl: string) {
       createdAt: now,
       updatedAt: now,
     },
+  ])
+  await db.insert(schema.productUnits).values([
+    { id: "unit-audit-unidad", code: "unidad", label: "Unidad", description: "Unidad individual", sortOrder: 1, isActive: true, createdAt: now, updatedAt: now },
+    { id: "unit-audit-par", code: "par", label: "Par", description: "EPP entregado por pares", sortOrder: 2, isActive: true, createdAt: now, updatedAt: now },
+    { id: "unit-audit-rollo", code: "rollo", label: "Rollo", description: "Material en rollo", sortOrder: 3, isActive: true, createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.productAttributeTemplates).values([
+    { id: "template-audit-talla", categoryId: "cat-audit-epp", name: "Talla", type: "select", options: JSON.stringify(["S", "M", "L", "XL"]), isRequired: true, sortOrder: 1, isActive: true, createdAt: now, updatedAt: now },
+    { id: "template-audit-color", categoryId: "cat-audit-epp", name: "Color", type: "select", options: JSON.stringify(["Amarillo", "Azul", "Negro", "Rojo"]), isRequired: false, sortOrder: 2, isActive: true, createdAt: now, updatedAt: now },
   ])
   await db.insert(schema.productAttributes).values({
     id: "attr-audit-1",
@@ -1573,11 +1586,18 @@ async function ensureDatabaseExists(databaseUrl: string) {
 }
 
 async function startServer(captureDbUrl: string) {
+  const captureUrl = new URL(captureDbUrl)
+  const socketHost = captureUrl.hostname ? undefined : (process.env.PGHOST ?? "/var/run/postgresql")
   const env = {
     ...process.env,
     DATABASE_URL: captureDbUrl,
+    ...(socketHost ? {
+      PGHOST: socketHost,
+      PGUSER: process.env.PGUSER ?? process.env.USER ?? "postgres",
+    } : {}),
     AUTH_SECRET: authSecret,
     NEXTAUTH_SECRET: authSecret,
+    AUTH_URL: baseUrl,
     APP_URL: baseUrl,
     NEXTAUTH_URL: baseUrl,
     PORT: String(port),
@@ -1588,7 +1608,21 @@ async function startServer(captureDbUrl: string) {
     SMTP_DISABLED: "true",
     SMTP_TIMEOUT_MS: "1000",
   }
-  const server = spawn(path.join(root, "node_modules", ".bin", "next"), ["start", "--hostname", "127.0.0.1", "--port", String(port)], {
+  const standaloneServer = path.join(root, ".next", "standalone", "server.js")
+  const useStandalone = fs.existsSync(standaloneServer)
+  if (useStandalone) {
+    const standaloneStatic = path.join(root, ".next", "standalone", ".next", "static")
+    if (!fs.existsSync(standaloneStatic)) {
+      fs.mkdirSync(path.dirname(standaloneStatic), { recursive: true })
+      fs.cpSync(path.join(root, ".next", "static"), standaloneStatic, { recursive: true })
+    }
+    fs.cpSync(path.join(root, "public"), path.join(root, ".next", "standalone", "public"), { recursive: true, force: true })
+  }
+  const command = useStandalone ? process.execPath : path.join(root, "node_modules", ".bin", "next")
+  const args = useStandalone
+    ? [standaloneServer]
+    : ["start", "--hostname", "127.0.0.1", "--port", String(port)]
+  const server = spawn(command, args, {
     cwd: root,
     env,
     stdio: ["ignore", "pipe", "pipe"],

@@ -4,8 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Plus, Trash } from "@phosphor-icons/react"
-import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -16,9 +15,8 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { createProduct, updateProduct } from "./actions"
-import { cn } from "@/lib/utils"
 import type { AttributeRow, SupplierRow, ProductFormProps } from "./product-form.types"
-import { UOM_OPTIONS } from "./product-form.types"
+import { mergeProductAttribute, setPreferredSupplier } from "./product-form.helpers"
 
 const EPP_ATTRIBUTE_PRESETS: AttributeRow[] = [
   {
@@ -44,7 +42,18 @@ const EPP_ATTRIBUTE_PRESETS: AttributeRow[] = [
   },
 ]
 
-export function ProductForm({ open, onClose, categories, allSuppliers, editProduct, variant = "sheet" }: ProductFormProps) {
+function optionsAsText(options: string) {
+  if (!options) return ""
+  try {
+    const parsed: unknown = JSON.parse(options)
+    if (Array.isArray(parsed)) return parsed.map((value) => String(value)).join(", ")
+  } catch {
+    // Legacy templates may still contain comma/newline-separated text.
+  }
+  return options
+}
+
+export function ProductForm({ open, onClose, categories, allSuppliers, units, templates, editProduct, variant = "sheet" }: ProductFormProps) {
   const isEdit = !!editProduct
   const action = isEdit ? updateProduct : createProduct
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -66,6 +75,33 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
   const [attrs,      setAttrs]      = React.useState<AttributeRow[]>(editProduct?.attributes ?? [])
   const [suppRows,   setSuppRows]   = React.useState<SupplierRow[]>(editProduct?.suppliers ?? [])
   const [isEpp,      setIsEpp]      = React.useState(editProduct?.isEpp ?? false)
+  const [requiresPrevencion, setRequiresPrevencion] = React.useState(editProduct?.requiresPrevencion ?? false)
+
+  // New products inherit EPP/Prevención from the chosen category as a default;
+  // existing products keep their own explicit flags (divergence is surfaced as
+  // a list warning instead of being silently overwritten on edit).
+  function handleCategoryChange(id: string) {
+    setCategoryId(id)
+    if (isEdit) return
+    const category = categories.find((c) => c.id === id)
+    if (!category) return
+    setIsEpp(category.isEpp ?? false)
+    setRequiresPrevencion(category.requiresPrevencion ?? false)
+  }
+
+  function updateSuppPreferred(i: number, checked: boolean) {
+    setSuppRows((prev) => setPreferredSupplier(prev, i, checked))
+  }
+
+  const unitOptions = React.useMemo(() => {
+    if (!uom || units.some((unit) => unit.code === uom)) return units
+    return [{ code: uom, label: `${uom} (heredada)`, isActive: false }, ...units]
+  }, [units, uom])
+
+  const categoryTemplates = React.useMemo(
+    () => templates.filter((template) => !template.categoryId || template.categoryId === categoryId),
+    [categoryId, templates],
+  )
 
   function addAttr() {
     setAttrs((prev) => [...prev, { id: crypto.randomUUID(), name: "", type: "text", isRequired: false, options: "", sortOrder: prev.length }])
@@ -74,17 +110,26 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
   function updateAttr(i: number, patch: Partial<AttributeRow>) {
     setAttrs((prev) => prev.map((a, idx) => idx === i ? { ...a, ...patch } : a))
   }
+  function upsertAttr(preset: AttributeRow) {
+    setAttrs((prev) => mergeProductAttribute(prev, preset))
+  }
+
   function addPresetAttr(preset: AttributeRow) {
-    setAttrs((prev) => {
-      const existingIndex = prev.findIndex((a) => a.name.trim().toLowerCase() === preset.name.toLowerCase())
-      const existing = existingIndex >= 0 ? prev[existingIndex] : undefined
-      const nextPreset = { ...preset, id: existing?.id ?? crypto.randomUUID(), sortOrder: existing?.sortOrder ?? prev.length }
-      if (existingIndex >= 0) {
-        return prev.map((a, idx) => idx === existingIndex ? { ...a, ...nextPreset } : a)
-      }
-      return [...prev, nextPreset]
-    })
+    upsertAttr(preset)
     setIsEpp(true)
+  }
+
+  function applyCategoryTemplates() {
+    categoryTemplates.forEach((template) => {
+      upsertAttr({
+        id: template.id,
+        name: template.name,
+        type: template.type,
+        isRequired: template.isRequired,
+        options: optionsAsText(template.options),
+        sortOrder: template.sortOrder,
+      })
+    })
   }
 
   function addSupp(supplierId: string) {
@@ -99,55 +144,38 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
 
   const availableSuppliers = allSuppliers.filter((s) => !suppRows.find((r) => r.supplierId === s.id))
   const formNode = (
-    <form
-      action={formAction}
-      className={cn(
-        "flex min-h-0 flex-col",
-        variant !== "embedded" && "h-full max-h-[inherit] overflow-hidden",
-        variant === "embedded" &&
-          "overflow-hidden rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]",
+    <CatalogFormSheet
+      open={open}
+      onClose={onClose}
+      isEdit={isEdit}
+      entityId={editProduct?.id}
+      title={isEdit ? "Editar producto" : "Nuevo producto"}
+      description={isEdit ? `Modificar ${editProduct.name}` : "Registra un nuevo producto en el catálogo"}
+      create={createProduct}
+      update={updateProduct}
+      submitLabel={isEdit ? "Guardar cambios" : "Crear producto"}
+      submittingLabel={isEdit ? "Guardando..." : "Creando..."}
+      successMessage={isEdit ? "Producto actualizado" : "Producto creado"}
+      variant={variant}
+      bodyClassName={variant === "embedded" ? "overflow-visible px-5 py-5 md:px-6" : undefined}
+      footerClassName={variant === "embedded" ? "bg-[var(--color-surface-2)]" : undefined}
+      embeddedCloseLabel="Volver al catálogo"
+      externalActionState={{ state, formAction }}
+      hiddenFields={(
+        <>
+          <input type="hidden" name="categoryId" value={categoryId} />
+          <input type="hidden" name="unitOfMeasure" value={uom} />
+          <input type="hidden" name="attributesJson" value={JSON.stringify(attrs)} />
+          <input type="hidden" name="suppliersJson" value={JSON.stringify(suppRows.map((s) => ({
+            supplierId: s.supplierId,
+            unitPrice: s.unitPrice ? parseFloat(s.unitPrice) : null,
+            isPreferred: s.isPreferred,
+            notes: s.notes || null,
+          })))} />
+        </>
       )}
     >
-      {isEdit && <input type="hidden" name="id" value={editProduct.id} />}
-      <input type="hidden" name="categoryId"    value={categoryId} />
-      <input type="hidden" name="unitOfMeasure" value={uom} />
-      <input type="hidden" name="attributesJson" value={JSON.stringify(attrs)} />
-      <input type="hidden" name="suppliersJson"  value={JSON.stringify(suppRows.map((s) => ({
-        supplierId:  s.supplierId,
-        unitPrice:   s.unitPrice ? parseFloat(s.unitPrice) : null,
-        isPreferred: s.isPreferred,
-        notes:       s.notes || null,
-      })))} />
-
-      {variant === "embedded" ? (
-        <div className="flex flex-col gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-4 md:flex-row md:items-start md:justify-between md:px-6">
-          <div>
-            <h2 className="text-h2 text-[var(--color-text)]">{isEdit ? "Editar producto" : "Nuevo producto"}</h2>
-            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
-              {isEdit ? `Modificar ${editProduct.name}` : "Registra un producto del catálogo sin perder el contexto de administración."}
-            </p>
-          </div>
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Volver al catálogo
-          </Button>
-        </div>
-      ) : (
-        <SheetHeader>
-          <div>
-            <SheetTitle>{isEdit ? "Editar producto" : "Nuevo producto"}</SheetTitle>
-            <SheetDescription>
-              {isEdit ? `Modificar ${editProduct.name}` : "Registra un nuevo producto en el catálogo"}
-            </SheetDescription>
-          </div>
-          <SheetCloseButton />
-        </SheetHeader>
-      )}
-
-      <SheetBody className={variant === "embedded" ? "overflow-visible px-5 py-5 md:px-6" : undefined}>
-        {state.message && !state.ok && !state.fieldErrors && (
-          <p className="mb-4 text-sm text-danger">{state.message}</p>
-        )}
-
+      {() => (
         <Tabs defaultValue="general">
           <TabsList className="mb-4 w-full">
             <TabsTrigger value="general">General</TabsTrigger>
@@ -172,7 +200,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
               )}
 
               <Field label="Categoría" htmlFor="p-cat" required error={state.fieldErrors?.categoryId?.[0]}>
-                  <Select value={categoryId} onValueChange={setCategoryId}>
+                  <Select value={categoryId} onValueChange={handleCategoryChange}>
                     <SelectTrigger id="p-cat" error={!!state.fieldErrors?.categoryId}>
                       <SelectValue placeholder="Seleccionar..." />
                     </SelectTrigger>
@@ -197,7 +225,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                   <Select value={uom} onValueChange={setUom}>
                     <SelectTrigger id="p-uom"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {UOM_OPTIONS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                      {unitOptions.map((unit) => <SelectItem key={unit.code} value={unit.code}>{unit.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
@@ -212,7 +240,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
 
               <div className="flex flex-col gap-2">
                 <Checkbox id="p-epp" name="isEpp" value="on" checked={isEpp} onChange={(event) => setIsEpp(event.target.checked)} label="Es EPP" />
-                <Checkbox id="p-prev" name="requiresPrevencion" value="on" defaultChecked={editProduct?.requiresPrevencion ?? false} label="Requiere aprobación de Prevención" />
+                <Checkbox id="p-prev" name="requiresPrevencion" value="on" checked={requiresPrevencion} onChange={(event) => setRequiresPrevencion(event.target.checked)} label="Requiere aprobación de Prevención" />
                 <Checkbox id="p-active" name="isActive" value="on" defaultChecked={editProduct?.isActive ?? true} label="Producto activo" />
               </div>
             </FieldGroup>
@@ -231,7 +259,15 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                     <Plus size={13} />{preset.name}
                   </Button>
                 ))}
+                {categoryTemplates.length > 0 && (
+                  <Button type="button" variant="secondary" size="sm" onClick={applyCategoryTemplates}>
+                    <Plus size={13} />Aplicar plantillas ({categoryTemplates.length})
+                  </Button>
+                )}
               </div>
+              {categoryId && categoryTemplates.length === 0 && (
+                <p className="mt-2 text-xs text-text-subtle">Esta categoría no tiene plantillas activas.</p>
+              )}
             </div>
             {attrs.length === 0 && (
               <p className="text-sm text-text-subtle mb-4">Sin atributos definidos.</p>
@@ -278,6 +314,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
             <p className="text-sm text-text-muted mb-4">
               Asocia proveedores con su precio unitario referencial. El proveedor preferido se usará por defecto al crear órdenes de compra.
             </p>
+            {state.fieldErrors?.suppliers && (
+              <p className="mb-4 text-sm text-danger">{state.fieldErrors.suppliers[0]}</p>
+            )}
             {suppRows.length === 0 && (
               <p className="text-sm text-text-subtle mb-4">Sin proveedores asociados.</p>
             )}
@@ -295,7 +334,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
                       <Input id={`sup-notes-${i}`} value={sr.notes} onChange={(e) => updateSupp(i, { notes: e.target.value })} placeholder="Tiempo de entrega..." />
                     </Field>
                     <div className="col-span-2">
-                      <Checkbox id={`sup-pref-${i}`} checked={sr.isPreferred} onChange={(e) => updateSupp(i, { isPreferred: e.target.checked })} label="Proveedor preferido" />
+                      <Checkbox id={`sup-pref-${i}`} checked={sr.isPreferred} onChange={(e) => updateSuppPreferred(i, e.target.checked)} label="Proveedor preferido" />
                     </div>
                   </div>
                   <button type="button" onClick={() => removeSupp(i)} className="mt-6 p-1.5 rounded-sm text-text-subtle hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-50)] transition-colors duration-(--duration-fast)" aria-label={`Eliminar proveedor ${sr.supplierName}`}>
@@ -318,25 +357,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, editProdu
             )}
           </TabsContent>
         </Tabs>
-      </SheetBody>
-
-      <SheetFooter className={variant === "embedded" ? "bg-[var(--color-surface-2)]" : undefined}>
-        <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-        <SubmitButton
-          label={isEdit ? "Guardar cambios" : "Crear producto"}
-          loadingLabel={isEdit ? "Guardando..." : "Creando..."}
-        />
-      </SheetFooter>
-    </form>
+      )}
+    </CatalogFormSheet>
   )
 
-  if (variant === "embedded") return formNode
-
-  return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <SheetContent>
-        {formNode}
-      </SheetContent>
-    </Sheet>
-  )
+  return formNode
 }

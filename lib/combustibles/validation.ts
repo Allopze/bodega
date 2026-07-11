@@ -58,6 +58,41 @@ export const FUEL_VEHICLE_TYPE_LABELS: Record<(typeof FUEL_VEHICLE_TYPES)[number
   camion_3_4: "Camión 3/4",
 }
 
+/** Safe aliases for values already found in legacy vehicle records. */
+export const FUEL_VEHICLE_TYPE_ALIASES: Record<string, (typeof FUEL_VEHICLE_TYPES)[number]> = {
+  "camion 3/4": "camion_3_4",
+  "mini cargador": "minicargador",
+  "retro excavadora": "retroexcavadora",
+  "hidro lavadora": "hidrolavadora",
+  tractocamion: "tracto",
+  "station wagon": "station_wagon",
+}
+
+function normalizeVehicleType(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("es-CL").replace(/\s+/g, " ")
+}
+
+export function canonicalFuelVehicleType(value: string) {
+  const normalized = normalizeVehicleType(value)
+  if (FUEL_VEHICLE_TYPES.includes(normalized as (typeof FUEL_VEHICLE_TYPES)[number])) return normalized as (typeof FUEL_VEHICLE_TYPES)[number]
+  return FUEL_VEHICLE_TYPE_ALIASES[normalized] ?? null
+}
+
+export function formatFuelVehicleType(value: string) {
+  const canonical = canonicalFuelVehicleType(value)
+  if (!canonical) return value
+  const label = FUEL_VEHICLE_TYPE_LABELS[canonical]
+  return value === canonical ? label : `${value} · ${label}`
+}
+
+export const FUEL_VEHICLE_STATUSES = ["operativo", "mantencion", "fuera_servicio"] as const
+
+export const FUEL_VEHICLE_STATUS_LABELS: Record<(typeof FUEL_VEHICLE_STATUSES)[number], string> = {
+  operativo: "Operativo",
+  mantencion: "En mantención",
+  fuera_servicio: "Fuera de servicio",
+}
+
 export const createFuelVehicleSchema = z.object({
   plate:     z.string().min(1, "Patente requerida").max(20),
   type:      z.string().min(1, "Tipo requerido").max(50),  // texto libre — ver nota en FUEL_VEHICLE_TYPES
@@ -66,6 +101,13 @@ export const createFuelVehicleSchema = z.object({
   model:     z.string().max(100).optional(),
   year:      z.coerce.number().int().min(1990).max(2030).optional(),
   worksiteId: z.string().min(1, "Faena requerida"),
+  responsibleUserId: z.string().optional(),
+  operationalStatus: z.enum(FUEL_VEHICLE_STATUSES).optional(),
+  soapExpiresAt: z.string().optional(),
+  technicalReviewExpiresAt: z.string().optional(),
+  circulationPermitExpiresAt: z.string().optional(),
+  insurancePolicyNumber: z.string().max(60).optional(),
+  insuranceExpiresAt: z.string().optional(),
   notes:     z.string().optional(),
 })
 
@@ -78,6 +120,7 @@ export type UpdateFuelVehicleInput = z.infer<typeof updateFuelVehicleSchema>
 
 /* ── Fuel Supplier ───────────────────────────────────────────────────────── */
 export const createFuelSupplierSchema = z.object({
+  supplierId:   z.string().optional(),
   name:         z.string().min(1, "Nombre requerido").max(200),
   rut:          z.string().max(20).optional(),
   contactName:  z.string().max(200).optional(),

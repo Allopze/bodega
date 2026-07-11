@@ -9,6 +9,8 @@ const mockRecordAudit = vi.hoisted(() => vi.fn())
 const mockUpsertResponsible = vi.hoisted(() => vi.fn())
 const mockUpsertSheet = vi.hoisted(() => vi.fn())
 const mockParseDefaultScopeRoles = vi.hoisted(() => vi.fn((_raw: unknown, registry: string[]) => registry.slice(0, 1)))
+const mockSetResponsibleActive = vi.hoisted(() => vi.fn())
+const mockSetSheetActive = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -21,12 +23,16 @@ vi.mock("@/lib/services/pdtp/admin-catalogs", () => ({
   upsertPdtpSheet: mockUpsertSheet,
   parseDefaultScopeRoles: mockParseDefaultScopeRoles,
   listRoleSlugs: vi.fn(() => ["administrador", "prevencionista", "jefe_terreno"]),
+  setPdtpResponsibleActive: mockSetResponsibleActive,
+  setPdtpSheetActive: mockSetSheetActive,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import {
   savePdtpResponsibleAction,
   savePdtpSheetAction,
+  togglePdtpResponsibleActiveAction,
+  togglePdtpSheetActiveAction,
 } from "@/app/(app)/admin/pdtp-catalogos/actions"
 import type { ActionState } from "@/lib/validation/masters"
 
@@ -131,6 +137,80 @@ describe("savePdtpSheetAction", () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
       entityType: "pdtp_sheet",
       entityId: "sht-1",
+    }))
+  })
+})
+
+describe("togglePdtpResponsibleActiveAction", () => {
+  beforeEach(() => vi.resetAllMocks())
+
+  it("deactivates a responsible", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockSetResponsibleActive.mockResolvedValueOnce({
+      row: { slug: "x", displayName: "X", kind: "role", roleName: null, notes: null, isActive: false },
+      previousIsActive: true,
+    })
+    const fd = new FormData(); fd.set("slug", "x"); fd.set("activate", "false")
+    const res = await togglePdtpResponsibleActiveAction(prevState, fd)
+    expect(res.ok).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "pdtp_responsible",
+      entityId: "x",
+      oldState: { isActive: true },
+      newState: { isActive: false },
+    }))
+  })
+
+  it("reactivates a responsible", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockSetResponsibleActive.mockResolvedValueOnce({
+      row: { slug: "x", displayName: "X", kind: "role", roleName: null, notes: null, isActive: true },
+      previousIsActive: false,
+    })
+    const fd = new FormData(); fd.set("slug", "x"); fd.set("activate", "true")
+    const res = await togglePdtpResponsibleActiveAction(prevState, fd)
+    expect(res.ok).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      oldState: { isActive: false },
+      newState: { isActive: true },
+    }))
+  })
+})
+
+describe("togglePdtpSheetActiveAction", () => {
+  beforeEach(() => vi.resetAllMocks())
+
+  it("deactivates a sheet", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockSetSheetActive.mockResolvedValueOnce({
+      row: { id: "sht-1", code: "HOJA-1", label: "Hoja 1", area: "Op", defaultScopeRoles: [], isActive: false },
+      previousIsActive: true,
+    })
+    const fd = new FormData(); fd.set("id", "sht-1"); fd.set("activate", "false")
+    const res = await togglePdtpSheetActiveAction(prevState, fd)
+    expect(res.ok).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "pdtp_sheet",
+      entityId: "sht-1",
+      oldState: { isActive: true },
+      newState: { isActive: false },
+    }))
+  })
+
+  it("reactivates a sheet", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockSetSheetActive.mockResolvedValueOnce({
+      row: { id: "sht-2", code: "HOJA-2", label: "Hoja 2", area: "Admin", defaultScopeRoles: [], isActive: true },
+      previousIsActive: false,
+    })
+    const fd = new FormData(); fd.set("id", "sht-2"); fd.set("activate", "true")
+    const res = await togglePdtpSheetActiveAction(prevState, fd)
+    expect(res.ok).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "pdtp_sheet",
+      entityId: "sht-2",
+      oldState: { isActive: false },
+      newState: { isActive: true },
     }))
   })
 })

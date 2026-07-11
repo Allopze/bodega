@@ -7,6 +7,8 @@ import { workers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { logger } from "@/lib/logger"
+import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
 import { workerSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/trabajadores"
@@ -141,4 +143,62 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: activate ? "Trabajador activado" : "Trabajador desactivado" }
+}
+
+export async function importWorkersFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:workers") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const file = formData.get("file")
+  if (!(file instanceof File) || file.size === 0) return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) return { ok: false, fieldErrors: { file: ["El archivo debe estar en formato .xlsx"] } }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const result = await parseCatalogWorkbook(buffer)
+  if (!result.ok) return { ok: false, message: result.errors.join("; ") }
+
+  let created = 0; let updated = 0; let skipped = 0
+
+  try {
+    await db.transaction(async (tx) => {
+      for (const row of result.rows) {
+        const v = row.values
+        const firstName = (v["Nombre"] ?? "").trim()
+        const lastName = (v["Apellido"] ?? "").trim()
+        if (!firstName && !lastName) { skipped++; continue }
+        const isActive = v["Activo"]?.trim() !== "No"
+
+        if (row.decision === "update" && row.existingId) {
+          updated++
+          await tx.update(workers).set({
+            rut: (v["RUT"] ?? "").trim() || null,
+            firstName, lastName,
+            position: (v["Cargo"] ?? "").trim() || null,
+            supervisor: (v["Supervisor"] ?? "").trim() || null,
+            prevencionista: (v["Prevencionista"] ?? "").trim() || null,
+            isActive,
+          }).where(eq(workers.id, row.existingId!))
+        } else {
+          created++
+          await tx.insert(workers).values({
+            id: nanoid(), rut: (v["RUT"] ?? "").trim() || null,
+            firstName, lastName,
+            position: (v["Cargo"] ?? "").trim() || null,
+            supervisor: (v["Supervisor"] ?? "").trim() || null,
+            prevencionista: (v["Prevencionista"] ?? "").trim() || null,
+            worksiteId: session.user.primaryWorksiteId || "ws-default",
+            isActive,
+            createdAt: new Date().toISOString(),
+          })
+        }
+      }
+    })
+    await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "worker", entityId: "import_xlsx", newState: { created, updated, skipped } })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos`, data: { created, updated, skipped } }
+  } catch (err) {
+    logger.error("[admin/trabajadores] importXlsx", err)
+    return { ok: false, message: (err as Error).message }
+  }
 }

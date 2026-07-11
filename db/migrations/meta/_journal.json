@@ -253,6 +253,34 @@
       "when": 1783657483154,
       "tag": "0035_wandering_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1783720548866,
+      "tag": "0036_register_product_units",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1783730995498,
+      "tag": "0037_late_kronos",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1783742541436,
+      "tag": "0038_conscious_shooting_star",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1783747282922,
+      "tag": "0039_complex_eternity",
+      "breakpoints": true
     }
   ]
 }

@@ -1,24 +1,9 @@
 "use client"
 
-import * as React from "react"
-import { useActionState } from "react"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetBody,
-  SheetFooter,
-  SheetTitle,
-  SheetDescription,
-  SheetCloseButton,
-} from "@/components/admin/sheet"
-import { SubmitButton } from "@/components/admin/submit-button"
-import { Button } from "@/components/ui/button"
+import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
-import { toast } from "@/lib/toast"
 import { createCostCenterAction, updateCostCenterAction } from "./actions"
 
 export interface CostCenterRow {
@@ -47,43 +32,21 @@ interface CostCenterFormProps {
 
 export function CostCenterForm({ open, onClose, editCostCenter, worksites }: CostCenterFormProps) {
   const isEdit = !!editCostCenter
-  const action = isEdit ? updateCostCenterAction : createCostCenterAction
-
-  const [state, formAction] = useActionState<ActionState, FormData>(
-    async (prev, formData) => {
-      const result = await action(prev, formData)
-      if (result.ok) {
-        toast.success(result.message ?? (isEdit ? "Centro actualizado" : "Centro creado"))
-        onClose()
-      } else if (result.message && !result.fieldErrors) {
-        toast.error(result.message)
-      }
-      return result
-    },
-    INITIAL_STATE,
-  )
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <SheetContent>
-        <form action={formAction} className="flex flex-col flex-1 min-h-0">
-          {isEdit && <input type="hidden" name="id" value={editCostCenter!.id} />}
-          <SheetHeader>
-            <div>
-              <SheetTitle>{isEdit ? "Editar centro de costo" : "Nuevo centro de costo"}</SheetTitle>
-              <SheetDescription>
-                {isEdit
-                  ? "Actualiza el código, nombre o faena asociada."
-                  : "Completa los datos del nuevo centro de costo."}
-              </SheetDescription>
-            </div>
-            <SheetCloseButton />
-          </SheetHeader>
-
-          <SheetBody>
-            {state.message && !state.ok && !state.fieldErrors && (
-              <p className="mb-4 text-sm text-[var(--color-danger)]">{state.message}</p>
-            )}
+    <CatalogFormSheet
+      open={open}
+      onClose={onClose}
+      isEdit={isEdit}
+      entityId={editCostCenter?.id}
+      title={isEdit ? "Editar centro de costo" : "Nuevo centro de costo"}
+      description={isEdit ? "Actualiza el código, nombre o faena asociada." : "Completa los datos del nuevo centro de costo."}
+      create={createCostCenterAction}
+      update={updateCostCenterAction}
+      submitLabel={isEdit ? "Guardar cambios" : "Crear centro"}
+      successMessage={isEdit ? "Centro actualizado" : "Centro creado"}
+    >
+      {(state) => (
             <FieldGroup className="gap-4">
               <Field label="Código" htmlFor="cc-code" required error={state.fieldErrors?.code?.[0]}>
                 <Input
@@ -131,14 +94,7 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites }: Cos
                 label="Centro activo"
               />
             </FieldGroup>
-          </SheetBody>
-
-          <SheetFooter>
-            <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-            <SubmitButton label={isEdit ? "Guardar cambios" : "Crear centro"} loadingLabel="Guardando..." />
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
+      )}
+    </CatalogFormSheet>
   )
 }

@@ -13,6 +13,7 @@ vi.mock("@/db", () => {
       fuelLoads: { findFirst: vi.fn() },
       fuelVehicles: { findFirst: vi.fn() },
       fuelSuppliers: { findFirst: vi.fn() },
+      suppliers: { findFirst: vi.fn() },
       fuelMonthlyStatements: { findFirst: vi.fn() },
       systemSettings: { findFirst: vi.fn() },
     },
@@ -117,6 +118,8 @@ describe("createFuelSupplierAction", () => {
   })
 
   it("creates supplier successfully", async () => {
+    const query = await getQuery()
+    vi.mocked(query.suppliers.findFirst).mockResolvedValueOnce(undefined)
     const res = await createFuelSupplierAction(prevState, makeSupplierForm())
     expect(res.ok).toBe(true)
     expect(res.message).toContain("Proveedor creado")
@@ -136,6 +139,20 @@ describe("deleteFuelSupplierAction", () => {
   })
 
   it("soft-deletes supplier successfully", async () => {
+    const query = await getQuery()
+    vi.mocked(query.fuelSuppliers.findFirst).mockResolvedValueOnce({
+      id: "sup-1",
+      supplierId: null,
+      name: "Copec",
+      rut: "99555666-7",
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      notes: null,
+      isActive: true,
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    })
     const res = await deleteFuelSupplierAction("sup-1")
     expect(res.ok).toBe(true)
     expect(res.message).toContain("Proveedor desactivado")

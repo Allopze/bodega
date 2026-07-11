@@ -27,6 +27,7 @@ export interface SheetRow {
   label: string
   area: string
   defaultScopeRoles: string[]
+  isActive: boolean
 }
 export interface ProgramOption {
   id: string
@@ -36,29 +37,15 @@ export interface ProgramOption {
   title: string
 }
 
-/** Slugs that should appear as defaultScopeRole options. */
-const ROLE_OPTIONS = [
-  "administrador",
-  "jefa_chome",
-  "secretaria",
-  "prevencionista",
-  "jefe_mantencion",
-  "jefe_terreno",
-  "cphs",
-  "prevencionista_faena",
-  "admin_contrato",
-  "conductor_lider",
-  "solicitante_faena",
-] as const
-
 interface SheetFormProps {
   open: boolean
   onClose: () => void
   editSheet?: SheetRow | null
   programs: ProgramOption[]
+  roleOptions: string[]
 }
 
-export function SheetForm({ open, onClose, editSheet, programs }: SheetFormProps) {
+export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: SheetFormProps) {
   const isEdit = !!editSheet
 
   const [selected, setSelected] = React.useState<Set<string>>(
@@ -88,7 +75,7 @@ export function SheetForm({ open, onClose, editSheet, programs }: SheetFormProps
           <input
             type="hidden"
             name="defaultScopeRoles"
-            value={ROLE_OPTIONS.filter((r) => selected.has(r)).join(",")}
+            value={roleOptions.filter((r) => selected.has(r)).join(",")}
           />
           <SheetHeader>
             <div>
@@ -146,7 +133,7 @@ export function SheetForm({ open, onClose, editSheet, programs }: SheetFormProps
               <div>
                 <p className="text-eyebrow mb-2">Alcance RBAC predeterminado</p>
                 <div className="space-y-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-                  {ROLE_OPTIONS.map((r) => (
+                  {roleOptions.map((r) => (
                     <label key={r} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-[var(--color-surface)]">
                       <input
                         type="checkbox"

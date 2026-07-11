@@ -1,5 +1,5 @@
 import { pgTable, text, integer, boolean, timestamp, numeric, uniqueIndex } from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
 import { suppliers } from "./worksites"
 
 /* ── Product Categories ──────────────────────────────────────────────────── */
@@ -66,6 +66,7 @@ export const productSuppliers = pgTable("product_suppliers", {
   notes:        text("notes"),
 }, (table) => [
   uniqueIndex("product_suppliers_product_supplier_unique").on(table.productId, table.supplierId),
+  uniqueIndex("product_suppliers_one_preferred_per_product").on(table.productId).where(sql`${table.isPreferred} = true`),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

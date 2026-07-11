@@ -1,16 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect } from "react"
-import { toast } from "@/lib/toast"
-import { Plus, PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { Plus, DownloadSimple, UploadSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
+import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
+import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { SupplierForm } from "./supplier-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleSupplierActive } from "./actions"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { importSuppliersFromXlsx } from "./actions"
+import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
+import { COLUMNS, CONTRACT } from "./catalog-contract"
 
 interface SupplierRow {
   id: string; name: string; rut: string | null; contactName: string | null
@@ -21,42 +23,39 @@ interface SupplierRow {
   isActive: boolean; createdAt: string
 }
 
-const COLUMNS = [
-  { key: "name",         label: "Proveedor",          sortable: true  },
-  { key: "rut",          label: "RUT",                sortable: true, width: "w-32" },
-  { key: "businessActivity", label: "Giro",           sortable: true  },
-  { key: "paymentTerms", label: "Pago",               sortable: true, width: "w-28" },
-  { key: "isActive",     label: "Estado",             sortable: true, width: "w-24" },
-  { key: "",             label: "",                   sortable: false, width: "w-16" },
-]
-
 export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
-  const [sheetOpen,    setSheetOpen]    = React.useState(false)
-  const [editSupplier, setEditSupplier] = React.useState<SupplierRow | null>(null)
-  const [toggleState,  toggleAction]   = useActionState(toggleSupplierActive, INITIAL_STATE)
+  const {
+    sheetOpen, editRow: editSupplier, openCreate, openEdit, closeSheet, toggleAction,
+  } = useCatalogSheet<SupplierRow>(toggleSupplierActive)
 
-  useEffect(() => {
-    if (toggleState.message) {
-      if (toggleState.ok) toast.success(toggleState.message)
-      else toast.error(toggleState.message)
-    }
-  }, [toggleState])
-
-  function openCreate()              { setEditSupplier(null);  setSheetOpen(true) }
-  function openEdit(s: SupplierRow)  { setEditSupplier(s);     setSheetOpen(true) }
+  const [importOpen, setImportOpen] = React.useState(false)
 
   return (
     <>
       <DataTable
         columns={COLUMNS}
         rows={suppliers as unknown as Record<string, unknown>[]}
-        searchKeys={["name", "rut", "businessActivity", "commune", "city"]}
+        searchKeys={CONTRACT.searchKeys}
         pageSize={25}
 
         emptyTitle="Sin proveedores"
         emptyDescription="Registra el primer proveedor para comenzar."
         emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>}
-        actions={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>}
+        actions={(
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a
+              href="/api/admin/catalogos/export?tipo=proveedores"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
+            >
+              <DownloadSimple size={14} />Exportar XLSX
+            </a>
+            <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
+              <UploadSimple size={14} />Importar XLSX
+            </Button>
+            <Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>
+          </div>
+        )}
         renderMobileCard={(row) => {
           const s = row as unknown as SupplierRow
           return (
@@ -89,16 +88,13 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
               </dl>
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <button type="button" onClick={() => openEdit(s)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label="Editar proveedor">
-                  <PencilSimple size={16} />
-                </button>
-                <form action={toggleAction}>
-                  <input type="hidden" name="id" value={s.id} />
-                  <input type="hidden" name="activate" value={String(!s.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={s.isActive ? "Desactivar" : "Activar"} aria-label={`${s.isActive ? "Desactivar" : "Activar"} proveedor ${s.name}`}>
-                    {s.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
-                  </button>
-                </form>
+                <CatalogRowActions
+                  id={s.id}
+                  isActive={s.isActive}
+                  label={`proveedor ${s.name}`}
+                  onEdit={() => openEdit(s)}
+                  toggleAction={toggleAction}
+                />
               </div>
             </article>
           )
@@ -125,23 +121,28 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2 justify-end">
-                  <button type="button" onClick={() => openEdit(s)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label={`Editar proveedor ${s.name}`}>
-                    <PencilSimple size={16} />
-                  </button>
-                  <form action={toggleAction}>
-                    <input type="hidden" name="id" value={s.id} />
-                    <input type="hidden" name="activate" value={String(!s.isActive)} />
-                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={s.isActive ? "Desactivar" : "Activar"}>
-                      {s.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
-                    </button>
-                  </form>
+                  <CatalogRowActions
+                    id={s.id}
+                    isActive={s.isActive}
+                    label={`proveedor ${s.name}`}
+                    onEdit={() => openEdit(s)}
+                    toggleAction={toggleAction}
+                  />
                 </div>
               </TableCell>
             </TableRow>
           )
         }}
       />
-      <SupplierForm open={sheetOpen} onClose={() => setSheetOpen(false)} editSupplier={editSupplier} />
+      <SupplierForm open={sheetOpen} onClose={closeSheet} editSupplier={editSupplier} />
+      <CatalogImportPanel
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Importar proveedores desde XLSX"
+        description="Importa proveedores exportados desde el catálogo. La columna ID determina si se crea o actualiza."
+        action={importSuppliersFromXlsx}
+        helperText="Usa el botón Exportar XLSX para obtener la plantilla con los datos actuales."
+      />
     </>
   )
 }

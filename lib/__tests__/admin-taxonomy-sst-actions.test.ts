@@ -132,22 +132,24 @@ describe("setDocumentCategoryStatusAction", () => {
 
   it("deactivates", async () => {
     mockRequirePermission.mockResolvedValueOnce(makeSession())
-    mockSetCategoryActive.mockResolvedValueOnce({ slug: "x", name: "X", isActive: false })
+    mockSetCategoryActive.mockResolvedValueOnce({ row: { slug: "x", name: "X", isActive: false }, previousIsActive: true })
     const fd = new FormData(); fd.set("slug", "x"); fd.set("activate", "false")
     const res = await setDocumentCategoryStatusAction(prevState, fd)
     expect(res.ok).toBe(true)
     expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      oldState: { isActive: true },
       newState: { isActive: false },
     }))
   })
 
   it("reactivates", async () => {
     mockRequirePermission.mockResolvedValueOnce(makeSession())
-    mockSetCategoryActive.mockResolvedValueOnce({ slug: "x", name: "X", isActive: true })
+    mockSetCategoryActive.mockResolvedValueOnce({ row: { slug: "x", name: "X", isActive: true }, previousIsActive: false })
     const fd = new FormData(); fd.set("slug", "x"); fd.set("activate", "true")
     const res = await setDocumentCategoryStatusAction(prevState, fd)
     expect(res.ok).toBe(true)
     expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      oldState: { isActive: false },
       newState: { isActive: true },
     }))
   })
@@ -158,13 +160,15 @@ describe("setDocumentTypeStatusAction", () => {
 
   it("toggles by id", async () => {
     mockRequirePermission.mockResolvedValueOnce(makeSession())
-    mockSetTypeActive.mockResolvedValueOnce({ id: "t-1", name: "X", isActive: false })
+    mockSetTypeActive.mockResolvedValueOnce({ row: { id: "t-1", name: "X", isActive: false }, previousIsActive: true })
     const fd = new FormData(); fd.set("id", "t-1"); fd.set("activate", "false")
     const res = await setDocumentTypeStatusAction(prevState, fd)
     expect(res.ok).toBe(true)
     expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
       entityType: "sst_document_type",
       entityId: "t-1",
+      oldState: { isActive: true },
+      newState: { isActive: false },
     }))
   })
 })

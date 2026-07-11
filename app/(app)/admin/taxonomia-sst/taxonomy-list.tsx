@@ -104,16 +104,11 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
           <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
             Categorías
           </h2>
-          <div className="flex items-center gap-2">
-            <form action={seedAction}>
-              <Button type="submit" variant="secondary" size="sm">
-                <ArrowsClockwise size={14} />Sembrar predeterminadas
-              </Button>
-            </form>
-            <Button size="sm" onClick={() => { setEditCategory(null); setCatSheetOpen(true) }}>
-              <Plus size={14} />Nueva categoría
+          <form action={seedAction}>
+            <Button type="submit" variant="secondary" size="sm">
+              <ArrowsClockwise size={14} />Sembrar predeterminadas
             </Button>
-          </div>
+          </form>
         </div>
         {activeCategory && (
           <p className="mb-2 text-xs text-[var(--color-text-muted)]">
@@ -196,17 +191,10 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
       </section>
 
       <section>
-        <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="mb-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
             Tipos {activeCategory ? `· ${activeCategory.name}` : ""}
           </h2>
-          <Button
-            size="sm"
-            disabled={!activeSlug}
-            onClick={() => { setEditType(null); setTypeSheetOpen(true) }}
-          >
-            <Plus size={14} />Nuevo tipo
-          </Button>
         </div>
         {!activeSlug ? (
           <p className="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] p-6 text-center text-sm text-[var(--color-text-muted)]">

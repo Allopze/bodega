@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { requirePermission } from "@/lib/auth/can"
 import { getFleetOverview } from "@/lib/services/fleet"
+import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { FleetFilters } from "./fleet-filters"
 
 export const metadata: Metadata = { title: "Flota" }
@@ -28,14 +29,18 @@ export default async function FlotaPage({
   try { session = await requirePermission("flota:view") }
   catch { redirect("/forbidden") }
 
-  const vehicles = await getFleetOverview(session)
+  const [vehicles, fleetSettings] = await Promise.all([
+    getFleetOverview(session),
+    getFleetAdminSettings(),
+  ])
   const sp = await searchParams
   const filterEstado = typeof sp.estado === "string" ? sp.estado : undefined
   const filterResponsable = typeof sp.responsable === "string" ? sp.responsable : undefined
   const filterVencimiento = typeof sp.vencimiento === "string" ? sp.vencimiento : undefined
 
+  const warningDays = fleetSettings.warningDays
   const now = new Date()
-  const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const warningWindowEnd = new Date(now.getTime() + warningDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   // Client-side filtering after server fetch
   let filteredVehicles = vehicles
@@ -50,9 +55,9 @@ export default async function FlotaPage({
     if (filterVencimiento === "vencidos") {
       filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate < nowStr)
     } else if (filterVencimiento === "proximos") {
-      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate >= nowStr && v.nextExpiryDate <= thirtyDays)
+      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate >= nowStr && v.nextExpiryDate <= warningWindowEnd)
     } else if (filterVencimiento === "al-dia") {
-      filteredVehicles = filteredVehicles.filter((v) => !v.nextExpiryDate || v.nextExpiryDate >= thirtyDays)
+      filteredVehicles = filteredVehicles.filter((v) => !v.nextExpiryDate || v.nextExpiryDate >= warningWindowEnd)
     }
   }
 
@@ -71,7 +76,7 @@ export default async function FlotaPage({
   const expiringSoon = vehicles.filter((vehicle) =>
     vehicle.nextExpiryDate &&
     vehicle.nextExpiryDate >= now.toISOString().slice(0, 10) &&
-    vehicle.nextExpiryDate <= thirtyDays,
+    vehicle.nextExpiryDate <= warningWindowEnd,
   )
 
   return (
@@ -87,7 +92,7 @@ export default async function FlotaPage({
         }
         headerActions={
           <Button asChild size="sm" variant="secondary">
-            <Link href="/combustibles/vehiculos">Gestionar vehículos</Link>
+            <Link href="/admin/flota-catalogos/vehiculos">Gestionar vehículos</Link>
           </Button>
         }
       />
@@ -109,7 +114,7 @@ export default async function FlotaPage({
           )}
           {expiringSoon.length > 0 && (
             <div className="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
-              <strong>Próximos a vencer (30 días):</strong>{" "}
+              <strong>Próximos a vencer ({warningDays} días):</strong>{" "}
               {expiringSoon.map((v) => v.plate).join(", ")}
             </div>
           )}
@@ -125,6 +130,7 @@ export default async function FlotaPage({
             operationalStatuses={operationalStatuses}
             responsibleUsers={responsibleUsers}
             current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento }}
+            warningDays={warningDays}
           />
         </CardContent>
       </Card>

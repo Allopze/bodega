@@ -13,9 +13,10 @@ interface FleetFiltersProps {
     responsable?: string
     vencimiento?: string
   }
+  warningDays: number
 }
 
-export function FleetFilters({ operationalStatuses, responsibleUsers, current }: FleetFiltersProps) {
+export function FleetFilters({ operationalStatuses, responsibleUsers, current, warningDays }: FleetFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -65,7 +66,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current }:
         <SelectContent>
           <SelectItem value="all">Sin filtro de vencimiento</SelectItem>
           <SelectItem value="vencidos">Documentos vencidos</SelectItem>
-          <SelectItem value="proximos">Próximos a vencer (30 días)</SelectItem>
+          <SelectItem value="proximos">Próximos a vencer ({warningDays} días)</SelectItem>
           <SelectItem value="al-dia">Al día</SelectItem>
         </SelectContent>
       </Select>

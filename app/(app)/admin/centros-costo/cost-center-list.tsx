@@ -1,24 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect } from "react"
-import { PencilSimple, Plus, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { Plus } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
+import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
+import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { toast } from "@/lib/toast"
-import { INITIAL_STATE } from "@/components/admin/form-state"
 import { setCostCenterActiveAction } from "./actions"
+import { COLUMNS as CC_COLUMNS, CONTRACT } from "./catalog-contract"
 import { CostCenterForm, type CostCenterRow, type WorksiteOption } from "./cost-center-form"
-
-const CC_COLUMNS = [
-  { key: "code", label: "Código", sortable: true, width: "w-40" },
-  { key: "name", label: "Nombre", sortable: true },
-  { key: "worksiteName", label: "Faena", sortable: true },
-  { key: "isActive", label: "Estado", sortable: true, width: "w-32" },
-  { key: "", label: "", sortable: false, width: "w-28" },
-]
 
 interface CostCenterListProps {
   costCenters: CostCenterRow[]
@@ -27,25 +19,9 @@ interface CostCenterListProps {
 }
 
 export function CostCenterList({ costCenters, worksites, canCreate }: CostCenterListProps) {
-  const [sheetOpen, setSheetOpen] = React.useState(false)
-  const [editCc, setEditCc] = React.useState<CostCenterRow | null>(null)
-
-  const [toggleState, toggleAction] = useActionState(setCostCenterActiveAction, INITIAL_STATE)
-  useEffect(() => {
-    if (toggleState.message) {
-      if (toggleState.ok) toast.success(toggleState.message)
-      else toast.error(toggleState.message)
-    }
-  }, [toggleState])
-
-  function openNew() {
-    setEditCc(null)
-    setSheetOpen(true)
-  }
-  function openEdit(cc: CostCenterRow) {
-    setEditCc(cc)
-    setSheetOpen(true)
-  }
+  const {
+    sheetOpen, editRow: editCc, openCreate: openNew, openEdit, closeSheet, toggleAction,
+  } = useCatalogSheet<CostCenterRow>(setCostCenterActiveAction)
 
   const rows = costCenters as (CostCenterRow & Record<string, unknown>)[]
 
@@ -54,12 +30,40 @@ export function CostCenterList({ costCenters, worksites, canCreate }: CostCenter
       <DataTable
         columns={CC_COLUMNS}
         rows={rows}
-        searchKeys={["code", "name", "worksiteName", "description"]}
+        searchKeys={CONTRACT.searchKeys}
         pageSize={20}
         emptyTitle="Sin centros de costo"
         emptyDescription={canCreate ? "Crea el primer centro de costo para la organización." : "No hay centros de costo registrados."}
         emptyAction={canCreate ? <Button size="sm" onClick={openNew}><Plus size={14} />Nuevo centro</Button> : undefined}
         actions={canCreate ? <Button size="sm" onClick={openNew}><Plus size={14} />Nuevo centro</Button> : undefined}
+        renderMobileCard={(row) => {
+          const cc = row as unknown as CostCenterRow
+          return (
+            <article key={cc.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs text-[var(--color-text-subtle)]">{cc.code}</p>
+                  <h2 className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{cc.name}</h2>
+                </div>
+                <Badge variant={cc.isActive ? "success" : "default"} dot>
+                  {cc.isActive ? "Activo" : "Inactivo"}
+                </Badge>
+              </div>
+              <p className="mt-3 text-xs text-[var(--color-text-muted)]">{cc.worksiteName || "Sin faena asociada"}</p>
+              {canCreate && (
+                <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+                  <CatalogRowActions
+                    id={cc.id}
+                    isActive={cc.isActive}
+                    label={`centro de costo ${cc.name}`}
+                    onEdit={() => openEdit(cc)}
+                    toggleAction={toggleAction}
+                  />
+                </div>
+              )}
+            </article>
+          )
+        }}
         renderRow={(row) => {
           const cc = row as CostCenterRow
           return (
@@ -76,27 +80,13 @@ export function CostCenterList({ costCenters, worksites, canCreate }: CostCenter
                 <TableCell>
                   <div className="flex items-center gap-1">
                     {canCreate && (
-                      <button
-                        type="button"
-                        onClick={() => openEdit(cc)}
-                        className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                        aria-label={`Editar ${cc.name}`}
-                      >
-                        <PencilSimple size={15} />
-                      </button>
-                    )}
-                    {canCreate && (
-                      <form action={toggleAction}>
-                        <input type="hidden" name="id" value={cc.id} />
-                        <input type="hidden" name="activate" value={String(!cc.isActive)} />
-                        <button
-                          type="submit"
-                          className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                          aria-label={cc.isActive ? "Desactivar" : "Reactivar"}
-                        >
-                          {cc.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                        </button>
-                      </form>
+                      <CatalogRowActions
+                        id={cc.id}
+                        isActive={cc.isActive}
+                        label={`centro de costo ${cc.name}`}
+                        onEdit={() => openEdit(cc)}
+                        toggleAction={toggleAction}
+                      />
                     )}
                   </div>
                 </TableCell>
@@ -109,7 +99,7 @@ export function CostCenterList({ costCenters, worksites, canCreate }: CostCenter
         <CostCenterForm
           key={editCc?.id ?? "nuevo"}
           open={sheetOpen}
-          onClose={() => setSheetOpen(false)}
+          onClose={closeSheet}
           editCostCenter={editCc}
           worksites={worksites}
         />

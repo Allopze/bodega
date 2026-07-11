@@ -106,14 +106,16 @@ test.describe("Combustibles module", () => {
 
   test("vehicles catalog page loads", async ({ page }) => {
     await page.goto("/combustibles/vehiculos")
+    await expect(page).toHaveURL(/\/admin\/flota-catalogos\/vehiculos$/)
     await expect(page.locator("h1").first()).toContainText("Vehículos")
     await expect(page.getByText("Patente")).toBeVisible()
   })
 
   test("suppliers catalog page loads", async ({ page }) => {
     await page.goto("/combustibles/proveedores-combustible")
+    await expect(page).toHaveURL(/\/admin\/flota-catalogos\/proveedores-combustible$/)
     await expect(page.locator("h1").first()).toContainText("Proveedores")
-    await expect(page.getByText("Nombre")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Ordenar por Proveedor" })).toBeVisible()
   })
 
   test("monthly statements page loads", async ({ page }) => {

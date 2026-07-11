@@ -1,5 +1,17 @@
-export interface Category  { id: string; name: string; slug: string }
+export interface Category  { id: string; name: string; slug: string; isEpp?: boolean; requiresPrevencion?: boolean }
 export interface Supplier  { id: string; name: string }
+export interface ProductUnitOption { code: string; label: string; isActive?: boolean }
+
+export interface AttributeTemplateOption {
+  id: string
+  categoryId: string
+  categoryName?: string
+  name: string
+  type: "text" | "select" | "number"
+  isRequired: boolean
+  options: string
+  sortOrder: number
+}
 
 export interface AttributeRow {
   id?: string
@@ -40,8 +52,8 @@ export interface ProductFormProps {
   onClose:       () => void
   categories:    Category[]
   allSuppliers:  Supplier[]
+  units:         ProductUnitOption[]
+  templates:     AttributeTemplateOption[]
   editProduct?:  ProductForEdit | null
   variant?:      "sheet" | "embedded"
 }
-
-export const UOM_OPTIONS = ["unidad", "par", "caja", "paquete", "rollo", "metro", "kg", "litro", "juego", "set"]

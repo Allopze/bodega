@@ -32,6 +32,7 @@ export {
   parseEppWorkbook,
   findProductMatches,
   buildCorrections,
+  buildEppFamilyIdentityKey,
   type NormalizedEppRow,
   type ImportCorrection,
   type ImportDecision,
@@ -191,7 +192,7 @@ function buildManualCorrections(previous: NormalizedEppRow, next: NormalizedEppR
 }
 
 async function resolveCategory(tx: Tx, categoryName: string) { const slug = toCode(categoryName).toLowerCase(); const existing = await tx.query.productCategories.findFirst({ where: eq(productCategories.slug, slug) }); if (existing) return existing; const id = slug === "epp" ? DEFAULT_CATEGORY.id : `cat-${slug}`; await tx.insert(productCategories).values({ id, name: categoryName, slug, isEpp: true, requiresPrevencion: true, sortOrder: 10 }).onConflictDoNothing(); return { id, name: categoryName } }
-async function resolveFamily(tx: Tx, categoryId: string, normalized: NormalizedEppRow) { const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, normalized.identityKey) }); if (existing) return existing; const id = nanoid(); await tx.insert(eppProductFamilies).values({ id, categoryId, canonicalName: normalized.canonicalName, identityKey: normalized.identityKey, eppType: normalized.eppType, brand: normalized.brand, model: normalized.model }); return { id } }
+async function resolveFamily(tx: Tx, categoryId: string, normalized: NormalizedEppRow) { const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, normalized.familyIdentityKey) }); if (existing) return existing; const id = nanoid(); await tx.insert(eppProductFamilies).values({ id, categoryId, canonicalName: normalized.canonicalName, identityKey: normalized.familyIdentityKey, eppType: normalized.eppType, brand: normalized.brand, model: normalized.model }); return { id } }
 async function resolveSupplier(tx: Tx, supplierName: string) { const existing = await tx.query.suppliers.findFirst({ where: eq(suppliers.name, supplierName) }); if (existing) return existing; const id = `sup-${toCode(supplierName).toLowerCase()}`; await tx.insert(suppliers).values({ id, name: supplierName, isActive: true, notes: "Aprobado durante importación de EPP." }).onConflictDoNothing(); return { id } }
 async function generateUniqueEppSku(tx: Tx) { for (let attempt = 0; attempt < 5; attempt++) { const sku = `EPP-${nanoid(6).toUpperCase().replace(/[^A-Z0-9]/g, "X")}`; const existing = await tx.query.products.findFirst({ where: eq(products.sku, sku) }); if (!existing) return sku } throw new Error("No se pudo generar un SKU único") }
 async function persistProductDetails(tx: Tx, productId: string, normalized: NormalizedEppRow, supplierId: string | null) { if (normalized.attributes.length) await tx.insert(productAttributes).values(normalized.attributes.map((attribute, index) => ({ id: nanoid(), productId, categoryId: null, name: attribute.name, type: "select", isRequired: true, options: JSON.stringify([attribute.value]), sortOrder: index }))); if (supplierId) await tx.insert(productSuppliers).values({ id: nanoid(), productId, supplierId, unitPrice: normalized.price, isPreferred: true }).onConflictDoUpdate({ target: [productSuppliers.productId, productSuppliers.supplierId], set: { unitPrice: normalized.price, isPreferred: true, lastUpdated: new Date().toISOString() } }) }

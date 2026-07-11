@@ -134,3 +134,31 @@ export async function defaultScopeRolesForSheetIds(sheetIds: string[]): Promise<
     .where(inArray(pdtpSheets.id, sheetIds))
   return Object.fromEntries(rows.map((r) => [r.id, r.defaultScopeRoles as string[]]))
 }
+
+export async function setPdtpResponsibleActive(slug: string, isActive: boolean) {
+  const [current] = await db
+    .select({ isActive: pdtpResponsibleCatalog.isActive })
+    .from(pdtpResponsibleCatalog)
+    .where(eq(pdtpResponsibleCatalog.slug, slug))
+  if (!current) throw new Error("Responsable PDTP no encontrado")
+  const [row] = await db
+    .update(pdtpResponsibleCatalog)
+    .set({ isActive })
+    .where(eq(pdtpResponsibleCatalog.slug, slug))
+    .returning()
+  return { row: row!, previousIsActive: current.isActive }
+}
+
+export async function setPdtpSheetActive(id: string, isActive: boolean) {
+  const [current] = await db
+    .select({ isActive: pdtpSheets.isActive })
+    .from(pdtpSheets)
+    .where(eq(pdtpSheets.id, id))
+  if (!current) throw new Error("Hoja PDTP no encontrada")
+  const [row] = await db
+    .update(pdtpSheets)
+    .set({ isActive })
+    .where(eq(pdtpSheets.id, id))
+    .returning()
+  return { row: row!, previousIsActive: current.isActive }
+}

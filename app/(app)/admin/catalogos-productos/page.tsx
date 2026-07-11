@@ -17,16 +17,23 @@ export default async function ProductCatalogsPage() {
     redirect("/forbidden")
   }
 
-  const [units, templates, distinctRows] = await Promise.all([
+  const [units, templates, categories, distinctRows] = await Promise.all([
     db.select().from(productUnits).orderBy(asc(productUnits.sortOrder), asc(productUnits.code)),
     db.select().from(productAttributeTemplates).orderBy(asc(productAttributeTemplates.sortOrder), asc(productAttributeTemplates.name)),
+    db.query.productCategories.findMany({
+      orderBy: (category, { asc }) => [asc(category.sortOrder), asc(category.name)],
+    }),
     db
       .select({ value: sql<string>`DISTINCT ${products.unitOfMeasure}` })
       .from(products)
       .orderBy(sql`${products.unitOfMeasure} ASC`),
   ])
 
-  const legacyUnits = distinctRows.map((r) => r.value).filter((v) => typeof v === "string" && v.length > 0) as string[]
+  const registeredUnitCodes = new Set(units.map((unit) => unit.code))
+  const legacyUnits = distinctRows
+    .map((r) => r.value)
+    .filter((value): value is string => typeof value === "string" && value.length > 0 && !registeredUnitCodes.has(value))
+  const categoryNames = new Map(categories.map((category) => [category.id, category.name]))
 
   return (
     <PageContainer>
@@ -47,6 +54,7 @@ export default async function ProductCatalogsPage() {
         templates={templates.map((t) => ({
           id: t.id,
           categoryId: t.categoryId ?? "",
+          categoryName: categoryNames.get(t.categoryId ?? "") ?? "",
           name: t.name,
           type: t.type,
           options: t.options ?? "",
@@ -54,6 +62,7 @@ export default async function ProductCatalogsPage() {
           sortOrder: t.sortOrder,
           isActive: t.isActive,
         }))}
+        categories={categories.map((category) => ({ id: category.id, name: category.name }))}
         legacyUnits={legacyUnits}
       />
     </PageContainer>

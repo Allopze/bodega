@@ -139,6 +139,14 @@ export const productSchema = z.object({
   isActive:           z.coerce.boolean().default(true),
   attributes:         z.array(productAttributeSchema).default([]),
   suppliers:          z.array(productSupplierSchema).default([]),
+}).superRefine((data, ctx) => {
+  if (data.suppliers.filter((s) => s.isPreferred).length > 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["suppliers"],
+      message: "Solo un proveedor puede ser preferido",
+    })
+  }
 })
 
 // ── Worker (Trabajador) ───────────────────────────────────────────────────────

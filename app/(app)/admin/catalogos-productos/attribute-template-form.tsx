@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 import {
   Sheet,
   SheetContent,
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { toast } from "@/lib/toast"
 import { saveAttributeTemplateAction } from "./actions"
@@ -30,12 +31,14 @@ export interface AttributeTemplateRow {
   isRequired: boolean
   sortOrder: number
   isActive: boolean
+  categoryName?: string
 }
 
 interface AttributeTemplateFormProps {
   open: boolean
   onClose: () => void
   editTemplate?: AttributeTemplateRow | null
+  categories: { id: string; name: string }[]
 }
 
 function optionsAsLines(json: string | undefined): string {
@@ -43,15 +46,17 @@ function optionsAsLines(json: string | undefined): string {
   try {
     const parsed: unknown = JSON.parse(json)
     if (Array.isArray(parsed)) return parsed.map((v) => String(v)).join("\n")
-    return ""
+    return json
   } catch {
-    return ""
+    return json.replace(/\s*,\s*/g, "\n")
   }
 }
 
-export function AttributeTemplateForm({ open, onClose, editTemplate }: AttributeTemplateFormProps) {
+export function AttributeTemplateForm({ open, onClose, editTemplate, categories }: AttributeTemplateFormProps) {
   const isEdit = !!editTemplate
-  const isSelectType = (editTemplate?.type ?? "text") === "select"
+  const [type, setType] = useState(editTemplate?.type ?? "text")
+  const [categoryId, setCategoryId] = useState(editTemplate?.categoryId || "__all__")
+  const isSelectType = type === "select"
 
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -88,19 +93,25 @@ export function AttributeTemplateForm({ open, onClose, editTemplate }: Attribute
                 <Input id="attr-name" name="name" defaultValue={editTemplate?.name ?? ""} error={!!state.fieldErrors?.name} />
               </Field>
               <Field label="Tipo" htmlFor="attr-type" required error={state.fieldErrors?.type?.[0]}>
-                <select
-                  id="attr-type"
-                  name="type"
-                  defaultValue={editTemplate?.type ?? "text"}
-                  className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm"
-                >
-                  {ATTRIBUTE_TYPE_OPTIONS.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                <Select value={type} onValueChange={setType}>
+                  <SelectTrigger id="attr-type" error={!!state.fieldErrors?.type}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ATTRIBUTE_TYPE_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <input type="hidden" name="type" value={type} />
               </Field>
-              <Field label="Categoría (id)" htmlFor="attr-cat" error={state.fieldErrors?.categoryId?.[0]} helper="Slug de la categoría a la que aplica. Vacío para todas.">
-                <Input id="attr-cat" name="categoryId" defaultValue={editTemplate?.categoryId ?? ""} error={!!state.fieldErrors?.categoryId} />
+              <Field label="Categoría" htmlFor="attr-cat" error={state.fieldErrors?.categoryId?.[0]} helper="Vacío para reutilizarla en cualquier categoría.">
+                <Select value={categoryId} onValueChange={setCategoryId}>
+                  <SelectTrigger id="attr-cat" error={!!state.fieldErrors?.categoryId}>
+                    <SelectValue placeholder="Todas las categorías" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">Todas las categorías</SelectItem>
+                    {categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <input type="hidden" name="categoryId" value={categoryId === "__all__" ? "" : categoryId} />
               </Field>
               {isSelectType && (
                 <Field label="Opciones (una por línea)" htmlFor="attr-options" required error={state.fieldErrors?.optionsText?.[0]}>

@@ -51,10 +51,12 @@ export function SessionRetryHandler() {
   const retryCountRef = useRef(0)
   const hadSessionRef = useRef(false)
 
-  // Track whether we ever had a valid session (set synchronously during render).
-  if (session) {
-    hadSessionRef.current = true
-  }
+  // Track whether we ever had a valid session.
+  useEffect(() => {
+    if (session) {
+      hadSessionRef.current = true
+    }
+  }, [session])
 
   useEffect(() => {
     // Detect session fetch failure:

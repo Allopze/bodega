@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
-import { products, productAttributes, productSuppliers, productCategories } from "@/db/schema"
+import { eppProductFamilies, products, productAttributes, productSuppliers, productCategories } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
-import { cancelEppImportBatch, confirmEppImportBatch, reviewEppImportRow, stageEppImportXlsx } from "@/lib/services/epp-import"
+import { buildEppFamilyIdentityKey, cancelEppImportBatch, confirmEppImportBatch, reviewEppImportRow, stageEppImportXlsx } from "@/lib/services/epp-import"
+import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
 import { productSchema, productCategorySchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/productos"
@@ -22,6 +23,18 @@ async function generateUniqueProductSku(isEpp: boolean) {
   }
 
   throw new Error("No se pudo generar un SKU único")
+}
+
+async function resolveManualEppFamily(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], input: { categoryId: string; name: string; isEpp: boolean }) {
+  if (!input.isEpp) return null
+  const category = await tx.query.productCategories.findFirst({ where: eq(productCategories.id, input.categoryId) })
+  if (!category) return null
+  const identityKey = buildEppFamilyIdentityKey({ categoryName: category.name, canonicalName: input.name, brand: null, model: null })
+  const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, identityKey) })
+  if (existing) return existing
+  const id = nanoid()
+  await tx.insert(eppProductFamilies).values({ id, categoryId: input.categoryId, canonicalName: input.name, identityKey, eppType: null, brand: null, model: null })
+  return { id }
 }
 
 function formString(formData: FormData, name: string) {
@@ -150,10 +163,12 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   const sku = await generateUniqueProductSku(d.isEpp)
 
   await db.transaction(async (tx) => {
+    const family = await resolveManualEppFamily(tx, { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp })
     await tx.insert(products).values({
       id, sku, name: d.name,
       description: d.description || null,
       categoryId: d.categoryId,
+      familyId: family?.id ?? null,
       unitOfMeasure: d.unitOfMeasure,
       isEpp: d.isEpp,
       requiresPrevencion: d.requiresPrevencion,
@@ -226,10 +241,12 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   const sku = current.sku
 
   await db.transaction(async (tx) => {
+    const family = await resolveManualEppFamily(tx, { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp })
     await tx.update(products).set({
       sku, name: d.name,
       description: d.description || null,
       categoryId: d.categoryId,
+      familyId: family?.id ?? null,
       unitOfMeasure: d.unitOfMeasure,
       isEpp: d.isEpp,
       requiresPrevencion: d.requiresPrevencion,
@@ -277,7 +294,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
 // ── Read for edit ─────────────────────────────────────────────────────────────
 
 export async function getProductForEdit(id: string) {
-  try { await requirePermission("admin:epp_import_review") }
+  try { await requirePermission("admin:products") }
   catch { return null }
 
   const product = await db.query.products.findFirst({
@@ -417,4 +434,92 @@ export async function confirmEppImportBatchAction(_prev: ActionState, formData: 
     revalidatePath(REVALIDATE)
     return { ok: true, message: `Lote confirmado: ${result.created} creados, ${result.updated} actualizados`, data: result }
   } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo confirmar el lote" } }
+}
+
+export async function importProductsFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:products") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const file = formData.get("file")
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+  }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    return { ok: false, fieldErrors: { file: ["El archivo debe estar en formato .xlsx"] } }
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return { ok: false, fieldErrors: { file: ["El archivo no puede superar 10 MB"] } }
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const result = await parseCatalogWorkbook(buffer)
+  if (!result.ok) return { ok: false, message: result.errors.join("; ") }
+
+  const activeRows = result.rows.filter((r) => r.decision !== "skip")
+  let created = 0
+  let updated = 0
+  let skipped = 0
+
+  try {
+    await db.transaction(async (tx) => {
+      for (const row of activeRows) {
+        const v = row.values
+        const name = (v["Nombre"] ?? "").trim()
+        const isActive = v["Activo"]?.trim() !== "No"
+        const categoryName = (v["Categoría"] ?? "Elementos de Protección Personal").trim()
+        const category = await resolveImportCategory(tx, categoryName)
+
+        if (!name) { skipped++; continue }
+
+        if (row.decision === "update" && row.existingId) {
+          updated++
+          await tx.update(products).set({
+            name,
+            categoryId: category.id,
+            description: (v["Descripción"] ?? "").trim() || null,
+            unitOfMeasure: (v["Unidad"] ?? "unidad").trim(),
+            isEpp: v["EPP"]?.trim() === "Sí",
+            requiresPrevencion: v["Prevención"]?.trim() === "Sí",
+            referencePrice: parseFloat(v["Precio ref."] ?? "") || null,
+            isActive,
+            updatedAt: new Date().toISOString(),
+          }).where(eq(products.id, row.existingId!))
+        } else {
+          created++
+          const sku = await generateUniqueProductSku(false)
+          const id = nanoid()
+          await tx.insert(products).values({
+            id, sku, name,
+            categoryId: category.id,
+            description: (v["Descripción"] ?? "").trim() || null,
+            unitOfMeasure: (v["Unidad"] ?? "unidad").trim(),
+            isEpp: v["EPP"]?.trim() === "Sí",
+            requiresPrevencion: v["Prevención"]?.trim() === "Sí",
+            referencePrice: parseFloat(v["Precio ref."] ?? "") || null,
+            isActive,
+          })
+        }
+      }
+    })
+    await recordAudit({
+      userId: session.user.id, userEmail: session.user.email ?? undefined,
+      action: "create", entityType: "product", entityId: "import_xlsx",
+      newState: { created, updated, skipped },
+    })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos`, data: { created, updated, skipped } }
+  } catch (err) {
+    logger.error("[admin/productos] importXlsx", err)
+    return { ok: false, message: (err as Error).message }
+  }
+}
+
+async function resolveImportCategory(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], name: string) {
+  const slug = name.toLowerCase().replace(/\s+/g, "_").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  const existing = await tx.query.productCategories.findFirst({ where: eq(productCategories.slug, slug) })
+  if (existing) return existing
+  const id = `cat-${slug}`
+  await tx.insert(productCategories).values({ id, name, slug, isEpp: false, requiresPrevencion: false, sortOrder: 10 }).onConflictDoNothing()
+  return { id, name }
 }

@@ -1,96 +1,114 @@
 "use client"
 
-import { useState } from "react"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import * as React from "react"
+import { DataTable } from "@/components/admin/data-table"
+import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
+import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Trash } from "@phosphor-icons/react"
-import { EditSupplierDialog } from "./edit-supplier-dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { deleteFuelSupplierAction } from "../actions"
-import { toast } from "@/lib/toast"
+import { TableCell, TableRow } from "@/components/ui/table"
+import { Plus } from "@phosphor-icons/react"
+import { toggleFuelSupplierActive } from "../actions"
+import { CONTRACT, COLUMNS } from "./catalog-contract"
+import { FuelSupplierForm, type FuelSupplierRow, type GeneralSupplierOption } from "./supplier-form"
 
-interface SupplierRow {
-  id: string
-  name: string
-  rut: string | null
-  contactName: string | null
-  contactPhone: string | null
-  contactEmail: string | null
-  isActive: boolean
-}
-
-export function SupplierCatalogTable({ suppliers }: { suppliers: SupplierRow[] }) {
-  const [deleting, setDeleting] = useState<string | null>(null)
-  const [confirmId, setConfirmId] = useState<string | null>(null)
-
-  async function handleDelete(id: string) {
-    setDeleting(id)
-    setConfirmId(null)
-    const result = await deleteFuelSupplierAction(id)
-    if (result.ok) toast.success(result.message)
-    else toast.error(result.message)
-    setDeleting(null)
-  }
+export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: FuelSupplierRow[]; generalSuppliers: GeneralSupplierOption[] }) {
+  const {
+    sheetOpen, editRow, openCreate, openEdit, closeSheet, toggleAction, togglePending,
+  } = useCatalogSheet<FuelSupplierRow>(toggleFuelSupplierActive)
+  const [confirmId, setConfirmId] = React.useState<string | null>(null)
 
   return (
-    <div className="border rounded-lg overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-      <Table className="min-w-[600px]">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Nombre</TableHead>
-            <TableHead>RUT</TableHead>
-            <TableHead>Contacto</TableHead>
-            <TableHead>Teléfono</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead className="w-20"></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {suppliers.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                No hay proveedores de combustible registrados
+    <>
+      <DataTable
+        columns={COLUMNS}
+        rows={suppliers as unknown as Record<string, unknown>[]}
+        searchKeys={CONTRACT.searchKeys}
+        pageSize={25}
+        emptyTitle="Sin proveedores de combustible"
+        emptyDescription="Registra el primer proveedor para comenzar."
+        emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>}
+        actions={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>}
+        renderMobileCard={(row) => {
+          const supplier = row as unknown as FuelSupplierRow
+          return (
+            <article key={supplier.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-medium text-[var(--color-text)]">{supplier.name}</h2>
+                  <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{supplier.rut ?? "—"}</p>
+                </div>
+                <Badge variant={supplier.isActive ? "success" : "default"} dot>{supplier.isActive ? "Activo" : "Inactivo"}</Badge>
+              </div>
+              <p className="mt-3 text-xs text-[var(--color-text-muted)]">{supplier.contactName ?? "Sin contacto"}</p>
+              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+                <CatalogRowActions
+                  id={supplier.id}
+                  isActive={supplier.isActive}
+                  label={`proveedor de combustible ${supplier.name}`}
+                  onEdit={() => openEdit(supplier)}
+                  toggleAction={toggleAction}
+                  onDeactivateRequest={() => setConfirmId(supplier.id)}
+                  togglePending={togglePending}
+                />
+              </div>
+            </article>
+          )
+        }}
+        renderRow={(row) => {
+          const supplier = row as unknown as FuelSupplierRow
+          return (
+            <TableRow key={supplier.id}>
+              <TableCell className="font-medium">{supplier.name}</TableCell>
+              <TableCell className="font-mono text-xs">{supplier.rut ?? "—"}</TableCell>
+              <TableCell>{supplier.contactName ?? "—"}</TableCell>
+              <TableCell>{supplier.contactPhone ?? "—"}</TableCell>
+              <TableCell>{supplier.contactEmail ?? "—"}</TableCell>
+              <TableCell><Badge variant={supplier.isActive ? "success" : "default"} dot>{supplier.isActive ? "Activo" : "Inactivo"}</Badge></TableCell>
+              <TableCell>
+                <div className="flex justify-end gap-2">
+                  <CatalogRowActions
+                    id={supplier.id}
+                    isActive={supplier.isActive}
+                    label={`proveedor de combustible ${supplier.name}`}
+                    onEdit={() => openEdit(supplier)}
+                    toggleAction={toggleAction}
+                    onDeactivateRequest={() => setConfirmId(supplier.id)}
+                    togglePending={togglePending}
+                  />
+                </div>
               </TableCell>
             </TableRow>
-          ) : (
-            suppliers.map((s) => (
-              <TableRow key={s.id}>
-                <TableCell className="font-semibold">{s.name}</TableCell>
-                <TableCell className="font-mono text-sm">{s.rut ?? "—"}</TableCell>
-                <TableCell>{s.contactName ?? "—"}</TableCell>
-                <TableCell>{s.contactPhone ?? "—"}</TableCell>
-                <TableCell>{s.contactEmail ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant={s.isActive ? "success" : "default"}>
-                    {s.isActive ? "Activo" : "Inactivo"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <EditSupplierDialog supplier={s} />
-                    <Button variant="ghost" size="sm" onClick={() => setConfirmId(s.id)} disabled={deleting === s.id || !s.isActive}>
-                      <Trash className="h-4 w-4" />
-                    </Button>
-                  </div>
+          )
+        }}
+      />
 
       <ConfirmDialog
         open={confirmId !== null}
         onOpenChange={(open) => { if (!open) setConfirmId(null) }}
         title="¿Desactivar proveedor?"
-        description="El proveedor quedará inactivo y no aparecerá en las listas de selección. Esta acción no elimina sus registros históricos."
+        description="El proveedor quedará inactivo para nuevas cargas, pero conservará sus relaciones financieras e historia."
         confirmLabel="Desactivar"
         variant="warning"
-        loading={deleting !== null}
-        onConfirm={() => confirmId && handleDelete(confirmId)}
+        loading={togglePending}
+        onConfirm={() => {
+          if (!confirmId) return
+          const formData = new FormData()
+          formData.set("id", confirmId)
+          formData.set("activate", "false")
+          toggleAction(formData)
+          setConfirmId(null)
+        }}
       />
-                </TableCell>
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
+
+      <FuelSupplierForm
+        key={editRow?.id ?? "nuevo"}
+        open={sheetOpen}
+        onClose={closeSheet}
+        editSupplier={editRow}
+        generalSuppliers={generalSuppliers}
+      />
+    </>
   )
 }

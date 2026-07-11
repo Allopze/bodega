@@ -7,6 +7,8 @@ import {
   parseDefaultScopeRoles,
   upsertPdtpResponsible,
   upsertPdtpSheet,
+  setPdtpResponsibleActive,
+  setPdtpSheetActive,
   type PdtpResponsibleInput,
   type PdtpSheetInput,
 } from "@/lib/services/pdtp/admin-catalogs"
@@ -102,6 +104,66 @@ export async function savePdtpSheetAction(_prev: ActionState, formData: FormData
     })
     revalidatePath(REVALIDATE)
     return { ok: true, message: `Hoja ${row.code} guardada` }
+  } catch (err) {
+    return { ok: false, message: (err as Error).message }
+  }
+}
+
+export async function togglePdtpResponsibleActiveAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try {
+    session = await requirePermission("admin:pdtp_catalog")
+  } catch {
+    return errorState("Sin permisos")
+  }
+
+  const slug = (formData.get("slug") as string | null)?.trim()
+  const activate = formData.get("activate") === "true"
+  if (!slug) return errorState("Slug requerido")
+
+  try {
+    const { row, previousIsActive } = await setPdtpResponsibleActive(slug, activate)
+    await recordAudit({
+      userId:     session.user.id,
+      userEmail:  session.user.email ?? undefined,
+      action:     "update",
+      entityType: "pdtp_responsible",
+      entityId:   row.slug,
+      oldState:   { isActive: previousIsActive },
+      newState:   { isActive: activate },
+    })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: activate ? `Responsable ${row.displayName} activado` : `Responsable ${row.displayName} desactivado` }
+  } catch (err) {
+    return { ok: false, message: (err as Error).message }
+  }
+}
+
+export async function togglePdtpSheetActiveAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try {
+    session = await requirePermission("admin:pdtp_catalog")
+  } catch {
+    return errorState("Sin permisos")
+  }
+
+  const id = (formData.get("id") as string | null)?.trim()
+  const activate = formData.get("activate") === "true"
+  if (!id) return errorState("ID requerido")
+
+  try {
+    const { row, previousIsActive } = await setPdtpSheetActive(id, activate)
+    await recordAudit({
+      userId:     session.user.id,
+      userEmail:  session.user.email ?? undefined,
+      action:     "update",
+      entityType: "pdtp_sheet",
+      entityId:   row.id,
+      oldState:   { isActive: previousIsActive },
+      newState:   { isActive: activate },
+    })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: activate ? `Hoja ${row.code} activada` : `Hoja ${row.code} desactivada` }
   } catch (err) {
     return { ok: false, message: (err as Error).message }
   }

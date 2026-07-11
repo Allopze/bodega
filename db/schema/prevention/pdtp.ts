@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { check, index, integer, jsonb, numeric, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, index, integer, jsonb, numeric, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { pgTable } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
@@ -34,6 +34,7 @@ export const pdtpResponsibleCatalog = pgTable("pdtp_responsible_catalog", {
   roleName:    text("role_name"),
   kind:        text("kind").notNull(),
   notes:       text("notes"),
+  isActive:    boolean("is_active").notNull().default(true),
 }, (table) => [
   uniqueIndex("pdtp_responsible_catalog_display_unique").on(table.displayName),
 ])
@@ -128,6 +129,7 @@ export const pdtpSheets = pgTable("pdtp_sheets", {
   label:             text("label").notNull(),
   area:              text("area").notNull(),
   defaultScopeRoles: jsonb("default_scope_roles").notNull(),
+  isActive:          boolean("is_active").notNull().default(true),
 }, (table) => [
   uniqueIndex("pdtp_sheets_program_code_unique").on(table.programId, table.code),
 ])
