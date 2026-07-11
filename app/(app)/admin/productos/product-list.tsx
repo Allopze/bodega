@@ -12,9 +12,11 @@ import { ProductForm } from "./product-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { formatCLP } from "@/lib/utils"
-import { toggleProductActive, getProductForEdit } from "./actions"
+import { toggleProductActive, getProductForEdit, bulkToggleProductActiveAction } from "./actions"
 import { ProductImportPanel } from "./product-import-panel"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { importProductsFromXlsx } from "./actions"
 import { getProductWarnings, getFamilyWarnings, type ProductAttributeSummary } from "./product-list.helpers"
@@ -80,12 +82,66 @@ export function ProductList({ products, categories, allSuppliers, units, templat
   const [productFormKey,   setProductFormKey]   = React.useState(0)
   const [selectedVariantByFamily, setSelectedVariantByFamily] = React.useState<Record<string, string>>({})
   const [,                 startTransition]     = React.useTransition()
-  const productFamilies = React.useMemo<ProductFamilyRow[]>(() => groupProductVariants(products).map((family) => ({
+  const [tab, setTab] = React.useState<"active" | "inactive">("active")
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set())
+  const [bulkActionType, setBulkActionType] = React.useState<"activate" | "deactivate" | null>(null)
+  const [bulkPending, setBulkPending] = React.useState(false)
+
+  const activeProducts = React.useMemo(() => products.filter((p) => p.isActive), [products])
+  const inactiveProducts = React.useMemo(() => products.filter((p) => !p.isActive), [products])
+
+  const toFamilyRow = React.useCallback((family: { id: string; name: string; variants: ProductRow[] }): ProductFamilyRow => ({
     ...family,
     sku: family.variants.map((variant) => variant.sku).join(" "),
     categoryName: family.variants.map((variant) => variant.categoryName).join(" "),
     variantSearchText: family.variants.map((variant) => formatProductVariant(variant.attributes, variant.sku)).join(" "),
-  })), [products])
+  }), [])
+
+  const activeFamilies = React.useMemo<ProductFamilyRow[]>(
+    () => groupProductVariants(activeProducts).map(toFamilyRow),
+    [activeProducts, toFamilyRow],
+  )
+  const inactiveFamilies = React.useMemo<ProductFamilyRow[]>(
+    () => groupProductVariants(inactiveProducts).map(toFamilyRow),
+    [inactiveProducts, toFamilyRow],
+  )
+
+  const currentFamilies = tab === "active" ? activeFamilies : inactiveFamilies
+
+  // Reset selection when switching tabs
+  React.useEffect(() => { setSelectedIds(new Set()) }, [tab])
+
+  // ── Bulk selection helpers ────────────────────────────────────────────────
+  const allIds = React.useMemo(
+    () => new Set(currentFamilies.flatMap((f) => f.variants.map((v) => v.id))),
+    [currentFamilies],
+  )
+  const allSelected = allIds.size > 0 && allIds.size === selectedIds.size
+
+  const selectAllRef = React.useRef<HTMLInputElement>(null)
+
+  React.useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectedIds.size > 0 && !allSelected
+    }
+  }, [selectedIds, allSelected])
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(allIds))
+    }
+  }
 
   function selectedVariant(family: ProductFamilyRow): ProductRow {
     const variant = family.variants.find((item) => item.id === selectedVariantByFamily[family.id]) ?? family.variants[0]
@@ -129,6 +185,190 @@ export function ProductList({ products, categories, allSuppliers, units, templat
     setCatSheetOpen(true)
   }
 
+  // Columns with checkbox
+  const CHECKBOX_WIDTH = "w-10"
+  const COLUMNS_WITH_CHECKBOX = [
+    { key: "_sel", label: "Sel.", sortable: false, width: CHECKBOX_WIDTH },
+    ...COLUMNS,
+  ]
+
+  const renderRow = React.useCallback((row: Record<string, unknown>) => {
+    const family = row as unknown as ProductFamilyRow
+    const p = selectedVariant(family)
+    return (
+      <TableRow key={family.id}>
+        <TableCell>
+          <input
+            type="checkbox"
+            checked={selectedIds.has(p.id)}
+            onChange={() => toggleSelect(p.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+            aria-label={`Seleccionar ${p.name}`}
+          />
+        </TableCell>
+        <TableCell>
+          <span className="block font-mono text-xs leading-4 line-clamp-2 break-words" title={p.sku}>{p.sku}</span>
+        </TableCell>
+        <TableCell>
+          <p className="line-clamp-2 text-sm font-medium text-[var(--color-text)]" title={p.name}>{p.name}</p>
+          <div className="flex items-center gap-1 mt-0.5">
+            {p.isEpp           && <Badge variant="info"    size="sm">EPP</Badge>}
+            {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
+            {warningsFor(p).length > 0 && (
+              <Warning size={14} weight="fill" className="text-warning" alt={warningsFor(p).join(" · ")} />
+            )}
+            {familyWarningsFor(family).length > 0 && (
+              <Warning size={14} weight="fill" className="text-warning" alt={`Familia: ${familyWarningsFor(family).join(" · ")}`} />
+            )}
+          </div>
+        </TableCell>
+        <TableCell className="text-sm text-[var(--color-text-muted)]">
+          <span className="block truncate" title={p.categoryName}>{p.categoryName}</span>
+        </TableCell>
+        <TableCell className="text-sm text-[var(--color-text-muted)]">
+          {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
+            <select
+              aria-label={`Características de ${family.name}`}
+              value={p.id}
+              onChange={(event) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: event.target.value }))}
+              className="h-8 max-w-52 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+            >
+              {family.variants.map((variant) => (
+                <option key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</option>
+              ))}
+            </select>
+          )}
+        </TableCell>
+        <TableCellNum>
+          {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
+        </TableCellNum>
+        <TableCell>
+          <Badge variant={p.isActive ? "success" : "default"} dot className="w-20 justify-center">
+            {p.isActive ? "Activo" : "Inactivo"}
+          </Badge>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2 justify-end">
+            <CatalogRowActions
+              id={p.id}
+              isActive={p.isActive}
+              label={`producto ${p.name}`}
+              onEdit={() => openEditProduct(p.id)}
+              toggleAction={toggleAction}
+              editDisabled={loadingEditId === p.id}
+              editPending={loadingEditId === p.id}
+            />
+          </div>
+        </TableCell>
+      </TableRow>
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVariantByFamily, loadingEditId, selectedIds])
+
+  const renderMobileCard = React.useCallback((row: Record<string, unknown>) => {
+    const family = row as unknown as ProductFamilyRow
+    const p = selectedVariant(family)
+    return (
+      <article key={family.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(p.id)}
+                onChange={() => toggleSelect(p.id)}
+                className="h-4 w-4 shrink-0 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                aria-label={`Seleccionar ${p.name}`}
+              />
+              <div>
+                <p className="font-mono text-xs text-[var(--color-text-subtle)]">{p.sku}</p>
+                <h2 className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{p.name}</h2>
+              </div>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1 ml-6">
+              {p.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
+              {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
+              {warningsFor(p).length > 0 && (
+                <Warning size={14} weight="fill" className="text-warning" alt={warningsFor(p).join(" · ")} />
+              )}
+              {familyWarningsFor(family).length > 0 && (
+                <Warning size={14} weight="fill" className="text-warning" alt={`Familia: ${familyWarningsFor(family).join(" · ")}`} />
+              )}
+            </div>
+          </div>
+          <Badge variant={p.isActive ? "success" : "default"} dot className="shrink-0">
+            {p.isActive ? "Activo" : "Inactivo"}
+          </Badge>
+        </div>
+
+        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+          <div>
+            <dt className="text-[var(--color-text-subtle)]">Categoría</dt>
+            <dd className="text-[var(--color-text-muted)]">{p.categoryName}</dd>
+          </div>
+          <div className="text-right">
+            <dt className="text-[var(--color-text-subtle)]">Precio ref.</dt>
+            <dd className="font-mono tabular-nums text-[var(--color-text)]">
+              {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
+            </dd>
+          </div>
+          <div className="col-span-2">
+            <dt className="text-[var(--color-text-subtle)]">Características</dt>
+            <dd className="text-[var(--color-text-muted)]">
+              {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
+                <select
+                  aria-label={`Características de ${family.name}`}
+                  value={p.id}
+                  onChange={(event) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: event.target.value }))}
+                  className="mt-1 h-8 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+                >
+                  {family.variants.map((variant) => (
+                    <option key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</option>
+                  ))}
+                </select>
+              )}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+          <CatalogRowActions
+            id={p.id}
+            isActive={p.isActive}
+            label={`producto ${p.name}`}
+            onEdit={() => openEditProduct(p.id)}
+            toggleAction={toggleAction}
+            editDisabled={loadingEditId === p.id}
+            editPending={loadingEditId === p.id}
+          />
+        </div>
+      </article>
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVariantByFamily, loadingEditId, selectedIds])
+
+  const toolbar = (
+    <div className="flex items-center gap-2">
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+      <a
+        href="/api/admin/catalogos/export?tipo=productos"
+        className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
+      >
+        <DownloadSimple size={14} />Exportar XLSX
+      </a>
+      <Button size="sm" variant="secondary" onClick={() => setImportSheetOpen(true)}>
+        <UploadSimple size={14} />Importar EPP
+      </Button>
+      <Button size="sm" variant="secondary" onClick={() => setCatalogImportOpen(true)}>
+        <UploadSimple size={14} />Importar catálogo
+      </Button>
+      <Button size="sm" onClick={openNewProduct}>
+        <Plus size={14} />Nuevo producto
+      </Button>
+    </div>
+  )
+
   return (
     <>
       <div className="flex items-center gap-2 mb-1">
@@ -142,170 +382,129 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         </button>
       </div>
 
-      <DataTable
-        columns={COLUMNS}
-        rows={productFamilies as unknown as Record<string, unknown>[]}
-        searchKeys={CONTRACT.searchKeys}
-        tableClassName="table-fixed min-w-0"
-        pageSize={25}
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as "active" | "inactive")}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <TabsList>
+            <TabsTrigger value="active">
+              Activos
+              <span className="ml-1.5 text-xs text-[var(--color-text-subtle)]">{activeFamilies.length}</span>
+            </TabsTrigger>
+            <TabsTrigger value="inactive">
+              Inactivos
+              <span className="ml-1.5 text-xs text-[var(--color-text-subtle)]">{inactiveFamilies.length}</span>
+            </TabsTrigger>
+          </TabsList>
+          {toolbar}
+        </div>
 
-        emptyTitle="Sin productos"
-        emptyDescription="Registra el primer producto del catálogo."
-        emptyAction={
-          <Button size="sm" onClick={openNewProduct}>
-            <Plus size={14} />Nuevo producto
-          </Button>
-        }
-        actions={(
-          <div className="flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-            <a
-              href="/api/admin/catalogos/export?tipo=productos"
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
-            >
-              <DownloadSimple size={14} />Exportar XLSX
-            </a>
-            <Button size="sm" variant="secondary" onClick={() => setImportSheetOpen(true)}>
-              <UploadSimple size={14} />Importar EPP
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setCatalogImportOpen(true)}>
-              <UploadSimple size={14} />Importar catálogo
-            </Button>
-            <Button size="sm" onClick={openNewProduct}>
-              <Plus size={14} />Nuevo producto
-            </Button>
+        <div className="flex items-center gap-3 mb-3">
+          <label className="flex items-center gap-1.5 cursor-pointer text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+              aria-label="Seleccionar o deseleccionar todos"
+            />
+            {allSelected
+              ? `${selectedIds.size} seleccionados`
+              : selectedIds.size > 0
+                ? `${selectedIds.size} seleccionados`
+                : "Seleccionar todo"}
+          </label>
+        </div>
+
+        {selectedIds.size > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-chrome)] px-4 py-2 mb-3">
+            <span className="text-sm font-medium text-[var(--color-text)]">
+              {selectedIds.size} producto{selectedIds.size === 1 ? "" : "s"} seleccionado{selectedIds.size === 1 ? "" : "s"}
+            </span>
+            <div className="flex items-center gap-2">
+              {tab === "inactive" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setBulkActionType("activate")}
+                >
+                  Reactivar seleccionados
+                </Button>
+              )}
+              {tab === "active" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setBulkActionType("deactivate")}
+                >
+                  Desactivar seleccionados
+                </Button>
+              )}
+              <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+                Limpiar selección
+              </Button>
+            </div>
           </div>
         )}
-        renderRow={(row) => {
-          const family = row as unknown as ProductFamilyRow
-          const p = selectedVariant(family)
-          return (
-            <TableRow key={family.id}>
-              <TableCell>
-                <span className="block font-mono text-xs leading-4 line-clamp-2 break-words" title={p.sku}>{p.sku}</span>
-              </TableCell>
-              <TableCell>
-                <p className="line-clamp-2 text-sm font-medium text-[var(--color-text)]" title={p.name}>{p.name}</p>
-                <div className="flex items-center gap-1 mt-0.5">
-                  {p.isEpp           && <Badge variant="info"    size="sm">EPP</Badge>}
-                  {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
-                  {warningsFor(p).length > 0 && (
-                    <Warning size={14} weight="fill" className="text-warning" alt={warningsFor(p).join(" · ")} />
-                  )}
-                  {familyWarningsFor(family).length > 0 && (
-                    <Warning size={14} weight="fill" className="text-warning" alt={`Familia: ${familyWarningsFor(family).join(" · ")}`} />
-                  )}
-                </div>
-              </TableCell>
-              <TableCell className="text-sm text-[var(--color-text-muted)]">
-                <span className="block truncate" title={p.categoryName}>{p.categoryName}</span>
-              </TableCell>
-              <TableCell className="text-sm text-[var(--color-text-muted)]">
-                {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
-                  <select
-                    aria-label={`Características de ${family.name}`}
-                    value={p.id}
-                    onChange={(event) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: event.target.value }))}
-                    className="h-8 max-w-52 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-                  >
-                    {family.variants.map((variant) => (
-                      <option key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</option>
-                    ))}
-                  </select>
-                )}
-              </TableCell>
-              <TableCellNum>
-                {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
-              </TableCellNum>
-              <TableCell>
-                <Badge variant={p.isActive ? "success" : "default"} dot className="w-20 justify-center">
-                  {p.isActive ? "Activo" : "Inactivo"}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2 justify-end">
-                  <CatalogRowActions
-                    id={p.id}
-                    isActive={p.isActive}
-                    label={`producto ${p.name}`}
-                    onEdit={() => openEditProduct(p.id)}
-                    toggleAction={toggleAction}
-                    editDisabled={loadingEditId === p.id}
-                    editPending={loadingEditId === p.id}
-                  />
-                </div>
-              </TableCell>
-            </TableRow>
-          )
-        }}
-        renderMobileCard={(row) => {
-          const family = row as unknown as ProductFamilyRow
-          const p = selectedVariant(family)
-          return (
-            <article key={family.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-mono text-xs text-[var(--color-text-subtle)]">{p.sku}</p>
-                  <h2 className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{p.name}</h2>
-                  <div className="mt-1 flex flex-wrap items-center gap-1">
-                    {p.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
-                    {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
-                    {warningsFor(p).length > 0 && (
-                      <Warning size={14} weight="fill" className="text-warning" alt={warningsFor(p).join(" · ")} />
-                    )}
-                    {familyWarningsFor(family).length > 0 && (
-                      <Warning size={14} weight="fill" className="text-warning" alt={`Familia: ${familyWarningsFor(family).join(" · ")}`} />
-                    )}
-                  </div>
-                </div>
-                <Badge variant={p.isActive ? "success" : "default"} dot>
-                  {p.isActive ? "Activo" : "Inactivo"}
-                </Badge>
-              </div>
 
-              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <div>
-                  <dt className="text-[var(--color-text-subtle)]">Categoría</dt>
-                  <dd className="text-[var(--color-text-muted)]">{p.categoryName}</dd>
-                </div>
-                <div className="text-right">
-                  <dt className="text-[var(--color-text-subtle)]">Precio ref.</dt>
-                  <dd className="font-mono tabular-nums text-[var(--color-text)]">
-                    {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
-                  </dd>
-                </div>
-                <div className="col-span-2">
-                  <dt className="text-[var(--color-text-subtle)]">Características</dt>
-                  <dd className="text-[var(--color-text-muted)]">
-                    {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
-                      <select
-                        aria-label={`Características de ${family.name}`}
-                        value={p.id}
-                        onChange={(event) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: event.target.value }))}
-                        className="mt-1 h-8 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-                      >
-                        {family.variants.map((variant) => (
-                          <option key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</option>
-                        ))}
-                      </select>
-                    )}
-                  </dd>
-                </div>
-              </dl>
+        <TabsContent value="active">
+          <DataTable
+            columns={COLUMNS_WITH_CHECKBOX}
+            rows={activeFamilies as unknown as Record<string, unknown>[]}
+            searchKeys={CONTRACT.searchKeys}
+            tableClassName="table-fixed min-w-0"
+            pageSize={25}
+            emptyTitle="Sin productos activos"
+            emptyDescription="No hay productos activos en el catálogo."
+            emptyAction={
+              <Button size="sm" onClick={openNewProduct}>
+                <Plus size={14} />Nuevo producto
+              </Button>
+            }
+            renderRow={renderRow}
+            renderMobileCard={renderMobileCard}
+          />
+        </TabsContent>
 
-              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <CatalogRowActions
-                  id={p.id}
-                  isActive={p.isActive}
-                  label={`producto ${p.name}`}
-                  onEdit={() => openEditProduct(p.id)}
-                  toggleAction={toggleAction}
-                  editDisabled={loadingEditId === p.id}
-                  editPending={loadingEditId === p.id}
-                />
-              </div>
-            </article>
-          )
+        <TabsContent value="inactive">
+          <DataTable
+            columns={COLUMNS_WITH_CHECKBOX}
+            rows={inactiveFamilies as unknown as Record<string, unknown>[]}
+            searchKeys={CONTRACT.searchKeys}
+            tableClassName="table-fixed min-w-0"
+            pageSize={25}
+            emptyTitle="Sin productos inactivos"
+            emptyDescription="No hay productos dados de baja en el catálogo."
+            renderRow={renderRow}
+            renderMobileCard={renderMobileCard}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* Bulk action confirm dialog */}
+      <ConfirmDialog
+        open={bulkActionType !== null}
+        onOpenChange={(open) => { if (!open) setBulkActionType(null) }}
+        title={bulkActionType === "activate" ? "¿Reactivar productos seleccionados?" : "¿Desactivar productos seleccionados?"}
+        description={`Se ${bulkActionType === "activate" ? "reactivarán" : "desactivarán"} ${selectedIds.size} producto${selectedIds.size === 1 ? "" : "s"}. Los productos ${bulkActionType === "activate" ? "reactivados" : "desactivados"} ${bulkActionType === "activate" ? "volverán a estar disponibles" : "quedarán ocultos en el catálogo activo"}. Esta acción no afecta registros históricos y puede revertirse individualmente.`}
+        confirmLabel={bulkActionType === "activate" ? "Reactivar" : "Desactivar"}
+        variant={bulkActionType === "activate" ? "default" : "warning"}
+        loading={bulkPending}
+        onConfirm={async () => {
+          setBulkPending(true)
+          const fd = new FormData()
+          fd.set("ids", Array.from(selectedIds).join(","))
+          fd.set("activate", String(bulkActionType === "activate"))
+          const res = await bulkToggleProductActiveAction({ ok: true, message: "" }, fd)
+          setBulkPending(false)
+          setBulkActionType(null)
+          setSelectedIds(new Set())
+          if (res.ok) toast.success(res.message ?? "Operación exitosa")
+          else toast.error(res.message ?? "Error al realizar la operación")
         }}
       />
 
