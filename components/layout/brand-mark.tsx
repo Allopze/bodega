@@ -20,8 +20,9 @@ const TITLE_CLASSES = {
   lg:   "text-lg",
 } as const
 
-const BRAND_TITLE = "Plataforma Chome"
-const BRAND_SUBTITLE = "Gestión operacional"
+/** Single source of truth for the product name/tagline — reuse instead of hardcoding copies. */
+export const BRAND_TITLE = "Plataforma Chome"
+export const BRAND_SUBTITLE = "Gestión operacional"
 
 const BrandMarkInner = React.memo(function BrandMarkInner({
   variant    = "dark",

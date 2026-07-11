@@ -227,7 +227,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
           <span className="block truncate" title={p.categoryName}>{p.categoryName}</span>
         </TableCell>
         <TableCell className="text-sm text-[var(--color-text-muted)]">
-          {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
+          {family.variants.length === 1 ? (p.attributes.length > 0 ? formatProductVariant(p.attributes, p.sku) : "—") : (
             <select
               aria-label={`Características de ${family.name}`}
               value={p.id}
@@ -316,7 +316,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
           <div className="col-span-2">
             <dt className="text-[var(--color-text-subtle)]">Características</dt>
             <dd className="text-[var(--color-text-muted)]">
-              {family.variants.length === 1 ? formatProductVariant(p.attributes, p.sku) : (
+              {family.variants.length === 1 ? (p.attributes.length > 0 ? formatProductVariant(p.attributes, p.sku) : "—") : (
                 <select
                   aria-label={`Características de ${family.name}`}
                   value={p.id}

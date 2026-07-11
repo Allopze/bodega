@@ -6,6 +6,7 @@ import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -144,19 +145,19 @@ export function VehicleForm({ open, onClose, worksites, users, editVehicle }: Ve
 
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Vencimiento SOAP" htmlFor="v-soap">
-                      <Input id="v-soap" name="soapExpiresAt" type="date" defaultValue={editVehicle?.soapExpiresAt ?? ""} />
+                      <DatePicker id="v-soap" name="soapExpiresAt" defaultValue={editVehicle?.soapExpiresAt ?? ""} />
                     </Field>
                     <Field label="Vencimiento revisión técnica" htmlFor="v-tech">
-                      <Input id="v-tech" name="technicalReviewExpiresAt" type="date" defaultValue={editVehicle?.technicalReviewExpiresAt ?? ""} />
+                      <DatePicker id="v-tech" name="technicalReviewExpiresAt" defaultValue={editVehicle?.technicalReviewExpiresAt ?? ""} />
                     </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Vencimiento permiso de circulación" htmlFor="v-circ">
-                      <Input id="v-circ" name="circulationPermitExpiresAt" type="date" defaultValue={editVehicle?.circulationPermitExpiresAt ?? ""} />
+                      <DatePicker id="v-circ" name="circulationPermitExpiresAt" defaultValue={editVehicle?.circulationPermitExpiresAt ?? ""} />
                     </Field>
                     <Field label="Vencimiento seguro" htmlFor="v-ins-exp">
-                      <Input id="v-ins-exp" name="insuranceExpiresAt" type="date" defaultValue={editVehicle?.insuranceExpiresAt ?? ""} />
+                      <DatePicker id="v-ins-exp" name="insuranceExpiresAt" defaultValue={editVehicle?.insuranceExpiresAt ?? ""} />
                     </Field>
                   </div>
 

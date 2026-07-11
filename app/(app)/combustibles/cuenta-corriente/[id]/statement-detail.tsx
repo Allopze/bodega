@@ -6,6 +6,7 @@ import type { ActionState } from "@/lib/validation/masters"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -187,7 +188,7 @@ function AddPaymentDialog({ statementId, pendingAmount }: { statementId: string;
           <p className="text-sm text-muted-foreground">Pendiente: {formatCLP(pendingAmount)}</p>
           <div className="space-y-2">
             <Label>Fecha de pago *</Label>
-            <Input name="paymentDate" type="date" required />
+            <DatePicker name="paymentDate" />
           </div>
           <div className="space-y-2">
             <Label>Monto (CLP) *</Label>

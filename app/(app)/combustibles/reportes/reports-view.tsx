@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -57,11 +57,11 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
       <div className="flex flex-wrap gap-4 p-4 bg-[var(--color-surface-2)] rounded-lg">
         <div className="flex flex-col gap-1">
           <Label className="text-xs">Desde</Label>
-          <Input type="date" className="w-44" defaultValue={currentFilters.startDate ?? ""} onChange={(e) => setDateFilter("desde", e.target.value)} />
+          <DatePicker className="w-44" defaultValue={currentFilters.startDate ?? ""} onChange={(iso) => setDateFilter("desde", iso)} />
         </div>
         <div className="flex flex-col gap-1">
           <Label className="text-xs">Hasta</Label>
-          <Input type="date" className="w-44" defaultValue={currentFilters.endDate ?? ""} onChange={(e) => setDateFilter("hasta", e.target.value)} />
+          <DatePicker className="w-44" defaultValue={currentFilters.endDate ?? ""} onChange={(iso) => setDateFilter("hasta", iso)} />
         </div>
         <div className="flex items-end">
           <Button variant="ghost" size="sm" onClick={() => router.push("/combustibles/reportes")}>Limpiar</Button>

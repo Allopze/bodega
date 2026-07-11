@@ -66,7 +66,7 @@ const REQUEST_TYPE_LABELS: Record<string, string> = {
 const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
   epp:        "info",
   otro:       "default",
-  repuestos:  "warning",
+  repuestos:  "default",
   servicios:  "info",
 }
 

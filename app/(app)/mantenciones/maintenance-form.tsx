@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -106,7 +107,7 @@ export function MaintenanceForm({
 
       <div>
         <Label htmlFor="maintenanceDate" required>Fecha</Label>
-        <Input id="maintenanceDate" name="maintenanceDate" type="date" required defaultValue={defaults?.maintenanceDate ?? ""} />
+        <DatePicker id="maintenanceDate" name="maintenanceDate" defaultValue={defaults?.maintenanceDate ?? ""} />
       </div>
 
       <div>

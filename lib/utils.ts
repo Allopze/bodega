@@ -83,6 +83,15 @@ export function toTitleCase(str: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+/**
+ * Prefix a worksite name with "Faena " for display, without doubling the
+ * word when the name already starts with it (e.g. a worksite literally
+ * named "Faena Mininco").
+ */
+export function formatWorksiteLabel(name: string): string {
+  return /^faena\s/i.test(name) ? name : `Faena ${name}`
+}
+
 /** Generate initials from a full name (for Avatar) */
 export function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)

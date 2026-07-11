@@ -6,6 +6,7 @@ import { updateFuelLoadAction } from "../actions"
 import type { ActionState } from "@/lib/validation/masters"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -123,7 +124,7 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Fecha *</Label>
-              <Input name="loadDate" type="date" defaultValue={load.loadDate} disabled={!isEditable} required />
+              <DatePicker name="loadDate" defaultValue={load.loadDate} disabled={!isEditable} />
             </div>
             <div className="space-y-2">
               <Label>Servicio *</Label>

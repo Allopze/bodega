@@ -7,6 +7,7 @@ import type { ActionState } from "@/lib/validation/masters"
 import { calculateFuelAmounts } from "@/lib/combustibles/calculations"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -66,7 +67,7 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="loadDate">Fecha *</Label>
-              <Input id="loadDate" name="loadDate" type="date" required />
+              <DatePicker id="loadDate" name="loadDate" error={!!state.fieldErrors?.loadDate} />
               {state.fieldErrors?.loadDate && <p className="text-sm text-destructive">{state.fieldErrors.loadDate[0]}</p>}
             </div>
 

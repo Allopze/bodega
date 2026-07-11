@@ -10,7 +10,7 @@ import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { FileInput } from "@/components/ui/file-input"
 import { toast } from "@/lib/toast"
 
 interface ImportResultData {
@@ -58,7 +58,7 @@ export function CatalogImportPanel({ open, onClose, title, description, action, 
               <Field label="Archivo XLSX" htmlFor="catalog-import-file" required
                 error={state.fieldErrors?.file?.[0]}
                 helper={helperText}>
-                <Input id="catalog-import-file" name="file" type="file"
+                <FileInput id="catalog-import-file" name="file"
                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   error={!!state.fieldErrors?.file} />
               </Field>

@@ -5,7 +5,7 @@ import { purchaseOrders } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { getCompanyProfile } from "@/lib/services/system-settings"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatWorksiteLabel } from "@/lib/utils"
 import { ocPdfFilename } from "./filename"
 import { formatRequestReference, unique } from "./oc-print-formatters"
 import { clpAmountToWords } from "./oc-number-to-words"
@@ -76,7 +76,7 @@ export async function loadOcPrintData(id: string, session: Session): Promise<OcP
     order.notes,
     company.address ? `enviar a ${company.address}` : null,
     requestCodes.length > 0 ? `NP ${requestCodes.join("-")}` : null,
-    order.worksite?.name ? `Faena ${order.worksite.name}` : null,
+    order.worksite?.name ? formatWorksiteLabel(order.worksite.name) : null,
   ].filter((line): line is string => !!line?.trim())
 
   const totalInWords = `SON: ${clpAmountToWords(order.totalAmount)}`

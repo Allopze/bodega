@@ -18,7 +18,7 @@ export const DEFAULT_ALERT_THRESHOLDS: AnalyticsAlertThresholds = { vehicleMonth
 
 export function normalizeAnalyticsFilters(input: AnalyticsFilters, now: Date = new Date()) {
   return {
-    fromDate: input.fromDate ?? monthStart(now), toDate: input.toDate ?? dateOnly(now),
+    fromDate: input.fromDate ?? daysAgo(now, 30), toDate: input.toDate ?? dateOnly(now),
     ...(input.worksiteId ? { worksiteId: input.worksiteId } : {}),
     ...(input.supplierId ? { supplierId: input.supplierId } : {}),
     ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}),
@@ -78,6 +78,14 @@ export function moduleLabel(value: unknown) {
 
 export function monthStart(date: Date) { return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-01` }
 export function dateOnly(date: Date) { return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` }
+/** ISO date `days` before `date` — used as a wider default range than "mes en curso" so a
+ * dashboard opened early in the month (or for a faena with sparse recent activity) doesn't
+ * land empty. */
+export function daysAgo(date: Date, days: number) {
+  const d = new Date(date)
+  d.setDate(d.getDate() - days)
+  return dateOnly(d)
+}
 export function parsePlainDate(value: string) { const [y, m, d] = value.split("-").map(Number); return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1) }
 export function pad2(value: number) { return String(value).padStart(2, "0") }
 

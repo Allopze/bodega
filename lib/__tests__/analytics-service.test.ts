@@ -62,10 +62,10 @@ beforeEach(() => {
 })
 
 describe("normalizeAnalyticsFilters", () => {
-  it("defaults to the current calendar month when no dates are provided", () => {
+  it("defaults to a trailing 30-day window when no dates are provided", () => {
     const filters = normalizeAnalyticsFilters({}, new Date("2026-06-26T12:00:00Z"))
     expect(filters).toEqual({
-      fromDate: "2026-06-01",
+      fromDate: "2026-05-27",
       toDate: "2026-06-26",
     })
   })

@@ -13,7 +13,7 @@ import {
   TableRoot, Table, TableHeader, TableBody,
   TableRow, TableHead, TableCell, TableCellNum,
 } from "@/components/ui/table"
-import { cn, formatCLP, formatDateTime, formatQty } from "@/lib/utils"
+import { cn, formatCLP, formatDateTime, formatQty, formatWorksiteLabel } from "@/lib/utils"
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Detalle de recepción" }
@@ -61,7 +61,7 @@ export default async function RecepcionDetallePage({
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
   const destinationLabel = receipt.locationType === "office"
     ? "Oficina Chome"
-    : `Faena ${receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? ""}`.trim()
+    : formatWorksiteLabel(receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "").trim()
 
   const totalRejected = receipt.items.reduce((sum, item) => sum + (item.quantityRejected ?? 0), 0)
   const totalDamaged  = receipt.items.reduce((sum, item) => sum + (item.quantityDamaged ?? 0), 0)

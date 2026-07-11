@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
+import { FileInput } from "@/components/ui/file-input"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import {
   Dialog,
@@ -149,12 +150,10 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
           </Field>
 
           <Field label="Evidencia (foto o PDF)" htmlFor="exec-file">
-            <input
+            <FileInput
               ref={fileInputRef}
               id="exec-file"
-              type="file"
               accept="image/jpeg,image/png,application/pdf"
-              className="text-xs text-[var(--color-text)]"
             />
           </Field>
 

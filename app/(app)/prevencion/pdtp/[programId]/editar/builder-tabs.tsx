@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useActionState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { FileInput } from "@/components/ui/file-input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -283,7 +284,7 @@ function ImportExcelSection({ programId }: { programId: string }) {
         actividades. Reemplaza por completo las actividades actuales del programa — no se acumulan.
       </p>
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-3">
-        <input ref={fileRef} type="file" name="file" accept=".xlsx,.xls" required className="text-sm text-[var(--color-text)]" />
+        <FileInput ref={fileRef} name="file" accept=".xlsx,.xls" required />
         {state?.message && (
           <p className={`rounded-[var(--radius)] border px-3 py-2 text-sm ${
             state.ok

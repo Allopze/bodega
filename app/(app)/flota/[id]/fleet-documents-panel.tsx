@@ -5,6 +5,8 @@ import { useActionState } from "react"
 import { UploadSimple, Trash, FileText } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
+import { FileInput } from "@/components/ui/file-input"
 import { Field } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
@@ -116,20 +118,18 @@ export function FleetDocumentsPanel({
           </Field>
 
           <Field label="Vencimiento" htmlFor="fleetDocExpiresAt" helper="Opcional">
-            <Input
+            <DatePicker
               id="fleetDocExpiresAt"
               name="expiresAt"
-              type="date"
               value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
+              onChange={setExpiresAt}
             />
           </Field>
 
           <Field label="Archivo" htmlFor="fleetDocFile" required>
-            <Input
+            <FileInput
               id="fleetDocFile"
               name="file"
-              type="file"
               accept="application/pdf,image/jpeg,image/png"
               required
             />

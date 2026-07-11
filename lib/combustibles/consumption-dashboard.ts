@@ -9,7 +9,7 @@ import { db } from "@/db"
 import { fuelConsumptionRecords } from "@/db/schema"
 import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-queries"
 import { calcVariacion } from "./consumption-calculations"
-import { previousPeriod, dateOnly, monthStart } from "@/lib/services/analytics-module/helpers"
+import { previousPeriod, dateOnly, daysAgo } from "@/lib/services/analytics-module/helpers"
 
 export interface ConsumptionAlert {
   type: string
@@ -68,7 +68,7 @@ const TRANSACCIONES_ALTAS = 30
 
 export function normalizeConsumptionFilters(input: ConsumptionFilters, now: Date = new Date()) {
   return {
-    fromDate: input.fromDate ?? monthStart(now),
+    fromDate: input.fromDate ?? daysAgo(now, 30),
     toDate: input.toDate ?? dateOnly(now),
     ...(input.worksiteId ? { worksiteId: input.worksiteId } : {}),
     ...(input.fuente ? { fuente: input.fuente } : {}),

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { FileInput } from "@/components/ui/file-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { uploadSstDocumentVersionAction } from "../actions"
@@ -57,11 +57,10 @@ export function VersionsTab({ versions, userMap, currentVersionId, documentId, c
               }}
             >
               <Field label="Archivo" htmlFor="version-file" required>
-                <Input
+                <FileInput
                   id="version-file"
-                  type="file"
                   accept="application/pdf,image/jpeg,image/png,application/xml"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  onChange={setFile}
                 />
               </Field>
               <Button type="submit" disabled={isPending}>

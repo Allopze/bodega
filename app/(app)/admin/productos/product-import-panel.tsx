@@ -17,7 +17,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { FileInput } from "@/components/ui/file-input"
 import { toast } from "@/lib/toast"
 import { importProductsXlsx } from "./actions"
 
@@ -71,10 +71,9 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
                 error={state.fieldErrors?.file?.[0]}
                 helper="Columnas reconocidas: Nombre, Código, Proveedor, Precio, Atributos, Talla, Color, Marca, Modelo, Descripción, Categoría, Unidad, Notas."
               >
-                <Input
+                <FileInput
                   id="product-import-file"
                   name="file"
-                  type="file"
                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   error={!!state.fieldErrors?.file}
                 />

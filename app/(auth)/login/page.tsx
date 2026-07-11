@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Image from "next/image"
 import { Suspense } from "react"
-import { BrandMark } from "@/components/layout/brand-mark"
+import { BrandMark, BRAND_TITLE, BRAND_SUBTITLE } from "@/components/layout/brand-mark"
 import { getUserCount } from "@/lib/auth/bootstrap"
 import { LoginForm } from "./login-form"
 
@@ -53,7 +53,7 @@ export default async function LoginPage() {
           <div className="flex items-center gap-3">
             <Image
               src="/chome_logo_white.svg"
-              alt="Servicios Chome"
+              alt={BRAND_TITLE}
               width={96}
               height={96}
               unoptimized
@@ -63,10 +63,10 @@ export default async function LoginPage() {
             />
             <div>
               <p className="font-sans font-semibold text-2xl leading-tight tracking-tight text-white">
-                Servicios Chome
+                {BRAND_TITLE}
               </p>
               <p className="text-xs font-mono uppercase tracking-wider text-white/45 leading-tight mt-0.5">
-                Plataforma Chome
+                {BRAND_SUBTITLE}
               </p>
             </div>
           </div>
@@ -75,7 +75,7 @@ export default async function LoginPage() {
         {/* Zona inferior — solo eyebrow */}
         <div className="relative z-10 px-12 pb-12">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/50">
-            Plataforma Chome
+            {BRAND_SUBTITLE}
           </p>
         </div>
       </aside>

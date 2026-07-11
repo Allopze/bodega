@@ -8,6 +8,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { FileInput } from "@/components/ui/file-input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatCLP, formatDate } from "@/lib/utils"
@@ -252,10 +253,9 @@ function AddInvoiceForm({ purchaseOrderId }: { purchaseOrderId: string }) {
         htmlFor="invoice-file"
         helper="PDF, JPG, PNG o XML (DTE)"
       >
-        <Input
+        <FileInput
           id="invoice-file"
           name="file"
-          type="file"
           accept="application/pdf,image/jpeg,image/png,application/xml,text/xml"
           required
         />

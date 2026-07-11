@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -51,12 +52,12 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
 
       <div className="flex flex-col gap-1">
         <Label className="text-xs">Desde</Label>
-        <Input type="date" className="w-40" defaultValue={currentFilters.startDate ?? ""} onChange={(e) => setFilter("startDate", e.target.value)} />
+        <DatePicker className="w-40" defaultValue={currentFilters.startDate ?? ""} onChange={(iso) => setFilter("startDate", iso)} />
       </div>
 
       <div className="flex flex-col gap-1">
         <Label className="text-xs">Hasta</Label>
-        <Input type="date" className="w-40" defaultValue={currentFilters.endDate ?? ""} onChange={(e) => setFilter("endDate", e.target.value)} />
+        <DatePicker className="w-40" defaultValue={currentFilters.endDate ?? ""} onChange={(iso) => setFilter("endDate", iso)} />
       </div>
 
       <div className="flex flex-col gap-1">

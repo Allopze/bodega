@@ -5,6 +5,7 @@ import { createMonthlyStatementAction } from "../actions"
 import type { ActionState } from "@/lib/validation/masters"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -47,7 +48,7 @@ export function NewStatementDialog({ suppliers }: { suppliers: Array<{ id: strin
           </div>
           <div className="space-y-2">
             <Label>Fecha de vencimiento</Label>
-            <Input name="dueDate" type="date" />
+            <DatePicker name="dueDate" />
           </div>
           {state.message && !state.ok && (
             <p className="text-sm text-destructive">{state.message}</p>

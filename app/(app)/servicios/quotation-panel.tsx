@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { FileInput } from "@/components/ui/file-input"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter, DialogClose,
@@ -233,7 +234,7 @@ export function ServiceQuotationPanel({
             <input type="hidden" name="requestId" value={requestId} />
 
             <Field label="Archivo (PDF, JPG o PNG)" required>
-              <Input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required />
+              <FileInput name="file" accept=".pdf,.jpg,.jpeg,.png" required />
             </Field>
 
             <div className="grid grid-cols-2 gap-3">

@@ -8,6 +8,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { FileInput } from "@/components/ui/file-input"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -189,10 +190,9 @@ export function DeliveryForm({
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Comprobante" htmlFor="deliveryProofFile" helper="PDF, JPG o PNG. Opcional.">
-                <Input
+                <FileInput
                   id="deliveryProofFile"
                   name="proofFile"
-                  type="file"
                   accept="application/pdf,image/jpeg,image/png"
                   disabled={!selectedItem}
                 />

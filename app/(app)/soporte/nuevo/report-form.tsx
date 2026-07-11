@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
+import { FileInput } from "@/components/ui/file-input"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -174,11 +175,10 @@ export function ReportForm() {
           htmlFor="attachment"
           helper="PDF, JPG o PNG. Máx. 20 MB."
         >
-          <Input
+          <FileInput
             id="attachment"
-            type="file"
             accept="application/pdf,image/jpeg,image/png"
-            onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+            onChange={setAttachment}
           />
         </Field>
       </FieldGroup>

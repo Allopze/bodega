@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockSettingFindFirst = vi.fn()
 const mockUserFindFirst = vi.fn()
@@ -47,9 +47,17 @@ describe("buildCopecSyncPeriods", () => {
 describe("syncCopecReportPeriod", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // importCopecPeriod only looks up the importer user when this env var is
+    // set — stub it here so the test doesn't depend on the ambient shell/CI
+    // environment ever defining it.
+    vi.stubEnv("COPEC_SYNC_IMPORTER_EMAIL", "importer@chome.cl")
     mockSettingFindFirst.mockResolvedValue(undefined)
     mockUserFindFirst.mockResolvedValue({ id: "user-1" })
     mockSaveState.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it("continues and checkpoints when Copec has no downloadable file for a period", async () => {
