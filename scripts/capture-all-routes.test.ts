@@ -7,6 +7,7 @@ const root = process.cwd()
 
 const dynamicSamples: Record<string, string> = {
   "/admin/productos/[id]": "/admin/productos/prod-audit-1",
+  "/admin/productos/importar/[batchId]": "/admin/productos/importar/batch-audit-1",
   "/compras/[id]": "/compras/po-audit-1",
   "/compras/[id]/print": "/compras/po-audit-1/print",
   "/prevencion/[id]": "/prevencion/sst-audit-1",

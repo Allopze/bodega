@@ -12,6 +12,7 @@ import {
   createFuelVehicleSchema,
   updateFuelVehicleSchema,
 } from "@/lib/combustibles/validation"
+import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import type { ActionState } from "@/lib/validation/masters"
 import { dbErrMsg } from "./loads"
 
@@ -35,6 +36,13 @@ export async function createFuelVehicleAction(
     model: formData.get("model") || undefined,
     year: formData.get("year") || undefined,
     worksiteId: formData.get("worksiteId") || undefined,
+    responsibleUserId: formData.get("responsibleUserId") || undefined,
+    operationalStatus: formData.get("operationalStatus") || undefined,
+    soapExpiresAt: formData.get("soapExpiresAt") || undefined,
+    technicalReviewExpiresAt: formData.get("technicalReviewExpiresAt") || undefined,
+    circulationPermitExpiresAt: formData.get("circulationPermitExpiresAt") || undefined,
+    insurancePolicyNumber: formData.get("insurancePolicyNumber") || undefined,
+    insuranceExpiresAt: formData.get("insuranceExpiresAt") || undefined,
     notes: formData.get("notes") || undefined,
   })
 
@@ -48,8 +56,9 @@ export async function createFuelVehicleAction(
 
   try {
     const id = nanoid()
-    await db.insert(fuelVehicles).values({ id, ...parsed.data })
-    revalidatePath("/combustibles/vehiculos")
+    const operationalStatus = parsed.data.operationalStatus ?? (await getFleetAdminSettings()).defaultVehicleStatus
+    await db.insert(fuelVehicles).values({ id, ...parsed.data, operationalStatus })
+    revalidatePath("/admin/flota-catalogos/vehiculos")
     return { ok: true, message: "Vehículo creado", data: { id } }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al crear vehículo") }
@@ -76,6 +85,13 @@ export async function updateFuelVehicleAction(
     model: formData.get("model") || undefined,
     year: formData.get("year") || undefined,
     worksiteId: formData.get("worksiteId") || undefined,
+    responsibleUserId: formData.get("responsibleUserId") || undefined,
+    operationalStatus: formData.get("operationalStatus") || undefined,
+    soapExpiresAt: formData.get("soapExpiresAt") || undefined,
+    technicalReviewExpiresAt: formData.get("technicalReviewExpiresAt") || undefined,
+    circulationPermitExpiresAt: formData.get("circulationPermitExpiresAt") || undefined,
+    insurancePolicyNumber: formData.get("insurancePolicyNumber") || undefined,
+    insuranceExpiresAt: formData.get("insuranceExpiresAt") || undefined,
     notes: formData.get("notes") || undefined,
   })
 
@@ -95,14 +111,14 @@ export async function updateFuelVehicleAction(
   try {
     const { id: _, ...data } = parsed.data
     await db.update(fuelVehicles).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, id))
-    revalidatePath("/combustibles/vehiculos")
+    revalidatePath("/admin/flota-catalogos/vehiculos")
     return { ok: true, message: "Vehículo actualizado" }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al actualizar") }
   }
 }
 
-export async function deleteFuelVehicleAction(id: string): Promise<ActionState> {
+export async function toggleFuelVehicleActiveAction(id: string, activate: boolean): Promise<ActionState> {
   let session
   try { session = await requirePermission("combustibles:manage_vehicles") }
   catch { return { ok: false, message: "Sin permisos" } }
@@ -114,10 +130,10 @@ export async function deleteFuelVehicleAction(id: string): Promise<ActionState> 
   }
 
   try {
-    await db.update(fuelVehicles).set({ isActive: false, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, id))
-    revalidatePath("/combustibles/vehiculos")
-    return { ok: true, message: "Vehículo desactivado" }
+    await db.update(fuelVehicles).set({ isActive: activate, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, id))
+    revalidatePath("/admin/flota-catalogos/vehiculos")
+    return { ok: true, message: activate ? "Vehículo activado" : "Vehículo desactivado" }
   } catch (e) {
-    return { ok: false, message: await dbErrMsg(e, "Error al desactivar") }
+    return { ok: false, message: await dbErrMsg(e, activate ? "Error al activar" : "Error al desactivar") }
   }
 }

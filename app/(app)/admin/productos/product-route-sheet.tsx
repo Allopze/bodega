@@ -3,11 +3,14 @@
 import { useRouter } from "next/navigation"
 import { ProductForm } from "./product-form"
 import type { getProductForEdit } from "./actions"
+import type { AttributeTemplateOption, ProductUnitOption } from "./product-form.types"
 
 interface Category {
   id: string
   name: string
   slug: string
+  isEpp: boolean
+  requiresPrevencion: boolean
 }
 
 interface Supplier {
@@ -18,10 +21,14 @@ interface Supplier {
 export function ProductRouteSheet({
   categories,
   allSuppliers,
+  units,
+  templates,
   editProduct,
 }: {
   categories: Category[]
   allSuppliers: Supplier[]
+  units: ProductUnitOption[]
+  templates: AttributeTemplateOption[]
   editProduct?: Awaited<ReturnType<typeof getProductForEdit>>
 }) {
   const router = useRouter()
@@ -32,6 +39,8 @@ export function ProductRouteSheet({
       onClose={() => router.push("/admin/productos")}
       categories={categories}
       allSuppliers={allSuppliers}
+      units={units}
+      templates={templates}
       editProduct={editProduct}
       variant="embedded"
     />

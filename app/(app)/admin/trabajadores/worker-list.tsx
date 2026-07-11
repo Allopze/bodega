@@ -1,16 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect } from "react"
-import { toast } from "@/lib/toast"
-import { Plus, PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { Plus, DownloadSimple, UploadSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
+import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
+import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorkerForm } from "./worker-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleWorkerActive } from "./actions"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { importWorkersFromXlsx } from "./actions"
+import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
+import { COLUMNS, CONTRACT } from "./catalog-contract"
 
 interface WorksiteOption { id: string; name: string }
 
@@ -26,47 +28,45 @@ interface WorkerRow {
   createdAt:   string
 }
 
-const COLUMNS = [
-  { key: "name",         label: "Trabajador",    sortable: true  },
-  { key: "rut",          label: "RUT",           sortable: true,  width: "w-32" },
-  { key: "position",     label: "Cargo",         sortable: true  },
-  { key: "worksiteName", label: "Faena",         sortable: true  },
-  { key: "isActive",     label: "Estado",        sortable: true,  width: "w-24" },
-  { key: "",             label: "",              sortable: false, width: "w-16" },
-]
-
 export function WorkerList({
   workers, worksites,
 }: {
   workers:   WorkerRow[]
   worksites: WorksiteOption[]
 }) {
-  const [sheetOpen,  setSheetOpen]  = React.useState(false)
-  const [editWorker, setEditWorker] = React.useState<WorkerRow | null>(null)
-  const [toggleState, toggleAction] = useActionState(toggleWorkerActive, INITIAL_STATE)
+  const {
+    sheetOpen, editRow: editWorker,
+    openCreate, openEdit, closeSheet, toggleAction,
+  } = useCatalogSheet<WorkerRow>(toggleWorkerActive)
 
-  useEffect(() => {
-    if (toggleState.message) {
-      if (toggleState.ok) toast.success(toggleState.message)
-      else toast.error(toggleState.message)
-    }
-  }, [toggleState])
-
-  function openCreate()             { setEditWorker(null); setSheetOpen(true) }
-  function openEdit(w: WorkerRow)   { setEditWorker(w);    setSheetOpen(true) }
+  const [importOpen, setImportOpen] = React.useState(false)
 
   return (
     <>
       <DataTable
         columns={COLUMNS}
         rows={workers as unknown as Record<string, unknown>[]}
-        searchKeys={["firstName", "lastName", "rut", "position", "worksiteName"]}
+        searchKeys={CONTRACT.searchKeys}
         pageSize={25}
 
         emptyTitle="Sin trabajadores"
         emptyDescription="Registra el primer trabajador para gestionar entregas de EPP."
         emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo trabajador</Button>}
-        actions={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo trabajador</Button>}
+        actions={(
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a
+              href="/api/admin/catalogos/export?tipo=trabajadores"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
+            >
+              <DownloadSimple size={14} />Exportar XLSX
+            </a>
+            <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
+              <UploadSimple size={14} />Importar XLSX
+            </Button>
+            <Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo trabajador</Button>
+          </div>
+        )}
         renderMobileCard={(row) => {
           const w = row as unknown as WorkerRow
           return (
@@ -95,16 +95,13 @@ export function WorkerList({
               </dl>
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <button type="button" onClick={() => openEdit(w)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label="Editar trabajador">
-                  <PencilSimple size={16} />
-                </button>
-                <form action={toggleAction}>
-                  <input type="hidden" name="id" value={w.id} />
-                  <input type="hidden" name="activate" value={String(!w.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={w.isActive ? "Desactivar" : "Activar"} aria-label={`${w.isActive ? "Desactivar" : "Activar"} trabajador ${w.firstName} ${w.lastName}`}>
-                    {w.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
-                  </button>
-                </form>
+                <CatalogRowActions
+                  id={w.id}
+                  isActive={w.isActive}
+                  label={`trabajador ${w.firstName} ${w.lastName}`}
+                  onEdit={() => openEdit(w)}
+                  toggleAction={toggleAction}
+                />
               </div>
             </article>
           )
@@ -136,29 +133,13 @@ export function WorkerList({
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(w)}
-                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
-                    title="Editar"
-                    aria-label={`Editar trabajador ${w.firstName} ${w.lastName}`}
-                  >
-                    <PencilSimple size={16} />
-                  </button>
-                  <form action={toggleAction}>
-                    <input type="hidden" name="id"       value={w.id} />
-                    <input type="hidden" name="activate" value={String(!w.isActive)} />
-                    <button
-                      type="submit"
-                      className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
-                      title={w.isActive ? "Desactivar" : "Activar"}
-                      aria-label={`${w.isActive ? "Desactivar" : "Activar"} trabajador ${w.firstName} ${w.lastName}`}
-                    >
-                      {w.isActive
-                        ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
-                        : <ToggleLeft  size={20} />}
-                    </button>
-                  </form>
+                  <CatalogRowActions
+                    id={w.id}
+                    isActive={w.isActive}
+                    label={`trabajador ${w.firstName} ${w.lastName}`}
+                    onEdit={() => openEdit(w)}
+                    toggleAction={toggleAction}
+                  />
                 </div>
               </TableCell>
             </TableRow>
@@ -167,9 +148,17 @@ export function WorkerList({
       />
       <WorkerForm
         open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
+        onClose={closeSheet}
         editWorker={editWorker}
         worksites={worksites}
+      />
+      <CatalogImportPanel
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Importar trabajadores desde XLSX"
+        description="Importa trabajadores exportados desde el catálogo. La columna ID determina si se crea o actualiza."
+        action={importWorkersFromXlsx}
+        helperText="Usa el botón Exportar XLSX para obtener la plantilla con los datos actuales."
       />
     </>
   )

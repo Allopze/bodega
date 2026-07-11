@@ -1,0 +1,74 @@
+import { test, expect } from "@playwright/test"
+import { login } from "./helpers"
+
+const catalogRoutes = [
+  { path: "/admin/faenas", title: "Faenas" },
+  { path: "/admin/trabajadores", title: "Trabajadores" },
+  { path: "/admin/proveedores", title: "Proveedores" },
+  { path: "/admin/centros-costo", title: "Centros de costo" },
+  { path: "/admin/productos", title: "Productos" },
+  { path: "/admin/catalogos-productos", title: "Catálogos de productos" },
+  { path: "/admin/flota-catalogos/vehiculos", title: "Vehículos de combustible" },
+  { path: "/admin/flota-catalogos/proveedores-combustible", title: "Proveedores de combustible" },
+]
+
+test.describe("Catálogos administrativos migrados", () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page)
+  })
+
+  test("todos los catálogos tienen una ruta administrativa navegable", async ({ page }) => {
+    for (const route of catalogRoutes) {
+      await page.goto(route.path)
+      await expect(page.getByRole("heading", { name: route.title }).first()).toBeVisible()
+      await expect(page.getByPlaceholder("Filtrar en esta página...")).toBeVisible()
+    }
+  })
+
+  test("el hub de flota enlaza las superficies canónicas", async ({ page }) => {
+    await page.goto("/admin/flota-catalogos")
+    await expect(page.getByRole("heading", { name: "Catálogos de flota" })).toBeVisible()
+    await expect(page.getByRole("link", { name: /Vehículos/ })).toHaveAttribute("href", "/admin/flota-catalogos/vehiculos")
+    await expect(page.getByRole("link", { name: /Proveedores de combustible/ })).toHaveAttribute("href", "/admin/flota-catalogos/proveedores-combustible")
+  })
+
+  test("vehículos mantienen edición, desactivación y reactivación", async ({ page }) => {
+    await page.goto("/admin/flota-catalogos/vehiculos")
+    await expect(page.getByRole("cell", { name: "E2E-FUEL-1", exact: true })).toBeVisible()
+
+    await page.getByRole("button", { name: "Editar vehículo E2E-FUEL-1" }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole("tab", { name: "General" })).toBeVisible()
+    await dialog.getByLabel("Modelo").fill("Hilux E2E Validado")
+    await dialog.getByRole("button", { name: "Guardar cambios" }).click()
+    await expect(dialog).toBeHidden()
+
+    await page.getByRole("button", { name: "Desactivar vehículo E2E-FUEL-1" }).click()
+    await expect(page.getByRole("dialog")).toContainText("¿Desactivar vehículo?")
+    await page.getByRole("dialog").getByRole("button", { name: "Desactivar" }).click()
+    await expect(page.getByRole("button", { name: "Activar vehículo E2E-FUEL-1" })).toBeVisible()
+
+    await page.getByRole("button", { name: "Activar vehículo E2E-FUEL-1" }).click()
+    await expect(page.getByRole("button", { name: "Desactivar vehículo E2E-FUEL-1" })).toBeVisible()
+  })
+
+  test("proveedores de combustible mantienen crear y ciclo de estado", async ({ page }) => {
+    await page.goto("/admin/flota-catalogos/proveedores-combustible")
+    await page.getByRole("button", { name: "Nuevo proveedor" }).first().click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    await dialog.getByLabel("Razón social").fill("Proveedor Catálogo E2E")
+    await dialog.getByLabel("RUT").fill("76.444.555-6")
+    await dialog.getByLabel("Email").fill("catalogo-e2e@chome.cl")
+    await dialog.getByRole("button", { name: "Crear proveedor" }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole("cell", { name: "Proveedor Catálogo E2E", exact: true })).toBeVisible()
+
+    await page.getByRole("button", { name: "Desactivar proveedor de combustible Proveedor Catálogo E2E" }).click()
+    await page.getByRole("dialog").getByRole("button", { name: "Desactivar" }).click()
+    await expect(page.getByRole("button", { name: "Activar proveedor de combustible Proveedor Catálogo E2E" })).toBeVisible()
+    await page.getByRole("button", { name: "Activar proveedor de combustible Proveedor Catálogo E2E" }).click()
+    await expect(page.getByRole("button", { name: "Desactivar proveedor de combustible Proveedor Catálogo E2E" })).toBeVisible()
+  })
+})

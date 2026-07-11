@@ -31,6 +31,14 @@ describe("normalizeEppRow", () => {
     expect(result.eppType).toBe("pantalon")
     expect(result.issues).toEqual([])
   })
+
+  it("keeps variant identity separate from family identity", () => {
+    const blue = normalizeEppRow({ name: "GUANTE NITRILO AZUL TALLA M", unitOfMeasure: "unidad" })
+    const red = normalizeEppRow({ name: "GUANTE NITRILO ROJO TALLA M", unitOfMeasure: "unidad" })
+
+    expect(blue.identityKey).not.toBe(red.identityKey)
+    expect(blue.familyIdentityKey).toBe(red.familyIdentityKey)
+  })
 })
 
 describe("parseEppWorkbook", () => {

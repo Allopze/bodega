@@ -25,6 +25,7 @@ export interface ResponsibleRow {
   roleName: string
   kind: string
   notes: string
+  isActive: boolean
 }
 
 interface ResponsibleFormProps {

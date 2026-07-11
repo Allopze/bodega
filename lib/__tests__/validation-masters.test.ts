@@ -334,6 +334,33 @@ describe("productSchema", () => {
     })
     expect(result.unitOfMeasure).toBe("unidad")
   })
+
+  it("accepts a single preferred supplier", () => {
+    const result = productSchema.safeParse({
+      name: "Casco",
+      categoryId: "cat-1",
+      suppliers: [
+        { supplierId: "sup-1", isPreferred: true },
+        { supplierId: "sup-2", isPreferred: false },
+      ],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it("rejects more than one preferred supplier", () => {
+    const result = productSchema.safeParse({
+      name: "Casco",
+      categoryId: "cat-1",
+      suppliers: [
+        { supplierId: "sup-1", isPreferred: true },
+        { supplierId: "sup-2", isPreferred: true },
+      ],
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.suppliers?.[0]).toMatch(/preferido/i)
+    }
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════

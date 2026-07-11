@@ -1,15 +1,10 @@
 "use client"
 
-import { useActionState } from "react"
-import { toast } from "@/lib/toast"
-import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
-import { SubmitButton } from "@/components/admin/submit-button"
-import { Button } from "@/components/ui/button"
+import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { toTitleCase } from "@/lib/utils"
 import { createSupplier, updateSupplier } from "./actions"
 
@@ -37,42 +32,22 @@ interface SupplierFormProps {
 
 export function SupplierForm({ open, onClose, editSupplier }: SupplierFormProps) {
   const isEdit = !!editSupplier
-  const action = isEdit ? updateSupplier : createSupplier
-  const [state, formAction] = useActionState<ActionState, FormData>(
-    async (prev, formData) => {
-      const result = await action(prev, formData)
-      if (result.ok) {
-        toast.success(result.message ?? (isEdit ? "Proveedor actualizado" : "Proveedor creado"))
-        onClose()
-      } else if (result.message && !result.fieldErrors) {
-        toast.error(result.message)
-      }
-      return result
-    },
-    INITIAL_STATE,
-  )
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <SheetContent>
-        <form action={formAction} className="flex flex-col flex-1 min-h-0">
-          {isEdit && <input type="hidden" name="id" value={editSupplier.id} />}
-
-          <SheetHeader>
-            <div>
-              <SheetTitle>{isEdit ? "Editar proveedor" : "Nuevo proveedor"}</SheetTitle>
-              <SheetDescription>
-                {isEdit ? `Modificar ${toTitleCase(editSupplier.name)}` : "Registra un nuevo proveedor"}
-              </SheetDescription>
-            </div>
-            <SheetCloseButton />
-          </SheetHeader>
-
-          <SheetBody>
-            {state.message && !state.ok && !state.fieldErrors && (
-              <p className="mb-4 text-sm text-[var(--color-danger)]">{state.message}</p>
-            )}
-            <FieldGroup className="gap-4">
+    <CatalogFormSheet
+      open={open}
+      onClose={onClose}
+      isEdit={isEdit}
+      entityId={editSupplier?.id}
+      title={isEdit ? "Editar proveedor" : "Nuevo proveedor"}
+      description={isEdit ? `Modificar ${toTitleCase(editSupplier.name)}` : "Registra un nuevo proveedor"}
+      create={createSupplier}
+      update={updateSupplier}
+      submitLabel={isEdit ? "Guardar cambios" : "Crear proveedor"}
+      successMessage={isEdit ? "Proveedor actualizado" : "Proveedor creado"}
+    >
+      {(state) => (
+        <FieldGroup className="gap-4">
               <Field label="Razón social" htmlFor="sup-name" required error={state.fieldErrors?.name?.[0]}>
                 <Input id="sup-name" name="name" autoComplete="off" defaultValue={editSupplier?.name ?? ""} placeholder="Ferretería Industrial Cáceres Ltda." error={!!state.fieldErrors?.name} />
               </Field>
@@ -120,15 +95,8 @@ export function SupplierForm({ open, onClose, editSupplier }: SupplierFormProps)
               </Field>
 
               <Checkbox id="sup-isActive" name="isActive" value="on" defaultChecked={editSupplier?.isActive ?? true} label="Proveedor activo" />
-            </FieldGroup>
-          </SheetBody>
-
-          <SheetFooter>
-            <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-            <SubmitButton label={isEdit ? "Guardar cambios" : "Crear proveedor"} loadingLabel="Guardando..." />
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
+        </FieldGroup>
+      )}
+    </CatalogFormSheet>
   )
 }

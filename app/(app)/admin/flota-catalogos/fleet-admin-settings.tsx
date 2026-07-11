@@ -7,18 +7,13 @@ import { Input } from "@/components/ui/input"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
+import { FUEL_VEHICLE_STATUSES, FUEL_VEHICLE_STATUS_LABELS } from "@/lib/combustibles/validation"
 import { saveFleetAdminSettingsAction } from "./actions"
 
 interface FleetAdminSettingsProps {
   warningDays: number
   defaultVehicleStatus: string
 }
-
-const STATUS_OPTIONS = [
-  { value: "operativo", label: "Operativo" },
-  { value: "mantencion", label: "En mantención" },
-  { value: "fuera_servicio", label: "Fuera de servicio" },
-] as const
 
 export function FleetAdminSettings({ warningDays, defaultVehicleStatus }: FleetAdminSettingsProps) {
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -74,8 +69,8 @@ export function FleetAdminSettings({ warningDays, defaultVehicleStatus }: FleetA
                 defaultValue={defaultVehicleStatus}
                 className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm"
               >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
+                {FUEL_VEHICLE_STATUSES.map((s) => (
+                  <option key={s} value={s}>{FUEL_VEHICLE_STATUS_LABELS[s]}</option>
                 ))}
               </select>
             </Field>

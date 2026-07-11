@@ -110,6 +110,30 @@ docker compose logs --tail=200 app
 5. Restaurar primero en staging y validar conteos/tablas criticas.
 6. Documentar hora de inicio, causa probable, acciones tomadas y hora de cierre.
 
+## Backfill de identidad de proveedores de combustible
+
+El enlace entre `fuel_suppliers` y `suppliers` se puede revisar sin escribir datos.
+Ejecutar siempre el DRY-RUN en la base objetivo antes de aplicar cualquier vínculo:
+
+```bash
+DATABASE_URL="<URL_DEL_ENTORNO>" npm run db:normalize-fuel-suppliers
+```
+
+El reporte separa vínculos seguros por RUT, coincidencias solo por nombre, casos
+ambiguos y proveedores sin coincidencia. Las coincidencias solo por nombre, ambiguas
+y sin RUT requieren revisión manual; el script no las fusiona.
+
+Después de un backup reciente y de aprobar el reporte, aplicar únicamente las
+coincidencias únicas por RUT:
+
+```bash
+DATABASE_URL="<URL_DEL_ENTORNO>" npm run db:normalize-fuel-suppliers -- --apply
+```
+
+Orden recomendado: base de pruebas/restauración, staging y finalmente producción.
+Guardar la salida de ambos comandos junto con la fecha, el SHA desplegado y la
+confirmación de revisión. No ejecutar `--apply` como parte del deploy automático.
+
 ## Tareas recurrentes
 
 | Tarea | Frecuencia |

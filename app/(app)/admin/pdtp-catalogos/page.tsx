@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
-import { listPdtpAdminCatalogs } from "@/lib/services/pdtp/admin-catalogs"
+import { listPdtpAdminCatalogs, listRoleSlugs } from "@/lib/services/pdtp/admin-catalogs"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { CatalogTabs } from "./catalog-tabs"
@@ -15,7 +15,10 @@ export default async function PdtpCatalogsPage() {
     redirect("/forbidden")
   }
 
-  const { responsibles, programs, sheets } = await listPdtpAdminCatalogs()
+  const [{ responsibles, programs, sheets }, roleOptions] = await Promise.all([
+    listPdtpAdminCatalogs(),
+    listRoleSlugs(),
+  ])
 
   return (
     <PageContainer>
@@ -29,12 +32,14 @@ export default async function PdtpCatalogsPage() {
         ]}
       />
       <CatalogTabs
+        roleOptions={roleOptions}
         responsibles={responsibles.map((r) => ({
           slug: r.slug,
           displayName: r.displayName,
           roleName: r.roleName ?? "",
           kind: r.kind,
           notes: r.notes ?? "",
+          isActive: r.isActive,
         }))}
         sheets={sheets.map((s) => ({
           id: s.id,
@@ -43,6 +48,7 @@ export default async function PdtpCatalogsPage() {
           label: s.label,
           area: s.area,
           defaultScopeRoles: Array.isArray(s.defaultScopeRoles) ? s.defaultScopeRoles as string[] : [],
+          isActive: s.isActive,
         }))}
         programs={programs.map((p) => ({
           id: p.id,

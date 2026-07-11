@@ -1,0 +1,2 @@
+ALTER TABLE "fuel_suppliers" ADD COLUMN "supplier_id" text;--> statement-breakpoint
+ALTER TABLE "fuel_suppliers" ADD CONSTRAINT "fuel_suppliers_supplier_id_suppliers_id_fk" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE set null ON UPDATE no action;

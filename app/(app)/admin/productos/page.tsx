@@ -1,9 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { eppImportBatches } from "@/db/schema"
 import { suppliers } from "@/db/schema"
-import { desc } from "drizzle-orm"
 import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -16,13 +14,14 @@ export default async function ProductosPage() {
   try { await requirePermission("admin:products") }
   catch { redirect("/forbidden") }
 
-  const [allProducts, allCategories, allSuppliers, recentBatches] = await Promise.all([
+  const [allProducts, allCategories, allSuppliers, recentBatches, units, templates] = await Promise.all([
     db.query.products.findMany({
       with: {
         category: true,
         productAttributes: {
           orderBy: (attribute, { asc }) => [asc(attribute.sortOrder)],
         },
+        productSuppliers: true,
       },
       orderBy: (p, { asc }) => [asc(p.name)],
     }),
@@ -36,6 +35,15 @@ export default async function ProductosPage() {
     db.query.eppImportBatches.findMany({
       orderBy: (batch, { desc }) => [desc(batch.createdAt)],
       limit: 10,
+    }),
+    db.query.productUnits.findMany({
+      where: (unit, { eq }) => eq(unit.isActive, true),
+      orderBy: (unit, { asc }) => [asc(unit.sortOrder), asc(unit.code)],
+    }),
+    db.query.productAttributeTemplates.findMany({
+      where: (template, { eq }) => eq(template.isActive, true),
+      with: { category: true },
+      orderBy: (template, { asc }) => [asc(template.sortOrder), asc(template.name)],
     }),
   ])
 
@@ -55,18 +63,32 @@ export default async function ProductosPage() {
       <ProductList
         products={allProducts.map((p) => ({
           id: p.id, sku: p.sku, name: p.name,
+          familyId: p.familyId,
           categoryId: p.categoryId, categoryName: p.category?.name ?? "—",
           isEpp: p.isEpp, requiresPrevencion: p.requiresPrevencion,
           referencePrice: p.referencePrice,
+          hasPreferredSupplier: p.productSuppliers.some((s) => s.isPreferred),
           isActive: p.isActive, createdAt: p.createdAt,
           attributes: p.productAttributes.map((attribute) => ({
             name: attribute.name,
             sortOrder: attribute.sortOrder,
             options: attribute.options,
+            isRequired: attribute.isRequired,
           })),
         }))}
         categories={allCategories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion, sortOrder: c.sortOrder }))}
         allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
+        units={units.map((unit) => ({ code: unit.code, label: unit.label, isActive: unit.isActive }))}
+        templates={templates.map((template) => ({
+          id: template.id,
+          categoryId: template.categoryId ?? "",
+          categoryName: template.category?.name,
+          name: template.name,
+          type: template.type as "text" | "select" | "number",
+          isRequired: template.isRequired,
+          options: template.options ?? "",
+          sortOrder: template.sortOrder,
+        }))}
         recentBatches={recentBatches.map((batch) => {
           let rowCount: number | null = null
           try {

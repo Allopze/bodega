@@ -21,4 +21,17 @@ describe("product variant grouping", () => {
     expect(variant).toBeDefined()
     expect(formatProductVariant(variant?.attributes ?? [], variant?.sku ?? "")).toBe("Color: Amarillo")
   })
+
+  it("groups by familyId when the catalog provides the canonical family", () => {
+    const groups = groupProductVariants([
+      { id: "casco-amarillo", name: "Casco seguridad", sku: "CAS-AMA", familyId: "family-casco", attributes: [{ name: "Color", options: '["Amarillo"]' }] },
+      { id: "casco-blanco", name: "CASCO SEGURIDAD", sku: "CAS-BLA", familyId: "family-casco", attributes: [{ name: "Color", options: '["Blanco"]' }] },
+      { id: "otro-casco", name: "Casco seguridad", sku: "CAS-OTRO", familyId: "family-otro", attributes: [] },
+    ])
+
+    expect(groups.map((group) => [group.id, group.variants.map((variant) => variant.id)])).toEqual([
+      ["family-casco", ["casco-amarillo", "casco-blanco"]],
+      ["family-otro", ["otro-casco"]],
+    ])
+  })
 })

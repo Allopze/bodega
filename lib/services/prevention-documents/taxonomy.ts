@@ -99,23 +99,31 @@ export async function seedDefaultCategories() {
 }
 
 export async function setDocumentCategoryActive(slug: string, isActive: boolean) {
+  const [current] = await db
+    .select({ isActive: sstDocumentCategories.isActive })
+    .from(sstDocumentCategories)
+    .where(eq(sstDocumentCategories.slug, slug))
+  if (!current) throw new Error("Categoría documental no encontrada")
   const now = new Date().toISOString()
   const [row] = await db
     .update(sstDocumentCategories)
     .set({ isActive, updatedAt: now })
     .where(eq(sstDocumentCategories.slug, slug))
     .returning()
-  if (!row) throw new Error("Categoría documental no encontrada")
-  return row
+  return { row: row!, previousIsActive: current.isActive }
 }
 
 export async function setDocumentTypeActive(id: string, isActive: boolean) {
+  const [current] = await db
+    .select({ isActive: sstDocumentTypes.isActive })
+    .from(sstDocumentTypes)
+    .where(eq(sstDocumentTypes.id, id))
+  if (!current) throw new Error("Tipo documental no encontrado")
   const now = new Date().toISOString()
   const [row] = await db
     .update(sstDocumentTypes)
     .set({ isActive, updatedAt: now })
     .where(eq(sstDocumentTypes.id, id))
     .returning()
-  if (!row) throw new Error("Tipo documental no encontrado")
-  return row
+  return { row: row!, previousIsActive: current.isActive }
 }

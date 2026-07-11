@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState, useEffect } from "react"
-import { Plus, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { PencilSimple, Plus, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/admin/data-table"
@@ -21,7 +21,7 @@ const UNIT_COLUMNS = [
   { key: "label", label: "Etiqueta", sortable: true },
   { key: "description", label: "Descripción", sortable: true },
   { key: "isActive", label: "Estado", sortable: true, width: "w-28" },
-  { key: "", label: "", sortable: false, width: "w-24" },
+  { key: "", label: "", sortable: false, width: "w-28" },
 ]
 
 const ATTR_COLUMNS = [
@@ -30,7 +30,7 @@ const ATTR_COLUMNS = [
   { key: "categoryId", label: "Categoría", sortable: true, width: "w-32" },
   { key: "isRequired", label: "Requerido", sortable: true, width: "w-28" },
   { key: "isActive", label: "Estado", sortable: true, width: "w-28" },
-  { key: "", label: "", sortable: false, width: "w-24" },
+  { key: "", label: "", sortable: false, width: "w-28" },
 ]
 
 const TABS = [
@@ -41,10 +41,11 @@ const TABS = [
 interface CatalogListProps {
   units: ProductUnitRow[]
   templates: AttributeTemplateRow[]
+  categories: { id: string; name: string }[]
   legacyUnits: string[]
 }
 
-export function CatalogList({ units, templates, legacyUnits }: CatalogListProps) {
+export function CatalogList({ units, templates, categories, legacyUnits }: CatalogListProps) {
   const [tab, setTab] = React.useState<(typeof TABS)[number]["key"]>("units")
   const [unitSheetOpen, setUnitSheetOpen] = React.useState(false)
   const [editUnit, setEditUnit] = React.useState<ProductUnitRow | null>(null)
@@ -132,17 +133,18 @@ export function CatalogList({ units, templates, legacyUnits }: CatalogListProps)
                       {u.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
                     </TableCell>
                     <TableCell>
-                      <form action={unitToggleAction}>
-                        <input type="hidden" name="id" value={u.id} />
-                        <input type="hidden" name="activate" value={String(!u.isActive)} />
-                        <button
-                          type="submit"
-                          className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                          aria-label={u.isActive ? "Desactivar" : "Reactivar"}
-                        >
-                          {u.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => { setEditUnit(u); setUnitSheetOpen(true) }} className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]" aria-label={`Editar unidad ${u.label}`}>
+                          <PencilSimple size={16} />
                         </button>
-                      </form>
+                        <form action={unitToggleAction}>
+                          <input type="hidden" name="id" value={u.id} />
+                          <input type="hidden" name="activate" value={String(!u.isActive)} />
+                          <button type="submit" className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]" aria-label={u.isActive ? "Desactivar" : "Reactivar"}>
+                            {u.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                          </button>
+                        </form>
+                      </div>
                     </TableCell>
                   </TableRow>
                 </React.Fragment>
@@ -187,23 +189,24 @@ export function CatalogList({ units, templates, legacyUnits }: CatalogListProps)
                   <TableRow>
                     <TableCell>{t.name}</TableCell>
                     <TableCell className="font-mono text-xs"><Badge variant="default">{t.type}</Badge></TableCell>
-                    <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">{t.categoryId || "—"}</TableCell>
+                    <TableCell className="text-xs text-[var(--color-text-muted)]">{t.categoryName || "Todas"}</TableCell>
                     <TableCell>{t.isRequired ? <Badge variant="warning">Sí</Badge> : <Badge variant="default">No</Badge>}</TableCell>
                     <TableCell>
                       {t.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
                     </TableCell>
                     <TableCell>
-                      <form action={attrToggleAction}>
-                        <input type="hidden" name="id" value={t.id} />
-                        <input type="hidden" name="activate" value={String(!t.isActive)} />
-                        <button
-                          type="submit"
-                          className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                          aria-label={t.isActive ? "Desactivar" : "Reactivar"}
-                        >
-                          {t.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => { setEditAttr(t); setAttrSheetOpen(true) }} className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]" aria-label={`Editar plantilla ${t.name}`}>
+                          <PencilSimple size={16} />
                         </button>
-                      </form>
+                        <form action={attrToggleAction}>
+                          <input type="hidden" name="id" value={t.id} />
+                          <input type="hidden" name="activate" value={String(!t.isActive)} />
+                          <button type="submit" className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]" aria-label={t.isActive ? "Desactivar" : "Reactivar"}>
+                            {t.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                          </button>
+                        </form>
+                      </div>
                     </TableCell>
                   </TableRow>
                 </React.Fragment>
@@ -215,6 +218,7 @@ export function CatalogList({ units, templates, legacyUnits }: CatalogListProps)
             open={attrSheetOpen}
             onClose={() => setAttrSheetOpen(false)}
             editTemplate={editAttr}
+            categories={categories}
           />
         </section>
       )}

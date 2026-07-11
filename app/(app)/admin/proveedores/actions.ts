@@ -7,6 +7,8 @@ import { suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
+import { logger } from "@/lib/logger"
+import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
 import { supplierSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/proveedores"
@@ -127,4 +129,72 @@ export async function toggleSupplierActive(_prev: ActionState, formData: FormDat
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: activate ? "Proveedor activado" : "Proveedor desactivado" }
+}
+
+export async function importSuppliersFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:suppliers") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const file = formData.get("file")
+  if (!(file instanceof File) || file.size === 0) return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) return { ok: false, fieldErrors: { file: ["El archivo debe estar en formato .xlsx"] } }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const result = await parseCatalogWorkbook(buffer)
+  if (!result.ok) return { ok: false, message: result.errors.join("; ") }
+
+  let created = 0; let updated = 0; let skipped = 0
+
+  try {
+    await db.transaction(async (tx) => {
+      for (const row of result.rows) {
+        const v = row.values
+        const name = (v["Nombre"] ?? "").trim()
+        if (!name) { skipped++; continue }
+        const isActive = v["Activo"]?.trim() !== "No"
+
+        if (row.decision === "update" && row.existingId) {
+          updated++
+          await tx.update(suppliers).set({
+            name, rut: (v["RUT"] ?? "").trim() || null,
+            businessActivity: (v["Giro"] ?? "").trim() || null,
+            contactName: (v["Contacto"] ?? "").trim() || null,
+            email: (v["Email"] ?? "").trim() || null,
+            phone: (v["Teléfono"] ?? "").trim() || null,
+            address: (v["Dirección"] ?? "").trim() || null,
+            commune: (v["Comuna"] ?? "").trim() || null,
+            city: (v["Ciudad"] ?? "").trim() || null,
+            paymentTerms: (v["Cond. pago"] ?? "").trim() || null,
+            notes: (v["Notas"] ?? "").trim() || null,
+            isActive,
+            updatedAt: new Date().toISOString(),
+          }).where(eq(suppliers.id, row.existingId!))
+        } else {
+          created++
+          await tx.insert(suppliers).values({
+            id: nanoid(), name, rut: (v["RUT"] ?? "").trim() || null,
+            businessActivity: (v["Giro"] ?? "").trim() || null,
+            contactName: (v["Contacto"] ?? "").trim() || null,
+            email: (v["Email"] ?? "").trim() || null,
+            phone: (v["Teléfono"] ?? "").trim() || null,
+            address: (v["Dirección"] ?? "").trim() || null,
+            commune: (v["Comuna"] ?? "").trim() || null,
+            city: (v["Ciudad"] ?? "").trim() || null,
+            paymentTerms: (v["Cond. pago"] ?? "").trim() || null,
+            notes: (v["Notas"] ?? "").trim() || null,
+            isActive,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          })
+        }
+      }
+    })
+    await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "supplier", entityId: "import_xlsx", newState: { created, updated, skipped } })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos`, data: { created, updated, skipped } }
+  } catch (err) {
+    logger.error("[admin/proveedores] importXlsx", err)
+    return { ok: false, message: (err as Error).message }
+  }
 }

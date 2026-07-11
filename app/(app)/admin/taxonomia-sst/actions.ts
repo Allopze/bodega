@@ -137,14 +137,14 @@ export async function setDocumentCategoryStatusAction(_prev: ActionState, formDa
   if (!slug) return errorState("Slug requerido")
 
   try {
-    const row = await setDocumentCategoryActive(slug, activate)
+    const { row, previousIsActive } = await setDocumentCategoryActive(slug, activate)
     await recordAudit({
       userId:     session.user.id,
       userEmail:  session.user.email ?? undefined,
       action:     "update",
       entityType: "sst_document_category",
       entityId:   row.slug,
-      oldState:   { isActive: !activate },
+      oldState:   { isActive: previousIsActive },
       newState:   { isActive: activate },
     })
     revalidatePath(REVALIDATE)
@@ -167,14 +167,14 @@ export async function setDocumentTypeStatusAction(_prev: ActionState, formData: 
   if (!id) return errorState("ID requerido")
 
   try {
-    const row = await setDocumentTypeActive(id, activate)
+    const { row, previousIsActive } = await setDocumentTypeActive(id, activate)
     await recordAudit({
       userId:     session.user.id,
       userEmail:  session.user.email ?? undefined,
       action:     "update",
       entityType: "sst_document_type",
       entityId:   row.id,
-      oldState:   { isActive: !activate },
+      oldState:   { isActive: previousIsActive },
       newState:   { isActive: activate },
     })
     revalidatePath(REVALIDATE)

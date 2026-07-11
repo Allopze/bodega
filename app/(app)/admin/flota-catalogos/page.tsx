@@ -10,8 +10,9 @@ import { FleetAdminSettings } from "./fleet-admin-settings"
 export const metadata: Metadata = { title: "Catálogos de flota" }
 
 export default async function FleetCatalogsPage() {
+  let session
   try {
-    await requirePermission("admin:fleet_catalog")
+    session = await requirePermission("admin:fleet_catalog")
   } catch {
     redirect("/forbidden")
   }
@@ -29,7 +30,7 @@ export default async function FleetCatalogsPage() {
           { label: "Catálogos de flota" },
         ]}
       />
-      <CatalogLinks />
+      <CatalogLinks permissions={session.user.permissions} />
       <FleetAdminSettings
         warningDays={settings.warningDays}
         defaultVehicleStatus={settings.defaultVehicleStatus}

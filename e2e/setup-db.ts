@@ -93,6 +93,7 @@ async function main() {
     { id: "p-adm-sup", name: "admin:suppliers", module: "admin", description: "Proveedores" },
     { id: "p-adm-cfg", name: "admin:config", module: "admin", description: "Config" },
     { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Auditoría" },
+    { id: "p-adm-fleet", name: "admin:fleet_catalog", module: "admin", description: "Catálogos de flota" },
     { id: "p-ppa-view", name: "ppa:view", module: "ppa", description: "Ver PPA Digital" },
     { id: "p-ppa-review", name: "ppa:review", module: "ppa", description: "Revisar PPA" },
     { id: "p-ppa-manage", name: "ppa:manage", module: "ppa", description: "Gestionar PPA" },

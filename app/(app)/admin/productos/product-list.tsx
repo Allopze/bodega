@@ -1,11 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect } from "react"
 import Link from "next/link"
 import { toast } from "@/lib/toast"
-import { Plus, PencilSimple, ToggleLeft, ToggleRight, Tag, UploadSimple } from "@phosphor-icons/react"
+import { Plus, PencilSimple, Tag, UploadSimple, Warning, DownloadSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
+import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
+import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { CategoryPanel, type CategoryForEdit } from "./category-panel"
 import { ProductForm } from "./product-form"
 import { Badge } from "@/components/ui/badge"
@@ -13,16 +14,21 @@ import { Button } from "@/components/ui/button"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { formatCLP } from "@/lib/utils"
 import { toggleProductActive, getProductForEdit } from "./actions"
-import { INITIAL_STATE } from "@/components/admin/form-state"
 import { ProductImportPanel } from "./product-import-panel"
-import type { ProductAttributeSummary } from "./product-list.helpers"
+import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
+import { importProductsFromXlsx } from "./actions"
+import { getProductWarnings, getFamilyWarnings, type ProductAttributeSummary } from "./product-list.helpers"
+import type { AttributeTemplateOption, ProductUnitOption } from "./product-form.types"
 import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
+import { COLUMNS, CONTRACT } from "./catalog-contract"
 
 interface ProductRow {
   id: string; sku: string; name: string
+  familyId: string | null
   categoryId: string; categoryName: string
   isEpp: boolean; requiresPrevencion: boolean
   referencePrice: number | null
+  hasPreferredSupplier: boolean
   isActive: boolean; createdAt: string
   attributes: ProductAttributeSummary[]
 }
@@ -53,26 +59,19 @@ interface ProductFamilyRow {
   variantSearchText: string
 }
 
-const COLUMNS = [
-  { key: "sku",          label: "SKU",       sortable: true, width: "w-32" },
-  { key: "name",         label: "Nombre",    sortable: true, width: "min-w-[140px] max-w-[350px] w-[22%]" },
-  { key: "categoryName", label: "Categoría", sortable: true, width: "min-w-[80px] w-[12%]" },
-  { key: "attributeNames", label: "Características", sortable: false, width: "min-w-[120px] w-[18%]" },
-  { key: "referencePrice", label: "Precio ref.", sortable: true, numeric: true, width: "w-28" },
-  { key: "isActive",     label: "Estado",    sortable: true, width: "w-24"  },
-  { key: "",             label: "",          sortable: false, width: "w-20"  },
-]
-
-export function ProductList({ products, categories, allSuppliers, recentBatches }: {
+export function ProductList({ products, categories, allSuppliers, units, templates, recentBatches }: {
   products:      ProductRow[]
   categories:    CategoryItem[]
   allSuppliers:  SupplierItem[]
+  units:         ProductUnitOption[]
+  templates:     AttributeTemplateOption[]
   recentBatches?: RecentBatch[]
 }) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
   const [importSheetOpen, setImportSheetOpen] = React.useState(false)
+  const [catalogImportOpen, setCatalogImportOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<CategoryForEdit | null>(null)
-  const [toggleState,  toggleAction]    = useActionState(toggleProductActive, INITIAL_STATE)
+  const { toggleAction } = useCatalogSheet<ProductRow>(toggleProductActive)
 
   // Product sheet state
   const [productSheetOpen, setProductSheetOpen] = React.useState(false)
@@ -94,12 +93,14 @@ export function ProductList({ products, categories, allSuppliers, recentBatches 
     return variant
   }
 
-  useEffect(() => {
-    if (toggleState.message) {
-      if (toggleState.ok) toast.success(toggleState.message)
-      else toast.error(toggleState.message)
-    }
-  }, [toggleState])
+  const categoriesById = React.useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories])
+  function warningsFor(p: ProductRow) {
+    return getProductWarnings(p, categoriesById.get(p.categoryId))
+  }
+  function familyWarningsFor(family: ProductFamilyRow) {
+    const cat = categoriesById.get(family.variants[0]?.categoryId ?? "")
+    return getFamilyWarnings(family.variants, cat)
+  }
 
   function openNewProduct() {
     setEditProductFull(null)
@@ -144,7 +145,7 @@ export function ProductList({ products, categories, allSuppliers, recentBatches 
       <DataTable
         columns={COLUMNS}
         rows={productFamilies as unknown as Record<string, unknown>[]}
-        searchKeys={["sku", "name", "categoryName", "variantSearchText"]}
+        searchKeys={CONTRACT.searchKeys}
         tableClassName="table-fixed min-w-0"
         pageSize={25}
 
@@ -157,8 +158,18 @@ export function ProductList({ products, categories, allSuppliers, recentBatches 
         }
         actions={(
           <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a
+              href="/api/admin/catalogos/export?tipo=productos"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
+            >
+              <DownloadSimple size={14} />Exportar XLSX
+            </a>
             <Button size="sm" variant="secondary" onClick={() => setImportSheetOpen(true)}>
-              <UploadSimple size={14} />Importar XLSX
+              <UploadSimple size={14} />Importar EPP
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setCatalogImportOpen(true)}>
+              <UploadSimple size={14} />Importar catálogo
             </Button>
             <Button size="sm" onClick={openNewProduct}>
               <Plus size={14} />Nuevo producto
@@ -175,9 +186,15 @@ export function ProductList({ products, categories, allSuppliers, recentBatches 
               </TableCell>
               <TableCell>
                 <p className="line-clamp-2 text-sm font-medium text-[var(--color-text)]" title={p.name}>{p.name}</p>
-                <div className="flex gap-1 mt-0.5">
+                <div className="flex items-center gap-1 mt-0.5">
                   {p.isEpp           && <Badge variant="info"    size="sm">EPP</Badge>}
                   {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
+                  {warningsFor(p).length > 0 && (
+                    <Warning size={14} weight="fill" className="text-warning" alt={warningsFor(p).join(" · ")} />
+                  )}
+                  {familyWarningsFor(family).length > 0 && (
+                    <Warning size={14} weight="fill" className="text-warning" alt={`Familia: ${familyWarningsFor(family).join(" · ")}`} />
+                  )}
                 </div>
               </TableCell>
               <TableCell className="text-sm text-[var(--color-text-muted)]">
@@ -207,22 +224,15 @@ export function ProductList({ products, categories, allSuppliers, recentBatches 
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => openEditProduct(p.id)}
-                    disabled={loadingEditId === p.id}
-                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
-                    title="Editar" aria-label="Editar producto"
-                  >
-                    <PencilSimple size={16} className={loadingEditId === p.id ? "animate-spin" : ""} />
-                  </button>
-                  <form action={toggleAction}>
-                    <input type="hidden" name="id"       value={p.id} />
-                    <input type="hidden" name="activate" value={String(!p.isActive)} />
-                    <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={p.isActive ? "Desactivar" : "Activar"} aria-label={`${p.isActive ? "Desactivar" : "Activar"} producto ${p.name}`}>
-                      {p.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
-                    </button>
-                  </form>
+                  <CatalogRowActions
+                    id={p.id}
+                    isActive={p.isActive}
+                    label={`producto ${p.name}`}
+                    onEdit={() => openEditProduct(p.id)}
+                    toggleAction={toggleAction}
+                    editDisabled={loadingEditId === p.id}
+                    editPending={loadingEditId === p.id}
+                  />
                 </div>
               </TableCell>
             </TableRow>
@@ -237,9 +247,15 @@ export function ProductList({ products, categories, allSuppliers, recentBatches 
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{p.sku}</p>
                   <h2 className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{p.name}</h2>
-                  <div className="mt-1 flex flex-wrap gap-1">
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
                     {p.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
                     {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
+                    {warningsFor(p).length > 0 && (
+                      <Warning size={14} weight="fill" className="text-warning" alt={warningsFor(p).join(" · ")} />
+                    )}
+                    {familyWarningsFor(family).length > 0 && (
+                      <Warning size={14} weight="fill" className="text-warning" alt={`Familia: ${familyWarningsFor(family).join(" · ")}`} />
+                    )}
                   </div>
                 </div>
                 <Badge variant={p.isActive ? "success" : "default"} dot>
@@ -278,22 +294,15 @@ export function ProductList({ products, categories, allSuppliers, recentBatches 
               </dl>
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <button
-                  type="button"
-                  onClick={() => openEditProduct(p.id)}
-                  disabled={loadingEditId === p.id}
-                  className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50"
-                  title="Editar"
-                >
-                  <PencilSimple size={16} className={loadingEditId === p.id ? "animate-spin" : ""} />
-                </button>
-                <form action={toggleAction}>
-                  <input type="hidden" name="id" value={p.id} />
-                  <input type="hidden" name="activate" value={String(!p.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={p.isActive ? "Desactivar" : "Activar"} aria-label={`${p.isActive ? "Desactivar" : "Activar"} producto ${p.name}`}>
-                    {p.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
-                  </button>
-                </form>
+                <CatalogRowActions
+                  id={p.id}
+                  isActive={p.isActive}
+                  label={`producto ${p.name}`}
+                  onEdit={() => openEditProduct(p.id)}
+                  toggleAction={toggleAction}
+                  editDisabled={loadingEditId === p.id}
+                  editPending={loadingEditId === p.id}
+                />
               </div>
             </article>
           )
@@ -378,15 +387,26 @@ export function ProductList({ products, categories, allSuppliers, recentBatches 
         onClose={() => setImportSheetOpen(false)}
       />
 
-      <ProductForm
+      <CatalogImportPanel
+        open={catalogImportOpen}
+        onClose={() => setCatalogImportOpen(false)}
+        title="Importar productos desde XLSX"
+        description="Importa productos exportados desde el catálogo. La columna ID determina si se crea (sin ID) o actualiza (con ID)."
+        action={importProductsFromXlsx}
+        helperText="Usa el botón Exportar XLSX para obtener la plantilla con los datos actuales."
+      />
+
+        <ProductForm
         key={`${editProductFull?.id ?? "nuevo"}-${productFormKey}`}
         open={productSheetOpen}
         onClose={() => {
           setProductSheetOpen(false)
           setEditProductFull(null)
         }}
-        categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))}
+        categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion }))}
         allSuppliers={allSuppliers}
+        units={units}
+        templates={templates}
         editProduct={editProductFull}
       />
     </>

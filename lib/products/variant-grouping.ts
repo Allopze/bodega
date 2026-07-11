@@ -7,6 +7,7 @@ export interface ProductVariantLike {
   id: string
   name: string
   sku: string
+  familyId?: string | null
   attributes: VariantAttribute[]
 }
 
@@ -47,7 +48,7 @@ export function groupProductVariants<T extends ProductVariantLike>(products: T[]
   const groups = new Map<string, ProductVariantGroup<T>>()
 
   for (const product of products) {
-    const id = normalizedProductName(product.name)
+    const id = product.familyId ?? normalizedProductName(product.name)
     const group = groups.get(id)
     if (group) group.variants.push(product)
     else groups.set(id, { id, name: product.name, variants: [product] })

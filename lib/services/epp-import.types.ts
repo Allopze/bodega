@@ -13,7 +13,7 @@ export interface ImportCorrection { field: string; from: string | null; to: stri
 export interface NormalizedEppRow {
   sourceCode: string | null; name: string; canonicalName: string; description: string | null; supplierName: string | null; price: number | null
   categoryName: string; unitOfMeasure: string; attributes: EppAttribute[]; eppType: string | null; brand: string | null; model: string | null; material: string | null
-  identityKey: string; issues: Array<{ severity: ImportSeverity; message: string }>
+  identityKey: string; familyIdentityKey: string; issues: Array<{ severity: ImportSeverity; message: string }>
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -115,8 +115,9 @@ export function normalizeEppRow(source: Record<string, string>): NormalizedEppRo
   const canonicalName = titleCase(cleanText(workingName))
   if (!canonicalName) issues.push({ severity: "blocking", message: "El nombre queda vacío después de normalizarlo." })
   const categoryName = cleanText(source.categoryName) || "Elementos de Protección Personal"
-  const normalized: NormalizedEppRow = { sourceCode: cleanText(source.sourceCode) ? toCode(cleanText(source.sourceCode)) : null, name: canonicalName, canonicalName, description: cleanText(source.description) || null, supplierName: cleanText(source.supplierName) || null, price, categoryName, unitOfMeasure: unitOfMeasure ?? "unidad", attributes: corrections, eppType, brand, model, material: material || null, identityKey: "", issues }
+  const normalized: NormalizedEppRow = { sourceCode: cleanText(source.sourceCode) ? toCode(cleanText(source.sourceCode)) : null, name: canonicalName, canonicalName, description: cleanText(source.description) || null, supplierName: cleanText(source.supplierName) || null, price, categoryName, unitOfMeasure: unitOfMeasure ?? "unidad", attributes: corrections, eppType, brand, model, material: material || null, identityKey: "", familyIdentityKey: "", issues }
   normalized.identityKey = identityKey(normalized)
+  normalized.familyIdentityKey = buildEppFamilyIdentityKey(normalized)
   return normalized
 }
 
@@ -175,6 +176,10 @@ function parsePrice(value: string | undefined) {
 
 function identityKey(row: Pick<NormalizedEppRow, "canonicalName" | "categoryName" | "brand" | "model" | "attributes">) {
   return [normalizeKey(row.categoryName), normalizeKey(row.canonicalName), normalizeKey(row.brand ?? ""), normalizeKey(row.model ?? ""), ...row.attributes.map((attribute) => `${normalizeKey(attribute.name)}=${normalizeKey(attribute.value)}`).sort()].join("|")
+}
+
+export function buildEppFamilyIdentityKey(row: Pick<NormalizedEppRow, "canonicalName" | "categoryName" | "brand" | "model">) {
+  return [normalizeKey(row.categoryName), normalizeKey(row.canonicalName), normalizeKey(row.brand ?? ""), normalizeKey(row.model ?? "")].join("|")
 }
 
 function cleanText(value: string | undefined) {

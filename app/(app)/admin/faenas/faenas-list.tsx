@@ -1,16 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useEffect } from "react"
-import { toast } from "@/lib/toast"
-import { Plus, PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { Plus } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
+import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
+import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorksiteForm } from "./worksite-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleWorksiteActive } from "./actions"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { COLUMNS as WS_COLUMNS, CONTRACT } from "./catalog-contract"
 
 interface WorksiteRow {
   id: string
@@ -23,14 +23,6 @@ interface WorksiteRow {
   updatedAt: string
 }
 
-const WS_COLUMNS = [
-  { key: "name",   label: "Faena",    sortable: true  },
-  { key: "code",   label: "Código",   sortable: true, width: "w-32" },
-  { key: "region", label: "Región",   sortable: true  },
-  { key: "isActive", label: "Estado", sortable: true  },
-  { key: "",       label: "",         sortable: false, width: "w-28" },
-]
-
 export function FaenasList({
   worksites,
   canCreateWorksites,
@@ -38,20 +30,11 @@ export function FaenasList({
   worksites: WorksiteRow[]
   canCreateWorksites: boolean
 }) {
-  const [wsSheetOpen,  setWsSheetOpen]  = React.useState(false)
-  const [editWs,       setEditWs]       = React.useState<WorksiteRow | null>(null)
-
-  const [wsToggleState, wsToggleAction] = useActionState(toggleWorksiteActive, INITIAL_STATE)
-
-  useEffect(() => {
-    if (wsToggleState.message) {
-      if (wsToggleState.ok) toast.success(wsToggleState.message)
-      else toast.error(wsToggleState.message)
-    }
-  }, [wsToggleState])
-
-  function openNewWs()     { setEditWs(null);  setWsSheetOpen(true) }
-  function openEditWs(ws: WorksiteRow) { setEditWs(ws); setWsSheetOpen(true) }
+  const {
+    sheetOpen, editRow: editWs,
+    openCreate: openNewWs, openEdit: openEditWs, closeSheet,
+    toggleAction: wsToggleAction,
+  } = useCatalogSheet<WorksiteRow>(toggleWorksiteActive)
 
   const rows = worksites as (WorksiteRow & Record<string, unknown>)[]
 
@@ -60,7 +43,7 @@ export function FaenasList({
       <DataTable
         columns={WS_COLUMNS}
         rows={rows}
-        searchKeys={["name", "code", "region"]}
+        searchKeys={CONTRACT.searchKeys}
         pageSize={20}
 
         emptyTitle="Sin faenas"
@@ -97,16 +80,13 @@ export function FaenasList({
               </dl>
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <button type="button" onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title="Editar" aria-label="Editar faena">
-                  <PencilSimple size={16} />
-                </button>
-                <form action={wsToggleAction}>
-                  <input type="hidden" name="id" value={ws.id} />
-                  <input type="hidden" name="activate" value={String(!ws.isActive)} />
-                  <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]" title={ws.isActive ? "Desactivar" : "Activar"} aria-label={`${ws.isActive ? "Desactivar" : "Activar"} faena ${ws.name}`}>
-                    {ws.isActive ? <ToggleRight size={20} className="text-[var(--color-primary)]" /> : <ToggleLeft size={20} />}
-                  </button>
-                </form>
+                <CatalogRowActions
+                  id={ws.id}
+                  isActive={ws.isActive}
+                  label={`faena ${ws.name}`}
+                  onEdit={() => openEditWs(ws)}
+                  toggleAction={wsToggleAction}
+                />
               </div>
             </article>
           )
@@ -128,16 +108,13 @@ export function FaenasList({
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2 justify-end">
-                    <button type="button" onClick={() => openEditWs(ws)} className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast)" title="Editar">
-                      <PencilSimple size={16} />
-                    </button>
-                    <form action={wsToggleAction}>
-                      <input type="hidden" name="id"       value={ws.id} />
-                      <input type="hidden" name="activate" value={String(!ws.isActive)} />
-                      <button type="submit" className="h-8 w-8 flex items-center justify-center rounded-sm text-text-subtle hover:text-text hover:bg-surface-2 transition-colors duration-(--duration-fast)" title={ws.isActive ? "Desactivar" : "Activar"} aria-label={`${ws.isActive ? "Desactivar" : "Activar"} faena ${ws.name}`}>
-                        {ws.isActive ? <ToggleRight size={20} className="text-primary" /> : <ToggleLeft size={20} />}
-                      </button>
-                    </form>
+                    <CatalogRowActions
+                      id={ws.id}
+                      isActive={ws.isActive}
+                      label={`faena ${ws.name}`}
+                      onEdit={() => openEditWs(ws)}
+                      toggleAction={wsToggleAction}
+                    />
                   </div>
                 </TableCell>
               </TableRow>
@@ -148,8 +125,8 @@ export function FaenasList({
 
       <WorksiteForm
         key={editWs?.id ?? "nuevo"}
-        open={wsSheetOpen}
-        onClose={() => setWsSheetOpen(false)}
+        open={sheetOpen}
+        onClose={closeSheet}
         editWorksite={editWs}
       />
     </>
