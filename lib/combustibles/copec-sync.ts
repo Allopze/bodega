@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, desc, eq, inArray, ne } from "drizzle-orm"
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelImportBatches, fuelVehicles, systemSettings, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -161,6 +161,13 @@ async function importCopecPeriod(
   let imported = 0
   const reports: string[] = []
   const unavailable: string[] = []
+  // Pedimos TCT y TAE. OJO: en cuentas donde el TAE está asociado a estanques
+  // fijos, el reporte viene agregado por "Asignación" (faena), no por patente —
+  // sin columna Patente, el parser por-patente devuelve 0 filas y ese consumo
+  // (que puede ser millonario) NO queda registrado en ningún lado. No es un bug
+  // del import (no rompe nada), es una feature faltante: rastrear TAE-por-faena
+  // requiere su propio modelo/tabla y sección de dashboard. Decidido dejarlo
+  // documentado hasta que se priorice esa feature.
   const downloads = await downloadCopecReports(
     (["TCT", "TAE"] as const).map((cardType) => ({ cardType, from, to })),
   )
@@ -184,14 +191,47 @@ async function importCopecPeriod(
       const rows = groups.get(vehicle.worksiteId) ?? []
       rows.push(row); groups.set(vehicle.worksiteId, rows)
     }
+    const buildRecords = (rows: ParsedConsumptionRow[], batchId: string, worksiteId: string) =>
+      rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: byPlate.get(row.patente)?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: `Copec ${cardType}`, rawRow: row.rawRow }))
+
     for (const [worksiteId, rows] of groups) {
-      const duplicate = await db.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.hashArchivo, hash), eq(fuelImportBatches.worksiteId, worksiteId), ne(fuelImportBatches.estado, "revertido")) })
-      if (duplicate) continue
+      // Dedup por identidad lógica del período (faena + rango + fuente), NO por
+      // hash del archivo: Copec regenera el XLSX en cada descarga (hash distinto
+      // siempre), así que deduplicar por hash nunca acertaba y reimportar un
+      // período DUPLICABA todo. La identidad lógica es estable entre descargas.
+      const duplicate = await db.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, `Copec ${cardType}`), ne(fuelImportBatches.estado, "revertido")), columns: { id: true } })
+      if (duplicate) {
+        // El lote ya existe para este (archivo, faena). En vez de saltarlo entero,
+        // insertamos solo las patentes que faltaban: típicamente vehículos recién
+        // registrados que en una corrida previa quedaron "sin vincular". Así el
+        // consumo histórico sí entra al reimportar el período una vez completada
+        // la flota, sin duplicar lo ya cargado.
+        const existing = await db.query.fuelConsumptionRecords.findMany({ where: eq(fuelConsumptionRecords.batchId, duplicate.id), columns: { patente: true } })
+        const existingPlates = new Set(existing.map((r) => r.patente))
+        const missing = rows.filter((row) => !existingPlates.has(row.patente))
+        if (missing.length === 0) continue
+        const add = computeBatchTotals(missing)
+        await db.transaction(async (tx) => {
+          await tx.insert(fuelConsumptionRecords).values(buildRecords(missing, duplicate.id, worksiteId))
+          await tx.update(fuelImportBatches).set({
+            totalFilas: sql`${fuelImportBatches.totalFilas} + ${add.totalFilas}`,
+            filasValidas: sql`${fuelImportBatches.filasValidas} + ${add.totalFilas}`,
+            totalPatentes: sql`${fuelImportBatches.totalPatentes} + ${add.totalPatentes}`,
+            totalTarjetas: sql`${fuelImportBatches.totalTarjetas} + ${add.totalTarjetas}`,
+            totalTransacciones: sql`${fuelImportBatches.totalTransacciones} + ${add.totalTransacciones}`,
+            totalCantidad: sql`${fuelImportBatches.totalCantidad} + ${add.totalCantidad}`,
+            totalMonto: sql`${fuelImportBatches.totalMonto} + ${add.totalMonto}`,
+            updatedAt: new Date().toISOString(),
+          }).where(eq(fuelImportBatches.id, duplicate.id))
+        })
+        imported += missing.length
+        continue
+      }
       const totals = computeBatchTotals(rows)
       const batchId = nanoid()
       await db.transaction(async (tx) => {
         await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: `Copec ${cardType}`, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: hash, estado: "importado", totalFilas: totals.totalFilas + parsed.errors.length, filasValidas: totals.totalFilas, filasInvalidas: parsed.errors.length, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización automática Copec" })
-        await tx.insert(fuelConsumptionRecords).values(rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: byPlate.get(row.patente)?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: `Copec ${cardType}`, rawRow: row.rawRow })))
+        await tx.insert(fuelConsumptionRecords).values(buildRecords(rows, batchId, worksiteId))
       })
       imported += rows.length
     }
@@ -203,13 +243,20 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   const current = await state()
   const pending = new Set(current.pending)
   const result = await importCopecPeriod(period.from, period.to, pending, importerId)
+  // Solo avanzamos el cursor si el portal entregó al menos un archivo. Un período
+  // sin NINGUNA descarga (todas las tarjetas "no disponible") ya no es el caso
+  // normal: un período realmente vacío igual descarga un archivo de 0 filas. La
+  // ausencia total de archivo indica que el portal cambió o las credenciales
+  // fallan; avanzar el cursor ahí fue lo que enmascaró una pérdida de datos de
+  // meses. Al no avanzar, el próximo intento reanuda desde el mismo tramo.
+  const advanced = result.reports.length > 0
   // Persistimos cada período. Así una primera importación extensa puede
   // reanudarse y no vuelve a descargar los tramos ya procesados.
   // Si saveState falla, los datos ya están insertados con hash check;
   // la próxima ejecución re-procesará el período pero el hash check
   // evitará duplicados.
   try {
-    await saveState({ cursor: addDays(period.to, 1), lastRunAt: new Date().toISOString(), pending: [...pending].sort() })
+    await saveState({ cursor: advanced ? addDays(period.to, 1) : period.from, lastRunAt: new Date().toISOString(), pending: [...pending].sort() })
   } catch (err) {
     console.error("[copec-sync] saveState failed, cursor may be stale on next run", err)
   }
@@ -228,6 +275,12 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
     pending = result.pending
     reports.push(...result.reports)
     unavailable.push(...result.unavailable.map((cardType) => `${period.from} a ${period.to} (${cardType})`))
+    // Un período que no descargó nada indica portal/credenciales rotos. Se corta
+    // el barrido y se falla ruidosamente en vez de avanzar el cursor por todo el
+    // histórico importando cero (el bug que dejó la sync "al día" con la tabla vacía).
+    if (result.reports.length === 0) {
+      throw new Error(`Copec no entregó ningún archivo para el período ${period.from} a ${period.to}. Revisa credenciales/portal, o ajusta la fecha de inicio si ese tramo no tiene consumos. Se importaron ${imported} registros antes de detenerse.`)
+    }
   }
   return { from: plan.from, to: plan.to, imported, pending, reports, unavailable }
 }

@@ -1,5 +1,5 @@
 export { createFuelLoadAction, updateFuelLoadAction, deleteFuelLoadAction, registerFuelLoadAction } from "./loads"
-export { createFuelVehicleAction, updateFuelVehicleAction, toggleFuelVehicleActiveAction, bulkToggleFuelVehicleActiveAction } from "./vehicles"
+export { createFuelVehicleAction, updateFuelVehicleAction, toggleFuelVehicleActiveAction, bulkToggleFuelVehicleActiveAction, importFuelVehiclesFromXlsx } from "./vehicles"
 export { createFuelSupplierAction, updateFuelSupplierAction, toggleFuelSupplierActive, deleteFuelSupplierAction } from "./suppliers"
 export { createMonthlyStatementAction, addPaymentAction } from "./statements"
 export { exportFuelLoadsXlsxAction } from "./export"

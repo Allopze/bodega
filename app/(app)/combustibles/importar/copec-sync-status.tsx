@@ -58,6 +58,13 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         imported += r.imported
         pendingPlates = r.pending
         unavailable.push(...r.unavailable.map((ct) => `${period.from} a ${period.to} (${ct})`))
+        // Sin ninguna descarga = portal/credenciales rotos. Se detiene y avisa en
+        // lugar de seguir barriendo el histórico sin traer nada.
+        if (r.reports === 0) {
+          toast.error(`Copec no entregó archivos para ${period.from} a ${period.to}. Revisa el portal/credenciales o ajusta la fecha de inicio.`)
+          stoppedAt = sp
+          break
+        }
       }
 
       setProgress(null)
@@ -126,7 +133,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
                 Faltan por traer los consumos desde {status.cursor} hasta ayer
               </span>
             )}
-            {status.pending > 0 && <span className="text-[var(--color-warning)]">{status.pending} patente(s) sin vehículo registrado — se importarán solas cuando las vincules</span>}
+            {status.pending > 0 && <span className="text-[var(--color-warning)]">{status.pending} patente(s) sin vehículo registrado — su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-3 text-xs">

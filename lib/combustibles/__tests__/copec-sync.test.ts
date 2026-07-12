@@ -3,21 +3,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 const mockSettingFindFirst = vi.fn()
 const mockUserFindFirst = vi.fn()
 const mockBatchFindFirst = vi.fn()
+const mockVehiclesFindMany = vi.fn()
+const mockConsumptionFindMany = vi.fn()
 const mockDownloadCopecReports = vi.fn()
+const mockParseConsumptionExcel = vi.fn()
 const mockSaveState = vi.fn()
+const mockTransaction = vi.fn()
+const mockTxInsertValues = vi.fn()
+const mockTxUpdateSet = vi.fn()
 
 vi.mock("@/db", () => ({
   db: {
     query: {
       systemSettings: { findFirst: (...args: unknown[]) => mockSettingFindFirst(...args) },
       users: { findFirst: (...args: unknown[]) => mockUserFindFirst(...args) },
-      fuelVehicles: { findMany: vi.fn() },
+      fuelVehicles: { findMany: (...args: unknown[]) => mockVehiclesFindMany(...args) },
       fuelImportBatches: { findFirst: (...args: unknown[]) => mockBatchFindFirst(...args) },
+      fuelConsumptionRecords: { findMany: (...args: unknown[]) => mockConsumptionFindMany(...args) },
     },
     insert: vi.fn(() => ({
       values: vi.fn(() => ({ onConflictDoUpdate: (...args: unknown[]) => mockSaveState(...args) })),
     })),
-    transaction: vi.fn(),
+    transaction: (cb: (tx: unknown) => unknown) => mockTransaction(cb),
   },
 }))
 vi.mock("@/db/schema", () => ({
@@ -25,6 +32,9 @@ vi.mock("@/db/schema", () => ({
 }))
 vi.mock("@/lib/combustibles/copec-reports", () => ({
   downloadCopecReports: (...args: unknown[]) => mockDownloadCopecReports(...args),
+}))
+vi.mock("@/lib/combustibles/consumption-import", () => ({
+  parseConsumptionExcel: (...args: unknown[]) => mockParseConsumptionExcel(...args),
 }))
 
 const { buildCopecSyncPeriods, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod } = await import("../copec-sync")
@@ -59,7 +69,7 @@ describe("syncCopecReportPeriod", () => {
     vi.unstubAllEnvs()
   })
 
-  it("continues and checkpoints when Copec has no downloadable file for a period", async () => {
+  it("does NOT advance the cursor when Copec delivered no file at all (portal likely broken)", async () => {
     mockDownloadCopecReports.mockResolvedValue([
       { cardType: "TCT", unavailable: true },
       { cardType: "TAE", unavailable: true },
@@ -67,12 +77,16 @@ describe("syncCopecReportPeriod", () => {
 
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" })
 
-    expect(result).toMatchObject({ imported: 0, unavailable: ["TCT", "TAE"] })
+    expect(result).toMatchObject({ imported: 0, unavailable: ["TCT", "TAE"], reports: [] })
     expect(mockDownloadCopecReports).toHaveBeenCalledWith([
       { cardType: "TCT", from: "2026-02-01", to: "2026-02-28" },
       { cardType: "TAE", from: "2026-02-01", to: "2026-02-28" },
     ])
+    // El cursor se queda en el inicio del período (no avanza a 2026-03-01), para
+    // reintentar en vez de saltarse datos por un portal caído.
     expect(mockSaveState).toHaveBeenCalledOnce()
+    const savedState = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
+    expect(savedState.cursor).toBe("2026-02-01")
   })
 
   it("uses the authenticated operator for a manual sync without requiring cron configuration", async () => {
@@ -86,6 +100,39 @@ describe("syncCopecReportPeriod", () => {
 
     expect(mockUserFindFirst).not.toHaveBeenCalled()
     expect(mockSaveState).toHaveBeenCalledOnce()
+  })
+
+  it("re-imports only the newly-linked plates into an existing batch (no duplicates)", async () => {
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { cardType: "TCT", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct.xlsx" } },
+      { cardType: "TAE", unavailable: true },
+    ])
+    // El archivo trae AAA (ya importada antes) y BBB (recién vinculada a un vehículo).
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("BBB")], errors: [], duplicates: [] })
+    mockVehiclesFindMany.mockResolvedValue([
+      { id: "v-aaa", plate: "AAA", worksiteId: "W1" },
+      { id: "v-bbb", plate: "BBB", worksiteId: "W1" },
+    ])
+    // Ya existe un lote para (archivo, W1) con solo AAA cargada.
+    mockBatchFindFirst.mockResolvedValue({ id: "batch-1" })
+    mockConsumptionFindMany.mockResolvedValue([{ patente: "AAA" }])
+
+    const insertedRecords: Array<{ patente: string }> = []
+    const tx = {
+      insert: () => ({ values: (records: Array<{ patente: string }>) => { insertedRecords.push(...records); return mockTxInsertValues(records) } }),
+      update: () => ({ set: (patch: unknown) => { mockTxUpdateSet(patch); return { where: vi.fn() } } }),
+    }
+    mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
+
+    const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    // Solo BBB se inserta; AAA no se duplica.
+    expect(result.imported).toBe(1)
+    expect(insertedRecords).toHaveLength(1)
+    expect(insertedRecords[0]!.patente).toBe("BBB")
+    // El lote existente se actualiza con los totales de la patente nueva.
+    expect(mockTxUpdateSet).toHaveBeenCalledOnce()
   })
 })
 
