@@ -126,15 +126,11 @@ const STATUS_OPTIONS: FilterOption[] = Object.entries(REQUEST_STATE_META).map(
 
 export function RequestList({
   requests,
-  canCreate,
-  hasWorksites = true,
   currentUserId,
   canDeleteAny = false,
   worksiteOptions = [],
 }: {
   requests: RequestRow[]
-  canCreate: boolean
-  hasWorksites?: boolean
   currentUserId: string
   canDeleteAny?: boolean
   worksiteOptions?: FilterOption[]

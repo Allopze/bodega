@@ -138,7 +138,7 @@ export default async function SolicitudesPage({
           }
           actions={<SolicitudesActions canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />}
         />
-        <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} worksiteOptions={worksiteOptions} />
+        <RequestList requests={[]} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} worksiteOptions={worksiteOptions} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -199,8 +199,6 @@ export default async function SolicitudesPage({
       />
       <RequestList
         requests={rows}
-        canCreate={can(session, "requests:create")}
-        hasWorksites={hasWorksites}
         currentUserId={session.user.id}
         canDeleteAny={canDeleteAny}
         worksiteOptions={worksiteOptions}

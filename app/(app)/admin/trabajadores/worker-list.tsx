@@ -32,7 +32,7 @@ export function WorkerList({
 }) {
   const {
     sheetOpen, editRow: editWorker,
-    openCreate, openEdit, closeSheet, toggleAction,
+    openEdit, closeSheet, toggleAction,
   } = useCatalogSheet<WorkerRow>(toggleWorkerActive)
 
   return (
