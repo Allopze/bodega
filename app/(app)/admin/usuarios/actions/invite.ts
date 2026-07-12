@@ -17,6 +17,7 @@ import {
 } from "../actions.helpers"
 import { requireAdminPermission } from "./helpers"
 import { REVALIDATE } from "./revalidate"
+import { validateWorkerAssociation } from "./worker-association"
 
 export async function inviteUser(
   _prev: ActionState,
@@ -29,6 +30,7 @@ export async function inviteUser(
     name: formData.get("name") || "",
     email: formData.get("email"),
     roleIds: formData.getAll("roleIds"),
+    workerId: formData.get("workerId") || "",
     expiresInDays: formData.get("expiresInDays") || 7,
     worksiteAssignments: buildWorksiteAssignments(formData),
   }
@@ -47,6 +49,21 @@ export async function inviteUser(
     canManageAdministratorRole(session),
   )
   if (roleError) return roleError
+  const workerAssociation = await validateWorkerAssociation(session, d.workerId || undefined, d.worksiteAssignments)
+  if (workerAssociation.error) return workerAssociation.error
+  if (d.workerId) {
+    const pendingWorkerInvitation = await db.query.userInvitations.findFirst({
+      where: and(
+        eq(userInvitations.workerId, d.workerId),
+        isNull(userInvitations.acceptedAt),
+        isNull(userInvitations.cancelledAt),
+        isNull(userInvitations.replacedAt),
+      ),
+    })
+    if (pendingWorkerInvitation) {
+      return { ok: false, fieldErrors: { workerId: ["Este trabajador ya tiene una invitación pendiente"] } }
+    }
+  }
 
   const existing = await db.query.users.findFirst({ where: eq(users.email, d.email) })
   if (existing) {
@@ -72,7 +89,8 @@ export async function inviteUser(
     await tx.insert(userInvitations).values({
       id: invitationId,
       email: d.email,
-      name: d.name || null,
+      name: workerAssociation.worker ? `${workerAssociation.worker.firstName} ${workerAssociation.worker.lastName}` : d.name || null,
+      workerId: d.workerId || null,
       tokenHash: hashInvitationToken(token),
       roleIdsJson: JSON.stringify(d.roleIds),
       worksiteAssignmentsJson: JSON.stringify(d.worksiteAssignments),
@@ -106,7 +124,7 @@ export async function inviteUser(
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "create", entityType: "user_invitation", entityId: invitationId,
-    newState: { email: d.email, roles: d.roleIds, expiresAt, smtpSent: !pendingInviteUrl },
+    newState: { email: d.email, workerId: d.workerId || null, roles: d.roleIds, expiresAt, smtpSent: !pendingInviteUrl },
   })
 
   revalidatePath(REVALIDATE)

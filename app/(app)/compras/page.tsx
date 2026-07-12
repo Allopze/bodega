@@ -16,6 +16,7 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, statusSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import { ComprasActions } from "./compras-actions"
 import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
 import { purchaseRequestItems } from "@/db/schema"
@@ -160,6 +161,7 @@ export default async function ComprasPage({
             ]} />
           }
           headerActions={<HeaderSignals signals={headerSignals} />}
+          actions={<ComprasActions canCreate={canCreateOrder} />}
         />
         <OcList orders={[]} pendingCount={0} postponedItems={[]} canCreate={canCreateOrder} canDelete={canDeleteOrder} createdCount={createdCount} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
 
@@ -274,6 +276,7 @@ export default async function ComprasPage({
           ]} />
         }
         headerActions={<HeaderSignals signals={headerSignals} />}
+        actions={<ComprasActions canCreate={canCreateOrder} />}
       />
       <OcList
         orders={rows}

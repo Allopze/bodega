@@ -7,6 +7,7 @@ import { listRolesWithPermissions, PROTECTED_ROLE_SLUGS } from "@/lib/services/a
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { RoleList } from "./role-list"
+import { RolesActions } from "./roles-actions"
 
 export const metadata: Metadata = { title: "Roles" }
 
@@ -74,6 +75,7 @@ export default async function RolesPage() {
           { label: "Administración", href: "/admin" },
           { label: "Roles" },
         ]}
+        actions={<RolesActions groupedPermissions={grouped} permissions={permissionsForForm} />}
       />
       <RoleList
         roles={rolesForView}

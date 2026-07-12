@@ -2,9 +2,8 @@
 
 import * as React from "react"
 import { useActionState, useEffect } from "react"
-import { PencilSimple, Plus, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/admin/data-table"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
@@ -90,14 +89,6 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
 
       {tab === "units" && (
         <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
-              Unidades de medida
-            </h2>
-            <Button size="sm" onClick={() => { setEditUnit(null); setUnitSheetOpen(true) }}>
-              <Plus size={14} />Nueva unidad
-            </Button>
-          </div>
           {legacyUnits.length > 0 && (
             <div className="mb-3 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
               <p className="text-[var(--color-text-muted)]">
@@ -116,11 +107,6 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
             pageSize={20}
             emptyTitle="Sin unidades"
             emptyDescription="Crea unidades para empezar a normalizar el catálogo."
-            emptyAction={
-              <Button size="sm" onClick={() => { setEditUnit(null); setUnitSheetOpen(true) }}>
-                <Plus size={14} />Nueva unidad
-              </Button>
-            }
             renderRow={(row) => {
               const u = row as ProductUnitRow
               return (
@@ -152,7 +138,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
             }}
           />
           <ProductUnitForm
-            key={editUnit?.id ?? "nuevo"}
+            key={editUnit?.id ?? "editar"}
             open={unitSheetOpen}
             onClose={() => setUnitSheetOpen(false)}
             editUnit={editUnit}
@@ -162,14 +148,6 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
 
       {tab === "templates" && (
         <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
-              Atributos reutilizables
-            </h2>
-            <Button size="sm" onClick={() => { setEditAttr(null); setAttrSheetOpen(true) }}>
-              <Plus size={14} />Nueva plantilla
-            </Button>
-          </div>
           <DataTable
             columns={ATTR_COLUMNS}
             rows={attrRows}
@@ -177,11 +155,6 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
             pageSize={20}
             emptyTitle="Sin plantillas"
             emptyDescription={'Crea plantillas (ej. "Talla", "Color", "Capacidad") reutilizables por categoría.'}
-            emptyAction={
-              <Button size="sm" onClick={() => { setEditAttr(null); setAttrSheetOpen(true) }}>
-                <Plus size={14} />Nueva plantilla
-              </Button>
-            }
             renderRow={(row) => {
               const t = row as AttributeTemplateRow
               return (
@@ -214,7 +187,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
             }}
           />
           <AttributeTemplateForm
-            key={editAttr?.id ?? "nuevo"}
+            key={editAttr?.id ?? "editar"}
             open={attrSheetOpen}
             onClose={() => setAttrSheetOpen(false)}
             editTemplate={editAttr}

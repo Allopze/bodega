@@ -14,6 +14,18 @@ const AvatarRoot = React.forwardRef<
 ))
 AvatarRoot.displayName = AvatarPrimitive.Root.displayName
 
+const AvatarImage = React.forwardRef<
+  React.ElementRef<typeof AvatarPrimitive.Image>,
+  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image>
+>(({ className, ...props }, ref) => (
+  <AvatarPrimitive.Image
+    ref={ref}
+    className={cn("aspect-square h-full w-full object-cover", className)}
+    {...props}
+  />
+))
+AvatarImage.displayName = AvatarPrimitive.Image.displayName
+
 const AvatarFallback = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Fallback>,
   React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>
@@ -31,8 +43,7 @@ const AvatarFallback = React.forwardRef<
 AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName
 
 /* ── Avatar: high-level component ────────────────────────────────────────── */
-// Uses initials from name — no egg icons, no broken Unsplash links.
-// Color is generated deterministically from the user's name/email.
+// Uses DiceBear Glyphs API, falling back to initials if loading fails.
 
 interface AvatarProps {
   name:       string
@@ -59,11 +70,14 @@ export function Avatar({ name, hue, size = "default", className }: AvatarProps) 
   const bg    = `oklch(0.72 0.09 ${h})`
   const color = `oklch(0.28 0.06 ${h})`
 
+  const avatarUrl = `https://api.dicebear.com/9.x/glyphs/svg?seed=${encodeURIComponent(name)}`
+
   return (
     <AvatarRoot
       className={cn(SIZE_CLASSES[size], className)}
       style={{ backgroundColor: bg }}
     >
+      <AvatarImage src={avatarUrl} alt={name} />
       <AvatarFallback style={{ color }} delayMs={0}>
         {initials}
       </AvatarFallback>

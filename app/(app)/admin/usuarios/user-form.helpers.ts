@@ -7,6 +7,14 @@ export interface Permission {
   roleIds: string[]
 }
 export interface Worksite { id: string; name: string; code: string }
+export interface WorkerOption {
+  id: string
+  name: string
+  rut: string | null
+  worksiteId: string
+  worksiteName: string
+  linkedUserId: string | null
+}
 
 export interface UserForEdit {
   id:         string
@@ -16,6 +24,7 @@ export interface UserForEdit {
   emailNotifications: boolean
   roleIds:    string[]
   permissionIds: string[]
+  workerId?: string | null
   worksiteAssignments: { worksiteId: string; isPrimary: boolean }[]
 }
 
@@ -26,6 +35,7 @@ export interface UserFormProps {
   allRoles:   Role[]
   allPermissions: Permission[]
   allWorksites: Worksite[]
+  allWorkers?: WorkerOption[]
 }
 
 export interface UserSelectionState {
@@ -33,6 +43,7 @@ export interface UserSelectionState {
   selectedPermissions: string[]
   selectedWsIds:     string[]
   primaryWorksiteId: string
+  workerId: string
 }
 
 export interface PendingInvite {
@@ -47,6 +58,7 @@ export type UserSelectionAction =
   | { type: "set-permissions"; ids: string[] }
   | { type: "toggle-worksite"; id: string }
   | { type: "set-primary"; id: string }
+  | { type: "set-worker"; workerId: string; worksiteId?: string }
 
 export function getUserSelection(user?: UserForEdit | null): UserSelectionState {
   const selectedWsIds = user?.worksiteAssignments.map((a) => a.worksiteId) ?? []
@@ -56,6 +68,7 @@ export function getUserSelection(user?: UserForEdit | null): UserSelectionState 
     selectedWsIds,
     primaryWorksiteId: user?.worksiteAssignments.find((a) => a.isPrimary)?.worksiteId
       ?? selectedWsIds[0] ?? "",
+    workerId: user?.workerId ?? "",
   }
 }
 
@@ -88,6 +101,17 @@ export function userSelectionReducer(state: UserSelectionState, action: UserSele
     }
     case "set-primary":
       return { ...state, primaryWorksiteId: action.id }
+    case "set-worker": {
+      const selectedWsIds = action.worksiteId && !state.selectedWsIds.includes(action.worksiteId)
+        ? [...state.selectedWsIds, action.worksiteId]
+        : state.selectedWsIds
+      return {
+        ...state,
+        workerId: action.workerId,
+        selectedWsIds,
+        primaryWorksiteId: state.primaryWorksiteId || action.worksiteId || "",
+      }
+    }
   }
 }
 

@@ -11,9 +11,10 @@ import { InvitePendingCard } from "./invite-pending-card"
 import { RoleSelector } from "./role-selector"
 import { PermissionSection } from "./permission-section"
 import { WorksiteSelector } from "./worksite-selector"
+import { WorkerSelector } from "./worker-selector"
 import type { UserFormProps } from "./user-form.helpers"
 
-export function UserForm({ open, onClose, editUser, allRoles, allPermissions, allWorksites }: UserFormProps) {
+export function UserForm({ open, onClose, editUser, allRoles, allPermissions, allWorksites, allWorkers = [] }: UserFormProps) {
   const {
     isEdit,
     state,
@@ -29,11 +30,12 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
     toggleAllInModule,
     toggleWorksite,
     setPrimary,
+    setWorker,
     copyInvite,
     dismissPending,
     dismissPendingAndClose,
     handleOpenChange,
-  } = useUserForm({ editUser, onClose, allRoles, allPermissions, allWorksites })
+  } = useUserForm({ editUser, onClose, allRoles, allPermissions, allWorksites, allWorkers })
 
   const safeEditUser = editUser!
 
@@ -80,17 +82,24 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
             )}
 
             <FieldGroup className="gap-4">
-              {isEdit && (
-                <Field label="Nombre completo" htmlFor="name" required error={state.fieldErrors?.name?.[0]}>
-                  <Input
-                    id="name" name="name"
-                    defaultValue={editUser?.name ?? ""}
-                    placeholder="Nombre Apellido"
-                    error={!!state.fieldErrors?.name}
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
+              <WorkerSelector
+                workers={allWorkers}
+                selectedId={selection.workerId}
+                currentUserId={editUser?.id}
+                onValueChange={setWorker}
+                error={state.fieldErrors?.workerId?.[0]}
+              />
+
+              <Field label="Nombre completo" htmlFor="name" error={state.fieldErrors?.name?.[0]}>
+                <Input
+                  key={selection.workerId || editUser?.id || "new"}
+                  id="name" name="name"
+                  defaultValue={allWorkers.find((worker) => worker.id === selection.workerId)?.name ?? editUser?.name ?? ""}
+                  placeholder="Nombre Apellido"
+                  error={!!state.fieldErrors?.name}
+                  autoComplete="off"
+                />
+              </Field>
 
               <Field label="Correo electrónico" htmlFor="email" required error={state.fieldErrors?.email?.[0]}>
                 <Input

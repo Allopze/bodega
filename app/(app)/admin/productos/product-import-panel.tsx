@@ -29,6 +29,9 @@ interface ProductImportPanelProps {
 interface ImportResultData {
   batchId?: string
   totalRows?: number
+  blocked?: number
+  pending?: number
+  ready?: number
   created?: number
   updated?: number
   suppliersCreated?: number
@@ -53,9 +56,9 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
       <SheetContent className="sm:max-w-xl">
         <SheetHeader>
           <div>
-            <SheetTitle>Importar EPP desde XLSX</SheetTitle>
+            <SheetTitle>Importar equipos de protección (EPP)</SheetTitle>
             <SheetDescription>
-              Analiza y normaliza el archivo antes de incorporar cualquier EPP al catálogo.
+              Analiza y normaliza el archivo; cada fila se revisa antes de incorporarse al catálogo.
             </SheetDescription>
           </div>
           <SheetCloseButton />
@@ -84,16 +87,26 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
                 <p className="mt-1 font-mono">Talla: M; Color: Blanco; Modelo: Premium</p>
               </div>
 
-              {data && state.ok && (
-                <div className="rounded-[var(--radius-lg)] border border-[var(--color-success-line)] bg-[var(--color-success-tint)] p-3 text-sm">
-                  <p className="font-medium text-[var(--color-success)]">Análisis listo</p>
-                  <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--color-text-muted)]">
-                    <SummaryItem label="Filas" value={data.totalRows} />
-                    <SummaryItem label="Estado" value="Revisión requerida" />
-                  </dl>
-                  {data.batchId && <Button type="button" size="sm" className="mt-3" onClick={() => router.push(`/admin/productos/importar/${data.batchId}`)}>Revisar lote</Button>}
-                </div>
-              )}
+              {data && state.ok && (() => {
+                const needsReview = (data.blocked ?? 0) + (data.pending ?? 0)
+                return (
+                  <div className={needsReview > 0
+                    ? "rounded-[var(--radius-lg)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3 text-sm"
+                    : "rounded-[var(--radius-lg)] border border-[var(--color-success-line)] bg-[var(--color-success-tint)] p-3 text-sm"}
+                  >
+                    <p className={needsReview > 0 ? "font-medium text-[var(--color-warning-ink)]" : "font-medium text-[var(--color-success)]"}>
+                      {needsReview > 0 ? "Requiere revisión antes de confirmar" : "Análisis listo para confirmar"}
+                    </p>
+                    <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--color-text-muted)]">
+                      <SummaryItem label="Filas" value={data.totalRows} />
+                      <SummaryItem label="Listas para crear" value={data.ready} />
+                      <SummaryItem label="Bloqueantes" value={data.blocked} />
+                      <SummaryItem label="Por resolver (posible duplicado)" value={data.pending} />
+                    </dl>
+                    {data.batchId && <Button type="button" size="sm" className="mt-3" onClick={() => router.push(`/admin/productos/importar/${data.batchId}`)}>Revisar lote</Button>}
+                  </div>
+                )
+              })()}
 
               {data?.errors && data.errors.length > 0 && (
                 <div className="rounded-[var(--radius-lg)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] p-3 text-sm">

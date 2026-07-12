@@ -10,6 +10,7 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import { RequestList } from "./request-list"
+import { SolicitudesActions } from "./solicitudes-actions"
 
 export const metadata: Metadata = { title: "Solicitudes de compra" }
 
@@ -135,8 +136,9 @@ export default async function SolicitudesPage({
               { label: "Solicitudes" },
             ]} />
           }
+          actions={<SolicitudesActions canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />}
         />
-        <RequestList requests={[]} canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} worksiteOptions={worksiteOptions} />
+        <RequestList requests={[]} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} worksiteOptions={worksiteOptions} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -193,11 +195,10 @@ export default async function SolicitudesPage({
             { label: "Solicitudes" },
           ]} />
         }
+        actions={<SolicitudesActions canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />}
       />
       <RequestList
         requests={rows}
-        canCreate={can(session, "requests:create")}
-        hasWorksites={hasWorksites}
         currentUserId={session.user.id}
         canDeleteAny={canDeleteAny}
         worksiteOptions={worksiteOptions}

@@ -1,17 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { Plus, DownloadSimple, UploadSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorkerForm } from "./worker-form"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleWorkerActive } from "./actions"
-import { importWorkersFromXlsx } from "./actions"
-import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
 
 interface WorksiteOption { id: string; name: string }
@@ -36,10 +32,8 @@ export function WorkerList({
 }) {
   const {
     sheetOpen, editRow: editWorker,
-    openCreate, openEdit, closeSheet, toggleAction,
+    openEdit, closeSheet, toggleAction,
   } = useCatalogSheet<WorkerRow>(toggleWorkerActive)
-
-  const [importOpen, setImportOpen] = React.useState(false)
 
   return (
     <>
@@ -51,22 +45,6 @@ export function WorkerList({
 
         emptyTitle="Sin trabajadores"
         emptyDescription="Registra el primer trabajador para gestionar entregas de EPP."
-        emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo trabajador</Button>}
-        actions={(
-          <div className="flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-            <a
-              href="/api/admin/catalogos/export?tipo=trabajadores"
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
-            >
-              <DownloadSimple size={14} />Exportar XLSX
-            </a>
-            <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
-              <UploadSimple size={14} />Importar XLSX
-            </Button>
-            <Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo trabajador</Button>
-          </div>
-        )}
         renderMobileCard={(row) => {
           const w = row as unknown as WorkerRow
           return (
@@ -151,14 +129,6 @@ export function WorkerList({
         onClose={closeSheet}
         editWorker={editWorker}
         worksites={worksites}
-      />
-      <CatalogImportPanel
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        title="Importar trabajadores desde XLSX"
-        description="Importa trabajadores exportados desde el catálogo. La columna ID determina si se crea o actualiza."
-        action={importWorkersFromXlsx}
-        helperText="Usa el botón Exportar XLSX para obtener la plantilla con los datos actuales."
       />
     </>
   )

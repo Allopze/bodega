@@ -7,6 +7,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ProductList } from "./product-list"
+import { ProductActions } from "./product-actions"
 
 export const metadata: Metadata = { title: "Catálogo de productos" }
 
@@ -58,6 +59,23 @@ export default async function ProductosPage() {
             { label: "Administración", href: "/admin" },
             { label: "Productos" },
           ]} />
+        }
+        actions={
+          <ProductActions
+            categories={allCategories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion, sortOrder: c.sortOrder }))}
+            allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
+            units={units.map((unit) => ({ code: unit.code, label: unit.label, isActive: unit.isActive }))}
+            templates={templates.map((template) => ({
+              id: template.id,
+              categoryId: template.categoryId ?? "",
+              categoryName: template.category?.name,
+              name: template.name,
+              type: template.type as "text" | "select" | "number",
+              isRequired: template.isRequired,
+              options: template.options ?? "",
+              sortOrder: template.sortOrder,
+            }))}
+          />
         }
       />
       <ProductList

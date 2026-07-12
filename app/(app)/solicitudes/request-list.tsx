@@ -3,12 +3,11 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Plus, Warning, Trash } from "@phosphor-icons/react"
+import { Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge, REQUEST_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { OnboardingHint } from "@/components/adquisiciones/onboarding-hint"
-import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -16,9 +15,6 @@ import { formatDate } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { urgencyLabel } from "@/lib/urgency-labels"
 import { useActionState, useTransition } from "react"
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
-} from "@/components/ui/dialog"
 import { deleteRequestAction } from "./actions"
 import { DELETABLE_REQUEST_STATUSES, isOwnerDeletable } from "@/lib/services/requests-delete.constants"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -130,37 +126,16 @@ const STATUS_OPTIONS: FilterOption[] = Object.entries(REQUEST_STATE_META).map(
 
 export function RequestList({
   requests,
-  canCreate,
-  hasWorksites = true,
   currentUserId,
   canDeleteAny = false,
   worksiteOptions = [],
 }: {
   requests: RequestRow[]
-  canCreate: boolean
-  hasWorksites?: boolean
   currentUserId: string
   canDeleteAny?: boolean
   worksiteOptions?: FilterOption[]
 }) {
-  const [showWarningModal, setShowWarningModal] = React.useState(false)
   const router = useRouter()
-
-  const nuevaButton = canCreate ? (
-    hasWorksites ? (
-      <Button variant="primary" size="sm" asChild>
-        <Link href="/solicitudes/nueva">
-          <Plus weight="bold" size={16} />
-          Nueva solicitud
-        </Link>
-      </Button>
-    ) : (
-      <Button variant="primary" size="sm" onClick={() => setShowWarningModal(true)}>
-        <Plus weight="bold" size={16} />
-        Nueva solicitud
-      </Button>
-    )
-  ) : undefined
 
   return (
     <div className="flex flex-col gap-4">
@@ -174,7 +149,6 @@ export function RequestList({
         statusOptions={STATUS_OPTIONS}
         worksiteOptions={worksiteOptions}
         exportTipo="solicitudes"
-        actions={nuevaButton}
       />
       <DataTable
         columns={COLUMNS}
@@ -184,7 +158,6 @@ export function RequestList({
         pageSize={25}
         emptyTitle="Sin solicitudes"
         emptyDescription="No hay solicitudes que coincidan con los filtros."
-        emptyAction={nuevaButton}
         renderMobileCard={(row) => {
           const r = row as unknown as RequestRow
           return (
@@ -289,26 +262,6 @@ export function RequestList({
         }}
       />
 
-      <Dialog open={showWarningModal} onOpenChange={setShowWarningModal}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader className="flex flex-col items-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)] mb-3">
-              <Warning size={24} weight="bold" />
-            </div>
-            <DialogTitle>Sin faenas asignadas</DialogTitle>
-            <DialogDescription className="mt-2 text-sm text-center">
-              No tienes faenas activas asignadas a tu cuenta o no existen faenas en el sistema. Contacta a un administrador para que te asigne una faena antes de poder crear una solicitud.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="sm:justify-center">
-            <DialogClose asChild>
-              <Button type="button" variant="secondary" size="sm">
-                Entendido
-              </Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

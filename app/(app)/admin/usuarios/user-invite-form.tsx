@@ -12,13 +12,16 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { inviteUser } from "./actions"
 import { PendingInvitePanel } from "./user-invite-form-pending"
+import { WorkerSelector } from "./worker-selector"
 import type { PendingInvite, UserInviteFormProps } from "./user-invite-form.types"
 
-export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserInviteFormProps) {
+export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorkers }: UserInviteFormProps) {
   const [selectedRoles, setSelectedRoles] = React.useState<string[]>([])
   const [selectedWsIds, setSelectedWsIds] = React.useState<string[]>([])
   const [primaryWorksiteId, setPrimaryWorksiteId] = React.useState("")
-    const [pending, setPending] = React.useState<PendingInvite | null>(null)
+  const [selectedWorkerId, setSelectedWorkerId] = React.useState("")
+  const [name, setName] = React.useState("")
+  const [pending, setPending] = React.useState<PendingInvite | null>(null)
   const [_copied, setCopied]   = React.useState(false)
 
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -33,6 +36,8 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
           setSelectedRoles([])
           setSelectedWsIds([])
           setPrimaryWorksiteId("")
+          setSelectedWorkerId("")
+          setName("")
         } else {
           onClose()
         }
@@ -56,7 +61,20 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
       if (!next.includes(primaryWorksiteId)) setPrimaryWorksiteId(next[0] ?? "")
       return next
     })
-  }  return (
+  }
+
+  function selectWorker(workerId: string) {
+    const worker = allWorkers.find((item) => item.id === workerId)
+    setSelectedWorkerId(workerId)
+    if (!worker) return
+    setName(worker.name)
+    setSelectedWsIds((previous) => previous.includes(worker.worksiteId)
+      ? previous
+      : [...previous, worker.worksiteId])
+    setPrimaryWorksiteId((previous) => previous || worker.worksiteId)
+  }
+
+  return (
     <Sheet open={open} onOpenChange={(v) => {
       if (!v) {
         setPending(null)
@@ -99,10 +117,19 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites }: UserIn
               )}
 
               <FieldGroup className="gap-4">
+                <WorkerSelector
+                  workers={allWorkers}
+                  selectedId={selectedWorkerId}
+                  onValueChange={selectWorker}
+                  error={state.fieldErrors?.workerId?.[0]}
+                />
+
                 <Field label="Nombre" htmlFor="invite-name" error={state.fieldErrors?.name?.[0]}>
                   <Input
                     id="invite-name"
                     name="name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
                     placeholder="Nombre Apellido"
                     autoComplete="off"
                     error={!!state.fieldErrors?.name}

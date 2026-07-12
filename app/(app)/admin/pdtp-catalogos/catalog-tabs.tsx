@@ -6,7 +6,6 @@ import Link from "next/link"
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -104,9 +103,6 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
             <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
               Responsables
             </h2>
-            <Button size="sm" onClick={() => { setEditResp(null); setRespSheetOpen(true) }}>
-              + Nuevo responsable
-            </Button>
           </div>
           <DataTable
             columns={RESP_COLUMNS}
@@ -115,11 +111,6 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
             pageSize={20}
             emptyTitle="Sin responsables"
             emptyDescription="Crea el primer responsable del programa preventivo."
-            emptyAction={
-              <Button size="sm" onClick={() => { setEditResp(null); setRespSheetOpen(true) }}>
-                + Nuevo responsable
-              </Button>
-            }
             renderRow={(row) => {
               const r = row as ResponsibleRow
               return (
@@ -165,7 +156,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
             }}
           />
           <ResponsibleForm
-            key={editResp?.slug ?? "nuevo"}
+            key={editResp?.slug ?? "editar"}
             open={respSheetOpen}
             onClose={() => setRespSheetOpen(false)}
             editResponsible={editResp}
@@ -179,9 +170,6 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
             <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
               Hojas del programa
             </h2>
-            <Button size="sm" onClick={() => { setEditSheet(null); setSheetSheetOpen(true) }}>
-              + Nueva hoja
-            </Button>
           </div>
           <DataTable
             columns={SHEET_COLUMNS}
@@ -190,11 +178,6 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
             pageSize={20}
             emptyTitle="Sin hojas"
             emptyDescription="Crea la primera hoja del programa preventivo."
-            emptyAction={
-              <Button size="sm" onClick={() => { setEditSheet(null); setSheetSheetOpen(true) }}>
-                + Nueva hoja
-              </Button>
-            }
             renderRow={(row) => {
               const s = row as SheetRow
               return (
@@ -251,7 +234,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
             }}
           />
           <SheetForm
-            key={editSheet?.id ?? "nuevo"}
+            key={editSheet?.id ?? "editar"}
             open={sheetSheetOpen}
             onClose={() => setSheetSheetOpen(false)}
             editSheet={editSheet}

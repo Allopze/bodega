@@ -15,6 +15,7 @@ import {
   type Permission,
   type Role,
   type Worksite,
+  type WorkerOption,
   type PendingInvite,
 } from "./user-form.helpers"
 
@@ -24,6 +25,7 @@ export interface UseUserFormProps {
   allRoles: Role[]
   allPermissions: Permission[]
   allWorksites: Worksite[]
+  allWorkers: WorkerOption[]
 }
 
 export interface UseUserFormReturn {
@@ -37,6 +39,7 @@ export interface UseUserFormReturn {
     selectedPermissions: string[]
     selectedWsIds: string[]
     primaryWorksiteId: string
+    workerId: string
   }
   groupedPermissions: ReturnType<typeof groupPermissions>
   directPermissionLabel: string
@@ -46,13 +49,14 @@ export interface UseUserFormReturn {
   toggleAllInModule: (group: { module: string; permissions: Permission[] }) => void
   toggleWorksite: (id: string) => void
   setPrimary: (id: string) => void
+  setWorker: (id: string) => void
   copyInvite: () => Promise<void>
   dismissPending: () => void
   dismissPendingAndClose: () => void
   handleOpenChange: (v: boolean) => void
 }
 
-export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermissions, allWorksites: _allWorksites }: UseUserFormProps): UseUserFormReturn {
+export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermissions, allWorkers, allWorksites: _allWorksites }: UseUserFormProps): UseUserFormReturn {
   const isEdit = !!editUser
 
   const action = isEdit ? updateUser : createUser
@@ -115,6 +119,11 @@ export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermiss
     updateSelection({ type: "set-primary", id })
   }
 
+  function setWorker(id: string) {
+    const worker = allWorkers.find((item) => item.id === id)
+    updateSelection({ type: "set-worker", workerId: id, worksiteId: worker?.worksiteId })
+  }
+
   async function copyInvite() {
     if (!pending) return
     try {
@@ -145,7 +154,7 @@ export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermiss
     }
   }
 
-  const { selectedRoles, selectedPermissions, selectedWsIds, primaryWorksiteId } = selection
+  const { selectedRoles, selectedPermissions, selectedWsIds, primaryWorksiteId, workerId } = selection
   const groupped = React.useMemo(() => groupPermissions(allPermissions), [allPermissions])
   const directPermissionLabel = `${selectedPermissions.length} ${
     selectedPermissions.length === 1 ? "permiso directo" : "permisos directos"
@@ -166,7 +175,7 @@ export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermiss
     formAction,
     pending,
     copied,
-    selection: { selectedRoles, selectedPermissions, selectedWsIds, primaryWorksiteId },
+    selection: { selectedRoles, selectedPermissions, selectedWsIds, primaryWorksiteId, workerId },
     groupedPermissions: groupped,
     directPermissionLabel,
     activeModules,
@@ -175,6 +184,7 @@ export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermiss
     toggleAllInModule,
     toggleWorksite,
     setPrimary,
+    setWorker,
     copyInvite,
     dismissPending,
     dismissPendingAndClose,

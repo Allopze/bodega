@@ -6,6 +6,7 @@ import { worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { CostCenterActions } from "./cost-center-actions"
 import { CostCenterList } from "./cost-center-list"
 
 export const metadata: Metadata = { title: "Centros de costo" }
@@ -41,6 +42,7 @@ export default async function CostCentersPage() {
           { label: "Administración", href: "/admin" },
           { label: "Centros de costo" },
         ]}
+        actions={<CostCenterActions worksites={wsRows.map((w) => ({ id: w.id, name: w.name, code: w.code }))} canCreate={canCreate} />}
       />
       <CostCenterList
         costCenters={rows.map((r) => ({

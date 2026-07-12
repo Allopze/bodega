@@ -17,6 +17,7 @@ export const userCreateSchema = z.object({
   isActive: z.coerce.boolean().default(true),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
   permissionIds: z.array(z.string()).default([]),
+  workerId: z.string().optional().or(z.literal("")),
   expiresInDays: z.coerce.number().int().min(1, "Mínimo 1 día").max(30, "Máximo 30 días").default(7),
   worksiteAssignments: z.array(
     z.object({
@@ -35,6 +36,7 @@ export const userUpdateSchema = z.object({
   emailNotifications: z.coerce.boolean().default(true),
   roleIds:  z.array(z.string()).min(1, "Asigna al menos un rol"),
   permissionIds: z.array(z.string()).default([]),
+  workerId: z.string().optional().or(z.literal("")),
   worksiteAssignments: z.array(
     z.object({
       worksiteId: z.string(),
@@ -58,6 +60,7 @@ export const userInvitationSchema = z.object({
   name:       z.string().max(80).optional().or(z.literal("")),
   email:      z.string().email("Correo inválido").transform((v) => v.toLowerCase().trim()),
   roleIds:    z.array(z.string()).min(1, "Asigna al menos un rol"),
+  workerId:   z.string().optional().or(z.literal("")),
   expiresInDays: z.coerce.number().int().min(1, "Mínimo 1 día").max(30, "Máximo 30 días").default(7),
   worksiteAssignments: z.array(
     z.object({

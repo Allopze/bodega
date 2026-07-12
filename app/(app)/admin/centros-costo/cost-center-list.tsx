@@ -1,12 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { Plus } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { setCostCenterActiveAction } from "./actions"
 import { COLUMNS as CC_COLUMNS, CONTRACT } from "./catalog-contract"
@@ -20,7 +18,7 @@ interface CostCenterListProps {
 
 export function CostCenterList({ costCenters, worksites, canCreate }: CostCenterListProps) {
   const {
-    sheetOpen, editRow: editCc, openCreate: openNew, openEdit, closeSheet, toggleAction,
+    sheetOpen, editRow: editCc, openEdit, closeSheet, toggleAction,
   } = useCatalogSheet<CostCenterRow>(setCostCenterActiveAction)
 
   const rows = costCenters as (CostCenterRow & Record<string, unknown>)[]
@@ -34,8 +32,6 @@ export function CostCenterList({ costCenters, worksites, canCreate }: CostCenter
         pageSize={20}
         emptyTitle="Sin centros de costo"
         emptyDescription={canCreate ? "Crea el primer centro de costo para la organización." : "No hay centros de costo registrados."}
-        emptyAction={canCreate ? <Button size="sm" onClick={openNew}><Plus size={14} />Nuevo centro</Button> : undefined}
-        actions={canCreate ? <Button size="sm" onClick={openNew}><Plus size={14} />Nuevo centro</Button> : undefined}
         renderMobileCard={(row) => {
           const cc = row as unknown as CostCenterRow
           return (

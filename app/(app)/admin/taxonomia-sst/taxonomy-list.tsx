@@ -5,7 +5,6 @@ import { useActionState, useEffect } from "react"
 import Link from "next/link"
 import {
   PencilSimple,
-  Plus,
   ToggleLeft,
   ToggleRight,
   Plant,
@@ -123,16 +122,6 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
           pageSize={20}
           emptyTitle="Sin categorías"
           emptyDescription="Crea o siembra las categorías maestras del SST."
-          emptyAction={
-            <Button size="sm" onClick={() => { setEditCategory(null); setCatSheetOpen(true) }}>
-              <Plus size={14} />Nueva categoría
-            </Button>
-          }
-          actions={
-            <Button size="sm" onClick={() => { setEditCategory(null); setCatSheetOpen(true) }}>
-              <Plus size={14} />Nueva categoría
-            </Button>
-          }
           renderRow={(row) => {
             const c = row as CategoryRow
             const isActive = c.slug === activeSlug
@@ -183,7 +172,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
           }}
         />
         <CategoryForm
-          key={editCategory?.slug ?? "nueva"}
+          key={editCategory?.slug ?? "editar"}
           open={catSheetOpen}
           onClose={() => setCatSheetOpen(false)}
           editCategory={editCategory}
@@ -208,22 +197,6 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
             pageSize={20}
             emptyTitle="Sin tipos"
             emptyDescription={`Crea el primer tipo para la categoría ${activeCategory?.name ?? ""}.`}
-            emptyAction={
-              <Button
-                size="sm"
-                onClick={() => { setEditType(null); setTypeSheetOpen(true) }}
-              >
-                <Plus size={14} />Nuevo tipo
-              </Button>
-            }
-            actions={
-              <Button
-                size="sm"
-                onClick={() => { setEditType(null); setTypeSheetOpen(true) }}
-              >
-                <Plus size={14} />Nuevo tipo
-              </Button>
-            }
             renderRow={(row) => {
               const t = row as TypeRow
               return (
@@ -270,7 +243,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
         )}
         {activeSlug && (
           <TypeForm
-            key={editType?.id ?? activeSlug}
+            key={editType?.id ?? "editar"}
             open={typeSheetOpen}
             onClose={() => setTypeSheetOpen(false)}
             editType={editType}

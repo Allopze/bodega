@@ -1,10 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { PencilSimple, Plus } from "@phosphor-icons/react"
+import { PencilSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { RoleForm, type RoleRow, type PermissionOption } from "./role-form"
 
@@ -31,10 +30,6 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
   const [open, setOpen] = React.useState(false)
   const [editRole, setEditRole] = React.useState<RoleRow | null>(null)
 
-  function openNew() {
-    setEditRole(null)
-    setOpen(true)
-  }
   function openEdit(role: RoleRow) {
     setEditRole(role)
     setOpen(true)
@@ -51,8 +46,6 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
         pageSize={20}
         emptyTitle="Sin roles"
         emptyDescription="Crea un rol base para agrupar permisos reutilizables."
-        emptyAction={<Button size="sm" onClick={openNew}><Plus size={14} />Nuevo rol</Button>}
-        actions={<Button size="sm" onClick={openNew}><Plus size={14} />Nuevo rol</Button>}
         renderRow={(row) => {
           const r = row as RoleRow
           return (

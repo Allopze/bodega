@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { Plus } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
@@ -37,7 +36,6 @@ export function VehicleCatalogTable({ vehicles, worksites, users }: {
   const {
     sheetOpen: formOpen,
     editRow: editVehicle,
-    openCreate,
     openEdit,
     closeSheet,
     toggleAction,
@@ -183,8 +181,6 @@ export function VehicleCatalogTable({ vehicles, worksites, users }: {
     )
   }, [openEdit, toggleAction, togglePending, selectedIds])
 
-  const newButton = <Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo vehículo</Button>
-
   return (
     <>
       <Tabs
@@ -202,7 +198,6 @@ export function VehicleCatalogTable({ vehicles, worksites, users }: {
               <span className="ml-1.5 text-xs text-[var(--color-text-subtle)]">{inactiveVehicles.length}</span>
             </TabsTrigger>
           </TabsList>
-          {newButton}
         </div>
 
         <div className="flex items-center gap-3 mb-3">
@@ -265,7 +260,6 @@ export function VehicleCatalogTable({ vehicles, worksites, users }: {
             pageSize={25}
             emptyTitle="Sin vehículos activos"
             emptyDescription="No hay vehículos activos en el catálogo."
-            emptyAction={newButton}
             renderRow={renderRow}
             renderMobileCard={renderMobileCard}
           />

@@ -6,6 +6,7 @@ import { products, productAttributeTemplates, productUnits } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { CatalogActions } from "./catalog-actions"
 import { CatalogList } from "./catalog-list"
 
 export const metadata: Metadata = { title: "Catálogos de productos" }
@@ -45,6 +46,7 @@ export default async function ProductCatalogsPage() {
           { label: "Administración", href: "/admin" },
           { label: "Catálogos de productos" },
         ]}
+        actions={<CatalogActions categories={categories.map((category) => ({ id: category.id, name: category.name }))} />}
       />
       <CatalogList
         units={units.map((u) => ({

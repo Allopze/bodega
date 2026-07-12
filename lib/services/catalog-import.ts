@@ -23,6 +23,8 @@ export interface CatalogImportResult {
   errors: string[]
 }
 
+const REQUIRED_HEADER = "Nombre"
+
 function cellText(value: unknown): string {
   if (value == null) return ""
   if (value instanceof Date) return value.toISOString().slice(0, 10)
@@ -58,7 +60,13 @@ export async function parseCatalogWorkbook(buffer: Buffer): Promise<CatalogImpor
     }
   }
   if (headers.length < 2) {
-    return { ok: false, rows: [], headers: [], sheetName: sheet.name, errors: ["El archivo no tiene suficientes columnas."] }
+    return { ok: false, rows: [], headers: [], sheetName: sheet.name, errors: ["El archivo no tiene suficientes columnas. Usa la plantilla del botón Exportar XLSX."] }
+  }
+  if (!headers.includes(REQUIRED_HEADER)) {
+    return {
+      ok: false, rows: [], headers, sheetName: sheet.name,
+      errors: [`Falta la columna "${REQUIRED_HEADER}". El archivo tiene: ${headers.join(", ")}. Usa la plantilla del botón Exportar XLSX.`],
+    }
   }
 
   const idIndex = headers.indexOf("ID")
@@ -74,13 +82,14 @@ export async function parseCatalogWorkbook(buffer: Buffer): Promise<CatalogImpor
     if (!Object.values(values).some(Boolean)) return
 
     const existingId = idIndex >= 0 ? values["ID"]?.trim() || null : null
+    const name = values[REQUIRED_HEADER]?.trim()
 
     rows.push({
       rowNumber,
       values,
-      decision: existingId ? "update" : "create",
+      decision: name ? (existingId ? "update" : "create") : "skip",
       existingId,
-      error: null,
+      error: name ? null : `Fila ${rowNumber}: falta el nombre, no se importó.`,
     })
   })
 

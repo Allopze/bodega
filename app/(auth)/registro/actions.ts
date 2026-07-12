@@ -3,7 +3,7 @@
 import bcrypt from "bcryptjs"
 import { and, count, eq, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { userInvitations, userRoles, users, worksiteUsers } from "@/db/schema"
+import { userInvitations, userRoles, users, workers, worksiteUsers } from "@/db/schema"
 import { ensureSystemRbac, hashInvitationToken } from "@/lib/auth/bootstrap"
 import { isInvitationUsable } from "@/lib/auth/invitations"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
@@ -96,6 +96,7 @@ export async function registerUser(
       let roleIds: string[] = ["rol-admin"]
       let worksiteAssignments: WorksiteAssignment[] = []
       let invitationId: string | null = null
+      let workerId: string | null = null
 
       if (userCount === 0) {
         isBootstrap = true
@@ -131,6 +132,16 @@ export async function registerUser(
         roleIds = safeParseJson<string[]>(invitation.roleIdsJson, [])
         worksiteAssignments = safeParseJson<WorksiteAssignment[]>(invitation.worksiteAssignmentsJson, [])
         invitationId = invitation.id
+        workerId = invitation.workerId
+
+        if (workerId) {
+          const worker = await tx.query.workers.findFirst({ where: eq(workers.id, workerId) })
+          const linkedUser = await tx.query.users.findFirst({ where: eq(users.workerId, workerId) })
+          if (!worker || !worker.isActive || (linkedUser && linkedUser.id !== id)) {
+            validationFailure = { ok: false, fieldErrors: { token: ["El trabajador de esta invitación ya no está disponible"] } }
+            throw new RegistrationRollback()
+          }
+        }
       }
 
       if (existing) {
@@ -142,6 +153,7 @@ export async function registerUser(
           avatarColor,
           isActive: true,
           updatedAt: new Date().toISOString(),
+          workerId: workerId ?? existing.workerId,
         }).where(eq(users.id, existing.id))
       } else {
         // Nuevo usuario desde invitación: crear registro y aplicar asignaciones.
@@ -152,6 +164,7 @@ export async function registerUser(
           hashedPassword,
           avatarColor,
           isActive: true,
+          workerId,
         })
 
         await tx.insert(userRoles).values(roleIds.map((roleId) => ({ userId: id, roleId })))

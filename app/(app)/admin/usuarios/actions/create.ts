@@ -22,6 +22,7 @@ import {
 } from "../actions.helpers"
 import { requireAdminPermission } from "./helpers"
 import { REVALIDATE } from "./revalidate"
+import { validateWorkerAssociation } from "./worker-association"
 
 export async function createUser(
   _prev: ActionState,
@@ -36,6 +37,7 @@ export async function createUser(
     isActive: formData.get("isActive") === "on",
     roleIds:  formData.getAll("roleIds"),
     permissionIds: formData.getAll("permissionIds"),
+    workerId: formData.get("workerId") || "",
     expiresInDays: formData.get("expiresInDays") || 7,
     worksiteAssignments: buildWorksiteAssignments(formData),
   }
@@ -57,6 +59,21 @@ export async function createUser(
   if (roleError) return roleError
   const permissionError = await validatePermissionRules(permissionIds, canManageAdministratorRole(session))
   if (permissionError) return permissionError
+  const workerAssociation = await validateWorkerAssociation(session, d.workerId || undefined, d.worksiteAssignments)
+  if (workerAssociation.error) return workerAssociation.error
+  if (d.workerId) {
+    const pendingWorkerInvitation = await db.query.userInvitations.findFirst({
+      where: and(
+        eq(userInvitations.workerId, d.workerId),
+        isNull(userInvitations.acceptedAt),
+        isNull(userInvitations.cancelledAt),
+        isNull(userInvitations.replacedAt),
+      ),
+    })
+    if (pendingWorkerInvitation) {
+      return { ok: false, fieldErrors: { workerId: ["Este trabajador ya tiene una invitación pendiente"] } }
+    }
+  }
 
   const existing = await db.query.users.findFirst({ where: eq(users.email, d.email) })
   if (existing) {
@@ -64,7 +81,9 @@ export async function createUser(
   }
 
   const id           = nanoid()
-  const displayName  = d.name?.trim() || displayNameFromEmail(d.email)
+  const displayName  = workerAssociation.worker
+    ? `${workerAssociation.worker.firstName} ${workerAssociation.worker.lastName}`
+    : d.name?.trim() || displayNameFromEmail(d.email)
   const avatarColor  = String(Math.abs(hashStr(displayName)) % 360)
   const token        = generateInvitationToken()
   const inviteUrl    = `${getAppBaseUrl()}/registro?token=${encodeURIComponent(token)}`
@@ -78,6 +97,7 @@ export async function createUser(
       hashedPassword: createPendingPasswordMarker(),
       avatarColor,
       isActive: d.isActive,
+      workerId: d.workerId || null,
     })
     if (d.roleIds.length > 0) {
       await tx.insert(userRoles).values(d.roleIds.map((rid) => ({ userId: id, roleId: rid })))
@@ -136,7 +156,7 @@ export async function createUser(
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "create", entityType: "user", entityId: id,
-    newState: { name: displayName, email: d.email, roles: d.roleIds, permissions: permissionIds, passwordSetupPending: true, invitationId, smtpSent: !pendingInviteUrl },
+    newState: { name: displayName, email: d.email, workerId: d.workerId || null, roles: d.roleIds, permissions: permissionIds, passwordSetupPending: true, invitationId, smtpSent: !pendingInviteUrl },
   })
 
   clearUserRbacCache(id)

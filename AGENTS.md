@@ -118,7 +118,26 @@ or `<section className="pt-8">` around it — this creates whitespace gaps.
 Internal spacing between sections should use `gap-*` or `space-y-*` **inside**
 `PageContainer`.
 
-## 5. Minimal page template
+## 5. Page-level action buttons (import, export, create, etc.) go in `PageHeader`'s `actions` — never as a separate inline toolbar
+
+Buttons like "Nuevo producto", "Exportar XLSX", "Importar" operate on the whole
+page/list, not on a single row — they are page-level actions and belong in
+`PageHeader`'s `actions` prop (see rule 2) so they render consistently in the
+`TopBar` (desktop) and header block (mobile).
+
+- Do NOT build a `toolbar` div inside a list/table component and render it
+  next to `TabsList` or above a `DataTable` — that duplicates the header's
+  job, scrolls out of view with the table, and reads as a second header.
+- If the action needs local component state (e.g. opening a sheet or a
+  choice dialog), lift the trigger and state into the page-level client
+  component that renders `PageHeader`, or expose a callback prop — don't
+  leave the button buried in a nested list component.
+- If a page needs several related import/export flows, prefer **one** entry
+  point button with a dialog to disambiguate over multiple similarly-named
+  buttons (e.g. one "Importar" button that asks *what* to import, not
+  "Importar EPP" + "Importar catálogo" side by side).
+
+## 6. Minimal page template
 
 ```tsx
 import { PageHeader } from "@/components/ui/page-header"
