@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { permissions, rolePermissions, roles, userPermissions, userRoles, users, worksites, worksiteUsers } from "@/db/schema"
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { permissions, rolePermissions, roles, userPermissions, userRoles, users, workers, worksites, worksiteUsers } from "@/db/schema"
+import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { visibleUserIdsForAdminScope } from "@/lib/auth/admin-user-scope"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -11,6 +11,7 @@ import { getInvitationStatus, parseInvitationJson } from "@/lib/auth/invitations
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { UserList } from "./user-list"
+import { UserActions } from "./user-actions"
 
 
 export const metadata: Metadata = { title: "Usuarios" }
@@ -92,6 +93,24 @@ export default async function UsuariosPage() {
     where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)),
     orderBy: (w, { asc }) => [asc(w.name)],
   })
+  const allWorkersData = await db
+    .select({
+      id: workers.id,
+      firstName: workers.firstName,
+      lastName: workers.lastName,
+      rut: workers.rut,
+      worksiteId: workers.worksiteId,
+      worksiteName: worksites.name,
+      linkedUserId: users.id,
+    })
+    .from(workers)
+    .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
+    .leftJoin(users, eq(users.workerId, workers.id))
+    .where(and(
+      or(eq(workers.isActive, true), isNotNull(users.id)),
+      worksiteScopeSql(session, workers.worksiteId),
+    ))
+    .orderBy(workers.firstName, workers.lastName)
 
   const invitationRowsRaw = await db.query.userInvitations.findMany({
     orderBy: (i, { desc }) => [desc(i.createdAt)],
@@ -163,6 +182,7 @@ export default async function UsuariosPage() {
       roleIds:     uRoles.map((r) => r.roleId),
       roleLabels:  uRoles.map((r) => r.roleLabel),
       permissionIds: uPermissions.map((p) => p.permissionId),
+      workerId: u.workerId,
       worksiteAssignments: uWs.map((w) => ({ worksiteId: w.worksiteId, isPrimary: w.isPrimary })),
       worksiteCount: uWs.length,
     }]
@@ -179,6 +199,33 @@ export default async function UsuariosPage() {
             { label: "Administración", href: "/admin" },
             { label: "Usuarios" },
           ]} />
+        }
+        actions={
+          <UserActions
+            allRoles={allRolesData
+              .filter((r) => canManageAdmins || r.name !== "administrador")
+              .map((r) => ({ id: r.id, name: r.name, label: r.label }))}
+            allPermissions={allPermissionsData
+              .filter((p) => canManageAdmins || p.module !== "admin")
+              .map((p) => ({
+                id: p.id,
+                name: p.name,
+                module: p.module,
+                description: p.description,
+                roleIds: allRolePermissionRows
+                  .filter((rp) => rp.permissionId === p.id)
+                  .map((rp) => rp.roleId),
+              }))}
+            allWorksites={allWorksitesData.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
+            allWorkers={allWorkersData.map((worker) => ({
+              id: worker.id,
+              name: `${worker.firstName} ${worker.lastName}`,
+              rut: worker.rut,
+              worksiteId: worker.worksiteId,
+              worksiteName: worker.worksiteName,
+              linkedUserId: worker.linkedUserId,
+            }))}
+          />
         }
       />
       <UserList
@@ -199,6 +246,14 @@ export default async function UsuariosPage() {
               .map((rp) => rp.roleId),
           }))}
         allWorksites={allWorksitesData.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
+        allWorkers={allWorkersData.map((worker) => ({
+          id: worker.id,
+          name: `${worker.firstName} ${worker.lastName}`,
+          rut: worker.rut,
+          worksiteId: worker.worksiteId,
+          worksiteName: worker.worksiteName,
+          linkedUserId: worker.linkedUserId,
+        }))}
       />
     </PageContainer>
   )

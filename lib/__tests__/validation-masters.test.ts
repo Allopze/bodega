@@ -74,6 +74,11 @@ describe("userCreateSchema", () => {
     const result = userCreateSchema.safeParse({ ...valid, name: "" })
     expect(result.success).toBe(true)
   })
+
+  it("accepts an optional worker association", () => {
+    const result = userCreateSchema.parse({ ...valid, workerId: "worker-1" })
+    expect(result.workerId).toBe("worker-1")
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════

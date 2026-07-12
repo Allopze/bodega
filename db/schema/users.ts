@@ -1,6 +1,6 @@
 import { pgTable, text, boolean, timestamp, uniqueIndex, integer } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
-import { worksites } from "./worksites"
+import { workers, worksites } from "./worksites"
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
 export const users = pgTable("users", {
@@ -11,6 +11,7 @@ export const users = pgTable("users", {
   avatarColor:        text("avatar_color"),
   isActive:           boolean("is_active").notNull().default(true),
   emailNotifications: boolean("email_notifications").notNull().default(true),
+  workerId:           text("worker_id").unique().references(() => workers.id, { onDelete: "set null" }),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
@@ -30,6 +31,7 @@ export const userInvitations = pgTable("user_invitations", {
   id:                  text("id").primaryKey(),
   email:               text("email").notNull(),
   name:                text("name"),
+  workerId:            text("worker_id").references(() => workers.id, { onDelete: "set null" }),
   tokenHash:           text("token_hash").notNull().unique(),
   roleIdsJson:         text("role_ids_json").notNull().default("[]"),
   worksiteAssignmentsJson: text("worksite_assignments_json").notNull().default("[]"),
@@ -97,7 +99,8 @@ export const worksiteUsers = pgTable("worksite_users", {
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
+  worker:          one(workers, { fields: [users.workerId], references: [workers.id] }),
   userRoles:       many(userRoles),
   userPermissions: many(userPermissions),
   worksiteUsers:   many(worksiteUsers),
@@ -125,6 +128,7 @@ export const userPermissionsRelations = relations(userPermissions, ({ one }) => 
 }))
 
 export const userInvitationsRelations = relations(userInvitations, ({ one }) => ({
+  worker: one(workers, { fields: [userInvitations.workerId], references: [workers.id] }),
   invitedBy: one(users, { fields: [userInvitations.invitedByUserId], references: [users.id] }),
 }))
 

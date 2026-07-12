@@ -1,17 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { Plus, DownloadSimple, UploadSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { SupplierForm } from "./supplier-form"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleSupplierActive } from "./actions"
-import { importSuppliersFromXlsx } from "./actions"
-import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
 
 interface SupplierRow {
@@ -25,10 +21,8 @@ interface SupplierRow {
 
 export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
   const {
-    sheetOpen, editRow: editSupplier, openCreate, openEdit, closeSheet, toggleAction,
+    sheetOpen, editRow: editSupplier, openEdit, closeSheet, toggleAction,
   } = useCatalogSheet<SupplierRow>(toggleSupplierActive)
-
-  const [importOpen, setImportOpen] = React.useState(false)
 
   return (
     <>
@@ -40,22 +34,6 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
 
         emptyTitle="Sin proveedores"
         emptyDescription="Registra el primer proveedor para comenzar."
-        emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>}
-        actions={(
-          <div className="flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-            <a
-              href="/api/admin/catalogos/export?tipo=proveedores"
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
-            >
-              <DownloadSimple size={14} />Exportar XLSX
-            </a>
-            <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
-              <UploadSimple size={14} />Importar XLSX
-            </Button>
-            <Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>
-          </div>
-        )}
         renderMobileCard={(row) => {
           const s = row as unknown as SupplierRow
           return (
@@ -135,14 +113,6 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
         }}
       />
       <SupplierForm open={sheetOpen} onClose={closeSheet} editSupplier={editSupplier} />
-      <CatalogImportPanel
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        title="Importar proveedores desde XLSX"
-        description="Importa proveedores exportados desde el catálogo. La columna ID determina si se crea o actualiza."
-        action={importSuppliersFromXlsx}
-        helperText="Usa el botón Exportar XLSX para obtener la plantilla con los datos actuales."
-      />
     </>
   )
 }

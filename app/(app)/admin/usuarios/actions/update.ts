@@ -1,9 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
-import { users, userRoles, userPermissions, worksiteUsers } from "@/db/schema"
+import { users, userInvitations, userRoles, userPermissions, worksiteUsers } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { clearUserRbacCache } from "@/lib/auth/rbac"
 import { canManageUserInAdminScope } from "@/lib/auth/admin-user-scope"
@@ -19,6 +19,7 @@ import {
 } from "../actions.helpers"
 import { requireAdminPermission } from "./helpers"
 import { REVALIDATE } from "./revalidate"
+import { validateWorkerAssociation } from "./worker-association"
 
 export async function updateUser(
   _prev: ActionState,
@@ -35,6 +36,7 @@ export async function updateUser(
     emailNotifications: formData.get("emailNotifications") === "on",
     roleIds:  formData.getAll("roleIds"),
     permissionIds: formData.getAll("permissionIds"),
+    workerId: formData.get("workerId") || "",
     worksiteAssignments: buildWorksiteAssignments(formData),
   }
 
@@ -66,6 +68,21 @@ export async function updateUser(
   if (worksiteScopeError) return worksiteScopeError
   const permissionError = await validatePermissionRules(permissionIds, actorCanManageAdmins)
   if (permissionError) return permissionError
+  const workerAssociation = await validateWorkerAssociation(session, d.workerId || undefined, d.worksiteAssignments, d.id)
+  if (workerAssociation.error) return workerAssociation.error
+  if (d.workerId && d.workerId !== current.workerId) {
+    const pendingWorkerInvitation = await db.query.userInvitations.findFirst({
+      where: and(
+        eq(userInvitations.workerId, d.workerId),
+        isNull(userInvitations.acceptedAt),
+        isNull(userInvitations.cancelledAt),
+        isNull(userInvitations.replacedAt),
+      ),
+    })
+    if (pendingWorkerInvitation) {
+      return { ok: false, fieldErrors: { workerId: ["Este trabajador ya tiene una invitación pendiente"] } }
+    }
+  }
 
   const emailConflict = await db.query.users.findFirst({ where: eq(users.email, d.email) })
   if (emailConflict && emailConflict.id !== d.id) {
@@ -77,6 +94,7 @@ export async function updateUser(
     email:    d.email,
     isActive: d.isActive,
     emailNotifications: d.emailNotifications,
+    workerId: d.workerId || null,
     updatedAt: new Date().toISOString(),
   }
 
@@ -103,8 +121,8 @@ export async function updateUser(
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
     action: "update", entityType: "user", entityId: d.id,
-    oldState: { name: current.name, email: current.email, isActive: current.isActive, emailNotifications: current.emailNotifications },
-    newState: { name: d.name, email: d.email, isActive: d.isActive, emailNotifications: d.emailNotifications, roles: d.roleIds, permissions: permissionIds },
+    oldState: { name: current.name, email: current.email, workerId: current.workerId, isActive: current.isActive, emailNotifications: current.emailNotifications },
+    newState: { name: d.name, email: d.email, workerId: d.workerId || null, isActive: d.isActive, emailNotifications: d.emailNotifications, roles: d.roleIds, permissions: permissionIds },
   })
 
   clearUserRbacCache(d.id)

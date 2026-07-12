@@ -416,10 +416,13 @@ export async function importProductsXlsx(_prev: ActionState, formData: FormData)
       },
     }
   }
+  const needsReview = result.blocked + result.pending
   return {
     ok: true,
-    message: `Lote de ${result.rowCount} filas listo para revisión`,
-    data: { batchId: result.batchId, totalRows: result.rowCount },
+    message: needsReview > 0
+      ? `Lote de ${result.rowCount} filas: ${needsReview} necesitan revisión antes de confirmar`
+      : `Lote de ${result.rowCount} filas listo para confirmar`,
+    data: { batchId: result.batchId, totalRows: result.rowCount, blocked: result.blocked, pending: result.pending, ready: result.ready },
   }
 }
 
@@ -485,9 +488,10 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
   if (!result.ok) return { ok: false, message: result.errors.join("; ") }
 
   const activeRows = result.rows.filter((r) => r.decision !== "skip")
+  const skippedRows = result.rows.filter((r) => r.decision === "skip")
   let created = 0
   let updated = 0
-  let skipped = 0
+  const skipped = skippedRows.length
 
   try {
     await db.transaction(async (tx) => {
@@ -497,8 +501,6 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
         const isActive = v["Activo"]?.trim() !== "No"
         const categoryName = (v["Categoría"] ?? "Elementos de Protección Personal").trim()
         const category = await resolveImportCategory(tx, categoryName)
-
-        if (!name) { skipped++; continue }
 
         if (row.decision === "update" && row.existingId) {
           updated++
@@ -536,7 +538,12 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
       newState: { created, updated, skipped },
     })
     revalidatePath(REVALIDATE)
-    return { ok: true, message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos`, data: { created, updated, skipped } }
+    const rowErrors = skippedRows.map((row) => row.error).filter((error): error is string => Boolean(error))
+    return {
+      ok: true,
+      message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos`,
+      data: { created, updated, skipped, errors: rowErrors.slice(0, 20), totalErrors: rowErrors.length },
+    }
   } catch (err) {
     logger.error("[admin/productos] importXlsx", err)
     return { ok: false, message: (err as Error).message }

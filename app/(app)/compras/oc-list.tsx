@@ -48,15 +48,6 @@ export function OcList({
   worksiteOptions?: FilterOption[]
   supplierOptions?: FilterOption[]
 }) {
-  const nuevaButton = canCreate ? (
-    <Button variant="primary" size="sm" asChild>
-      <Link href="/compras/nueva">
-        <Plus weight="bold" size={14} />
-        Nueva OC
-      </Link>
-    </Button>
-  ) : undefined
-
   return (
     <div className="flex flex-col gap-4">
       <OnboardingHint
@@ -115,7 +106,6 @@ export function OcList({
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}
         exportTipo="compras"
-        actions={nuevaButton}
       />
 
       {/* OC table */}
@@ -127,7 +117,6 @@ export function OcList({
         pageSize={25}
         emptyTitle="Sin órdenes de compra"
         emptyDescription="No hay órdenes que coincidan con los filtros."
-        emptyAction={nuevaButton}
         renderRow={(row) => <OcTableRow key={(row as unknown as OcRow).id} row={row as unknown as OcRow} canDelete={canDelete} />}
       />
     </div>

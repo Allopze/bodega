@@ -4,14 +4,12 @@ import * as React from "react"
 import { useActionState } from "react"
 import { useEffect } from "react"
 import { toast } from "@/lib/toast"
-import { EnvelopeSimple, Plus, PencilSimple, ToggleLeft, ToggleRight, Trash } from "@phosphor-icons/react"
+import { PencilSimple, ToggleLeft, ToggleRight, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { UserForm } from "./user-form"
-import { UserInviteForm } from "./user-invite-form"
 import { UserInvitationsPanel, type InvitationRow } from "./user-invitations-panel"
 import { Avatar } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
@@ -27,6 +25,14 @@ interface Permission {
   roleIds: string[]
 }
 interface Worksite { id: string; name: string; code: string }
+interface WorkerOption {
+  id: string
+  name: string
+  rut: string | null
+  worksiteId: string
+  worksiteName: string
+  linkedUserId: string | null
+}
 interface UserRow {
   id:          string
   name:        string
@@ -39,6 +45,7 @@ interface UserRow {
   roleIds:     string[]
   roleLabels:  string[]
   permissionIds: string[]
+  workerId: string | null
   worksiteAssignments: { worksiteId: string; isPrimary: boolean }[]
   worksiteCount: number
 }
@@ -49,6 +56,7 @@ interface UserListProps {
   allRoles:     Role[]
   allPermissions: Permission[]
   allWorksites: Worksite[]
+  allWorkers: WorkerOption[]
 }
 
 const COLUMNS = [
@@ -60,9 +68,8 @@ const COLUMNS = [
   { key: "",          label: "",          sortable: false, width: "w-32" },
 ]
 
-export function UserList({ users, invitations, allRoles, allPermissions, allWorksites }: UserListProps) {
+export function UserList({ users, invitations, allRoles, allPermissions, allWorksites, allWorkers }: UserListProps) {
   const [sheetOpen, setSheetOpen]   = React.useState(false)
-  const [inviteOpen, setInviteOpen] = React.useState(false)
   const [editUser,  setEditUser]    = React.useState<UserRow | null>(null)
   const [deleteUserConfirm, setDeleteUserConfirm] = React.useState<UserRow | null>(null)
   const [toggleState, toggleAction] = useActionState(toggleUserActive, INITIAL_STATE)
@@ -82,7 +89,6 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
     }
   }, [deleteState])
 
-  function openCreate() { setEditUser(null); setSheetOpen(true) }
   function openEdit(u: UserRow) { setEditUser(u); setSheetOpen(true) }
 
   return (
@@ -95,17 +101,6 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
 
         emptyTitle="Sin usuarios"
         emptyDescription="Invita al equipo o crea usuarios manualmente."
-        emptyAction={<Button size="sm" onClick={() => setInviteOpen(true)}><EnvelopeSimple size={14} />Invitar usuario</Button>}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={openCreate}>
-              <Plus size={14} />Nuevo usuario
-            </Button>
-            <Button size="sm" onClick={() => setInviteOpen(true)}>
-              <EnvelopeSimple size={14} />Invitar
-            </Button>
-          </div>
-        }
         renderRow={(row) => {
           const u = row as unknown as UserRow
           return (
@@ -292,15 +287,8 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
         allRoles={allRoles}
         allPermissions={allPermissions}
         allWorksites={allWorksites}
+        allWorkers={allWorkers}
       />
-      {inviteOpen && (
-        <UserInviteForm
-          open={inviteOpen}
-          onClose={() => setInviteOpen(false)}
-          allRoles={allRoles}
-          allWorksites={allWorksites}
-        />
-      )}
     </>
   )
 }

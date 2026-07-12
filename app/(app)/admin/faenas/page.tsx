@@ -9,6 +9,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { Buildings, CheckCircle, PauseCircle, MapPin } from "@phosphor-icons/react/dist/ssr"
 import { FaenasList } from "./faenas-list"
+import { FaenasActions } from "./faenas-actions"
 
 export const metadata: Metadata = { title: "Faenas" }
 
@@ -42,6 +43,7 @@ export default async function FaenasPage() {
           { label: "Administración", href: "/admin" },
           { label: "Faenas" },
         ]}
+        actions={canCreateWorksites ? <FaenasActions /> : undefined}
       />
       {allWorksites.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <FaenasList

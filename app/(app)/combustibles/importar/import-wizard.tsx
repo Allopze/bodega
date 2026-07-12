@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Upload, FileText, WarningCircle, CheckCircle, ArrowLeft, ArrowDown, ArrowUp, DownloadSimple, LinkSimple, X } from "@phosphor-icons/react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Upload, FileText, WarningCircle, CheckCircle, ArrowLeft, ArrowDown, ArrowUp, X } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { formatCLP, formatQty } from "@/lib/utils"
@@ -42,8 +42,6 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
   const [periodoHasta, setPeriodoHasta] = useState("")
   const [notas, setNotas] = useState("")
   const [loading, setLoading] = useState(false)
-  const [downloadingReport, setDownloadingReport] = useState<"TCT" | "TAE" | null>(null)
-  const [copecSectionOpen, setCopecSectionOpen] = useState(false)
   const [columnsOpen, setColumnsOpen] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
   const [dateFromFile, setDateFromFile] = useState(false)
@@ -129,32 +127,6 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
       setPeriodoDesde(detected.desde)
       setPeriodoHasta(detected.hasta)
       setDateFromFile(true)
-    }
-  }
-
-  async function downloadCopecReport(cardType: "TCT" | "TAE") {
-    if (!periodoDesde || !periodoHasta) return
-    setDownloadingReport(cardType)
-    try {
-      const response = await fetch(`/api/combustibles/copec/report?tipo=${cardType}&desde=${periodoDesde}&hasta=${periodoHasta}`)
-      if (!response.ok) {
-        const body = await response.json().catch(() => null) as { message?: string } | null
-        throw new Error(body?.message ?? `Copec no pudo generar el reporte ${cardType}`)
-      }
-      const blob = await response.blob()
-      const contentDisposition = response.headers.get("content-disposition") ?? ""
-      const fileName = contentDisposition.match(/filename="?([^";]+)"?/i)?.[1] ?? `copec-${cardType}-${periodoDesde}-${periodoHasta}.xlsx`
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      link.href = url
-      link.download = fileName
-      link.click()
-      URL.revokeObjectURL(url)
-      toast.success(`Reporte ${cardType} descargado`)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : `No fue posible descargar el reporte ${cardType}`)
-    } finally {
-      setDownloadingReport(null)
     }
   }
 
@@ -287,13 +259,16 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
 
   return (
     <Card>
-      <CardHeader><CardTitle>Nueva importación de consumos</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>Subir un archivo</CardTitle>
+        <CardDescription>Ya tienes un reporte de tarjetas de combustible (.xlsx) en tu equipo y quieres importarlo directamente.</CardDescription>
+      </CardHeader>
       <CardContent className="space-y-4">
         {worksites.length === 0 && !canImportAllWorksites ? (
           <p className="text-sm text-muted-foreground">No tienes faenas asignadas. Contacta a un administrador para que te asigne una faena.</p>
         ) : (
           <>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="grid gap-1.5">
             <Label className="text-xs">Faena</Label>
             <Select value={worksiteId} onValueChange={setWorksiteId}>
@@ -303,7 +278,6 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
                 {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            {worksiteId === "all" && <p className="text-xs text-muted-foreground">Cada consumo se asignará a la faena del vehículo registrado.</p>}
           </div>
           <div className="grid gap-1.5">
             <div className="flex items-center gap-2">
@@ -316,13 +290,14 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
             <Label className="text-xs">Período hasta</Label>
             <DatePicker value={periodoHasta} onChange={setPeriodoHasta} />
           </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-1 max-w-sm">
           <div className="grid gap-1.5">
             <Label className="text-xs">Notas (opcional)</Label>
             <Input value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Ej: reporte semanal" />
           </div>
         </div>
+        {worksiteId === "all" && (
+          <p className="text-xs text-muted-foreground">Cada consumo se asignará a la faena del vehículo registrado.</p>
+        )}
 
         <label
           onDragOver={(e) => { e.preventDefault(); setDragActive(true) }}
@@ -391,55 +366,6 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
             <div className="border-t border-[var(--color-border)] px-3.5 py-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
                 Patente, N° Tarjetas, N° Transacciones, Cantidad (Unidad), Monto ($), Rendimiento Promedio
-              </p>
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)]">
-          <button
-            type="button"
-            onClick={() => setCopecSectionOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-3.5 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] rounded-t-[var(--radius-lg)]"
-          >
-            <span className="flex items-center gap-2">
-              <LinkSimple className="h-4 w-4 text-muted-foreground" />
-              Obtener reporte desde Copec
-            </span>
-            {copecSectionOpen ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
-          </button>
-          {copecSectionOpen && (
-            <div className="border-t border-[var(--color-border)] px-3.5 py-3 space-y-3">
-              {(!periodoDesde || !periodoHasta) ? (
-                <p className="text-xs text-muted-foreground">
-                  Selecciona el período desde/hasta arriba para descargar reportes directamente desde el portal de Copec.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => downloadCopecReport("TCT")}
-                    disabled={!!downloadingReport}
-                  >
-                    <DownloadSimple className="h-4 w-4 mr-1.5" />
-                    {downloadingReport === "TCT" ? "Descargando TCT…" : "Descargar reporte TCT"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => downloadCopecReport("TAE")}
-                    disabled={!!downloadingReport}
-                  >
-                    <DownloadSimple className="h-4 w-4 mr-1.5" />
-                    {downloadingReport === "TAE" ? "Descargando TAE…" : "Descargar reporte TAE"}
-                  </Button>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Los reportes descargados se guardan en tu equipo y debes arrastrarlos a la zona de carga para importarlos.
               </p>
             </div>
           )}

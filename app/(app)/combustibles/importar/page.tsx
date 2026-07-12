@@ -5,7 +5,7 @@ import { fuelImportBatches, fuelOperationBatches, worksites } from "@/db/schema"
 import { desc, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { isGlobalRole, resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
-import { getCopecSyncState } from "@/lib/combustibles/copec-sync"
+import { getCopecSyncStartOptions, getCopecSyncState } from "@/lib/combustibles/copec-sync"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -25,7 +25,7 @@ export default async function ImportarConsumosPage() {
   const worksiteScope = resolveWorksiteScope(session)
   const canImportOperations = isGlobalRole(session)
 
-  const [worksitesList, batches, operationBatches, copecSyncState] = await Promise.all([
+  const [worksitesList, batches, operationBatches, copecSyncState, copecSyncStartOptions] = await Promise.all([
     worksiteScope.mode === "none"
       ? Promise.resolve([])
       : db.query.worksites.findMany({
@@ -46,6 +46,7 @@ export default async function ImportarConsumosPage() {
         })
       : Promise.resolve([]),
     getCopecSyncState(),
+    getCopecSyncStartOptions(),
   ])
 
   return (
@@ -56,10 +57,6 @@ export default async function ImportarConsumosPage() {
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos" }]} />}
       />
 
-      <div className="mb-6">
-        <CopecSyncStatus initialStatus={copecSyncState} />
-      </div>
-
       <Tabs defaultValue="consumos">
         <TabsList>
           <TabsTrigger value="consumos">Consumos por patente</TabsTrigger>
@@ -67,6 +64,10 @@ export default async function ImportarConsumosPage() {
         </TabsList>
 
         <TabsContent value="consumos">
+          <p className="text-xs text-muted-foreground mb-3">Hay dos formas de traer los consumos — elige la que corresponda.</p>
+          <div className="mb-6">
+            <CopecSyncStatus initialStatus={copecSyncState} initialStartOptions={copecSyncStartOptions} />
+          </div>
           <div className="mb-8">
             <ImportWizard worksites={worksitesList} canImportAllWorksites={canImportOperations} />
           </div>

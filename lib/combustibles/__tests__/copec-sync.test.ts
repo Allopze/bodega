@@ -2,10 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockSettingFindFirst = vi.fn()
 const mockUserFindFirst = vi.fn()
-const mockDownloadCopecReport = vi.fn()
+const mockBatchFindFirst = vi.fn()
+const mockDownloadCopecReports = vi.fn()
 const mockSaveState = vi.fn()
-
-class MockCopecReportUnavailableError extends Error {}
 
 vi.mock("@/db", () => ({
   db: {
@@ -13,7 +12,7 @@ vi.mock("@/db", () => ({
       systemSettings: { findFirst: (...args: unknown[]) => mockSettingFindFirst(...args) },
       users: { findFirst: (...args: unknown[]) => mockUserFindFirst(...args) },
       fuelVehicles: { findMany: vi.fn() },
-      fuelImportBatches: { findFirst: vi.fn() },
+      fuelImportBatches: { findFirst: (...args: unknown[]) => mockBatchFindFirst(...args) },
     },
     insert: vi.fn(() => ({
       values: vi.fn(() => ({ onConflictDoUpdate: (...args: unknown[]) => mockSaveState(...args) })),
@@ -25,11 +24,10 @@ vi.mock("@/db/schema", () => ({
   fuelConsumptionRecords: {}, fuelImportBatches: {}, fuelVehicles: {}, systemSettings: {}, users: {},
 }))
 vi.mock("@/lib/combustibles/copec-reports", () => ({
-  downloadCopecReport: (...args: unknown[]) => mockDownloadCopecReport(...args),
-  isCopecReportUnavailableError: (error: unknown) => error instanceof MockCopecReportUnavailableError,
+  downloadCopecReports: (...args: unknown[]) => mockDownloadCopecReports(...args),
 }))
 
-const { buildCopecSyncPeriods, syncCopecReportPeriod } = await import("../copec-sync")
+const { buildCopecSyncPeriods, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod } = await import("../copec-sync")
 
 describe("buildCopecSyncPeriods", () => {
   it("divides an initial historical import into Copec-sized contiguous periods", () => {
@@ -52,6 +50,7 @@ describe("syncCopecReportPeriod", () => {
     // environment ever defining it.
     vi.stubEnv("COPEC_SYNC_IMPORTER_EMAIL", "importer@chome.cl")
     mockSettingFindFirst.mockResolvedValue(undefined)
+    mockBatchFindFirst.mockResolvedValue(undefined)
     mockUserFindFirst.mockResolvedValue({ id: "user-1" })
     mockSaveState.mockResolvedValue(undefined)
   })
@@ -61,12 +60,74 @@ describe("syncCopecReportPeriod", () => {
   })
 
   it("continues and checkpoints when Copec has no downloadable file for a period", async () => {
-    mockDownloadCopecReport.mockRejectedValue(new MockCopecReportUnavailableError("sin archivo"))
+    mockDownloadCopecReports.mockResolvedValue([
+      { cardType: "TCT", unavailable: true },
+      { cardType: "TAE", unavailable: true },
+    ])
 
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" })
 
     expect(result).toMatchObject({ imported: 0, unavailable: ["TCT", "TAE"] })
-    expect(mockDownloadCopecReport).toHaveBeenCalledTimes(2)
+    expect(mockDownloadCopecReports).toHaveBeenCalledWith([
+      { cardType: "TCT", from: "2026-02-01", to: "2026-02-28" },
+      { cardType: "TAE", from: "2026-02-01", to: "2026-02-28" },
+    ])
     expect(mockSaveState).toHaveBeenCalledOnce()
+  })
+
+  it("uses the authenticated operator for a manual sync without requiring cron configuration", async () => {
+    vi.unstubAllEnvs()
+    mockDownloadCopecReports.mockResolvedValue([
+      { cardType: "TCT", unavailable: true },
+      { cardType: "TAE", unavailable: true },
+    ])
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    expect(mockUserFindFirst).not.toHaveBeenCalled()
+    expect(mockSaveState).toHaveBeenCalledOnce()
+  })
+})
+
+describe("Copec synchronization start date", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv("COPEC_SYNC_START_DATE", "2020-01-01")
+    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2020-02-01", lastRunAt: null, pending: [] }) })
+    mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-06-30" })
+    mockSaveState.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("only offers dates after the latest active fuel import", async () => {
+    const options = await getCopecSyncStartOptions()
+
+    expect(options).toMatchObject({
+      currentStart: "2020-02-01",
+      minimumStart: "2026-07-01",
+      latestImportedUntil: "2026-06-30",
+    })
+  })
+
+  it("rejects a configured start that would overlap an imported period", async () => {
+    await expect(setCopecSyncStartDate("2026-06-30", "2020-02-01"))
+      .rejects.toThrow("posterior al último período importado")
+    expect(mockSaveState).not.toHaveBeenCalled()
+  })
+
+  it("allows skipping ahead to a date after imported periods", async () => {
+    const result = await setCopecSyncStartDate("2026-07-01", "2020-02-01")
+
+    expect(result.currentStart).toBe("2026-07-01")
+    expect(mockSaveState).toHaveBeenCalledOnce()
+  })
+
+  it("rejects a stale edit instead of overwriting a newer sync cursor", async () => {
+    await expect(setCopecSyncStartDate("2026-07-01", "2020-01-01"))
+      .rejects.toThrow("La sincronización cambió")
+    expect(mockSaveState).not.toHaveBeenCalled()
   })
 })

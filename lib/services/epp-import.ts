@@ -65,6 +65,9 @@ export async function stageEppImportXlsx(input: { buffer: Buffer; fileName: stri
   })
   const batchId = nanoid()
   const seenIdentityKeys = new Set<string>()
+  let blocked = 0
+  let pending = 0
+  let ready = 0
 
   await db.transaction(async (tx) => {
     await tx.insert(eppImportBatches).values({
@@ -84,6 +87,9 @@ export async function stageEppImportXlsx(input: { buffer: Buffer; fileName: stri
         ? "blocking"
         : matches.length > 0 || normalized.issues.some((issue) => issue.severity === "warning") ? "warning" : "info"
       const decision: ImportDecision = severity === "blocking" ? "blocked" : matches.length > 0 ? "pending" : "create"
+      if (decision === "blocked") blocked++
+      else if (decision === "pending") pending++
+      else ready++
       const rowId = nanoid()
       await tx.insert(eppImportRows).values({
         id: rowId, batchId, rowNumber: source.rowNumber, sourceCode: normalized.sourceCode,
@@ -96,7 +102,7 @@ export async function stageEppImportXlsx(input: { buffer: Buffer; fileName: stri
       if (matches.length) await tx.insert(eppImportMatches).values(matches.map((match) => ({ id: nanoid(), rowId, productId: match.productId, score: match.score, reasonsJson: JSON.stringify(match.reasons) })))
     }
   })
-  return { ok: true as const, batchId, rowCount: parsed.rows.length }
+  return { ok: true as const, batchId, rowCount: parsed.rows.length, blocked, pending, ready }
 }
 
 export async function getEppImportBatch(batchId: string) {

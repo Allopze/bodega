@@ -9,6 +9,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { UsersThree, CheckCircle, PauseCircle, Buildings } from "@phosphor-icons/react/dist/ssr"
+import { WorkerActions } from "./worker-actions"
 import { WorkerList } from "./worker-list"
 
 export const metadata: Metadata = { title: "Trabajadores" }
@@ -51,6 +52,7 @@ export default async function TrabajadoresPage() {
             { label: "Trabajadores" },
           ]} />
         }
+        actions={<WorkerActions worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))} />}
       />
       {allWorkers.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <WorkerList

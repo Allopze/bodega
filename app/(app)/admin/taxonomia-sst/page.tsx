@@ -7,6 +7,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { listDocumentCategories } from "@/lib/services/prevention-documents/taxonomy"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { TaxonomyActions } from "./taxonomy-actions"
 import { TaxonomyView } from "./taxonomy-list"
 
 export const metadata: Metadata = { title: "Taxonomía documental SST" }
@@ -43,6 +44,7 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
           { label: "Administración", href: "/admin" },
           { label: "Taxonomía documental SST" },
         ]}
+        actions={<TaxonomyActions categorySlug={activeSlug} />}
       />
       <TaxonomyView
         categories={categories.map((c) => ({

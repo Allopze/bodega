@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { listPdtpAdminCatalogs, listRoleSlugs } from "@/lib/services/pdtp/admin-catalogs"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { PdtpActions } from "./pdtp-actions"
 import { CatalogTabs } from "./catalog-tabs"
 
 export const metadata: Metadata = { title: "Catálogos PDTP" }
@@ -30,6 +31,7 @@ export default async function PdtpCatalogsPage() {
           { label: "Administración", href: "/admin" },
           { label: "Catálogos PDTP" },
         ]}
+        actions={<PdtpActions programs={programs.map((p) => ({ id: p.id, year: p.year, version: p.version, status: p.status, title: p.title ?? p.id }))} roleOptions={roleOptions} />}
       />
       <CatalogTabs
         roleOptions={roleOptions}

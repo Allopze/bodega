@@ -7,6 +7,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { VehicleActions } from "./vehicle-actions"
 import { VehicleCatalogTable } from "./vehicle-table"
 
 export async function FuelVehiclesCatalogPage() {
@@ -41,6 +42,7 @@ export async function FuelVehiclesCatalogPage() {
           { label: "Catálogos de flota", href: "/admin/flota-catalogos" },
           { label: "Vehículos" },
         ]} />}
+        actions={<VehicleActions worksites={worksitesList.map((w) => ({ id: w.id, name: w.name }))} users={usersList.map((u) => ({ id: u.id, name: u.name }))} />}
       />
       <VehicleCatalogTable
         vehicles={vehicles.map((v) => ({ ...v, worksiteName: v.worksite?.name ?? null, responsibleName: v.responsibleUser?.name ?? null }))}

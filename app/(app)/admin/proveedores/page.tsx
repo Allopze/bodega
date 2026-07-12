@@ -7,6 +7,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { Storefront, CheckCircle, PauseCircle, Receipt } from "@phosphor-icons/react/dist/ssr"
 import { SupplierList } from "./supplier-list"
+import { SupplierActions } from "./supplier-actions"
 
 export const metadata: Metadata = { title: "Proveedores" }
 
@@ -35,6 +36,7 @@ export default async function ProveedoresPage() {
           { label: "Administración", href: "/admin" },
           { label: "Proveedores" },
         ]}
+        actions={<SupplierActions />}
       />
       {allSuppliers.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <SupplierList suppliers={allSuppliers.map((s) => ({

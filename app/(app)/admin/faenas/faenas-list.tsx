@@ -1,13 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { Plus } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorksiteForm } from "./worksite-form"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleWorksiteActive } from "./actions"
 import { COLUMNS as WS_COLUMNS, CONTRACT } from "./catalog-contract"
@@ -32,7 +30,7 @@ export function FaenasList({
 }) {
   const {
     sheetOpen, editRow: editWs,
-    openCreate: openNewWs, openEdit: openEditWs, closeSheet,
+    openEdit: openEditWs, closeSheet,
     toggleAction: wsToggleAction,
   } = useCatalogSheet<WorksiteRow>(toggleWorksiteActive)
 
@@ -48,16 +46,6 @@ export function FaenasList({
 
         emptyTitle="Sin faenas"
         emptyDescription={canCreateWorksites ? "Crea la primera faena para comenzar." : "No hay faenas dentro de tu alcance."}
-        emptyAction={canCreateWorksites ? <Button size="sm" onClick={openNewWs}><Plus size={14} />Nueva faena</Button> : undefined}
-        actions={
-          canCreateWorksites
-            ? (
-                <Button size="sm" onClick={openNewWs}>
-                  <Plus size={14} />Nueva faena
-                </Button>
-              )
-            : undefined
-        }
         renderMobileCard={(row) => {
           const ws = row as unknown as WorksiteRow
           return (

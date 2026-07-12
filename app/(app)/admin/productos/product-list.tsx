@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "@/lib/toast"
-import { Plus, PencilSimple, Tag, UploadSimple, Warning, DownloadSimple } from "@phosphor-icons/react"
+import { Plus, PencilSimple, Tag, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
@@ -15,10 +15,7 @@ import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { formatCLP } from "@/lib/utils"
 import { toggleProductActive, getProductForEdit, bulkToggleProductActiveAction } from "./actions"
-import { ProductImportPanel } from "./product-import-panel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
-import { importProductsFromXlsx } from "./actions"
 import { getProductWarnings, getFamilyWarnings, type ProductAttributeSummary } from "./product-list.helpers"
 import type { AttributeTemplateOption, ProductUnitOption } from "./product-form.types"
 import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
@@ -70,8 +67,6 @@ export function ProductList({ products, categories, allSuppliers, units, templat
   recentBatches?: RecentBatch[]
 }) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
-  const [importSheetOpen, setImportSheetOpen] = React.useState(false)
-  const [catalogImportOpen, setCatalogImportOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<CategoryForEdit | null>(null)
   const { toggleAction } = useCatalogSheet<ProductRow>(toggleProductActive)
 
@@ -156,12 +151,6 @@ export function ProductList({ products, categories, allSuppliers, units, templat
   function familyWarningsFor(family: ProductFamilyRow) {
     const cat = categoriesById.get(family.variants[0]?.categoryId ?? "")
     return getFamilyWarnings(family.variants, cat)
-  }
-
-  function openNewProduct() {
-    setEditProductFull(null)
-    setProductFormKey((key) => key + 1)
-    setProductSheetOpen(true)
   }
 
   function openEditProduct(id: string) {
@@ -348,27 +337,6 @@ export function ProductList({ products, categories, allSuppliers, units, templat
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVariantByFamily, loadingEditId, selectedIds])
 
-  const toolbar = (
-    <div className="flex items-center gap-2">
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a
-        href="/api/admin/catalogos/export?tipo=productos"
-        className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
-      >
-        <DownloadSimple size={14} />Exportar XLSX
-      </a>
-      <Button size="sm" variant="secondary" onClick={() => setImportSheetOpen(true)}>
-        <UploadSimple size={14} />Importar EPP
-      </Button>
-      <Button size="sm" variant="secondary" onClick={() => setCatalogImportOpen(true)}>
-        <UploadSimple size={14} />Importar catálogo
-      </Button>
-      <Button size="sm" onClick={openNewProduct}>
-        <Plus size={14} />Nuevo producto
-      </Button>
-    </div>
-  )
-
   return (
     <>
       <div className="flex items-center gap-2 mb-1">
@@ -397,7 +365,6 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               <span className="ml-1.5 text-xs text-[var(--color-text-subtle)]">{inactiveFamilies.length}</span>
             </TabsTrigger>
           </TabsList>
-          {toolbar}
         </div>
 
         <div className="flex items-center gap-3 mb-3">
@@ -460,11 +427,6 @@ export function ProductList({ products, categories, allSuppliers, units, templat
             pageSize={25}
             emptyTitle="Sin productos activos"
             emptyDescription="No hay productos activos en el catálogo."
-            emptyAction={
-              <Button size="sm" onClick={openNewProduct}>
-                <Plus size={14} />Nuevo producto
-              </Button>
-            }
             renderRow={renderRow}
             renderMobileCard={renderMobileCard}
           />
@@ -581,21 +543,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         editCategory={editCategory}
       />
 
-      <ProductImportPanel
-        open={importSheetOpen}
-        onClose={() => setImportSheetOpen(false)}
-      />
-
-      <CatalogImportPanel
-        open={catalogImportOpen}
-        onClose={() => setCatalogImportOpen(false)}
-        title="Importar productos desde XLSX"
-        description="Importa productos exportados desde el catálogo. La columna ID determina si se crea (sin ID) o actualiza (con ID)."
-        action={importProductsFromXlsx}
-        helperText="Usa el botón Exportar XLSX para obtener la plantilla con los datos actuales."
-      />
-
-        <ProductForm
+      <ProductForm
         key={`${editProductFull?.id ?? "nuevo"}-${productFormKey}`}
         open={productSheetOpen}
         onClose={() => {

@@ -46,6 +46,8 @@ describe("registerUser — hardening (M1)", () => {
     await inMemoryDb.delete(schema.worksiteUsers)
     await inMemoryDb.delete(schema.userRoles)
     await inMemoryDb.delete(schema.userInvitations)
+    await inMemoryDb.delete(schema.workers)
+    await inMemoryDb.delete(schema.worksites)
     await inMemoryDb.delete(schema.rolePermissions)
     await inMemoryDb.delete(schema.users)
     await inMemoryDb.delete(schema.roles)
@@ -116,6 +118,41 @@ describe("registerUser — hardening (M1)", () => {
     const [user] = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "invitado@chome.cl"))
     const assigned = await inMemoryDb.select().from(schema.userRoles).where(eq(schema.userRoles.userId, user!.id))
     expect(assigned.map((r) => r.roleId)).toEqual(["rol-sec"])
+  })
+
+  it("associates the invited account with its selected worker", async () => {
+    await seedExistingUser()
+    await inMemoryDb.insert(schema.roles).values({ id: "rol-worker", name: "trabajador", label: "Trabajador" })
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-1", name: "Faena Norte", code: "NORTE" })
+    await inMemoryDb.insert(schema.workers).values({
+      id: "worker-1",
+      firstName: "María",
+      lastName: "Pérez",
+      worksiteId: "ws-1",
+      isActive: true,
+    })
+    const token = "invitacion-trabajadora-123"
+    await inMemoryDb.insert(schema.userInvitations).values({
+      id: "inv-worker-1",
+      email: "maria@chome.cl",
+      workerId: "worker-1",
+      tokenHash: hashInvitationToken(token),
+      roleIdsJson: JSON.stringify(["rol-worker"]),
+      worksiteAssignmentsJson: JSON.stringify([{ worksiteId: "ws-1", isPrimary: true }]),
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    })
+
+    const res = await registerUser(INITIAL, form({
+      name: "María Pérez",
+      email: "maria@chome.cl",
+      password: "segura123",
+      confirmPassword: "segura123",
+      token,
+    }))
+
+    expect(res.ok).toBe(true)
+    const [user] = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "maria@chome.cl"))
+    expect(user?.workerId).toBe("worker-1")
   })
 
   it("rejects a cancelled invitation token", async () => {
