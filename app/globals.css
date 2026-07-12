@@ -248,9 +248,22 @@ body {
 
 /* ─── Sonner: entry, progress bar, exit ────────────────────────── */
 
-/* Container clipping ensures the progress bar respects border-radius */
+/* Keep the toast surface clipped, but keep the close control inside the
+ * surface. Sonner's default close control is intentionally translated
+ * outside the top-left corner, which collides with the status icon here. */
 [data-sonner-toast] {
   overflow: clip;
+  box-sizing: border-box;
+  padding-right: 40px;
+}
+
+/* The close action must not compete with the status icon or be clipped at
+ * the edge of the toast. This also gives it a stable hit target. */
+[data-sonner-toast][data-styled="true"] [data-close-button] {
+  left: auto;
+  right: 8px;
+  top: 8px;
+  transform: none;
 }
 
 /* ── Entry: fade-in + slide-down ── */
