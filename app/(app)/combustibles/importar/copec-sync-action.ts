@@ -83,7 +83,7 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
 }
 
 export async function runCopecSyncPeriodAction(period: { from: string; to: string }): Promise<
-  | { ok: true; imported: number; pending: number; unavailable: string[] }
+  | { ok: true; imported: number; pending: number; unavailable: string[]; reports: number }
   | { ok: false; message: string }
 > {
   try {
@@ -102,7 +102,7 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
     // La acción manual usa al operador autenticado. El importador configurado
     // queda reservado para el cron, que no tiene sesión de usuario.
     const result = await syncCopecReportPeriod(parsedPeriod.data, session.user.id)
-    return { ok: true, imported: result.imported, pending: result.pending, unavailable: result.unavailable }
+    return { ok: true, imported: result.imported, pending: result.pending, unavailable: result.unavailable, reports: result.reports.length }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No fue posible sincronizar Copec" }
   }

@@ -51,18 +51,42 @@ function dateForCopec(value: string): string {
   return `${day}/${month}/${year}`
 }
 
+/** Rellena un RadDatePicker y confirma con Enter. Sin el Enter, "Fecha Fin"
+ * descarta el valor tras el postback de "Fecha Inicio" y la búsqueda queda sin
+ * fecha final. */
+async function fillDate(page: Page, selector: string, value: string) {
+  const input = page.locator(selector)
+  await input.click()
+  await input.fill(dateForCopec(value))
+  await input.press("Enter")
+  await page.waitForLoadState("networkidle").catch(() => {})
+}
+
 async function downloadReportFromPage(page: Page, request: CopecReportRequest): Promise<CopecDownloadedReport> {
   const card = page.locator('input[id$="RcbxTipoProducto_Input"]')
   await card.click()
   const option = page.getByText(request.cardType, { exact: true }).last()
   if (await option.count()) await option.click()
 
-  await page.locator('input[id$="FechaInicioPatente_dateInput"]').fill(dateForCopec(request.from))
-  await page.locator('input[id$="FechaFinPatente_dateInput"]').fill(dateForCopec(request.to))
+  await fillDate(page, 'input[id$="FechaInicioPatente_dateInput"]', request.from)
+  await fillDate(page, 'input[id$="FechaFinPatente_dateInput"]', request.to)
+
+  // "Buscar" solo renderiza la grilla en pantalla; el XLSX se obtiene del botón
+  // "Descargar Resumen". Ese botón únicamente aparece cuando hay resultados, así
+  // que su ausencia es el caso recuperable de "período sin archivo".
+  await page.locator("#Cph1_LinkBtnBuscar").click({ noWaitAfter: true })
+  await page.waitForLoadState("networkidle").catch(() => {})
+
+  const exportButton = page.locator("#Cph1_LinkBtnExportarXls")
+  try {
+    await exportButton.waitFor({ state: "visible", timeout: 30_000 })
+  } catch {
+    throw new CopecReportUnavailableError(request.from, request.to, request.cardType)
+  }
 
   // Start listening before the click so a fast response cannot race the event.
   const downloadPromise = page.waitForEvent("download", { timeout: 30_000 }).catch(() => null)
-  await page.locator("#Cph1_LinkBtnBuscar").click({ noWaitAfter: true })
+  await exportButton.click({ noWaitAfter: true })
   const download = await downloadPromise
   if (!download) throw new CopecReportUnavailableError(request.from, request.to, request.cardType)
 

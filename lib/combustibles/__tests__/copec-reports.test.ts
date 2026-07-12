@@ -34,9 +34,10 @@ describe("downloadCopecReports", () => {
     const password = { fill: vi.fn() }
     const login = { click: vi.fn() }
     const card = { click: vi.fn() }
-    const dateStart = { fill: vi.fn() }
-    const dateEnd = { fill: vi.fn() }
+    const dateStart = { click: vi.fn(), fill: vi.fn(), press: vi.fn() }
+    const dateEnd = { click: vi.fn(), fill: vi.fn(), press: vi.fn() }
     const search = { click: vi.fn() }
+    const exportBtn = { waitFor: vi.fn(), click: vi.fn() }
     const option = { count: vi.fn().mockResolvedValue(1), click: vi.fn() }
     const downloads = [reportDownload("tct.xlsx", "tct"), reportDownload("tae.xlsx", "tae")]
 
@@ -44,6 +45,7 @@ describe("downloadCopecReports", () => {
       setDefaultTimeout: vi.fn(),
       goto: vi.fn(),
       waitForURL: vi.fn(),
+      waitForLoadState: vi.fn().mockResolvedValue(undefined),
       waitForEvent: vi.fn()
         .mockResolvedValueOnce(downloads[0])
         .mockResolvedValueOnce(downloads[1]),
@@ -57,6 +59,7 @@ describe("downloadCopecReports", () => {
         if (selector === 'input[id$="FechaInicioPatente_dateInput"]') return dateStart
         if (selector === 'input[id$="FechaFinPatente_dateInput"]') return dateEnd
         if (selector === "#Cph1_LinkBtnBuscar") return search
+        if (selector === "#Cph1_LinkBtnExportarXls") return exportBtn
         throw new Error(`Selector inesperado: ${selector}`)
       }),
       getByText: vi.fn(() => ({ last: () => option })),
@@ -73,6 +76,7 @@ describe("downloadCopecReports", () => {
     expect(password.fill).toHaveBeenCalledOnce()
     expect(login.click).toHaveBeenCalledOnce()
     expect(search.click).toHaveBeenCalledTimes(2)
+    expect(exportBtn.click).toHaveBeenCalledTimes(2)
     expect(result).toEqual([
       expect.objectContaining({ cardType: "TCT", unavailable: false, report: expect.objectContaining({ fileName: "tct.xlsx" }) }),
       expect.objectContaining({ cardType: "TAE", unavailable: false, report: expect.objectContaining({ fileName: "tae.xlsx" }) }),
