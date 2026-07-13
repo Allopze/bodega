@@ -84,6 +84,28 @@ describe("parseConsumptionExcel", () => {
     expect(result.rows[0]!.patente).toBe("XY1234")
   })
 
+  it("aggregates the Copec detail export by plate", async () => {
+    const buffer = await createTestExcel([
+      { "Producto": "Diésel", "Tarjeta": "1001", "Patente": "AA-BB11", "Fecha Transacción": "01-01-2026", "Volumen": "10,5", "Monto": "10.000", "Rendimiento (Kms. por Litro)": "4,0" },
+      { "Producto": "Diésel", "Tarjeta": "1002", "Patente": "AA-BB11", "Fecha Transacción": "10-01-2026", "Volumen": "20,5", "Monto": "20.000", "Rendimiento (Kms. por Litro)": "6,0" },
+      { "Producto": "Diésel", "Tarjeta": "2001", "Patente": "CC-DD22", "Fecha Transacción": "12-01-2026", "Volumen": "8", "Monto": "8.000", "Rendimiento (Kms. por Litro)": "5,0" },
+    ])
+
+    const result = await parseConsumptionExcel(buffer)
+
+    expect(result.errors).toEqual([])
+    expect(result.duplicates).toEqual([])
+    expect(result.rows).toHaveLength(2)
+    expect(result.rows[0]).toMatchObject({
+      patente: "AA-BB11",
+      numeroTarjetas: 2,
+      numeroTransacciones: 2,
+      cantidadUnidad: 31,
+      monto: 30000,
+      rendimientoPromedio: 5.32,
+    })
+  })
+
   it("returns a friendly error for a corrupt file", async () => {
     const buffer = new TextEncoder().encode("not an excel file").buffer
     const result = await parseConsumptionExcel(buffer)

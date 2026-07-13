@@ -89,15 +89,16 @@ describe("findWorkerByRutAction", () => {
     const res = await findWorkerByRutAction("12345678-5")
     expect(res.ok).toBe(true)
     // PII minimizado: nombre enmascarado (primer nombre + inicial apellido),
-    // sin RUT, sin cargo, sin nombre de faena. Solo id y worksiteId, que el
-    // flujo necesita para preseleccionar la faena.
+    // sin RUT, sin cargo, sin nombre de faena (el cliente lo infiere de la
+    // lista pública de worksites usando worksiteId — ver resolvedWorksiteName
+    // en ppa-form.hooks.ts). Solo id y worksiteId, que el flujo necesita
+    // para preseleccionar la faena.
     expect(res.worker).toEqual({
       id: "work-1",
       name: "Juan P.",
       rut: null,
       position: null,
       worksiteId: "ws-1",
-      worksiteName: "",
     })
   })
 })

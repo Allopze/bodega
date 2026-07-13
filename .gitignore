@@ -65,3 +65,7 @@ next-env.d.ts
 
 /releases
 /Registros SG-SST
+
+# tesseract.js descarga el modelo de idioma en el cwd en runtime (~5MB) si no
+# se configura langPath/cachePath — artefacto regenerable, no es código fuente
+*.traineddata

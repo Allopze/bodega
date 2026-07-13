@@ -8,6 +8,7 @@ const FLEET_DOCUMENT_PREFIX = "storage/flota/"
 const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
+const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
 
 /**
  * Resolves the base storage directory.
@@ -240,4 +241,24 @@ export function resolveFuelImportFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolveFuelImportsDir(), storageName)
+}
+
+/* ── Evidencia de cargas TAE ──────────────────────────────────────────────── */
+
+export function resolveFuelTaeEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "fuel-tae")
+}
+
+export function createFuelTaeEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid TAE evidence storage name")
+  }
+  return `${FUEL_TAE_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolveFuelTaeEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(FUEL_TAE_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(FUEL_TAE_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveFuelTaeEvidenceDir(), storageName)
 }

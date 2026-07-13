@@ -38,6 +38,13 @@ export async function createPpaSubmission(
 
   let manualIdentificacion = true
   let workerId: string | null = null
+  // `data.workerName` es el nombre enmascarado devuelto por la búsqueda pública
+  // por RUT (minimización de PII en la respuesta de red — ver findWorkerByRutAction),
+  // no el nombre real del trabajador. Cuando hay workerId válido, el registro
+  // permanente debe usar el nombre real ya verificado en el catálogo, no el
+  // que mandó el cliente — si no, el PPA queda archivado como "Trabajador E."
+  // en vez de "Trabajador E2E".
+  let workerName = data.workerName
   if (data.workerId) {
     const worker = await db.query.workers.findFirst({
       where: eq(workers.id, data.workerId),
@@ -46,6 +53,7 @@ export async function createPpaSubmission(
     if (worker && worker.worksiteId === data.worksiteId) {
       workerId = worker.id
       manualIdentificacion = false
+      workerName = `${worker.firstName} ${worker.lastName}`.trim()
     }
   }
 
@@ -71,7 +79,7 @@ export async function createPpaSubmission(
     id,
     worksiteId:           data.worksiteId,
     workerId,
-    workerName:           data.workerName,
+    workerName,
     workerRut:            data.workerRut || null,
     workerCompany:        data.workerCompany || null,
     manualIdentificacion,
@@ -103,7 +111,7 @@ export async function createPpaSubmission(
           await notifyManyUser(reviewerIds, {
             type:       "ppa_stopped",
             title:      "PPA detenido — requiere revisión",
-            body:       `${data.workerName} detuvo un trabajo en ${worksite.name}. Revisa y registra la acción correctiva.`,
+            body:       `${workerName} detuvo un trabajo en ${worksite.name}. Revisa y registra la acción correctiva.`,
             entityType: "ppa",
             entityId:   id,
             entityHref: `/prevencion/ppa/${id}`,

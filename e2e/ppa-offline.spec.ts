@@ -11,45 +11,8 @@
  * Usa las fixtures de e2e/setup-db.ts (Faena E2E + trabajador 11111111-1).
  * No requiere login — el formulario PPA es público.
  */
-import { expect, test, type Page } from "@playwright/test"
-import { selectRadixById } from "./helpers"
-
-const FAENA = "Faena E2E"
-
-/* ── Helpers ────────────────────────────────────────────────────────────── */
-
-/**
- * Fill the PPA form using manual identification (no RUT verification).
- * This is the only reliable path for offline tests since the server
- * worker lookup requires network.
- */
-async function fillManualPpaForm(page: Page) {
-  // Switch to manual identification
-  await page.getByRole("button", { name: "No estoy en la lista" }).click()
-
-  // Select faena from dropdown
-  await page.locator("#worksite").click()
-  await page.getByRole("option", { name: FAENA }).first().click()
-
-  // Fill name
-  await page.locator("#wname").fill("Trabajador Offline E2E")
-
-  // Select work type
-  await selectRadixById(page, "tipo", "Conductor Batea")
-
-  // No planned change
-  await page.getByTestId("cambio-no").click()
-
-  // No uncontrolled hazard
-  await page.getByTestId("peligro-no").click()
-
-  // Check required controls
-  await page.getByRole("checkbox", { name: "Elementos de protección personal" }).check()
-  await page.getByRole("checkbox", { name: "Herramientas adecuadas y en buen estado" }).check()
-
-  // Safe to start
-  await page.getByTestId("seguro-si").click()
-}
+import { expect, test } from "@playwright/test"
+import { fillManualPpaForm } from "./helpers"
 
 /* ── Tests ──────────────────────────────────────────────────────────────── */
 

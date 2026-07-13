@@ -17,7 +17,7 @@ interface UsePpaFormReturn {
   rutSearch: string
   setRutSearch: (v: string) => void
   searchingWorker: boolean
-  matchedWorker: { id: string; name: string; rut: string | null; position: string | null; worksiteName: string } | null
+  matchedWorker: { id: string; name: string; rut: string | null; position: string | null } | null
   manual: boolean
   workerName: string
   setWorkerName: (v: string) => void
@@ -46,7 +46,7 @@ interface UsePpaFormReturn {
   setConfirmOpen: (v: boolean) => void
   stopReasons: PpaStopReason[]
   pending: boolean
-  paramWorksiteName: string
+  resolvedWorksiteName: string
   online: boolean
   savedOffline: boolean
   err: (k: string) => string | undefined
@@ -85,9 +85,12 @@ export function usePpaForm({
   const [stopReasons, setStopReasons] = React.useState<PpaStopReason[]>([])
   const [savedOffline, setSavedOffline] = React.useState(false)
 
-  const paramWorksiteName = hasFaenaParam
-    ? worksites.find((w) => w.id === worksiteId)?.name ?? ""
-    : ""
+  // La acción pública de verificación por RUT no devuelve el nombre de la
+  // faena (minimización de PII — ver findWorkerByRutAction), solo su id.
+  // El nombre se resuelve acá contra `worksites` (ya público, es la misma
+  // lista que alimenta el <Select> del modo manual) para poder mostrar
+  // confirmación tanto si la faena vino de ?faena= como si se derivó del RUT.
+  const resolvedWorksiteName = worksites.find((w) => w.id === worksiteId)?.name ?? ""
 
   function toggleControl(value: string) {
     setControles((prev) =>
@@ -228,7 +231,7 @@ export function usePpaForm({
     comp, setComp,
     errors, confirmOpen, setConfirmOpen,
     stopReasons, pending,
-    paramWorksiteName, online,
+    resolvedWorksiteName, online,
     savedOffline,
     err,
     handleVerifyRut: identity.handleVerifyRut,

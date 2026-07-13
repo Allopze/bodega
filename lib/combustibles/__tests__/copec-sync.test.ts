@@ -40,15 +40,21 @@ vi.mock("@/lib/combustibles/consumption-import", () => ({
 const { buildCopecSyncPeriods, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod } = await import("../copec-sync")
 
 describe("buildCopecSyncPeriods", () => {
-  it("divides an initial historical import into Copec-sized contiguous periods", () => {
-    expect(buildCopecSyncPeriods("2026-01-01", "2026-02-04", 31)).toEqual([
+  it("divides an initial historical import into closed calendar months", () => {
+    expect(buildCopecSyncPeriods("2026-01-01", "2026-02-28")).toEqual([
       { from: "2026-01-01", to: "2026-01-31" },
-      { from: "2026-02-01", to: "2026-02-04" },
+      { from: "2026-02-01", to: "2026-02-28" },
+    ])
+  })
+
+  it("does not request a partial open month", () => {
+    expect(buildCopecSyncPeriods("2026-01-01", "2026-02-04")).toEqual([
+      { from: "2026-01-01", to: "2026-01-31" },
     ])
   })
 
   it("does not request a period when the cursor is already after the target date", () => {
-    expect(buildCopecSyncPeriods("2026-02-05", "2026-02-04", 31)).toEqual([])
+    expect(buildCopecSyncPeriods("2026-02-05", "2026-02-04")).toEqual([])
   })
 })
 
@@ -71,16 +77,16 @@ describe("syncCopecReportPeriod", () => {
 
   it("does NOT advance the cursor when Copec delivered no file at all (portal likely broken)", async () => {
     mockDownloadCopecReports.mockResolvedValue([
-      { cardType: "TCT", unavailable: true },
-      { cardType: "TAE", unavailable: true },
+      { product: "diesel", unavailable: true },
+      { product: "bluemax", unavailable: true },
     ])
 
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" })
 
-    expect(result).toMatchObject({ imported: 0, unavailable: ["TCT", "TAE"], reports: [] })
+    expect(result).toMatchObject({ imported: 0, unavailable: ["Diesel", "BlueMax"], reports: [] })
     expect(mockDownloadCopecReports).toHaveBeenCalledWith([
-      { cardType: "TCT", from: "2026-02-01", to: "2026-02-28" },
-      { cardType: "TAE", from: "2026-02-01", to: "2026-02-28" },
+      { product: "diesel", from: "2026-02-01", to: "2026-02-28" },
+      { product: "bluemax", from: "2026-02-01", to: "2026-02-28" },
     ])
     // El cursor se queda en el inicio del período (no avanza a 2026-03-01), para
     // reintentar en vez de saltarse datos por un portal caído.
@@ -92,8 +98,8 @@ describe("syncCopecReportPeriod", () => {
   it("uses the authenticated operator for a manual sync without requiring cron configuration", async () => {
     vi.unstubAllEnvs()
     mockDownloadCopecReports.mockResolvedValue([
-      { cardType: "TCT", unavailable: true },
-      { cardType: "TAE", unavailable: true },
+      { product: "diesel", unavailable: true },
+      { product: "bluemax", unavailable: true },
     ])
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
@@ -105,8 +111,8 @@ describe("syncCopecReportPeriod", () => {
   it("re-imports only the newly-linked plates into an existing batch (no duplicates)", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { cardType: "TCT", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct.xlsx" } },
-      { cardType: "TAE", unavailable: true },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "bluemax", unavailable: true },
     ])
     // El archivo trae AAA (ya importada antes) y BBB (recién vinculada a un vehículo).
     mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("BBB")], errors: [], duplicates: [] })
@@ -153,14 +159,14 @@ describe("Copec synchronization start date", () => {
     const options = await getCopecSyncStartOptions()
 
     expect(options).toMatchObject({
-      currentStart: "2020-02-01",
+      currentStart: "2026-07-01",
       minimumStart: "2026-07-01",
       latestImportedUntil: "2026-06-30",
     })
   })
 
   it("rejects a configured start that would overlap an imported period", async () => {
-    await expect(setCopecSyncStartDate("2026-06-30", "2020-02-01"))
+    await expect(setCopecSyncStartDate("2026-06-01", "2020-02-01"))
       .rejects.toThrow("posterior al último período importado")
     expect(mockSaveState).not.toHaveBeenCalled()
   })

@@ -73,7 +73,7 @@ export async function findWorkerByRutAction(
   rut: string,
 ): Promise<{
   ok: boolean
-  worker?: { id: string; name: string; rut: null; position: null; worksiteId: string; worksiteName: "" }
+  worker?: { id: string; name: string; rut: null; position: null; worksiteId: string }
   message?: string
 }> {
   if (!rut) return { ok: false, message: "Ingresa tu RUT." }
@@ -106,7 +106,9 @@ export async function findWorkerByRutAction(
     }
     // ponytail: minimizar PII expuesto en acción pública - solo primer nombre + inicial
     // apellido para identificación básica. No devolver RUT (ya lo tiene quien busca),
-    // cargo completo, ni nombre de faena (se infiere del select).
+    // cargo completo, ni nombre de faena (el cliente lo infiere de `worksites`,
+    // la misma lista pública que alimenta el <Select> del modo manual, usando
+    // el worksiteId de abajo — ver resolvedWorksiteName en ppa-form.hooks.ts).
     const maskedName = `${worker.firstName} ${worker.lastName?.[0]}.`
 
     // Registrar éxito para telemetría: permite detectar enumeración masiva
@@ -121,7 +123,6 @@ export async function findWorkerByRutAction(
         rut: null, // No devolver RUT en respuesta pública
         position: null, // No devolver cargo en respuesta pública
         worksiteId: worker.worksiteId,
-        worksiteName: "", // No devolver nombre de faena en respuesta pública
       },
     }
   } catch (e) {

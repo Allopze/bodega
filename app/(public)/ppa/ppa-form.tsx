@@ -50,7 +50,7 @@ function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void
     comp, setComp,
     confirmOpen, setConfirmOpen,
     stopReasons, pending,
-    paramWorksiteName, online, savedOffline,
+    resolvedWorksiteName, online, savedOffline,
     err,
     handleVerifyRut, onSubmit, toggleManual, doSubmit, resetIdentity,
   } = usePpaForm(props)
@@ -73,10 +73,10 @@ function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void
 
         {!manual ? (
           <div className="flex flex-col gap-4">
-            {hasFaenaParam && paramWorksiteName && (
+            {hasFaenaParam && resolvedWorksiteName && (
               <Field label="Faena / lugar de trabajo">
                 <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-3 text-base text-[var(--color-text-muted)]">
-                  {paramWorksiteName}
+                  {resolvedWorksiteName}
                 </div>
               </Field>
             )}
@@ -110,8 +110,8 @@ function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void
                   <CheckCircle size={18} weight="fill" className="shrink-0" />
                   <span>Verificado: <strong>{matchedWorker.name}</strong></span>
                 </div>
-                {!hasFaenaParam && matchedWorker.worksiteName && (
-                  <span className="pl-7 text-xs">Faena: <strong>{matchedWorker.worksiteName}</strong></span>
+                {!hasFaenaParam && resolvedWorksiteName && (
+                  <span className="pl-7 text-xs">Faena: <strong>{resolvedWorksiteName}</strong></span>
                 )}
               </div>
             )}

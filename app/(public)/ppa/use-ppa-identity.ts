@@ -9,7 +9,6 @@ export interface MatchedWorker {
   name: string
   rut: string | null
   position: string | null
-  worksiteName: string
 }
 
 interface UsePpaIdentityOptions {
@@ -66,7 +65,6 @@ export function usePpaIdentity({
           name: res.worker.name,
           rut: res.worker.rut,
           position: res.worker.position,
-          worksiteName: res.worker.worksiteName,
         })
         setWorkerId(res.worker.id)
         if (!hasFaenaParam) onWorksiteChange(res.worker.worksiteId)

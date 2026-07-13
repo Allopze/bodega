@@ -29,6 +29,8 @@ const MAGIC: Array<{ mime: string; bytes: number[] }> = [
 
 /** MIME types accepted by the application per upload context. */
 export const MimeType = {
+  /** Evidencia de terreno TAE */
+  IMAGE: new Set(["image/jpeg", "image/png"]),
   /** Entregas: comprobantes de entrega */
   PROOF: new Set(["application/pdf", "image/jpeg", "image/png"]),
   /** Compras: facturas (PDF, images, XML) */
