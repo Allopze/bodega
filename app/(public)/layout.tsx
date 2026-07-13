@@ -1,18 +1,10 @@
 import type { Metadata, Viewport } from "next"
 import { Toaster } from "sonner"
-import { PwaRegister } from "@/components/pwa/pwa-register"
 
 export const metadata: Metadata = {
-  title: "PPA Digital — Para, Piensa y Actúa",
-  description:
-    "Evaluación preventiva antes de iniciar el trabajo. Accesible incluso sin conexión a internet.",
+  title: "Plataforma Chome",
+  description: "Formularios públicos operacionales de Plataforma Chome.",
   robots: { index: false, follow: false },
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "PPA Digital",
-  },
 }
 
 export const viewport: Viewport = {
@@ -35,7 +27,6 @@ export const viewport: Viewport = {
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-[var(--color-surface-1)] text-[var(--color-text)]">
-      <PwaRegister />
       {children}
       <Toaster position="top-center" closeButton offset={16} toastOptions={{ duration: 4000 }} />
     </div>

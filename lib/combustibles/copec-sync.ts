@@ -12,11 +12,6 @@ import {
 const STATE_KEY = "combustibles.copec.sync"
 const START_KEY = "COPEC_SYNC_START_DATE"
 const DEFAULT_START = "2020-01-01"
-const DEFAULT_MAX_PERIOD_DAYS = 31
-
-const _maxPeriodDays = Number.isInteger(Number(process.env.COPEC_REPORT_MAX_DAYS)) && Number(process.env.COPEC_REPORT_MAX_DAYS) > 0
-  ? Number(process.env.COPEC_REPORT_MAX_DAYS)
-  : DEFAULT_MAX_PERIOD_DAYS
 
 interface SyncState { cursor: string | null; lastRunAt: string | null; pending: string[]; }
 
@@ -44,14 +39,30 @@ async function saveState(next: SyncState) {
   await db.insert(systemSettings).values({ key: STATE_KEY, value }).onConflictDoUpdate({ target: systemSettings.key, set: { value, updatedAt: new Date().toISOString() } })
 }
 
-function yesterday(): string { const d = new Date(); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10) }
-
 function today(): string { return new Date().toISOString().slice(0, 10) }
 
 function addDays(value: string, days: number): string {
   const date = new Date(`${value}T00:00:00.000Z`)
   date.setUTCDate(date.getUTCDate() + days)
   return date.toISOString().slice(0, 10)
+}
+
+function firstDayOfMonth(value: string): string {
+  return `${value.slice(0, 7)}-01`
+}
+
+function nextMonth(value: string): string {
+  const date = new Date(`${firstDayOfMonth(value)}T00:00:00.000Z`)
+  date.setUTCMonth(date.getUTCMonth() + 1)
+  return date.toISOString().slice(0, 10)
+}
+
+function lastDayOfMonth(value: string): string {
+  return addDays(nextMonth(value), -1)
+}
+
+function lastClosedMonthEnd(): string {
+  return addDays(firstDayOfMonth(today()), -1)
 }
 
 function isValidIsoDate(value: string | null | undefined): value is string {
@@ -83,56 +94,59 @@ async function latestActiveImportUntil(): Promise<string | null> {
  */
 export async function getCopecSyncStartOptions(): Promise<CopecSyncStartOptions> {
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
+  const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
+  const currentStart = firstDayOfMonth(startFrom(current) < minimumStart ? minimumStart : startFrom(current))
   return {
-    currentStart: startFrom(current),
-    minimumStart: latestImportedUntil ? addDays(latestImportedUntil, 1) : DEFAULT_START,
-    maximumStart: today(),
+    currentStart,
+    minimumStart,
+    maximumStart: firstDayOfMonth(today()),
     latestImportedUntil,
   }
 }
 
 export async function setCopecSyncStartDate(startDate: string, expectedStart: string): Promise<CopecSyncStartOptions> {
   if (!isValidIsoDate(startDate)) throw new Error("La fecha de inicio no es válida")
+  if (!startDate.endsWith("-01")) throw new Error("Selecciona el primer día del mes desde el que quieres sincronizar")
 
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
-  if (startFrom(current) !== expectedStart) {
+  const currentStart = firstDayOfMonth(startFrom(current))
+  if (currentStart !== expectedStart) {
     throw new Error("La sincronización cambió mientras ajustabas la fecha. Actualiza la página e inténtalo nuevamente.")
   }
 
-  const minimumStart = latestImportedUntil ? addDays(latestImportedUntil, 1) : DEFAULT_START
-  const maximumStart = today()
+  const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
+  const maximumStart = firstDayOfMonth(today())
   if (startDate < minimumStart) {
     throw new Error(`La fecha debe ser posterior al último período importado (${latestImportedUntil}).`)
   }
   if (startDate > maximumStart) {
-    throw new Error("La importación automática solo puede comenzar hasta hoy.")
+    throw new Error("La importación automática solo puede comenzar hasta el mes actual.")
   }
 
   await saveState({ cursor: startDate, lastRunAt: current.lastRunAt, pending: current.pending })
   return { currentStart: startDate, minimumStart, maximumStart, latestImportedUntil }
 }
 
-function maxPeriodDays(): number {
-  return _maxPeriodDays
-}
-
 export interface CopecSyncPeriod { from: string; to: string }
 
-/** Divide el histórico en el máximo de días que el portal puede descargar. */
-export function buildCopecSyncPeriods(from: string, to: string, maxDays = maxPeriodDays()): CopecSyncPeriod[] {
-  if (from > to) return []
+/** El portal TCT acepta un mes por búsqueda, por eso cada período es un mes calendario. */
+export function buildCopecSyncPeriods(from: string, to: string): CopecSyncPeriod[] {
+  const firstMonth = firstDayOfMonth(from)
+  if (firstMonth > to) return []
   const periods: CopecSyncPeriod[] = []
-  for (let cursor = from; cursor <= to; cursor = addDays(cursor, maxDays)) {
-    const end = addDays(cursor, maxDays - 1)
-    periods.push({ from: cursor, to: end < to ? end : to })
+  for (let cursor = firstMonth; cursor <= to; cursor = nextMonth(cursor)) {
+    const end = lastDayOfMonth(cursor)
+    if (end > to) break
+    periods.push({ from: cursor, to: end })
   }
   return periods
 }
 
 export async function getCopecSyncPlan(): Promise<{ from: string; to: string; periods: CopecSyncPeriod[]; pending: number }> {
-  const current = await state()
-  const from = startFrom(current)
-  const to = yesterday()
+  const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
+  const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
+  const from = firstDayOfMonth(startFrom(current) < minimumStart ? minimumStart : startFrom(current))
+  const to = lastClosedMonthEnd()
   return { from, to, periods: buildCopecSyncPeriods(from, to), pending: current.pending.length }
 }
 
@@ -161,24 +175,19 @@ async function importCopecPeriod(
   let imported = 0
   const reports: string[] = []
   const unavailable: string[] = []
-  // Pedimos TCT y TAE. OJO: en cuentas donde el TAE está asociado a estanques
-  // fijos, el reporte viene agregado por "Asignación" (faena), no por patente —
-  // sin columna Patente, el parser por-patente devuelve 0 filas y ese consumo
-  // (que puede ser millonario) NO queda registrado en ningún lado. No es un bug
-  // del import (no rompe nada), es una feature faltante: rastrear TAE-por-faena
-  // requiere su propio modelo/tabla y sección de dashboard. Decidido dejarlo
-  // documentado hasta que se priorice esa feature.
   const downloads = await downloadCopecReports(
-    (["TCT", "TAE"] as const).map((cardType) => ({ cardType, from, to })),
+    (["diesel", "bluemax"] as const).map((product) => ({ product, from, to })),
   )
   for (const download of downloads) {
-    const { cardType } = download
+    const { product } = download
+    const productLabel = product === "diesel" ? "Diesel" : "BlueMax"
+    const source = `Copec TCT ${productLabel}`
     if (download.unavailable) {
-      unavailable.push(cardType)
+      unavailable.push(productLabel)
       continue
     }
     const { report } = download
-    reports.push(`${cardType}:${report.fileName}`)
+    reports.push(`${productLabel}:${report.fileName}`)
     const hash = createHash("sha256").update(report.buffer).digest("hex")
     const parsed = await parseConsumptionExcel(report.buffer)
     const plates = [...new Set(parsed.rows.map((row) => row.patente))]
@@ -192,14 +201,14 @@ async function importCopecPeriod(
       rows.push(row); groups.set(vehicle.worksiteId, rows)
     }
     const buildRecords = (rows: ParsedConsumptionRow[], batchId: string, worksiteId: string) =>
-      rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: byPlate.get(row.patente)?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: `Copec ${cardType}`, rawRow: row.rawRow }))
+      rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: byPlate.get(row.patente)?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: source, rawRow: row.rawRow }))
 
     for (const [worksiteId, rows] of groups) {
       // Dedup por identidad lógica del período (faena + rango + fuente), NO por
       // hash del archivo: Copec regenera el XLSX en cada descarga (hash distinto
       // siempre), así que deduplicar por hash nunca acertaba y reimportar un
       // período DUPLICABA todo. La identidad lógica es estable entre descargas.
-      const duplicate = await db.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, `Copec ${cardType}`), ne(fuelImportBatches.estado, "revertido")), columns: { id: true } })
+      const duplicate = await db.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")), columns: { id: true } })
       if (duplicate) {
         // El lote ya existe para este (archivo, faena). En vez de saltarlo entero,
         // insertamos solo las patentes que faltaban: típicamente vehículos recién
@@ -230,7 +239,7 @@ async function importCopecPeriod(
       const totals = computeBatchTotals(rows)
       const batchId = nanoid()
       await db.transaction(async (tx) => {
-        await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: `Copec ${cardType}`, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: hash, estado: "importado", totalFilas: totals.totalFilas + parsed.errors.length, filasValidas: totals.totalFilas, filasInvalidas: parsed.errors.length, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización automática Copec" })
+        await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: source, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: hash, estado: "importado", totalFilas: totals.totalFilas + parsed.errors.length, filasValidas: totals.totalFilas, filasInvalidas: parsed.errors.length, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización mensual automática Copec TCT" })
         await tx.insert(fuelConsumptionRecords).values(buildRecords(rows, batchId, worksiteId))
       })
       imported += rows.length
@@ -274,7 +283,7 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
     imported += result.imported
     pending = result.pending
     reports.push(...result.reports)
-    unavailable.push(...result.unavailable.map((cardType) => `${period.from} a ${period.to} (${cardType})`))
+    unavailable.push(...result.unavailable.map((product) => `${period.from} a ${period.to} (${product})`))
     // Un período que no descargó nada indica portal/credenciales rotos. Se corta
     // el barrido y se falla ruidosamente en vez de avanzar el cursor por todo el
     // histórico importando cero (el bug que dejó la sync "al día" con la tabla vacía).

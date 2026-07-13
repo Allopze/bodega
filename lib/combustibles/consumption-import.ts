@@ -37,6 +37,92 @@ export function normalizePlate(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, "")
 }
 
+function normalizedRecord(record: Record<string, unknown>) {
+  const norm = new Map<string, unknown>()
+  for (const [key, value] of Object.entries(record)) norm.set(normKey(key), value)
+  return (...names: string[]): unknown => {
+    for (const name of names) {
+      const value = norm.get(normKey(name))
+      if (value !== null && value !== undefined && value !== "") return value
+    }
+    return null
+  }
+}
+
+function isCopecDetail(records: Record<string, unknown>[]) {
+  return records.some((record) => {
+    const keys = new Set(Object.keys(record).map(normKey))
+    return keys.has(normKey("Fecha Transacción")) && keys.has(normKey("Tarjeta")) && keys.has(normKey("Volumen"))
+  })
+}
+
+function parseCopecDetail(records: Record<string, unknown>[]): ConsumptionImportResult {
+  const errors: ImportError[] = []
+  const groups = new Map<string, {
+    rowIndex: number
+    cards: Set<string>
+    transactions: Record<string, unknown>[]
+    quantity: number
+    amount: number
+    weightedPerformance: number
+    performanceQuantity: number
+  }>()
+
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index]!
+    const rowIndex = index + 2
+    const get = normalizedRecord(record)
+    const patente = normalizePlate(String(get("Patente") ?? ""))
+    if (!patente) {
+      errors.push({ rowIndex, field: "Patente", message: "La patente es requerida" })
+      continue
+    }
+
+    const quantity = parseChileanNumber(get("Volumen", "Cantidad (Unidad)", "Cantidad", "Litros"))
+    const amount = parseChileanNumber(get("Monto ($)", "Monto"))
+    const performance = parseChileanNumber(get("Rendimiento (Kms. por Litro)", "Rendimiento Promedio", "Rendimiento"))
+    if (quantity < 0 || amount < 0 || performance < 0) {
+      errors.push({ rowIndex, field: quantity < 0 ? "Volumen" : amount < 0 ? "Monto ($)" : "Rendimiento", message: "Debe ser ≥ 0" })
+      continue
+    }
+
+    const group = groups.get(patente) ?? {
+      rowIndex,
+      cards: new Set<string>(),
+      transactions: [],
+      quantity: 0,
+      amount: 0,
+      weightedPerformance: 0,
+      performanceQuantity: 0,
+    }
+    const card = String(get("Tarjeta", "N° Tarjeta", "Numero Tarjeta") ?? "").trim()
+    if (card) group.cards.add(card)
+    group.transactions.push(record)
+    group.quantity += quantity
+    group.amount += amount
+    if (performance > 0 && quantity > 0) {
+      group.weightedPerformance += performance * quantity
+      group.performanceQuantity += quantity
+    }
+    groups.set(patente, group)
+  }
+
+  const rows = [...groups.entries()].map(([patente, group]): ParsedConsumptionRow => ({
+    rowIndex: group.rowIndex,
+    patente,
+    numeroTarjetas: group.cards.size,
+    numeroTransacciones: group.transactions.length,
+    cantidadUnidad: Math.round(group.quantity * 10_000) / 10_000,
+    monto: Math.round(group.amount * 100) / 100,
+    rendimientoPromedio: group.performanceQuantity > 0
+      ? Math.round((group.weightedPerformance / group.performanceQuantity) * 100) / 100
+      : 0,
+    rawRow: { detalle: group.transactions },
+  }))
+
+  return { rows, errors, duplicates: [] }
+}
+
 /**
  * Parsea un archivo Excel de consumos por patente. Server-side siempre
  * (nunca se confía en filas parseadas por el cliente) — a diferencia de
@@ -56,6 +142,11 @@ export async function parseConsumptionExcel(fileBuffer: ArrayBuffer | Buffer): P
 
   const records = sheetToRecords(sheet)
 
+  // "Descargar Detalle" trae una fila por transacción. El modelo interno guarda
+  // un consolidado por patente y mes, por eso agregamos tarjetas, transacciones,
+  // litros, monto y rendimiento antes de importar.
+  if (isCopecDetail(records)) return parseCopecDetail(records)
+
   const rows: ParsedConsumptionRow[] = []
   const errors: ImportError[] = []
   const seenPlates = new Set<string>()
@@ -65,15 +156,7 @@ export async function parseConsumptionExcel(fileBuffer: ArrayBuffer | Buffer): P
     const record = records[i]!
     const rowNum = i + 2  // fila 1 = header
 
-    const norm = new Map<string, unknown>()
-    for (const [k, v] of Object.entries(record)) norm.set(normKey(k), v)
-    const get = (...names: string[]): unknown => {
-      for (const name of names) {
-        const v = norm.get(normKey(name))
-        if (v !== null && v !== undefined && v !== "") return v
-      }
-      return null
-    }
+    const get = normalizedRecord(record)
 
     // Saltar filas completamente vacías
     if (!get("Patente") && !get("Monto ($)", "Monto")) continue

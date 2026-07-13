@@ -20,6 +20,30 @@ export interface RateLimitOptions {
   lockMs?: number
 }
 
+/** Consume una cuota de ventana fija. A diferencia de `recordFailure`, cuenta
+ * también operaciones exitosas y sirve para limitar endpoints públicos caros. */
+export async function consumeFixedWindowLimit(
+  key: string,
+  { maxAttempts, lockMs }: Required<RateLimitOptions>,
+): Promise<{ allowed: boolean; remaining: number }> {
+  const now = Date.now()
+  const cutoff = new Date(now - lockMs).toISOString()
+  const [row] = await db
+    .insert(rateLimits)
+    .values({ key, count: 1, lockUntil: 0, updatedAt: new Date(now).toISOString() })
+    .onConflictDoUpdate({
+      target: rateLimits.key,
+      set: {
+        count: sql`CASE WHEN ${rateLimits.updatedAt} < ${cutoff}::timestamptz THEN 1 ELSE LEAST(${rateLimits.count} + 1, ${maxAttempts + 1}) END`,
+        lockUntil: 0,
+        updatedAt: sql`CASE WHEN ${rateLimits.updatedAt} < ${cutoff}::timestamptz THEN ${new Date(now).toISOString()}::timestamptz ELSE ${rateLimits.updatedAt} END`,
+      },
+    })
+    .returning({ count: rateLimits.count })
+  const count = row?.count ?? maxAttempts + 1
+  return { allowed: count <= maxAttempts, remaining: Math.max(0, maxAttempts - count) }
+}
+
 /**
  * Check whether `key` (IP or email) is allowed to attempt login.
  * Returns `{ allowed, waitTimeRemainingMs }`.

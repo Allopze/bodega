@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { PwaRegister } from "@/components/pwa/pwa-register"
 
 export const metadata: Metadata = {
   title: "PPA Digital — Para, Piensa y Actúa",
@@ -20,5 +21,5 @@ export const metadata: Metadata = {
 // una versión más simple sin los fixes P0-P3 de AUDITORIA_PWA_OFFLINE.md
 // (FIFO eviction, cache versionado) que ya tiene sw.js.
 export default function PpaLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return <><PwaRegister />{children}</>
 }

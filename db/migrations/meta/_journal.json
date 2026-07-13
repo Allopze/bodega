@@ -288,6 +288,20 @@
       "when": 1783813626965,
       "tag": "0040_cold_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783874113062,
+      "tag": "0041_broken_mockingbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1783887253352,
+      "tag": "0042_opposite_bug",
+      "breakpoints": true
     }
   ]
 }

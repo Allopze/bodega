@@ -15,6 +15,10 @@ export async function writeBuffer(filePath: string, buffer: Buffer): Promise<voi
   await fs.writeFile(filePath, buffer)
 }
 
+export async function readBuffer(filePath: string): Promise<Buffer> {
+  return fs.readFile(filePath)
+}
+
 export async function removeFile(filePath: string): Promise<void> {
   await fs.unlink(filePath)
 }

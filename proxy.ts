@@ -19,7 +19,16 @@ export default auth((req) => {
   // Public paths — no auth required
   // NOTE: "/ppa" es el formulario público del trabajador (sin login). El panel
   // autenticado vive en "/prevencion/ppa" y NO calza con este prefijo.
-  const publicPaths = ["/login", "/registro", "/recuperar", "/api/auth", "/api/health", "/ppa"]
+  // NOTE: "/tae" es la PWA pública de carga TAE (sin login, acceso por QR/token).
+  // El panel autenticado vive en "/combustibles/tae" y NO calza con este prefijo.
+  // Las rutas API públicas del formulario se listan explícitas (no "/api/tae"
+  // completo) para que "/api/tae/evidence/[id]" —lectura privada de fotos—
+  // siga exigiendo sesión también a nivel de proxy, no solo dentro del handler.
+  const publicPaths = [
+    "/login", "/registro", "/recuperar", "/api/auth", "/api/health",
+    "/ppa",
+    "/tae", "/api/tae/access", "/api/tae/submit", "/api/tae/identity",
+  ]
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     // Redirect authenticated users away from login
     if (isLoggedIn && (pathname === "/login" || pathname === "/registro")) {
