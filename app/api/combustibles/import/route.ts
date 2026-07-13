@@ -6,6 +6,8 @@ import { inArray } from "drizzle-orm"
 import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
+import { fuelEquipmentTypeIdForLegacy, fuelMetricDefaultsForLegacy } from "@/lib/combustibles/validation"
 
 const CREATE_FAENA = "__create__"
 const SKIP_FAENA = "__skip__"
@@ -173,7 +175,7 @@ export async function POST(req: NextRequest) {
         // Auto-crear entidades faltantes si está habilitado
         if (!vehicleId && createMissing) {
           const id = nanoid()
-          await tx.insert(fuelVehicles).values({ id, plate: load.vehicle, type: "camion", worksiteId, isActive: true })
+          await tx.insert(fuelVehicles).values({ id, plate: load.vehicle, type: "camion", equipmentTypeId: fuelEquipmentTypeIdForLegacy("camion"), ...fuelMetricDefaultsForLegacy("camion"), worksiteId, isActive: true })
           vehicleId = id
           vehicleMap.set(load.vehicle.toUpperCase(), id)
           created.push({ type: "vehículo", name: load.vehicle })
@@ -213,7 +215,7 @@ export async function POST(req: NextRequest) {
           id: nanoid(),
           loadDate: load.loadDate, month: load.month, serviceType: load.serviceType,
           vehicleId, fuelSupplierId: supplierId, worksiteId,
-          product: load.product, receiptNumber: load.receiptNumber || null,
+          product: load.product, productId: fuelProductIdForLegacy(load.product), receiptNumber: load.receiptNumber || null,
           odometerReading: load.odometerReading ?? null,
           hourMeterReading: load.hourMeterReading ?? null,
           liters: load.liters, iecFixed: load.iecFixed, iecVariable: load.iecVariable,

@@ -12,6 +12,7 @@ export interface FuelLoadFilters {
   worksiteId?: string
   fuelSupplierId?: string
   product?: string
+  productId?: string
   status?: string
 }
 
@@ -30,6 +31,7 @@ export function buildFuelLoadsWhere(session: Session, filters: FuelLoadFilters =
     filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined,
     filters.fuelSupplierId ? eq(fuelLoads.fuelSupplierId, filters.fuelSupplierId) : undefined,
     filters.product ? eq(fuelLoads.product, filters.product) : undefined,
+    filters.productId ? eq(fuelLoads.productId, filters.productId) : undefined,
     filters.status ? eq(fuelLoads.status, filters.status) : undefined,
     worksiteScopeSql(session, fuelLoads.worksiteId),
   ]

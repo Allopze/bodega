@@ -17,6 +17,7 @@ import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
 import { optionalNumber } from "./export"
+import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 
 const REVALIDATE = "/combustibles"
 
@@ -119,6 +120,7 @@ export async function createFuelLoadAction(
     await db.insert(fuelLoads).values({
       id,
       ...parsed.data,
+      productId: fuelProductIdForLegacy(parsed.data.product),
       createdBy: session.user.id,
     })
 
@@ -222,7 +224,7 @@ export async function updateFuelLoadAction(
   }
 
   try {
-    await db.update(fuelLoads).set({ ...parsed.data, updatedAt: new Date().toISOString() }).where(eq(fuelLoads.id, id))
+    await db.update(fuelLoads).set({ ...parsed.data, productId: fuelProductIdForLegacy(parsed.data.product), updatedAt: new Date().toISOString() }).where(eq(fuelLoads.id, id))
 
     await recordAudit({
       userId: session.user.id,

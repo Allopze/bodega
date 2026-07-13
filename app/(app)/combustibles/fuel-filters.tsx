@@ -11,6 +11,7 @@ interface FuelFiltersProps {
   vehicles: Array<{ id: string; plate: string }>
   suppliers: Array<{ id: string; name: string }>
   worksites: Array<{ id: string; name: string }>
+  products: Array<{ id: string; name: string }>
   currentFilters: {
     month?: string
     serviceType?: string
@@ -18,13 +19,14 @@ interface FuelFiltersProps {
     worksiteId?: string
     supplierId?: string
     product?: string
+    productId?: string
     status?: string
     startDate?: string
     endDate?: string
   }
 }
 
-export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: FuelFiltersProps) {
+export function FuelFilters({ vehicles, suppliers, worksites, products, currentFilters }: FuelFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -41,6 +43,16 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
 
   function clearFilters() {
     router.push("/combustibles/facturas")
+  }
+
+  function setProductFilter(value: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("producto")
+    params.delete("productoId")
+    if (value.startsWith("legacy:")) params.set("producto", value.slice("legacy:".length))
+    else if (value !== "all") params.set("productoId", value)
+    params.delete("page")
+    router.push(`?${params.toString()}`)
   }
 
   return (
@@ -107,12 +119,12 @@ export function FuelFilters({ vehicles, suppliers, worksites, currentFilters }: 
 
       <div className="flex flex-col gap-1">
         <Label className="text-xs">Producto</Label>
-        <Select defaultValue={currentFilters.product ?? "all"} onValueChange={(v) => setFilter("producto", v === "all" ? "" : v)}>
+        <Select defaultValue={currentFilters.productId ?? (currentFilters.product ? `legacy:${currentFilters.product}` : "all")} onValueChange={setProductFilter}>
           <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="PETROLEO DIESEL">Petróleo Diésel</SelectItem>
-            <SelectItem value="BLUEMAX">BlueMax</SelectItem>
+            {currentFilters.product && !currentFilters.productId && <SelectItem value={`legacy:${currentFilters.product}`}>{currentFilters.product} (legacy)</SelectItem>}
+            {products.map((product) => <SelectItem key={product.id} value={product.id}>{product.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>

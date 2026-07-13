@@ -9,17 +9,19 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { buildConsumptionWhere } from "@/lib/combustibles/consumption-queries"
 import { getConsumptionDashboard, normalizeConsumptionFilters } from "@/lib/combustibles/consumption-dashboard"
 import { getOperationsSummary } from "@/lib/combustibles/operations-dashboard"
+import { getFuelControlOverview } from "@/lib/combustibles/fuel-control-overview"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Upload, FileXls } from "@phosphor-icons/react/dist/ssr"
+import { Upload, FileXls, QrCode, Drop } from "@phosphor-icons/react/dist/ssr"
 import { ConsumptionKpis } from "./consumption-kpis"
 import { ConsumptionFiltersBar } from "./consumption-filters"
 import { ConsumptionAlerts } from "./consumption-alerts"
 import { ConsumptionDetailTable } from "./consumption-detail-table"
 import { EvolutionChart, PriceEvolutionChart, PatenteRankingChart, RendimientoChart } from "./consumption-charts-lazy"
 import { formatCLP, formatQty } from "@/lib/utils"
+import { FuelControlOverviewPanel } from "./fuel-control-overview"
 
 export const metadata: Metadata = { title: "Combustibles" }
 
@@ -46,8 +48,10 @@ export default async function CombustiblesPage({
   const requestedFilters = normalizeConsumptionFilters({ fromDate, toDate, worksiteId, fuente, patente, associated })
 
   const worksiteScope = resolveWorksiteScope(session)
+  const canImport = can(session, "combustibles:import")
+  const canViewTae = can(session, "combustibles:tae_view")
 
-  const [dashboard, worksitesList, fuentesRows, operationsSummary] = await Promise.all([
+  const [dashboard, worksitesList, fuentesRows, operationsSummary, controlOverview] = await Promise.all([
     getConsumptionDashboard(session, requestedFilters),
     worksiteScope.mode === "none"
       ? Promise.resolve([])
@@ -65,6 +69,7 @@ export default async function CombustiblesPage({
       patente: requestedFilters.patente,
       associated: requestedFilters.associated,
     }),
+    getFuelControlOverview(session, { filters: requestedFilters, includeTae: canViewTae }),
   ])
   const effectiveFilters = dashboard.filters
 
@@ -83,16 +88,22 @@ export default async function CombustiblesPage({
   const totalDetailPages = Math.ceil(totalDetail / PAGE_SIZE)
 
   const fuentes = fuentesRows.map((r) => r.fuente).filter((f): f is string => !!f).sort()
-  const canImport = can(session, "combustibles:import")
-
   return (
     <PageContainer>
       <PageHeader
         title="Combustibles"
-        description="Análisis de consumo por patente — tarjetas, transacciones, rendimiento y gasto"
+        description="Control ejecutivo, operación TAE y análisis de consumo TCT en un mismo contexto."
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles" }]} />}
-        headerActions={
+        actions={
           <div className="flex gap-2">
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/combustibles/ciclo"><Drop className="h-4 w-4 mr-1.5" />Ciclo físico</Link>
+            </Button>
+            {canViewTae && (
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/combustibles/tae"><QrCode className="h-4 w-4 mr-1.5" />Control TAE</Link>
+              </Button>
+            )}
             <Button asChild variant="secondary" size="sm">
               <Link href="/combustibles/facturas"><FileXls className="h-4 w-4 mr-1.5" />Facturas</Link>
             </Button>
@@ -105,6 +116,25 @@ export default async function CombustiblesPage({
         }
       />
 
+      <FuelControlOverviewPanel
+        data={controlOverview}
+        tct={{
+          liters: dashboard.kpis.totalCantidad,
+          transactions: dashboard.kpis.totalTransacciones,
+          vehicles: dashboard.kpis.patentesUnicas,
+          variationLitersPct: dashboard.kpis.variacionCantidadPct,
+        }}
+        period={{
+          fromDate: effectiveFilters.fromDate,
+          toDate: effectiveFilters.toDate,
+          worksiteId: effectiveFilters.worksiteId,
+          source: effectiveFilters.fuente,
+          plate: effectiveFilters.patente,
+          associated: effectiveFilters.associated,
+        }}
+      />
+
+      <div id="analisis-tct" className="scroll-mt-24" />
       <ConsumptionKpis kpis={dashboard.kpis} />
 
       <ConsumptionFiltersBar

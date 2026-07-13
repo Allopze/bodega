@@ -5,6 +5,7 @@ import {
   fleetVehicleDocuments,
   fuelLoads,
   fuelOperationRecords,
+  fuelVehicleOperationalIntervals,
   fuelVehicles,
   maintenanceRecords,
 } from "@/db/schema"
@@ -27,7 +28,7 @@ export async function getFleetOverview(session: Session) {
   const [vehicles, fuelRows, maintenanceRows] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
-      with: { worksite: true, responsibleUser: true },
+      with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
       orderBy: [fuelVehicles.plate],
     }),
     db
@@ -72,7 +73,7 @@ export async function getFleetOverview(session: Session) {
     return {
       id: vehicle.id,
       plate: vehicle.plate,
-      type: vehicle.type,
+      type: vehicle.equipmentType?.name ?? vehicle.type,
       brand: vehicle.brand,
       model: vehicle.model,
       year: vehicle.year,
@@ -108,14 +109,14 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
   const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
   const vehicle = await db.query.fuelVehicles.findFirst({
     where: eq(fuelVehicles.id, id),
-    with: { worksite: true, responsibleUser: true },
+    with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
   })
   if (!vehicle) return null
   if (scopedWorksites !== null && !scopedWorksites.includes(vehicle.worksiteId)) {
     return null
   }
 
-  const [documents, recentLoads, recentMaintenance, recentOperations, operatorCounts] = await Promise.all([
+  const [documents, recentLoads, recentMaintenance, recentOperations, operatorCounts, operationalIntervals] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
       where: eq(fleetVehicleDocuments.vehicleId, id),
       orderBy: [fleetVehicleDocuments.expiresAt],
@@ -144,6 +145,12 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
       .groupBy(fuelOperationRecords.operador)
       .orderBy(desc(sql`COUNT(*)`))
       .limit(5),
+    db.query.fuelVehicleOperationalIntervals.findMany({
+      where: eq(fuelVehicleOperationalIntervals.vehicleId, id),
+      with: { changedByUser: { columns: { name: true, email: true } } },
+      orderBy: [desc(fuelVehicleOperationalIntervals.startedAt)],
+      limit: 25,
+    }),
   ])
 
   return {
@@ -156,6 +163,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     currentReading: recentOperations[0] ?? null,
     recentOperations,
     topOperators: operatorCounts.map((o) => ({ operador: o.operador!, count: Number(o.count) })),
+    operationalIntervals,
     nextExpiryDate: getNextExpiryDate([
       vehicle.soapExpiresAt,
       vehicle.technicalReviewExpiresAt,

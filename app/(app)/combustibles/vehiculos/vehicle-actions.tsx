@@ -10,9 +10,15 @@ import { VehicleForm } from "./vehicle-form"
 export function VehicleActions({
   worksites,
   users,
+  equipmentTypes,
+  suppliers,
+  products,
 }: {
   worksites: Array<{ id: string; name: string }>
   users: Array<{ id: string; name: string }>
+  equipmentTypes: Array<{ id: string; name: string; category: string; defaultMeterType: string; defaultPerformanceUnit: string; isActive: boolean }>
+  suppliers: Array<{ id: string; name: string }>
+  products: Array<{ id: string; name: string; unit: string; isActive: boolean }>
 }) {
   const [formOpen, setFormOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
@@ -32,6 +38,9 @@ export function VehicleActions({
         onClose={() => setFormOpen(false)}
         worksites={worksites}
         users={users}
+        equipmentTypes={equipmentTypes}
+        suppliers={suppliers}
+        products={products}
         editVehicle={null}
       />
       <CatalogImportPanel

@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
-import { and, asc, desc, eq, gt, lt, ne } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, lt, ne } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelTaeEvidence,
   fuelTaeLoadingPoints,
   fuelTaePublicLinks,
   fuelTaeSubmissions,
+  fuelProducts,
+  fuelVehicleProducts,
   fuelVehicles,
   workers,
   worksites,
@@ -35,7 +37,7 @@ export interface TaeEvidenceUpload {
 export interface TaeAccessConfig {
   worksite: { id: string; name: string }
   loadingPoint: { id: string; name: string } | null
-  vehicles: Array<{ id: string; code: string | null; plate: string; type: string }>
+  vehicles: Array<{ id: string; code: string | null; plate: string; type: string; products: Array<{ id: string; name: string; unit: string }> }>
 }
 
 const MAX_SUBMISSION_AGE_MS = 30 * 24 * 60 * 60 * 1000
@@ -98,8 +100,23 @@ export async function getTaeAccessConfig(accessToken: string): Promise<TaeAccess
     }),
   ])
   if (!worksite || (link.loadingPointId && !point)) throw new Error("El enlace TAE está incompleto")
+  const compatibility = vehicles.length === 0 ? [] : await db.select({
+    vehicleId: fuelVehicleProducts.vehicleId,
+    id: fuelProducts.id,
+    name: fuelProducts.name,
+    unit: fuelProducts.unit,
+  }).from(fuelVehicleProducts)
+    .innerJoin(fuelProducts, eq(fuelProducts.id, fuelVehicleProducts.productId))
+    .where(and(inArray(fuelVehicleProducts.vehicleId, vehicles.map((vehicle) => vehicle.id)), eq(fuelProducts.isActive, true)))
+    .orderBy(fuelProducts.name)
+  const productsByVehicle = new Map<string, Array<{ id: string; name: string; unit: string }>>()
+  for (const item of compatibility) {
+    const current = productsByVehicle.get(item.vehicleId) ?? []
+    current.push({ id: item.id, name: item.name, unit: item.unit })
+    productsByVehicle.set(item.vehicleId, current)
+  }
   await db.update(fuelTaePublicLinks).set({ lastUsedAt: new Date().toISOString() }).where(eq(fuelTaePublicLinks.id, link.id))
-  return { worksite, loadingPoint: point ?? null, vehicles }
+  return { worksite, loadingPoint: point ?? null, vehicles: vehicles.map((vehicle) => ({ ...vehicle, products: productsByVehicle.get(vehicle.id) ?? [] })) }
 }
 
 export async function createTaePublicLink({
@@ -181,12 +198,17 @@ export async function createTaeSubmission({
   })
   if (existing) return { ...existing, duplicate: true }
 
-  const [vehicle, driver, supervisor] = await Promise.all([
+  const [vehicle, productCompatibility, driver, supervisor] = await Promise.all([
     db.query.fuelVehicles.findFirst({ where: and(eq(fuelVehicles.id, input.vehicleId), eq(fuelVehicles.isActive, true)) }),
+    db.query.fuelVehicleProducts.findFirst({
+      where: and(eq(fuelVehicleProducts.vehicleId, input.vehicleId), eq(fuelVehicleProducts.productId, input.productId)),
+      with: { product: true },
+    }),
     input.driverWorkerId ? db.query.workers.findFirst({ where: and(eq(workers.id, input.driverWorkerId), eq(workers.isActive, true)) }) : Promise.resolve(null),
     input.supervisorWorkerId ? db.query.workers.findFirst({ where: and(eq(workers.id, input.supervisorWorkerId), eq(workers.isActive, true)) }) : Promise.resolve(null),
   ])
   if (!vehicle || vehicle.worksiteId !== link.worksiteId) throw new Error("El equipo no pertenece a la faena o está inactivo")
+  if (!productCompatibility?.product?.isActive) throw new Error("El producto no está habilitado para este equipo")
   if (input.driverWorkerId && (!driver || driver.worksiteId !== link.worksiteId)) throw new Error("El conductor no pertenece a la faena o está inactivo")
   if (input.supervisorWorkerId && (!supervisor || supervisor.worksiteId !== link.worksiteId)) throw new Error("El supervisor no pertenece a la faena o está inactivo")
 
@@ -219,6 +241,7 @@ export async function createTaeSubmission({
         worksiteId: link.worksiteId,
         loadingPointId: link.loadingPointId,
         vehicleId: vehicle.id,
+        productId: input.productId,
         equipmentCodeSnapshot: vehicle.code ?? vehicle.plate,
         plateSnapshot: vehicle.plate,
         loadedAt: input.loadedAt,

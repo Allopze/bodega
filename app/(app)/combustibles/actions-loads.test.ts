@@ -174,6 +174,7 @@ describe("createFuelLoadAction — audit logging", () => {
     // alcanzara a disparar router.push).
     await createFuelLoadAction({ ok: false, message: "" }, fd)
 
+    expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ productId: "fuel-diesel" }))
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "create", entityType: "fuel_load" }),
     )

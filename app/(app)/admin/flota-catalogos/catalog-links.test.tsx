@@ -29,6 +29,13 @@ describe("CatalogLinks", () => {
     expect(screen.getByText("Mantenciones")).toBeInTheDocument()
   })
 
+  it("exposes the configurable equipment taxonomy to fleet administrators", () => {
+    render(<CatalogLinks permissions={["admin:fleet_catalog"]} />)
+
+    expect(screen.getByRole("link", { name: /Tipos de equipo/ })).toHaveAttribute("href", "/admin/flota-catalogos/tipos-equipo")
+    expect(screen.getByRole("link", { name: /Productos de combustible/ })).toHaveAttribute("href", "/admin/flota-catalogos/productos-combustible")
+  })
+
   it("shows nothing when the session has none of the linked permissions", () => {
     render(<CatalogLinks permissions={[]} />)
 

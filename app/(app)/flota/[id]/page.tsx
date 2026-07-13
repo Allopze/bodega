@@ -31,7 +31,7 @@ export default async function FlotaVehiclePage({
     <PageContainer>
       <PageHeader
         title={vehicle.plate}
-        description={[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
+        description={[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.equipmentType?.name || vehicle.type}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Vehículos", href: "/flota" },
@@ -55,6 +55,10 @@ export default async function FlotaVehiclePage({
           <CardHeader><CardTitle className="text-base">Operación</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Fact label="Faena" value={vehicle.worksite?.name ?? "Sin faena"} />
+            <Fact label="Tipo" value={vehicle.equipmentType?.name ?? vehicle.type} />
+            <Fact label="Rendimiento" value={vehicle.performanceUnit === "km_per_liter" ? "km/L" : vehicle.performanceUnit === "liters_per_hour" ? "L/h" : "No aplica"} />
+            <Fact label="Capacidad" value={vehicle.tankCapacityLiters != null ? `${Number(vehicle.tankCapacityLiters).toLocaleString("es-CL")} L` : "Sin información"} />
+            <Fact label="Proveedor habitual" value={vehicle.usualFuelSupplier?.name ?? "No asignado"} />
             <Fact label="Responsable" value={vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? "—"} />
             <Fact label="Estado" value={<Badge variant={vehicle.operationalStatus === "operativo" ? "success" : "outline"}>{vehicle.operationalStatus}</Badge>} />
             <Fact label="Próximo vencimiento" value={detail.nextExpiryDate ?? "—"} />
@@ -118,6 +122,33 @@ export default async function FlotaVehiclePage({
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Historial de estado operacional</CardTitle></CardHeader>
+        <CardContent>
+          {detail.operationalIntervals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin intervalos históricos registrados.</p>
+          ) : (
+            <ol className="divide-y divide-[var(--color-border)]">
+              {detail.operationalIntervals.map((interval) => (
+                <li key={interval.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
+                  <Badge variant={interval.status === "operativo" ? "success" : interval.status === "mantencion" ? "warning" : "danger"}>
+                    {interval.status === "operativo" ? "Operativo" : interval.status === "mantencion" ? "En mantención" : "Fuera de servicio"}
+                  </Badge>
+                  <div>
+                    <p>{interval.reason ?? "Sin motivo informado"}</p>
+                    <p className="text-xs text-muted-foreground">{interval.changedByUser?.name ?? interval.changedByUser?.email ?? "Usuario no disponible"}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground sm:text-right">
+                    {new Date(interval.startedAt).toLocaleString("es-CL")}
+                    <span className="block">{interval.endedAt ? `hasta ${new Date(interval.endedAt).toLocaleString("es-CL")}` : "intervalo vigente"}</span>
+                  </p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Documentos del vehículo</CardTitle></CardHeader>

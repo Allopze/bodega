@@ -35,11 +35,11 @@ async function main() {
   console.log(`  Usando faena: ${worksitesList[0]!.name} (${worksiteId})`)
 
   const FUEL_VEHICLES: (typeof schema.fuelVehicles.$inferInsert)[] = [
-    { id: "fv-camion-01", plate: "XX-XX-01", type: "camion", brand: "Hyundai", model: "HD78", year: 2020, worksiteId, isActive: true },
-    { id: "fv-camion-02", plate: "XX-XX-02", type: "camion", brand: "Hyundai", model: "HD78", year: 2021, worksiteId, isActive: true },
-    { id: "fv-camioneta-01", plate: "XX-XX-03", type: "camioneta", brand: "Toyota", model: "Hilux", year: 2022, worksiteId, isActive: true },
-    { id: "fv-camioneta-02", plate: "XX-XX-04", type: "camioneta", brand: "Toyota", model: "Hilux", year: 2023, worksiteId, isActive: true },
-    { id: "fv-estanque-01", plate: "XX-XX-05", type: "estanque", brand: "Mercedes-Benz", model: "Actros", year: 2019, worksiteId, isActive: true },
+    { id: "fv-camion-01", plate: "XX-XX-01", type: "camion", equipmentTypeId: "fet-camion", meterType: "odometer", performanceUnit: "km_per_liter", brand: "Hyundai", model: "HD78", year: 2020, worksiteId, isActive: true },
+    { id: "fv-camion-02", plate: "XX-XX-02", type: "camion", equipmentTypeId: "fet-camion", meterType: "odometer", performanceUnit: "km_per_liter", brand: "Hyundai", model: "HD78", year: 2021, worksiteId, isActive: true },
+    { id: "fv-camioneta-01", plate: "XX-XX-03", type: "camioneta", equipmentTypeId: "fet-camioneta", meterType: "odometer", performanceUnit: "km_per_liter", brand: "Toyota", model: "Hilux", year: 2022, worksiteId, isActive: true },
+    { id: "fv-camioneta-02", plate: "XX-XX-04", type: "camioneta", equipmentTypeId: "fet-camioneta", meterType: "odometer", performanceUnit: "km_per_liter", brand: "Toyota", model: "Hilux", year: 2023, worksiteId, isActive: true },
+    { id: "fv-estanque-01", plate: "XX-XX-05", type: "estanque", equipmentTypeId: "fet-estanque", meterType: "none", performanceUnit: "not_applicable", brand: "Mercedes-Benz", model: "Actros", year: 2019, worksiteId, isActive: true },
   ]
 
   const FUEL_SUPPLIERS: (typeof schema.fuelSuppliers.$inferInsert)[] = [

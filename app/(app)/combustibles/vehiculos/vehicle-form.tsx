@@ -11,13 +11,29 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { createFuelVehicleAction, updateFuelVehicleAction } from "../actions"
-import { FUEL_VEHICLE_TYPES, FUEL_VEHICLE_TYPE_LABELS, FUEL_VEHICLE_STATUSES, FUEL_VEHICLE_STATUS_LABELS, canonicalFuelVehicleType, formatFuelVehicleType } from "@/lib/combustibles/validation"
+import {
+  FUEL_EQUIPMENT_CATEGORY_LABELS,
+  FUEL_METER_TYPES,
+  FUEL_METER_TYPE_LABELS,
+  FUEL_PERFORMANCE_UNITS,
+  FUEL_PERFORMANCE_UNIT_LABELS,
+  FUEL_VEHICLE_STATUSES,
+  FUEL_VEHICLE_STATUS_LABELS,
+} from "@/lib/combustibles/validation"
 
 export interface VehicleForEdit {
   id: string
   plate: string
   code: string | null
   type: string
+  equipmentTypeId: string
+  meterType: string
+  performanceUnit: string
+  tankCapacityLiters: number | null
+  comparisonGroup: string | null
+  usualFuelSupplierId: string | null
+  compatibleProductIds: string[]
+  operatingSchedule: { timezone: string; days: number[]; start: string; end: string } | null
   brand: string | null
   model: string | null
   year: number | null
@@ -37,20 +53,32 @@ interface VehicleFormProps {
   onClose: () => void
   worksites: Array<{ id: string; name: string }>
   users: Array<{ id: string; name: string }>
+  equipmentTypes: Array<{ id: string; name: string; category: string; defaultMeterType: string; defaultPerformanceUnit: string; isActive: boolean }>
+  suppliers: Array<{ id: string; name: string }>
+  products: Array<{ id: string; name: string; unit: string; isActive: boolean }>
   editVehicle?: VehicleForEdit | null
 }
 
-export function VehicleForm({ open, onClose, worksites, users, editVehicle }: VehicleFormProps) {
-  const isEdit = !!editVehicle
+const DAYS = [
+  { value: 1, label: "L" }, { value: 2, label: "M" }, { value: 3, label: "X" },
+  { value: 4, label: "J" }, { value: 5, label: "V" }, { value: 6, label: "S" }, { value: 7, label: "D" },
+]
 
-  // Los tipos del catálogo real no siempre calzan con la lista canónica (hay
-  // valores legacy libres). Si el vehículo tiene un tipo fuera de la lista, se
-  // agrega como opción para que se pueda ver y conservar al guardar.
-  const typeOptions: Array<{ value: string; label: string }> = FUEL_VEHICLE_TYPES.map((t) => ({ value: t, label: FUEL_VEHICLE_TYPE_LABELS[t] }))
-  if (editVehicle?.type && !canonicalFuelVehicleType(editVehicle.type)) {
-    typeOptions.unshift({ value: editVehicle.type, label: formatFuelVehicleType(editVehicle.type) })
-  } else if (editVehicle?.type && !FUEL_VEHICLE_TYPES.includes(editVehicle.type as (typeof FUEL_VEHICLE_TYPES)[number])) {
-    typeOptions.unshift({ value: editVehicle.type, label: formatFuelVehicleType(editVehicle.type) })
+export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, suppliers, products, editVehicle }: VehicleFormProps) {
+  const isEdit = !!editVehicle
+  const initialType = equipmentTypes.find((item) => item.id === editVehicle?.equipmentTypeId)
+    ?? equipmentTypes.find((item) => item.isActive)
+  const [equipmentTypeId, setEquipmentTypeId] = React.useState(initialType?.id ?? "")
+  const [meterType, setMeterType] = React.useState(editVehicle?.meterType ?? initialType?.defaultMeterType ?? "none")
+  const [performanceUnit, setPerformanceUnit] = React.useState(editVehicle?.performanceUnit ?? initialType?.defaultPerformanceUnit ?? "not_applicable")
+  const selectedProductIds = React.useMemo(() => new Set(editVehicle?.compatibleProductIds ?? []), [editVehicle?.compatibleProductIds])
+
+  function changeEquipmentType(id: string) {
+    setEquipmentTypeId(id)
+    const selected = equipmentTypes.find((item) => item.id === id)
+    if (!selected) return
+    setMeterType(selected.defaultMeterType)
+    setPerformanceUnit(selected.defaultPerformanceUnit)
   }
 
   return (
@@ -71,6 +99,7 @@ export function VehicleForm({ open, onClose, worksites, users, editVehicle }: Ve
             <Tabs defaultValue="general">
               <TabsList className="mb-4 w-full">
                 <TabsTrigger value="general">General</TabsTrigger>
+                <TabsTrigger value="combustible">Combustible</TabsTrigger>
                 <TabsTrigger value="estado">Estado y vigencias</TabsTrigger>
                 {isEdit && <TabsTrigger value="documentos">Documentos</TabsTrigger>}
               </TabsList>
@@ -87,11 +116,15 @@ export function VehicleForm({ open, onClose, worksites, users, editVehicle }: Ve
                     </Field>
                   </div>
 
-                  <Field label="Tipo" htmlFor="v-type" required>
-                    <Select name="type" defaultValue={editVehicle?.type}>
-                      <SelectTrigger id="v-type"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                  <Field label="Tipo de equipo" htmlFor="v-equipment-type" required error={state.fieldErrors?.equipmentTypeId?.[0]}>
+                    <Select name="equipmentTypeId" value={equipmentTypeId} onValueChange={changeEquipmentType}>
+                      <SelectTrigger id="v-equipment-type" error={!!state.fieldErrors?.equipmentTypeId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                       <SelectContent>
-                        {typeOptions.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                        {equipmentTypes.map((item) => (
+                          <SelectItem key={item.id} value={item.id} disabled={!item.isActive && item.id !== editVehicle?.equipmentTypeId}>
+                            {item.name} · {FUEL_EQUIPMENT_CATEGORY_LABELS[item.category as keyof typeof FUEL_EQUIPMENT_CATEGORY_LABELS] ?? item.category}{!item.isActive ? " (inactivo)" : ""}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </Field>
@@ -121,6 +154,66 @@ export function VehicleForm({ open, onClose, worksites, users, editVehicle }: Ve
                 </FieldGroup>
               </TabsContent>
 
+              <TabsContent value="combustible">
+                <FieldGroup className="gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="Tipo de medidor" htmlFor="v-meter" required error={state.fieldErrors?.meterType?.[0]}>
+                      <Select name="meterType" value={meterType} onValueChange={setMeterType}>
+                        <SelectTrigger id="v-meter" error={!!state.fieldErrors?.meterType}><SelectValue /></SelectTrigger>
+                        <SelectContent>{FUEL_METER_TYPES.map((item) => <SelectItem key={item} value={item}>{FUEL_METER_TYPE_LABELS[item]}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Unidad de rendimiento" htmlFor="v-performance" required error={state.fieldErrors?.performanceUnit?.[0]}>
+                      <Select name="performanceUnit" value={performanceUnit} onValueChange={setPerformanceUnit}>
+                        <SelectTrigger id="v-performance" error={!!state.fieldErrors?.performanceUnit}><SelectValue /></SelectTrigger>
+                        <SelectContent>{FUEL_PERFORMANCE_UNITS.map((item) => <SelectItem key={item} value={item}>{FUEL_PERFORMANCE_UNIT_LABELS[item]}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="Capacidad de estanque (L)" htmlFor="v-capacity" error={state.fieldErrors?.tankCapacityLiters?.[0]}>
+                      <Input id="v-capacity" name="tankCapacityLiters" type="number" min="0.01" step="0.01" defaultValue={editVehicle?.tankCapacityLiters ?? ""} error={!!state.fieldErrors?.tankCapacityLiters} />
+                    </Field>
+                    <Field label="Grupo comparable" htmlFor="v-comparison" helper="Ej.: camiones 6x4 faena forestal.">
+                      <Input id="v-comparison" name="comparisonGroup" defaultValue={editVehicle?.comparisonGroup ?? ""} />
+                    </Field>
+                  </div>
+                  <Field label="Proveedor habitual" htmlFor="v-usual-supplier">
+                    <Select name="usualFuelSupplierId" defaultValue={editVehicle?.usualFuelSupplierId ?? undefined}>
+                      <SelectTrigger id="v-usual-supplier"><SelectValue placeholder="Sin proveedor habitual" /></SelectTrigger>
+                      <SelectContent>{suppliers.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </Field>
+                  <fieldset className="space-y-2 border-t border-[var(--color-border)] pt-4">
+                    <legend className="text-sm font-medium text-[var(--color-text)]">Productos compatibles</legend>
+                    <p className="text-xs text-[var(--color-text-muted)]">TAE sólo permitirá registrar productos habilitados para este equipo.</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {products.map((product) => <label key={product.id} className="flex items-center gap-2 border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"><input type="checkbox" name="compatibleProductIds" value={product.id} defaultChecked={editVehicle ? selectedProductIds.has(product.id) : product.id === "fuel-diesel"} disabled={!product.isActive && !selectedProductIds.has(product.id)} />{product.name}</label>)}
+                    </div>
+                  </fieldset>
+                  <fieldset className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                    <legend className="text-sm font-medium text-[var(--color-text)]">Horario operativo habitual</legend>
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS.map((day) => (
+                        <label key={day.value} className="flex h-9 w-9 cursor-pointer items-center justify-center border border-[var(--color-border)] bg-[var(--color-surface)] text-xs font-medium has-[:checked]:border-[var(--color-primary)] has-[:checked]:bg-[var(--color-primary-tint)] has-[:checked]:text-[var(--color-primary-ink)]">
+                          <input className="sr-only" type="checkbox" name="operatingDays" value={day.value} defaultChecked={editVehicle?.operatingSchedule?.days.includes(day.value)} />
+                          {day.label}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <Field label="Desde" htmlFor="v-operating-start" error={state.fieldErrors?.operatingStart?.[0]}>
+                        <Input id="v-operating-start" name="operatingStart" type="time" defaultValue={editVehicle?.operatingSchedule?.start ?? ""} error={!!state.fieldErrors?.operatingStart} />
+                      </Field>
+                      <Field label="Hasta" htmlFor="v-operating-end">
+                        <Input id="v-operating-end" name="operatingEnd" type="time" defaultValue={editVehicle?.operatingSchedule?.end ?? ""} />
+                      </Field>
+                    </div>
+                    <input type="hidden" name="operatingTimezone" value={editVehicle?.operatingSchedule?.timezone ?? "America/Santiago"} />
+                  </fieldset>
+                </FieldGroup>
+              </TabsContent>
+
               {/* ── Estado y vigencias tab ── */}
               <TabsContent value="estado">
                 <FieldGroup className="gap-4">
@@ -142,6 +235,18 @@ export function VehicleForm({ open, onClose, worksites, users, editVehicle }: Ve
                       </Select>
                     </Field>
                   </div>
+
+                  {isEdit && (
+                    <Field label="Motivo del cambio de estado" htmlFor="v-status-reason" error={state.fieldErrors?.operationalStatusReason?.[0]}>
+                      <Textarea
+                        id="v-status-reason"
+                        name="operationalStatusReason"
+                        placeholder="Obligatorio cuando el estado operacional cambia"
+                        rows={2}
+                        error={!!state.fieldErrors?.operationalStatusReason}
+                      />
+                    </Field>
+                  )}
 
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Vencimiento SOAP" htmlFor="v-soap">
