@@ -10,19 +10,50 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { inviteUser } from "./actions"
+import { inviteUser } from "./actions/invite"
 import { PendingInvitePanel } from "./user-invite-form-pending"
 import { WorkerSelector } from "./worker-selector"
 import type { PendingInvite, UserInviteFormProps } from "./user-invite-form.types"
 
+interface InviteSelection {
+  selectedRoles: string[]
+  selectedWsIds: string[]
+  primaryWorksiteId: string
+  selectedWorkerId: string
+  name: string
+}
+
+type InviteSelectionAction =
+  | { type: "reset" }
+  | { type: "toggle-role"; id: string }
+  | { type: "toggle-worksite"; id: string }
+  | { type: "select-worker"; id: string; name?: string; worksiteId?: string }
+  | { type: "set-name"; value: string }
+  | { type: "set-primary"; id: string }
+
+const EMPTY_SELECTION: InviteSelection = { selectedRoles: [], selectedWsIds: [], primaryWorksiteId: "", selectedWorkerId: "", name: "" }
+
+function inviteSelectionReducer(state: InviteSelection, action: InviteSelectionAction): InviteSelection {
+  switch (action.type) {
+    case "reset": return EMPTY_SELECTION
+    case "toggle-role": return { ...state, selectedRoles: state.selectedRoles.includes(action.id) ? state.selectedRoles.filter((id) => id !== action.id) : [...state.selectedRoles, action.id] }
+    case "toggle-worksite": {
+      const selectedWsIds = state.selectedWsIds.includes(action.id) ? state.selectedWsIds.filter((id) => id !== action.id) : [...state.selectedWsIds, action.id]
+      return { ...state, selectedWsIds, primaryWorksiteId: selectedWsIds.includes(state.primaryWorksiteId) ? state.primaryWorksiteId : selectedWsIds[0] ?? "" }
+    }
+    case "select-worker": {
+      const selectedWsIds = action.worksiteId && !state.selectedWsIds.includes(action.worksiteId) ? [...state.selectedWsIds, action.worksiteId] : state.selectedWsIds
+      return { ...state, selectedWorkerId: action.id, name: action.name ?? state.name, selectedWsIds, primaryWorksiteId: state.primaryWorksiteId || action.worksiteId || "" }
+    }
+    case "set-name": return { ...state, name: action.value }
+    case "set-primary": return { ...state, primaryWorksiteId: action.id }
+  }
+}
+
 export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorkers }: UserInviteFormProps) {
-  const [selectedRoles, setSelectedRoles] = React.useState<string[]>([])
-  const [selectedWsIds, setSelectedWsIds] = React.useState<string[]>([])
-  const [primaryWorksiteId, setPrimaryWorksiteId] = React.useState("")
-  const [selectedWorkerId, setSelectedWorkerId] = React.useState("")
-  const [name, setName] = React.useState("")
+  const [selection, dispatchSelection] = React.useReducer(inviteSelectionReducer, EMPTY_SELECTION)
   const [pending, setPending] = React.useState<PendingInvite | null>(null)
-  const [_copied, setCopied]   = React.useState(false)
+  const { selectedRoles, selectedWsIds, primaryWorksiteId, selectedWorkerId, name } = selection
 
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -33,11 +64,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
         if (data?.inviteUrl) {
           const matchedEmail = data.email ?? result.message?.match(/a\s+(\S+@\S+)/i)?.[1] ?? ""
           setPending({ email: matchedEmail, inviteUrl: data.inviteUrl })
-          setSelectedRoles([])
-          setSelectedWsIds([])
-          setPrimaryWorksiteId("")
-          setSelectedWorkerId("")
-          setName("")
+          dispatchSelection({ type: "reset" })
         } else {
           onClose()
         }
@@ -50,35 +77,22 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
   )
 
   function toggleRole(id: string) {
-    setSelectedRoles((prev) =>
-      prev.includes(id) ? prev.filter((roleId) => roleId !== id) : [...prev, id],
-    )
+    dispatchSelection({ type: "toggle-role", id })
   }
 
   function toggleWorksite(id: string) {
-    setSelectedWsIds((prev) => {
-      const next = prev.includes(id) ? prev.filter((worksiteId) => worksiteId !== id) : [...prev, id]
-      if (!next.includes(primaryWorksiteId)) setPrimaryWorksiteId(next[0] ?? "")
-      return next
-    })
+    dispatchSelection({ type: "toggle-worksite", id })
   }
 
   function selectWorker(workerId: string) {
     const worker = allWorkers.find((item) => item.id === workerId)
-    setSelectedWorkerId(workerId)
-    if (!worker) return
-    setName(worker.name)
-    setSelectedWsIds((previous) => previous.includes(worker.worksiteId)
-      ? previous
-      : [...previous, worker.worksiteId])
-    setPrimaryWorksiteId((previous) => previous || worker.worksiteId)
+    dispatchSelection({ type: "select-worker", id: workerId, name: worker?.name, worksiteId: worker?.worksiteId })
   }
 
   return (
     <Sheet open={open} onOpenChange={(v) => {
       if (!v) {
         setPending(null)
-        setCopied(false)
         onClose()
       }
     }}>
@@ -86,8 +100,8 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
         {pending ? (
           <PendingInvitePanel
             pending={pending}
-            onCreateAnother={() => { setPending(null); setCopied(false) }}
-            onClose={() => { setPending(null); setCopied(false); onClose() }}
+            onCreateAnother={() => setPending(null)}
+            onClose={() => { setPending(null); onClose() }}
           />
         ) : (
           <form action={formAction} className="flex flex-col flex-1 min-h-0">
@@ -129,7 +143,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
                     id="invite-name"
                     name="name"
                     value={name}
-                    onChange={(event) => setName(event.target.value)}
+                    onChange={(event) => dispatchSelection({ type: "set-name", value: event.target.value })}
                     placeholder="Nombre Apellido"
                     autoComplete="off"
                     error={!!state.fieldErrors?.name}
@@ -240,7 +254,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
                         {isChecked && (
                           <button
                             type="button"
-                            onClick={(e) => { e.preventDefault(); setPrimaryWorksiteId(worksite.id) }}
+                            onClick={(e) => { e.preventDefault(); dispatchSelection({ type: "set-primary", id: worksite.id }) }}
                             className={[
                               "rounded-(--radius-sm) border px-2 py-0.5 text-xs cursor-pointer select-none",
                               "transition-all duration-(--duration-fast) ease-[var(--ease-out)]",

@@ -69,6 +69,20 @@ describeIf("rate limit concurrency on real Postgres", () => {
     expect(row?.lockUntil).toBeGreaterThan(Date.now())
     await expect(checkRateLimit(key)).resolves.toMatchObject({ allowed: false })
   })
+
+  it("allows exactly the configured fixed-window volume under concurrency", async () => {
+    const db = getTestDb()
+    const { consumeFixedWindowLimit } = await import("@/lib/services/rate-limit")
+    const key = "tae:submit-volume:concurrent-e2e"
+
+    const results = await Promise.all(Array.from({ length: 150 }, () =>
+      consumeFixedWindowLimit(key, { maxAttempts: 120, lockMs: 15 * 60 * 1000 })))
+
+    expect(results.filter((result) => result.allowed)).toHaveLength(120)
+    expect(results.filter((result) => !result.allowed)).toHaveLength(30)
+    const [row] = await db.select().from(schema.rateLimits).where(eq(schema.rateLimits.key, key))
+    expect(row?.count).toBe(121)
+  })
 })
 
 function getTestDb() {

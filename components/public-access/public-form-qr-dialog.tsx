@@ -52,15 +52,16 @@ export function PublicFormQrDialog({
   const link = selected?.url ?? ""
 
   React.useEffect(() => {
-    if (!open || !link) { setQr(""); return }
+    const selectedUrl = options.find((option) => option.id === selectedOptionId)?.url ?? options[0]?.url ?? ""
+    if (!open || !selectedUrl) { setQr(""); return }
     let active = true
     import("qrcode").then((mod) => {
-      (mod.default ?? mod).toDataURL(link, { width: 320, margin: 2 })
+      (mod.default ?? mod).toDataURL(selectedUrl, { width: 320, margin: 2 })
         .then((url: string) => { if (active) setQr(url) })
         .catch(() => { if (active) setQr("") })
     })
     return () => { active = false }
-  }, [open, link])
+  }, [open, options, selectedOptionId])
 
   async function copyLink() {
     if (!link) return

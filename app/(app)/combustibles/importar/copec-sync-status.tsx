@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useCallback } from "react"
+import { useReducer, useTransition, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowsClockwise, CheckCircle, PencilSimple, WarningCircle, XCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,25 @@ interface SyncProgress {
   to: string
 }
 
+interface CopecSyncViewState {
+  status: CopecSyncStatus
+  startOptions: CopecSyncStartOptions
+  selectedStart: string
+  isEditingStart: boolean
+  progress: SyncProgress | null
+  syncInProgress: boolean
+  result: string | null
+}
+
+type CopecSyncViewAction =
+  | { type: "patch"; patch: Partial<CopecSyncViewState> }
+  | { type: "set-cursor"; cursor: string }
+
+function copecSyncViewReducer(state: CopecSyncViewState, action: CopecSyncViewAction): CopecSyncViewState {
+  if (action.type === "set-cursor") return { ...state, status: { ...state.status, cursor: action.cursor } }
+  return { ...state, ...action.patch }
+}
+
 function formatMonth(value: string) {
   return MONTH_FORMATTER.format(new Date(`${value}T00:00:00.000Z`))
 }
@@ -29,24 +48,25 @@ function firstDayOfMonth(value: string) {
 export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initialStatus: CopecSyncStatus; initialStartOptions: CopecSyncStartOptions }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const [status, setStatus] = useState<CopecSyncStatus>(initialStatus)
-  const [startOptions, setStartOptions] = useState<CopecSyncStartOptions>(initialStartOptions)
-  const [selectedStart, setSelectedStart] = useState(initialStartOptions.currentStart)
-  const [isEditingStart, setIsEditingStart] = useState(false)
-  const [progress, setProgress] = useState<SyncProgress | null>(null)
-  const [syncInProgress, setSyncInProgress] = useState(false)
-  const [result, setResult] = useState<string | null>(null)
+  const [view, dispatchView] = useReducer(copecSyncViewReducer, {
+    status: initialStatus,
+    startOptions: initialStartOptions,
+    selectedStart: initialStartOptions.currentStart,
+    isEditingStart: false,
+    progress: null,
+    syncInProgress: false,
+    result: null,
+  })
+  const { status, startOptions, selectedStart, isEditingStart, progress, syncInProgress, result } = view
 
   const sync = useCallback(() => {
     startTransition(async () => {
-      setResult(null)
-      setSyncInProgress(true)
+      dispatchView({ type: "patch", patch: { result: null, syncInProgress: true } })
 
       const plan = await getCopecSyncPlanAction()
-      if (!plan.ok) { toast.error(plan.message); setSyncInProgress(false); return }
+      if (!plan.ok) { toast.error(plan.message); dispatchView({ type: "patch", patch: { syncInProgress: false } }); return }
       if (plan.periods.length === 0) {
-        setResult("No hay meses cerrados nuevos para sincronizar")
-        setSyncInProgress(false)
+        dispatchView({ type: "patch", patch: { result: "No hay meses cerrados nuevos para sincronizar", syncInProgress: false } })
         return
       }
 
@@ -57,7 +77,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
 
       for (const [index, period] of plan.periods.entries()) {
         const sp: SyncProgress = { current: index + 1, total: plan.periods.length, from: period.from, to: period.to }
-        setProgress(sp)
+        dispatchView({ type: "patch", patch: { progress: sp } })
 
         const r = await runCopecSyncPeriodAction(period)
         if (!r.ok) {
@@ -77,19 +97,18 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         }
       }
 
-      setProgress(null)
-      setSyncInProgress(false)
+      dispatchView({ type: "patch", patch: { progress: null, syncInProgress: false } })
 
       const updated = await getCopecSyncStatusAction()
-      if (updated.ok) setStatus(updated.data)
+      if (updated.ok) dispatchView({ type: "patch", patch: { status: updated.data } })
       router.refresh()
 
       if (stoppedAt) {
-        setResult(`Se importaron ${imported} registros antes de detenerse. Reintenta desde ${formatMonth(stoppedAt.from)}.`)
+        dispatchView({ type: "patch", patch: { result: `Se importaron ${imported} registros antes de detenerse. Reintenta desde ${formatMonth(stoppedAt.from)}.` } })
         return
       }
 
-      setResult(`${imported} registros importados${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin archivo` : ""}`)
+      dispatchView({ type: "patch", patch: { result: `${imported} registros importados${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin archivo` : ""}` } })
 
       if (unavailable.length) toast.warning(`${unavailable.length} reporte(s) de Copec sin archivo`)
       else toast.success(`Copec sincronizado: ${imported} registros`)
@@ -110,11 +129,8 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         return
       }
 
-      setStartOptions(response.data)
-      setSelectedStart(response.data.currentStart)
-      setStatus((current) => ({ ...current, cursor: response.data.currentStart }))
-      setIsEditingStart(false)
-      setResult(`La próxima sincronización comenzará el ${response.data.currentStart}.`)
+      dispatchView({ type: "patch", patch: { startOptions: response.data, selectedStart: response.data.currentStart, isEditingStart: false, result: `La próxima sincronización comenzará el ${response.data.currentStart}.` } })
+      dispatchView({ type: "set-cursor", cursor: response.data.currentStart })
       toast.success("Primer mes actualizado")
       router.refresh()
     })
@@ -154,7 +170,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-3 text-xs">
             <span className="text-muted-foreground">Primer mes pendiente: <span className="font-medium text-[var(--color-text)]">{formatMonth(startOptions.currentStart)}</span></span>
             {!isEditingStart && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setIsEditingStart(true)} disabled={isActiveSync || startOptions.minimumStart > startOptions.maximumStart}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => dispatchView({ type: "patch", patch: { isEditingStart: true } })} disabled={isActiveSync || startOptions.minimumStart > startOptions.maximumStart}>
                 <PencilSimple className="mr-1 h-3.5 w-3.5" />
                 Ajustar mes
               </Button>
@@ -165,13 +181,13 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
             <div className="grid gap-3 border-t border-[var(--color-border)] pt-3 sm:grid-cols-[minmax(0,220px)_auto] sm:items-end">
               <div className="grid gap-1.5">
                 <label htmlFor="copec-sync-start" className="text-xs font-medium text-[var(--color-text)]">Comenzar desde el mes</label>
-                <DatePicker id="copec-sync-start" value={selectedStart} onChange={(value) => setSelectedStart(firstDayOfMonth(value))} min={startOptions.minimumStart} max={startOptions.maximumStart} disabled={isActiveSync} />
+                <DatePicker id="copec-sync-start" value={selectedStart} onChange={(value) => dispatchView({ type: "patch", patch: { selectedStart: firstDayOfMonth(value) } })} min={startOptions.minimumStart} max={startOptions.maximumStart} disabled={isActiveSync} />
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" size="sm" onClick={saveStartDate} disabled={isActiveSync || selectedStart < startOptions.minimumStart || selectedStart > startOptions.maximumStart}>
                   {pending ? "Guardando…" : "Guardar mes"}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => { setSelectedStart(startOptions.currentStart); setIsEditingStart(false) }} disabled={isActiveSync}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => dispatchView({ type: "patch", patch: { selectedStart: startOptions.currentStart, isEditingStart: false } })} disabled={isActiveSync}>
                   Cancelar
                 </Button>
               </div>

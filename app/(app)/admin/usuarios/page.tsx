@@ -44,95 +44,54 @@ export default async function UsuariosPage() {
       : sql`false`
   const canManageAdmins = can(session, "admin:manage_admins")
 
-  // Load all users — DataTable handles client-side filtering + pagination via TopBar search
-  const allUsers = await db.query.users.findMany({
-    where: userScope,
-    orderBy: (u, { asc }) => [asc(u.name)],
-  })
-
-  // Load role assignments for all users in one query
-  const allUserRoleRows = await db
-    .select({
-      userId:    userRoles.userId,
-      roleId:    userRoles.roleId,
-      roleName:  roles.name,
-      roleLabel: roles.label,
-    })
-    .from(userRoles)
-    .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(userRolesScope)
-
-  const allUserPermissionRows = await db
-    .select({
-      userId: userPermissions.userId,
-      permissionId: userPermissions.permissionId,
-      permissionModule: permissions.module,
-    })
-    .from(userPermissions)
-    .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
-    .where(userPermissionsScope)
-
-  const allRolePermissionRows = await db
-    .select({
-      roleId: rolePermissions.roleId,
-      permissionId: rolePermissions.permissionId,
-    })
-    .from(rolePermissions)
-
-  // Load worksite assignments
-  const allWsUsers = await db.query.worksiteUsers.findMany({
-    where: worksiteUsersScope,
-  })
-
-  // Load available roles + active worksites for the form selects and invitation row shaping
-  const allRolesData     = await db.query.roles.findMany({ orderBy: (r, { asc }) => [asc(r.label)] })
-  const allPermissionsData = await db.query.permissions.findMany({
-    orderBy: (p, { asc }) => [asc(p.module), asc(p.name)],
-  })
-  const allWorksitesData = await db.query.worksites.findMany({
-    where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)),
-    orderBy: (w, { asc }) => [asc(w.name)],
-  })
-  const allWorkersData = await db
-    .select({
-      id: workers.id,
-      firstName: workers.firstName,
-      lastName: workers.lastName,
-      rut: workers.rut,
-      worksiteId: workers.worksiteId,
-      worksiteName: worksites.name,
-      linkedUserId: users.id,
-    })
-    .from(workers)
-    .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
-    .leftJoin(users, eq(users.workerId, workers.id))
-    .where(and(
-      or(eq(workers.isActive, true), isNotNull(users.id)),
-      worksiteScopeSql(session, workers.worksiteId),
-    ))
-    .orderBy(workers.firstName, workers.lastName)
-
-  const invitationRowsRaw = await db.query.userInvitations.findMany({
-    orderBy: (i, { desc }) => [desc(i.createdAt)],
-    limit: 500,
-  })
+  // Todas estas lecturas dependen solo del alcance ya calculado; ejecutarlas
+  // juntas evita sumar su latencia en cascada.
+  const [allUsers, allUserRoleRows, allUserPermissionRows, allRolePermissionRows, allWsUsers, allRolesData, allPermissionsData, allWorksitesData, allWorkersData, invitationRowsRaw] = await Promise.all([
+    db.query.users.findMany({ where: userScope, orderBy: (u, { asc }) => [asc(u.name)] }),
+    db.select({ userId: userRoles.userId, roleId: userRoles.roleId, roleName: roles.name, roleLabel: roles.label }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(userRolesScope),
+    db.select({ userId: userPermissions.userId, permissionId: userPermissions.permissionId, permissionModule: permissions.module }).from(userPermissions).innerJoin(permissions, eq(userPermissions.permissionId, permissions.id)).where(userPermissionsScope),
+    db.select({ roleId: rolePermissions.roleId, permissionId: rolePermissions.permissionId }).from(rolePermissions),
+    db.query.worksiteUsers.findMany({ where: worksiteUsersScope }),
+    db.query.roles.findMany({ orderBy: (r, { asc }) => [asc(r.label)] }),
+    db.query.permissions.findMany({ orderBy: (p, { asc }) => [asc(p.module), asc(p.name)] }),
+    db.query.worksites.findMany({ where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)), orderBy: (w, { asc }) => [asc(w.name)] }),
+    db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut, worksiteId: workers.worksiteId, worksiteName: worksites.name, linkedUserId: users.id })
+      .from(workers)
+      .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
+      .leftJoin(users, eq(users.workerId, workers.id))
+      .where(and(or(eq(workers.isActive, true), isNotNull(users.id)), worksiteScopeSql(session, workers.worksiteId)))
+      .orderBy(workers.firstName, workers.lastName),
+    db.query.userInvitations.findMany({ orderBy: (i, { desc }) => [desc(i.createdAt)], limit: 500 }),
+  ])
 
   const roleLabelById = new Map(allRolesData.map((role) => [role.id, role.label]))
   const worksiteById = new Map(allWorksitesData.map((worksite) => [worksite.id, worksite]))
   const visibleUserEmails = new Set(allUsers.map((user) => user.email.toLowerCase()))
   const invitationEmails = [...new Set(invitationRowsRaw.map((invitation) => invitation.email.toLowerCase()))]
-  const usersForInvitationEmails = invitationEmails.length
-    ? await db
-        .select({ email: users.email })
-        .from(users)
-        .where(inArray(users.email, invitationEmails))
-    : []
-  const existingUserEmailsForInvitations = new Set(usersForInvitationEmails.map((user) => user.email.toLowerCase()))
   const inviterIds = [...new Set(invitationRowsRaw.map((invitation) => invitation.invitedByUserId).filter(Boolean) as string[])]
-  const inviterRows = inviterIds.length
-    ? await db.query.users.findMany({ where: inArray(users.id, inviterIds) })
-    : []
+  const [usersForInvitationEmails, inviterRows] = await Promise.all([
+    invitationEmails.length ? db.select({ email: users.email }).from(users).where(inArray(users.email, invitationEmails)) : Promise.resolve([]),
+    inviterIds.length ? db.query.users.findMany({ where: inArray(users.id, inviterIds) }) : Promise.resolve([]),
+  ])
+  const existingUserEmailsForInvitations = new Set(usersForInvitationEmails.map((user) => user.email.toLowerCase()))
   const inviterNameById = new Map(inviterRows.map((user) => [user.id, user.name]))
+
+  const roleIdsByPermission = new Map<string, string[]>()
+  for (const assignment of allRolePermissionRows) {
+    const roleIds = roleIdsByPermission.get(assignment.permissionId) ?? []
+    roleIds.push(assignment.roleId)
+    roleIdsByPermission.set(assignment.permissionId, roleIds)
+  }
+  const availableRoles = allRolesData.flatMap((role) => canManageAdmins || role.name !== "administrador" ? [{ id: role.id, name: role.name, label: role.label }] : [])
+  const availablePermissions = allPermissionsData.flatMap((permission) => canManageAdmins || permission.module !== "admin" ? [{
+    id: permission.id,
+    name: permission.name,
+    module: permission.module,
+    description: permission.description,
+    roleIds: roleIdsByPermission.get(permission.id) ?? [],
+  }] : [])
+  const availableWorksites = allWorksitesData.map((worksite) => ({ id: worksite.id, name: worksite.name, code: worksite.code }))
+  const availableWorkers = allWorkersData.map((worker) => ({ id: worker.id, name: `${worker.firstName} ${worker.lastName}`, rut: worker.rut, worksiteId: worker.worksiteId, worksiteName: worker.worksiteName, linkedUserId: worker.linkedUserId }))
 
   const invitationRows = invitationRowsRaw.flatMap((invitation) => {
     const invitationEmail = invitation.email.toLowerCase()
@@ -202,58 +161,20 @@ export default async function UsuariosPage() {
         }
         actions={
           <UserActions
-            allRoles={allRolesData
-              .filter((r) => canManageAdmins || r.name !== "administrador")
-              .map((r) => ({ id: r.id, name: r.name, label: r.label }))}
-            allPermissions={allPermissionsData
-              .filter((p) => canManageAdmins || p.module !== "admin")
-              .map((p) => ({
-                id: p.id,
-                name: p.name,
-                module: p.module,
-                description: p.description,
-                roleIds: allRolePermissionRows
-                  .filter((rp) => rp.permissionId === p.id)
-                  .map((rp) => rp.roleId),
-              }))}
-            allWorksites={allWorksitesData.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
-            allWorkers={allWorkersData.map((worker) => ({
-              id: worker.id,
-              name: `${worker.firstName} ${worker.lastName}`,
-              rut: worker.rut,
-              worksiteId: worker.worksiteId,
-              worksiteName: worker.worksiteName,
-              linkedUserId: worker.linkedUserId,
-            }))}
+            allRoles={availableRoles}
+            allPermissions={availablePermissions}
+            allWorksites={availableWorksites}
+            allWorkers={availableWorkers}
           />
         }
       />
       <UserList
         users={userRows}
         invitations={invitationRows}
-        allRoles={allRolesData
-          .filter((r) => canManageAdmins || r.name !== "administrador")
-          .map((r) => ({ id: r.id, name: r.name, label: r.label }))}
-        allPermissions={allPermissionsData
-          .filter((p) => canManageAdmins || p.module !== "admin")
-          .map((p) => ({
-            id: p.id,
-            name: p.name,
-            module: p.module,
-            description: p.description,
-            roleIds: allRolePermissionRows
-              .filter((rp) => rp.permissionId === p.id)
-              .map((rp) => rp.roleId),
-          }))}
-        allWorksites={allWorksitesData.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
-        allWorkers={allWorkersData.map((worker) => ({
-          id: worker.id,
-          name: `${worker.firstName} ${worker.lastName}`,
-          rut: worker.rut,
-          worksiteId: worker.worksiteId,
-          worksiteName: worker.worksiteName,
-          linkedUserId: worker.linkedUserId,
-        }))}
+        allRoles={availableRoles}
+        allPermissions={availablePermissions}
+        allWorksites={availableWorksites}
+        allWorkers={availableWorkers}
       />
     </PageContainer>
   )

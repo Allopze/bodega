@@ -64,4 +64,10 @@ describe("extractMeterReading", () => {
     const result = await extractMeterReading(buffer)
     expect(result.value).toBeNull()
   }, 30000)
+
+  it("procesa varias solicitudes concurrentes sin perder resultados", async () => {
+    const images = await Promise.all(["123001", "123002", "123003"].map((digits) => generateOdometerImage(digits)))
+    const results = await Promise.all(images.map((image) => extractMeterReading(image)))
+    expect(results.map((result) => result.value)).toEqual([123001, 123002, 123003])
+  }, 60000)
 })

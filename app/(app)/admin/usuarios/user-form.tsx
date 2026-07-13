@@ -12,9 +12,11 @@ import { RoleSelector } from "./role-selector"
 import { PermissionSection } from "./permission-section"
 import { WorksiteSelector } from "./worksite-selector"
 import { WorkerSelector } from "./worker-selector"
-import type { UserFormProps } from "./user-form.helpers"
+import type { UserFormProps, WorkerOption } from "./user-form.helpers"
 
-export function UserForm({ open, onClose, editUser, allRoles, allPermissions, allWorksites, allWorkers = [] }: UserFormProps) {
+const EMPTY_WORKERS: WorkerOption[] = []
+
+export function UserForm({ open, onClose, editUser, allRoles, allPermissions, allWorksites, allWorkers = EMPTY_WORKERS }: UserFormProps) {
   const {
     isEdit,
     state,

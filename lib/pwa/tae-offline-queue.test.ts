@@ -32,6 +32,16 @@ describe("tae-offline-queue", () => {
     expect(await countPendingTaeSubmissions()).toBeGreaterThanOrEqual(1)
   })
 
+  it("mantiene orden FIFO y conteo con 100 cargas offline", async () => {
+    const ids = Array.from({ length: 100 }, (_, index) => `tae-volume-${String(index).padStart(3, "0")}`)
+    for (const id of ids) await enqueue({ clientSubmissionId: id })
+
+    expect(await countPendingTaeSubmissions()).toBeGreaterThanOrEqual(100)
+    const { getPendingTaeSubmissions } = await import("./tae-offline-queue")
+    const queued = (await getPendingTaeSubmissions()).filter((item) => item.id.startsWith("tae-volume-"))
+    expect(queued.map((item) => item.id)).toEqual(ids)
+  })
+
   describe("purgeSyncedTaeSubmissions", () => {
     it("borra una carga sincronizada hace más de 48h", async () => {
       const item = await enqueue()
