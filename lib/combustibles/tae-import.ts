@@ -31,6 +31,62 @@ export interface TaeLegacyImportResult {
   errors: TaeLegacyImportError[]
 }
 
+/** Reinterpreta una fila persistida en `rawRow` usando exactamente el contrato del importador. */
+export function parseTaeLegacyRecord(rawRow: Record<string, unknown>, rowIndex: number): { row: ParsedTaeLegacyRow | null; error: TaeLegacyImportError | null } {
+  const values = new Map(Object.entries(rawRow).map(([key, value]) => [normKey(key), value]))
+  const get = (key: string) => values.get(normKey(key))
+  const legacySourceId = text(get("id"))
+  const worksiteName = text(get("faena"))
+  const loadedAt = formatTimestamp(get("fecha y hora"))
+  const loadingPointName = text(get("lugar de carga"))
+  const supervisorName = text(get("supervisor / líder"))
+  const driverName = text(get("conductor"))
+  const equipmentCode = text(get("equipo"))
+  const liters = strictNumber(get("litros"))
+
+  if (!legacySourceId || !worksiteName || !loadedAt || !loadingPointName || !supervisorName || !driverName || !equipmentCode || liters == null || liters <= 0) {
+    const fields = [
+      !legacySourceId && "ID",
+      !worksiteName && "Faena",
+      !loadedAt && "Fecha y hora",
+      !loadingPointName && "Lugar de carga",
+      !supervisorName && "Supervisor / líder",
+      !driverName && "Conductor",
+      !equipmentCode && "Equipo",
+      (liters == null || liters <= 0) && "Litros",
+    ].filter(Boolean).join(", ")
+    return { row: null, error: { rowIndex, field: fields, message: "Fila incompleta o con litros inválidos" } }
+  }
+
+  const meterRaw = text(get("odómetro"))
+  return {
+    error: null,
+    row: {
+      rowIndex,
+      legacySourceId,
+      worksiteName,
+      loadedAt,
+      loadingPointName,
+      supervisorName,
+      driverName,
+      equipmentCode,
+      meterReading: strictNumber(meterRaw),
+      meterRaw,
+      liters,
+      removedSealNumber: text(get("n.º sello retirado")),
+      installedSealNumber: text(get("n.º sello instalado")),
+      notes: text(get("observaciones")),
+      evidenceUrls: {
+        odometer: text(get("imagen odómetro")),
+        liter_meter: text(get("imagen medidor de litros")),
+        removed_seal: text(get("imagen sello retirado")),
+        installed_seal: text(get("imagen sello instalado")),
+      },
+      rawRow,
+    },
+  }
+}
+
 const REQUIRED_HEADERS = ["id", "faena", "fecha y hora", "lugar de carga", "supervisor / líder", "conductor", "equipo", "odómetro", "litros"]
 
 function text(value: unknown): string | null {
@@ -73,56 +129,9 @@ export async function parseTaeLegacyExcel(fileBuffer: ArrayBuffer | Buffer): Pro
   for (let index = 0; index < records.length; index++) {
     const rawRow = records[index]!
     const rowIndex = index + 2
-    const values = new Map(Object.entries(rawRow).map(([key, value]) => [normKey(key), value]))
-    const get = (key: string) => values.get(normKey(key))
-    const legacySourceId = text(get("id"))
-    const worksiteName = text(get("faena"))
-    const loadedAt = formatTimestamp(get("fecha y hora"))
-    const loadingPointName = text(get("lugar de carga"))
-    const supervisorName = text(get("supervisor / líder"))
-    const driverName = text(get("conductor"))
-    const equipmentCode = text(get("equipo"))
-    const liters = strictNumber(get("litros"))
-
-    if (!legacySourceId || !worksiteName || !loadedAt || !loadingPointName || !supervisorName || !driverName || !equipmentCode || liters == null || liters <= 0) {
-      const fields = [
-        !legacySourceId && "ID",
-        !worksiteName && "Faena",
-        !loadedAt && "Fecha y hora",
-        !loadingPointName && "Lugar de carga",
-        !supervisorName && "Supervisor / líder",
-        !driverName && "Conductor",
-        !equipmentCode && "Equipo",
-        (liters == null || liters <= 0) && "Litros",
-      ].filter(Boolean).join(", ")
-      errors.push({ rowIndex, field: fields, message: "Fila incompleta o con litros inválidos" })
-      continue
-    }
-
-    const meterRaw = text(get("odómetro"))
-    rows.push({
-      rowIndex,
-      legacySourceId,
-      worksiteName,
-      loadedAt,
-      loadingPointName,
-      supervisorName,
-      driverName,
-      equipmentCode,
-      meterReading: strictNumber(meterRaw),
-      meterRaw,
-      liters,
-      removedSealNumber: text(get("n.º sello retirado")),
-      installedSealNumber: text(get("n.º sello instalado")),
-      notes: text(get("observaciones")),
-      evidenceUrls: {
-        odometer: text(get("imagen odómetro")),
-        liter_meter: text(get("imagen medidor de litros")),
-        removed_seal: text(get("imagen sello retirado")),
-        installed_seal: text(get("imagen sello instalado")),
-      },
-      rawRow,
-    })
+    const parsed = parseTaeLegacyRecord(rawRow, rowIndex)
+    if (parsed.error) errors.push(parsed.error)
+    else if (parsed.row) rows.push(parsed.row)
   }
   return { rows, errors }
 }

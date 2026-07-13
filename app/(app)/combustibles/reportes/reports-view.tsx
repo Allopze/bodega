@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/field"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChartBar, Truck, Buildings, GasPump, CalendarBlank } from "@phosphor-icons/react"
-import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "../fuel-charts-lazy"
+import { MonthlyEvolutionChart, CategoryBarChart } from "../fuel-charts-lazy"
 
 interface ReportRow {
   group: string | null
@@ -76,7 +76,8 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">Por producto</CardTitle></CardHeader>
-          <CardContent><ProductPieChart data={byProduct} /></CardContent>
+          {/* Barra, no torta: con pocos productos el gasto se compara con precisión (dataviz: "donut para comparar valores cercanos → barra"). */}
+          <CardContent><CategoryBarChart data={byProduct} title="Productos" /></CardContent>
         </Card>
       </div>
 
@@ -106,7 +107,12 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
             <ReportCard title="Por vehículo" icon={<Truck className="h-5 w-5" />} rows={byVehicle} />
           </div>
         </TabsContent>
-        <TabsContent value="supplier"><ReportCard title="Por proveedor" icon={<GasPump className="h-5 w-5" />} rows={bySupplier} /></TabsContent>
+        <TabsContent value="supplier">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <CategoryBarChart data={bySupplier} title="Proveedores" />
+            <ReportCard title="Por proveedor" icon={<GasPump className="h-5 w-5" />} rows={bySupplier} />
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
   )

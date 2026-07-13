@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compareCycleAmounts, fuelCycleMovementSchema } from "./fuel-cycle"
+import { compareCycleAmounts, differenceSeverity, fuelCycleMovementSchema } from "./fuel-cycle"
 
 const base = { worksiteId: "ws", productId: "diesel", quantity: 10, occurredAt: "2026-07-12T12:00:00.000Z" }
 
@@ -27,5 +27,25 @@ describe("cycle comparison formula", () => {
   })
   it("does not invent a difference without both sources", () => {
     expect(compareCycleAmounts({ liters: 120, records: 2 }, null)).toEqual({ status: "unavailable", absolute: null, percent: null })
+  })
+})
+
+describe("difference severity", () => {
+  it("is unavailable when the underlying comparison is unavailable", () => {
+    expect(differenceSeverity(compareCycleAmounts(null, null))).toBe("unavailable")
+  })
+  it("is unavailable when the base is zero (no percent to threshold against)", () => {
+    expect(differenceSeverity(compareCycleAmounts({ liters: 10, records: 1 }, { liters: 0, records: 1 }))).toBe("unavailable")
+  })
+  it("is normal within ±2%", () => {
+    expect(differenceSeverity(compareCycleAmounts({ liters: 101, records: 1 }, { liters: 100, records: 1 }))).toBe("normal")
+    expect(differenceSeverity(compareCycleAmounts({ liters: 98, records: 1 }, { liters: 100, records: 1 }))).toBe("normal")
+  })
+  it("is warning strictly beyond ±2% and up to ±5%", () => {
+    expect(differenceSeverity(compareCycleAmounts({ liters: 104, records: 1 }, { liters: 100, records: 1 }))).toBe("warning")
+  })
+  it("is critical beyond ±5%, in either direction", () => {
+    expect(differenceSeverity(compareCycleAmounts({ liters: 110, records: 1 }, { liters: 100, records: 1 }))).toBe("critical")
+    expect(differenceSeverity(compareCycleAmounts({ liters: 80, records: 1 }, { liters: 100, records: 1 }))).toBe("critical")
   })
 })

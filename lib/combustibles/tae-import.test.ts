@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs"
 import { describe, expect, it } from "vitest"
-import { parseTaeLegacyExcel } from "./tae-import"
+import { parseTaeLegacyExcel, parseTaeLegacyRecord } from "./tae-import"
 
 async function fixture(liters: number | string = 118) {
   const workbook = new ExcelJS.Workbook()
@@ -22,5 +22,22 @@ describe("parseTaeLegacyExcel", () => {
     const result = await parseTaeLegacyExcel(await fixture("Q91"))
     expect(result.rows).toHaveLength(0)
     expect(result.errors[0]).toMatchObject({ field: "Litros" })
+  })
+
+  it("can reparse a persisted raw row with the same validation contract", () => {
+    const result = parseTaeLegacyRecord({
+      ID: 42,
+      Faena: "MASISA",
+      "Fecha y hora": "2026-07-01T08:38:32.100Z",
+      "Lugar de carga": "TAE",
+      "Supervisor / líder": "Luis Riquelme",
+      Conductor: "Carlos Norambuena",
+      Equipo: "KA-90",
+      Odómetro: "Sin odómetro",
+      Litros: 118,
+    }, 43)
+
+    expect(result.error).toBeNull()
+    expect(result.row).toMatchObject({ rowIndex: 43, legacySourceId: "42", meterReading: null, meterRaw: "Sin odómetro" })
   })
 })

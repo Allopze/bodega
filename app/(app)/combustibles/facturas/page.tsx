@@ -15,7 +15,7 @@ import { FuelLoadTable } from "../fuel-load-table"
 import { ImportFuelLoadsModal } from "../import-fuel-modal"
 import { FuelDashboardKpis } from "../fuel-kpis"
 import { FuelFilters } from "../fuel-filters"
-import { MonthlyEvolutionChart, CategoryBarChart, ProductPieChart } from "../fuel-charts-lazy"
+import { MonthlyEvolutionChart, CategoryBarChart } from "../fuel-charts-lazy"
 import { ExportXlsxButton } from "../export-button"
 
 export const metadata: Metadata = { title: "Facturas de combustible" }
@@ -169,7 +169,8 @@ export default async function CombustiblesFacturasPage({
         <Card>
           <CardHeader><CardTitle className="text-base">Por producto</CardTitle></CardHeader>
           <CardContent>
-            <ProductPieChart data={chartByProduct} />
+            {/* Barra, no torta: con 2-3 productos el gasto se compara con precisión, y una torta oculta justo esa comparación (dataviz: "donut para comparar valores cercanos → barra"). */}
+            <CategoryBarChart data={chartByProduct} title="Productos" />
           </CardContent>
         </Card>
       </div>

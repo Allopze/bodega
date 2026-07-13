@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions } from "@/db/schema"
+import { fuelStorageLocations, fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions } from "@/db/schema"
 import { guardPermission, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { createTaePublicLink, revokeTaePublicLink, reviewTaeSubmission } from "@/lib/services/fuel-tae"
@@ -41,7 +41,7 @@ export async function revokeTaePublicLinkAction(id: string) {
   return { ok: true, message: "Enlace revocado" }
 }
 
-export async function createTaeLoadingPointAction(input: { worksiteId: string; name: string; type: string }) {
+export async function createTaeLoadingPointAction(input: { worksiteId: string; name: string; type: string; storageLocationId?: string | null }) {
   const guard = await guardPermission("combustibles:tae_manage_config")
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
@@ -50,12 +50,31 @@ export async function createTaeLoadingPointAction(input: { worksiteId: string; n
   const allowed = ["fixed_dispenser", "truck_dispenser", "pickup_tank", "tae", "other"]
   if (!allowed.includes(input.type)) return { ok: false, message: "Tipo de punto inválido" }
   try {
-    await db.insert(fuelTaeLoadingPoints).values({ id: nanoid(), worksiteId: input.worksiteId, name, type: input.type })
+    await db.insert(fuelTaeLoadingPoints).values({ id: nanoid(), worksiteId: input.worksiteId, name, type: input.type, storageLocationId: input.storageLocationId || null })
     revalidatePath("/combustibles/tae")
     return { ok: true, message: "Punto de carga creado" }
   } catch {
     return { ok: false, message: "No se pudo crear el punto. Revisa que no exista otro con ese nombre." }
   }
+}
+
+/** Enlaza (o desvincula) un punto de carga con la vasija de la que reparte.
+ *  Sin este enlace, lo que la PWA entrega no se descuenta del saldo de ninguna
+ *  vasija concreta: `getFuelStorageBalances` sólo cuenta puntos enlazados. */
+export async function setTaeLoadingPointStorageAction(id: string, storageLocationId: string | null) {
+  const guard = await guardPermission("combustibles:tae_manage_config")
+  if (guard.error) return guard.error
+  const point = await db.query.fuelTaeLoadingPoints.findFirst({ where: eq(fuelTaeLoadingPoints.id, id) })
+  if (!point || !canAccessWorksite(guard.session, point.worksiteId)) return { ok: false, message: "Punto de carga no encontrado" }
+  if (storageLocationId) {
+    const location = await db.query.fuelStorageLocations.findFirst({ where: eq(fuelStorageLocations.id, storageLocationId) })
+    if (!location || location.worksiteId !== point.worksiteId) return { ok: false, message: "La vasija no pertenece a la misma faena" }
+  }
+  await db.update(fuelTaeLoadingPoints).set({ storageLocationId, updatedAt: new Date().toISOString() }).where(eq(fuelTaeLoadingPoints.id, id))
+  await recordAudit({ userId: guard.session.user.id, userEmail: guard.session.user.email ?? undefined, action: "update", entityType: "fuel_tae_loading_point", entityId: id, oldState: { storageLocationId: point.storageLocationId }, newState: { storageLocationId } })
+  revalidatePath("/combustibles/tae")
+  revalidatePath("/combustibles/ciclo")
+  return { ok: true, message: storageLocationId ? "Vasija asignada" : "Vasija desvinculada" }
 }
 
 export async function reviewTaeSubmissionAction(input: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote: string }) {

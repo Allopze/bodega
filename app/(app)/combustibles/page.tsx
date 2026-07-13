@@ -20,6 +20,7 @@ import { ConsumptionFiltersBar } from "./consumption-filters"
 import { ConsumptionAlerts } from "./consumption-alerts"
 import { ConsumptionDetailTable } from "./consumption-detail-table"
 import { EvolutionChart, PriceEvolutionChart, PatenteRankingChart, RendimientoChart } from "./consumption-charts-lazy"
+import { CategoryBarChart } from "./fuel-charts-lazy"
 import { formatCLP, formatQty } from "@/lib/utils"
 import { FuelControlOverviewPanel } from "./fuel-control-overview"
 
@@ -253,25 +254,21 @@ export default async function CombustiblesPage({
           </div>
           <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
             <Card>
-              <CardHeader><CardTitle className="text-base">Gasto por faena</CardTitle></CardHeader>
-              <CardContent className="space-y-1.5 text-sm">
-                {operationsSummary.porFaena.slice(0, 10).map((f) => (
-                  <div key={f.faena} className="flex items-center justify-between gap-3">
-                    <span className="truncate">{f.faena} <span className="text-muted-foreground">({f.equipos} equipos)</span></span>
-                    <span className="font-mono shrink-0">{formatCLP(f.monto)}</span>
-                  </div>
-                ))}
+              <CardHeader>
+                <CardTitle className="text-base">Gasto por faena</CardTitle>
+                <CardDescription>¿Qué faena concentra el gasto de combustible del log operacional?</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CategoryBarChart data={operationsSummary.porFaena.map((f) => ({ group: f.faena, totalLiters: f.litros, totalAmount: f.monto, count: f.equipos }))} title="Faenas" />
               </CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle className="text-base">Gasto por proveedor</CardTitle></CardHeader>
-              <CardContent className="space-y-1.5 text-sm">
-                {operationsSummary.porProveedor.slice(0, 10).map((p) => (
-                  <div key={p.proveedor} className="flex items-center justify-between gap-3">
-                    <span className="truncate">{p.proveedor} <span className="text-muted-foreground">({p.transacciones} cargas)</span></span>
-                    <span className="font-mono shrink-0">{formatCLP(p.monto)}</span>
-                  </div>
-                ))}
+              <CardHeader>
+                <CardTitle className="text-base">Gasto por proveedor</CardTitle>
+                <CardDescription>¿Con qué proveedor se concentra el volumen y el gasto?</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CategoryBarChart data={operationsSummary.porProveedor.map((p) => ({ group: p.proveedor, totalLiters: p.litros, totalAmount: p.monto, count: p.transacciones }))} title="Proveedores" />
               </CardContent>
             </Card>
           </div>

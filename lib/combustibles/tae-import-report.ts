@@ -89,11 +89,11 @@ export interface TaeImportReportData {
   missingSealRows: Array<{ rowIndex: number; equipmentCode: string; removedSealNumber: string | null; installedSealNumber: string | null }>
 }
 
-function normalizeCode(value: string): string {
+export function normalizeCode(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, "")
 }
 
-function normalizeName(value: string): string {
+export function normalizeName(value: string): string {
   return value
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()

@@ -1,0 +1,2 @@
+ALTER TABLE "fuel_tae_loading_points" ADD COLUMN "storage_location_id" text;--> statement-breakpoint
+ALTER TABLE "fuel_tae_loading_points" ADD CONSTRAINT "fuel_tae_loading_points_storage_location_id_fuel_storage_locations_id_fk" FOREIGN KEY ("storage_location_id") REFERENCES "public"."fuel_storage_locations"("id") ON DELETE set null ON UPDATE no action;

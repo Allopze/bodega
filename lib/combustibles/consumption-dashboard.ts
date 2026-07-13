@@ -9,6 +9,7 @@ import { db } from "@/db"
 import { fuelConsumptionRecords } from "@/db/schema"
 import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-queries"
 import { calcVariacion } from "./consumption-calculations"
+import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
 import { previousPeriod, dateOnly, daysAgo } from "@/lib/services/analytics-module/helpers"
 
 export interface ConsumptionAlert {
@@ -62,7 +63,6 @@ export interface ConsumptionDashboardData {
   alerts: ConsumptionAlert[]
 }
 
-const RENDIMIENTO_ATIPICO_DESVIACIONES = 1.5   // ponytail: umbral fijo, no configurable — ajustar aquí si hace falta
 const VARIACION_FUERTE_PCT = 30
 const TRANSACCIONES_ALTAS = 30
 
@@ -160,7 +160,7 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
   const transaccionesPorPatente = [...byPatente].sort((a, b) => b.transacciones - a.transacciones).slice(0, 10)
 
   const rendimientosRaw = byPatenteRaw.map((r) => ({ patente: r.patente, rendimiento: Number(r.rendimiento), cantidad: Number(r.cantidad) }))
-  const rendimientoPorPatente = flagOutliers(rendimientosRaw)
+  const rendimientoPorPatente = flagOutliersGeneric(rendimientosRaw, (r) => r.rendimiento)
 
   const alerts = buildConsumptionAlerts({
     byPatente, rendimientoPorPatente, patentesSinAsociacion,
@@ -181,19 +181,6 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
     rendimientoPorPatente: rendimientoPorPatente.sort((a, b) => b.cantidad - a.cantidad).slice(0, 15),
     alerts,
   }
-}
-
-/** Marca como atípico un rendimiento fuera de mean ± N·desviaciones estándar. */
-function flagOutliers(rows: Array<{ patente: string; rendimiento: number; cantidad: number }>): RendimientoRow[] {
-  const values = rows.map((r) => r.rendimiento).filter((v) => v > 0)
-  if (values.length < 3) return rows.map((r) => ({ ...r, atipico: r.rendimiento === 0 }))
-  const mean = values.reduce((s, v) => s + v, 0) / values.length
-  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length
-  const stddev = Math.sqrt(variance)
-  return rows.map((r) => ({
-    ...r,
-    atipico: r.rendimiento === 0 || Math.abs(r.rendimiento - mean) > RENDIMIENTO_ATIPICO_DESVIACIONES * stddev,
-  }))
 }
 
 function buildConsumptionAlerts(input: {

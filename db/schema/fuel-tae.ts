@@ -4,6 +4,7 @@ import { users } from "./users"
 import { worksites, workers } from "./worksites"
 import { fuelVehicles } from "./fuel-vehicles"
 import { fuelProducts } from "./fuel-products"
+import { fuelStorageLocations } from "./fuel-cycle"
 
 /** Lotes de importación del control manual TAE. */
 export const fuelTaeImportBatches = pgTable("fuel_tae_import_batches", {
@@ -31,6 +32,11 @@ export const fuelTaeImportBatches = pgTable("fuel_tae_import_batches", {
 export const fuelTaeLoadingPoints = pgTable("fuel_tae_loading_points", {
   id:           text("id").primaryKey(),
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
+  /** Vasija física de la que reparte este punto. Opcional: puntos legados de
+   *  importación histórica ("tae" genérico) pueden no corresponder a una vasija
+   *  administrada. Sin este enlace, lo que la PWA entrega no se puede atribuir
+   *  al saldo de una vasija concreta. */
+  storageLocationId: text("storage_location_id").references(() => fuelStorageLocations.id, { onDelete: "set null" }),
   name:         text("name").notNull(),
   type:         text("type").notNull().default("other"),
   importAliases: jsonb("import_aliases").notNull().default([]),
@@ -118,6 +124,57 @@ export const fuelTaeSubmissions = pgTable("fuel_tae_submissions", {
     .where(sql`${table.legacySourceId} IS NOT NULL`),
 ])
 
+/** Decisión manual: qué equipo del catálogo corresponde a un código histórico
+ *  ambiguo en una faena. `vehicle_id` nulo significa "revisado, sin equivalente"
+ *  — evita volver a marcar como ambiguo un código ya descartado a propósito.
+ *  Se consulta ANTES del fuzzy-match en `buildTaeImportPlan`, así una decisión
+ *  se aplica sola en cualquier reimportación futura del mismo histórico. */
+export const fuelTaeVehicleMappings = pgTable("fuel_tae_vehicle_mappings", {
+  id:          text("id").primaryKey(),
+  worksiteId:  text("worksite_id").notNull().references(() => worksites.id),
+  legacyCode:  text("legacy_code").notNull(),
+  vehicleId:   text("vehicle_id").references(() => fuelVehicles.id, { onDelete: "set null" }),
+  decidedBy:   text("decided_by").notNull().references(() => users.id),
+  decidedAt:   timestamp("decided_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  notes:       text("notes"),
+}, (table) => [
+  uniqueIndex("fuel_tae_vehicle_mappings_worksite_code_unique").on(table.worksiteId, table.legacyCode),
+])
+
+/** Igual que `fuelTaeVehicleMappings` pero para conductor/supervisor, que comparten
+ *  el catálogo de `workers` y se distinguen por `role`. */
+export const fuelTaeWorkerMappings = pgTable("fuel_tae_worker_mappings", {
+  id:          text("id").primaryKey(),
+  worksiteId:  text("worksite_id").notNull().references(() => worksites.id),
+  role:        text("role").notNull(),
+  legacyName:  text("legacy_name").notNull(),
+  workerId:    text("worker_id").references(() => workers.id, { onDelete: "set null" }),
+  decidedBy:   text("decided_by").notNull().references(() => users.id),
+  decidedAt:   timestamp("decided_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  notes:       text("notes"),
+}, (table) => [
+  check("fuel_tae_worker_mappings_role_valid", sql`${table.role} IN ('driver', 'supervisor')`),
+  uniqueIndex("fuel_tae_worker_mappings_worksite_role_name_unique").on(table.worksiteId, table.role, table.legacyName),
+])
+
+/** Fila descartada de un lote histórico: falla de formato al parsear, o falla al
+ *  resolver la faena. Antes de esto sólo se contaban (`invalid_rows`); persistirlas
+ *  permite mostrar el detalle y, más adelante, reprocesarlas. */
+export const fuelTaeImportRejections = pgTable("fuel_tae_import_rejections", {
+  id:             text("id").primaryKey(),
+  batchId:        text("batch_id").notNull().references(() => fuelTaeImportBatches.id, { onDelete: "cascade" }),
+  rowIndex:       integer("row_index").notNull(),
+  stage:          text("stage").notNull(),
+  field:          text("field"),
+  message:        text("message").notNull(),
+  legacySourceId: text("legacy_source_id"),
+  rawRow:         jsonb("raw_row"),
+  createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("fuel_tae_import_rejections_stage_valid", sql`${table.stage} IN ('parse', 'worksite')`),
+  index("fuel_tae_import_rejections_batch_idx").on(table.batchId),
+])
+
 /** Evidencia fotográfica de la carga, siempre privada. */
 export const fuelTaeEvidence = pgTable("fuel_tae_evidence", {
   id:           text("id").primaryKey(),
@@ -140,10 +197,28 @@ export const fuelTaeEvidence = pgTable("fuel_tae_evidence", {
 export const fuelTaeImportBatchesRelations = relations(fuelTaeImportBatches, ({ one, many }) => ({
   importer: one(users, { fields: [fuelTaeImportBatches.importedBy], references: [users.id] }),
   submissions: many(fuelTaeSubmissions),
+  rejections: many(fuelTaeImportRejections),
+}))
+
+export const fuelTaeImportRejectionsRelations = relations(fuelTaeImportRejections, ({ one }) => ({
+  batch: one(fuelTaeImportBatches, { fields: [fuelTaeImportRejections.batchId], references: [fuelTaeImportBatches.id] }),
+}))
+
+export const fuelTaeVehicleMappingsRelations = relations(fuelTaeVehicleMappings, ({ one }) => ({
+  worksite: one(worksites, { fields: [fuelTaeVehicleMappings.worksiteId], references: [worksites.id] }),
+  vehicle: one(fuelVehicles, { fields: [fuelTaeVehicleMappings.vehicleId], references: [fuelVehicles.id] }),
+  decider: one(users, { fields: [fuelTaeVehicleMappings.decidedBy], references: [users.id] }),
+}))
+
+export const fuelTaeWorkerMappingsRelations = relations(fuelTaeWorkerMappings, ({ one }) => ({
+  worksite: one(worksites, { fields: [fuelTaeWorkerMappings.worksiteId], references: [worksites.id] }),
+  worker: one(workers, { fields: [fuelTaeWorkerMappings.workerId], references: [workers.id] }),
+  decider: one(users, { fields: [fuelTaeWorkerMappings.decidedBy], references: [users.id] }),
 }))
 
 export const fuelTaeLoadingPointsRelations = relations(fuelTaeLoadingPoints, ({ one, many }) => ({
   worksite: one(worksites, { fields: [fuelTaeLoadingPoints.worksiteId], references: [worksites.id] }),
+  storageLocation: one(fuelStorageLocations, { fields: [fuelTaeLoadingPoints.storageLocationId], references: [fuelStorageLocations.id] }),
   publicLinks: many(fuelTaePublicLinks),
   submissions: many(fuelTaeSubmissions),
 }))

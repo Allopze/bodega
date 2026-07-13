@@ -8,6 +8,8 @@ import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import {
   downloadCopecReports,
 } from "@/lib/combustibles/copec-reports"
+import { parseTaeReceiptExcel } from "@/lib/combustibles/tae-receipt-import"
+import { importTaeReceipts } from "@/lib/combustibles/tae-receipts"
 
 const STATE_KEY = "combustibles.copec.sync"
 const START_KEY = "COPEC_SYNC_START_DATE"
@@ -153,8 +155,14 @@ export async function getCopecSyncPlan(): Promise<{ from: string; to: string; pe
 interface PeriodSyncResult {
   imported: number
   pending: number
+  /** Solo informes TCT. El guard de "el portal no entregó nada" se mide con esto:
+   *  si un informe TAE contara aquí, una caída de TCT avanzaría el cursor igual. */
   reports: string[]
   unavailable: string[]
+  /** Recepciones del canal TAE (etapa `received` del ciclo físico). */
+  received: number
+  /** Tarjetas TAE sin vasija asociada: su combustible no entró al ciclo. */
+  unmappedCards: string[]
 }
 
 async function importCopecPeriod(
@@ -245,7 +253,47 @@ async function importCopecPeriod(
       imported += rows.length
     }
   }
-  return { imported, pending: pending.size, reports, unavailable }
+
+  const receipts = await importTaeReceiptPeriod(from, to, resolvedImporterId, unavailable)
+  return { imported, pending: pending.size, reports, unavailable, ...receipts }
+}
+
+/**
+ * Canal TAE: mismo portal y mismo mes, otro "Tipo Producto". Cada fila es una carga
+ * de una vasija propia en estación, que es la etapa `received` del ciclo.
+ *
+ * Sus informes NO se agregan a `reports` a propósito: ese arreglo alimenta el guard
+ * que corta el barrido cuando el portal deja de entregar archivos, y debe seguir
+ * midiendo únicamente TCT.
+ */
+async function importTaeReceiptPeriod(
+  from: string,
+  to: string,
+  importerId: string,
+  unavailable: string[],
+): Promise<{ received: number; unmappedCards: string[] }> {
+  const downloads = await downloadCopecReports(
+    (["diesel", "bluemax"] as const).map((product) => ({ product, from, to })),
+    "TAE",
+  )
+
+  let received = 0
+  const unmappedCards = new Set<string>()
+  for (const download of downloads) {
+    const productLabel = download.product === "diesel" ? "Diesel" : "BlueMax"
+    if (download.unavailable) {
+      unavailable.push(`TAE ${productLabel}`)
+      continue
+    }
+    const parsed = await parseTaeReceiptExcel(download.report.buffer)
+    if (parsed.errors.length) {
+      console.warn(`[copec-sync] informe TAE ${productLabel} ${from}: ${parsed.errors.length} filas descartadas`, parsed.errors.slice(0, 5))
+    }
+    const outcome = await importTaeReceipts(parsed.rows, importerId)
+    received += outcome.inserted
+    for (const card of outcome.unmappedCards) unmappedCards.add(card)
+  }
+  return { received, unmappedCards: [...unmappedCards].sort() }
 }
 
 export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?: string): Promise<PeriodSyncResult> {
@@ -272,15 +320,19 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   return result
 }
 
-export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; pending: number; reports: string[]; unavailable: string[] }> {
+export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; received: number; pending: number; reports: string[]; unavailable: string[]; unmappedCards: string[] }> {
   const plan = await getCopecSyncPlan()
   let imported = 0
+  let received = 0
   const reports: string[] = []
   const unavailable: string[] = []
+  const unmappedCards = new Set<string>()
   let pending = plan.pending
   for (const period of plan.periods) {
     const result = await syncCopecReportPeriod(period)
     imported += result.imported
+    received += result.received
+    for (const card of result.unmappedCards) unmappedCards.add(card)
     pending = result.pending
     reports.push(...result.reports)
     unavailable.push(...result.unavailable.map((product) => `${period.from} a ${period.to} (${product})`))
@@ -291,5 +343,5 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
       throw new Error(`Copec no entregó ningún archivo para el período ${period.from} a ${period.to}. Revisa credenciales/portal, o ajusta la fecha de inicio si ese tramo no tiene consumos. Se importaron ${imported} registros antes de detenerse.`)
     }
   }
-  return { from: plan.from, to: plan.to, imported, pending, reports, unavailable }
+  return { from: plan.from, to: plan.to, imported, received, pending, reports, unavailable, unmappedCards: [...unmappedCards].sort() }
 }

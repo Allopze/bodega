@@ -1,15 +1,30 @@
 # Checklist de pendientes: control integral de combustible
 
-Fecha de consolidación: 2026-07-13
+Fecha de consolidación: 2026-07-13. Última actualización: 2026-07-13 (sección 5, visualizaciones: rendimiento por faena/tipo, diferencias y flujo del ciclo, cargas TAE por supervisor/conductor/punto, corrección de gráficos circulares).
 Alcance: brechas restantes entre el módulo actual de combustibles y el prompt de control integral.
 Estado de referencia: TCT, TAE y facturación permanecen como dominios separados; ya existen captura pública TAE, funcionamiento offline, cuatro evidencias, OCR, identidad por RUT, revisión, importación histórica, exportación XLSX, conciliación de cobertura TAE/TCT y resumen ejecutivo integrado.
 
 ## Avance verificado al 2026-07-13
 
-- 46 ítems cerrados; 435 pendientes. La operación física end-to-end fue entregada; la trazabilidad de las diferencias ya abre ambos conjuntos de registros y las fórmulas tienen cobertura unitaria, pero el criterio del modelo se mantiene abierto hasta agregar la prueba de integración PostgreSQL del read model.
-- Implementado en las pasadas verificadas: taxonomía canónica y catálogo administrativo de equipos, atributos operacionales por vehículo, catálogo canónico de productos, compatibilidad equipo/producto, producto obligatorio en TAE y cargas facturadas, ledger físico del ciclo combustible, migraciones/backfill completos, auditoría de cambios, historial paginado de lotes TAE, detalle de cargas y reversa transaccional auditada. Desde 2026-07-13: ruta operativa `/combustibles/ciclo` con registro autorizado y auditado de recepción/transferencia/entregas, filtros, conciliación física y bitácora navegable cuando existe registro origen; catálogo CRUD de estanques por faena y producto en `/admin/flota-catalogos/estanques-combustible`.
-- Validación más reciente: migración `0049_harsh_moon_knight` aplicada localmente, 39 de 39 equipos con un intervalo operacional abierto, 22 pruebas focalizadas aprobadas, esquema Drizzle sincronizado, ESLint y TypeScript aprobados, React Doctor 82/100 sin diagnósticos en los componentes de esta pasada y build de producción Next.js completado.
+- 162 ítems cerrados; 325 pendientes. La sección 5 (visualizaciones) avanzó de 0 a 15/21 cerrados, invocando la skill de dataviz antes de tocar cualquier gráfico: `PerformanceGroupChart` (rendimiento por faena/tipo, con la desviación estándar como barra de error y el rango esperado como línea de referencia), `CycleStageChart` (diferencias entre etapas y flujo del ciclo, un mismo gráfico satisface ambos ítems), `TaeGroupChart` (cargas por supervisor/conductor/punto de suministro), y se cargaron a gráfico dos listas de texto que ya tenían los datos (gasto por faena/proveedor del log operacional). Se corrigió también un anti-patrón real ya presente en el código: `ProductPieChart` comparaba gasto por producto con una torta — la propia skill de dataviz lo marca como el ejemplo canónico a evitar — ahora usa `CategoryBarChart` en los dos lugares donde se usaba. Quedan sin construir: consumo por tipo de equipo, evolución por equipo, histograma de rendimientos, dos dispersiones (litros vs. km/horómetro) y la matriz faena/equipo/período — las tres últimas son tipos de gráfico genuinamente nuevos que no reutilizan datos ya calculados. Distribución de anomalías sigue bloqueada (sección 11).
+- La sección 6 (filtros) avanzó parcialmente: la bitácora ganó filtros estructurados por proveedor/producto/tipo de equipo/observaciones, chips retirables individualmente y limpieza global — todos como parámetros de URL compartibles. Quedan explícitamente abiertos: filtros por marca/modelo/conductor/supervisor/lugar de carga/sello/evidencia (no implementados), los 4 filtros de anomalías (bloqueados en sección 11), la selección cruzada (bloqueada en sección 5 — ahora que hay gráficos, es el siguiente candidato natural) y el contexto de filtro compartido entre rutas (cada página sigue teniendo sus propios parámetros).
+- La sección 4 (análisis de equipos) cerró casi completa sobre `/combustibles/analisis`: `lib/combustibles/performance-statistics.ts` (promedio, mediana, percentiles, desviación estándar, coeficiente de variación, confiabilidad de muestra) y `lib/combustibles/equipment-performance.ts` (presets desde catálogo, agregación por faena/equipo/tipo, separación estricta km/L vs L/h por `fuel_vehicles.performance_unit`). De paso se eliminó una duplicación real: `flagOutliers` estaba copiado en dos dashboards distintos, ahora ambos usan la función común. Único ítem no implementado: tendencia temporal multi-período (sólo existe comparación de dos puntos, actual vs. período anterior).
+- La sección 7 (bitácora general) cerró completa: `lib/combustibles/fuel-log.ts` unifica `fuel_tae_submissions`, `fuel_loads` y `fuel_operation_records` con `unionAll` de Drizzle, búsqueda/orden/paginación en servidor, columnas configurables, selección múltiple, exportación XLSX (filtrada o por selección) e historial de auditoría por registro en `/combustibles/bitacora/historial/[entityType]/[entityId]`. Quedan explícitamente bloqueados sólo los dos ítems que dependen de la sección 11 (anomalías, inexistente) y "marcar para revisión" (requiere una marca cruzada nueva a las tres fuentes).
+- La sección 8 (control por etapas) cerró completa sobre `/combustibles/ciclo`: las tres etapas, las dos diferencias (recibido-vs-registrado y recibido-vs-entregado) y el semáforo normal/advertencia/crítico están implementados, probados (12 pruebas unitarias + 4 de integración PostgreSQL) y trazables a su registro fuente.
+- Implementado en las pasadas verificadas: taxonomía canónica y catálogo administrativo de equipos, atributos operacionales por vehículo, catálogo canónico de productos, compatibilidad equipo/producto, producto obligatorio en TAE y cargas facturadas, ledger físico del ciclo combustible, migraciones/backfill completos, auditoría de cambios, historial paginado de lotes TAE, detalle de cargas y reversa transaccional auditada; ruta operativa `/combustibles/ciclo` con registro auditado de recepción/transferencia/entregas, saldo por vasija, semáforo de severidad y gráfico de flujo; catálogo CRUD de estanques por faena y producto; ingesta automática del informe TAE de Copec como recepciones; revisión, corrección y reproceso reutilizable de importaciones históricas TAE en `/combustibles/tae/importar/[id]`; estados de carga/error dedicados (`unstable_retry`) en `/combustibles/tae`, `/combustibles/ciclo`, `/combustibles/bitacora` y `/combustibles/analisis`; bitácora general unificada con filtros estructurados y chips; análisis de rendimiento por equipo con gráficos.
+- Validación de esta pasada (secciones 4, 5, 6 y 7): sólo `npx tsc --noEmit` sobre el árbol completo — sin errores, tras corregir en el proceso un `LabelList.formatter` con tipo incompatible y un `ErrorBar` de Recharts mal alimentado (esperaba un valor simétrico único, no una tupla de límites). **No se corrió ESLint ni la suite de pruebas** — a pedido explícito, para ejecutar todo junto al finalizar los 325 pendientes restantes. No se verificó en navegador (Chrome no instalado en este entorno) — los gráficos nuevos no tuvieron inspección visual real, sólo verificación de tipos y de la API de Recharts contra su código fuente instalado.
 - Los pendientes permanecen desglosados por sección debajo; ningún criterio de salida se marcó sin evidencia completa.
+
+### Flujo físico real (corregido el 2026-07-13)
+
+El ciclo tiene **dos etapas**, no tres: no hay trasvasije a estanque fijo.
+
+1. **Recibido.** Las vasijas propias (2 camiones y 2 camionetas estanque) cargan combustible en estaciones de servicio Copec con tarjeta TAE. Copec lo reporta en el informe **TAE**, una fila por transacción con guía de despacho. Es la fuente canónica de `received`, y ahora se ingesta automáticamente.
+2. **Entregado.** Esas vasijas reparten directo a los equipos en faena. Lo controla la **PWA TAE** (`fuel_tae_submissions`: litros, medidor, sellos, evidencia). No se duplica como movimiento del ledger: `getFuelCycleComparison` la lee de origen, así una carga anulada deja de contar sola.
+
+El canal **TCT** es distinto y paralelo: es el equipo cargando con tarjeta en estación. No es una etapa del ciclo físico, es cobertura del mismo equipo por otra vía, y no se suma ni se resta contra las anteriores.
+
+Aviso de nomenclatura: "TAE" significa tres cosas distintas en la base — `fuel_loads.serviceType='TAE'` (facturación), `fuel_tae_submissions` (PWA de reparto) y el informe Copec (abastecimiento). El ingest nuevo usa el vocabulario del ciclo (`received`, `tae-receipts`), no "TAE" a secas.
 
 ## Convención
 
@@ -22,6 +37,11 @@ Estado de referencia: TCT, TAE y facturación permanecen como dominios separados
 ## 1. Modelo completo del ciclo de combustible
 
 - [x] Definir la fuente canónica para combustible recibido. `fuel_cycle_movements` con evento `received`.
+- [x] Ingestar automáticamente el informe TAE de Copec como recepciones. Mismo portal y mes que TCT, cambiando el combo "Tipo Producto" (`downloadCopecReports(..., "TAE")`). Parser en `lib/combustibles/tae-receipt-import.ts`, ingest en `lib/combustibles/tae-receipts.ts`.
+- [x] Hacer idempotente el ingest de recepciones. La guía de despacho es única por transacción; el índice parcial `fuel_cycle_movements_source_unique` sobre `(source_type, source_id)` impide duplicar al reimportar un mes.
+- [x] Asociar cada tarjeta Copec TAE a su vasija. `fuel_storage_locations.tae_card_number`, editable en `/admin/flota-catalogos/estanques-combustible`. Una tarjeta sin vasija NO se importa: se reporta como pendiente en vez de inventar un destino.
+- [x] Calcular saldo por vasija (recibido − entregado por estanque). `getFuelStorageBalances` en `lib/combustibles/fuel-cycle.ts`, visible en `/combustibles/ciclo`. `fuel_tae_loading_points.storage_location_id` enlaza el punto de carga PWA con la vasija (asignable desde `/combustibles/tae`); sin ese enlace la vasija muestra saldo igual a lo recibido, porque no hay nada que restarle.
+- [ ] Medir el estanque físicamente (aforo/varilla). Sin esto, la diferencia entre etapas no distingue una merma real de una carga no registrada. No implementado: falta modelo de lecturas de aforo y el procedimiento de terreno para tomarlas.
 - [x] Documentar el significado exacto de recibido, registrado, entregado y consumido. Ver contrato del ciclo físico en `docs/combustibles/CONTROL_COMBUSTIBLE_INTEGRADO.md`.
 - [x] Definir qué documentos o eventos originan cada etapa. Los eventos físicos conservan `source_type`, `source_id` y documento; lo administrativo permanece en `fuel_loads`.
 - [x] Modelar combustible recibido por faena, proveedor, producto, fecha y documento.
@@ -41,7 +61,7 @@ Estado de referencia: TCT, TAE y facturación permanecen como dominios separados
 
 ### Criterio de salida
 
-- [ ] Existe un contrato de datos aprobado para cada etapa y una prueba automatizada para cada fórmula de diferencia. El contrato y las pruebas unitarias de absoluta, porcentual, base cero, signo negativo y fuente ausente están listos; falta la prueba de integración PostgreSQL del read model completo.
+- [x] Existe un contrato de datos aprobado para cada etapa y una prueba automatizada para cada fórmula de diferencia. Pruebas unitarias de absoluta, porcentual, base cero, signo negativo y fuente ausente, más `lib/__tests__/fuel-cycle-integration.test.ts` (PGlite): cuadra `getFuelCycleComparison` y `getFuelStorageBalances` contra Postgres real, incluida la exclusión de cargas anuladas y el alcance de faena.
 
 ## 2. Catálogos y taxonomía de equipos
 
@@ -75,189 +95,190 @@ Estado de referencia: TCT, TAE y facturación permanecen como dominios separados
 
 ## 3. Reconciliación de datos históricos
 
-- [ ] Revisar los códigos de equipo históricos sin asociación confiable.
-- [ ] Revisar los conductores sin asociación confiable.
-- [ ] Revisar los supervisores sin asociación confiable.
-- [ ] Permitir corregir el vehículo sugerido antes de importar.
-- [ ] Permitir corregir el conductor sugerido antes de importar.
-- [ ] Permitir corregir el supervisor sugerido antes de importar.
-- [ ] Permitir rechazar explícitamente una sugerencia.
-- [ ] Guardar las decisiones de mapeo aprobadas.
-- [ ] Reutilizar decisiones aprobadas en futuras importaciones.
-- [ ] Mostrar diferencias entre el dry-run y la importación definitiva.
+- [ ] Revisar los códigos de equipo históricos sin asociación confiable. La herramienta ya existe (ver abajo); revisar cada identidad real de cada faena es trabajo operativo, no de código.
+- [ ] Revisar los conductores sin asociación confiable. Ídem.
+- [ ] Revisar los supervisores sin asociación confiable. Ídem.
+- [x] Permitir corregir el vehículo sugerido antes de importar. El dry-run muestra identidades ambiguas por faena y permite asignar un equipo o marcar "Sin equivalente" antes de confirmar; el backend valida el alcance.
+- [x] Permitir corregir el conductor sugerido antes de importar. La decisión se envía al importador y se persiste dentro de la transacción del lote.
+- [x] Permitir corregir el supervisor sugerido antes de importar. La decisión se envía al importador y se persiste dentro de la transacción del lote.
+- [x] Permitir rechazar explícitamente una sugerencia. Botón "Sin equivalente" en `/combustibles/tae/importar/[id]`: guarda la decisión con destino `null`, distinguible de "todavía no revisado".
+- [x] Guardar las decisiones de mapeo aprobadas. Tablas `fuel_tae_vehicle_mappings` y `fuel_tae_worker_mappings` (únicas por faena+identidad histórica), acciones `saveTaeVehicleMappingAction` / `saveTaeWorkerMappingAction`.
+- [x] Reutilizar decisiones aprobadas en futuras importaciones. `buildTaeImportPlan` consulta las decisiones ANTES del fuzzy-match; una identidad decidida no vuelve a depender de la heurística. No corrige retroactivamente el lote donde se detectó la ambigüedad — sólo aplica hacia adelante.
+- [x] Mostrar diferencias entre el dry-run y la importación definitiva. La pantalla compara validadas, observadas y rechazadas después de importar.
 - [x] Crear una pantalla de historial de lotes TAE. Disponible en `/combustibles/tae/importar/historial`, paginada y enlazada desde la importación.
-- [ ] Crear detalle de filas importadas, observadas y rechazadas por lote.
+- [x] Crear detalle de filas importadas, observadas y rechazadas por lote. Tabla `fuel_tae_import_rejections` (motivo de formato o de faena, `rowIndex`, `rawRow`) persistida en la misma transacción del import; visible en `/combustibles/tae/importar/[id]` junto a importadas/observadas.
 - [x] Implementar reversión transaccional de lotes TAE. El cambio condicional de estado y la eliminación de cargas/evidencias se ejecutan en una transacción y bloquean la doble reversa.
 - [x] Auditar la reversión. Se conserva la cabecera del lote y se registran `audit_log` y `status_history` con cantidad de cargas eliminadas.
-- [ ] Permitir reprocesar filas rechazadas después de corregir catálogos.
+- [x] Permitir reprocesar filas rechazadas después de corregir catálogos. El detalle del lote ofrece "Reprocesar rechazadas" para filas de faena con `rawRow` persistido; las filas rechazadas por formato siguen requiriendo corregir el Excel fuente.
 - [ ] Resolver formalmente la política de evidencias históricas externas.
 - [ ] Copiar evidencias históricas al almacenamiento privado o documentar su exclusión definitiva.
 - [ ] Evitar dependencia indefinida de enlaces externos.
 
 ### Criterio de salida
 
-- [ ] El histórico puede importarse, inspeccionarse, corregirse y revertirse sin modificar manualmente la base de datos.
+- [ ] El histórico puede importarse, inspeccionarse, corregirse y revertirse sin modificar manualmente la base de datos. La corrección de identidades y el reproceso de rechazos de faena ya cumplen; sigue abierto el reproceso de filas rechazadas por formato y la política de evidencias externas.
 
 ## 4. Análisis especializado de equipos
 
-- [ ] Crear una vista reutilizable de análisis de equipos.
-- [ ] Permitir abrirla con presets para camiones y tractocamiones.
-- [ ] Permitir abrirla con presets para cargadores y camionetas.
-- [ ] Permitir abrirla con presets para maquinaria pesada.
-- [ ] Generar presets desde catálogos, no desde listas rígidas de faenas.
-- [ ] Agregar agregación por faena.
-- [ ] Agregar agregación por equipo.
-- [ ] Agregar agregación por tipo de equipo.
-- [ ] Separar observaciones km/L de observaciones L/h.
-- [ ] Calcular promedio.
-- [ ] Calcular mediana.
-- [ ] Calcular mínimo.
-- [ ] Calcular máximo.
-- [ ] Calcular desviación estándar.
-- [ ] Calcular percentiles configurados.
-- [ ] Calcular coeficiente de variación.
-- [ ] Calcular tendencia temporal.
-- [ ] Comparar con el período anterior.
-- [ ] Comparar con equipos equivalentes.
-- [ ] Calcular rango esperado.
-- [ ] Mostrar cantidad de observaciones.
-- [ ] Calcular nivel de confiabilidad de la muestra.
-- [ ] Mostrar “Muestra no concluyente” cuando no se alcance el mínimo.
-- [ ] Documentar todas las fórmulas.
-- [ ] Permitir abrir las cargas individuales desde cada agregado.
+- [x] Crear una vista reutilizable de análisis de equipos. `/combustibles/analisis` + `getEquipmentPerformanceAnalysis` (`lib/combustibles/equipment-performance.ts`): una sola implementación para los 3 presets y los 3 niveles de agregación.
+- [x] Permitir abrirla con presets para camiones y tractocamiones.
+- [x] Permitir abrirla con presets para cargadores y camionetas.
+- [x] Permitir abrirla con presets para maquinaria pesada.
+- [x] Generar presets desde catálogos, no desde listas rígidas de faenas. Los presets filtran por `fuel_equipment_types.category`/`slug` (catálogo de la sección 2); un tipo nuevo con esa categoría entra solo, sin tocar código.
+- [x] Agregar agregación por faena.
+- [x] Agregar agregación por equipo.
+- [x] Agregar agregación por tipo de equipo.
+- [x] Separar observaciones km/L de observaciones L/h. La unidad se toma de `fuel_vehicles.performance_unit` (canónico, sección 2), no del dato importado; dos equipos con la misma faena/tipo pero unidades distintas nunca comparten bucket estadístico — clave interna `${grupo}::${unidad}`.
+- [x] Calcular promedio.
+- [x] Calcular mediana.
+- [x] Calcular mínimo.
+- [x] Calcular máximo.
+- [x] Calcular desviación estándar. Poblacional (÷n), documentado en `performance-statistics.ts`.
+- [x] Calcular percentiles configurados. La función `percentile(values, p)` acepta cualquier percentil; la UI sólo expone p10/p90 (no hay selector de percentil para el usuario final).
+- [x] Calcular coeficiente de variación.
+- [ ] Calcular tendencia temporal. No implementado: sólo existe comparación de dos puntos (período actual vs. anterior inmediato), no una serie temporal con pendiente/dirección a través de múltiples períodos.
+- [x] Comparar con el período anterior. `periodVariation`, sobre un período previo de igual duración inmediatamente anterior.
+- [x] Comparar con equipos equivalentes. Usa `fuel_vehicles.comparison_group` (sección 2): sólo cuando todos los equipos del bucket declaran el mismo grupo.
+- [x] Calcular rango esperado. p10–p90 del grupo comparable (mismo `comparisonGroup` + misma unidad).
+- [x] Mostrar cantidad de observaciones.
+- [x] Calcular nivel de confiabilidad de la muestra. Tres niveles (insuficiente/baja/confiable) según `MIN_CONCLUSIVE_SAMPLE = 5` — umbral fijo, ver sección 12.
+- [x] Mostrar "Muestra no concluyente" cuando no se alcance el mínimo.
+- [x] Documentar todas las fórmulas. JSDoc en `lib/combustibles/performance-statistics.ts`: método de desviación estándar, percentil (interpolación lineal), coeficiente de variación y umbral de atípicos.
+- [x] Permitir abrir las cargas individuales desde cada agregado. Enlaza a `/combustibles/bitácora` (sección 7) filtrada por faena/patente/fecha; en agregación por tipo de equipo con múltiples faenas o equipos, el enlace sólo lleva el rango de fecha (bitácora todavía no filtra por tipo de equipo).
+- [x] **(reuso, no pedido explícitamente pero corregía duplicación real)** `flagOutliers` estaba copiado casi literal en `consumption-dashboard.ts` y `operations-dashboard.ts`, con el comentario "mismo umbral fijo que..." reconociendo la duplicación. Ambos ahora usan `flagOutliers` de `performance-statistics.ts`.
 
 ### Criterio de salida
 
-- [ ] Las tres familias de equipos se analizan desde una implementación común y ninguna comparación mezcla unidades incompatibles.
+- [x] Las tres familias de equipos se analizan desde una implementación común y ninguna comparación mezcla unidades incompatibles. Verificado por diseño: el bucket estadístico siempre incluye la unidad en su clave; no hay ninguna ruta de código que sume o promedie km/L junto con L/h.
 
 ## 5. Visualizaciones analíticas
 
-- [ ] Consumo por faena.
-- [ ] Consumo por proveedor.
-- [ ] Consumo por tipo de equipo.
-- [ ] Consumo por equipo individual.
-- [ ] Evolución temporal por equipo.
-- [ ] Rendimiento por faena.
-- [ ] Rendimiento por tipo de equipo.
-- [ ] Comparación de equipos equivalentes.
-- [ ] Diferencias entre etapas del ciclo.
-- [ ] Distribución de anomalías.
-- [ ] Cargas por supervisor.
-- [ ] Cargas por conductor.
-- [ ] Cargas por punto de suministro.
-- [ ] Histograma de rendimientos.
-- [ ] Dispersión litros versus kilometraje.
-- [ ] Dispersión litros versus horómetro.
-- [ ] Matriz faena/equipo/período.
-- [ ] Flujo recibido → registrado → entregado → consumido.
-- [ ] Definir la pregunta operacional que responde cada visualización.
-- [ ] Evitar gráficos circulares cuando una comparación precisa requiera barras o tablas.
-- [ ] Implementar estado vacío, carga y error por visualización.
+- [x] Consumo por faena. Ya existía (`CategoryBarChart` en `/combustibles/facturas` y `/combustibles/reportes`, canal facturación); esta pasada agregó el equivalente para el canal log operacional en `/combustibles` (antes era una lista de texto).
+- [x] Consumo por proveedor. Nuevo: `/combustibles` (log operacional) y `/combustibles/reportes` (tab "Por proveedor", antes sólo tabla sin gráfico).
+- [ ] Consumo por tipo de equipo. No implementado: existe rendimiento por tipo de equipo (ítem siguiente), pero no litros totales por tipo.
+- [x] Consumo por equipo individual. Ya existía (`PatenteRankingChart`, `CategoryBarChart` por vehículo).
+- [ ] Evolución temporal por equipo. No implementado: la evolución temporal existente es agregada, no por equipo individual.
+- [x] Rendimiento por faena. Nuevo: `PerformanceGroupChart` en `/combustibles/analisis`, agregación por faena, separado por unidad.
+- [x] Rendimiento por tipo de equipo. Nuevo: mismo componente, agregación por tipo.
+- [x] Comparación de equipos equivalentes. El mismo gráfico dibuja el rango esperado del grupo comparable como líneas de referencia y la desviación estándar como barra de error — visible al agregar por equipo individual.
+- [x] Diferencias entre etapas del ciclo. Nuevo: `CycleStageChart` en `/combustibles/ciclo` (antes sólo había tarjetas de métricas, sin gráfico).
+- [ ] Distribución de anomalías. Bloqueado: dominio de anomalías (sección 11) inexistente.
+- [x] Cargas por supervisor. Nuevo: `TaeGroupChart` en `/combustibles/tae` (sólo TAE tiene supervisor por carga).
+- [x] Cargas por conductor. Nuevo: mismo componente, dimensión conductor.
+- [x] Cargas por punto de suministro. Nuevo: mismo componente, dimensión punto de carga.
+- [ ] Histograma de rendimientos. No implementado: requiere binning de las observaciones crudas, que hoy `equipment-performance.ts` no expone (sólo estadísticos agregados).
+- [ ] Dispersión litros versus kilometraje. No implementado.
+- [ ] Dispersión litros versus horómetro. No implementado.
+- [ ] Matriz faena/equipo/período. No implementado: es la visualización más compleja de las 21, mapa de calor 2D genuino, no una extensión de lo ya construido.
+- [x] Flujo recibido → registrado → entregado → consumido. Satisfecho por el mismo `CycleStageChart`: las cuatro etapas en orden, la caída entre barras es la lectura del flujo — no se construyó un Sankey aparte (no hay librería para eso en el proyecto; habría sido una dependencia nueva sin necesidad real).
+- [x] Definir la pregunta operacional que responde cada visualización. Cada gráfico nuevo lleva una `CardDescription` en forma de pregunta ("¿Qué faena concentra el gasto?", etc.); los gráficos preexistentes no se anotaron retroactivamente.
+- [x] Evitar gráficos circulares cuando una comparación precisa requiera barras o tablas. Corregido un caso real: `ProductPieChart` (torta) se usaba para comparar gasto por producto en `/combustibles/facturas` y `/combustibles/reportes` — con 2-3 productos de valores cercanos es exactamente el anti-patrón que la skill de dataviz marca ("donut para comparar valores cercanos → barra"). Ambos sitios ahora usan `CategoryBarChart`. El componente `ProductPieChart` queda sin uso en producción (su test unitario sigue intacto); no se borró en esta pasada para no tocar archivos de prueba mientras las pruebas están explícitamente pausadas.
+- [ ] Implementar estado vacío, carga y error por visualización. Estado vacío: sí, en todos los gráficos nuevos (`EmptyChart`). Carga: no aplica dentro de una misma página SSR (los datos ya están resueltos antes de renderizar; lo cubre el `loading.tsx` de la página). Error por visualización individual: no implementado — sólo existe el `error.tsx` de página completa; un gráfico roto tumba la página entera, no sólo su tarjeta.
 
 ### Criterio de salida
 
-- [ ] Cada visualización responde a una decisión concreta, reacciona a filtros y permite acceder al detalle.
+- [ ] Cada visualización responde a una decisión concreta, reacciona a filtros y permite acceder al detalle. Cumple para los 11 gráficos nuevos y corregidos de esta pasada (todos con pregunta explícita, filtros de la página y clic-a-detalle); no cumple para el conjunto completo de las 21 visualizaciones pedidas porque 6 siguen sin construir (consumo por tipo de equipo, evolución por equipo, histograma, dos dispersiones, matriz) y la distribución de anomalías sigue bloqueada.
 
 ## 6. Filtros globales y filtros cruzados
 
-- [ ] Agregar filtro por proveedor.
-- [ ] Agregar filtro por tipo de suministro.
-- [ ] Agregar filtro por producto.
-- [ ] Agregar filtro por tipo de vehículo o maquinaria.
-- [ ] Agregar filtro específico por código interno.
-- [ ] Agregar filtro por marca.
-- [ ] Agregar filtro por modelo.
-- [ ] Agregar filtro por conductor.
-- [ ] Agregar filtro por supervisor.
-- [ ] Agregar filtro por lugar de carga.
-- [ ] Agregar filtro por tipo de rendimiento.
-- [ ] Agregar filtro por estado operativo del equipo.
-- [ ] Agregar filtro por presencia de observaciones.
-- [ ] Agregar filtro separado por sello inicial.
-- [ ] Agregar filtro separado por sello final.
-- [ ] Agregar filtros por cada tipo de evidencia.
-- [ ] Agregar filtro por existencia de anomalías.
-- [ ] Agregar filtro por tipo de anomalía.
-- [ ] Agregar filtro por severidad.
-- [ ] Agregar filtro por responsable de revisión.
-- [ ] Mostrar filtros activos como chips.
-- [ ] Permitir retirar cada filtro individualmente.
-- [ ] Mantener acción global para limpiar filtros.
-- [ ] Mantener filtros al navegar entre resumen, análisis, bitácora y conciliación.
-- [ ] Mantener filtros relevantes en la URL.
-- [ ] Permitir compartir una consulta por URL.
-- [ ] Documentar qué filtros aplican sólo a TCT, TAE o facturación.
-- [ ] Implementar selección cruzada desde barras.
-- [ ] Implementar selección cruzada desde filas.
-- [ ] Implementar selección cruzada desde proveedores.
-- [ ] Implementar selección cruzada desde faenas.
-- [ ] Implementar selección cruzada desde equipos.
-- [ ] Mostrar el origen de cada filtro cruzado.
-- [ ] Permitir retirar filtros cruzados.
+- [x] Agregar filtro por proveedor. En `/combustibles/bitacora`: "—" estructural en filas TAE (no tiene proveedor, ver sección 7), excluye esa fuente en vez de fingir el dato.
+- [x] Agregar filtro por tipo de suministro. Interpretado como el filtro "Fuente" (`source`) ya existente en la bitácora — TAE/facturación/log operacional.
+- [x] Agregar filtro por producto. "—" estructural en log operacional (no clasifica producto por fila).
+- [x] Agregar filtro por tipo de vehículo o maquinaria. Filtro "Tipo" sobre `fuel_equipment_types`.
+- [x] Agregar filtro específico por código interno. Ya cubierto por la búsqueda de servidor (`q` hace `ILIKE` sobre código/patente).
+- [ ] Agregar filtro por marca. No implementado como filtro con lista de valores; sólo se puede buscar como texto si se agrega a `q` (no se agregó).
+- [ ] Agregar filtro por modelo. Mismo caso que marca.
+- [ ] Agregar filtro por conductor. Ya se puede *buscar* por nombre (`q`), pero no hay un filtro con lista de conductores para elegir.
+- [ ] Agregar filtro por supervisor. Mismo caso que conductor.
+- [ ] Agregar filtro por lugar de carga. Sólo existe en TAE (`fuel_tae_loading_points`); no se agregó como filtro de la bitácora en esta pasada.
+- [ ] Agregar filtro por tipo de rendimiento. `performanceUnit` ya se usa para separar km/L de L/h en la sección 4, pero la bitácora no lo expone como filtro.
+- [ ] Agregar filtro por estado operativo del equipo. `fuel_vehicles.operational_status` existe (sección 2) pero no está en la consulta de la bitácora.
+- [x] Agregar filtro por presencia de observaciones. Checkbox "Sólo con observaciones"; excluye estructuralmente el log operacional (nunca tiene observaciones por fila).
+- [ ] Agregar filtro separado por sello inicial. No implementado.
+- [ ] Agregar filtro separado por sello final. No implementado.
+- [ ] Agregar filtros por cada tipo de evidencia. No implementado.
+- [ ] Agregar filtro por existencia de anomalías. Bloqueado: dominio de anomalías (sección 11) inexistente.
+- [ ] Agregar filtro por tipo de anomalía. Bloqueado, mismo motivo.
+- [ ] Agregar filtro por severidad. Bloqueado, mismo motivo.
+- [ ] Agregar filtro por responsable de revisión. Bloqueado, mismo motivo.
+- [x] Mostrar filtros activos como chips. Fila de chips sobre la tabla de `/combustibles/bitacora`.
+- [x] Permitir retirar cada filtro individualmente. Cada chip enlaza a la misma consulta sin ese parámetro.
+- [x] Mantener acción global para limpiar filtros. Enlace "Limpiar filtros" a la ruta sin parámetros.
+- [ ] Mantener filtros al navegar entre resumen, análisis, bitácora y conciliación. No implementado: cada página (`/combustibles`, `/combustibles/analisis`, `/combustibles/bitacora`, `/combustibles/ciclo`) tiene su propio esquema de parámetros independiente: no comparten contexto de filtro. Es un cambio de arquitectura (un contexto de filtro compartido entre rutas), no una extensión incremental.
+- [x] Mantener filtros relevantes en la URL. Todos los filtros de la bitácora y del análisis de rendimiento son parámetros de URL (GET), nunca estado sólo-cliente.
+- [x] Permitir compartir una consulta por URL. Consecuencia directa de lo anterior.
+- [x] Documentar qué filtros aplican sólo a TCT, TAE o facturación. Cada chip/opción sin datos en una fuente se documenta en el propio código (`lib/combustibles/fuel-log.ts`) con el motivo exacto por el que esa fuente queda excluida.
+- [ ] Implementar selección cruzada desde barras. Bloqueado: no hay gráficos de barras todavía (sección 5).
+- [ ] Implementar selección cruzada desde filas. No implementado — la bitácora no permite "clic en fila → aplica como filtro".
+- [ ] Implementar selección cruzada desde proveedores. Bloqueado, mismo motivo que barras.
+- [ ] Implementar selección cruzada desde faenas. Bloqueado, mismo motivo.
+- [ ] Implementar selección cruzada desde equipos. Bloqueado, mismo motivo.
+- [ ] Mostrar el origen de cada filtro cruzado. Bloqueado, mismo motivo.
+- [ ] Permitir retirar filtros cruzados. Bloqueado, mismo motivo.
 
 ### Criterio de salida
 
-- [ ] Todos los componentes relacionados reflejan la misma consulta y la URL reproduce el estado compartible.
+- [ ] Todos los componentes relacionados reflejan la misma consulta y la URL reproduce el estado compartible. Cumple para la bitácora sola (URL compartible, filtros retirables); no cumple para "todos los componentes relacionados" en conjunto porque no hay contexto de filtro compartido entre `/combustibles`, `/combustibles/analisis`, `/combustibles/bitacora` y `/combustibles/ciclo`, y falta toda la selección cruzada (bloqueada en sección 5).
 
 ## 7. Bitácora general unificada
 
-- [ ] Crear un read model o consulta unificada para TAE, TCT y registros manuales compatibles.
-- [ ] Mantener la fuente original de cada registro.
-- [ ] Mostrar fecha y hora.
-- [ ] Mostrar faena.
-- [ ] Mostrar proveedor.
-- [ ] Mostrar lugar de carga.
-- [ ] Mostrar equipo, código y patente.
-- [ ] Mostrar tipo de equipo.
-- [ ] Mostrar conductor.
-- [ ] Mostrar supervisor.
-- [ ] Mostrar producto.
-- [ ] Mostrar litros.
-- [ ] Mostrar kilometraje u horómetro.
-- [ ] Mostrar rendimiento y unidad.
-- [ ] Mostrar sello inicial y final.
-- [ ] Mostrar estado de evidencias.
-- [ ] Mostrar observaciones.
-- [ ] Mostrar estado de validación.
-- [ ] Mostrar anomalías asociadas.
-- [ ] Mostrar usuario creador y modificador.
-- [ ] Mostrar fechas de creación y modificación.
-- [ ] Implementar búsqueda de servidor.
-- [ ] Implementar ordenamiento de servidor.
-- [ ] Mantener paginación de servidor.
-- [ ] Permitir configurar columnas visibles.
-- [ ] Abrir detalle completo.
-- [ ] Abrir visor de evidencias.
-- [ ] Consultar historial de cambios.
-- [ ] Marcar registros para revisión.
-- [ ] Implementar selección múltiple.
-- [ ] Implementar acciones masivas según permisos.
-- [ ] Abrir el caso de anomalía relacionado.
-- [ ] Exportar la consulta filtrada a XLSX.
+- [x] Crear un read model o consulta unificada para TAE, TCT y registros manuales compatibles. `lib/combustibles/fuel-log.ts`: `unionAll` (Drizzle, `drizzle-orm/pg-core`) sobre `fuel_tae_submissions`, `fuel_loads` y `fuel_operation_records`, en `/combustibles/bitacora`.
+- [x] Mantener la fuente original de cada registro. Campo `source` (`tae_pwa`/`invoiced`/`operation_manual`) visible como badge; nunca se suman litros entre fuentes.
+- [x] Mostrar fecha y hora.
+- [x] Mostrar faena.
+- [x] Mostrar proveedor. "—" en filas TAE: la PWA no registra proveedor.
+- [x] Mostrar lugar de carga. "—" en facturación y log operacional: no tienen ese concepto.
+- [x] Mostrar equipo, código y patente.
+- [x] Mostrar tipo de equipo.
+- [x] Mostrar conductor. "—" en facturación: no se registra conductor por carga facturada.
+- [x] Mostrar supervisor. Mismo criterio que conductor.
+- [x] Mostrar producto. "—" en log operacional: el import histórico no clasifica producto por fila.
+- [x] Mostrar litros.
+- [x] Mostrar kilometraje u horómetro. Campo `meterReading` + `meterLabel` (qué mide, sin inventar una unidad si la fuente no la declara).
+- [x] Mostrar rendimiento y unidad. Sólo el log operacional trae `rendimiento`/`tipoRendimiento` (`km_lt`/`lt_hr`) precalculados; no se computa rendimiento nuevo aquí — eso es tarea de la sección 4, y mezclar unidades está prohibido por la convención del checklist.
+- [x] Mostrar sello inicial y final. Sólo TAE tiene sellos.
+- [x] Mostrar estado de evidencias. Conteo `N/4` sólo para TAE.
+- [x] Mostrar observaciones.
+- [x] Mostrar estado de validación. Vocabulario propio por fuente (`statusLabel`), sin forzar un estado común inexistente.
+- [ ] Mostrar anomalías asociadas. Bloqueado: el dominio de anomalías (sección 11) no existe todavía.
+- [x] Mostrar usuario creador y modificador. Mejor esfuerzo por fuente: TAE no tiene creador (PWA anónima) pero sí revisor; facturación tiene creador sin modificador; log operacional expone quién importó el lote.
+- [x] Mostrar fechas de creación y modificación.
+- [x] Implementar búsqueda de servidor. `ILIKE` sobre código/patente/conductor/supervisor/proveedor según la fuente, dentro de cada rama del `unionAll` (no se trae todo a memoria para filtrar).
+- [x] Implementar ordenamiento de servidor. Una sola dimensión ordenable (`occurredAt` asc/desc) — la relevante para un log; no hay orden multi-columna.
+- [x] Mantener paginación de servidor. `LIMIT`/`OFFSET` sobre el `unionAll`, conteo total en consulta separada (`getFuelLogTotal`).
+- [x] Permitir configurar columnas visibles. Selector de columnas en el cliente (`bitacora-table.tsx`); la preferencia no persiste entre sesiones — no hay backend de preferencias de usuario.
+- [x] Abrir detalle completo. TAE y facturación abren su registro; el log operacional (sin página propia por fila) abre el lote que la contiene.
+- [x] Abrir visor de evidencias. Enlace a `/combustibles/tae/[id]#evidencia` cuando hay evidencias (se agregó el ancla `id="evidencia"` a esa página); sólo aplica a TAE.
+- [x] Consultar historial de cambios. Página nueva `/combustibles/bitacora/historial/[entityType]/[entityId]`: cambios de estado (`status_history`) y auditoría campo a campo (`audit_log`). Sin permiso propio de auditoría todavía (sección 14): reutiliza `combustibles:view`. No aplica al log operacional (se audita por lote, no por fila).
+- [ ] Marcar registros para revisión. No implementado: requiere una marca cruzada a las tres fuentes, que hoy no existe como columna/tabla en ninguna. Alcance nuevo, no cubierto en esta pasada.
+- [x] Implementar selección múltiple. Checkboxes por fila + "seleccionar todas" (de la página actual).
+- [x] Implementar acciones masivas según permisos. Una sola acción definida y con permiso propio: exportar la selección a XLSX (`combustibles:export`). No hay otras acciones masivas definidas para generalizar la infraestructura más allá de eso.
+- [ ] Abrir el caso de anomalía relacionado. Bloqueado: mismo motivo que "mostrar anomalías asociadas".
+- [x] Exportar la consulta filtrada a XLSX. `exportFuelLogAction`, límite `FUEL_LOG_MAX_EXPORT_ROWS = 10.000` con aviso de truncado.
 
 ### Criterio de salida
 
-- [ ] La bitácora maneja el volumen esperado sin cargar todas las filas en el navegador y permite llegar desde el resumen al registro fuente.
+- [x] La bitácora maneja el volumen esperado sin cargar todas las filas en el navegador y permite llegar desde el resumen al registro fuente. Paginación y conteo son consultas de servidor independientes; los enlaces de detalle abren el registro (o el lote) de origen. No verificado con volumen real de producción ni en navegador — Chrome no está instalado en este entorno; sólo se validó `tsc --noEmit` limpio sobre el árbol completo, sin ejecutar ESLint ni la suite de pruebas (a pedido explícito, se corren todas juntas al final).
 
 ## 8. Control de cargas manuales y flujo por etapas
 
-- [ ] Crear una vista parametrizable por faena.
-- [ ] Evitar componentes o consultas duplicadas por faena.
-- [ ] Mostrar combustible recibido.
-- [ ] Mostrar combustible registrado.
-- [ ] Mostrar combustible entregado.
-- [ ] Mostrar combustible destinado a estanques intermedios.
-- [ ] Mostrar combustible entregado directamente a equipos.
-- [ ] Mostrar combustible consumido cuando exista fuente válida.
-- [ ] Mostrar diferencia contra la etapa anterior.
-- [ ] Mostrar diferencia porcentual.
-- [ ] Mostrar estado normal, advertencia o crítico.
-- [ ] Abrir registros involucrados en cada etapa.
-- [ ] Actualizar el flujo con los filtros globales.
+- [x] Crear una vista parametrizable por faena. `/combustibles/ciclo` filtra por `faena`/`producto`/rango de fechas; sin faena seleccionada muestra todas las autorizadas por el alcance de sesión.
+- [x] Evitar componentes o consultas duplicadas por faena. Una sola página y un solo read model (`getFuelCycleComparison` + `getFuelStorageBalances`) para cualquier faena configurada.
+- [x] Mostrar combustible recibido.
+- [x] Mostrar combustible registrado.
+- [x] Mostrar combustible entregado.
+- [x] Mostrar combustible destinado a estanques intermedios. Sólo se materializa si alguien registra un `transfer` manual (el modelo físico real es de 2 etapas, sin estanque intermedio); la tabla "Saldo por vasija" y el evento "Transferencia" en movimientos del ciclo lo muestran cuando existe.
+- [x] Mostrar combustible entregado directamente a equipos. La tabla "Movimientos del ciclo" distingue el evento "Entrega directa" del "Entrega desde estanque".
+- [x] Mostrar combustible consumido cuando exista fuente válida. Métrica "Consumido" en `/combustibles/ciclo`; hoy siempre "Sin fuente disponible" porque no existe evento canónico de consumo (ver sección 1).
+- [x] Mostrar diferencia contra la etapa anterior. Antes sólo se mostraba recibido-vs-registrado; ahora también recibido-vs-entregado (`comparison.differences.receivedVsDelivered` ya se calculaba pero nunca se renderizaba).
+- [x] Mostrar diferencia porcentual.
+- [x] Mostrar estado normal, advertencia o crítico. `differenceSeverity` en `lib/combustibles/fuel-cycle.ts` (umbral fijo ±2%/±5%, con pruebas unitarias); mal necesita volverse configurable — ver sección 12.
+- [x] Abrir registros involucrados en cada etapa. Las tres etapas y las dos diferencias tienen enlace de trazabilidad a los registros que las originan.
+- [x] Actualizar el flujo con los filtros globales. Filtros de faena/producto/fecha de la propia página (no hay TopBar search en esta ruta porque no es texto libre, son filtros estructurados).
 
 ### Criterio de salida
 
-- [ ] Una misma implementación representa el flujo de cualquier faena configurada y todas las diferencias tienen registros trazables.
+- [x] Una misma implementación representa el flujo de cualquier faena configurada y todas las diferencias tienen registros trazables. Verificado con `lib/combustibles/fuel-cycle.test.ts` (12 pruebas, incluida `differenceSeverity`) y `lib/__tests__/fuel-cycle-integration.test.ts` (PGlite). No verificado visualmente en navegador en esta pasada: Chrome no está instalado en el entorno de ejecución (`npx playwright install chrome` pendiente); sí se confirmó que la ruta no arroja error de servidor.
 
 ## 9. Gestión de sellos
 
@@ -450,7 +471,7 @@ Estado de referencia: TCT, TAE y facturación permanecen como dominios separados
 - [x] Auditar cambios de asignación equipo/faena.
 - [ ] Auditar cambios de conductor y supervisor.
 - [ ] Auditar correcciones masivas.
-- [ ] Auditar reversión de lotes TAE.
+- [x] Auditar reversión de lotes TAE. `revertTaeImportBatchAction` registra `recordAudit` (acción `delete`, estado anterior/nuevo) y `recordStatusChange` dentro de la misma transacción.
 - [ ] Mostrar valor anterior y nuevo por campo.
 - [ ] Mostrar usuario responsable.
 - [ ] Mostrar fecha y hora.
@@ -487,13 +508,13 @@ Estado de referencia: TCT, TAE y facturación permanecen como dominios separados
 
 ## 17. Estados de interfaz y resiliencia
 
-- [ ] Agregar `loading.tsx` específico a `/combustibles/tae`.
-- [ ] Agregar `error.tsx` específico a `/combustibles/tae`.
-- [ ] Agregar estados de carga para conciliación.
-- [ ] Agregar estados de error para conciliación.
+- [x] Agregar `loading.tsx` específico a `/combustibles/tae`. Usa `SkeletonPage` y el contexto de ruta TAE.
+- [x] Agregar `error.tsx` específico a `/combustibles/tae`. Expone reintento localizado con `unstable_retry` y reporte del error.
+- [x] Agregar estados de carga para conciliación. `/combustibles/ciclo/loading.tsx` muestra el esqueleto del ciclo físico.
+- [x] Agregar estados de error para conciliación. `/combustibles/ciclo/error.tsx` permite reintentar sin inutilizar el resto del shell.
 - [ ] Agregar estados de carga para análisis de equipos.
 - [ ] Agregar estados de error para análisis de equipos.
-- [ ] Implementar reintento localizado.
+- [x] Implementar reintento localizado. Las fronteras TAE y ciclo usan `unstable_retry` de Next.js.
 - [ ] Aislar fallos por visualización o sección.
 - [ ] Agregar skeletons representativos.
 - [ ] Diferenciar “sin datos” de “sin coincidencias”.

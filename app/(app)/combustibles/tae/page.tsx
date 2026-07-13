@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { ArrowsLeftRight, Upload } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
-import { fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions, worksites } from "@/db/schema"
+import { fuelStorageLocations, fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions, worksites } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
@@ -15,6 +15,9 @@ import { Button } from "@/components/ui/button"
 import { TaeAccessPanel } from "./tae-access-panel"
 import { TaeExportButton } from "./tae-export-button"
 import { TaeFilters } from "./tae-filters"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { getTaeGroupedTotals } from "@/lib/combustibles/tae-dashboard"
+import { TaeGroupChart } from "./tae-group-chart"
 
 export const metadata: Metadata = { title: "Control TAE" }
 
@@ -63,9 +66,18 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     ) : undefined,
   ].filter((condition) => condition !== undefined)
   const where = conditions.length > 0 ? and(...conditions) : undefined
-  const [worksitesList, loadingPoints, publicLinks, submissions, metricsRows] = await Promise.all([
+  const now = new Date()
+  const chartRange = {
+    worksiteId: filters.worksiteId || undefined,
+    from: filters.from || new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    to: filters.to || now.toISOString().slice(0, 10),
+  }
+  const bitacoraGroupHref = (q: string) => `/combustibles/bitacora?${new URLSearchParams({ q, desde: chartRange.from, hasta: chartRange.to, fuente: "tae_pwa" }).toString()}`
+
+  const [worksitesList, loadingPoints, storageLocations, publicLinks, submissions, metricsRows, cargasPorSupervisor, cargasPorConductor, cargasPorPunto] = await Promise.all([
     scope.mode === "none" ? Promise.resolve([]) : db.query.worksites.findMany({ where: worksiteWhere, columns: { id: true, name: true }, orderBy: [worksites.name] }),
-    scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaeLoadingPoints.findMany({ where: scope.mode === "some" ? inArray(fuelTaeLoadingPoints.worksiteId, scope.ids) : undefined, columns: { id: true, worksiteId: true, name: true, type: true }, orderBy: [fuelTaeLoadingPoints.name] }),
+    scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaeLoadingPoints.findMany({ where: scope.mode === "some" ? inArray(fuelTaeLoadingPoints.worksiteId, scope.ids) : undefined, columns: { id: true, worksiteId: true, name: true, type: true, storageLocationId: true }, orderBy: [fuelTaeLoadingPoints.name] }),
+    scope.mode === "none" ? Promise.resolve([]) : db.query.fuelStorageLocations.findMany({ where: and(eq(fuelStorageLocations.isActive, true), scope.mode === "some" ? inArray(fuelStorageLocations.worksiteId, scope.ids) : undefined), columns: { id: true, worksiteId: true, name: true } }),
     scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaePublicLinks.findMany({ where: scope.mode === "some" ? inArray(fuelTaePublicLinks.worksiteId, scope.ids) : undefined, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } } }, orderBy: [desc(fuelTaePublicLinks.createdAt)] }),
     db.query.fuelTaeSubmissions.findMany({ where, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } }, product: { columns: { name: true } } }, orderBy: [desc(fuelTaeSubmissions.loadedAt)], limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
     db.select({
@@ -74,6 +86,9 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
       observed: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'observed')`,
       pending: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'submitted')`,
     }).from(fuelTaeSubmissions).where(where),
+    getTaeGroupedTotals(session, chartRange, "supervisor"),
+    getTaeGroupedTotals(session, chartRange, "driver"),
+    getTaeGroupedTotals(session, chartRange, "loadingPoint"),
   ])
   const metrics = metricsRows[0] ?? { total: 0, liters: 0, observed: 0, pending: 0 }
   const totalPages = Math.max(1, Math.ceil(Number(metrics.total) / PAGE_SIZE))
@@ -101,7 +116,31 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
         <div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Pendientes de validar</p><p className="mt-1 font-mono text-xl tabular-nums">{Number(metrics.pending).toLocaleString("es-CL")}</p></div>
       </section>
 
-      {canConfigure && <div className="mb-5"><TaeAccessPanel worksites={worksitesList} loadingPoints={loadingPoints} existingLinks={publicLinks.map((link) => ({ id: link.id, label: link.label, worksiteName: link.worksite?.name ?? "—", loadingPointName: link.loadingPoint?.name ?? null, revokedAt: link.revokedAt }))} /></div>}
+      <section className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Litros por supervisor</CardTitle>
+            <CardDescription>¿Qué supervisor concentra el volumen repartido? {!filters.from && !filters.to && "Últimos 90 días."}</CardDescription>
+          </CardHeader>
+          <CardContent><TaeGroupChart data={cargasPorSupervisor} drilldownHref={bitacoraGroupHref} /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Litros por conductor</CardTitle>
+            <CardDescription>¿Qué conductor recibió más litros en el período?</CardDescription>
+          </CardHeader>
+          <CardContent><TaeGroupChart data={cargasPorConductor} drilldownHref={bitacoraGroupHref} /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Litros por punto de suministro</CardTitle>
+            <CardDescription>¿Qué punto reparte más? Útil para priorizar dónde reforzar control.</CardDescription>
+          </CardHeader>
+          <CardContent><TaeGroupChart data={cargasPorPunto} drilldownHref={bitacoraGroupHref} /></CardContent>
+        </Card>
+      </section>
+
+      {canConfigure && <div className="mb-5"><TaeAccessPanel worksites={worksitesList} loadingPoints={loadingPoints} storageLocations={storageLocations} existingLinks={publicLinks.map((link) => ({ id: link.id, label: link.label, worksiteName: link.worksite?.name ?? "—", loadingPointName: link.loadingPoint?.name ?? null, revokedAt: link.revokedAt }))} /></div>}
 
       <TaeFilters values={filters} worksites={worksitesList} loadingPoints={loadingPoints} />
 

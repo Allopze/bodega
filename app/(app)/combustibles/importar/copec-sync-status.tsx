@@ -71,8 +71,10 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       }
 
       let imported = 0
+      let received = 0
       let pendingPlates = 0
       const unavailable: string[] = []
+      const unmappedCards = new Set<string>()
       let stoppedAt: SyncProgress | null = null
 
       for (const [index, period] of plan.periods.entries()) {
@@ -86,7 +88,9 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
           break
         }
         imported += r.imported
+        received += r.received
         pendingPlates = r.pending
+        for (const card of r.unmappedCards) unmappedCards.add(card)
         unavailable.push(...r.unavailable.map((product) => `${formatMonth(period.from)} (${product})`))
         // Sin ninguna descarga = portal/credenciales rotos. Se detiene y avisa en
         // lugar de seguir barriendo el histórico sin traer nada.
@@ -108,7 +112,10 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         return
       }
 
-      dispatchView({ type: "patch", patch: { result: `${imported} registros importados${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin archivo` : ""}` } })
+      dispatchView({ type: "patch", patch: { result: `${imported} registros importados · ${received} recepciones TAE${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin archivo` : ""}` } })
+      // Una tarjeta sin estanque asociado significa que ese combustible NO entró al
+      // ciclo: la recepción se omitió. Hay que avisarlo, no dejarlo en el resumen.
+      if (unmappedCards.size) toast.warning(`${unmappedCards.size} tarjeta(s) TAE sin estanque asociado: sus recepciones no se importaron. Asócialas en Administración › Estanques de combustible.`)
 
       if (unavailable.length) toast.warning(`${unavailable.length} reporte(s) de Copec sin archivo`)
       else toast.success(`Copec sincronizado: ${imported} registros`)
