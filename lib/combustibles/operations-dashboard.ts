@@ -11,8 +11,7 @@ import { db } from "@/db"
 import { fuelOperationRecords } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PatenteRankingRow, RendimientoRow } from "./consumption-dashboard"
-
-const RENDIMIENTO_ATIPICO_DESVIACIONES = 1.5 // ponytail: mismo umbral fijo que consumption-dashboard.ts
+import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
 
 export interface OperationsSummary {
   totalLitros: number
@@ -120,23 +119,10 @@ export async function getOperationsSummary(session: Session, filters: Operations
     totalRegistros,
     rendimientoPromedioPonderado: Number(totals?.rendimientoPonderado ?? 0),
     topEquiposPorGasto: [...byEquipo].sort((a, b) => b.monto - a.monto).slice(0, 10),
-    rendimientoPorEquipo: flagOutliers(rendimientosRaw).sort((a, b) => b.cantidad - a.cantidad).slice(0, 15),
+    rendimientoPorEquipo: flagOutliersGeneric(rendimientosRaw, (r) => r.rendimiento).sort((a, b) => b.cantidad - a.cantidad).slice(0, 15),
     porFaena: porFaenaRaw.map((r) => ({ faena: r.faena, litros: Number(r.litros), monto: Number(r.monto), equipos: Number(r.equipos) }))
       .sort((a, b) => b.monto - a.monto),
     porProveedor: porProveedorRaw.map((r) => ({ proveedor: r.proveedor, litros: Number(r.litros), monto: Number(r.monto), transacciones: Number(r.transacciones) }))
       .sort((a, b) => b.monto - a.monto),
   }
-}
-
-/** Marca como atípico un rendimiento fuera de mean ± N·desviaciones estándar. */
-function flagOutliers(rows: Array<{ patente: string; rendimiento: number; cantidad: number }>): RendimientoRow[] {
-  const values = rows.map((r) => r.rendimiento).filter((v) => v > 0)
-  if (values.length < 3) return rows.map((r) => ({ ...r, atipico: r.rendimiento === 0 }))
-  const mean = values.reduce((s, v) => s + v, 0) / values.length
-  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length
-  const stddev = Math.sqrt(variance)
-  return rows.map((r) => ({
-    ...r,
-    atipico: r.rendimiento === 0 || Math.abs(r.rendimiento - mean) > RENDIMIENTO_ATIPICO_DESVIACIONES * stddev,
-  }))
 }

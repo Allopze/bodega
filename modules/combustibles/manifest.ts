@@ -50,6 +50,18 @@ export const combustiblesModule = {
           permissions: ["combustibles:import"],
         },
         {
+          label: "Bitácora general",
+          href: "/combustibles/bitacora",
+          iconName: "Books",
+          permissions: ["combustibles:view"],
+        },
+        {
+          label: "Análisis de rendimiento",
+          href: "/combustibles/analisis",
+          iconName: "ChartLineUp",
+          permissions: ["combustibles:view"],
+        },
+        {
           label: "Control TAE",
           href: "/combustibles/tae",
           iconName: "QrCode",

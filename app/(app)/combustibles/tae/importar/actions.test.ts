@@ -32,8 +32,8 @@ vi.mock("@/lib/audit", () => ({
   recordAudit: (...args: unknown[]) => mockRecordAudit(...args),
   recordStatusChange: (...args: unknown[]) => mockRecordStatusChange(...args),
 }))
-vi.mock("@/lib/services/fuel-tae", () => ({ generateTaeImportDryRunReport: vi.fn() }))
-vi.mock("@/lib/combustibles/tae-import-service", () => ({ importTaeLegacyWorkbook: vi.fn() }))
+vi.mock("@/lib/services/fuel-tae", () => ({ generateTaeImportDryRunReport: vi.fn(), generateTaeImportPreview: vi.fn() }))
+vi.mock("@/lib/combustibles/tae-import-service", () => ({ importTaeLegacyWorkbook: vi.fn(), reprocessTaeImportRejectedRows: vi.fn() }))
 
 import { revertTaeImportBatchAction } from "./actions"
 

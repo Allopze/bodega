@@ -31,6 +31,7 @@ const dynamicSamples: Record<string, string> = {
   "/combustibles/importar/[id]": "/combustibles/importar/fuel-import-audit-1",
   "/combustibles/importar/operaciones/[id]": "/combustibles/importar/operaciones/fuel-op-audit-1",
   "/combustibles/tae/[id]": "/combustibles/tae/tae-audit-1",
+  "/combustibles/tae/importar/[id]": "/combustibles/tae/importar/tae-import-audit-1",
   "/tae/access/[accessToken]": "/tae/access/capture-tae-token",
   "/tae/resultado/[token]": "/tae/resultado/capture-tae-result-token",
   "/entregas/[id]/print": "/entregas/del-audit-1/print",

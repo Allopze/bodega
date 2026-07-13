@@ -6,6 +6,13 @@ const MAX_BYTES = 25 * 1024 * 1024
 
 export type CopecProduct = "diesel" | "bluemax"
 
+/** Los dos canales viven en la MISMA pantalla del portal y sólo se distinguen por
+ *  el combo "Tipo Producto":
+ *  - TCT: el equipo carga con tarjeta en estación de servicio (consumo).
+ *  - TAE: la vasija propia (camión/camioneta estanque) carga en estación para
+ *    después repartir en faena (recepción del ciclo). */
+export type CopecChannel = "TCT" | "TAE"
+
 export interface CopecReportRequest {
   product: CopecProduct
   from: string
@@ -98,7 +105,7 @@ async function selectMonth(page: Page, from: string) {
   await page.waitForLoadState("networkidle").catch(() => {})
 }
 
-async function downloadReportFromPage(page: Page, request: CopecReportRequest): Promise<CopecDownloadedReport> {
+async function downloadReportFromPage(page: Page, request: CopecReportRequest, channel: CopecChannel): Promise<CopecDownloadedReport> {
   await selectMonth(page, request.from)
   await page.locator(PRODUCT_RADIO[request.product]).check()
 
@@ -166,7 +173,7 @@ async function downloadReportFromPage(page: Page, request: CopecReportRequest): 
   const plainFileName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
   const fileName = encodedFileName
     ? decodeURIComponent(encodedFileName)
-    : plainFileName ?? `copec-tct-${request.product}-${request.from.slice(0, 7)}.xlsx`
+    : plainFileName ?? `copec-${channel.toLowerCase()}-${request.product}-${request.from.slice(0, 7)}.xlsx`
 
   return {
     buffer,
@@ -180,12 +187,12 @@ async function downloadReportFromPage(page: Page, request: CopecReportRequest): 
  * mes -> producto -> Buscar -> Descargar Detalle -> Excel. Todos los productos
  * del mes reutilizan una única sesión TCT autenticada.
  */
-export async function downloadCopecReports(requests: CopecReportRequest[]): Promise<CopecReportDownloadResult[]> {
+export async function downloadCopecReports(requests: CopecReportRequest[], channel: CopecChannel = "TCT"): Promise<CopecReportDownloadResult[]> {
   for (const request of requests) {
     assertDate(request.from, "Fecha desde")
     assertDate(request.to, "Fecha hasta")
     if (request.from > request.to) throw new Error("La fecha desde no puede ser posterior a la fecha hasta")
-    if (!request.from.endsWith("-01")) throw new Error("Copec TCT solo permite consultar meses calendario completos")
+    if (!request.from.endsWith("-01")) throw new Error("El portal Copec solo permite consultar meses calendario completos")
   }
   if (!requests.length) return []
 
@@ -205,13 +212,13 @@ export async function downloadCopecReports(requests: CopecReportRequest[]): Prom
     await page.locator('a[title="Informes de Consumos"]').filter({ visible: true }).first().click({ noWaitAfter: true })
     await page.waitForURL(/AdmInfConsumosAgrupado\.aspx/)
 
-    await chooseComboOption(page, page.locator('input[id$="RcbxTipoProducto_Input"]'), "TCT")
+    await chooseComboOption(page, page.locator('input[id$="RcbxTipoProducto_Input"]'), channel)
     await chooseComboOption(page, page.locator('input[id$="RcbxTipoInforme_Input"]'), "Por Patente / Asignación")
 
     const results: CopecReportDownloadResult[] = []
     for (const request of requests) {
       try {
-        results.push({ product: request.product, report: await downloadReportFromPage(page, request), unavailable: false })
+        results.push({ product: request.product, report: await downloadReportFromPage(page, request, channel), unavailable: false })
       } catch (error) {
         if (!isCopecReportUnavailableError(error)) throw error
         results.push({ product: request.product, unavailable: true })

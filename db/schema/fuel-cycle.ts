@@ -13,6 +13,9 @@ export const fuelStorageLocations = pgTable("fuel_storage_locations", {
   productId: text("product_id").notNull().references(() => fuelProducts.id),
   name: text("name").notNull(),
   capacityLiters: numeric("capacity_liters", { precision: 14, scale: 2, mode: "number" }),
+  /** Tarjeta Copec TAE con la que esta vasija carga en estación. Es la única
+   *  llave que trae el informe TAE: sin ella la recepción no se puede atribuir. */
+  taeCardNumber: text("tae_card_number"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -21,6 +24,10 @@ export const fuelStorageLocations = pgTable("fuel_storage_locations", {
   uniqueIndex("fuel_storage_locations_worksite_name_unique").on(t.worksiteId, t.name),
   index("fuel_storage_locations_worksite_product_idx").on(t.worksiteId, t.productId),
   check("fuel_storage_locations_capacity_positive", sql`${t.capacityLiters} IS NULL OR ${t.capacityLiters} > 0`),
+  // Una tarjeta carga un producto por vasija: (tarjeta, producto) identifica el destino.
+  uniqueIndex("fuel_storage_locations_tae_card_product_unique")
+    .on(t.taeCardNumber, t.productId)
+    .where(sql`${t.taeCardNumber} IS NOT NULL`),
 ])
 
 /** Evento canónico del ciclo: recepción, transferencia o entrega. */
@@ -50,6 +57,11 @@ export const fuelCycleMovements = pgTable("fuel_cycle_movements", {
     OR (${t.eventType} = 'tank_delivery' AND ${t.sourceLocationId} IS NOT NULL AND ${t.vehicleId} IS NOT NULL)
     OR (${t.eventType} = 'direct_delivery' AND ${t.vehicleId} IS NOT NULL AND ${t.supplierId} IS NOT NULL)
   `),
+  // Idempotencia del ingest automático: la guía de despacho Copec es única por
+  // transacción, así que reimportar un mes no puede duplicar recepciones.
+  uniqueIndex("fuel_cycle_movements_source_unique")
+    .on(t.sourceType, t.sourceId)
+    .where(sql`${t.sourceId} IS NOT NULL`),
   index("fuel_cycle_movements_worksite_time_idx").on(t.worksiteId, t.occurredAt),
   index("fuel_cycle_movements_product_time_idx").on(t.productId, t.occurredAt),
   index("fuel_cycle_movements_vehicle_time_idx").on(t.vehicleId, t.occurredAt),

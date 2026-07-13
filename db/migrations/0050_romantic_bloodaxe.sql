@@ -1,0 +1,3 @@
+ALTER TABLE "fuel_storage_locations" ADD COLUMN "tae_card_number" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "fuel_cycle_movements_source_unique" ON "fuel_cycle_movements" USING btree ("source_type","source_id") WHERE "fuel_cycle_movements"."source_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "fuel_storage_locations_tae_card_product_unique" ON "fuel_storage_locations" USING btree ("tae_card_number","product_id") WHERE "fuel_storage_locations"."tae_card_number" IS NOT NULL;

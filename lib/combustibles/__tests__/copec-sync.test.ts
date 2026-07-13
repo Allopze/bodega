@@ -7,6 +7,8 @@ const mockVehiclesFindMany = vi.fn()
 const mockConsumptionFindMany = vi.fn()
 const mockDownloadCopecReports = vi.fn()
 const mockParseConsumptionExcel = vi.fn()
+const mockParseTaeReceiptExcel = vi.fn()
+const mockImportTaeReceipts = vi.fn()
 const mockSaveState = vi.fn()
 const mockTransaction = vi.fn()
 const mockTxInsertValues = vi.fn()
@@ -35,6 +37,14 @@ vi.mock("@/lib/combustibles/copec-reports", () => ({
 }))
 vi.mock("@/lib/combustibles/consumption-import", () => ({
   parseConsumptionExcel: (...args: unknown[]) => mockParseConsumptionExcel(...args),
+}))
+// El canal TAE (recepciones) tiene sus propias pruebas; aquí se aísla para que
+// estos casos sigan midiendo solo la importación TCT.
+vi.mock("@/lib/combustibles/tae-receipt-import", () => ({
+  parseTaeReceiptExcel: (...args: unknown[]) => mockParseTaeReceiptExcel(...args),
+}))
+vi.mock("@/lib/combustibles/tae-receipts", () => ({
+  importTaeReceipts: (...args: unknown[]) => mockImportTaeReceipts(...args),
 }))
 
 const { buildCopecSyncPeriods, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod } = await import("../copec-sync")
@@ -68,6 +78,8 @@ describe("syncCopecReportPeriod", () => {
     mockSettingFindFirst.mockResolvedValue(undefined)
     mockBatchFindFirst.mockResolvedValue(undefined)
     mockUserFindFirst.mockResolvedValue({ id: "user-1" })
+    mockParseTaeReceiptExcel.mockResolvedValue({ rows: [], errors: [] })
+    mockImportTaeReceipts.mockResolvedValue({ inserted: 0, duplicates: 0, unmappedCards: [], unmappedLiters: 0 })
     mockSaveState.mockResolvedValue(undefined)
   })
 
@@ -83,7 +95,9 @@ describe("syncCopecReportPeriod", () => {
 
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" })
 
-    expect(result).toMatchObject({ imported: 0, unavailable: ["Diesel", "BlueMax"], reports: [] })
+    // `reports` sigue vacío aunque el canal TAE también se haya consultado: ese
+    // arreglo es el que decide si el cursor avanza, y solo debe contar TCT.
+    expect(result).toMatchObject({ imported: 0, received: 0, unavailable: ["Diesel", "BlueMax", "TAE Diesel", "TAE BlueMax"], reports: [] })
     expect(mockDownloadCopecReports).toHaveBeenCalledWith([
       { product: "diesel", from: "2026-02-01", to: "2026-02-28" },
       { product: "bluemax", from: "2026-02-01", to: "2026-02-28" },
