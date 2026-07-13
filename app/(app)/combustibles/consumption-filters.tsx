@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ArrowCounterClockwise, FunnelSimple, SpinnerGap } from "@phosphor-icons/react"
+import { ArrowCounterClockwise, FunnelSimple, SpinnerGap, X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
+import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { buildConsumptionHref } from "./consumption-url"
@@ -22,16 +23,22 @@ interface ConsumptionFiltersProps {
     associated?: "yes" | "no"
   }
   hasExplicitDateRange: boolean
+  /** Filtro de proveedor: sólo alimenta el log operacional (no es parte de `ConsumptionFilters`), pero se muestra y retira desde aquí igual que el resto. */
+  proveedor?: string
 }
 
-function getActiveFilterCount(filters: ConsumptionFiltersProps["currentFilters"], hasExplicitDateRange: boolean) {
-  return [
-    hasExplicitDateRange,
-    Boolean(filters.worksiteId),
-    Boolean(filters.fuente),
-    Boolean(filters.patente),
-    Boolean(filters.associated),
-  ].filter(Boolean).length
+interface FilterChip { key: string; label: string }
+
+function buildChips(filters: ConsumptionFiltersProps["currentFilters"], hasExplicitDateRange: boolean, proveedor: string | undefined, worksites: Array<{ id: string; name: string }>): FilterChip[] {
+  const chips: Array<FilterChip | null> = [
+    hasExplicitDateRange ? { key: "desde", label: `Período: ${filters.fromDate} a ${filters.toDate}` } : null,
+    filters.worksiteId ? { key: "faena", label: `Faena: ${worksites.find((w) => w.id === filters.worksiteId)?.name ?? filters.worksiteId}` } : null,
+    filters.fuente ? { key: "fuente", label: `Fuente: ${filters.fuente}` } : null,
+    filters.patente ? { key: "patente", label: `Patente: ${filters.patente}` } : null,
+    filters.associated ? { key: "asociacion", label: filters.associated === "yes" ? "Con vehículo asociado" : "Sin vehículo asociado" } : null,
+    proveedor ? { key: "proveedor", label: `Proveedor: ${proveedor}` } : null,
+  ]
+  return chips.filter((chip): chip is FilterChip => chip !== null)
 }
 
 export function ConsumptionFiltersBar({
@@ -39,14 +46,15 @@ export function ConsumptionFiltersBar({
   fuentes,
   currentFilters,
   hasExplicitDateRange,
+  proveedor,
 }: ConsumptionFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const [patenteDraft, setPatenteDraft] = useState(currentFilters.patente ?? "")
-  const activeFilterCount = useMemo(
-    () => getActiveFilterCount(currentFilters, hasExplicitDateRange),
-    [currentFilters, hasExplicitDateRange],
+  const chips = useMemo(
+    () => buildChips(currentFilters, hasExplicitDateRange, proveedor, worksites),
+    [currentFilters, hasExplicitDateRange, proveedor, worksites],
   )
 
   useEffect(() => {
@@ -60,6 +68,12 @@ export function ConsumptionFiltersBar({
 
   function applyPatente() {
     setFilter("patente", patenteDraft.trim().toUpperCase())
+  }
+
+  function removeChip(key: string) {
+    const changes = key === "desde" ? { desde: "", hasta: "" } : { [key]: "" }
+    const href = buildConsumptionHref(searchParams.toString(), changes)
+    startTransition(() => router.replace(href, { scroll: false }))
   }
 
   function clearFilters() {
@@ -78,16 +92,21 @@ export function ConsumptionFiltersBar({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {activeFilterCount > 0 && (
-            <span className="border border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] px-2 py-1 text-xs font-medium text-[var(--color-primary-ink)]">
-              {activeFilterCount} activo{activeFilterCount === 1 ? "" : "s"}
-            </span>
-          )}
           <Button type="button" variant="ghost" size="sm" onClick={clearFilters} disabled={isPending}>
             <ArrowCounterClockwise className="mr-1.5 h-4 w-4" />Limpiar
           </Button>
         </div>
       </div>
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-b border-[var(--color-border)] px-4 py-2.5 md:px-5">
+          {chips.map((chip) => (
+            <button key={chip.key} type="button" onClick={() => removeChip(chip.key)} disabled={isPending}>
+              <Badge variant="outline" size="sm" className="inline-flex items-center gap-1 hover:bg-[var(--color-surface-2)]">{chip.label}<X size={10} /></Badge>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-x-4 gap-y-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 md:px-5">
         <div className="flex min-w-0 flex-col gap-1">

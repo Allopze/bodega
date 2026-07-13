@@ -11,7 +11,7 @@ interface ChartDataPoint {
 }
 
 type MonthlyEvolutionChartType = ComponentType<{ data: ChartDataPoint[] }>
-type CategoryBarChartType = ComponentType<{ data: ChartDataPoint[]; title: string }>
+type CategoryBarChartType = ComponentType<{ data: ChartDataPoint[]; title: string; onSelect?: (group: string) => void }>
 type ProductPieChartType = ComponentType<{ data: ChartDataPoint[] }>
 
 export const MonthlyEvolutionChart = dynamic(

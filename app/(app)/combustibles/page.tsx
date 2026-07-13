@@ -21,6 +21,7 @@ import { ConsumptionAlerts } from "./consumption-alerts"
 import { ConsumptionDetailTable } from "./consumption-detail-table"
 import { EvolutionChart, PriceEvolutionChart, PatenteRankingChart, RendimientoChart } from "./consumption-charts-lazy"
 import { CategoryBarChart } from "./fuel-charts-lazy"
+import { OperationsProveedorChart } from "./operations-category-chart"
 import { formatCLP, formatQty } from "@/lib/utils"
 import { FuelControlOverviewPanel } from "./fuel-control-overview"
 
@@ -45,6 +46,7 @@ export default async function CombustiblesPage({
   const fuente = str("fuente")
   const patente = str("patente")
   const associated = str("asociacion") as "yes" | "no" | undefined
+  const proveedor = str("proveedor")
   const page = typeof sp.page === "string" ? Math.max(1, Number(sp.page)) : 1
   const requestedFilters = normalizeConsumptionFilters({ fromDate, toDate, worksiteId, fuente, patente, associated })
 
@@ -69,6 +71,7 @@ export default async function CombustiblesPage({
       worksiteId: requestedFilters.worksiteId,
       patente: requestedFilters.patente,
       associated: requestedFilters.associated,
+      proveedorNombre: proveedor,
     }),
     getFuelControlOverview(session, { filters: requestedFilters, includeTae: canViewTae }),
   ])
@@ -143,6 +146,7 @@ export default async function CombustiblesPage({
         fuentes={fuentes}
         currentFilters={effectiveFilters}
         hasExplicitDateRange={Boolean(fromDate || toDate)}
+        proveedor={proveedor}
       />
 
       <section aria-labelledby="consumo-evolucion-title" className="mb-8">
@@ -268,7 +272,7 @@ export default async function CombustiblesPage({
                 <CardDescription>¿Con qué proveedor se concentra el volumen y el gasto?</CardDescription>
               </CardHeader>
               <CardContent>
-                <CategoryBarChart data={operationsSummary.porProveedor.map((p) => ({ group: p.proveedor, totalLiters: p.litros, totalAmount: p.monto, count: p.transacciones }))} title="Proveedores" />
+                <OperationsProveedorChart data={operationsSummary.porProveedor.map((p) => ({ group: p.proveedor, totalLiters: p.litros, totalAmount: p.monto, count: p.transacciones }))} />
               </CardContent>
             </Card>
           </div>

@@ -31,6 +31,9 @@ export interface OperationsFilters {
   worksiteId?: string
   patente?: string
   associated?: "yes" | "no"
+  /** Nombre crudo del proveedor tal como aparece en `porProveedor` — incluye el
+   *  literal "Sin proveedor" que usa esa agregación para filas sin dato. */
+  proveedorNombre?: string
 }
 
 /** Comparte con el dashboard los filtros que existen realmente en el log operacional. */
@@ -42,6 +45,8 @@ export function buildOperationsWhere(session: Session, filters: OperationsFilter
     filters.patente ? eq(fuelOperationRecords.plate, filters.patente.trim().toUpperCase()) : undefined,
     filters.associated === "yes" ? isNotNull(fuelOperationRecords.vehicleId) : undefined,
     filters.associated === "no" ? isNull(fuelOperationRecords.vehicleId) : undefined,
+    filters.proveedorNombre === "Sin proveedor" ? isNull(fuelOperationRecords.proveedorNombre)
+      : filters.proveedorNombre ? eq(fuelOperationRecords.proveedorNombre, filters.proveedorNombre) : undefined,
     worksiteScopeSql(session, fuelOperationRecords.worksiteId),
   ]
   const defined = conditions.filter((condition): condition is SQL => condition !== undefined)
