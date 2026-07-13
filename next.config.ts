@@ -19,7 +19,11 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "6mb",
     },
   },
-  serverExternalPackages: ["postgres"],
+  // Tesseract calcula por defecto el worker Node desde su propio __dirname.
+  // Si Turbopack lo integra al bundle, ese dirname queda congelado como
+  // /ROOT/node_modules y el standalone no puede iniciar OCR. Mantener ambos
+  // paquetes externos conserva sus rutas reales en runtime.
+  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core"],
   images: {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [360, 480, 640, 750, 828, 1080, 1200, 1920],
@@ -59,6 +63,8 @@ const nextConfig: NextConfig = {
       "./node_modules/playwright-core/index.*",
       "./node_modules/playwright-core/package.json",
       "./node_modules/playwright/**/*",
+      "./node_modules/tesseract.js/**/*",
+      "./node_modules/tesseract.js-core/**/*",
     ],
   },
   outputFileTracingExcludes: {

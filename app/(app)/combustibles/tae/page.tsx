@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
-import { Upload } from "@phosphor-icons/react/dist/ssr"
+import { ArrowsLeftRight, Upload } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions, worksites } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -84,6 +84,7 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
         description="Cargas físicas registradas desde el formulario público de Copec TAE."
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control TAE" }]} />}
         actions={<div className="flex gap-2">
+          <Button asChild variant="secondary" size="sm"><Link href="/combustibles/tae/conciliacion"><ArrowsLeftRight className="mr-1 h-4 w-4" />Conciliación</Link></Button>
           {canImport && <Button asChild variant="secondary" size="sm"><Link href="/combustibles/tae/importar"><Upload className="mr-1 h-4 w-4" />Importar histórico</Link></Button>}
           {canExport && <TaeExportButton filters={filters} />}
         </div>}

@@ -144,21 +144,26 @@ export function TaeForm() {
   }, [refreshQueue])
 
   React.useEffect(() => {
+    const controller = new AbortController()
+    let active = true
     void (async () => {
       const token = await getTaeAccessToken()
+      if (!active) return
       if (!token) { setLoading(false); return }
       setAccessToken(token)
       let rejectedByServer = false
       try {
-        const response = await fetch("/api/tae/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accessToken: token }) })
+        const response = await fetch("/api/tae/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accessToken: token }), signal: controller.signal })
         const body = await response.json() as { ok: boolean; data?: AccessConfig }
         if (!response.ok || !body.ok || !body.data) {
           rejectedByServer = true
           throw new Error()
         }
+        if (!active) return
         setConfig(body.data)
         await saveTaeAccessConfig(body.data as unknown as Record<string, unknown>)
       } catch {
+        if (controller.signal.aborted) return
         if (rejectedByServer) {
           await Promise.all([clearTaeAccessToken(), clearTaeAccessConfig()])
           setAccessToken(null)
@@ -173,10 +178,12 @@ export function TaeForm() {
         } else {
           toast.error("No se pudo validar el enlace TAE. Conéctate e inténtalo nuevamente.")
         }
-      } finally { setLoading(false) }
+      } finally { if (active) setLoading(false) }
+      if (!active) return
       await refreshQueue()
       if (await countPendingTaeSubmissions()) void registerTaeBackgroundSync()
     })()
+    return () => { active = false; controller.abort() }
   }, [refreshQueue])
 
   const syncPending = React.useCallback(async () => {

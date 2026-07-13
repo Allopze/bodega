@@ -10,18 +10,24 @@ export function TaeAccessActivation({ accessToken }: { accessToken: string }) {
   const [error, setError] = React.useState("")
 
   React.useEffect(() => {
+    const controller = new AbortController()
+    let active = true
     fetch("/api/tae/access", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ accessToken }),
+      signal: controller.signal,
     })
       .then(async (response) => {
         const body = await response.json() as { ok: boolean; data?: Record<string, unknown>; message?: string }
         if (!response.ok || !body.ok || !body.data) throw new Error(body.message ?? "Este enlace TAE no está disponible")
         await Promise.all([saveTaeAccessToken(accessToken), saveTaeAccessConfig(body.data)])
-        router.replace("/tae")
+        if (active) router.replace("/tae")
       })
-      .catch(() => setError("No se pudo preparar este dispositivo. Habilita el almacenamiento del navegador e inténtalo nuevamente."))
+      .catch((cause) => {
+        if (active && !(cause instanceof DOMException && cause.name === "AbortError")) setError("No se pudo preparar este dispositivo. Habilita el almacenamiento del navegador e inténtalo nuevamente.")
+      })
+    return () => { active = false; controller.abort() }
   }, [accessToken, router])
 
   return (

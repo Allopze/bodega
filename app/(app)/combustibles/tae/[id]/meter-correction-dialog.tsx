@@ -32,8 +32,8 @@ export function MeterCorrectionDialog({
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
-  const [meterType, setMeterType] = React.useState(currentMeterType)
-  const [meterReading, setMeterReading] = React.useState(currentMeterReading == null ? "" : String(currentMeterReading))
+  const [meterType, setMeterType] = React.useState(() => currentMeterType)
+  const [meterReading, setMeterReading] = React.useState(() => currentMeterReading == null ? "" : String(currentMeterReading))
   const [reason, setReason] = React.useState("")
 
   function handleSubmit() {

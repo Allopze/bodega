@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
-import { deleteUser, toggleUserActive } from "./actions"
+import { deleteUser } from "./actions/delete"
+import { toggleUserActive } from "./actions/toggle-active"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
 interface Role    { id: string; name: string; label: string }

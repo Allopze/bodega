@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { generateTaeImportDryRunReport } from "@/lib/services/fuel-tae"
@@ -50,8 +49,6 @@ export async function importTaeHistoryAction(formData: FormData) {
       userId: guard.session.user.id,
       allowedWorksiteIds: scope.mode === "all" ? undefined : new Set(scope.mode === "some" ? scope.ids : []),
     })
-    revalidatePath("/combustibles/tae")
-    revalidatePath("/combustibles/tae/importar")
     return { ok: true as const, data: result, message: `${result.importedRows} cargas históricas importadas` }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo importar el histórico TAE" }
