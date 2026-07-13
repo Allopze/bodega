@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
 import * as schema from "@/db/schema"
+import { fuelEquipmentTypeIdForLegacy, fuelMetricDefaultsForLegacy } from "@/lib/combustibles/validation"
 
 interface PatenteChileRow {
   patente: string
@@ -65,10 +66,13 @@ async function main() {
   try {
     for (const row of rows) {
       const plate = normalizePlate(row.patente)
+      const normalizedType = normalizeType(row.tipo_vehiculo)
       const vehicle = {
         id: vehicleIdFromPlate(plate),
         plate,
-        type: normalizeType(row.tipo_vehiculo),
+        type: normalizedType,
+        equipmentTypeId: fuelEquipmentTypeIdForLegacy(normalizedType),
+        ...fuelMetricDefaultsForLegacy(normalizedType),
         brand: row.marca.trim(),
         model: row.modelo.trim(),
         year: row.año ?? row.anio ?? null,
@@ -91,6 +95,9 @@ async function main() {
         await db.update(schema.fuelVehicles)
           .set({
             type: vehicle.type,
+            equipmentTypeId: vehicle.equipmentTypeId,
+            meterType: vehicle.meterType,
+            performanceUnit: vehicle.performanceUnit,
             brand: vehicle.brand,
             model: vehicle.model,
             year: vehicle.year,

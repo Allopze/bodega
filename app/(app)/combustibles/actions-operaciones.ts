@@ -20,6 +20,7 @@ import {
   type ImportError,
 } from "@/lib/combustibles/operations-import"
 import type { ActionState } from "@/lib/validation/masters"
+import { fuelEquipmentTypeIdForLegacy, fuelMetricDefaultsForLegacy } from "@/lib/combustibles/validation"
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
@@ -259,11 +260,14 @@ export async function confirmOperationsImportAction(
         const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
         if (!worksite) continue // sin faena matcheada no se puede crear (worksiteId es NOT NULL)
         const id = nanoid()
+        const metricDefaults = fuelMetricDefaultsForLegacy(row.tipo)
         await tx.insert(fuelVehicles).values({
           id,
           plate: row.plate,
           code: row.code,
           type: row.tipo,
+          equipmentTypeId: fuelEquipmentTypeIdForLegacy(row.tipo),
+          ...metricDefaults,
           brand: row.marca,
           model: row.modelo,
           year: row.anio,

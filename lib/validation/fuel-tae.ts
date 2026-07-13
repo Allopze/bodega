@@ -9,6 +9,7 @@ export const taePublicSubmissionSchema = z.object({
   worksiteId: z.string().trim().min(1),
   loadingPointId: z.string().trim().min(1, "El QR debe identificar un punto de carga"),
   vehicleId: z.string().trim().min(1, "Selecciona el equipo"),
+  productId: z.string().trim().min(1, "Selecciona el producto"),
   equipmentCode: z.string().trim().min(2, "Selecciona el equipo").max(120),
   plate: nullableText(30),
   loadedAt: z.string().datetime({ offset: true }),

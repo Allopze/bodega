@@ -16,11 +16,14 @@ export async function optionalNumber(value: FormDataEntryValue | null): Promise<
 
 export async function exportFuelLoadsXlsxAction(filters?: {
   month?: string
+  startDate?: string
+  endDate?: string
   serviceType?: string
   vehicleId?: string
   worksiteId?: string
   fuelSupplierId?: string
   product?: string
+  productId?: string
   status?: string
 }) {
   let session

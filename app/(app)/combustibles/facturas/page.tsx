@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { fuelLoads, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
+import { fuelLoads, fuelProducts, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { desc, eq, inArray, sql } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -45,6 +45,7 @@ export default async function CombustiblesFacturasPage({
   const worksiteId = typeof sp.faena === "string" ? sp.faena : undefined
   const supplierId = typeof sp.proveedor === "string" ? sp.proveedor : undefined
   const product = typeof sp.producto === "string" ? sp.producto : undefined
+  const productId = typeof sp.productoId === "string" ? sp.productoId : undefined
   const status = typeof sp.status === "string" ? sp.status : undefined
   const page = typeof sp.page === "string" ? Math.max(1, Number(sp.page)) : 1
 
@@ -54,12 +55,12 @@ export default async function CombustiblesFacturasPage({
   // Filtros + aislamiento por faena (scope) en un solo lugar.
   const where = buildFuelLoadsWhere(session, {
     month, startDate, endDate, serviceType, vehicleId, worksiteId,
-    fuelSupplierId: supplierId, product, status,
+    fuelSupplierId: supplierId, product, productId, status,
   })
   const worksiteScope = resolveWorksiteScope(session)
 
   // Fetch data
-  const [rows, countResult, vehicles, suppliersList, worksitesList] = await Promise.all([
+  const [rows, countResult, vehicles, suppliersList, worksitesList, products] = await Promise.all([
     db.query.fuelLoads.findMany({
       where,
       with: { vehicle: true, supplier: true, worksite: true },
@@ -79,6 +80,7 @@ export default async function CombustiblesFacturasPage({
           where: worksiteScope.mode === "some" ? inArray(worksites.id, worksiteScope.ids) : undefined,
           orderBy: [worksites.name],
         }),
+    db.query.fuelProducts.findMany({ where: eq(fuelProducts.isActive, true), orderBy: [fuelProducts.name] }),
   ])
 
   const total = countResult[0]?.count ?? 0
@@ -132,7 +134,7 @@ export default async function CombustiblesFacturasPage({
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Facturas" }]} />}
         headerActions={
           <div className="flex gap-2">
-            <ExportXlsxButton filters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, status }} />
+            <ExportXlsxButton filters={{ month, startDate, endDate, serviceType, vehicleId, worksiteId, fuelSupplierId: supplierId, product, productId, status }} />
             <ImportFuelLoadsModal worksites={worksitesList} />
             <Button asChild size="sm">
               <Link href="/combustibles/nueva">+ Nueva carga</Link>
@@ -152,7 +154,8 @@ export default async function CombustiblesFacturasPage({
         vehicles={vehicles}
         suppliers={suppliersList}
         worksites={worksitesList}
-        currentFilters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, status, startDate, endDate }}
+        products={products}
+        currentFilters={{ month, serviceType, vehicleId, worksiteId, supplierId, product, productId, status, startDate, endDate }}
       />
 
       {/* Charts */}

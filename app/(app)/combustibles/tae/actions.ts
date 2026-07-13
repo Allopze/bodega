@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions } from "@/db/schema"
+import { fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions } from "@/db/schema"
 import { guardPermission, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { createTaePublicLink, revokeTaePublicLink, reviewTaeSubmission } from "@/lib/services/fuel-tae"
@@ -129,7 +129,7 @@ export async function updateTaeMeterReadingAction(input: {
   return { ok: true, message: nextStatus === "observed" && submission.status === "validated" ? "Lectura actualizada; la carga volvió a observada" : "Lectura actualizada" }
 }
 
-export type TaeExportFilters = { q?: string; from?: string; to?: string; worksiteId?: string; loadingPointId?: string; status?: string }
+export type TaeExportFilters = { q?: string; from?: string; to?: string; worksiteId?: string; loadingPointId?: string; status?: string; seal?: string; evidence?: string }
 
 export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters = {}) {
   let session
@@ -143,6 +143,8 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined,
     filters.loadingPointId ? eq(fuelTaeSubmissions.loadingPointId, filters.loadingPointId) : undefined,
     status ? eq(fuelTaeSubmissions.status, status) : undefined,
+    filters.seal === "missing" ? sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')` : undefined,
+    filters.evidence === "missing" ? sql`(select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4` : undefined,
     /^\d{4}-\d{2}-\d{2}$/.test(filters.from ?? "") ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
     /^\d{4}-\d{2}-\d{2}$/.test(filters.to ?? "") ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date` : undefined,
     q ? or(ilike(fuelTaeSubmissions.equipmentCodeSnapshot, `%${q}%`), ilike(fuelTaeSubmissions.plateSnapshot, `%${q}%`), ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${q}%`), ilike(fuelTaeSubmissions.driverNameSnapshot, `%${q}%`)) : undefined,

@@ -3,11 +3,34 @@ import {
   Truck,
   GasPump,
   Wrench,
+  TreeStructure,
+  Drop,
   ArrowRight,
 } from "@phosphor-icons/react/ssr"
 import type { Permission } from "@/modules/permissions"
 
 const LINKS = [
+  {
+    title:       "Estanques de combustible",
+    description: "Configura los estanques físicos por faena y producto para operar el ciclo.",
+    href:        "/admin/flota-catalogos/estanques-combustible",
+    icon:        Drop,
+    permission:  "admin:fleet_catalog" satisfies Permission,
+  },
+  {
+    title:       "Productos de combustible",
+    description: "Administra Diésel, BlueMax, unidades y alias de integración.",
+    href:        "/admin/flota-catalogos/productos-combustible",
+    icon:        Drop,
+    permission:  "admin:fleet_catalog" satisfies Permission,
+  },
+  {
+    title:       "Tipos de equipo",
+    description: "Clasifica camiones, vehículos livianos, maquinaria y sus unidades de rendimiento.",
+    href:        "/admin/flota-catalogos/tipos-equipo",
+    icon:        TreeStructure,
+    permission:  "admin:fleet_catalog" satisfies Permission,
+  },
   {
     title:       "Vehículos",
     description: "Crear, editar y dar de baja vehículos asociados a faenas.",
@@ -42,7 +65,7 @@ export function CatalogLinks({ permissions }: { permissions: string[] }) {
   const visibleLinks = LINKS.filter((link) => permissions.includes(link.permission))
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
       {visibleLinks.map((link) => {
         const Icon = link.icon
         return (

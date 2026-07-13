@@ -6,6 +6,10 @@ const mockInsertValues = vi.fn(async () => undefined)
 const mockUpdateWhere = vi.fn(async () => undefined)
 const mockUpdateSet = vi.fn(() => ({ where: mockUpdateWhere }))
 const mockFindVehicle = vi.fn()
+const mockFindEquipmentType = vi.fn()
+const mockFindProducts = vi.fn()
+const mockDeleteWhere = vi.fn(async () => undefined)
+const mockRecordAudit = vi.fn(async (..._args: unknown[]) => undefined)
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -28,8 +32,24 @@ vi.mock("@/db", () => ({
         findFirst: (...args: unknown[]) => mockFindVehicle(...args),
         findMany: vi.fn(async () => []),
       },
+      fuelEquipmentTypes: {
+        findFirst: (...args: unknown[]) => mockFindEquipmentType(...args),
+        findMany: vi.fn(async () => []),
+      },
+      fuelProducts: {
+        findMany: (...args: unknown[]) => mockFindProducts(...args),
+      },
     },
+    transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      insert: () => ({ values: mockInsertValues }),
+      update: () => ({ set: mockUpdateSet }),
+      delete: () => ({ where: mockDeleteWhere }),
+    }),
   },
+}))
+
+vi.mock("@/lib/audit", () => ({
+  recordAudit: (...args: unknown[]) => mockRecordAudit(...args),
 }))
 
 vi.mock("@/lib/id", () => ({
@@ -59,7 +79,11 @@ function vehicleForm(overrides: Record<string, string> = {}) {
   const fd = new FormData()
   fd.set("plate", "AA-BB-11")
   fd.set("type", "camioneta")
+  fd.set("equipmentTypeId", "fet-camioneta")
+  fd.set("meterType", "odometer")
+  fd.set("performanceUnit", "km_per_liter")
   fd.set("worksiteId", "ws-1")
+  fd.append("compatibleProductIds", "fuel-diesel")
   for (const [key, value] of Object.entries(overrides)) fd.set(key, value)
   return fd
 }
@@ -68,7 +92,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockRequirePermission.mockResolvedValue(session)
   mockCanAccessWorksite.mockReturnValue(true)
-  mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1" })
+  mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo" })
+  mockFindEquipmentType.mockResolvedValue({ id: "fet-camioneta", slug: "camioneta", isActive: true })
+  mockFindProducts.mockResolvedValue([{ id: "fuel-diesel", isActive: true }])
 })
 
 describe("fuel vehicle actions worksite scope", () => {
@@ -112,6 +138,7 @@ describe("createFuelVehicleAction default status", () => {
 
     expect(result.ok).toBe(true)
     expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ operationalStatus: "mantencion" }))
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "create", entityType: "fuel_vehicle" }), expect.anything())
   })
 
   it("respects an explicit status submitted by the form", async () => {
@@ -128,6 +155,7 @@ describe("updateFuelVehicleAction governance fields", () => {
       id: "veh-1",
       responsibleUserId: "user-9",
       operationalStatus: "mantencion",
+      operationalStatusReason: "Ingreso programado al taller",
       soapExpiresAt: "2026-12-01",
       technicalReviewExpiresAt: "2026-11-01",
       circulationPermitExpiresAt: "2026-10-01",
@@ -145,6 +173,35 @@ describe("updateFuelVehicleAction governance fields", () => {
       insurancePolicyNumber: "POL-123",
       insuranceExpiresAt: "2026-09-01",
     }))
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "update", entityType: "fuel_vehicle" }), expect.anything())
+    expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+      vehicleId: "veh-1",
+      status: "mantencion",
+      reason: "Ingreso programado al taller",
+      changedBy: "user-1",
+    }))
+  })
+
+  it("rejects a status change without a reason and keeps the current interval open", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({
+      id: "veh-1",
+      operationalStatus: "fuera_servicio",
+    }))
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/motivo/i)
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+    expect(mockInsertValues).not.toHaveBeenCalled()
+  })
+
+  it("does not create another interval when the operational status is unchanged", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({
+      id: "veh-1",
+      operationalStatus: "operativo",
+    }))
+
+    expect(result.ok).toBe(true)
+    expect(mockInsertValues).not.toHaveBeenCalledWith(expect.objectContaining({ vehicleId: "veh-1", status: "operativo" }))
   })
 })
 

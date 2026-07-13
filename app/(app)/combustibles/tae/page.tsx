@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { ArrowsLeftRight, Upload } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
-import { fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions, worksites } from "@/db/schema"
+import { fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions, worksites } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
@@ -27,7 +27,7 @@ const STATUS: Record<string, { label: string; variant: "primary" | "warning" | "
 
 const PAGE_SIZE = 50
 
-type TaeSearchParams = { q?: string; from?: string; to?: string; faena?: string; punto?: string; estado?: string; page?: string }
+type TaeSearchParams = { q?: string; from?: string; to?: string; faena?: string; punto?: string; estado?: string; sello?: string; evidencia?: string; page?: string }
 
 export default async function TaeControlPage({ searchParams }: { searchParams: Promise<TaeSearchParams> }) {
   let session
@@ -40,6 +40,8 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     worksiteId: raw.faena?.trim() ?? "",
     loadingPointId: raw.punto?.trim() ?? "",
     status: ["submitted", "observed", "validated", "voided"].includes(raw.estado ?? "") ? raw.estado! : "",
+    seal: raw.sello === "faltante" ? "missing" : "",
+    evidence: raw.evidencia === "faltante" ? "missing" : "",
   }
   const page = Math.max(1, Number.parseInt(raw.page ?? "1", 10) || 1)
   const scope = resolveWorksiteScope(session)
@@ -49,6 +51,8 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined,
     filters.loadingPointId ? eq(fuelTaeSubmissions.loadingPointId, filters.loadingPointId) : undefined,
     filters.status ? eq(fuelTaeSubmissions.status, filters.status) : undefined,
+    filters.seal ? sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')` : undefined,
+    filters.evidence ? sql`(select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4` : undefined,
     filters.from ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
     filters.to ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date` : undefined,
     filters.q ? or(
@@ -63,7 +67,7 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     scope.mode === "none" ? Promise.resolve([]) : db.query.worksites.findMany({ where: worksiteWhere, columns: { id: true, name: true }, orderBy: [worksites.name] }),
     scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaeLoadingPoints.findMany({ where: scope.mode === "some" ? inArray(fuelTaeLoadingPoints.worksiteId, scope.ids) : undefined, columns: { id: true, worksiteId: true, name: true, type: true }, orderBy: [fuelTaeLoadingPoints.name] }),
     scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaePublicLinks.findMany({ where: scope.mode === "some" ? inArray(fuelTaePublicLinks.worksiteId, scope.ids) : undefined, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } } }, orderBy: [desc(fuelTaePublicLinks.createdAt)] }),
-    db.query.fuelTaeSubmissions.findMany({ where, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } } }, orderBy: [desc(fuelTaeSubmissions.loadedAt)], limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    db.query.fuelTaeSubmissions.findMany({ where, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } }, product: { columns: { name: true } } }, orderBy: [desc(fuelTaeSubmissions.loadedAt)], limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
     db.select({
       total: count(),
       liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)`,
@@ -102,8 +106,8 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
       <TaeFilters values={filters} worksites={worksitesList} loadingPoints={loadingPoints} />
 
       <div className="overflow-x-auto border border-(--color-border)">
-        <Table className="min-w-[840px]"><TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Faena</TableHead><TableHead>Punto</TableHead><TableHead>Equipo</TableHead><TableHead>Litros</TableHead><TableHead>Supervisor</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>
-          {submissions.length === 0 ? <TableRow><TableCell colSpan={8} className="py-10 text-center text-[var(--color-text-muted)]">Aún no hay cargas TAE. Genera un QR y compártelo en el punto de carga.</TableCell></TableRow> : submissions.map((item) => { const status = STATUS[item.status] ?? { label: "Recibida", variant: "primary" as const }; return <TableRow key={item.id}><TableCell className="font-mono text-xs">{new Date(item.loadedAt).toLocaleString("es-CL")}</TableCell><TableCell>{item.worksite?.name ?? "—"}</TableCell><TableCell>{item.loadingPoint?.name ?? "—"}</TableCell><TableCell className="font-mono">{item.equipmentCodeSnapshot}</TableCell><TableCell className="font-mono text-right">{Number(item.liters).toLocaleString("es-CL")} L</TableCell><TableCell>{item.supervisorNameSnapshot}</TableCell><TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell><TableCell className="text-right"><Button asChild variant="ghost" size="sm"><Link href={`/combustibles/tae/${item.id}`}>Revisar</Link></Button></TableCell></TableRow> })}
+        <Table className="min-w-[920px]"><TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Faena</TableHead><TableHead>Punto</TableHead><TableHead>Equipo</TableHead><TableHead>Producto</TableHead><TableHead>Litros</TableHead><TableHead>Supervisor</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>
+          {submissions.length === 0 ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-[var(--color-text-muted)]">Aún no hay cargas TAE. Genera un QR y compártelo en el punto de carga.</TableCell></TableRow> : submissions.map((item) => { const status = STATUS[item.status] ?? { label: "Recibida", variant: "primary" as const }; return <TableRow key={item.id}><TableCell className="font-mono text-xs">{new Date(item.loadedAt).toLocaleString("es-CL")}</TableCell><TableCell>{item.worksite?.name ?? "—"}</TableCell><TableCell>{item.loadingPoint?.name ?? "—"}</TableCell><TableCell className="font-mono">{item.equipmentCodeSnapshot}</TableCell><TableCell>{item.product?.name ?? "—"}</TableCell><TableCell className="font-mono text-right">{Number(item.liters).toLocaleString("es-CL")} L</TableCell><TableCell>{item.supervisorNameSnapshot}</TableCell><TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell><TableCell className="text-right"><Button asChild variant="ghost" size="sm"><Link href={`/combustibles/tae/${item.id}`}>Revisar</Link></Button></TableCell></TableRow> })}
         </TableBody></Table>
       </div>
       {totalPages > 1 && <nav aria-label="Paginación de cargas TAE" className="mt-4 flex items-center justify-between gap-3 text-sm"><span className="text-(--color-text-muted)">Página {Math.min(page, totalPages)} de {totalPages}</span><div className="flex gap-2">{page > 1 && <Button asChild variant="secondary" size="sm"><Link href={{ pathname: "/combustibles/tae", query: { ...raw, page: String(page - 1) } }}>Anterior</Link></Button>}{page < totalPages && <Button asChild variant="secondary" size="sm"><Link href={{ pathname: "/combustibles/tae", query: { ...raw, page: String(page + 1) } }}>Siguiente</Link></Button>}</div></nav>}

@@ -394,6 +394,7 @@ async function seedMediumDataset(db: ReturnType<typeof drizzle<typeof schema>>) 
     fuelSupplierId: `fuel-${supplierIds[index % supplierIds.length]}`,
     worksiteId: worksiteIds[index % worksiteIds.length],
     product: "PETROLEO DIESEL",
+    productId: "fuel-diesel",
     receiptNumber: `PERF-FUEL-${index + 1}`,
     liters: (index % 100) + 10,
     iecFixed: 0,

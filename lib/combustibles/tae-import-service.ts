@@ -6,6 +6,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChanges } from "@/lib/audit"
 import { parseTaeLegacyExcel, type ParsedTaeLegacyRow } from "./tae-import"
 import { buildTaeImportReport, type TaeImportReportData } from "./tae-import-report"
+import { FUEL_PRODUCT_IDS } from "./fuel-products"
 
 type Catalogs = {
   worksites: Array<{ id: string; name: string }>
@@ -129,6 +130,7 @@ export async function importTaeLegacyWorkbook(input: { buffer: Buffer; fileName:
       worksiteId: item.worksiteId,
       loadingPointId: pointByKey.get(`${item.worksiteId}:${item.row.loadingPointName.trim().toLocaleUpperCase("es-CL")}`)!,
       vehicleId: item.vehicleId,
+      productId: FUEL_PRODUCT_IDS.historicalUnspecified,
       equipmentCodeSnapshot: item.row.equipmentCode,
       loadedAt: item.row.loadedAt,
       submittedAt: item.row.loadedAt,

@@ -34,7 +34,7 @@ import { useTaeIdentity } from "./use-tae-identity"
 type AccessConfig = {
   worksite: { id: string; name: string }
   loadingPoint: { id: string; name: string } | null
-  vehicles: Array<{ id: string; code: string | null; plate: string; type: string }>
+  vehicles: Array<{ id: string; code: string | null; plate: string; type: string; products: Array<{ id: string; name: string; unit: string }> }>
 }
 
 class TaeSubmissionError extends Error {
@@ -108,6 +108,7 @@ export function TaeForm() {
   const [submitting, setSubmitting] = React.useState(false)
   const [online, setOnline] = React.useState(true)
   const [vehicleId, setVehicleId] = React.useState("")
+  const [productId, setProductId] = React.useState("")
   const [meterType, setMeterType] = React.useState<"odometer" | "hour_meter">("odometer")
   const [files, setFiles] = React.useState<Partial<Record<TaeEvidenceKind, File>>>({})
   const [compressing, setCompressing] = React.useState<Partial<Record<TaeEvidenceKind, boolean>>>({})
@@ -115,6 +116,13 @@ export function TaeForm() {
   const identityScope = config ? `${config.worksite.id}:${config.loadingPoint?.id ?? "none"}` : null
   const driverIdentity = useTaeIdentity("driver", accessToken, identityScope)
   const supervisorIdentity = useTaeIdentity("supervisor", accessToken, identityScope)
+  const selectedVehicle = config?.vehicles.find((item) => item.id === vehicleId)
+  const compatibleProducts = selectedVehicle?.products ?? []
+
+  function changeVehicle(id: string) {
+    setVehicleId(id)
+    setProductId("")
+  }
 
   const refreshQueue = React.useCallback(async () => {
     const [pending, failedItems] = await Promise.all([countPendingTaeSubmissions(), getFailedTaeSubmissions()])
@@ -230,6 +238,7 @@ export function TaeForm() {
       worksiteId: config.worksite.id,
       loadingPointId: config.loadingPoint?.id ?? "",
       vehicleId: vehicle.id,
+      productId,
       equipmentCode: vehicle.code ?? vehicle.plate,
       plate: vehicle.plate,
       loadedAt: new Date().toISOString(),
@@ -264,7 +273,7 @@ export function TaeForm() {
           return
         }
         await refreshQueue()
-        event.currentTarget.reset(); setFiles({}); setVehicleId("")
+        event.currentTarget.reset(); setFiles({}); setVehicleId(""); setProductId("")
         toast.success("Carga guardada en este dispositivo. Se enviará al recuperar conexión.")
         return
       }
@@ -343,7 +352,8 @@ export function TaeForm() {
               <div><Label htmlFor="tae-supervisor">Nombre completo del supervisor o líder</Label><Input id="tae-supervisor" name="supervisorName" required placeholder="Nombre completo" /></div>
             </div>
           </div>
-          <div><Label htmlFor="tae-vehicle">Equipo</Label><Select value={vehicleId} onValueChange={setVehicleId}><SelectTrigger id="tae-vehicle"><SelectValue placeholder="Selecciona el equipo" /></SelectTrigger><SelectContent>{config.vehicles.map((vehicle) => <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.code ?? vehicle.plate} · {vehicle.plate}</SelectItem>)}</SelectContent></Select></div>
+          <div><Label htmlFor="tae-vehicle">Equipo</Label><Select value={vehicleId} onValueChange={changeVehicle}><SelectTrigger id="tae-vehicle"><SelectValue placeholder="Selecciona el equipo" /></SelectTrigger><SelectContent>{config.vehicles.map((vehicle) => <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.code ?? vehicle.plate} · {vehicle.plate}</SelectItem>)}</SelectContent></Select></div>
+          <div><Label htmlFor="tae-product">Producto</Label><Select value={productId} onValueChange={setProductId} disabled={!vehicleId || compatibleProducts.length === 0}><SelectTrigger id="tae-product"><SelectValue placeholder={compatibleProducts.length === 0 && vehicleId ? "Sin productos habilitados" : "Selecciona el producto"} /></SelectTrigger><SelectContent>{compatibleProducts.map((product) => <SelectItem key={product.id} value={product.id}>{product.name} · {product.unit === "liter" ? "L" : product.unit}</SelectItem>)}</SelectContent></Select>{vehicleId && compatibleProducts.length === 0 && <p className="mt-1 text-xs text-[var(--color-danger-ink)]">Este equipo requiere configurar productos compatibles antes de registrar cargas.</p>}</div>
         </section>
 
         <section className="space-y-3 border-t border-(--color-border) pt-5">
@@ -366,7 +376,7 @@ export function TaeForm() {
         </section>
 
         <div><Label htmlFor="tae-notes">Observaciones</Label><Textarea id="tae-notes" name="notes" rows={3} /></div>
-        <Button type="submit" className="w-full" size="lg" disabled={submitting || Object.values(compressing).some(Boolean)}>{submitting ? <><CircleNotch className="animate-spin" size={16} /> Guardando</> : "Registrar carga TAE"}</Button>
+        <Button type="submit" className="w-full" size="lg" disabled={!productId || submitting || Object.values(compressing).some(Boolean)}>{submitting ? <><CircleNotch className="animate-spin" size={16} /> Guardando</> : "Registrar carga TAE"}</Button>
       </form>
     </main>
   )

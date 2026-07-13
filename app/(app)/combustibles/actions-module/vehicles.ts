@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache"
 import type { Session } from "next-auth"
 import { db } from "@/db"
-import { fuelVehicles } from "@/db/schema"
-import { eq, inArray } from "drizzle-orm"
+import { fuelEquipmentTypes, fuelProducts, fuelVehicleOperationalIntervals, fuelVehicleProducts, fuelVehicles } from "@/db/schema"
+import { and, eq, inArray, isNull } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
@@ -13,6 +13,7 @@ import { nanoid } from "@/lib/id"
 import { parseFleetXlsx } from "@/lib/combustibles/fleet-xlsx-import"
 import {
   createFuelVehicleSchema,
+  fuelEquipmentTypeSlug,
   updateFuelVehicleSchema,
 } from "@/lib/combustibles/validation"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
@@ -29,6 +30,58 @@ function canManageFuelVehicleWorksite(session: Session, worksiteId: string): boo
   return canAccessWorksite(session, worksiteId)
 }
 
+function vehicleFormData(formData: FormData, id?: string) {
+  return {
+    ...(id ? { id } : {}),
+    plate: formData.get("plate") || undefined,
+    equipmentTypeId: formData.get("equipmentTypeId") || undefined,
+    meterType: formData.get("meterType") || undefined,
+    performanceUnit: formData.get("performanceUnit") || undefined,
+    tankCapacityLiters: formData.get("tankCapacityLiters") || undefined,
+    comparisonGroup: formData.get("comparisonGroup") || undefined,
+    usualFuelSupplierId: formData.get("usualFuelSupplierId") || undefined,
+    compatibleProductIds: formData.getAll("compatibleProductIds"),
+    operatingDays: formData.getAll("operatingDays"),
+    operatingStart: formData.get("operatingStart") || undefined,
+    operatingEnd: formData.get("operatingEnd") || undefined,
+    operatingTimezone: formData.get("operatingTimezone") || undefined,
+    code: formData.get("code") || undefined,
+    brand: formData.get("brand") || undefined,
+    model: formData.get("model") || undefined,
+    year: formData.get("year") || undefined,
+    worksiteId: formData.get("worksiteId") || undefined,
+    responsibleUserId: formData.get("responsibleUserId") || undefined,
+    operationalStatus: formData.get("operationalStatus") || undefined,
+    operationalStatusReason: formData.get("operationalStatusReason") || undefined,
+    soapExpiresAt: formData.get("soapExpiresAt") || undefined,
+    technicalReviewExpiresAt: formData.get("technicalReviewExpiresAt") || undefined,
+    circulationPermitExpiresAt: formData.get("circulationPermitExpiresAt") || undefined,
+    insurancePolicyNumber: formData.get("insurancePolicyNumber") || undefined,
+    insuranceExpiresAt: formData.get("insuranceExpiresAt") || undefined,
+    notes: formData.get("notes") || undefined,
+  }
+}
+
+function vehicleValues<T extends {
+  operatingDays?: number[]
+  operatingStart?: string
+  operatingEnd?: string
+  operatingTimezone?: string
+  compatibleProductIds?: string[]
+  operationalStatusReason?: string
+}>(data: T, typeSlug: string) {
+  const { operatingDays, operatingStart, operatingEnd, operatingTimezone, compatibleProductIds, operationalStatusReason, ...values } = data
+  return {
+    ...values,
+    type: typeSlug,
+    operatingSchedule: operatingDays?.length && operatingStart && operatingEnd
+      ? { timezone: operatingTimezone ?? "America/Santiago", days: [...new Set(operatingDays)].sort(), start: operatingStart, end: operatingEnd }
+      : null,
+    compatibleProductIds: compatibleProductIds ?? [],
+    operationalStatusReason,
+  }
+}
+
 export async function createFuelVehicleAction(
   _prev: ActionState,
   formData: FormData,
@@ -37,23 +90,7 @@ export async function createFuelVehicleAction(
   try { session = await requirePermission("combustibles:manage_vehicles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
-  const parsed = createFuelVehicleSchema.safeParse({
-    plate: formData.get("plate"),
-    type: formData.get("type"),
-    code: formData.get("code") || undefined,
-    brand: formData.get("brand") || undefined,
-    model: formData.get("model") || undefined,
-    year: formData.get("year") || undefined,
-    worksiteId: formData.get("worksiteId") || undefined,
-    responsibleUserId: formData.get("responsibleUserId") || undefined,
-    operationalStatus: formData.get("operationalStatus") || undefined,
-    soapExpiresAt: formData.get("soapExpiresAt") || undefined,
-    technicalReviewExpiresAt: formData.get("technicalReviewExpiresAt") || undefined,
-    circulationPermitExpiresAt: formData.get("circulationPermitExpiresAt") || undefined,
-    insurancePolicyNumber: formData.get("insurancePolicyNumber") || undefined,
-    insuranceExpiresAt: formData.get("insuranceExpiresAt") || undefined,
-    notes: formData.get("notes") || undefined,
-  })
+  const parsed = createFuelVehicleSchema.safeParse(vehicleFormData(formData))
 
   if (!parsed.success) {
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
@@ -65,8 +102,32 @@ export async function createFuelVehicleAction(
 
   try {
     const id = nanoid()
+    const equipmentType = await db.query.fuelEquipmentTypes.findFirst({ where: eq(fuelEquipmentTypes.id, parsed.data.equipmentTypeId) })
+    if (!equipmentType?.isActive) return { ok: false, message: "El tipo de equipo no existe o está inactivo" }
     const operationalStatus = parsed.data.operationalStatus ?? (await getFleetAdminSettings()).defaultVehicleStatus
-    await db.insert(fuelVehicles).values({ id, ...parsed.data, operationalStatus })
+    const { compatibleProductIds, operationalStatusReason: _, ...values } = vehicleValues({ ...parsed.data, operationalStatus }, equipmentType.slug)
+    const validProducts = await db.query.fuelProducts.findMany({ where: inArray(fuelProducts.id, compatibleProductIds) })
+    if (validProducts.length !== compatibleProductIds.length || validProducts.some((product) => !product.isActive)) return { ok: false, message: "Hay productos compatibles inexistentes o inactivos" }
+    await db.transaction(async (tx) => {
+      await tx.insert(fuelVehicles).values({ id, ...values })
+      await tx.insert(fuelVehicleOperationalIntervals).values({
+        id: nanoid(),
+        vehicleId: id,
+        status: operationalStatus,
+        startedAt: new Date().toISOString(),
+        reason: "Alta inicial del equipo",
+        changedBy: session.user.id,
+      })
+      await tx.insert(fuelVehicleProducts).values(compatibleProductIds.map((productId) => ({ vehicleId: id, productId })))
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "create",
+        entityType: "fuel_vehicle",
+        entityId: id,
+        newState: { ...values, compatibleProductIds },
+      }, tx)
+    })
     revalidatePath(FLEET_CATALOG_PATH)
     return { ok: true, message: "Vehículo creado", data: { id } }
   } catch (e) {
@@ -85,24 +146,7 @@ export async function updateFuelVehicleAction(
   const id = String(formData.get("id") ?? "")
   if (!id) return { ok: false, message: "ID requerido" }
 
-  const parsed = updateFuelVehicleSchema.safeParse({
-    id,
-    plate: formData.get("plate") || undefined,
-    type: formData.get("type") || undefined,
-    code: formData.get("code") || undefined,
-    brand: formData.get("brand") || undefined,
-    model: formData.get("model") || undefined,
-    year: formData.get("year") || undefined,
-    worksiteId: formData.get("worksiteId") || undefined,
-    responsibleUserId: formData.get("responsibleUserId") || undefined,
-    operationalStatus: formData.get("operationalStatus") || undefined,
-    soapExpiresAt: formData.get("soapExpiresAt") || undefined,
-    technicalReviewExpiresAt: formData.get("technicalReviewExpiresAt") || undefined,
-    circulationPermitExpiresAt: formData.get("circulationPermitExpiresAt") || undefined,
-    insurancePolicyNumber: formData.get("insurancePolicyNumber") || undefined,
-    insuranceExpiresAt: formData.get("insuranceExpiresAt") || undefined,
-    notes: formData.get("notes") || undefined,
-  })
+  const parsed = updateFuelVehicleSchema.safeParse(vehicleFormData(formData, id))
 
   if (!parsed.success) {
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
@@ -118,8 +162,46 @@ export async function updateFuelVehicleAction(
   }
 
   try {
-    const { id: _, ...data } = parsed.data
-    await db.update(fuelVehicles).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, id))
+    const equipmentTypeId = parsed.data.equipmentTypeId ?? existing.equipmentTypeId
+    const equipmentType = await db.query.fuelEquipmentTypes.findFirst({ where: eq(fuelEquipmentTypes.id, equipmentTypeId) })
+    if (!equipmentType) return { ok: false, message: "El tipo de equipo no existe" }
+    const { id: _, ...parsedData } = parsed.data
+    const { compatibleProductIds, operationalStatusReason, ...data } = vehicleValues(parsedData, equipmentType.slug)
+    const statusChanged = data.operationalStatus !== undefined && data.operationalStatus !== existing.operationalStatus
+    if (statusChanged && !operationalStatusReason) {
+      return { ok: false, message: "Debes indicar el motivo del cambio de estado", fieldErrors: { operationalStatusReason: ["Motivo requerido al cambiar el estado"] } }
+    }
+    const validProducts = await db.query.fuelProducts.findMany({ where: inArray(fuelProducts.id, compatibleProductIds) })
+    if (validProducts.length !== compatibleProductIds.length || validProducts.some((product) => !product.isActive)) return { ok: false, message: "Hay productos compatibles inexistentes o inactivos" }
+    const nextState = { ...data, updatedAt: new Date().toISOString() }
+    await db.transaction(async (tx) => {
+      await tx.update(fuelVehicles).set(nextState).where(eq(fuelVehicles.id, id))
+      if (statusChanged) {
+        const changedAt = new Date().toISOString()
+        await tx.update(fuelVehicleOperationalIntervals)
+          .set({ endedAt: changedAt })
+          .where(and(eq(fuelVehicleOperationalIntervals.vehicleId, id), isNull(fuelVehicleOperationalIntervals.endedAt)))
+        await tx.insert(fuelVehicleOperationalIntervals).values({
+          id: nanoid(),
+          vehicleId: id,
+          status: data.operationalStatus!,
+          startedAt: changedAt,
+          reason: operationalStatusReason,
+          changedBy: session.user.id,
+        })
+      }
+      await tx.delete(fuelVehicleProducts).where(eq(fuelVehicleProducts.vehicleId, id))
+      await tx.insert(fuelVehicleProducts).values(compatibleProductIds.map((productId) => ({ vehicleId: id, productId })))
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "update",
+        entityType: "fuel_vehicle",
+        entityId: id,
+        oldState: existing,
+        newState: { ...nextState, compatibleProductIds, operationalStatusReason },
+      }, tx)
+    })
     revalidatePath(FLEET_CATALOG_PATH)
     return { ok: true, message: "Vehículo actualizado" }
   } catch (e) {
@@ -191,9 +273,10 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
     return { ok: false, message: parsed.errors[0]?.message ?? "La planilla no contiene vehículos válidos" }
   }
 
-  const [availableWorksites, existingVehicles] = await Promise.all([
+  const [availableWorksites, existingVehicles, equipmentTypes] = await Promise.all([
     db.query.worksites.findMany(),
     db.query.fuelVehicles.findMany(),
+    db.query.fuelEquipmentTypes.findMany(),
   ])
   const worksiteByName = new Map(
     availableWorksites
@@ -213,21 +296,61 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
       errors.push({ rowIndex: row.rowIndex, field: "PATENTE", message: "El vehículo existente no puede ser administrado desde tu alcance" })
       return []
     }
-    return [{ ...row, worksiteId: worksite.id, existing }]
+    return [{ ...row, worksiteId: worksite.id, existing, equipmentTypeSlug: fuelEquipmentTypeSlug(row.type) }]
   })
 
   let created = 0
   let updated = 0
   try {
     await db.transaction(async (tx) => {
+      const equipmentTypeBySlug = new Map(equipmentTypes.map((item) => [item.slug, item]))
+      const missingTypes = [...new Map(importable
+        .filter((row) => !equipmentTypeBySlug.has(row.equipmentTypeSlug))
+        .map((row) => [row.equipmentTypeSlug, row.type])).entries()]
+      if (missingTypes.length > 0) {
+        const createdTypes = missingTypes.map(([slug, name], index) => ({
+          id: `fet-${nanoid()}`,
+          slug,
+          name,
+          category: "other",
+          defaultMeterType: "none",
+          defaultPerformanceUnit: "not_applicable",
+          description: "Tipo creado desde importación XLSX; requiere revisión administrativa.",
+          sortOrder: 1000 + index,
+        }))
+        await tx.insert(fuelEquipmentTypes).values(createdTypes)
+        for (const item of createdTypes) equipmentTypeBySlug.set(item.slug, { ...item, isSystem: false, isActive: true, createdAt: "", updatedAt: "" })
+      }
       for (const row of importable) {
-        const values = { plate: row.plate, code: row.code, type: row.type, brand: row.brand, model: row.model, year: row.year, worksiteId: row.worksiteId }
+        const equipmentType = equipmentTypeBySlug.get(row.equipmentTypeSlug)!
+        const values = {
+          plate: row.plate,
+          code: row.code,
+          type: equipmentType.slug,
+          equipmentTypeId: equipmentType.id,
+          meterType: equipmentType.defaultMeterType,
+          performanceUnit: equipmentType.defaultPerformanceUnit,
+          brand: row.brand,
+          model: row.model,
+          year: row.year,
+          worksiteId: row.worksiteId,
+        }
         if (row.existing) {
           updated++
           await tx.update(fuelVehicles).set({ ...values, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, row.existing.id))
         } else {
           created++
-          await tx.insert(fuelVehicles).values({ id: nanoid(), ...values })
+          const vehicleId = nanoid()
+          const startedAt = new Date().toISOString()
+          await tx.insert(fuelVehicles).values({ id: vehicleId, ...values })
+          await tx.insert(fuelVehicleOperationalIntervals).values({
+            id: nanoid(),
+            vehicleId,
+            status: "operativo",
+            startedAt,
+            reason: `Alta mediante importación XLSX ${file.name}`,
+            changedBy: session.user.id,
+          })
         }
       }
     })
