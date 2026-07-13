@@ -122,11 +122,12 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
 }
 
 /* ── By Category (Horizontal Bar Chart) ──────────────────────────────────── */
-export function CategoryBarChart({ data, title }: { data: ChartDataPoint[]; title: string }) {
+export function CategoryBarChart({ data, title, onSelect }: { data: ChartDataPoint[]; title: string; onSelect?: (group: string) => void }) {
   if (data.length === 0) return <EmptyChart label={`Sin datos de ${title.toLowerCase()}`} />
 
   const chartData = data.slice(0, 8).map(d => ({
     name: (d.group ?? "Sin asignar").length > 20 ? (d.group ?? "Sin asignar").substring(0, 20) + "…" : (d.group ?? "Sin asignar"),
+    fullName: d.group ?? "Sin asignar",
     monto: d.totalAmount,
     litros: d.totalLiters,
   }))
@@ -134,7 +135,7 @@ export function CategoryBarChart({ data, title }: { data: ChartDataPoint[]; titl
   return (
     <div className="h-64">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+        <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }} title={onSelect ? `${title}. Selecciona una barra para filtrar el panel por esta selección.` : title}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
           {/* Una sola métrica: gasto (CLP). Los litros viven en el tooltip, no como barra rival. */}
           <XAxis type="number" className="text-xs" tickFormatter={formatCLP} tick={{ fill: "var(--color-text-muted)" }} />
@@ -146,7 +147,14 @@ export function CategoryBarChart({ data, title }: { data: ChartDataPoint[]; titl
               return [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, "Gasto"]
             }}
           />
-          <Bar dataKey="monto" radius={[0, 3, 3, 0]} name="Gasto" fill="var(--color-primary)" />
+          <Bar
+            dataKey="monto"
+            radius={[0, 3, 3, 0]}
+            name="Gasto"
+            fill="var(--color-primary)"
+            style={onSelect ? { cursor: "pointer" } : undefined}
+            onClick={onSelect ? (entry) => onSelect((entry as unknown as { payload: { fullName: string } }).payload.fullName) : undefined}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>
