@@ -7,7 +7,10 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++ bash
 
 COPY package*.json ./
-RUN npm ci
+# Keep the build stage complete even when the Docker daemon inherits
+# NODE_ENV=production. Next.js compilation and one-shot script bundling depend
+# on development tools such as TypeScript and esbuild.
+RUN npm ci --include=dev
 
 COPY . .
 
@@ -24,6 +27,16 @@ FROM dev AS build
 # connection (all routes using @/db are force-dynamic), so a placeholder
 # URL is safe here.  The real DATABASE_URL is injected at runtime only.
 RUN DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
+
+# Bundle the RBAC synchronizer while its TypeScript sources, path aliases and
+# build tools are still available. The slim runtime image receives only this
+# portable JavaScript artifact.
+RUN ./node_modules/.bin/esbuild scripts/sync-rbac.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=/tmp/sync-rbac.mjs
 
 
 # ── Production stage: standalone build, minimal runtime ──
@@ -70,12 +83,7 @@ COPY --from=build /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
-# tsx: runtime TypeScript executor for one-shot scripts (sync-rbac, etc.).
-# Installed separately (not via npm ci) so it's available in the slim prod image
-# without pulling in all devDependencies.
-# Pin tsx version to match devDependencies in package.json for reproducible builds.
-RUN npm install tsx@4.22.4
-COPY --from=build /app/scripts/sync-rbac.ts ./scripts/sync-rbac.ts
+COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
 
 # Ensure storage + the Next.js ISR/prerender cache dirs exist and are writable.
 # The standalone output copies .next/static but not a cache dir; at runtime the

@@ -85,8 +85,8 @@ services:
   # One-shot: sync RBAC permissions from module manifests to the database.
   # Run automatically by deploy-prod.sh after migrations. Also run manually:
   #   docker compose run --rm sync-rbac
-  # Reuses the same prod image (already built by deploy-prod.sh) — tsx is
-  # included in the Dockerfile's prod stage for one-shot scripts.
+  # Reuses the same prod image. The synchronizer is bundled during the Docker
+  # build, so it does not depend on TypeScript source files at runtime.
   sync-rbac:
     build:
       context: .
@@ -99,7 +99,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-    command: ["npx", "tsx", "scripts/sync-rbac.ts"]
+    command: ["node", "scripts/sync-rbac.mjs"]
 
   # One-shot, MANUAL: bootstrap seed (worksites/workers and EPP catalog).
   # Not part of the default `up` (guarded by the `seed` profile). Run explicitly:
