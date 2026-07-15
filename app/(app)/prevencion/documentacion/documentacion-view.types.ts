@@ -58,8 +58,6 @@ export interface Props {
   searchParams: { q?: string; category?: string; status?: string; worksiteId?: string }
   total: number
   canManage: boolean
-  canApprove?: boolean
-  canAck?: boolean
   canArchive: boolean
   userId: string
 }

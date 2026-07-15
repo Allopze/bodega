@@ -4,7 +4,7 @@
  */
 
 import type { Session } from "next-auth"
-import { sql, eq } from "drizzle-orm"
+import { sql, eq, desc } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords } from "@/db/schema"
 import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-queries"
@@ -240,7 +240,7 @@ export async function getConsumptionByEquipmentType(session: Session, filters: P
     .innerJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
     .where(where)
     .groupBy(fuelEquipmentTypes.name)
-    .orderBy(sql`totalLiters desc`)
+    .orderBy(desc(sql`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`))
 
   return rows.map((r) => ({
     equipmentTypeName: r.equipmentTypeName,
@@ -322,7 +322,7 @@ export async function getWorksiteEquipmentMatrix(session: Session, filters: Pick
     .innerJoin(worksites, eq(fuelVehicles.worksiteId, worksites.id))
     .where(where)
     .groupBy(worksites.name, fuelVehicles.code, fuelConsumptionRecords.patente)
-    .orderBy(sql`liters desc`)
+    .orderBy(desc(sql`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`))
     .limit(50)
 
   const cells = rows.map((r) => ({

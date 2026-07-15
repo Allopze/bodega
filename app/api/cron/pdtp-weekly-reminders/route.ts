@@ -3,7 +3,7 @@
  *
  * Endpoint protegido por CRON_SECRET para enviar recordatorios semanales
  * del Programa de Trabajo Preventivo SG-SST a los responsables con
- * permiso `prevention:pdtp:manage` por faena.
+ * permiso `prevention:pdtp:execute` por faena.
  *
  * Llamar semanalmente vía cron externo (Vercel cron, GitHub Actions, etc.):
  *   curl -H "Authorization: Bearer $CRON_SECRET" https://yourdomain/api/cron/pdtp-weekly-reminders

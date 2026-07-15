@@ -52,21 +52,26 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
 
   const allActivityIds = activityRows.map((row) => row.id)
   const { scheduleRows, executionRows } = await loadProgramScheduleAndExecutions(allActivityIds, year, worksiteId)
-  const validExecutionRows = executionRows.filter((row) => row.status === "submitted" || row.status === "approved")
+  // El cumplimiento formal solo incorpora ejecuciones validadas. Las
+  // submitted siguen visibles en el tablero operativo y en aprobaciones.
+  const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
 
-  const plannedByMonth = Array.from({ length: 12 }, () => new Set<string>())
+  // El cumplimiento se mide por cantidad comprometida, no por el mero hecho
+  // de que una actividad tenga al menos una ejecución durante el mes.
+  const plannedByMonth = Array.from({ length: 12 }, () => 0)
   for (const row of scheduleRows) {
-    if (row.plannedQuantity > 0) plannedByMonth[row.month - 1]!.add(row.activityId)
+    plannedByMonth[row.month - 1]! += row.plannedQuantity
   }
 
-  const executedByMonth = Array.from({ length: 12 }, () => new Set<string>())
-  for (const row of validExecutionRows) {
-    if (row.executedQuantity > 0) executedByMonth[row.month - 1]!.add(row.activityId)
+  const executedByMonth = Array.from({ length: 12 }, () => 0)
+  for (const row of approvedExecutionRows) {
+    executedByMonth[row.month - 1]! += row.executedQuantity
   }
 
   const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
-    const planned = plannedByMonth[i]!.size
-    const executed = executedByMonth[i]!.size
+    const planned = plannedByMonth[i]!
+    // Sobre-ejecutar no puede inflar un indicador de cumplimiento sobre 100%.
+    const executed = Math.min(executedByMonth[i]!, planned)
     const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
     return { month: i + 1, planned, executed, percent }
   })
@@ -138,13 +143,17 @@ export async function getPdtpIntegralCompliance(
 
   if (activityIds.length > 0) {
     const { executionRows } = await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)
-    const validExecutions = executionRows.filter((r) => r.status === "submitted" || r.status === "approved")
-    const executionIds = validExecutions.map((r) => r.id)
+    // El indicador integral es formal: checklist y acciones también requieren
+    // que la ejecución base haya sido aprobada.
+    const approvedExecutionIds = executionRows.reduce<string[]>((ids, execution) => {
+      if (execution.status === "approved") ids.push(execution.id)
+      return ids
+    }, [])
 
-    if (executionIds.length > 0) {
+    if (approvedExecutionIds.length > 0) {
       // Eje 2: verificación — promedio de porcentajeCumplimiento de las instancias
       const instances = await db.query.pdtpExecutionChecklists.findMany({
-        where: (t, { inArray: ia }) => ia(t.executionId, executionIds),
+        where: (t, { inArray: ia }) => ia(t.executionId, approvedExecutionIds),
       })
       const validPct = instances
         .map((i) => i.porcentajeCumplimiento)
@@ -155,7 +164,7 @@ export async function getPdtpIntegralCompliance(
 
       // Eje 3: cierre — acciones cerradas / total
       const actions = await db.select({ estado: pdtpActionPlan.estado, plazo: pdtpActionPlan.plazo })
-        .from(pdtpActionPlan).where(inArray(pdtpActionPlan.executionId, executionIds))
+        .from(pdtpActionPlan).where(inArray(pdtpActionPlan.executionId, approvedExecutionIds))
       if (actions.length > 0) {
         const cerradas = actions.filter((a) => PDTP_ESTADOS_CERRADOS.has(a.estado)).length
         cierre = Math.round((cerradas / actions.length) * 10000) / 100

@@ -29,6 +29,9 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
 
   return (
     <div className="space-y-3">
+      <p className="text-xs text-[var(--color-text-muted)]">
+        El cumplimiento formal considera únicamente ejecuciones aprobadas.
+      </p>
       {integral && <IntegralComplianceRow integral={integral} />}
 
       {/* Annual + quarterly summary */}
@@ -187,4 +190,3 @@ function IntegralComplianceRow({ integral }: { integral: PdtpIntegralCompliance 
     </div>
   )
 }
-

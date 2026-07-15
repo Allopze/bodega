@@ -136,6 +136,21 @@ describe("createAndUploadSstDocumentAction", () => {
     expect(mockUploadDocumentVersion).toHaveBeenCalled()
   })
 
+  it("archiva el borrador si falla la carga de su primera versión", async () => {
+    mockUploadDocumentVersion.mockRejectedValueOnce(new Error("Archivo inválido"))
+    const fd = new FormData()
+    fd.set("categorySlug", "gestion_preventiva")
+    fd.set("title", "Reglamento interno")
+    fd.set("file", new File(["contenido"], "reglamento.pdf", { type: "application/pdf" }))
+
+    const res = await createAndUploadSstDocumentAction(fd)
+
+    expect(res.ok).toBe(false)
+    expect(mockArchiveDocument).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({ documentId: "doc-1" }),
+    }))
+  })
+
   it("retorna error si el título está vacío", async () => {
     const fd = new FormData()
     fd.set("categorySlug", "gestion_preventiva")

@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { ZodError } from "zod"
-import { guardAuth } from "@/lib/auth/can"
+import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import {
   markPdtpExecution,
   approvePdtpProgramJdpr,
@@ -50,14 +51,23 @@ function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | 
   return scope.ids
 }
 
+function fail(error: unknown): ActionState {
+  if (error instanceof ZodError) {
+    return {
+      ok: false,
+      message: "Revisa los campos marcados.",
+      fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
+    }
+  }
+  return unexpectedActionError(error, "prevencion/pdtp/actions")
+}
+
 // ── Existing actions (keep unchanged) ──────────────────────────────────────
 
 export async function markPdtpExecutionAction(formData: FormData): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para registrar ejecución PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:execute")
+  if (guard.error) return guard.error
+  const session = guard.session
 
   try {
     const evidenceUrl = formData.get("evidenceUrl")
@@ -70,22 +80,15 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
       executedQuantity: formData.get("executedQuantity"),
       evidenceText: formData.get("evidenceText") ?? "",
       evidenceUrl: evidenceUrl ?? "",
-      evidencePhotos: evidenceUrl ? [String(evidenceUrl)] : [],
+      // evidenceUrl es la evidencia destacada; no se duplica en el arreglo
+      // de adjuntos, que se reserva para evidencias adicionales.
+      evidencePhotos: [],
     }, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    // pdtp-execution-form.tsx lee state.fieldErrors.month/week/executedQuantity
-    // para marcar los Select/input inválidos — antes nunca se poblaba porque
-    // acá solo se devolvía el mensaje crudo del ZodError, nunca los campos.
-    if (e instanceof ZodError) {
-      return {
-        ok: false,
-        message: "Revisa los campos marcados.",
-        fieldErrors: e.flatten().fieldErrors as Record<string, string[]>,
-      }
-    }
-    return { ok: false, message: (e as Error).message }
+    // pdtp-execution-form.tsx usa fieldErrors para señalar cada control.
+    return fail(e)
   }
 }
 
@@ -96,58 +99,50 @@ export async function markPdtpExecutionFormAction(formData: FormData): Promise<A
 // ── WS2: Program lifecycle ──────────────────────────────────────────────────
 
 export async function approvePdtpProgramJdprAction(programId: string): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:approve")) {
-    return { ok: false, message: "No tienes permisos para aprobar el programa PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:approve")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     await approvePdtpProgramJdpr(programId, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
 export async function signPdtpProgramLegalAction(programId: string): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:sign_legal")) {
-    return { ok: false, message: "No tienes permisos para firmar el programa PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:sign_legal")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     await signPdtpProgramLegal(programId, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
 export async function activatePdtpProgramAction(programId: string): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:approve")) {
-    return { ok: false, message: "No tienes permisos para activar el programa PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:approve")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     await activatePdtpProgram(programId, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
 // ── WS3: Execution approval ─────────────────────────────────────────────────
 
 export async function approvePdtpExecutionAction(executionId: string): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:approve")) {
-    return { ok: false, message: "No tienes permisos para aprobar ejecuciones PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:approve")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpExecutionApprovalSchema.parse({ executionId })
     await approvePdtpExecution(parsed.executionId, session.user.id, scopeToIds(resolveWorksiteScope(session)))
@@ -155,7 +150,7 @@ export async function approvePdtpExecutionAction(executionId: string): Promise<A
     revalidatePath("/prevencion/pdtp/aprobaciones")
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -163,11 +158,9 @@ export async function rejectPdtpExecutionAction(
   executionId: string,
   reason: string,
 ): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:approve")) {
-    return { ok: false, message: "No tienes permisos para rechazar ejecuciones PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:approve")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpExecutionRejectionSchema.parse({ executionId, reason })
     await rejectPdtpExecution(parsed.executionId, session.user.id, parsed.reason, scopeToIds(resolveWorksiteScope(session)))
@@ -175,34 +168,30 @@ export async function rejectPdtpExecutionAction(
     revalidatePath("/prevencion/pdtp/aprobaciones")
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
 // ── WS4: Activity edit + add ────────────────────────────────────────────────
 
 export async function updatePdtpActivityAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para editar actividades PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpActivityUpdateSchema.parse(input)
     await updatePdtpActivity(parsed, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
 export async function addPdtpActivityAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para agregar actividades PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpActivityAddSchema.parse(input)
     await addPdtpActivity(parsed, session.user.id)
@@ -210,7 +199,7 @@ export async function addPdtpActivityAction(input: unknown): Promise<ActionState
     revalidatePath(`${REVALIDATE}/${parsed.programId}`)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -232,11 +221,9 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
     redirect(qs ? `${detailPath}?${qs}` : detailPath)
   }
 
-  const { session, error } = await guardAuth()
-  if (error) return backTo(error.message)
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return backTo("No tienes permisos para fijar metas PDTP por faena.")
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return backTo(guard.error.message)
+  const session = guard.session
 
   const mode = String(fd.get("mode") ?? "set")
   try {
@@ -254,7 +241,7 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
       await setPdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     }
   } catch (e) {
-    return backTo((e as Error).message)
+    return backTo(fail(e).message)
   }
   revalidatePath(REVALIDATE)
   if (programId) revalidatePath(detailPath)
@@ -267,11 +254,9 @@ export async function createPdtpProgramAction(
   _prev: ActionState | null,
   formData: FormData,
 ): Promise<ActionState & { programId?: string }> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para crear programas PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
 
   try {
     const parsed = pdtpProgramCreateSchema.parse({
@@ -288,7 +273,7 @@ export async function createPdtpProgramAction(
     revalidatePath(REVALIDATE)
     return { ok: true, programId: program.id }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -296,11 +281,9 @@ export async function updatePdtpProgramAction(
   _prev: ActionState | null,
   formData: FormData,
 ): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para editar programas PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
 
   try {
     const parsed = pdtpProgramUpdateSchema.parse({
@@ -314,7 +297,7 @@ export async function updatePdtpProgramAction(
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -322,19 +305,17 @@ export async function deletePdtpProgramAction(
   _prev: ActionState | null,
   formData: FormData,
 ): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para eliminar programas PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
 
   try {
     const parsed = pdtpProgramDeleteSchema.parse({ programId: formData.get("programId") })
-    await deletePdtpProgramService(parsed.programId, session.user.id)
+    await deletePdtpProgramService(parsed.programId)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -344,11 +325,8 @@ export async function createPdtpSheetAction(
   _prev: ActionState | null,
   formData: FormData,
 ): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para crear hojas PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
 
   try {
     const parsed = pdtpSheetCreateSchema.parse({
@@ -362,7 +340,7 @@ export async function createPdtpSheetAction(
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -370,11 +348,8 @@ export async function deletePdtpSheetAction(
   _prev: ActionState | null,
   formData: FormData,
 ): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para eliminar hojas PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
 
   try {
     const parsed = pdtpSheetDeleteSchema.parse({
@@ -386,18 +361,16 @@ export async function deletePdtpSheetAction(
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
 // ── WS7: Activity delete + reorder ───────────────────────────────────────────
 
 export async function deletePdtpActivityAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para eliminar actividades PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
 
   try {
     const parsed = pdtpActivityDeleteSchema.parse(input)
@@ -405,16 +378,14 @@ export async function deletePdtpActivityAction(input: unknown): Promise<ActionSt
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
 export async function reorderPdtpActivitiesAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para reordenar actividades PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
 
   try {
     const parsed = pdtpActivityReorderSchema.parse(input)
@@ -424,7 +395,7 @@ export async function reorderPdtpActivitiesAction(input: unknown): Promise<Actio
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -446,11 +417,9 @@ export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
     redirect(qs ? `${detailPath}?${qs}` : detailPath)
   }
 
-  const { session, error } = await guardAuth()
-  if (error) return backTo(error.message)
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return backTo("No tienes permisos para agregar actividades PDTP.")
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return backTo(guard.error.message)
+  const session = guard.session
 
   // H-M2: aceptar múltiples responsables y hojas. Iteramos sobre todos los
   // entries del FormData con keys `responsibleSlugs[*]` y `sheetCodes[*]`.
@@ -482,7 +451,7 @@ export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
     })
     await addPdtpActivity(parsed, session.user.id)
   } catch (e) {
-    return backTo((e as Error).message)
+    return backTo(fail(e).message)
   }
   revalidatePath(REVALIDATE)
   if (programId) revalidatePath(detailPath)
@@ -492,11 +461,9 @@ export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
 // ── Tab Objetivos: renombrar el objetivo de un grupo (objectiveOrder) ───────
 
 export async function renamePdtpObjectiveAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:manage")) {
-    return { ok: false, message: "No tienes permisos para editar objetivos PDTP." }
-  }
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpObjectiveRenameSchema.parse(input)
     await renamePdtpObjective(parsed, session.user.id)
@@ -505,6 +472,6 @@ export async function renamePdtpObjectiveAction(input: unknown): Promise<ActionS
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }

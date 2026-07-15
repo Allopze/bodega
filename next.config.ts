@@ -50,6 +50,11 @@ const nextConfig: NextConfig = {
       // Biblioteca SST renamed to Documentación (2026-07-02)
       { source: "/prevencion/biblioteca", destination: "/prevencion/documentacion", permanent: true },
       { source: "/prevencion/biblioteca/:path*", destination: "/prevencion/documentacion/:path*", permanent: true },
+      // Subrutas de la biblioteca retiradas; se conserva la compatibilidad
+      // de bookmarks como redirect de borde en vez de renderizar stubs.
+      { source: "/prevencion/documentacion/nuevo", destination: "/prevencion/documentacion", permanent: true },
+      { source: "/prevencion/documentacion/revisiones", destination: "/prevencion/documentacion", permanent: true },
+      { source: "/prevencion/documentacion/vencimientos", destination: "/prevencion/documentacion", permanent: true },
     ];
   },
   // playwright-core ships non-JS assets (browsers.json, etc.) that NFT

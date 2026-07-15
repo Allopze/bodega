@@ -1,5 +1,11 @@
 # Auditoría de submódulos de Prevención — reporte, mitigación y features
 
+> **Histórico — alcance reemplazado el 2026-07-15.** Este documento describe
+> la superficie anterior a la poda del 2026-07-02. No usar sus pendientes para
+> planificar desarrollo: IPER, incidentes, EPP, salud, capacitaciones y los
+> demás submódulos aquí inventariados ya no existen en el producto. El alcance
+> vigente está en `ANALISIS_PREVENCION_2026-07-15.md`.
+
 > Generado: 2026-06-30. Alcance: `app/(app)/prevencion/**`, `lib/services/prevention-*.ts`,
 > `lib/validation/prevention.ts`, `db/schema/prevention.ts`, `modules/{registry,prevention,ppa}/*`.
 > Los 5 bugs marcados como "confirmados" fueron verificados leyendo el código fuente
@@ -549,4 +555,3 @@ bodega, o se registra el stock EPP como una entidad separada?).
 
 Ver la sección final de `docs/auditoria/PLAN_PREVENCION.md` — actualizada
 con el detalle ítem por ítem.
-

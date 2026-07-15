@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -154,6 +154,14 @@ export default async function AdminPage() {
       href:        "/admin/auditoria",
       icon:        ShieldCheck,
       permission:  "admin:audit_log",
+      group:       "gobierno",
+    },
+    {
+      title:       "Módulos del sistema",
+      description: "Activar o desactivar módulos y submódulos completos del sistema.",
+      href:        "/admin/modulos",
+      icon:        ToggleLeft,
+      permission:  "admin:module_management",
       group:       "gobierno",
     },
     {

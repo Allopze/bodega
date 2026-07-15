@@ -45,7 +45,7 @@ export async function signPdtpProgramLegal(programId: string, userId: string) {
 export async function activatePdtpProgram(programId: string, userId: string) {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status === "active") throw new Error("El programa ya está activo.")
+  if (program.status !== "draft") throw new Error("Solo se pueden activar programas en estado borrador (draft).")
   if (!program.approvedByJdprUserId) throw new Error("El programa debe ser aprobado por JDPR antes de activarse.")
   if (!program.approvedByLegalUserId) throw new Error("El programa debe ser firmado por Gerencia Legal antes de activarse.")
 
@@ -65,7 +65,7 @@ export async function activatePdtpProgram(programId: string, userId: string) {
       .where(eq(pdtpPrograms.id, programId)).returning()
     if (!row) throw new Error("No se pudo activar el programa PDTP.")
 
-    await addPdtpChangeLogEntry(programId, program.version, userId, "lifecycle", { status: "draft" }, { status: "active" }, "Programa activado.", tx)
+    await addPdtpChangeLogEntry(programId, program.version, userId, "lifecycle", { status: program.status }, { status: "active" }, "Programa activado.", tx)
     return row
   })
   return updated

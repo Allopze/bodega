@@ -223,8 +223,6 @@ describe("DocumentacionView", () => {
         searchParams={{}}
         total={0}
         canManage
-        canApprove
-        canAck
         canArchive
         userId="test-user"
       />,
@@ -263,8 +261,6 @@ describe("DocumentacionView", () => {
         searchParams={{}}
         total={0}
         canManage
-        canApprove
-        canAck
         canArchive
         userId="test-user"
       />,
@@ -300,8 +296,6 @@ describe("DocumentacionView", () => {
         searchParams={{}}
         total={1}
         canManage
-        canApprove
-        canAck
         canArchive
         userId="test-user"
       />,
@@ -349,8 +343,6 @@ describe("DocumentacionView", () => {
         searchParams={{}}
         total={2}
         canManage
-        canApprove
-        canAck
         canArchive
         userId="test-user"
       />,
@@ -390,8 +382,6 @@ describe("DocumentacionView", () => {
         searchParams={{ status: "archivado" }}
         total={0}
         canManage
-        canApprove
-        canAck
         canArchive
         userId="test-user"
       />,

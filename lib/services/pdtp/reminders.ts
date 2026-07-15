@@ -10,11 +10,12 @@
 
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, worksites } from "@/db/schema"
+import { pdtpActivities, pdtpExecutions, pdtpPrograms, worksites } from "@/db/schema"
 import { currentPdtpPeriod, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
 import { createNotifications, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { listVencidas } from "./followups"
+import { loadProgramScheduleAndExecutions } from "./helpers"
 
 export type PdtpPendingTarget = {
   worksiteId: string
@@ -32,9 +33,10 @@ export type PdtpWeeklyPendingResult = {
 }
 
 /**
- * Detecta faenas con actividades planificadas en el período actual (y el
- * anterior) que no tienen ejecución registrada. Devuelve una lista
- * agrupada por faena con los IDs de actividades pendientes.
+ * Detecta faenas activas con actividades planificadas en la semana actual
+ * que no tienen ejecución registrada. Usa el cronograma efectivo por faena,
+ * por lo que un override a 0 no genera recordatorios y uno que agrega una
+ * celda sí queda cubierto.
  */
 export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeriod()): Promise<PdtpPendingTarget[]> {
   // H4: antes se tomaba la versión más alta del año y se exigía que ESA
@@ -50,53 +52,49 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
   if (!program) return []
 
   const activityRows = await db
-    .select({ id: pdtpActivities.id, worksiteScope: pdtpActivitySchedule.sourceColumn })
+    .select({ id: pdtpActivities.id })
     .from(pdtpActivities)
-    .innerJoin(pdtpActivitySchedule, eq(pdtpActivitySchedule.activityId, pdtpActivities.id))
-    .where(and(
-      eq(pdtpActivities.programId, program.id),
-      eq(pdtpActivitySchedule.year, period.year),
-      inArray(pdtpActivitySchedule.month, [period.month, period.month - 1].filter((m) => m >= 1 && m <= 12)),
-    ))
+    .where(eq(pdtpActivities.programId, program.id))
 
   if (activityRows.length === 0) return []
 
-  const activityIds = [...new Set(activityRows.map((row) => row.id))]
-
-  const executionRows = await db
-    .select({ activityId: pdtpExecutions.activityId, worksiteId: pdtpExecutions.worksiteId, month: pdtpExecutions.month, week: pdtpExecutions.week })
-    .from(pdtpExecutions)
-    .where(and(
-      inArray(pdtpExecutions.activityId, activityIds),
-      eq(pdtpExecutions.year, period.year),
-    ))
-
-  const executedKeys = new Set(
-    executionRows
-      .filter((row) => row.month === period.month || row.month === period.month - 1)
-      .map((row) => `${row.activityId}::${row.worksiteId}::${row.month}::${row.week}`),
-  )
-
-  const allWorksites = await db.select({ id: worksites.id, name: worksites.name }).from(worksites)
+  const activityIds = activityRows.map((row) => row.id)
+  const allWorksites = await db
+    .select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(eq(worksites.isActive, true))
   if (allWorksites.length === 0) return []
 
-  const byWorksite = new Map<string, Set<string>>()
-  for (const ws of allWorksites) byWorksite.set(ws.id, new Set())
-
-  for (const activity of activityRows) {
-    for (const [worksiteId, set] of byWorksite) {
-      const key = `${activity.id}::${worksiteId}::${period.month}::${period.week}`
-      if (!executedKeys.has(key)) set.add(activity.id)
+  const targetResults = await Promise.all(allWorksites.map(async (ws) => {
+    const { scheduleRows, executionRows } = await loadProgramScheduleAndExecutions(activityIds, period.year, ws.id)
+    const executedActivityIds = new Set(
+      executionRows
+        .filter((row) => row.month === period.month && row.week === period.week)
+        .map((row) => row.activityId),
+    )
+    const pendingActivityIds = new Set(
+      scheduleRows.reduce<string[]>((activityIds, row) => {
+        if (
+          row.year === period.year
+          && row.month === period.month
+          && row.week === period.week
+          && row.plannedQuantity > 0
+          && !executedActivityIds.has(row.activityId)
+        ) {
+          activityIds.push(row.activityId)
+        }
+        return activityIds
+      }, []),
+    )
+    if (pendingActivityIds.size > 0) {
+      return { worksiteId: ws.id, worksiteName: ws.name, activityIds: [...pendingActivityIds] }
     }
-  }
-
-  const targets: PdtpPendingTarget[] = []
-  for (const ws of allWorksites) {
-    const ids = byWorksite.get(ws.id)
-    if (!ids || ids.size === 0) continue
-    targets.push({ worksiteId: ws.id, worksiteName: ws.name, activityIds: [...ids] })
-  }
-  return targets
+    return null
+  }))
+  return targetResults.reduce<PdtpPendingTarget[]>((targets, target) => {
+    if (target) targets.push(target)
+    return targets
+  }, [])
 }
 
 /**
@@ -129,8 +127,11 @@ export async function runPdtpWeeklyReminders(period: PdtpPeriod = currentPdtpPer
   // (userId, dedupeKey) en `notifications` previene duplicados si el
   // cron se ejecuta varias veces en el mismo período.
   const userWorksiteMap = new Map<string, { userId: string; worksiteId: string; worksiteName: string; activityIds: Set<string> }>()
-  for (const target of targets) {
-    const userIds = await getUserIdsWithPermissionForWorksite("prevention:pdtp:manage", target.worksiteId)
+  const recipientsByTarget = await Promise.all(targets.map(async (target) => ({
+    target,
+    userIds: await getUserIdsWithPermissionForWorksite("prevention:pdtp:execute", target.worksiteId),
+  })))
+  for (const { target, userIds } of recipientsByTarget) {
     for (const userId of userIds) {
       const key = `${userId}::${target.worksiteId}`
       const existing = userWorksiteMap.get(key)

@@ -35,14 +35,18 @@ const CODE_SHORTCUTS: { pattern: RegExp; href: (q: string) => string; label: (q:
   },
 ]
 
-export function CommandPalette({ session }: { session: Session }) {
+export function CommandPalette({ session, enabledModuleIds }: { session: Session; enabledModuleIds?: string[] }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
   const [active, setActive] = React.useState(0)
   const listRef = React.useRef<HTMLUListElement>(null)
 
-  const targets = React.useMemo(() => flattenNavTargets(session), [session])
+  const enabledSet = React.useMemo(
+    () => (enabledModuleIds ? new Set(enabledModuleIds) : undefined),
+    [enabledModuleIds],
+  )
+  const targets = React.useMemo(() => flattenNavTargets(session, enabledSet), [session, enabledSet])
 
   const results = React.useMemo(() => {
     const raw = query.trim()

@@ -186,6 +186,21 @@ export const ANOMALY_RULE_SEVERITY_LABELS: Record<(typeof ANOMALY_RULE_SEVERITIE
   low: "Baja", medium: "Media", high: "Alta", critical: "Crítica",
 }
 
+/** Códigos de regla que el motor batch reconoce (claves de `BATCH_DETECTORS` en anomaly-detector.ts)
+ *  más los que dispara inline `detectTaeAnomaliesInTx` en `lib/services/fuel-tae.ts`.
+ *  Una fila de `fuel_anomaly_rules` con un código fuera de esta lista queda inerte.
+ *  Se define aquí (y no en anomaly-detector.ts) para que los Client Components
+ *  puedan importarlo sin arrastrar `db` → `postgres` → `fs`. */
+export const KNOWN_RULE_CODES = [
+  "litros_supera_capacidad", "variacion_brusca_consumo", "consumo_durante_inactividad",
+  "evidencia_duplicada", "evidencia_ilegible", "proveedor_no_habitual",
+  "rendimiento_fuera_historico", "rendimiento_fuera_grupo",
+  "sello_repetido", "sello_no_correlativo", "kilometraje_regresivo", "horometro_regresivo",
+  "evidencia_faltante", "kilometraje_sin_variacion", "horometro_sin_variacion",
+  "sello_inicial_faltante", "sello_final_faltante", "identidad_incompleta",
+  "carga_faena_distinta", "carga_fuera_horario", "exceso_cargas_ventana",
+] as const
+
 export const anomalyRuleSchema = z.object({
   code: z.string().trim().min(2, "Código requerido").max(60).regex(/^[a-z0-9_]+$/, "Usa minúsculas, números o guion bajo"),
   name: z.string().trim().min(2, "Nombre requerido").max(150),

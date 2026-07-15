@@ -52,6 +52,37 @@ describe("auth bootstrap service", () => {
     expect(roles.length).toBeGreaterThan(0)
   })
 
+  it("retires the obsolete PDTP permission and every existing grant", async () => {
+    const retiredPermission = {
+      id: "p-prev-pdtp-manage",
+      name: "prevention:pdtp:manage",
+      module: "prevention",
+      description: "Permiso retirado",
+    }
+    await inMemoryDb.insert(schema.permissions).values(retiredPermission)
+    await inMemoryDb.insert(schema.rolePermissions).values({
+      roleId: "rol-prev",
+      permissionId: retiredPermission.id,
+    })
+    await inMemoryDb.insert(schema.users).values({
+      id: "user-retired-permission",
+      name: "Permiso retirado",
+      email: "retired-permission@example.com",
+      hashedPassword: "password_hash",
+      isActive: true,
+    })
+    await inMemoryDb.insert(schema.userPermissions).values({
+      userId: "user-retired-permission",
+      permissionId: retiredPermission.id,
+    })
+
+    await ensureSystemRbac()
+
+    expect((await inMemoryDb.select().from(schema.permissions)).find((permission) => permission.id === retiredPermission.id)).toBeUndefined()
+    expect((await inMemoryDb.select().from(schema.rolePermissions)).some((grant) => grant.permissionId === retiredPermission.id)).toBe(false)
+    expect((await inMemoryDb.select().from(schema.userPermissions)).some((grant) => grant.permissionId === retiredPermission.id)).toBe(false)
+  })
+
   it("getUserCount returns user count accurately", async () => {
     // Initial user count on empty db (since we haven't added users yet)
     await inMemoryDb.delete(schema.users)

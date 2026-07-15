@@ -77,9 +77,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const selectedWorksiteId = worksites.some((worksite) => worksite.id === requestedWorksite)
     ? requestedWorksite
     : worksites[0]?.id
-  const view = await getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId)
-  const indicators = await getPdtpComplianceIndicators(programId, selectedWorksiteId)
-  const integral = await getPdtpIntegralCompliance(programId, selectedWorksiteId)
+  const [view, indicators, integral] = await Promise.all([
+    getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId),
+    getPdtpComplianceIndicators(programId, selectedWorksiteId),
+    getPdtpIntegralCompliance(programId, selectedWorksiteId),
+  ])
 
   const canApprove = can(session, "prevention:pdtp:approve")
 
@@ -98,10 +100,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   }
 
   const canSignLegal = can(session, "prevention:pdtp:sign_legal")
-  const canManage = can(session, "prevention:pdtp:manage")
+  const canExecute = can(session, "prevention:pdtp:execute")
+  const canManageProgram = can(session, "prevention:pdtp:program:manage")
   const exportHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
 
-  const [responsibleCatalog, programSheetsRaw] = canManage && program.status === "draft"
+  const [responsibleCatalog, programSheetsRaw] = canManageProgram && program.status === "draft"
     ? await Promise.all([listPdtpResponsibleCatalog(), listPdtpProgramSheets(programId)])
     : [[], []]
   // listPdtpProgramSheets devuelve plantillas (program_id NULL) Y las copias
@@ -150,7 +153,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                     Exportar programa
                   </a>
                 </DropdownMenuItem>
-                {canManage && program.status === "draft" && (
+                {canManageProgram && program.status === "draft" && (
                   <DropdownMenuItem asChild>
                     <Link href={`/prevencion/pdtp/${programId}/editar`} className="flex items-center gap-2">
                       <PencilSimple size={14} />
@@ -193,7 +196,8 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           <PdtpSheetTable
             view={view}
             worksiteId={selectedWorksiteId}
-            canManage={canManage}
+            canExecute={canExecute}
+            canManageProgram={canManageProgram}
             canApprove={canApprove}
             pendingApprovals={pendingApprovals}
             viewMode={viewMode}
@@ -213,7 +217,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         <PdtpChangeLogSection programId={programId} />
 
         {/* Activity add form (draft programs only) */}
-        {canManage && program.status === "draft" && (
+        {canManageProgram && program.status === "draft" && (
           <PdtpAddActivityForm
             programId={programId}
             hoja={sheetCode}

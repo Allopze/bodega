@@ -177,7 +177,7 @@ export async function getPdtpProgram(programId: string) {
   return program ?? null
 }
 
-export async function deletePdtpProgram(programId: string, userId: string) {
+export async function deletePdtpProgram(programId: string) {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   if (program.status !== "draft") throw new Error("Solo se pueden eliminar programas en estado borrador (draft).")
@@ -187,7 +187,6 @@ export async function deletePdtpProgram(programId: string, userId: string) {
   // eliminado" después: el programa ya no existe, y la fila violaría su
   // propia FK (además, el cascade ya borró el historial previo).
   await db.delete(pdtpPrograms).where(eq(pdtpPrograms.id, programId))
-  void userId
 }
 
 export async function importPdtpFromExcel(input: PdtpProgramImportInput) {

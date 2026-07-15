@@ -279,7 +279,7 @@ describe("prevention PDTP service", () => {
     expect(result!.monthly[0]!.planned).toBe(36)
   })
 
-  it("getPdtpComplianceIndicators counts only submitted/approved executions, not draft", async () => {
+  it("getPdtpComplianceIndicators suma solo cantidades aprobadas", async () => {
     const { getPdtpComplianceIndicators, markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
     await loadActiveCatalog()
 
@@ -287,23 +287,23 @@ describe("prevention PDTP service", () => {
     const act1 = activities[0]!
     const act2 = activities[1]!
 
-    // Mark act1 submitted (executedQuantity > 0) — counted
+    // La misma actividad ejecutada tres veces aporta tres al cumplimiento.
     const exec1 = await markPdtpExecution({
       activityId: act1.id,
       worksiteId: "ws-1",
       year: 2026,
       month: 1,
       week: 1,
-      executedQuantity: 1,
+      executedQuantity: 3,
     }, "user-1", ["ws-1"])
-    // Mark act2 submitted then approved — still counted
+    // Una segunda actividad aporta su propia cantidad al total mensual.
     const exec2 = await markPdtpExecution({
       activityId: act2.id,
       worksiteId: "ws-1",
       year: 2026,
       month: 1,
       week: 1,
-      executedQuantity: 1,
+      executedQuantity: 2,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(exec2.id, "user-1", ["ws-1"])
 
@@ -325,7 +325,8 @@ describe("prevention PDTP service", () => {
     })
 
     const result = await getPdtpComplianceIndicators(2026, "ws-1")
-    // Only act1 (submitted) and act2 (approved) counted; act3 (draft) not counted
+    // Solo act2 (approved) cuenta; submitted y draft se mantienen como avance
+    // operativo, pero no forman parte del cumplimiento formal.
     expect(result!.monthly[0]!.executed).toBe(2)
     expect(exec1.status).toBe("submitted")
   })
@@ -378,6 +379,17 @@ describe("prevention PDTP service", () => {
     expect(v1Row?.status).toBe("closed")
   })
 
+  it("does not reactivate a closed program", async () => {
+    const { approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    await approvePdtpProgramJdpr(program.id, "user-1")
+    await signPdtpProgramLegal(program.id, "user-1")
+    await activatePdtpProgram(program.id, "user-1")
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "closed" }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    await expect(activatePdtpProgram(program.id, "user-1")).rejects.toThrow(/estado borrador/i)
+  })
+
   it("lifecycle transitions write change log entries", async () => {
     const { approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
     const { program } = await loadCatalog()
@@ -419,6 +431,30 @@ describe("prevention PDTP service", () => {
 
     // Already approved → throws
     await expect(approvePdtpExecution(exec.id, "user-1", ["ws-1"])).rejects.toThrow(/ya fue aprobada/i)
+  })
+
+  it("solo permite una transición terminal cuando aprobar y rechazar compiten", async () => {
+    const { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+    const execution = await markPdtpExecution({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 2,
+      week: 2,
+      executedQuantity: 1,
+    }, "user-1", ["ws-1"])
+
+    const results = await Promise.allSettled([
+      approvePdtpExecution(execution.id, "user-1", ["ws-1"]),
+      rejectPdtpExecution(execution.id, "user-1", "Revisión concurrente", ["ws-1"]),
+    ])
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+    const [stored] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.id, execution.id))
+    expect(["approved", "rejected"]).toContain(stored!.status)
   })
 
   it("listPendingPdtpExecutions: only submitted rows, scope filtering, joined names", async () => {

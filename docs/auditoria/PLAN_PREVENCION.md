@@ -1,5 +1,9 @@
 # Plan de implementación — hallazgos pendientes de `AUDITORIA_PREVENCION.md`
 
+> **Histórico — no ejecutar directamente.** Este plan cubre una arquitectura
+> anterior a la poda del 2026-07-02 y menciona submódulos retirados. Para el
+> alcance vigente y sus fixes, usar `ANALISIS_PREVENCION_2026-07-15.md`.
+
 > Generado: 2026-06-30. Este plan cubre **solo lo que sigue pendiente** después
 > de contrastar la auditoría contra el código actual. Lo ya corregido se
 > documenta en `AUDITORIA_PREVENCION.md` (sección "Verificación" se actualiza

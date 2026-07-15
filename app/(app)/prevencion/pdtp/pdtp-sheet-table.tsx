@@ -59,7 +59,8 @@ function PdtpExecutionBadges({ exec }: { exec: ExecutionForBadges }) {
 type PdtpSheetTableProps = {
   view: PdtpSheetView
   worksiteId?: string
-  canManage?: boolean
+  canExecute?: boolean
+  canManageProgram?: boolean
   canApprove?: boolean
   pendingApprovals?: PendingApproval[]
   viewMode: "semana" | "anual"
@@ -70,13 +71,15 @@ type PdtpSheetTableProps = {
 export function PdtpSheetTable({
   view,
   worksiteId,
-  canManage = false,
+  canExecute = false,
+  canManageProgram = false,
   canApprove = false,
   pendingApprovals = [],
   viewMode,
   currentPeriod,
   sheetCode,
 }: PdtpSheetTableProps) {
+  const canOperate = canExecute || canManageProgram
   const annualPlanned = view.monthlyTotals.reduce((sum, month) => sum + month.planned, 0)
   const annualExecuted = view.monthlyTotals.reduce((sum, month) => sum + month.executed, 0)
   const annualPercent = annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) : null
@@ -208,7 +211,7 @@ export function PdtpSheetTable({
                   <TableHead className="min-w-[22rem]">Actividad</TableHead>
                   <TableHead className="min-w-[10rem]">Responsables</TableHead>
                   <TableHead>Estado</TableHead>
-                  {canManage && worksiteId && <TableHead className="w-48">Registrar</TableHead>}
+                  {canOperate && worksiteId && <TableHead className="w-48">Registrar</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -217,7 +220,7 @@ export function PdtpSheetTable({
                     {/* Section header row */}
                     <TableRow className="bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2)]">
                       <TableCell
-                        colSpan={canManage && worksiteId ? 5 : 4}
+                        colSpan={canOperate && worksiteId ? 5 : 4}
                         className="py-1.5 pl-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-faint)]"
                       >
                         {group.objective}
@@ -279,17 +282,17 @@ export function PdtpSheetTable({
                           <TableCell className={rowPy}>
                             <PdtpStatusBadge status={status} overdueMonths={overdueMonths} />
                           </TableCell>
-                          {canManage && worksiteId && (
+                          {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <PdtpExecutionForm
+                                {canExecute && <PdtpExecutionForm
                                   activityId={activity.id}
                                   worksiteId={worksiteId}
                                   year={view.program.year}
                                   defaultMonth={currentPeriod.month}
                                   defaultWeek={currentPeriod.week}
-                                />
-                                <PdtpOverrideForm
+                                />}
+                                {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}
                                   activityId={activity.id}
                                   activityN={activity.n}
@@ -300,7 +303,7 @@ export function PdtpSheetTable({
                                   defaultWeek={currentPeriod.week}
                                   globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}
                                   hoja={sheetCode}
-                                />
+                                />}
                               </div>
                             </TableCell>
                           )}
@@ -336,7 +339,7 @@ export function PdtpSheetTable({
                   ))}
                   <TableHead className="text-right">Plan</TableHead>
                   <TableHead className="text-right">Ejecutado</TableHead>
-                  {canManage && worksiteId && <TableHead className="w-48">Registrar</TableHead>}
+                  {canOperate && worksiteId && <TableHead className="w-48">Registrar</TableHead>}
                   {canApprove && worksiteId && pendingApprovals.length > 0 && <TableHead className="min-w-[10rem]">Aprobar</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -348,7 +351,7 @@ export function PdtpSheetTable({
                       <TableCell
                         colSpan={
                           5 + 12 + 2
-                          + (canManage && worksiteId ? 1 : 0)
+                          + (canOperate && worksiteId ? 1 : 0)
                           + (canApprove && worksiteId && pendingApprovals.length > 0 ? 1 : 0)
                         }
                         className="py-1.5 pl-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-faint)]"
@@ -432,11 +435,11 @@ export function PdtpSheetTable({
                           <TableCellNum className={`font-semibold ${rowPy}`}>
                             {worksiteId ? formatQuantity(activity.totalExecuted) : "-"}
                           </TableCellNum>
-                          {canManage && worksiteId && (
+                          {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <PdtpExecutionForm activityId={activity.id} worksiteId={worksiteId} year={view.program.year} />
-                                <PdtpOverrideForm
+                                {canExecute && <PdtpExecutionForm activityId={activity.id} worksiteId={worksiteId} year={view.program.year} />}
+                                {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}
                                   activityId={activity.id}
                                   activityN={activity.n}
@@ -447,7 +450,7 @@ export function PdtpSheetTable({
                                   defaultWeek={currentPeriod.week}
                                   globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}
                                   hoja={sheetCode}
-                                />
+                                />}
                               </div>
                             </TableCell>
                           )}

@@ -67,10 +67,7 @@ export default async function DocumentDetailPage({ params }: Props) {
         worksiteMap={worksiteMap}
         linkEnrichment={{}}
         canManage={canManage}
-        canApprove={false}
         canArchive={canArchive}
-        canAck={false}
-        canLink={false}
         currentUserId={session.user.id}
         currentUserName={userMap[session.user.id]?.name ?? session.user.email ?? "Yo"}
       />

@@ -13,6 +13,7 @@ import { QueryProvider } from "@/components/providers/query-provider"
 import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { Toaster } from "sonner"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { getEnabledModuleIds } from "@/lib/services/module-toggles"
 
 // P-01: Cache badge counts per user for 30s. Prevents 3 DB queries on every
 // navigation event. Invalidated via revalidateTag('badge-counts-{userId}')
@@ -80,11 +81,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
 
-  const [ws, badgeCounts] = await Promise.all([
+  const [ws, badgeCounts, enabledModuleIds] = await Promise.all([
     session.user.primaryWorksiteId
       ? db.query.worksites.findFirst({ where: eq(worksites.id, session.user.primaryWorksiteId) })
       : Promise.resolve(undefined),
     getCachedBadgeCounts(session.user.id, isGlobal, wsIds),
+    getEnabledModuleIds(),
   ])
 
   return (
@@ -93,7 +95,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Suspense fallback={null}>
         <NavigationProgress />
       </Suspense>
-      <AppShell session={session} worksiteName={ws?.name} badgeCounts={badgeCounts}>
+      <AppShell session={session} worksiteName={ws?.name} badgeCounts={badgeCounts} enabledModuleIds={Array.from(enabledModuleIds)}>
         {children}
       </AppShell>
       <Toaster

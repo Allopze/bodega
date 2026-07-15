@@ -402,7 +402,8 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "p-adm-mngadm", name: "admin:manage_admins", module: "admin", description: "Administrar otros administradores" },
     // ── Prevención / PDTP / Documentación ──────────────────────────────
     { id: "p-prev-pdtp-view", name: "prevention:pdtp:view", module: "prevention", description: "Ver PDTP" },
-    { id: "p-prev-pdtp-mng", name: "prevention:pdtp:manage", module: "prevention", description: "Gestionar PDTP" },
+    { id: "p-prev-pdtp-exec", name: "prevention:pdtp:execute", module: "prevention", description: "Registrar ejecuciones y evidencias PDTP" },
+    { id: "p-prev-pdtp-program-mng", name: "prevention:pdtp:program:manage", module: "prevention", description: "Gestionar programa y cronograma PDTP" },
     { id: "p-prev-pdtp-apr", name: "prevention:pdtp:approve", module: "prevention", description: "Aprobar PDTP" },
     { id: "p-prev-pdtp-sgn", name: "prevention:pdtp:sign_legal", module: "prevention", description: "Firma legal PDTP" },
     { id: "p-prev-docs-view", name: "prevention:docs:view", module: "prevention", description: "Ver documentación SST" },

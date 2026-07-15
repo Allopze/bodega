@@ -15,7 +15,7 @@ export default async function PdtpCreateProgramPage() {
   let session
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
-  if (!can(session, "prevention:pdtp:manage")) redirect("/forbidden")
+  if (!can(session, "prevention:pdtp:program:manage")) redirect("/forbidden")
 
   const existingPrograms = await listPdtpPrograms()
 

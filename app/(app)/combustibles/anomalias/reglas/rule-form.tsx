@@ -7,8 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ANOMALY_RULE_SEVERITIES, ANOMALY_RULE_SEVERITY_LABELS } from "@/lib/combustibles/validation"
-import { KNOWN_RULE_CODES } from "@/lib/combustibles/anomaly-detector"
+import { ANOMALY_RULE_SEVERITIES, ANOMALY_RULE_SEVERITY_LABELS, KNOWN_RULE_CODES } from "@/lib/combustibles/validation"
 import { createAnomalyRuleAction, updateAnomalyRuleAction } from "./actions"
 
 export interface AnomalyRuleRow {

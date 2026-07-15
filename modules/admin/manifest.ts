@@ -43,6 +43,7 @@ export const adminModule = {
     "admin:folios",
     "admin:notifications",
     "admin:ops_settings",
+    "admin:module_management",
   ] as const,
 
   permissionMeta: {
@@ -68,7 +69,8 @@ export const adminModule = {
     "admin:security":          { id: "p-adm-sec",   description: "Gestionar bloqueos y controles de seguridad" },
     "admin:folios":            { id: "p-adm-fol",   description: "Ver y corregir folios operativos" },
     "admin:notifications":     { id: "p-adm-notif", description: "Administrar notificaciones del sistema" },
-    "admin:ops_settings":      { id: "p-adm-ops",   description: "Gestionar parámetros operativos avanzados" },
+    "admin:ops_settings":      { id: "p-adm-ops",    description: "Gestionar parámetros operativos avanzados" },
+    "admin:module_management": { id: "p-adm-modules", description: "Activar/desactivar módulos del sistema" },
   },
 
   // No aparece en el sidebar principal; el TopBar lo descubre dinámicamente
@@ -135,5 +137,7 @@ export const adminModule = {
     // Prevencionista faena — solo trabajadores (para EPP tracking)
     { roleSlug: "solicitante_faena", permission: "admin:workers" },
     { roleSlug: "prevencionista_faena", permission: "admin:workers" },
+    // Admin de módulos
+    { roleSlug: "administrador", permission: "admin:module_management" },
   ],
 } as const satisfies ModuleManifest

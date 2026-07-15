@@ -17,7 +17,7 @@ export default async function PdtpEditProgramPage({ params }: Props) {
   let session
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
-  if (!can(session, "prevention:pdtp:manage")) redirect("/forbidden")
+  if (!can(session, "prevention:pdtp:program:manage")) redirect("/forbidden")
 
   const { programId } = await params
   const program = await getPdtpProgram(programId)
@@ -54,7 +54,7 @@ export default async function PdtpEditProgramPage({ params }: Props) {
         schedule={schedule}
         checklists={checklists}
         userId={session.user.id}
-        canDelete={can(session, "prevention:pdtp:manage")}
+        canDelete={can(session, "prevention:pdtp:program:manage")}
       />
     </PageContainer>
   )

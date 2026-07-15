@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-const mockGuardAuth = vi.hoisted(() => vi.fn())
+const mockGuardPermission = vi.hoisted(() => vi.fn())
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as const, ids: [] })))
 const mockRedirect = vi.hoisted(() => vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) }))
 
@@ -32,7 +32,7 @@ const mockDeletePdtpSheet = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRenamePdtpObjective = vi.hoisted(() => vi.fn(async () => undefined))
 
 vi.mock("@/lib/auth/can", () => ({
-  guardAuth: mockGuardAuth,
+  guardPermission: mockGuardPermission,
 }))
 vi.mock("@/lib/auth/scope", () => ({
   resolveWorksiteScope: mockResolveWorksiteScope,
@@ -80,7 +80,7 @@ import {
   renamePdtpObjectiveAction,
 } from "@/app/(app)/prevencion/pdtp/actions"
 
-function makeSession(permissions: string[] = ["prevention:pdtp:manage", "prevention:pdtp:approve", "prevention:pdtp:sign_legal"]) {
+function makeSession(permissions: string[] = ["prevention:pdtp:execute", "prevention:pdtp:program:manage", "prevention:pdtp:approve", "prevention:pdtp:sign_legal"]) {
   return { user: { id: "user-1", permissions } }
 }
 
@@ -92,13 +92,13 @@ function makeFormData(fields: Record<string, string>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockGuardAuth.mockResolvedValue({ session: makeSession(), error: null })
+  mockGuardPermission.mockResolvedValue({ session: makeSession(), error: null })
   mockResolveWorksiteScope.mockReturnValue({ mode: "all", ids: [] })
 })
 
 describe("Program lifecycle actions", () => {
   it("approvePdtpProgramJdprAction requiere permiso prevention:pdtp:approve", async () => {
-    mockGuardAuth.mockResolvedValueOnce({ session: makeSession([]), error: null })
+    mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
     const res = await approvePdtpProgramJdprAction("prog-1")
     expect(res.ok).toBe(false)
     expect(res.message).toContain("No tienes permisos")
@@ -111,7 +111,7 @@ describe("Program lifecycle actions", () => {
   })
 
   it("signPdtpProgramLegalAction requiere permiso prevention:pdtp:sign_legal", async () => {
-    mockGuardAuth.mockResolvedValueOnce({ session: makeSession([]), error: null })
+    mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
     const res = await signPdtpProgramLegalAction("prog-1")
     expect(res.ok).toBe(false)
   })
@@ -128,17 +128,17 @@ describe("Program lifecycle actions", () => {
     expect(mockActivatePdtpProgram).toHaveBeenCalledWith("prog-1", "user-1")
   })
 
-  it("propaga error de servicio como mensaje", async () => {
+  it("oculta el detalle interno de un error de servicio", async () => {
     mockActivatePdtpProgram.mockRejectedValueOnce(new Error("Programa ya activo"))
     const res = await activatePdtpProgramAction("prog-1")
     expect(res.ok).toBe(false)
-    expect(res.message).toBe("Programa ya activo")
+    expect(res.message).toBe("No se pudo completar la acción. Intenta nuevamente.")
   })
 })
 
 describe("Execution approval actions", () => {
   it("approvePdtpExecutionAction rechaza sin permiso", async () => {
-    mockGuardAuth.mockResolvedValueOnce({ session: makeSession([]), error: null })
+    mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
     const res = await approvePdtpExecutionAction("exec-1")
     expect(res.ok).toBe(false)
   })
@@ -203,13 +203,14 @@ describe("Activity edit/add actions", () => {
   it("renamePdtpObjectiveAction renombra objetivo", async () => {
     const res = await renamePdtpObjectiveAction({ programId: "prog-1", objectiveOrder: 1, objective: "Nuevo objetivo" })
     expect(res.ok).toBe(true)
+    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
     expect(mockRenamePdtpObjective).toHaveBeenCalled()
   })
 })
 
 describe("setPdtpActivityOverrideFormAction (redirect-based)", () => {
   it("redirige con error si falta permiso", async () => {
-    mockGuardAuth.mockResolvedValueOnce({ session: makeSession([]), error: null })
+    mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
     const fd = makeFormData({ programId: "prog-1", activityId: "act-1", worksiteId: "ws-1", year: "2026", month: "1", week: "1", plannedQuantity: "5" })
     await expect(setPdtpActivityOverrideFormAction(fd)).rejects.toThrow("REDIRECT:")
     expect(mockRedirect).toHaveBeenCalledWith(expect.stringContaining("overrideError="))
@@ -218,6 +219,7 @@ describe("setPdtpActivityOverrideFormAction (redirect-based)", () => {
   it("fija override y redirige al detalle del programa", async () => {
     const fd = makeFormData({ programId: "prog-1", activityId: "act-1", worksiteId: "ws-1", year: "2026", month: "1", week: "1", plannedQuantity: "5" })
     await expect(setPdtpActivityOverrideFormAction(fd)).rejects.toThrow("REDIRECT:")
+    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
     expect(mockSetPdtpActivityOverride).toHaveBeenCalled()
     expect(mockRedirect).toHaveBeenCalledWith(expect.stringContaining("/prevencion/pdtp/prog-1"))
   })
@@ -261,7 +263,7 @@ describe("addPdtpActivityFormAction (redirect-based)", () => {
 
 describe("Program CRUD actions", () => {
   it("createPdtpProgramAction rechaza sin permiso", async () => {
-    mockGuardAuth.mockResolvedValueOnce({ session: makeSession([]), error: null })
+    mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
     const fd = makeFormData({ year: "2026", title: "Programa 2026" })
     const res = await createPdtpProgramAction(null, fd)
     expect(res.ok).toBe(false)
@@ -272,6 +274,7 @@ describe("Program CRUD actions", () => {
     const res = await createPdtpProgramAction(null, fd)
     expect(res.ok).toBe(true)
     expect(res.programId).toBe("prog-1")
+    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
   })
 
   it("createPdtpProgramAction retorna error con año inválido", async () => {
@@ -291,7 +294,7 @@ describe("Program CRUD actions", () => {
     const fd = makeFormData({ programId: "prog-1" })
     const res = await deletePdtpProgramAction(null, fd)
     expect(res.ok).toBe(true)
-    expect(mockDeletePdtpProgram).toHaveBeenCalledWith("prog-1", "user-1")
+    expect(mockDeletePdtpProgram).toHaveBeenCalledWith("prog-1")
   })
 })
 

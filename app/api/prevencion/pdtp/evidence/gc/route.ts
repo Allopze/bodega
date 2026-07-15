@@ -6,7 +6,7 @@
  *   - dryRun=true: solo reporta, no borra.
  *   - olderThanMs=N: umbral de antigüedad (default 1h).
  *
- * Protegido por sesión + permiso `prevention:pdtp:manage`. Pensado
+ * Protegido por sesión + permiso `prevention:pdtp:program:manage`. Pensado
  * para llamarse manualmente o desde un cron externo.
  */
 export const dynamic = "force-dynamic"
@@ -21,7 +21,7 @@ import { logger } from "@/lib/logger"
 export async function POST(request: NextRequest): Promise<Response> {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
-  if (!can(session, "prevention:pdtp:manage")) {
+  if (!can(session, "prevention:pdtp:program:manage")) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 

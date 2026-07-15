@@ -62,6 +62,20 @@ function buildAreaTree(): AreaNode[] {
 
 export const AREA_TREE: AreaNode[] = buildAreaTree()
 
+// ── Module toggle support ──────────────────────────────────────────────────
+
+/**
+ * Build a reverse map: NavItem href → module id.
+ * Used to filter out nav items whose module is disabled via feature toggles.
+ */
+const HREF_TO_MODULE = new Map<string, string>(
+  (registry as readonly { id: string; nav?: { areaId: string; items: { href: string; label: string }[] }[] }[])
+    .flatMap((mod) => {
+      if (!mod.nav) return []
+      return mod.nav.flatMap((section) => section.items.map((item) => [item.href, mod.id] as [string, string]))
+    }),
+)
+
 /** ANY-of permisos/roles concede visibilidad; sin restricción = visible. */
 export function canSeeNav(entry: { permissions?: string[]; roles?: string[] }, session: Session): boolean {
   if (!entry.permissions && !entry.roles) return true
@@ -72,13 +86,25 @@ export function canSeeNav(entry: { permissions?: string[]; roles?: string[] }, s
   return false
 }
 
-/** Áreas visibles para la sesión, con ítems y submenús filtrados por permiso. */
-export function getVisibleAreas(session: Session): AreaNode[] {
+/**
+ * Áreas visibles para la sesión, con ítems y submenús filtrados por permiso
+ * y —opcionalmente— por módulos habilitados (feature toggles).
+ *
+ * @param enabledModuleIds Si se provee, oculta ítems de módulos deshabilitados.
+ */
+export function getVisibleAreas(session: Session, enabledModuleIds?: Set<string>): AreaNode[] {
   return AREA_TREE
     .map((area) => ({
       ...area,
       items: area.items
         .filter((item) => canSeeNav(item, session))
+        .filter((item) => {
+          if (!enabledModuleIds) return true
+          const moduleId = HREF_TO_MODULE.get(item.href)
+          // Si el ítem no pertenece a ningún módulo conocido, mostrarlo
+          if (!moduleId) return true
+          return enabledModuleIds.has(moduleId)
+        })
         .map((item) => ({
           ...item,
           children: item.children?.filter((child) => canSeeNav(child, session)),
@@ -133,12 +159,12 @@ export interface NavTarget {
   iconName:  string
 }
 
-/** Lista plana de destinos navegables para la paleta ⌘K (filtrada por permiso). */
-export function flattenNavTargets(session: Session): NavTarget[] {
+/** Lista plana de destinos navegables para la paleta ⌘K (filtrada por permiso y toggles). */
+export function flattenNavTargets(session: Session, enabledModuleIds?: Set<string>): NavTarget[] {
   const targets: NavTarget[] = [
     { label: DASHBOARD_ITEM.label, href: DASHBOARD_ITEM.href, areaLabel: "Principal", iconName: DASHBOARD_ITEM.iconName },
   ]
-  for (const area of getVisibleAreas(session)) {
+  for (const area of getVisibleAreas(session, enabledModuleIds)) {
     for (const item of area.items) {
       targets.push({ label: item.label, href: item.href, areaLabel: area.label, iconName: item.iconName })
       for (const child of item.children ?? []) {

@@ -54,7 +54,6 @@ const LIST_COLUMNS = {
   esCritica: ppaSubmissions.esCritica,
   resultado: ppaSubmissions.resultado,
   estado: ppaSubmissions.estado,
-  publicToken: ppaSubmissions.publicToken,
   publicTokenRevokedAt: ppaSubmissions.publicTokenRevokedAt,
   reviewedBy: ppaSubmissions.reviewedBy,
   fuiAlLugar: ppaSubmissions.fuiAlLugar,

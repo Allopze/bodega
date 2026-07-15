@@ -21,6 +21,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/full-flow-integration.test.ts",
   "lib/__tests__/integration-rbac-sequences.test.ts",
   "lib/__tests__/item-state-mutations.test.ts",
+  "lib/__tests__/module-toggles.test.ts",
   "lib/__tests__/notification-permission-targeting.test.ts",
   "lib/__tests__/notification-service.test.ts",
   "lib/__tests__/pdtp-evidence-gc.test.ts",

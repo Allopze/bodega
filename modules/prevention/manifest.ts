@@ -5,7 +5,8 @@ export const preventionModule = {
 
   permissions: [
     "prevention:pdtp:view",
-    "prevention:pdtp:manage",
+    "prevention:pdtp:execute",
+    "prevention:pdtp:program:manage",
     "prevention:pdtp:approve",
     "prevention:pdtp:sign_legal",
     "prevention:pdtp:checklist:manage",
@@ -23,7 +24,8 @@ export const preventionModule = {
 
   permissionMeta: {
     "prevention:pdtp:view":       { id: "p-prev-pdtp-view",       description: "Ver Programa de Trabajo Preventivo SG-SST" },
-    "prevention:pdtp:manage":     { id: "p-prev-pdtp-manage",     description: "Gestionar catálogo, cronograma y ejecuciones del Programa de Trabajo Preventivo" },
+    "prevention:pdtp:execute":    { id: "p-prev-pdtp-execute",    description: "Registrar ejecuciones y evidencias del Programa de Trabajo Preventivo en faenas autorizadas" },
+    "prevention:pdtp:program:manage": { id: "p-prev-pdtp-program-manage", description: "Administrar catálogo, cronograma y metas por faena del Programa de Trabajo Preventivo" },
     "prevention:pdtp:approve":    { id: "p-prev-pdtp-approve",    description: "Aprobar el Programa de Trabajo Preventivo como jefatura de prevención" },
     "prevention:pdtp:sign_legal": { id: "p-prev-pdtp-sign-legal", description: "Firmar el Programa de Trabajo Preventivo como Gerencia Legal y Recursos Humanos" },
     "prevention:pdtp:checklist:manage": { id: "p-prev-pdtp-cl-manage", description: "Crear/editar plantillas de checklist del PDTP" },
@@ -74,20 +76,22 @@ export const preventionModule = {
   defaultGrants: [
     // PDTP
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:view" },
-    { roleSlug: "prevencionista",      permission: "prevention:pdtp:manage" },
+    { roleSlug: "prevencionista",      permission: "prevention:pdtp:execute" },
+    { roleSlug: "prevencionista",      permission: "prevention:pdtp:program:manage" },
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:approve" },
     { roleSlug: "jefa_chome",          permission: "prevention:pdtp:view" },
     { roleSlug: "jefa_chome",          permission: "prevention:pdtp:approve" },
     { roleSlug: "jefa_chome",          permission: "prevention:pdtp:sign_legal" },
     { roleSlug: "prevencionista_faena", permission: "prevention:pdtp:view" },
-    { roleSlug: "prevencionista_faena", permission: "prevention:pdtp:manage" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:pdtp:execute" },
     { roleSlug: "admin_contrato",      permission: "prevention:pdtp:view" },
-    { roleSlug: "admin_contrato",      permission: "prevention:pdtp:manage" },
+    { roleSlug: "admin_contrato",      permission: "prevention:pdtp:execute" },
     { roleSlug: "jefe_terreno",        permission: "prevention:pdtp:view" },
-    { roleSlug: "jefe_terreno",        permission: "prevention:pdtp:manage" },
+    { roleSlug: "jefe_terreno",        permission: "prevention:pdtp:execute" },
     { roleSlug: "cphs",                permission: "prevention:pdtp:view" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:view" },
-    { roleSlug: "administrador",       permission: "prevention:pdtp:manage" },
+    { roleSlug: "administrador",       permission: "prevention:pdtp:execute" },
+    { roleSlug: "administrador",       permission: "prevention:pdtp:program:manage" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:approve" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:sign_legal" },
     // PDTP — Checklist / Plan de acción / Seguimiento

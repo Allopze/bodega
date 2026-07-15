@@ -1,15 +1,15 @@
 /**
- * Task W2: markPdtpExecutionAction must actually forward evidenceUrl /
- * evidencePhotos to the service instead of silently dropping them.
+ * Task W2: markPdtpExecutionAction must forward the highlighted evidence
+ * URL without duplicating it in the additional-evidence array.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-const mockGuardAuth = vi.hoisted(() => vi.fn())
+const mockGuardPermission = vi.hoisted(() => vi.fn())
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn())
 const mockMarkPdtpExecution = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
-  guardAuth: mockGuardAuth,
+  guardPermission: mockGuardPermission,
 }))
 vi.mock("@/lib/auth/scope", () => ({
   resolveWorksiteScope: mockResolveWorksiteScope,
@@ -29,7 +29,7 @@ vi.mock("next/navigation", () => ({ redirect: vi.fn() }))
 const session = {
   user: {
     id: "user-1",
-    permissions: ["prevention:pdtp:manage"],
+    permissions: ["prevention:pdtp:execute"],
   },
 }
 
@@ -42,12 +42,12 @@ function makeFormData(fields: Record<string, string>) {
 describe("markPdtpExecutionAction", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGuardAuth.mockResolvedValue({ session, error: null })
+    mockGuardPermission.mockResolvedValue({ session, error: null })
     mockResolveWorksiteScope.mockReturnValue({ mode: "all", ids: [] })
     mockMarkPdtpExecution.mockResolvedValue({ id: "exec-1" })
   })
 
-  it("forwards evidenceUrl and derives a one-item evidencePhotos array when a file was uploaded", async () => {
+  it("forwards evidenceUrl without duplicating it as an additional attachment", async () => {
     const { markPdtpExecutionAction } = await import("@/app/(app)/prevencion/pdtp/actions")
 
     const fd = makeFormData({
@@ -64,10 +64,11 @@ describe("markPdtpExecutionAction", () => {
     const res = await markPdtpExecutionAction(fd)
 
     expect(res.ok).toBe(true)
+    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:execute")
     expect(mockMarkPdtpExecution).toHaveBeenCalledTimes(1)
     const input = mockMarkPdtpExecution.mock.calls[0]![0]
     expect(input.evidenceUrl).toBe("storage/pdtp-evidence/abc123.pdf")
-    expect(input.evidencePhotos).toEqual(["storage/pdtp-evidence/abc123.pdf"])
+    expect(input.evidencePhotos).toEqual([])
   })
 
   it("passes empty evidenceUrl/evidencePhotos when no file was uploaded", async () => {

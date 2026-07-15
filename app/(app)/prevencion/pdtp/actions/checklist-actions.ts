@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
-import { guardAuth } from "@/lib/auth/can"
+import { guardPermission } from "@/lib/auth/can"
+import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import {
   savePdtpActivityChecklist,
   deletePdtpActivityChecklist,
@@ -39,17 +40,14 @@ function fail(e: unknown): ActionState {
   if (e instanceof ZodError) {
     return { ok: false, message: "Revisa los campos marcados.", fieldErrors: e.flatten().fieldErrors as Record<string, string[]> }
   }
-  return { ok: false, message: (e as Error).message }
+  return unexpectedActionError(e, "prevencion/pdtp/checklist-actions")
 }
 
 // ── Plantillas de checklist (por actividad) ─────────────────────────────────
 
 export async function savePdtpChecklistTemplateAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:checklist:manage")) {
-    return { ok: false, message: "No tienes permisos para editar plantillas de checklist." }
-  }
+  const guard = await guardPermission("prevention:pdtp:checklist:manage")
+  if (guard.error) return guard.error
   try {
     const parsed = pdtpChecklistTemplateSaveSchema.parse(input)
     let definitionJson: unknown
@@ -76,11 +74,8 @@ export async function ensureDefaultPdtpChecklistAction(
   programId: string,
   label: string,
 ): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:checklist:manage")) {
-    return { ok: false, message: "No tienes permisos para crear plantillas de checklist." }
-  }
+  const guard = await guardPermission("prevention:pdtp:checklist:manage")
+  if (guard.error) return guard.error
   try {
     await ensureDefaultChecklist(activityId, label)
     revalidatePath(`${REVALIDATE}/${programId}/editar`)
@@ -91,11 +86,8 @@ export async function ensureDefaultPdtpChecklistAction(
 }
 
 export async function deletePdtpChecklistTemplateAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:checklist:manage")) {
-    return { ok: false, message: "No tienes permisos para eliminar plantillas de checklist." }
-  }
+  const guard = await guardPermission("prevention:pdtp:checklist:manage")
+  if (guard.error) return guard.error
   try {
     const parsed = pdtpChecklistTemplateDeleteSchema.parse(input)
     await deletePdtpActivityChecklist(parsed.checklistId)
@@ -109,11 +101,9 @@ export async function deletePdtpChecklistTemplateAction(input: unknown): Promise
 // ── Llenado de checklist en ejecución ───────────────────────────────────────
 
 export async function startPdtpExecutionChecklistAction(input: unknown): Promise<ActionState & { instanceId?: string }> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:checklist:fill")) {
-    return { ok: false, message: "No tienes permisos para llenar el checklist de verificación." }
-  }
+  const guard = await guardPermission("prevention:pdtp:checklist:fill")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpChecklistStartSchema.parse(input)
     const instance = await getOrCreateExecutionChecklist(parsed.executionId, session.user.id, {
@@ -128,11 +118,9 @@ export async function startPdtpExecutionChecklistAction(input: unknown): Promise
 }
 
 export async function upsertPdtpChecklistResponsesAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:checklist:fill")) {
-    return { ok: false, message: "No tienes permisos para llenar el checklist de verificación." }
-  }
+  const guard = await guardPermission("prevention:pdtp:checklist:fill")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpChecklistResponsesUpsertSchema.parse(input)
     await upsertChecklistResponses(parsed.instanceId, parsed.responses, session.user.id)
@@ -144,11 +132,9 @@ export async function upsertPdtpChecklistResponsesAction(input: unknown): Promis
 }
 
 export async function submitPdtpExecutionChecklistAction(input: unknown): Promise<ActionState & { generadas?: number }> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:checklist:fill")) {
-    return { ok: false, message: "No tienes permisos para enviar la revisión del checklist." }
-  }
+  const guard = await guardPermission("prevention:pdtp:checklist:fill")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpChecklistSubmitSchema.parse(input)
     const result = await submitExecutionChecklist(parsed.instanceId, session.user.id)
@@ -163,11 +149,9 @@ export async function submitPdtpExecutionChecklistAction(input: unknown): Promis
 // ── Plan de acción ──────────────────────────────────────────────────────────
 
 export async function createPdtpActionPlanItemAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:action:manage")) {
-    return { ok: false, message: "No tienes permisos para crear acciones correctivas." }
-  }
+  const guard = await guardPermission("prevention:pdtp:action:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpActionPlanCreateSchema.parse(input)
     await createActionPlanItem(parsed, session.user.id)
@@ -179,11 +163,9 @@ export async function createPdtpActionPlanItemAction(input: unknown): Promise<Ac
 }
 
 export async function updatePdtpActionPlanItemAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:action:manage")) {
-    return { ok: false, message: "No tienes permisos para editar acciones correctivas." }
-  }
+  const guard = await guardPermission("prevention:pdtp:action:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const { itemId, ...update } = pdtpActionPlanUpdateSchema.parse(input)
     await updateActionPlanItem(itemId, update, session.user.id)
@@ -195,11 +177,8 @@ export async function updatePdtpActionPlanItemAction(input: unknown): Promise<Ac
 }
 
 export async function deletePdtpActionPlanItemAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:action:manage")) {
-    return { ok: false, message: "No tienes permisos para eliminar acciones correctivas." }
-  }
+  const guard = await guardPermission("prevention:pdtp:action:manage")
+  if (guard.error) return guard.error
   try {
     const parsed = pdtpActionPlanDeleteSchema.parse(input)
     await deleteActionPlanItem(parsed.itemId)
@@ -211,11 +190,9 @@ export async function deletePdtpActionPlanItemAction(input: unknown): Promise<Ac
 }
 
 export async function verifyPdtpActionPlanItemAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:action:verify")) {
-    return { ok: false, message: "No tienes permisos para verificar el cierre de acciones." }
-  }
+  const guard = await guardPermission("prevention:pdtp:action:verify")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpActionPlanVerifySchema.parse(input)
     await verifyActionPlanItem(parsed.itemId, session.user.id, parsed.observacion)
@@ -227,11 +204,9 @@ export async function verifyPdtpActionPlanItemAction(input: unknown): Promise<Ac
 }
 
 export async function reopenPdtpActionPlanItemAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:action:verify")) {
-    return { ok: false, message: "No tienes permisos para reabrir acciones verificadas." }
-  }
+  const guard = await guardPermission("prevention:pdtp:action:verify")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpActionPlanReopenSchema.parse(input)
     await reopenActionPlanItem(parsed.itemId, session.user.id, parsed.motivo)
@@ -245,11 +220,9 @@ export async function reopenPdtpActionPlanItemAction(input: unknown): Promise<Ac
 // ── Seguimiento (bitácora) ───────────────────────────────────────────────────
 
 export async function addPdtpFollowupAction(input: unknown): Promise<ActionState> {
-  const { session, error } = await guardAuth()
-  if (error) return error
-  if (!session.user.permissions?.includes("prevention:pdtp:action:manage")) {
-    return { ok: false, message: "No tienes permisos para registrar seguimiento." }
-  }
+  const guard = await guardPermission("prevention:pdtp:action:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
     const parsed = pdtpFollowupAddSchema.parse(input)
     await addFollowup(parsed, session.user.id)

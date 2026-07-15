@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm"
+import { eq, and, or } from "drizzle-orm"
 import { db } from "@/db"
 import { ppaSubmissions, type PpaSubmission } from "@/db/schema/ppa"
 import { workers, worksites } from "@/db/schema/worksites"
@@ -17,8 +17,9 @@ import {
   notifyAfterCommit,
 } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
+import { hashPpaPublicToken } from "./public-token"
 
-export type PpaRow = PpaSubmission & { worksiteName: string | null }
+export type PpaRow = Omit<PpaSubmission, "publicToken"> & { worksiteName: string | null }
 
 export type PpaTokenResult = PpaRow & {
   supervisor: string | null
@@ -89,7 +90,7 @@ export async function createPpaSubmission(
     resultado:            evaluation.resultado,
     triggeredReasons:     evaluation.reasons,
     estado,
-    publicToken:          token,
+    publicToken:          hashPpaPublicToken(token),
     publicTokenRevokedAt: null,
     reviewedBy:           null,
     fuiAlLugar:           null,
@@ -129,6 +130,7 @@ export async function createPpaSubmission(
 
 export async function getPpaByToken(token: string): Promise<PpaTokenResult | null> {
   if (!token) return null
+  const tokenHash = hashPpaPublicToken(token)
   const rows = await db
     .select({
       submission: ppaSubmissions,
@@ -139,14 +141,22 @@ export async function getPpaByToken(token: string): Promise<PpaTokenResult | nul
     .from(ppaSubmissions)
     .leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
     .leftJoin(workers, eq(ppaSubmissions.workerId, workers.id))
-    .where(eq(ppaSubmissions.publicToken, token))
+    // El segundo término mantiene válidos enlaces emitidos antes de la
+    // migración. Al primer uso se convierten a hash en la misma aplicación.
+    .where(or(eq(ppaSubmissions.publicToken, tokenHash), eq(ppaSubmissions.publicToken, token)))
     .limit(1)
 
   if (rows.length === 0) return null
   const r = rows[0]!
   if (r.submission.publicTokenRevokedAt) return null
+  if (r.submission.publicToken === token) {
+    await db.update(ppaSubmissions)
+      .set({ publicToken: tokenHash, updatedAt: new Date().toISOString() })
+      .where(and(eq(ppaSubmissions.id, r.submission.id), eq(ppaSubmissions.publicToken, token)))
+  }
+  const { publicToken: _publicToken, ...submission } = r.submission
   return {
-    ...r.submission,
+    ...submission,
     worksiteName: r.worksiteName,
     supervisor: r.supervisor,
     prevencionista: r.prevencionista,
@@ -159,13 +169,11 @@ export async function revokePpaToken(
   worksiteIds: string[] | "all",
 ): Promise<void> {
   if (worksiteIds !== "all" && worksiteIds.length === 0) throw new Error("Sin acceso")
-  if (worksiteIds !== "all") {
-    const ppa = await db.query.ppaSubmissions.findFirst({ where: eq(ppaSubmissions.id, id) })
-    if (!ppa) throw new Error("PPA no encontrado")
-    if (!worksiteIds.includes(ppa.worksiteId)) throw new Error("Sin acceso a la faena de este PPA")
-  }
   const existing = await db.query.ppaSubmissions.findFirst({ where: eq(ppaSubmissions.id, id) })
   if (!existing) throw new Error("PPA no encontrado")
+  if (worksiteIds !== "all" && !worksiteIds.includes(existing.worksiteId)) {
+    throw new Error("Sin acceso a la faena de este PPA")
+  }
   if (existing.publicTokenRevokedAt) throw new Error("El acceso público ya está revocado")
 
   await db.update(ppaSubmissions).set({

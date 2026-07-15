@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpExecutions, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
@@ -119,9 +119,13 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
       rejectedByUserId: null, rejectedAt: null, rejectionReason: null,
       updatedAt: now,
     },
+    // El SELECT previo permite preservar las evidencias; esta condición es
+    // la garantía de escritura: una aprobación concurrente nunca puede ser
+    // degradada de approved a submitted por este upsert.
+    setWhere: ne(pdtpExecutions.status, "approved"),
   }).returning()
 
-  if (!row) throw new Error("No se pudo registrar la ejecucion PDTP.")
+  if (!row) throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
   return row
 }
 
@@ -146,8 +150,13 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
       rejectionReason: null,
       updatedAt: now,
     })
-    .where(eq(pdtpExecutions.id, executionId)).returning()
-  if (!updated) throw new Error("No se pudo aprobar la ejecución PDTP.")
+    // Compare-and-set: si otro revisor cambió el estado entre la lectura y
+    // esta escritura, no se modifica la fila que ya dejó de ser aprobable.
+    .where(and(
+      eq(pdtpExecutions.id, executionId),
+      inArray(pdtpExecutions.status, ["submitted", "rejected"]),
+    )).returning()
+  if (!updated) throw new Error("La ejecución cambió de estado antes de poder aprobarse. Actualiza la página e inténtalo nuevamente.")
   return updated
 }
 
@@ -179,8 +188,13 @@ export async function rejectPdtpExecution(
       rejectionReason: reason.trim(),
       updatedAt: now,
     })
-    .where(eq(pdtpExecutions.id, executionId)).returning()
-  if (!updated) throw new Error("No se pudo rechazar la ejecución PDTP.")
+    // Compare-and-set simétrico: un rechazo jamás puede sobrescribir una
+    // aprobación que ocurrió después del SELECT de autorización/scope.
+    .where(and(
+      eq(pdtpExecutions.id, executionId),
+      eq(pdtpExecutions.status, "submitted"),
+    )).returning()
+  if (!updated) throw new Error("La ejecución cambió de estado antes de poder rechazarse. Actualiza la página e inténtalo nuevamente.")
   return updated
 }
 

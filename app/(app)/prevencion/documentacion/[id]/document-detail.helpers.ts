@@ -68,10 +68,7 @@ export interface DetailViewProps {
   worksiteMap: Record<string, { id: string; name: string }>
   linkEnrichment: Record<string, Record<string, string>>
   canManage: boolean
-  canApprove: boolean
   canArchive: boolean
-  canAck: boolean
-  canLink: boolean
   currentUserId: string
   currentUserName: string
 }

@@ -17,11 +17,13 @@ interface DesktopNavProps {
   badgeCounts?:      Record<string, number>
   collapsed:         boolean
   onCollapsedChange: (collapsed: boolean) => void
+  /** Módulos habilitados por feature toggle (opcional). */
+  enabledModuleIds?: Set<string>
 }
 
-const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCounts, collapsed, onCollapsedChange }: DesktopNavProps) {
+const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCounts, collapsed, onCollapsedChange, enabledModuleIds }: DesktopNavProps) {
   const pathname = usePathname()
-  const areas = React.useMemo(() => getVisibleAreas(session), [session])
+  const areas = React.useMemo(() => getVisibleAreas(session, enabledModuleIds), [session, enabledModuleIds])
   const routeArea = findActiveArea(areas, pathname)
   const dashActive = isHrefActive(DASHBOARD_ITEM.href, pathname)
   const DashIcon = NAV_ICONS[DASHBOARD_ITEM.iconName]

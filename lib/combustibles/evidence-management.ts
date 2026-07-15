@@ -3,7 +3,7 @@
  * Detección de archivos corruptos, reutilización entre cargas, y políticas.
  */
 
-import { and, eq, isNotNull, sql } from "drizzle-orm"
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTaeEvidence, fuelTaeSubmissions } from "@/db/schema/fuel-tae"
 import { worksites } from "@/db/schema"
@@ -83,7 +83,7 @@ export async function getEvidenceStorageStats(): Promise<Array<{ worksiteName: s
     .innerJoin(fuelTaeSubmissions, eq(fuelTaeEvidence.submissionId, fuelTaeSubmissions.id))
     .innerJoin(worksites, eq(fuelTaeSubmissions.worksiteId, worksites.id))
     .groupBy(worksites.name)
-    .orderBy(sql`totalSizeBytes desc`)
+    .orderBy(desc(sql`coalesce(sum(${fuelTaeEvidence.fileSize}), 0)`))
 
   return rows.map((r) => ({
     worksiteName: r.worksiteName ?? "Sin faena",

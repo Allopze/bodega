@@ -14,10 +14,12 @@ const CommandPalette = React.lazy(() =>
 )
 
 interface AppShellProps {
-  session:        Session
-  worksiteName?:  string
-  badgeCounts?:   Record<string, number>
-  children:       React.ReactNode
+  session:           Session
+  worksiteName?:     string
+  badgeCounts?:      Record<string, number>
+  /** Módulos habilitados por feature toggle. */
+  enabledModuleIds?: string[]
+  children:          React.ReactNode
 }
 
 const PANEL_COLLAPSED_KEY = "sidebar-collapsed"
@@ -37,7 +39,12 @@ function subscribePanelCollapsed(onStoreChange: () => void) {
   }
 }
 
-const AppShellInner = React.memo(function AppShellInner({ session, worksiteName, badgeCounts, children }: AppShellProps) {
+const AppShellInner = React.memo(function AppShellInner({ session, worksiteName, badgeCounts, enabledModuleIds, children }: AppShellProps) {
+  // Convertir a Set para lookup eficiente en getVisibleAreas
+  const enabledSet = React.useMemo(
+    () => (enabledModuleIds ? new Set(enabledModuleIds) : undefined),
+    [enabledModuleIds],
+  )
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [isClosing,  setIsClosing]  = React.useState(false)
   const panelCollapsed = React.useSyncExternalStore(
@@ -76,6 +83,7 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
           badgeCounts={badgeCounts}
           collapsed={panelCollapsed}
           onCollapsedChange={handlePanelCollapsedChange}
+          enabledModuleIds={enabledSet}
         />
 
         <ShellHeaderProvider>
@@ -104,6 +112,7 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
                     worksiteName={worksiteName}
                     badgeCounts={badgeCounts}
                     onNavigate={closeDrawer}
+                    enabledModuleIds={enabledSet}
                   />
                 </div>
               </>
@@ -135,7 +144,7 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
 
       {/* Paleta de comandos global (⌘K / Ctrl+K) — lazy load */}
       <React.Suspense fallback={null}>
-        <CommandPalette session={session} />
+        <CommandPalette session={session} enabledModuleIds={enabledModuleIds} />
       </React.Suspense>
     </div>
   )

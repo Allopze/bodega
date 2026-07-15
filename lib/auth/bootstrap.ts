@@ -1,10 +1,13 @@
 import { createHash, randomBytes } from "crypto"
 import { count, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { permissions, rolePermissions, roles, users } from "@/db/schema"
+import { permissions, rolePermissions, roles, userPermissions, users } from "@/db/schema"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/system-rbac"
 
 export { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/system-rbac"
+
+/** Permissions removed from the registry that must not survive in direct grants. */
+const RETIRED_PERMISSION_NAMES = ["prevention:pdtp:manage"] as const
 
 /**
  * Idempotently seeds system roles/permissions. Accepts an optional transaction
@@ -33,6 +36,20 @@ export async function ensureSystemRbac(executor: typeof db | Tx = db) {
         description: permission.description ?? null,
       },
     })
+  }
+
+  // System role grants are rebuilt below, but direct user grants can otherwise
+  // keep a retired permission alive indefinitely. Remove every reference before
+  // deleting its permission record so the normal RBAC sync is a full retirement.
+  const retiredPermissions = await executor
+    .select({ id: permissions.id })
+    .from(permissions)
+    .where(inArray(permissions.name, [...RETIRED_PERMISSION_NAMES]))
+  const retiredPermissionIds = retiredPermissions.map((permission) => permission.id)
+  if (retiredPermissionIds.length > 0) {
+    await executor.delete(userPermissions).where(inArray(userPermissions.permissionId, retiredPermissionIds))
+    await executor.delete(rolePermissions).where(inArray(rolePermissions.permissionId, retiredPermissionIds))
+    await executor.delete(permissions).where(inArray(permissions.id, retiredPermissionIds))
   }
 
   await executor.delete(rolePermissions).where(inArray(rolePermissions.roleId, SYSTEM_ROLES.map((role) => role.id)))

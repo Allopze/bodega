@@ -102,7 +102,7 @@ describe("PdtpSheetTable — weekly filter", () => {
     expect(screen.queryByText("Actividad sin plan este mes")).toBeNull()
   })
 
-  it("shows the 'Registrar' trigger button when canManage and worksiteId are provided", () => {
+  it("shows the 'Registrar' trigger button when canExecute and worksiteId are provided", () => {
     const view = makeView([pendingActivity])
     render(
       <PdtpSheetTable
@@ -110,7 +110,7 @@ describe("PdtpSheetTable — weekly filter", () => {
         viewMode="semana"
         currentPeriod={CURRENT_PERIOD}
         sheetCode="pdtp_general"
-        canManage
+        canExecute
         worksiteId="ws-1"
       />,
     )

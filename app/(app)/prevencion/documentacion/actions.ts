@@ -5,6 +5,8 @@ import { headers } from "next/headers"
 import type { Session } from "next-auth"
 import { requireAuth, can, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { unexpectedActionError } from "@/lib/actions/safe-server-action"
+import { logger } from "@/lib/logger"
 import { getDocumentBundle } from "@/lib/services/prevention-documents-library"
 import {
   createDocument,
@@ -33,6 +35,10 @@ import {
 import type { ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/prevencion/documentacion"
+
+function fail<T extends object = Record<string, never>>(error: unknown): ActionState & { data?: T } {
+  return unexpectedActionError(error, "prevencion/documentacion/actions")
+}
 
 async function clientCtx(session: Session) {
   const h = await headers()
@@ -81,6 +87,7 @@ export async function createAndUploadSstDocumentAction(formData: FormData): Prom
     return { ok: false, message: "Revisa los campos del documento.", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   }
 
+  let documentId: string | null = null
   try {
     const ctx = await clientCtx(session)
     const row = await createDocument({
@@ -89,6 +96,7 @@ export async function createAndUploadSstDocumentAction(formData: FormData): Prom
       scope: resolveWorksiteScope(session),
       permissions: session.user.permissions,
     })
+    documentId = row.id
     await uploadDocumentVersion({
       input: {
         documentId: row.id,
@@ -103,7 +111,21 @@ export async function createAndUploadSstDocumentAction(formData: FormData): Prom
     revalidatePath(`${REVALIDATE}/${row.id}`)
     return { ok: true, message: "Documento creado y archivo subido.", data: { id: row.id } }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    // La creación y la escritura del archivo no pueden compartir una única
+    // transacción. Si falla la primera versión, compensamos archivando el
+    // borrador recién creado para que no quede visible sin contenido.
+    if (documentId) {
+      try {
+        await archiveDocument({
+          input: { documentId, comment: "Archivado automáticamente: falló la carga de la primera versión." },
+          ctx: await clientCtx(session),
+          scope: resolveWorksiteScope(session),
+        })
+      } catch (archiveError) {
+        logger.error("[prevencion/documentacion] falló la compensación de carga inicial", archiveError)
+      }
+    }
+    return fail<{ id: string }>(e)
   }
 }
 
@@ -131,7 +153,7 @@ export async function uploadSstDocumentVersionAction(formData: FormData): Promis
     revalidatePath(REVALIDATE)
     return { ok: true, message: `Versión ${version.version} subida.`, data: { id: version.id } }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail<{ id: string }>(e)
   }
 }
 
@@ -151,7 +173,7 @@ export async function archiveSstDocumentAction(input: { documentId: string; comm
     revalidatePath(`${REVALIDATE}/${parsed.data.documentId}`)
     return { ok: true, message: "Documento archivado." }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail<{ id: string }>(e)
   }
 }
 
@@ -170,7 +192,7 @@ export async function restoreSstDocumentAction(input: { documentId: string; comm
     revalidatePath(`${REVALIDATE}/${input.documentId}`)
     return { ok: true, message: "Documento restaurado como borrador." }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -191,7 +213,7 @@ export async function createSstDocumentFolderAction(input: { name: string; paren
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carpeta creada.", data: { id: folder.id } }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -206,7 +228,7 @@ export async function renameSstDocumentFolderAction(input: { id: string; name: s
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carpeta renombrada." }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -221,7 +243,7 @@ export async function moveSstDocumentFolderAction(input: { id: string; parentId?
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carpeta movida." }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -234,7 +256,7 @@ export async function archiveSstDocumentFolderAction(input: { id: string }): Pro
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carpeta archivada." }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -247,7 +269,7 @@ export async function restoreSstDocumentFolderAction(input: { id: string }): Pro
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carpeta restaurada." }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -263,7 +285,7 @@ export async function moveSstDocumentAction(input: { id: string; folderId?: stri
     revalidatePath(`${REVALIDATE}/${parsed.data.id}`)
     return { ok: true, message: "Documento movido." }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return fail(e)
   }
 }
 
@@ -309,10 +331,7 @@ export async function getDocumentDetailAction(documentId: string) {
     userMap,
     worksiteMap,
     canManage: can(session, "prevention:docs:manage"),
-    canApprove: false,
     canArchive: can(session, "prevention:docs:archive"),
-    canAck: false,
-    canLink: false,
     currentUserId: session.user.id,
     currentUserName: userMap[session.user.id]?.name ?? session.user.email ?? "Yo",
     error: undefined as string | undefined,

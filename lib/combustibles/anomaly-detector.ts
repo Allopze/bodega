@@ -467,13 +467,20 @@ const BATCH_DETECTORS: Record<string, DetectorFn> = {
   rendimiento_fuera_grupo: detectPerformanceOutlierGroup,
 }
 
-/** Códigos de regla que el motor efectivamente reconoce: las claves de `BATCH_DETECTORS`
- *  (corren vía `runAllBatchRules`) más las que dispara inline `detectTaeAnomaliesInTx`
- *  en `lib/services/fuel-tae.ts`. Una fila de `fuel_anomaly_rules` con un código fuera
- *  de esta lista queda registrada pero inerte — no hay ningún detector que la use. */
-export const KNOWN_RULE_CODES = [
-  ...Object.keys(BATCH_DETECTORS),
-  "sello_repetido", "sello_no_correlativo", "kilometraje_regresivo", "horometro_regresivo", "evidencia_faltante",
-  "kilometraje_sin_variacion", "horometro_sin_variacion", "sello_inicial_faltante", "sello_final_faltante", "identidad_incompleta",
-  "carga_faena_distinta", "carga_fuera_horario", "exceso_cargas_ventana",
-] as const
+import { KNOWN_RULE_CODES } from "./validation"
+export { KNOWN_RULE_CODES }
+
+/** Guard runtime: si una clave de `BATCH_DETECTORS` falta en `KNOWN_RULE_CODES`
+ *  (definido en `validation.ts`), alguien olvidó actualizar la lista compartida
+ *  después de añadir un nuevo detector batch. El error se dispara en server startup
+ *  y tests, no en producción (console.warn + no throw para evitar cascada). */
+{
+  const missing = Object.keys(BATCH_DETECTORS).filter((k) => !KNOWN_RULE_CODES.includes(k as (typeof KNOWN_RULE_CODES)[number]))
+  if (missing.length > 0) {
+    console.warn(
+      `[anomaly-detector] Batch detectors sin código en KNOWN_RULE_CODES: ${missing.join(", ")}.\n` +
+      "Agrega los códigos faltantes a export const KNOWN_RULE_CODES en lib/combustibles/validation.ts " +
+      "para que los Client Components puedan importarlos sin arrastrar db."
+    )
+  }
+}

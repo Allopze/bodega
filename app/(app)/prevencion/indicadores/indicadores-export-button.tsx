@@ -1,38 +1,13 @@
-"use client"
-
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { FileXls } from "@phosphor-icons/react"
-import { exportSafetyIndicatorsXlsxAction } from "./actions"
-import { toast } from "@/lib/toast"
 
 export function ExportIndicadoresButton({ year }: { year: number }) {
-  const [loading, setLoading] = useState(false)
-
-  async function handleExport() {
-    setLoading(true)
-    try {
-      const result = await exportSafetyIndicatorsXlsxAction(year)
-      if (result.ok && result.data) {
-        const link = document.createElement("a")
-        link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${result.data.base64}`
-        link.download = result.data.filename
-        link.click()
-        toast.success("Archivo exportado")
-      } else {
-        toast.error(result.message ?? "Error al exportar")
-      }
-    } catch {
-      toast.error("Error al exportar")
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
-    <Button variant="secondary" size="sm" onClick={handleExport} disabled={loading}>
+    <Button asChild variant="secondary" size="sm">
+      <a href={`/api/prevencion/indicadores/export?year=${year}`}>
       <FileXls className="h-4 w-4 mr-1" />
-      {loading ? "Exportando..." : "Exportar XLSX"}
+      Exportar XLSX
+      </a>
     </Button>
   )
 }

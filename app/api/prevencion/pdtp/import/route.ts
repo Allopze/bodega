@@ -20,7 +20,7 @@ const MAX_EXCEL_SIZE = 15 * 1024 * 1024
  * /api/prevencion/pdtp/evidence.
  */
 export async function POST(request: Request) {
-  const guard = await guardPermission("prevention:pdtp:manage")
+  const guard = await guardPermission("prevention:pdtp:program:manage")
   if (guard.error) return NextResponse.json(guard.error, { status: 403 })
 
   let form: FormData

@@ -27,7 +27,7 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024
  * Devuelve 201 con { path } o 4xx con detalle.
  */
 export async function POST(request: Request) {
-  const guard = await guardPermission("prevention:pdtp:manage")
+  const guard = await guardPermission("prevention:pdtp:execute")
   if (guard.error) return NextResponse.json(guard.error, { status: 403 })
 
   const session = guard.session

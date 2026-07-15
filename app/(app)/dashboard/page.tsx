@@ -46,7 +46,7 @@ export default async function DashboardPage() {
 
   // PDTP compliance summary — sólo si el usuario puede ver el módulo
   const canViewPdtp = can(session, "prevention:pdtp:view")
-  const canManagePdtp = can(session, "prevention:pdtp:manage")
+  const canManagePdtp = can(session, "prevention:pdtp:program:manage")
   const [pdtpSummary, activeProgram, allPrograms] = await Promise.all([
     canViewPdtp
       ? loadPdtpComplianceSummary(scopeToWorksiteIds(resolveWorksiteScope(session)))
@@ -257,7 +257,6 @@ export default async function DashboardPage() {
     </PageContainer>
   )
 }
-
 
 
 

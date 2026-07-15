@@ -69,10 +69,7 @@ const baseProps: DetailViewProps = {
   worksiteMap: {},
   linkEnrichment: {},
   canManage: true,
-  canApprove: true,
   canArchive: true,
-  canAck: true,
-  canLink: true,
   currentUserId: "user-1",
   currentUserName: "Prevencionista",
 }

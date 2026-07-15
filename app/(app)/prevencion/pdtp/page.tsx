@@ -21,7 +21,7 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
   if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
 
   const query = await searchParams
-  const canManage = can(session, "prevention:pdtp:manage")
+  const canManageProgram = can(session, "prevention:pdtp:program:manage")
   const programs = await listPdtpPrograms()
 
   // If coming from old URL with hoja param and there's exactly one 2026 program, redirect
@@ -61,7 +61,7 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
           ]} />
         }
         actions={
-          canManage && (
+          canManageProgram && (
             <Button asChild size="sm">
               <Link href="/prevencion/pdtp/nuevo">
                 <Plus size={14} />
@@ -78,7 +78,7 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             No hay programas de trabajo preventivo registrados. Crea el primero para comenzar.
           </p>
-          {canManage && (
+          {canManageProgram && (
             <Button asChild className="mt-4" size="sm">
               <Link href="/prevencion/pdtp/nuevo">Crear programa</Link>
             </Button>
