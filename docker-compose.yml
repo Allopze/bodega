@@ -85,11 +85,13 @@ services:
   # One-shot: sync RBAC permissions from module manifests to the database.
   # Run automatically by deploy-prod.sh after migrations. Also run manually:
   #   docker compose run --rm sync-rbac
-  # Uses `target: build` (like `seed`) because scripts/sync-rbac.ts needs tsx.
+  # Reuses the same prod image (already built by deploy-prod.sh) — tsx is
+  # included in the Dockerfile's prod stage for one-shot scripts.
   sync-rbac:
     build:
       context: .
-      target: build
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
     restart: "no"
     depends_on:
       db:

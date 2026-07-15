@@ -70,6 +70,13 @@ COPY --from=build /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
+# tsx: runtime TypeScript executor for one-shot scripts (sync-rbac, etc.).
+# Installed separately (not via npm ci) so it's available in the slim prod image
+# without pulling in all devDependencies.
+# Pin tsx version to match devDependencies in package.json for reproducible builds.
+RUN npm install tsx@4.22.4
+COPY --from=build /app/scripts/sync-rbac.ts ./scripts/sync-rbac.ts
+
 # Ensure storage + the Next.js ISR/prerender cache dirs exist and are writable.
 # The standalone output copies .next/static but not a cache dir; at runtime the
 # `nextjs` user writes the incremental cache to /app/.next/cache, which would
