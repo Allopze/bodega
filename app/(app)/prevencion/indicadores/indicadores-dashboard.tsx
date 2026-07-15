@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { Pencil } from "@phosphor-icons/react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,10 +13,11 @@ import { Gauge, Heartbeat, WarningDiamond, Siren, Wrench, Drop } from "@phosphor
 import { buildMonthlyCounters, calcRates, sumCounters, type IndicatorCounters } from "@/lib/prevention/safety-indicators-calc"
 import type { SafetyIndicator } from "@/db/schema"
 import { IndicadoresEditModal } from "./indicadores-edit-modal"
-import { IndicadoresCharts } from "./indicadores-charts-lazy"
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 const YEAR_RANGE = 3 // años hacia atrás que se ofrecen en el selector, además del actual
+// Recharts usa contextos de React y debe evaluarse exclusivamente en el navegador.
+const IndicadoresCharts = dynamic(() => import("./indicadores-charts"), { ssr: false })
 
 function fmtNum(n: number) {
   return n ? n.toLocaleString("es-CL") : "0"

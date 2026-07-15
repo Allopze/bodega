@@ -26,7 +26,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   )
 }
 
-export function IndicadoresCharts({ monthlyCounters }: { monthlyCounters: IndicatorCounters[] }) {
+export default function IndicadoresCharts({ monthlyCounters }: { monthlyCounters: IndicatorCounters[] }) {
   const data = monthlyCounters.map((c, i) => ({
     month: MONTH_LABELS[i],
     ...c,
