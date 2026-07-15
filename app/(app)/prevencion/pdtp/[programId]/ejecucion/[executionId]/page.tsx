@@ -100,6 +100,7 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
 
         <ExecutionActionPlanPanel
           executionId={executionId}
+          worksiteId={execution.worksiteId}
           items={actionItems}
           followupsByItem={followupsByItem}
           canManage={canManageActions}

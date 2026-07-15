@@ -22,9 +22,11 @@ import {
   recalcExecutionQuantityFromInstances,
 } from "./execution-checklists"
 import {
+  PDTP_DANO_POTENCIAL_A_PRIORIDAD,
   PDTP_ESTADOS_CERRADOS,
   isActionVencida,
   pdtpActionPlanItemId,
+  plazoFromDañoPotencial,
   plazoFromPrioridad,
 } from "./checklist-domain"
 import type { ChecklistDefinition } from "@/lib/sst/types"
@@ -148,6 +150,13 @@ export async function generateActionPlanFromChecklist(
 
     const accion = item.accionCorrectiva || "Por definir"
 
+    // Prioridad/plazo: si el ítem define danoPotencial, se derivan del mapa
+    // de daño potencial (mismo criterio que hallazgos manuales — PLAN_INTEGRACION
+    // §5.4). Sin ese campo, cae al default histórico "media" (+7 días).
+    const danoPotencial = defItem?.danoPotencial
+    const prioridad = danoPotencial ? PDTP_DANO_POTENCIAL_A_PRIORIDAD[danoPotencial] : "media"
+    const plazo = danoPotencial ? plazoFromDañoPotencial(danoPotencial, refDate) : plazoFromPrioridad("media", refDate)
+
     const id = pdtpActionPlanItemId(executionId, nextN)
     await db.insert(pdtpActionPlan).values({
       id,
@@ -161,8 +170,8 @@ export async function generateActionPlanFromChecklist(
       responsableRole,
       responsable: responsableRole,
       responsableUserId: null,
-      plazo: plazoFromPrioridad("media", refDate),
-      prioridad: "media",
+      plazo,
+      prioridad,
       estado: "pendiente",
       createdByUserId: userId,
       createdAt: now,
@@ -291,6 +300,29 @@ export async function listActionsByProgram(
     result = result.filter((r) => r.vencida)
   }
 
+  return result
+}
+
+/**
+ * Cuenta acciones pendientes/vencidas por ejecución (una sola query batch —
+ * mismo patrón que `getActionPlanClosureRate`). Usado por la hoja del sheet
+ * para mostrar badges de conteo por ejecución sin N queries.
+ */
+export async function countActionsByExecution(executionIds: string[]): Promise<Map<string, { pending: number; overdue: number }>> {
+  const result = new Map<string, { pending: number; overdue: number }>()
+  if (executionIds.length === 0) return result
+  const rows = await db.select({
+    executionId: pdtpActionPlan.executionId,
+    estado: pdtpActionPlan.estado,
+    plazo: pdtpActionPlan.plazo,
+  }).from(pdtpActionPlan).where(inArray(pdtpActionPlan.executionId, executionIds))
+
+  for (const r of rows) {
+    const entry = result.get(r.executionId) ?? { pending: 0, overdue: 0 }
+    if (!PDTP_ESTADOS_CERRADOS.has(r.estado)) entry.pending++
+    if (isActionVencida(r.estado, r.plazo)) entry.overdue++
+    result.set(r.executionId, entry)
+  }
   return result
 }
 

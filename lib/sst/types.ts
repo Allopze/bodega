@@ -43,6 +43,13 @@ export interface ChecklistItem {
   options?: SelectOption[]       // for select/multiselect
   placeholder?: string           // for text fields
   required?: boolean
+  /**
+   * Daño potencial del hallazgo si este ítem resulta 'no_cumple' (solo PDTP).
+   * Deriva prioridad/plazo automáticos de la acción correctiva generada —
+   * ver PDTP_DANO_POTENCIAL_A_PRIORIDAD en lib/services/pdtp/checklist-domain.ts.
+   * Ítems sin este campo caen al default ("media", +7 días).
+   */
+  danoPotencial?: 'leve' | 'moderado' | 'grave' | 'fatal'
 }
 
 export interface ChecklistSection {

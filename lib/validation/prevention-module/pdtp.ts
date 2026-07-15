@@ -133,6 +133,7 @@ const pdtpChecklistItemSchema = z.object({
   options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
   placeholder: z.string().optional(),
   required: z.boolean().optional(),
+  danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]).optional(),
 })
 
 const pdtpChecklistSectionSchema = z.object({
