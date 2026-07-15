@@ -1,12 +1,14 @@
 import { notFound, redirect } from "next/navigation"
+import Link from "next/link"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
+import { can, requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { Button } from "@/components/ui/button"
 import { EditFuelLoadForm } from "./edit-fuel-load-form"
 
 export default async function FuelLoadDetailPage({
@@ -45,6 +47,7 @@ export default async function FuelLoadDetailPage({
         title={`Carga — ${load.receiptNumber ?? "Sin número"}`}
         description={`${load.loadDate} · ${load.serviceType} · ${load.vehicle?.plate ?? "—"}`}
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: `Carga ${load.receiptNumber ?? load.id.slice(0, 8)}` }]} />}
+        actions={can(session, "combustibles:view_audit") ? <Button asChild variant="secondary" size="sm"><Link href={`/combustibles/bitacora/historial/fuel_load/${load.id}`}>Ver auditoría</Link></Button> : undefined}
       />
 
       <EditFuelLoadForm

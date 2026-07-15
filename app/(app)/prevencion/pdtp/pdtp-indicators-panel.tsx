@@ -1,7 +1,7 @@
 import { CheckCircle, Target, CalendarBlank, ChartBar } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import type { PdtpComplianceIndicators } from "@/lib/services/prevention-pdtp"
+import type { PdtpComplianceIndicators, PdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const QUARTER_LABELS = ["T1", "T2", "T3", "T4"]
@@ -24,11 +24,13 @@ function ComplianceBar({ value, target }: { value: number | null; target: number
   )
 }
 
-export function PdtpIndicatorsPanel({ data }: { data: PdtpComplianceIndicators }) {
+export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIndicators; integral?: PdtpIntegralCompliance | null }) {
   const { monthly, quarterly, annual, target } = data
 
   return (
     <div className="space-y-3">
+      {integral && <IntegralComplianceRow integral={integral} />}
+
       {/* Annual + quarterly summary */}
       <div className="overflow-hidden border-y border-[var(--color-border)]">
         <div className="-ml-px -mt-px flex flex-wrap">
@@ -140,6 +142,48 @@ export function PdtpIndicatorsPanel({ data }: { data: PdtpComplianceIndicators }
           </TableRoot>
         </div>
       </details>
+    </div>
+  )
+}
+
+/** Cumplimiento integral (plan §3): 3 ejes ponderados + el resultado combinado. */
+function IntegralComplianceRow({ integral }: { integral: PdtpIntegralCompliance }) {
+  const axes: Array<{ label: string; value: number | null; weight: number }> = [
+    { label: "Ejecución", value: integral.ejecucion !== null ? integral.ejecucion * 100 : null, weight: integral.pesos.ejecucion },
+    { label: "Verificación", value: integral.verificacion, weight: integral.pesos.verificacion },
+    { label: "Cierre", value: integral.cierre, weight: integral.pesos.cierre },
+  ]
+
+  return (
+    <div className="overflow-hidden rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface)">
+      <div className="flex flex-wrap items-stretch divide-x divide-(--color-border)">
+        <div className="flex-1 min-w-[10rem] px-4 py-3">
+          <div className="flex items-center gap-1.5">
+            <ChartBar size={13} className="shrink-0 text-(--color-text-faint)" />
+            <span className="text-eyebrow">Cumplimiento integral</span>
+          </div>
+          <div className="mt-2">
+            <span className="font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight text-(--color-text)">
+              {integral.integral !== null ? `${integral.integral}%` : "—"}
+            </span>
+          </div>
+          <p className="mt-1 text-[10px] text-text-subtle">0.5·ejecución + 0.3·verificación + 0.2·cierre</p>
+        </div>
+        {axes.map((axis) => (
+          <div key={axis.label} className="flex-1 min-w-[9rem] px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-eyebrow">{axis.label}</span>
+              <span className="text-[10px] text-text-subtle">peso {Math.round(axis.weight * 100)}%</span>
+            </div>
+            <div className="mt-2">
+              <span className="font-mono text-base font-semibold leading-none tabular-nums text-(--color-text)">
+                {axis.value !== null ? `${Math.round(axis.value)}%` : "—"}
+              </span>
+            </div>
+            <ComplianceBar value={axis.value !== null ? axis.value / 100 : null} target={1} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

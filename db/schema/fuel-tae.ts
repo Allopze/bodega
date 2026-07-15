@@ -229,6 +229,32 @@ export const fuelTaePublicLinksRelations = relations(fuelTaePublicLinks, ({ one 
   creator: one(users, { fields: [fuelTaePublicLinks.createdBy], references: [users.id] }),
 }))
 
+/* ── Fuel Seal Movements (historial de cambios de sello, sección 9) ──────── */
+
+export const fuelSealMovements = pgTable("fuel_seal_movements", {
+  id:              text("id").primaryKey(),
+  submissionId:    text("submission_id").notNull().references(() => fuelTaeSubmissions.id),
+  sealNumber:      text("seal_number").notNull(),
+  movementType:    text("movement_type").notNull(),           // "removed" | "installed"
+  changedBy:       text("changed_by").references(() => users.id),
+  justification:   text("justification"),
+  isException:     boolean("is_exception").notNull().default(false),
+  evidenceFileName: text("evidence_file_name"),
+  evidenceFilePath: text("evidence_file_path"),
+  evidenceSha256:  text("evidence_sha256"),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("fuel_seal_movements_type_valid", sql`${table.movementType} IN ('removed', 'installed')`),
+  index("fuel_seal_movements_submission_idx").on(table.submissionId),
+  index("fuel_seal_movements_seal_number_idx").on(table.sealNumber),
+  index("fuel_seal_movements_type_idx").on(table.movementType),
+])
+
+export const fuelSealMovementsRelations = relations(fuelSealMovements, ({ one }) => ({
+  submission: one(fuelTaeSubmissions, { fields: [fuelSealMovements.submissionId], references: [fuelTaeSubmissions.id] }),
+  changer: one(users, { fields: [fuelSealMovements.changedBy], references: [users.id] }),
+}))
+
 export const fuelTaeSubmissionsRelations = relations(fuelTaeSubmissions, ({ one, many }) => ({
   importBatch: one(fuelTaeImportBatches, { fields: [fuelTaeSubmissions.importBatchId], references: [fuelTaeImportBatches.id] }),
   worksite: one(worksites, { fields: [fuelTaeSubmissions.worksiteId], references: [worksites.id] }),

@@ -4,13 +4,14 @@
  */
 
 import type { Session } from "next-auth"
-import { sql } from "drizzle-orm"
+import { sql, eq } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords } from "@/db/schema"
 import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-queries"
 import { calcVariacion } from "./consumption-calculations"
 import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
 import { previousPeriod, dateOnly, daysAgo } from "@/lib/services/analytics-module/helpers"
+import { fuelVehicles, fuelEquipmentTypes, worksites } from "@/db/schema"
 
 export interface ConsumptionAlert {
   type: string
@@ -63,12 +64,42 @@ export interface ConsumptionDashboardData {
   alerts: ConsumptionAlert[]
 }
 
-const VARIACION_FUERTE_PCT = 30
-const TRANSACCIONES_ALTAS = 30
+/** ponytail: Umbral de variación porcentual para activar alerta de "variación fuerte"
+ *  respecto al período anterior (dashboard de combustibles). */
+export const VARIACION_FUERTE_PCT = 30
+
+/** ponytail: Umbral de transacciones en el período para activar alerta de
+ *  "transacciones altas" por patente. */
+export const TRANSACCIONES_ALTAS = 30
+
+/** ponytail: Ventana por defecto en días hacia atrás cuando no hay filtro de fecha.
+ *  Controla el alcance del dashboard de consumo y sus alertas. */
+export const DEFAULT_DAYS_AGO = 30
+
+/** ponytail: Cantidad máxima de patentes en rankings "top N" (consumo, gasto,
+ *  transacciones). Son límites de presentación, no operativos. */
+export const TOP_PATENTES_LIMIT = 10
+
+/** ponytail: Cantidad máxima de filas en el ranking de rendimiento por patente. */
+export const TOP_RENDIMIENTO_LIMIT = 15
+
+/** ponytail: Multiplicador sobre el monto medio para determinar gasto alto
+ *  con rendimiento bajo en alertas. */
+export const MONTO_MEDIO_ALERT_MULTIPLIER = 1.5
+
+/** ponytail: Mínimo de patentes necesario para activar alertas de "consumo alto"
+ *  (top N requiere al menos N*2 patentes para que "top" sea significativo). */
+export const MIN_PATENTES_FOR_ALERT = 4
+
+/** ponytail: Cuántas patentes mostrar en alertas de consumo alto, transacciones
+ *  altas y rendimiento cero respectivamente. */
+export const CONSUMO_ALTO_ALERT_COUNT = 3
+export const TRANSACCIONES_ALTAS_ALERT_COUNT = 3
+export const RENDIMIENTO_CERO_ALERT_COUNT = 5
 
 export function normalizeConsumptionFilters(input: ConsumptionFilters, now: Date = new Date()) {
   return {
-    fromDate: input.fromDate ?? daysAgo(now, 30),
+    fromDate: input.fromDate ?? daysAgo(now, DEFAULT_DAYS_AGO),
     toDate: input.toDate ?? dateOnly(now),
     ...(input.worksiteId ? { worksiteId: input.worksiteId } : {}),
     ...(input.fuente ? { fuente: input.fuente } : {}),
@@ -155,9 +186,9 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
     vehicleId: r.vehicleId,
   }))
 
-  const topPatentesPorConsumo = [...byPatente].sort((a, b) => b.cantidad - a.cantidad).slice(0, 10)
-  const topPatentesPorGasto = [...byPatente].sort((a, b) => b.monto - a.monto).slice(0, 10)
-  const transaccionesPorPatente = [...byPatente].sort((a, b) => b.transacciones - a.transacciones).slice(0, 10)
+  const topPatentesPorConsumo = [...byPatente].sort((a, b) => b.cantidad - a.cantidad).slice(0, TOP_PATENTES_LIMIT)
+  const topPatentesPorGasto = [...byPatente].sort((a, b) => b.monto - a.monto).slice(0, TOP_PATENTES_LIMIT)
+  const transaccionesPorPatente = [...byPatente].sort((a, b) => b.transacciones - a.transacciones).slice(0, TOP_PATENTES_LIMIT)
 
   const rendimientosRaw = byPatenteRaw.map((r) => ({ patente: r.patente, rendimiento: Number(r.rendimiento), cantidad: Number(r.cantidad) }))
   const rendimientoPorPatente = flagOutliersGeneric(rendimientosRaw, (r) => r.rendimiento)
@@ -178,9 +209,132 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
       variacionMontoPct: calcVariacion(totalMonto, previousMonto),
     },
     seriesPorPeriodo, topPatentesPorConsumo, topPatentesPorGasto, transaccionesPorPatente,
-    rendimientoPorPatente: rendimientoPorPatente.sort((a, b) => b.cantidad - a.cantidad).slice(0, 15),
+    rendimientoPorPatente: rendimientoPorPatente.sort((a, b) => b.cantidad - a.cantidad).slice(0, TOP_RENDIMIENTO_LIMIT),
     alerts,
   }
+}
+
+export interface EquipmentTypeConsumptionRow {
+  equipmentTypeName: string
+  totalLiters: number
+  totalAmount: number
+  transactionCount: number
+  uniqueVehicles: number
+}
+
+/** Litros totales agrupados por tipo de equipo, para el gráfico de la sección 5. */
+export async function getConsumptionByEquipmentType(session: Session, filters: Pick<ConsumptionFilters, "fromDate" | "toDate" | "worksiteId">): Promise<EquipmentTypeConsumptionRow[]> {
+  const norm = normalizeConsumptionFilters(filters)
+  const where = buildConsumptionWhere(session, norm)
+  if (!where) return []
+
+  const rows = await db.select({
+    equipmentTypeName: fuelEquipmentTypes.name,
+    totalLiters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
+    totalAmount: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+    transactionCount: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTransacciones}), 0)`,
+    uniqueVehicles: sql<number>`count(distinct ${fuelVehicles.id})`,
+  })
+    .from(fuelConsumptionRecords)
+    .innerJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
+    .innerJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
+    .where(where)
+    .groupBy(fuelEquipmentTypes.name)
+    .orderBy(sql`totalLiters desc`)
+
+  return rows.map((r) => ({
+    equipmentTypeName: r.equipmentTypeName,
+    totalLiters: Number(r.totalLiters),
+    totalAmount: Number(r.totalAmount),
+    transactionCount: Number(r.transactionCount),
+    uniqueVehicles: Number(r.uniqueVehicles),
+  })).filter((r) => r.totalLiters > 0)
+}
+
+export interface VehicleEvolutionPoint {
+  periodo: string
+  plate: string
+  vehicleCode: string | null
+  vehicleId: string | null
+  liters: number
+  amount: number
+}
+
+/** Serie temporal por vehículo para gráfico de evolución individual
+ *  (sección 5). Cada punto es un período/vehículo con litros y monto agregados. */
+export async function getEvolutionByVehicle(session: Session, filters: Pick<ConsumptionFilters, "fromDate" | "toDate" | "worksiteId" | "patente">): Promise<VehicleEvolutionPoint[]> {
+  const norm = normalizeConsumptionFilters(filters)
+  const where = buildConsumptionWhere(session, norm)
+  if (!where) return []
+
+  const rows = await db.select({
+    periodo: fuelConsumptionRecords.periodoDesde,
+    plate: fuelConsumptionRecords.patente,
+    vehicleCode: fuelVehicles.code,
+    vehicleId: fuelVehicles.id,
+    liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
+    amount: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+  })
+    .from(fuelConsumptionRecords)
+    .leftJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
+    .where(where)
+    .groupBy(fuelConsumptionRecords.periodoDesde, fuelConsumptionRecords.patente, fuelVehicles.code, fuelVehicles.id)
+    .orderBy(fuelConsumptionRecords.periodoDesde)
+    .limit(3000)
+
+  return rows.map((r) => ({
+    periodo: r.periodo,
+    plate: r.plate,
+    vehicleCode: r.vehicleCode,
+    vehicleId: r.vehicleId,
+    liters: Number(r.liters),
+    amount: Number(r.amount),
+  }))
+}
+
+export interface HeatmapCell {
+  worksiteName: string
+  equipmentLabel: string
+  /** Litros totales en el período para esta faena+equipo. */
+  liters: number
+  /** Monto total. */
+  amount: number
+  /** Ranking relativo (0–1) entre los litros visibles para intensidad de color. */
+  intensity: number
+}
+
+/** Matriz faena × equipo para el mapa de calor (sección 5).
+ *  Agrupa por faena y equipo (código+patente), devuelve top-50 combinaciones. */
+export async function getWorksiteEquipmentMatrix(session: Session, filters: Pick<ConsumptionFilters, "fromDate" | "toDate" | "worksiteId">): Promise<HeatmapCell[]> {
+  const norm = normalizeConsumptionFilters(filters)
+  const where = buildConsumptionWhere(session, norm)
+  if (!where) return []
+
+  const rows = await db.select({
+    worksiteName: worksites.name,
+    equipmentCode: fuelVehicles.code,
+    plate: fuelConsumptionRecords.patente,
+    liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
+    amount: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+  })
+    .from(fuelConsumptionRecords)
+    .innerJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
+    .innerJoin(worksites, eq(fuelVehicles.worksiteId, worksites.id))
+    .where(where)
+    .groupBy(worksites.name, fuelVehicles.code, fuelConsumptionRecords.patente)
+    .orderBy(sql`liters desc`)
+    .limit(50)
+
+  const cells = rows.map((r) => ({
+    worksiteName: r.worksiteName ?? "Sin faena",
+    equipmentLabel: r.equipmentCode ? `${r.equipmentCode} (${r.plate})` : r.plate,
+    liters: Number(r.liters),
+    amount: Number(r.amount),
+    intensity: 0,
+  })).filter((c) => c.liters > 0)
+
+  const maxLiters = cells.length > 0 ? Math.max(...cells.map((c) => c.liters)) : 1
+  return cells.map((c) => ({ ...c, intensity: c.liters / maxLiters }))
 }
 
 function buildConsumptionAlerts(input: {
@@ -193,9 +347,9 @@ function buildConsumptionAlerts(input: {
   const alerts: ConsumptionAlert[] = []
   const { byPatente, rendimientoPorPatente } = input
 
-  // Consumo inusualmente alto (top 3 por consumo, si hay suficientes patentes para que "top" signifique algo).
-  if (byPatente.length >= 4) {
-    for (const row of [...byPatente].sort((a, b) => b.cantidad - a.cantidad).slice(0, 3)) {
+  // Consumo inusualmente alto (top N por consumo, si hay suficientes patentes para que "top" signifique algo).
+  if (byPatente.length >= MIN_PATENTES_FOR_ALERT) {
+    for (const row of [...byPatente].sort((a, b) => b.cantidad - a.cantidad).slice(0, CONSUMO_ALTO_ALERT_COUNT)) {
       alerts.push({
         type: "consumo_alto", severity: "medium", entityLabel: row.patente,
         reason: `Consumió ${Math.round(row.cantidad).toLocaleString("es-CL")} L en el período, el mayor del grupo filtrado.`,
@@ -210,7 +364,7 @@ function buildConsumptionAlerts(input: {
   const montoMedio = byPatente.length > 0 ? byPatente.reduce((s, r) => s + r.monto, 0) / byPatente.length : 0
   for (const row of byPatente) {
     const rend = rendByPatente.get(row.patente)
-    if (row.monto > montoMedio * 1.5 && rend && rend.rendimiento > 0 && rend.atipico) {
+    if (row.monto > montoMedio * MONTO_MEDIO_ALERT_MULTIPLIER && rend && rend.rendimiento > 0 && rend.atipico) {
       alerts.push({
         type: "gasto_rendimiento_bajo", severity: "high", entityLabel: row.patente,
         reason: `Gasto de ${Math.round(row.monto).toLocaleString("es-CL")} CLP con rendimiento atípicamente bajo (${rend.rendimiento.toFixed(1)}).`,
@@ -221,7 +375,7 @@ function buildConsumptionAlerts(input: {
   }
 
   // Muchas transacciones en el período.
-  for (const row of byPatente.filter((r) => r.transacciones >= TRANSACCIONES_ALTAS).slice(0, 3)) {
+  for (const row of byPatente.filter((r) => r.transacciones >= TRANSACCIONES_ALTAS).slice(0, TRANSACCIONES_ALTAS_ALERT_COUNT)) {
     alerts.push({
       type: "transacciones_altas", severity: "low", entityLabel: row.patente,
       reason: `${row.transacciones} transacciones registradas en el período.`,
@@ -231,7 +385,7 @@ function buildConsumptionAlerts(input: {
   }
 
   // Rendimiento promedio igual a cero.
-  for (const row of rendimientoPorPatente.filter((r) => r.rendimiento === 0).slice(0, 5)) {
+  for (const row of rendimientoPorPatente.filter((r) => r.rendimiento === 0).slice(0, RENDIMIENTO_CERO_ALERT_COUNT)) {
     alerts.push({
       type: "rendimiento_cero", severity: "medium", entityLabel: row.patente,
       reason: "No registra rendimiento promedio en el período (dato ausente o cero).",

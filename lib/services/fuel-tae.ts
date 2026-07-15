@@ -1,12 +1,16 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
-import { and, asc, desc, eq, gt, inArray, lt, ne } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm"
+import { maxLoadsOf, requiredEvidenceCountOf, windowHoursOf } from "@/lib/combustibles/anomaly-detector"
 import { db } from "@/db"
 import {
   fuelTaeEvidence,
   fuelTaeLoadingPoints,
   fuelTaePublicLinks,
   fuelTaeSubmissions,
+  fuelSealMovements,
+  fuelAnomalyRules,
+  fuelAnomalyCases,
   fuelProducts,
   fuelVehicleProducts,
   fuelVehicles,
@@ -320,6 +324,225 @@ export async function getTaeSubmissionByToken(publicResultToken: string) {
   return submission
 }
 
+const WEEKDAY_ISO: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }
+
+/** true si `loadedAtIso` cae fuera de los días/horas declarados en `operatingSchedule` del equipo. */
+export function isOutsideOperatingSchedule(loadedAtIso: string, schedule: { timezone: string; days: number[]; start: string; end: string }): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: schedule.timezone, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(loadedAtIso))
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? ""
+  const hour = parts.find((p) => p.type === "hour")?.value ?? "00"
+  const minute = parts.find((p) => p.type === "minute")?.value ?? "00"
+  const isoDay = WEEKDAY_ISO[weekday]
+  if (!isoDay || !schedule.days.includes(isoDay)) return true
+  const time = `${hour}:${minute}`
+  return time < schedule.start || time > schedule.end
+}
+
+/** Auto-detectar anomalías dentro de la transacción de revisión TAE.
+ *  Escanea: sello repetido, sello no correlativo, lectura regresiva,
+ *  evidencia faltante, baja confianza OCR. */
+async function detectTaeAnomaliesInTx(
+  submission: typeof fuelTaeSubmissions.$inferSelect,
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+  newStatus: string,
+) {
+  if (newStatus !== "validated" && newStatus !== "observed") return
+
+  const { nanoid } = await import("@/lib/id")
+  const now = new Date().toISOString()
+  const base = {
+    worksiteId: submission.worksiteId,
+    vehicleId: submission.vehicleId,
+    referenceEntityType: "fuel_tae_submission",
+    referenceEntityId: submission.id,
+  }
+
+  // Sello repetido
+  if (submission.installedSealNumber) {
+    const reused = await tx.select({ id: fuelTaeSubmissions.id })
+      .from(fuelTaeSubmissions)
+      .where(and(
+        eq(fuelTaeSubmissions.installedSealNumber, submission.installedSealNumber),
+        eq(fuelTaeSubmissions.worksiteId, submission.worksiteId),
+        ne(fuelTaeSubmissions.id, submission.id),
+      )).limit(1)
+    if (reused.length > 0) {
+      const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "sello_repetido"), eq(fuelAnomalyRules.isActive, true))).limit(1)
+      if (rule[0]) {
+        await tx.insert(fuelAnomalyCases).values({
+          id: nanoid(), ruleId: rule[0]!.id, ruleCode: "sello_repetido", severity: "high",
+          ...base, description: `Sello instalado ${submission.installedSealNumber} ya fue usado en otra carga (${reused[0]!.id}).`,
+          observedValue: submission.installedSealNumber, status: "open", detectedAt: now,
+        }).onConflictDoNothing()
+      }
+    }
+  }
+
+  // Sello no correlativo (instalado != siguiente retirado)
+  if (submission.installedSealNumber && submission.vehicleId) {
+    const next = await tx.select({ id: fuelTaeSubmissions.id, removedSealNumber: fuelTaeSubmissions.removedSealNumber })
+      .from(fuelTaeSubmissions)
+      .where(and(
+        eq(fuelTaeSubmissions.vehicleId, submission.vehicleId),
+        gt(fuelTaeSubmissions.loadedAt, submission.loadedAt),
+      ))
+      .orderBy(desc(fuelTaeSubmissions.loadedAt))
+      .limit(1)
+    if (next.length > 0 && next[0]!.removedSealNumber && next[0]!.removedSealNumber !== submission.installedSealNumber) {
+      const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "sello_no_correlativo"), eq(fuelAnomalyRules.isActive, true))).limit(1)
+      if (rule[0]) {
+        await tx.insert(fuelAnomalyCases).values({
+          id: nanoid(), ruleId: rule[0]!.id, ruleCode: "sello_no_correlativo", severity: "medium",
+          ...base, description: `Sello instalado ${submission.installedSealNumber} no coincide con el sello retirado en la carga siguiente (${next[0]!.removedSealNumber}).`,
+          observedValue: submission.installedSealNumber, expectedValue: next[0]!.removedSealNumber, status: "open", detectedAt: now,
+        }).onConflictDoNothing()
+      }
+    }
+  }
+
+  // Lectura regresiva
+  if (submission.meterReading != null && submission.vehicleId) {
+    const prev = await tx.select({ id: fuelTaeSubmissions.id, meterReading: fuelTaeSubmissions.meterReading })
+      .from(fuelTaeSubmissions)
+      .where(and(
+        eq(fuelTaeSubmissions.vehicleId, submission.vehicleId),
+        lt(fuelTaeSubmissions.loadedAt, submission.loadedAt),
+        eq(fuelTaeSubmissions.meterType, submission.meterType),
+      ))
+      .orderBy(desc(fuelTaeSubmissions.loadedAt))
+      .limit(1)
+    if (prev.length > 0 && prev[0]!.meterReading != null) {
+      const meterLabel = submission.meterType === "hour_meter" ? "de horómetro" : "de odómetro"
+      if (Number(prev[0]!.meterReading) > Number(submission.meterReading)) {
+        const ruleCode = submission.meterType === "hour_meter" ? "horometro_regresivo" : "kilometraje_regresivo"
+        const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, ruleCode), eq(fuelAnomalyRules.isActive, true))).limit(1)
+        if (rule[0]) {
+          await tx.insert(fuelAnomalyCases).values({
+            id: nanoid(), ruleId: rule[0]!.id, ruleCode, severity: "high",
+            ...base, description: `Lectura ${meterLabel} (${submission.meterReading}) menor que la carga anterior (${prev[0]!.meterReading}).`,
+            observedValue: String(submission.meterReading), expectedValue: `> ${prev[0]!.meterReading}`, status: "open", detectedAt: now,
+          }).onConflictDoNothing()
+        }
+      } else if (Number(prev[0]!.meterReading) === Number(submission.meterReading)) {
+        const ruleCode = submission.meterType === "hour_meter" ? "horometro_sin_variacion" : "kilometraje_sin_variacion"
+        const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, ruleCode), eq(fuelAnomalyRules.isActive, true))).limit(1)
+        if (rule[0]) {
+          await tx.insert(fuelAnomalyCases).values({
+            id: nanoid(), ruleId: rule[0]!.id, ruleCode, severity: "medium",
+            ...base, description: `Lectura ${meterLabel} (${submission.meterReading}) idéntica a la carga anterior: el equipo no registra actividad entre ambas cargas.`,
+            observedValue: String(submission.meterReading), expectedValue: `≠ ${prev[0]!.meterReading}`, status: "open", detectedAt: now,
+          }).onConflictDoNothing()
+        }
+      }
+    }
+  }
+
+  // Sello inicial o final faltante (la carga permite omitirlo con `noSealReason`, pero
+  // igual debe quedar como caso revisable — la justificación no exime la revisión).
+  if (!submission.removedSealNumber || !submission.installedSealNumber) {
+    const missing: Array<{ code: "sello_inicial_faltante" | "sello_final_faltante"; label: string }> = []
+    if (!submission.removedSealNumber) missing.push({ code: "sello_inicial_faltante", label: "inicial (retirado)" })
+    if (!submission.installedSealNumber) missing.push({ code: "sello_final_faltante", label: "final (instalado)" })
+    for (const { code, label } of missing) {
+      const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, code), eq(fuelAnomalyRules.isActive, true))).limit(1)
+      if (rule[0]) {
+        await tx.insert(fuelAnomalyCases).values({
+          id: nanoid(), ruleId: rule[0]!.id, ruleCode: code, severity: "medium",
+          ...base, description: `Falta el sello ${label} en esta carga.${submission.noSealReason ? ` Motivo declarado: "${submission.noSealReason}".` : ""}`,
+          observedValue: "sin sello", status: "open", detectedAt: now,
+        }).onConflictDoNothing()
+      }
+    }
+  }
+
+  // Identidad no verificada (conductor y/o supervisor identificados manualmente, sin match en catálogo)
+  if (submission.manualIdentity) {
+    const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "identidad_incompleta"), eq(fuelAnomalyRules.isActive, true))).limit(1)
+    if (rule[0]) {
+      await tx.insert(fuelAnomalyCases).values({
+        id: nanoid(), ruleId: rule[0]!.id, ruleCode: "identidad_incompleta", severity: "low",
+        ...base, description: `Conductor ("${submission.driverNameSnapshot}") o supervisor ("${submission.supervisorNameSnapshot}") ingresado manualmente, sin coincidencia verificada en el catálogo de trabajadores.`,
+        observedValue: "identidad manual", status: "open", detectedAt: now,
+      }).onConflictDoNothing()
+    }
+  }
+
+  // Evidencia faltante (menos de N fotos en carga PWA; N configurable por regla, default 4)
+  if (submission.source === "public_pwa") {
+    const rule = await tx.select({ id: fuelAnomalyRules.id, config: fuelAnomalyRules.config }).from(fuelAnomalyRules)
+      .where(and(eq(fuelAnomalyRules.code, "evidencia_faltante"), eq(fuelAnomalyRules.isActive, true))).limit(1)
+    if (rule[0]) {
+      const requiredCount = requiredEvidenceCountOf(rule[0]!, 4)
+      const evidenceCount = await tx.select({ count: sql<number>`count(*)::int` })
+        .from(fuelTaeEvidence).where(eq(fuelTaeEvidence.submissionId, submission.id))
+      if (evidenceCount[0]!.count < requiredCount) {
+        await tx.insert(fuelAnomalyCases).values({
+          id: nanoid(), ruleId: rule[0]!.id, ruleCode: "evidencia_faltante", severity: "medium",
+          ...base, description: `Sólo ${evidenceCount[0]!.count}/${requiredCount} evidencias en esta carga.`,
+          observedValue: String(evidenceCount[0]!.count), expectedValue: String(requiredCount), status: "open", detectedAt: now,
+        }).onConflictDoNothing()
+      }
+    }
+  }
+
+  if (submission.vehicleId) {
+    const vehicle = await tx.query.fuelVehicles.findFirst({
+      where: eq(fuelVehicles.id, submission.vehicleId),
+      columns: { worksiteId: true, operatingSchedule: true, plate: true },
+    })
+
+    // Carga en faena distinta de la asignada al equipo
+    if (vehicle && vehicle.worksiteId !== submission.worksiteId) {
+      const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "carga_faena_distinta"), eq(fuelAnomalyRules.isActive, true))).limit(1)
+      if (rule[0]) {
+        await tx.insert(fuelAnomalyCases).values({
+          id: nanoid(), ruleId: rule[0]!.id, ruleCode: "carga_faena_distinta", severity: "medium",
+          ...base, description: `El equipo ${vehicle.plate} tiene asignada otra faena; esta carga se registró en una faena distinta.`,
+          observedValue: submission.worksiteId, expectedValue: vehicle.worksiteId, status: "open", detectedAt: now,
+        }).onConflictDoNothing()
+      }
+    }
+
+    // Carga fuera del horario operativo declarado del equipo
+    if (vehicle?.operatingSchedule && isOutsideOperatingSchedule(submission.loadedAt, vehicle.operatingSchedule)) {
+      const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "carga_fuera_horario"), eq(fuelAnomalyRules.isActive, true))).limit(1)
+      if (rule[0]) {
+        await tx.insert(fuelAnomalyCases).values({
+          id: nanoid(), ruleId: rule[0]!.id, ruleCode: "carga_fuera_horario", severity: "low",
+          ...base, description: `Carga registrada fuera del horario operativo declarado para ${vehicle.plate}.`,
+          observedValue: submission.loadedAt, status: "open", detectedAt: now,
+        }).onConflictDoNothing()
+      }
+    }
+
+    // Exceso de cargas dentro de una ventana temporal (umbral configurable, default 3 cargas en 2 horas)
+    const freqRule = await tx.select({ id: fuelAnomalyRules.id, config: fuelAnomalyRules.config }).from(fuelAnomalyRules)
+      .where(and(eq(fuelAnomalyRules.code, "exceso_cargas_ventana"), eq(fuelAnomalyRules.isActive, true))).limit(1)
+    if (freqRule[0]) {
+      const maxLoads = maxLoadsOf(freqRule[0]!, 3)
+      const windowHours = windowHoursOf(freqRule[0]!, 2)
+      const windowStart = new Date(new Date(submission.loadedAt).getTime() - windowHours * 3_600_000).toISOString()
+      const recent = await tx.select({ id: fuelTaeSubmissions.id }).from(fuelTaeSubmissions)
+        .where(and(
+          eq(fuelTaeSubmissions.vehicleId, submission.vehicleId),
+          ne(fuelTaeSubmissions.status, "voided"),
+          gt(fuelTaeSubmissions.loadedAt, windowStart),
+          lt(fuelTaeSubmissions.loadedAt, submission.loadedAt),
+        ))
+      if (recent.length + 1 >= maxLoads) {
+        await tx.insert(fuelAnomalyCases).values({
+          id: nanoid(), ruleId: freqRule[0]!.id, ruleCode: "exceso_cargas_ventana", severity: "medium",
+          ...base, description: `${recent.length + 1} cargas del mismo equipo en menos de ${windowHours}h (umbral: ${maxLoads}).`,
+          observedValue: String(recent.length + 1), expectedValue: `< ${maxLoads}`, status: "open", detectedAt: now,
+        }).onConflictDoNothing()
+      }
+    }
+  }
+}
+
 export async function reviewTaeSubmission({ id, expectedStatus, status, reviewNote, userId }: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote: string; userId: string }) {
   const current = await db.query.fuelTaeSubmissions.findFirst({ where: eq(fuelTaeSubmissions.id, id) })
   if (!current) throw new Error("Carga TAE no encontrada")
@@ -334,6 +557,43 @@ export async function reviewTaeSubmission({ id, expectedStatus, status, reviewNo
     if (updated.length === 0) throw new Error("La carga cambió mientras la revisabas. Actualiza la página e inténtalo nuevamente.")
     await recordAudit({ userId, action: "status_change", entityType: "fuel_tae_submission", entityId: id, oldState: { status: current.status }, newState: { status }, reason: reviewNote }, tx)
     await recordStatusChange({ entityType: "fuel_tae_submission", entityId: id, fromStatus: current.status, toStatus: status, changedBy: userId, reason: reviewNote }, tx)
+
+    // Auto-detección de anomalías durante la revisión (sección 11)
+    await detectTaeAnomaliesInTx(current, tx, userId, status)
+
+    // Registrar movimientos de sellos al validar (sección 9)
+    if (status === "validated") {
+      const { nanoid } = await import("@/lib/id")
+      // Buscar evidencias de sello en esta carga para asociarlas al movimiento
+      const sealEvidences = await tx.select({ kind: fuelTaeEvidence.kind, fileName: fuelTaeEvidence.fileName, filePath: fuelTaeEvidence.filePath, sha256: fuelTaeEvidence.sha256 })
+        .from(fuelTaeEvidence).where(and(eq(fuelTaeEvidence.submissionId, id), inArray(fuelTaeEvidence.kind, ["removed_seal", "installed_seal"])))
+
+      const removedEvidence = sealEvidences.find((e) => e.kind === "removed_seal")
+      const installedEvidence = sealEvidences.find((e) => e.kind === "installed_seal")
+
+      if (current.removedSealNumber) {
+        await tx.insert(fuelSealMovements).values({
+          id: nanoid(), submissionId: id, sealNumber: current.removedSealNumber,
+          movementType: "removed", changedBy: userId, isException: false,
+          evidenceFileName: removedEvidence?.fileName ?? null,
+          evidenceFilePath: removedEvidence?.filePath ?? null,
+          evidenceSha256: removedEvidence?.sha256 ?? null,
+        })
+      }
+      if (current.installedSealNumber) {
+        const existing = await tx.select({ id: fuelSealMovements.id }).from(fuelSealMovements)
+          .where(and(eq(fuelSealMovements.submissionId, id), eq(fuelSealMovements.movementType, "installed"), eq(fuelSealMovements.sealNumber, current.installedSealNumber)))
+        if (existing.length === 0) {
+          await tx.insert(fuelSealMovements).values({
+            id: nanoid(), submissionId: id, sealNumber: current.installedSealNumber,
+            movementType: "installed", changedBy: userId, isException: false,
+            evidenceFileName: installedEvidence?.fileName ?? null,
+            evidenceFilePath: installedEvidence?.filePath ?? null,
+            evidenceSha256: installedEvidence?.sha256 ?? null,
+          })
+        }
+      }
+    }
   })
 }
 

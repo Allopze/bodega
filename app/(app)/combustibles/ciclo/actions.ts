@@ -1,8 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { isNetworkError } from "@/lib/network-error"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createFuelCycleMovement, fuelCycleMovementSchema } from "@/lib/combustibles/fuel-cycle"
+import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
 
 function empty(value: FormDataEntryValue | null) { const text = String(value ?? "").trim(); return text || undefined }
@@ -23,5 +25,9 @@ export async function createFuelCycleMovementAction(_prev: ActionState, formData
     await createFuelCycleMovement(parsed.data, { userId: session.user.id, userEmail: session.user.email ?? undefined })
     revalidatePath("/combustibles/ciclo"); revalidatePath("/combustibles")
     return { ok: true, message: "Movimiento físico registrado" }
-  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo registrar el movimiento" } }
+  } catch (error) {
+    logger.error("[createFuelCycleMovementAction]", error)
+    const message = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo registrar el movimiento"
+    return { ok: false, message }
+  }
 }

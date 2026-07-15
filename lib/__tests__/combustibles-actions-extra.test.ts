@@ -10,7 +10,7 @@ vi.mock("@/lib/auth/can", () => ({
 vi.mock("@/db", () => {
   const db = {
     query: {
-      fuelLoads: { findFirst: vi.fn() },
+      fuelLoads: { findFirst: vi.fn(), findMany: vi.fn(() => []) },
       fuelVehicles: { findFirst: vi.fn() },
       fuelSuppliers: { findFirst: vi.fn() },
       suppliers: { findFirst: vi.fn() },
@@ -32,6 +32,8 @@ vi.mock("@/lib/combustibles/queries", () => ({ buildFuelLoadsWhere: vi.fn(() => 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { deleteFuelLoadAction, registerFuelLoadAction, createFuelSupplierAction, deleteFuelSupplierAction } from "@/app/(app)/combustibles/actions"
+import { exportFuelLoadsXlsxAction } from "@/app/(app)/combustibles/actions-module/export"
+import { recordAudit } from "@/lib/audit"
 import type { ActionState } from "@/lib/validation/masters"
 
 const prevState: ActionState = { ok: false, message: "" }
@@ -156,5 +158,27 @@ describe("deleteFuelSupplierAction", () => {
     const res = await deleteFuelSupplierAction("sup-1")
     expect(res.ok).toBe(true)
     expect(res.message).toContain("Proveedor desactivado")
+  })
+})
+
+describe("exportFuelLoadsXlsxAction", () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it("bloquea la exportación con montos a quien no tiene combustibles:export_sensitive (sección 19: exclusión de columnas por permiso)", async () => {
+    mockRequirePermission.mockRejectedValueOnce(new Error("no"))
+    const res = await exportFuelLoadsXlsxAction()
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Sin permisos para exportar datos con montos")
+  })
+
+  it("audita la exportación con recordAudit al generarla (sección 19: auditoría de exportaciones)", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession(["combustibles:export_sensitive"]))
+    const res = await exportFuelLoadsXlsxAction()
+    expect(res.ok).toBe(true)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "export", entityType: "fuel_loads_export" }),
+    )
   })
 })

@@ -5,6 +5,7 @@ import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { ArrowsLeftRight, Upload } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { fuelStorageLocations, fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions, worksites } from "@/db/schema"
+import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
@@ -74,21 +75,47 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
   }
   const bitacoraGroupHref = (q: string) => `/combustibles/bitacora?${new URLSearchParams({ q, desde: chartRange.from, hasta: chartRange.to, fuente: "tae_pwa" }).toString()}`
 
+  const TAEGROUP_FALLBACK: Array<{ name: string; liters: number; group: string; count: number }> = []
+
   const [worksitesList, loadingPoints, storageLocations, publicLinks, submissions, metricsRows, cargasPorSupervisor, cargasPorConductor, cargasPorPunto] = await Promise.all([
-    scope.mode === "none" ? Promise.resolve([]) : db.query.worksites.findMany({ where: worksiteWhere, columns: { id: true, name: true }, orderBy: [worksites.name] }),
-    scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaeLoadingPoints.findMany({ where: scope.mode === "some" ? inArray(fuelTaeLoadingPoints.worksiteId, scope.ids) : undefined, columns: { id: true, worksiteId: true, name: true, type: true, storageLocationId: true }, orderBy: [fuelTaeLoadingPoints.name] }),
-    scope.mode === "none" ? Promise.resolve([]) : db.query.fuelStorageLocations.findMany({ where: and(eq(fuelStorageLocations.isActive, true), scope.mode === "some" ? inArray(fuelStorageLocations.worksiteId, scope.ids) : undefined), columns: { id: true, worksiteId: true, name: true } }),
-    scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaePublicLinks.findMany({ where: scope.mode === "some" ? inArray(fuelTaePublicLinks.worksiteId, scope.ids) : undefined, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } } }, orderBy: [desc(fuelTaePublicLinks.createdAt)] }),
-    db.query.fuelTaeSubmissions.findMany({ where, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } }, product: { columns: { name: true } } }, orderBy: [desc(fuelTaeSubmissions.loadedAt)], limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    db.select({
-      total: count(),
-      liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)`,
-      observed: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'observed')`,
-      pending: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'submitted')`,
-    }).from(fuelTaeSubmissions).where(where),
-    getTaeGroupedTotals(session, chartRange, "supervisor"),
-    getTaeGroupedTotals(session, chartRange, "driver"),
-    getTaeGroupedTotals(session, chartRange, "loadingPoint"),
+    settle(
+      scope.mode === "none" ? Promise.resolve([]) : db.query.worksites.findMany({ where: worksiteWhere, columns: { id: true, name: true }, orderBy: [worksites.name] }),
+      [] as Array<{ id: string; name: string }>,
+      "tae-worksites",
+    ),
+    settle(
+      scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaeLoadingPoints.findMany({ where: scope.mode === "some" ? inArray(fuelTaeLoadingPoints.worksiteId, scope.ids) : undefined, columns: { id: true, worksiteId: true, name: true, type: true, storageLocationId: true }, orderBy: [fuelTaeLoadingPoints.name] }),
+      [] as Array<{ id: string; worksiteId: string; name: string; type: string; storageLocationId: string | null }>,
+      "tae-loadingPoints",
+    ),
+    settle(
+      scope.mode === "none" ? Promise.resolve([]) : db.query.fuelStorageLocations.findMany({ where: and(eq(fuelStorageLocations.isActive, true), scope.mode === "some" ? inArray(fuelStorageLocations.worksiteId, scope.ids) : undefined), columns: { id: true, worksiteId: true, name: true } }),
+      [] as Array<{ id: string; worksiteId: string; name: string }>,
+      "tae-storageLocations",
+    ),
+    settle(
+      scope.mode === "none" ? Promise.resolve([]) : db.query.fuelTaePublicLinks.findMany({ where: scope.mode === "some" ? inArray(fuelTaePublicLinks.worksiteId, scope.ids) : undefined, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } } }, orderBy: [desc(fuelTaePublicLinks.createdAt)] }),
+      [],
+      "tae-publicLinks",
+    ),
+    settle(
+      db.query.fuelTaeSubmissions.findMany({ where, with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } }, product: { columns: { name: true } } }, orderBy: [desc(fuelTaeSubmissions.loadedAt)], limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+      [],
+      "tae-submissions",
+    ),
+    settle(
+      db.select({
+        total: count(),
+        liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)`,
+        observed: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'observed')`,
+        pending: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'submitted')`,
+      }).from(fuelTaeSubmissions).where(where),
+      [{ total: 0, liters: 0, observed: 0, pending: 0 }],
+      "tae-metrics",
+    ),
+    settle(getTaeGroupedTotals(session, chartRange, "supervisor"), TAEGROUP_FALLBACK, "tae-group-supervisor"),
+    settle(getTaeGroupedTotals(session, chartRange, "driver"), TAEGROUP_FALLBACK, "tae-group-driver"),
+    settle(getTaeGroupedTotals(session, chartRange, "loadingPoint"), TAEGROUP_FALLBACK, "tae-group-loadingPoint"),
   ])
   const metrics = metricsRows[0] ?? { total: 0, liters: 0, observed: 0, pending: 0 }
   const totalPages = Math.max(1, Math.ceil(Number(metrics.total) / PAGE_SIZE))

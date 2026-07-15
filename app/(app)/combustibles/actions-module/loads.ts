@@ -15,14 +15,18 @@ import {
 import { calculateFuelAmounts } from "@/lib/combustibles/calculations"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
+import { isNetworkError } from "@/lib/network-error"
 import type { ActionState } from "@/lib/validation/masters"
 import { optionalNumber } from "./export"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 
 const REVALIDATE = "/combustibles"
 
+const CONN_MSG = "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente."
+
 export async function dbErrMsg(e: unknown, fallback: string): Promise<string> {
   if (!(e instanceof Error)) return fallback
+  if (isNetworkError(e)) return CONN_MSG
   const cause = (e as { cause?: unknown }).cause
   if (cause instanceof Error && cause.message) return cause.message
   return e.message

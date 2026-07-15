@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
-import { getPdtpComplianceIndicators } from "@/lib/services/prevention-pdtp"
+import { getPdtpComplianceIndicators, getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 
@@ -12,6 +12,7 @@ type PdtpComplianceCardProps = {
   pendingCount: number
   target: number
   percent: number | null
+  integralPercent: number | null
   month: number
   week: number
 }
@@ -26,7 +27,7 @@ const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "S
  * meta, Nº de pendientes de aprobación y la semana actual.
  */
 export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
-  const { year, worksiteId, pendingCount, target, percent, month, week } = props
+  const { year, worksiteId, pendingCount, target, percent, integralPercent, month, week } = props
   const targetPct = Math.round(target * 100)
   const value = percent ?? 0
   const belowTarget = percent !== null && percent < targetPct
@@ -71,6 +72,9 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
           {percent === null ? "—" : `${percent}%`}
         </span>
         <span className="mb-0.5 text-xs text-[var(--color-text-subtle)]">de meta {targetPct}%</span>
+        {integralPercent !== null && (
+          <span className="mb-0.5 text-xs text-[var(--color-text-faint)]">· integral {integralPercent}%</span>
+        )}
       </div>
 
       <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
@@ -105,13 +109,17 @@ export async function loadPdtpComplianceSummary(worksiteIds: string[] | "all") {
   const targetWorksiteId = worksiteIds === "all" ? undefined : worksiteIds[0]
   const indicators = await getPdtpComplianceIndicators(period.year, targetWorksiteId)
   if (!indicators) return null
-  const pending = await listPendingPdtpExecutions(worksiteIds, { year: period.year })
+  const [pending, integral] = await Promise.all([
+    listPendingPdtpExecutions(worksiteIds, { year: period.year }),
+    getPdtpIntegralCompliance(period.year, targetWorksiteId),
+  ])
   return {
     year: period.year,
     worksiteId: targetWorksiteId,
     pendingCount: pending.length,
     target: indicators.target,
     percent: indicators.annual.percent === null ? null : Math.round(indicators.annual.percent),
+    integralPercent: integral?.integral ?? null,
     month: period.month,
     week: period.week,
   } satisfies PdtpComplianceCardProps

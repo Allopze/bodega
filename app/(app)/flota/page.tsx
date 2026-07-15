@@ -151,6 +151,7 @@ export default async function FlotaPage({
                 <TableHead className="text-right">Combustible</TableHead>
                 <TableHead className="text-right">Mantenciones</TableHead>
                 <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">$/km·h</TableHead>
                 <TableHead className="text-right">Km/Hr</TableHead>
                 <TableHead>Última mantención</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
@@ -159,13 +160,13 @@ export default async function FlotaPage({
             <TableBody>
               {vehicles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
                     No hay vehículos visibles para tu alcance.
                   </TableCell>
                 </TableRow>
               ) : filteredVehicles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
                     No hay vehículos que coincidan con los filtros.
                   </TableCell>
                 </TableRow>
@@ -190,6 +191,13 @@ export default async function FlotaPage({
                   <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount)}</TableCell>
                   <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                    {vehicle.costPerKm != null
+                      ? `${formatCLP(vehicle.costPerKm)}/km`
+                      : vehicle.costPerHour != null
+                        ? `${formatCLP(vehicle.costPerHour)}/h`
+                        : "—"}
+                  </TableCell>
                   <TableCell className="text-right font-mono">
                     {vehicle.lastOdometerReading != null
                       ? formatNumber(vehicle.lastOdometerReading)

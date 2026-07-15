@@ -6,13 +6,16 @@ import { db } from "@/db"
 import { worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getEquipmentPerformanceAnalysis, PRESET_LABEL, type AggregationLevel, type EquipmentPreset } from "@/lib/combustibles/equipment-performance"
+import { getEquipmentPerformanceAnalysis, PRESET_LABEL, trendLabel, type AggregationLevel, type EquipmentPreset } from "@/lib/combustibles/equipment-performance"
+import { histogram } from "@/lib/combustibles/performance-statistics"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { PerformanceGroupChart } from "./performance-charts"
+import { HistogramChart } from "./histogram-chart"
 
 export const metadata: Metadata = { title: "Análisis de rendimiento por equipo" }
 
@@ -95,7 +98,13 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
 
       {groups.length === 0 ? (
         <div className="border border-dashed border-(--color-border-strong) p-8 text-center text-sm text-(--color-text-muted)">
-          Sin observaciones de rendimiento para este preset y período. Sólo el consumo TCT importado y el log operacional traen rendimiento calculado — TAE y facturación todavía no lo tienen (sección 1).
+          {worksiteId || preset !== "truck" || aggregateBy !== "worksite" ? (
+            <>Sin coincidencias para estos filtros. Intenta con otro preset, faena, agregación o rango de fechas. Sólo el consumo TCT importado y el log operacional traen rendimiento calculado — TAE y facturación todavía no lo tienen.
+            </>
+          ) : (
+            <>Sin observaciones de rendimiento para camiones en todas las faenas autorizadas. Sólo el consumo TCT importado y el log operacional traen rendimiento calculado.
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -107,11 +116,34 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
                 <CardDescription>¿Qué {AGGREGATIONS.find((a) => a.value === aggregateBy)?.label.toLowerCase().replace("por ", "")} rinde peor o mejor de lo esperado? Barra ámbar = muestra poco confiable.</CardDescription>
               </CardHeader>
               <CardContent>
-                <PerformanceGroupChart groups={groups.filter((g) => g.unit === unit)} drilldownHref={(group) => bitacoraHref(group, worksiteId, from, to)} />
+                <ChartErrorBoundary chartName={`Rendimiento medio (${UNIT_LABEL[unit] ?? unit})`}>
+                  <PerformanceGroupChart groups={groups.filter((g) => g.unit === unit)} drilldownHref={(group) => bitacoraHref(group, worksiteId, from, to)} />
+                </ChartErrorBoundary>
               </CardContent>
             </Card>
           ))}
         </div>
+        {groups.length > 0 && (
+          <div className="mb-6 grid gap-5 lg:grid-cols-2">
+            {[...new Set(groups.map((g) => g.unit))].map((unit) => {
+              const unitGroups = groups.filter((g) => g.unit === unit)
+              const allValues = unitGroups.flatMap((g) => g.values)
+              const hBins = histogram(allValues)
+              const unitLabel = UNIT_LABEL[unit] ?? unit
+              return (
+                <Card key={`histogram-${unit}`}>
+                  <CardHeader>
+                    <CardTitle className="text-base">Distribución de rendimiento ({unitLabel})</CardTitle>
+                    <CardDescription>{allValues.length} observaciones agrupadas en intervalos. La línea punteada marca la media global.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <HistogramChart bins={hBins} mean={allValues.length > 0 ? allValues.reduce((s, v) => s + v, 0) / allValues.length : 0} unitLabel={unitLabel} />
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
         <div className="overflow-x-auto border border-(--color-border)">
           <table className="w-full min-w-[1200px] text-sm">
             <thead className="bg-(--color-surface-2) text-left text-xs text-(--color-text-muted)">
@@ -127,6 +159,7 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
                 <th>P10–P90</th>
                 <th>Rango esperado</th>
                 <th>vs. período anterior</th>
+                <th>Tendencia</th>
                 <th>Cargas</th>
               </tr>
             </thead>
@@ -146,6 +179,7 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
                     <td className="font-mono">{group.stats.p10} – {group.stats.p90}</td>
                     <td className="font-mono text-(--color-text-muted)">{group.expectedRange ? `${group.expectedRange.low} – ${group.expectedRange.high}` : "—"}</td>
                     <td className="font-mono">{group.variationPct == null ? "—" : `${group.variationPct > 0 ? "+" : ""}${group.variationPct}%`}</td>
+                    <td className="font-mono text-xs">{trendLabel(group.trend)}<br /><span className="text-(--color-text-muted)">{group.trend ? `R²=${group.trend.r2}` : ""}</span></td>
                     <td><Link href={bitacoraHref(group, worksiteId, from, to)} className="text-xs text-(--color-primary-ink) hover:underline">Ver cargas</Link></td>
                   </tr>
                 )
