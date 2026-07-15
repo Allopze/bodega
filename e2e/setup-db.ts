@@ -134,6 +134,10 @@ async function main() {
     { id: "p-prev-pdtp-manage", name: "prevention:pdtp:manage", module: "prevention", description: "Gestionar catálogo, cronograma y ejecuciones del PDTP" },
     { id: "p-prev-pdtp-approve", name: "prevention:pdtp:approve", module: "prevention", description: "Aprobar el PDTP como jefatura de prevención" },
     { id: "p-prev-pdtp-sign-legal", name: "prevention:pdtp:sign_legal", module: "prevention", description: "Firmar el PDTP como Gerencia Legal" },
+    { id: "p-prev-pdtp-cl-manage", name: "prevention:pdtp:checklist:manage", module: "prevention", description: "Crear/editar plantillas de checklist del PDTP" },
+    { id: "p-prev-pdtp-cl-fill", name: "prevention:pdtp:checklist:fill", module: "prevention", description: "Llenar checklist en una ejecución del PDTP" },
+    { id: "p-prev-pdtp-ap-manage", name: "prevention:pdtp:action:manage", module: "prevention", description: "Crear/editar acciones y seguimiento del plan de acción PDTP" },
+    { id: "p-prev-pdtp-ap-verify", name: "prevention:pdtp:action:verify", module: "prevention", description: "Verificar cierre de acciones del plan de acción PDTP" },
     { id: "p-adm-epp-up", name: "admin:epp_import_upload", module: "admin", description: "Cargar archivos de importación EPP" },
     { id: "p-adm-epp-rv", name: "admin:epp_import_review", module: "admin", description: "Revisar y resolver importaciones EPP" },
     { id: "p-adm-epp-cf", name: "admin:epp_import_confirm", module: "admin", description: "Confirmar importaciones EPP" },
@@ -675,6 +679,84 @@ async function main() {
   // Advance the OC sequence past the fixture code (OC-2026-0001) so the
   // first real app call gets OC-2026-0002 and doesn't collide.
   await db.execute(sql`SELECT next_document_code('OC', EXTRACT(YEAR FROM NOW())::int)`)
+
+  // ── PDTP fixture: programa + actividad + hoja + checklist activo + ejecución ──
+  // Da a e2e/pdtp-flow.spec.ts un flujo completo navegable sin pasar por la UI
+  // de creación (que hoy no redirige, ver test.skip en ese spec).
+  await db.insert(schema.pdtpPrograms).values({
+    id: "pdtp-prog-e2e",
+    year: 2026,
+    version: 1,
+    status: "active",
+    title: "Programa PDTP E2E",
+    elaboratedByName: "Admin E2E",
+    elaboratedByTitle: "Prevencionista",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpActivities).values({
+    id: "pdtp-act-e2e",
+    programId: "pdtp-prog-e2e",
+    n: 1,
+    objectiveOrder: 1,
+    objective: "Objetivo E2E",
+    activity: "Charla de seguridad E2E",
+    program: "Programa E2E",
+    responsibleSlugs: [],
+    responsibleDisplay: "Prevencionista",
+    sourceSheetRow: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpSheets).values({
+    id: "pdtp-sheet-e2e",
+    code: "s1",
+    programId: "pdtp-prog-e2e",
+    label: "Hoja E2E",
+    area: "SG-SST",
+    defaultScopeRoles: [],
+    isActive: true,
+  })
+  await db.insert(schema.pdtpSheetActivities).values({
+    id: "pdtp-sheet-act-e2e",
+    sheetId: "pdtp-sheet-e2e",
+    sheetCode: "s1",
+    activityId: "pdtp-act-e2e",
+    sheetRow: 1,
+    displayOrder: 1,
+  })
+  await db.insert(schema.pdtpActivityChecklists).values({
+    id: "pdtp-cl-e2e",
+    activityId: "pdtp-act-e2e",
+    programId: "pdtp-prog-e2e",
+    version: "01",
+    label: "Checklist E2E",
+    definitionJson: {
+      code: "e2e", version: "01", revisionDate: "2026-01-01",
+      title: "Checklist E2E", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "s1", title: "Sección E2E",
+        items: [{ id: "i1", label: "Ítem conforme al procedimiento", kind: "cumple_nocumple_obs" }],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+    },
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpExecutions).values({
+    id: "pdtp-exec-e2e",
+    activityId: "pdtp-act-e2e",
+    worksiteId: "ws-e2e",
+    year: 2026,
+    month: 7,
+    week: 1,
+    executedQuantity: 1,
+    status: "submitted",
+    createdAt: now,
+    updatedAt: now,
+  })
 
   await client.end()
 }

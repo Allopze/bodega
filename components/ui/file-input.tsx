@@ -13,8 +13,12 @@ export interface FileInputProps {
   disabled?: boolean
   error?: boolean
   className?: string
-  /** Called with the selected file (or null if cleared). */
+  /** Allow selecting more than one file. Use `onFilesChange` to read the selection. */
+  multiple?: boolean
+  /** Called with the selected file (or null if cleared). Ignored when `multiple`. */
   onChange?: (file: File | null) => void
+  /** Called with the selected files when `multiple` is set. */
+  onFilesChange?: (files: File[]) => void
 }
 
 /**
@@ -27,11 +31,17 @@ export interface FileInputProps {
  * same as `Input`/`DatePicker`.
  */
 export const FileInput = React.forwardRef<HTMLInputElement, FileInputProps>(
-  ({ id, name, accept, required, disabled, error, className, onChange }, ref) => {
+  ({ id, name, accept, required, disabled, error, className, multiple, onChange, onFilesChange }, ref) => {
     const inputRef = React.useRef<HTMLInputElement>(null)
     const [fileName, setFileName] = React.useState<string | null>(null)
 
     function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+      if (multiple) {
+        const files = Array.from(e.target.files ?? [])
+        setFileName(files.length === 0 ? null : files.length === 1 ? files[0]!.name : `${files.length} archivos seleccionados`)
+        onFilesChange?.(files)
+        return
+      }
       const file = e.target.files?.[0] ?? null
       setFileName(file?.name ?? null)
       onChange?.(file)
@@ -70,6 +80,7 @@ export const FileInput = React.forwardRef<HTMLInputElement, FileInputProps>(
           accept={accept}
           required={required}
           disabled={disabled}
+          multiple={multiple}
           onChange={handleChange}
           className="sr-only"
           tabIndex={-1}

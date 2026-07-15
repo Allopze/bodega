@@ -293,6 +293,27 @@ export async function getNonCompliantItems(instanceId: string): Promise<
   }))
 }
 
+/**
+ * Cuenta ítems 'no_cumple' por ejecución, agrupado (una sola query batch —
+ * mismo patrón que `getAverageVerificationCompliance`). Usado por la hoja del
+ * sheet para mostrar un badge de conteo por ejecución sin N queries.
+ */
+export async function countNoCumpleByExecution(executionIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  if (executionIds.length === 0) return result
+  const rows = await db.select({ executionId: pdtpExecutionChecklists.executionId })
+    .from(pdtpExecutionChecklistResponses)
+    .innerJoin(pdtpExecutionChecklists, eq(pdtpExecutionChecklistResponses.checklistInstanceId, pdtpExecutionChecklists.id))
+    .where(and(
+      inArray(pdtpExecutionChecklists.executionId, executionIds),
+      eq(pdtpExecutionChecklistResponses.estado, "no_cumple"),
+    ))
+  for (const r of rows) {
+    result.set(r.executionId, (result.get(r.executionId) ?? 0) + 1)
+  }
+  return result
+}
+
 /** Obtiene el % promedio de verificación de varias ejecuciones (para indicadores). */
 export async function getAverageVerificationCompliance(executionIds: string[]): Promise<number | null> {
   if (executionIds.length === 0) return null

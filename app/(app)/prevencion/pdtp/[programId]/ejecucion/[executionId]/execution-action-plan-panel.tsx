@@ -7,9 +7,11 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
+import { FileInput } from "@/components/ui/file-input"
 import { Badge, type BadgeProps } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ListBullets, Plus } from "@phosphor-icons/react"
+import { PdtpEvidenceThumbs } from "../../../pdtp-evidence-thumbs"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -19,11 +21,14 @@ import {
   reopenPdtpActionPlanItemAction,
   addPdtpFollowupAction,
 } from "../../../actions/checklist-actions"
-import { listFollowups } from "@/lib/services/prevention-pdtp"
+// Import type-only para romper la cadena cliente → barrel → db → postgres → fs
+import type { listFollowups, listActionPlanItems } from "@/lib/services/prevention-pdtp"
+// Constantes y funciones puras del dominio (no usan db); se importan directo del
+// módulo concreto, no del barrel, para no arrastrar postgres al bundle cliente.
 import {
   PDTP_DANO_POTENCIAL_A_PRIORIDAD,
   plazoFromDañoPotencial,
-} from "@/lib/services/prevention-pdtp"
+} from "@/lib/services/pdtp/checklist-domain"
 
 /** Catálogo de daño potencial (módulo 04). El label incluye el plazo derivado. */
 const DANO_POTENCIAL_OPTIONS = [
@@ -33,7 +38,7 @@ const DANO_POTENCIAL_OPTIONS = [
   { value: "fatal", label: "Fatal · alta · inmediato" },
 ] as const
 
-type ActionItem = Awaited<ReturnType<typeof import("@/lib/services/prevention-pdtp").listActionPlanItems>>[number]
+type ActionItem = Awaited<ReturnType<typeof listActionPlanItems>>[number]
 type Followup = Awaited<ReturnType<typeof listFollowups>>[number]
 
 const ESTADO_LABELS: Record<string, string> = {
@@ -55,8 +60,9 @@ function estadoVariant(estado: string, vencida: boolean): BadgeProps["variant"] 
   }
 }
 
-export function ExecutionActionPlanPanel({ executionId, items, followupsByItem, canManage, canVerify }: {
+export function ExecutionActionPlanPanel({ executionId, worksiteId, items, followupsByItem, canManage, canVerify }: {
   executionId: string
+  worksiteId: string
   items: ActionItem[]
   followupsByItem: Record<string, Followup[]>
   canManage: boolean
@@ -111,6 +117,7 @@ export function ExecutionActionPlanPanel({ executionId, items, followupsByItem, 
                 <ActionFollowupTimeline
                   itemId={item.id}
                   estado={item.estado}
+                  worksiteId={worksiteId}
                   followups={followupsByItem[item.id] ?? []}
                   canManage={canManage}
                   canVerify={canVerify}
@@ -235,34 +242,60 @@ function NewActionDraft({ executionId, onCancel, onSaved }: {
   )
 }
 
-function ActionFollowupTimeline({ itemId, estado, followups, canManage, canVerify, onChange }: {
+function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canManage, canVerify, onChange }: {
   itemId: string
   estado: string
+  worksiteId: string
   followups: Followup[]
   canManage: boolean
   canVerify: boolean
   onChange: () => void
 }) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [observacion, setObservacion] = React.useState("")
   const [estadoNuevo, setEstadoNuevo] = React.useState(estado)
+  const [files, setFiles] = React.useState<File[]>([])
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   async function handleAddFollowup() {
-    if (!observacion.trim() && estadoNuevo === estado) {
-      setError("Ingresa una observación o cambia el estado.")
+    if (!observacion.trim() && estadoNuevo === estado && files.length === 0) {
+      setError("Ingresa una observación, cambia el estado o adjunta evidencia.")
       return
     }
     setPending(true)
     setError(null)
     try {
+      // Sube cada foto/PDF de evidencia igual que el registro de ejecución
+      // (pdtp-execution-form.tsx): POST a /api/prevencion/pdtp/evidence por
+      // archivo, se acumulan los `path` devueltos en evidenciaPhotos.
+      const evidenciaPhotos: string[] = []
+      for (const file of files) {
+        const uploadData = new FormData()
+        uploadData.set("file", file)
+        uploadData.set("worksiteId", worksiteId)
+        const res = await fetch("/api/prevencion/pdtp/evidence", { method: "POST", body: uploadData })
+        const json = await res.json()
+        if (!res.ok) {
+          setError(json.error ?? "Error al subir la evidencia.")
+          return
+        }
+        evidenciaPhotos.push(json.path)
+      }
+
       const result = await addPdtpFollowupAction({
         actionPlanItemId: itemId,
         observacion: observacion || undefined,
         estadoNuevo: estadoNuevo !== estado ? estadoNuevo : undefined,
+        evidenciaPhotos: evidenciaPhotos.length > 0 ? evidenciaPhotos : undefined,
       })
       if (!result.ok) setError(result.message ?? "Error al registrar seguimiento.")
-      else { setObservacion(""); onChange() }
+      else {
+        setObservacion("")
+        setFiles([])
+        if (fileInputRef.current) fileInputRef.current.value = ""
+        onChange()
+      }
     } finally {
       setPending(false)
     }
@@ -305,6 +338,15 @@ function ActionFollowupTimeline({ itemId, estado, followups, canManage, canVerif
             <li key={f.id} className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-xs">
               <p className="font-medium text-(--color-text)">{f.fecha} — {ESTADO_LABELS[f.estadoNuevo] ?? f.estadoNuevo}</p>
               {f.observacion && <p className="mt-1 text-text-subtle">{f.observacion}</p>}
+              {(f.evidenciaUrl || (Array.isArray(f.evidenciaPhotos) && f.evidenciaPhotos.length > 0)) && (
+                <div className="mt-1">
+                  <PdtpEvidenceThumbs
+                    evidenceUrl={f.evidenciaUrl}
+                    evidencePhotos={Array.isArray(f.evidenciaPhotos) ? f.evidenciaPhotos as string[] : []}
+                    evidenceText={null}
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -329,6 +371,12 @@ function ActionFollowupTimeline({ itemId, estado, followups, canManage, canVerif
               </SelectContent>
             </Select>
           </div>
+          <FileInput
+            ref={fileInputRef}
+            accept="image/jpeg,image/png,application/pdf"
+            multiple
+            onFilesChange={setFiles}
+          />
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" onClick={handleAddFollowup} disabled={pending}>

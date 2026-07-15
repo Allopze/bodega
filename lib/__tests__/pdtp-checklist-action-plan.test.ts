@@ -159,6 +159,46 @@ describe("pdtp execution checklist → plan de acción handoff", () => {
     expect(second.generadas).toBe(0)
     expect(second.existentes).toBe(1)
   })
+
+  it("deriva prioridad/plazo del danoPotencial del ítem; sin ese campo usa el default 'media'", async () => {
+    const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    const { submitExecutionChecklist, listActionPlanItems } = await import("@/lib/services/pdtp/action-plan")
+
+    await savePdtpActivityChecklist({
+      activityId: "act-1",
+      label: "L1",
+      definition: {
+        code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
+        legalFramework: [], applicableTo: "",
+        sections: [{
+          id: "s1", title: "Sección 1",
+          items: [
+            { id: "i1", label: "Sin daño potencial", kind: "cumple_nocumple_obs" },
+            { id: "i2", label: "Riesgo grave", kind: "cumple_nocumple_obs", danoPotencial: "grave" },
+          ],
+        }],
+        closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+      },
+    })
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i1", estado: "no_cumple", observacion: "Falla menor" },
+      { seccionId: "s1", itemId: "i2", estado: "no_cumple", observacion: "Falla grave" },
+    ], "u1")
+
+    await submitExecutionChecklist(instance.id, "u1")
+
+    const items = await listActionPlanItems("exec-1")
+    const sinDano = items.find((i) => i.itemId === "i1")!
+    const conDano = items.find((i) => i.itemId === "i2")!
+
+    expect(sinDano.prioridad).toBe("media")
+    expect(conDano.prioridad).toBe("alta")
+    // "alta" derivado de daño potencial "grave" = plazo +2 días (vs +7 de "media").
+    expect(new Date(conDano.plazo).getTime()).toBeLessThan(new Date(sinDano.plazo).getTime())
+  })
 })
 
 describe("pdtp action plan lifecycle", () => {
@@ -353,5 +393,51 @@ describe("pdtp cumplimiento integral", () => {
     expect(integral!.cierre).toBe(100)
     expect(integral!.integral).not.toBeNull()
     expect(integral!.pesos).toEqual({ ejecucion: 0.5, verificacion: 0.3, cierre: 0.2 })
+  })
+})
+
+describe("pdtp conteos por ejecución (badges de la hoja)", () => {
+  it("countNoCumpleByExecution y countActionsByExecution agregan en batch sin N+1", async () => {
+    const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses, countNoCumpleByExecution } = await import("@/lib/services/pdtp/execution-checklists")
+    const { submitExecutionChecklist, listActionPlanItems, verifyActionPlanItem, countActionsByExecution } = await import("@/lib/services/pdtp/action-plan")
+
+    await savePdtpActivityChecklist({
+      activityId: "act-1", label: "L1",
+      definition: {
+        code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
+        legalFramework: [], applicableTo: "",
+        sections: [{
+          id: "s1", title: "S1",
+          items: [
+            { id: "i1", label: "I1", kind: "cumple_nocumple_obs" },
+            { id: "i2", label: "I2", kind: "cumple_nocumple_obs" },
+          ],
+        }],
+        closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+      },
+    })
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i1", estado: "no_cumple", observacion: "Falla 1" },
+      { seccionId: "s1", itemId: "i2", estado: "no_cumple", observacion: "Falla 2" },
+    ], "u1")
+    await submitExecutionChecklist(instance.id, "u1")
+
+    const noCumple = await countNoCumpleByExecution(["exec-1"])
+    expect(noCumple.get("exec-1")).toBe(2)
+
+    const items = await listActionPlanItems("exec-1")
+    expect(items).toHaveLength(2)
+
+    const countsBeforeVerify = await countActionsByExecution(["exec-1"])
+    expect(countsBeforeVerify.get("exec-1")).toEqual({ pending: 2, overdue: 0 })
+
+    await verifyActionPlanItem(items[0]!.id, "u1")
+    const countsAfterVerify = await countActionsByExecution(["exec-1"])
+    expect(countsAfterVerify.get("exec-1")).toEqual({ pending: 1, overdue: 0 })
+
+    // Ejecución sin datos → no aparece en el mapa (fallback ?? 0 en el consumidor).
+    expect((await countNoCumpleByExecution(["exec-inexistente"])).get("exec-inexistente")).toBeUndefined()
   })
 })

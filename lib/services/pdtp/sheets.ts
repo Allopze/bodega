@@ -5,8 +5,9 @@ import { SHEET_EXPORT_NAMES, MONTH_LABELS } from "./constants"
 import { emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import type { ReportData, ReportCell, ReportSheet } from "@/lib/reports/export"
-import { listActionsByProgram } from "./action-plan"
+import { listActionsByProgram, countActionsByExecution } from "./action-plan"
 import { listFollowups } from "./followups"
+import { countNoCumpleByExecution } from "./execution-checklists"
 
 export type PdtpSheetView = {
   program: typeof pdtpPrograms.$inferSelect
@@ -27,6 +28,9 @@ export type PdtpSheetView = {
       evidenceText: string | null
       evidenceUrl: string | null
       evidencePhotos: string[]
+      noCumpleCount: number
+      actionsPending: number
+      actionsOverdue: number
     }>
   }>
   /** `percent` aquí es entero 0-100 (no fracción). No confundir con
@@ -78,6 +82,14 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: Pd
     executionsByActivity.set(e.activityId, current)
   }
 
+  // Badges de checklist/plan de acción por ejecución: dos queries batch (no
+  // N+1 por ejecución) sobre todas las ejecuciones del programa.
+  const executionIds = executionRows.map((e) => e.id)
+  const [noCumpleByExecution, actionsByExecution] = await Promise.all([
+    countNoCumpleByExecution(executionIds),
+    countActionsByExecution(executionIds),
+  ])
+
   const monthlyTotals = emptyMonthlyTotals()
   const activities: Array<NonNullable<PdtpSheetView["activities"][number]>> = []
   for (const membership of memberships) {
@@ -116,6 +128,9 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: Pd
           evidenceText: e.evidenceText,
           evidenceUrl: e.evidenceUrl,
           evidencePhotos: Array.isArray(e.evidencePhotos) ? e.evidencePhotos : [],
+          noCumpleCount: noCumpleByExecution.get(e.id) ?? 0,
+          actionsPending: actionsByExecution.get(e.id)?.pending ?? 0,
+          actionsOverdue: actionsByExecution.get(e.id)?.overdue ?? 0,
         })),
     })
   }

@@ -96,3 +96,47 @@ test.describe("PDTP — Creación y edición de programas", () => {
     await expect(page.getByLabel("Estado de cumplimiento mínimo (%)")).toBeVisible()
   })
 })
+
+/**
+ * E2E: PDTP — flujo checklist → plan de acción (Gap 5 del checklist de
+ * seguimiento). Usa el fixture sembrado por e2e/setup-db.ts
+ * (pdtp-prog-e2e / pdtp-act-e2e / pdtp-exec-e2e con un checklist activo de
+ * 1 ítem) en vez de crear el programa por UI — el flujo de creación tiene
+ * un bug conocido (ver test.skip arriba) que no es responsabilidad de este
+ * spec. Solo verifica el camino UI; el cálculo de % y las reglas de negocio
+ * ya están cubiertos por lib/__tests__/pdtp-checklist-action-plan.test.ts.
+ */
+test.describe("PDTP — Checklist de verificación y plan de acción", () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page)
+  })
+
+  test("marcar un ítem 'No cumple' genera automáticamente una acción correctiva", async ({ page }) => {
+    await page.goto("/prevencion/pdtp/pdtp-prog-e2e/ejecucion/pdtp-exec-e2e")
+
+    await expect(page.getByRole("heading", { name: /Verificación/ })).toBeVisible()
+
+    // Inicia el checklist de faena única (patrón B — sin sujeto).
+    await page.getByRole("button", { name: "Iniciar verificación" }).click()
+    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeVisible()
+
+    // Marca el único ítem como "No cumple" y agrega la observación que se
+    // convertirá en el hallazgo de la acción generada.
+    await page.getByRole("button", { name: "No cumple" }).click()
+    await page.getByRole("button", { name: "Agregar nota" }).click()
+    await page.getByPlaceholder("Agrega una nota breve...").fill("Falta EPP en terreno")
+    await page.getByRole("button", { name: "Guardar nota" }).click()
+
+    // Persiste la respuesta antes de enviar — "Enviar revisión" opera sobre lo
+    // guardado en servidor, no sobre el draft local (draftsByInstance).
+    await page.getByRole("button", { name: "Guardar respuestas" }).click()
+    await expect(page.getByText("Pendiente de respuesta")).not.toBeVisible()
+
+    await page.getByRole("button", { name: "Enviar revisión" }).click()
+
+    // El checklist queda completado (badge) y el plan de acción muestra la
+    // acción autogenerada con el hallazgo ingresado.
+    await expect(page.getByText("Completado")).toBeVisible()
+    await expect(page.getByRole("button", { name: /Falta EPP en terreno/ })).toBeVisible()
+  })
+})

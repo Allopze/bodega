@@ -12,6 +12,7 @@ import {
   TableRoot,
   TableRow,
 } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import type { PdtpSheetView } from "@/lib/services/prevention-pdtp"
 import { deriveActivityStatus, countOverdueMonths, type PdtpActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { PdtpExecutionForm } from "./pdtp-execution-form"
@@ -34,6 +35,26 @@ import { ListChecks, CalendarDots, CheckSquare, ChartBar } from "@phosphor-icons
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 type PendingApproval = { id: string; activityId: string; month: number; week: number }
+
+type ExecutionForBadges = { noCumpleCount: number; actionsPending: number; actionsOverdue: number }
+
+/** Badges de checklist/plan de acción por ejecución (no_cumple, pendientes, vencidas). */
+function PdtpExecutionBadges({ exec }: { exec: ExecutionForBadges }) {
+  if (exec.noCumpleCount === 0 && exec.actionsPending === 0 && exec.actionsOverdue === 0) return null
+  return (
+    <>
+      {exec.noCumpleCount > 0 && (
+        <Badge variant="warning" size="sm">{exec.noCumpleCount} no cumple</Badge>
+      )}
+      {exec.actionsOverdue > 0 && (
+        <Badge variant="danger" size="sm">{exec.actionsOverdue} vencidas</Badge>
+      )}
+      {exec.actionsPending > 0 && (
+        <Badge variant="outline" size="sm">{exec.actionsPending} pendientes</Badge>
+      )}
+    </>
+  )
+}
 
 type PdtpSheetTableProps = {
   view: PdtpSheetView
@@ -237,12 +258,15 @@ export function PdtpSheetTable({
                                         evidencePhotos={exec.evidencePhotos}
                                         evidenceText={exec.evidenceText}
                                       />
-                                      <Link
-                                        href={`/prevencion/pdtp/${view.program.id}/ejecucion/${exec.id}`}
-                                        className="mt-1 inline-block text-[10px] font-medium text-[var(--color-primary)] hover:underline"
-                                      >
-                                        Ver verificación →
-                                      </Link>
+                                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                        <Link
+                                          href={`/prevencion/pdtp/${view.program.id}/ejecucion/${exec.id}`}
+                                          className="text-[10px] font-medium text-[var(--color-primary)] hover:underline"
+                                        >
+                                          Ver verificación →
+                                        </Link>
+                                        <PdtpExecutionBadges exec={exec} />
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -363,12 +387,15 @@ export function PdtpSheetTable({
                                           evidencePhotos={exec.evidencePhotos}
                                           evidenceText={exec.evidenceText}
                                         />
-                                        <Link
-                                          href={`/prevencion/pdtp/${view.program.id}/ejecucion/${exec.id}`}
-                                          className="mt-1 inline-block text-[10px] font-medium text-[var(--color-primary)] hover:underline"
-                                        >
-                                          Ver verificación →
-                                        </Link>
+                                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                          <Link
+                                            href={`/prevencion/pdtp/${view.program.id}/ejecucion/${exec.id}`}
+                                            className="text-[10px] font-medium text-[var(--color-primary)] hover:underline"
+                                          >
+                                            Ver verificación →
+                                          </Link>
+                                          <PdtpExecutionBadges exec={exec} />
+                                        </div>
                                       </div>
                                     ))}
                                   </div>
