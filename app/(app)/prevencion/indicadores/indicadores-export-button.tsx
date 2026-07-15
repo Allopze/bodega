@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button"
-import { FileXls } from "@phosphor-icons/react"
+import { FileXls } from "@phosphor-icons/react/dist/ssr"
 
 export function ExportIndicadoresButton({ year }: { year: number }) {
   return (
