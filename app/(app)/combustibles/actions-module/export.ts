@@ -4,7 +4,10 @@ import { db } from "@/db"
 import { fuelLoads } from "@/db/schema"
 import { desc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
+import { recordAudit } from "@/lib/audit"
+import { nanoid } from "@/lib/id"
 import { buildFuelLoadsWhere } from "@/lib/combustibles/queries"
+import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 
 const MAX_FUEL_EXPORT_ROWS = 10_000
 
@@ -27,8 +30,10 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   status?: string
 }) {
   let session
-  try { session = await requirePermission("combustibles:export") }
-  catch { return { ok: false as const, message: "Sin permisos" } }
+  // Incluye montos (IEC, IVA, total): requiere el permiso de exportación
+  // sensible además del genérico, no sólo "combustibles:export".
+  try { session = await requirePermission("combustibles:export_sensitive") }
+  catch { return { ok: false as const, message: "Sin permisos para exportar datos con montos" } }
 
   const where = buildFuelLoadsWhere(session, filters ?? {})
 
@@ -97,9 +102,17 @@ export async function exportFuelLoadsXlsxAction(filters?: {
     ws.getColumn(col).numFmt = "#,##0"
   }
   ws.getColumn("liters").numFmt = "#,##0.00"
+  addExportMetadataSheet(wb, session, { filters: filters ?? null, rowCount: exportRows.length, from: filters?.startDate, to: filters?.endDate })
 
   const buffer = await wb.xlsx.writeBuffer()
   const base64 = Buffer.from(buffer).toString("base64")
+  // Esta exportación incluye montos (IEC, IVA, total) — auditarla es más
+  // importante que las demás, que sólo exponen datos operativos.
+  await recordAudit({
+    userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",
+    entityType: "fuel_loads_export", entityId: nanoid(),
+    newState: { rowCount: exportRows.length, truncated, filters: (filters ?? {}) as Record<string, unknown>, includesAmounts: true },
+  })
   return {
     ok: true as const,
     data: {

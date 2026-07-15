@@ -15,6 +15,8 @@ import { formatCLP, formatQty } from "@/lib/utils"
 
 interface FuelControlOverviewProps {
   data: FuelControlOverview
+  /** Sin `combustibles:view_costs`: se omite el monto ($) y el link a /combustibles/facturas (que ahora exige ese permiso). */
+  canViewCosts: boolean
   tct: {
     liters: number
     transactions: number
@@ -24,7 +26,7 @@ interface FuelControlOverviewProps {
   period: { fromDate: string; toDate: string; worksiteId?: string; source?: string; plate?: string; associated?: "yes" | "no" }
 }
 
-export function FuelControlOverviewPanel({ data, tct, period }: FuelControlOverviewProps) {
+export function FuelControlOverviewPanel({ data, canViewCosts, tct, period }: FuelControlOverviewProps) {
   const taeHref = buildHref("/combustibles/tae", period)
   const reconciliationHref = buildHref("/combustibles/tae/conciliacion", period)
   const maxWorksiteVolume = Math.max(
@@ -56,9 +58,9 @@ export function FuelControlOverviewPanel({ data, tct, period }: FuelControlOverv
           icon={<FileText size={18} aria-hidden />}
           label="Facturado / registrado"
           value={formatQty(Math.round(data.billed.liters), "L")}
-          detail={`${formatQty(data.billed.records)} registros · ${formatCLP(data.billed.amount)}`}
+          detail={canViewCosts ? `${formatQty(data.billed.records)} registros · ${formatCLP(data.billed.amount)}` : `${formatQty(data.billed.records)} registros`}
           trend={data.billed.variationLitersPct}
-          href="/combustibles/facturas"
+          href={canViewCosts ? "/combustibles/facturas" : undefined}
         />
         <ChannelSummary
           icon={<GasPump size={18} aria-hidden />}

@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { pdtpActivitySchedule, pdtpChangeLog, pdtpExecutions, pdtpSheets } from "@/db/schema"
+import { pdtpActivities, pdtpActivitySchedule, pdtpChangeLog, pdtpExecutions, pdtpSheets } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { ROLE_RESPONSIBLE_SLUGS } from "./constants"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
@@ -82,6 +82,14 @@ export function pdtpSheetActivityId(programId: string, sheetCode: string, activi
 
 export function pdtpExecutionId(activityId: string, worksiteId: string, year: number, month: number, week: number) {
   return `${activityId}-e-${worksiteId}-${year}-${String(month).padStart(2, "0")}-${week}`
+}
+
+export async function getPdtpProgramActivityCount(programId: string): Promise<number> {
+  const [result] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(pdtpActivities)
+    .where(eq(pdtpActivities.programId, programId))
+  return result?.count ?? 0
 }
 
 export async function addPdtpChangeLogEntry(

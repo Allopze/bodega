@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
+import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
 import { fuelStorageLocations, fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions } from "@/db/schema"
 import { guardPermission, requirePermission } from "@/lib/auth/can"
@@ -9,7 +10,9 @@ import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { createTaePublicLink, revokeTaePublicLink, reviewTaeSubmission } from "@/lib/services/fuel-tae"
 import { taeMeterCorrectionSchema, taeReviewSchema } from "@/lib/validation/fuel-tae"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { logger } from "@/lib/logger"
 import { nanoid } from "@/lib/id"
+import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 
 const MAX_TAE_EXPORT_ROWS = 10_000
 
@@ -27,7 +30,9 @@ export async function createTaePublicLinkAction(input: { worksiteId: string; loa
     revalidatePath("/combustibles/tae")
     return { ok: true, data: link }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo generar el enlace" }
+    logger.error("[createTaePublicLinkAction]", error)
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo generar el enlace"
+    return { ok: false, message: msg }
   }
 }
 
@@ -89,7 +94,9 @@ export async function reviewTaeSubmissionAction(input: { id: string; expectedSta
     revalidatePath("/combustibles/tae")
     return { ok: true, message: "Carga TAE actualizada" }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo actualizar la carga" }
+    logger.error("[reviewTaeSubmissionAction]", error)
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo actualizar la carga"
+    return { ok: false, message: msg }
   }
 }
 
@@ -140,7 +147,9 @@ export async function updateTaeMeterReadingAction(input: {
       }
     })
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo corregir la lectura" }
+    logger.error("[updateTaeMeterReadingAction]", error)
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo corregir la lectura"
+    return { ok: false, message: msg }
   }
 
   revalidatePath("/combustibles/tae")
@@ -225,9 +234,15 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
   }
   ws.getColumn("liters").numFmt = "#,##0.000"
   ws.views = [{ state: "frozen", ySplit: 1 }]
+  addExportMetadataSheet(wb, session, { filters, rowCount: exportRows.length, from: filters.from, to: filters.to })
 
   const buffer = await wb.xlsx.writeBuffer()
   const base64 = Buffer.from(buffer).toString("base64")
+  await recordAudit({
+    userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",
+    entityType: "fuel_tae_export", entityId: nanoid(),
+    newState: { rowCount: exportRows.length, truncated, filters: filters as Record<string, unknown> },
+  })
   return {
     ok: true as const,
     data: {
@@ -236,5 +251,61 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
       truncated,
       rowLimit: MAX_TAE_EXPORT_ROWS,
     },
+  }
+}
+
+export async function replaceEvidenceAction(input: {
+  evidenceId: string
+  replacementFileName: string
+  replacementFilePath: string
+  replacementMimeType: string
+  replacementSize: number
+  replacementSha256: string
+  motivo: string
+}) {
+  const guard = await guardPermission("combustibles:tae_review")
+  if (guard.error) return guard.error
+
+  const evidence = await db.query.fuelTaeEvidence.findFirst({
+    where: eq(fuelTaeEvidence.id, input.evidenceId),
+    with: { submission: { columns: { worksiteId: true } } },
+  })
+  if (!evidence) return { ok: false, message: "Evidencia no encontrada" }
+  if (!canAccessWorksite(guard.session, evidence.submission.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
+
+  if (!input.motivo || input.motivo.trim().length < 10) return { ok: false, message: "El motivo de reemplazo debe tener al menos 10 caracteres" }
+
+  const now = new Date().toISOString()
+  try {
+    await db.transaction(async (tx) => {
+      const oldState = {
+        fileName: evidence.fileName, filePath: evidence.filePath,
+        mimeType: evidence.mimeType, fileSize: evidence.fileSize, sha256: evidence.sha256,
+      }
+      await tx.update(fuelTaeEvidence).set({
+        fileName: input.replacementFileName,
+        filePath: input.replacementFilePath,
+        mimeType: input.replacementMimeType,
+        fileSize: input.replacementSize,
+        sha256: input.replacementSha256,
+        capturedAt: now,
+      }).where(eq(fuelTaeEvidence.id, input.evidenceId))
+      await recordAudit({
+        userId: guard.session.user.id, action: "update",
+        entityType: "fuel_tae_evidence", entityId: input.evidenceId,
+        oldState,
+        newState: {
+          fileName: input.replacementFileName, filePath: input.replacementFilePath,
+          mimeType: input.replacementMimeType, fileSize: input.replacementSize, sha256: input.replacementSha256,
+        },
+        reason: input.motivo,
+      }, tx)
+    })
+    revalidatePath("/combustibles/tae")
+    return { ok: true, message: "Evidencia reemplazada correctamente" }
+  } catch (error) {
+    logger.error("[replaceEvidenceAction]", error)
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo reemplazar la evidencia"
+    return { ok: false, message: msg }
   }
 }

@@ -150,6 +150,34 @@ export default async function FlotaVehiclePage({
         </CardContent>
       </Card>
 
+      {detail.recentMaintenance.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Mantenciones y su efecto en el rendimiento</CardTitle></CardHeader>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">Rendimiento promedio del log operacional 30 días antes vs. 30 días después de cada mantención.</p>
+            <ol className="divide-y divide-[var(--color-border)]">
+              {detail.recentMaintenance.map((m) => {
+                const impact = detail.maintenanceConsumptionImpact.find((i) => i.maintenanceId === m.id)
+                return (
+                  <li key={m.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
+                    <span className="capitalize">{m.maintenanceType}</span>
+                    <Badge variant={m.status === "completed" ? "success" : m.status === "cancelled" ? "default" : "outline"}>{m.status}</Badge>
+                    <p className="text-xs text-muted-foreground sm:text-right">
+                      {m.maintenanceDate}
+                      {impact && (impact.avgBefore != null || impact.avgAfter != null) ? (
+                        <span className="block font-mono">{impact.avgBefore?.toFixed(2) ?? "—"} → {impact.avgAfter?.toFixed(2) ?? "—"}</span>
+                      ) : (
+                        <span className="block">Sin datos de rendimiento en la ventana de 30 días</span>
+                      )}
+                    </p>
+                  </li>
+                )
+              })}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader><CardTitle className="text-base">Documentos del vehículo</CardTitle></CardHeader>
         <CardContent>

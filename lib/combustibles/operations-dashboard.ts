@@ -8,7 +8,7 @@
 import type { Session } from "next-auth"
 import { and, eq, gte, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelOperationRecords } from "@/db/schema"
+import { fuelOperationRecords, fuelVehicles, fuelEquipmentTypes, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PatenteRankingRow, RendimientoRow } from "./consumption-dashboard"
 import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
@@ -130,4 +130,52 @@ export async function getOperationsSummary(session: Session, filters: Operations
     porProveedor: porProveedorRaw.map((r) => ({ proveedor: r.proveedor, litros: Number(r.litros), monto: Number(r.monto), transacciones: Number(r.transacciones) }))
       .sort((a, b) => b.monto - a.monto),
   }
+}
+
+export interface ScatterPoint {
+  plate: string
+  equipmentCode: string | null
+  equipmentTypeName: string | null
+  worksiteName: string | null
+  liters: number
+  meterReading: number
+  /** "km" o "hora" — lo que mide el medidor en este registro. */
+  medidoPor: string
+}
+
+/** Observaciones individuales del log operacional para gráficos de dispersión
+ *  (litros vs km y litros vs horómetro). Sólo filas con lectura de medidor
+ *  válida y litros > 0. El llamador separa por `medidoPor` antes de graficar:
+ *  nunca se mezclan km con horas en el mismo eje. */
+export async function getScatterObservations(session: Session, filters: OperationsFilters = {}): Promise<ScatterPoint[]> {
+  const where = buildOperationsWhere(session, filters)
+  const rows = await db.select({
+    plate: fuelOperationRecords.plate,
+    equipmentCode: fuelVehicles.code,
+    equipmentTypeName: fuelEquipmentTypes.name,
+    worksiteName: worksites.name,
+    liters: fuelOperationRecords.liters,
+    meterReading: fuelOperationRecords.horometro,
+    medidoPor: fuelOperationRecords.medidoPor,
+  })
+    .from(fuelOperationRecords)
+    .leftJoin(fuelVehicles, eq(fuelOperationRecords.vehicleId, fuelVehicles.id))
+    .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
+    .leftJoin(worksites, eq(fuelOperationRecords.worksiteId, worksites.id))
+    .where(and(
+      where,
+      isNotNull(fuelOperationRecords.horometro),
+      sql`${fuelOperationRecords.liters} > 0`,
+    ))
+    .limit(3000) // suficiente para un scatter sin saturar el navegador
+
+  return rows.map((r) => ({
+    plate: r.plate,
+    equipmentCode: r.equipmentCode,
+    equipmentTypeName: r.equipmentTypeName,
+    worksiteName: r.worksiteName,
+    liters: Number(r.liters),
+    meterReading: Number(r.meterReading),
+    medidoPor: r.medidoPor ?? "sin unidad",
+  })).filter((r) => r.medidoPor === "km" || r.medidoPor === "hora")
 }

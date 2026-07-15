@@ -7,6 +7,7 @@ import { db } from "@/db"
 import { fuelTaeEvidence } from "@/db/schema"
 import { resolveFuelTaeEvidenceFile } from "@/lib/storage/config"
 import { readBuffer } from "@/lib/storage/helpers"
+import { logEvidenceAccess } from "@/lib/combustibles/evidence-management"
 
 export const runtime = "nodejs"
 
@@ -19,6 +20,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     with: { submission: { columns: { worksiteId: true } } },
   })
   if (!evidence || !evidence.submission || !canAccessWorksite(session, evidence.submission.worksiteId)) return new NextResponse("Not found", { status: 404 })
+  void logEvidenceAccess(id, session!.user.id, "view")
   if (!evidence.filePath) {
     if (!evidence.externalUrl) return new NextResponse("Evidence not found", { status: 404 })
     try {

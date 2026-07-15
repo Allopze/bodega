@@ -28,19 +28,22 @@ import {
   reorderPdtpActivitiesAction,
   renamePdtpObjectiveAction,
 } from "../../actions"
+import { ChecklistTab } from "./checklist-tab"
 
 import type { pdtpPrograms, pdtpSheets, pdtpActivities, pdtpActivitySchedule } from "@/db/schema"
+import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 
 type PdtpBuilderTabsProps = {
   program: typeof pdtpPrograms.$inferSelect
   sheets: Array<typeof pdtpSheets.$inferSelect>
   activities: Array<typeof pdtpActivities.$inferSelect>
   schedule: Array<typeof pdtpActivitySchedule.$inferSelect>
+  checklists: PdtpChecklistTemplate[]
   userId: string
   canDelete: boolean
 }
 
-export function PdtpBuilderTabs({ program, sheets, activities, schedule, userId, canDelete }: PdtpBuilderTabsProps) {
+export function PdtpBuilderTabs({ program, sheets, activities, schedule, checklists, userId, canDelete }: PdtpBuilderTabsProps) {
   return (
     <Tabs defaultValue="metadatos">
       <TabsList className="w-full justify-start">
@@ -49,6 +52,7 @@ export function PdtpBuilderTabs({ program, sheets, activities, schedule, userId,
         <TabsTrigger value="objetivos">Objetivos</TabsTrigger>
         <TabsTrigger value="actividades">Actividades</TabsTrigger>
         <TabsTrigger value="planificacion">Planificación</TabsTrigger>
+        <TabsTrigger value="checklist">Checklist</TabsTrigger>
       </TabsList>
 
       <TabsContent value="metadatos">
@@ -65,6 +69,9 @@ export function PdtpBuilderTabs({ program, sheets, activities, schedule, userId,
       </TabsContent>
       <TabsContent value="planificacion">
         <PlanificacionTab programId={program.id} year={program.year} activities={activities} schedule={schedule} />
+      </TabsContent>
+      <TabsContent value="checklist">
+        <ChecklistTab programId={program.id} activities={activities} checklists={checklists} />
       </TabsContent>
     </Tabs>
   )

@@ -45,6 +45,36 @@ export interface FuelLogFilters {
   productId?: string
   equipmentTypeId?: string
   hasNotes?: boolean
+  /** Filtro por marca de vehículo (columna en fuel_vehicles.brand). */
+  brand?: string
+  /** Filtro por modelo de vehículo (columna en fuel_vehicles.model). */
+  model?: string
+  /** Filtro por nombre de conductor. Aplica a TAE (driverNameSnapshot) y log operacional (operador); la facturación no tiene conductor por carga. */
+  driverName?: string
+  /** Filtro por nombre de supervisor. Aplica igual que driverName. */
+  supervisorName?: string
+  /** Filtro por lugar de carga (sólo TAE). */
+  loadingPointId?: string
+  /** Filtro por unidad de rendimiento (km_per_liter, liters_per_hour). */
+  performanceUnit?: string
+  /** Filtro por estado operativo del equipo (operativo, inactivo_mantencion, etc.). */
+  operationalStatus?: string
+  /** Filtro por número de sello retirado (sólo TAE). */
+  sealRemoved?: string
+  /** Filtro por número de sello instalado (sólo TAE). */
+  sealInstalled?: string
+  /** Filtro por tipo de evidencia (sólo TAE). Uno de: odometer, liter_meter, removed_seal, installed_seal. */
+  evidenceKind?: string
+  /** Sólo filas con al menos un caso de anomalía abierto/en revisión/reabierto. */
+  hasAnomaly?: boolean
+  /** Filtro por código de regla de anomalía (fuel_anomaly_rules.code). */
+  anomalyRuleCode?: string
+  /** Filtro por severidad de anomalía (low/medium/high/critical). */
+  anomalySeverity?: string
+  /** Filtro por responsable asignado al caso de anomalía. */
+  anomalyAssigneeId?: string
+  /** Sólo filas marcadas para revisión por algún usuario. */
+  hasReviewMark?: boolean
 }
 
 export interface FuelLogRow {
@@ -80,6 +110,14 @@ export interface FuelLogRow {
   updatedByName: string | null
   createdAt: string | null
   updatedAt: string | null
+  /** Cantidad de anomalías abiertas/en revisión/reabiertas para este registro. */
+  anomalyCount: number | null
+  /** `true` si el registro tiene una marca de revisión activa. `null` cuando no existe (el SQL retorna NULL). */
+  reviewMark: boolean | null
+  /** Nota de la marca de revisión, si existe. */
+  reviewMarkNotes: string | null
+  /** ID de la marca de revisión (para toggle desde la tabla). */
+  reviewMarkId: string | null
 }
 
 /** Ruta de detalle en el sistema fuente de cada fila. */
@@ -89,7 +127,58 @@ export function fuelLogDetailHref(row: Pick<FuelLogRow, "source" | "detailId">):
   return `/combustibles/importar/operaciones/${row.detailId}` // sin página propia por fila: abre el lote
 }
 
+/** Subquery de conteo de anomalías, reutilizada por las 3 ramas con su propio `referenceEntityType`. */
+function anomalyCountSql(referenceEntityType: string, idColumn: unknown) {
+  return sql<number | null>`(select count(*)::int from fuel_anomaly_cases ac where ac.reference_entity_type = ${referenceEntityType} and ac.reference_entity_id = ${idColumn} and ac.status IN ('open', 'in_review', 'reopened'))`.as("anomalyCount")
+}
+
+/** Subquery de marca de revisión, reutilizada por las 3 ramas con su propio `entityType`. */
+function reviewMarkSql(entityType: string, idColumn: unknown) {
+  return sql<boolean | null>`(
+    select true from fuel_review_marks rm
+    where rm.entity_type = ${entityType}
+      and rm.entity_id = ${idColumn}
+  )`.as("reviewMark")
+}
+
+function reviewMarkNotesSql(entityType: string, idColumn: unknown) {
+  return sql<string | null>`(
+    select rm.notes from fuel_review_marks rm
+    where rm.entity_type = ${entityType}
+      and rm.entity_id = ${idColumn}
+  )`.as("reviewMarkNotes")
+}
+
+function reviewMarkIdSql(entityType: string, idColumn: unknown) {
+  return sql<string | null>`(
+    select rm.id from fuel_review_marks rm
+    where rm.entity_type = ${entityType}
+      and rm.entity_id = ${idColumn}
+  )`.as("reviewMarkId")
+}
+
+/** Filtro EXISTS sobre `fuel_anomaly_cases`, reutilizado por las 3 ramas. `undefined` si no hay ningún filtro de anomalía activo. */
+function anomalyFilterSql(referenceEntityType: string, idColumn: unknown, filters: FuelLogFilters) {
+  if (!filters.hasAnomaly && !filters.anomalyRuleCode && !filters.anomalySeverity && !filters.anomalyAssigneeId) return undefined
+  return sql`exists (
+    select 1 from fuel_anomaly_cases ac
+    where ac.reference_entity_type = ${referenceEntityType}
+      and ac.reference_entity_id = ${idColumn}
+      and ac.status IN ('open', 'in_review', 'reopened')
+      ${filters.anomalyRuleCode ? sql`and ac.rule_code = ${filters.anomalyRuleCode}` : sql``}
+      ${filters.anomalySeverity ? sql`and ac.severity = ${filters.anomalySeverity}` : sql``}
+      ${filters.anomalyAssigneeId ? sql`and ac.assignee_id = ${filters.anomalyAssigneeId}` : sql``}
+  )`
+}
+
 /** Entidad/id que audita cada fila, para "Consultar historial de cambios". */
+/** Mapea `FuelLogSource` al nombre de la tabla para referencias polimórficas (auditoría, marcas de revisión, etc.). */
+export function fuelLogEntityType(source: FuelLogSource): string {
+  if (source === "tae_pwa") return "fuel_tae_submission"
+  if (source === "invoiced") return "fuel_load"
+  return "fuel_operation_record"
+}
+
 export function fuelLogAuditEntity(row: Pick<FuelLogRow, "source" | "id">): { entityType: string; entityId: string } | null {
   if (row.source === "tae_pwa") return { entityType: "fuel_tae_submission", entityId: row.id }
   if (row.source === "invoiced") return { entityType: "fuel_load", entityId: row.id }
@@ -99,44 +188,58 @@ export function fuelLogAuditEntity(row: Pick<FuelLogRow, "source" | "id">): { en
 function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[]) {
   return db
     .select({
-      id: fuelTaeSubmissions.id,
-      detailId: fuelTaeSubmissions.id,
+      // Toda columna de aquí en más lleva `.as()` explícito, aunque Drizzle a
+      // veces alias solo con la key del objeto: dentro de un `unionAll(...).as()`
+      // envuelto en otro `.select()`, las referencias de columna simples (sin
+      // `sql` + `.as()`) pierden ese alias y terminan usando el nombre físico
+      // de la columna de origen — con varias columnas de esta rama compartiendo
+      // el mismo nombre físico ("id" en id/detailId, "name" en worksiteName/
+      // loadingPointName/equipmentTypeName/productName/updatedByName), eso deja
+      // al `unionAll` con columnas de salida duplicadas y CUALQUIER consulta que
+      // no filtre por una sola fuente (el estado por defecto de la bitácora)
+      // rompe con "column reference is ambiguous". No es un matiz de estilo.
+      id: sql<string>`${fuelTaeSubmissions.id}`.as("id"),
+      detailId: sql<string>`${fuelTaeSubmissions.id}`.as("detailId"),
       source: sql<FuelLogSource>`'tae_pwa'`.as("source"),
-      occurredAt: fuelTaeSubmissions.loadedAt,
-      worksiteName: worksites.name,
+      occurredAt: sql<string>`${fuelTaeSubmissions.loadedAt}`.as("occurredAt"),
+      worksiteName: sql<string | null>`${worksites.name}`.as("worksiteName"),
       supplierId: sql<string | null>`NULL`.as("supplierId"),
       supplierName: sql<string | null>`NULL`.as("supplierName"),
-      loadingPointName: fuelTaeLoadingPoints.name,
+      loadingPointName: sql<string | null>`${fuelTaeLoadingPoints.name}`.as("loadingPointName"),
       // equipmentCodeSnapshot/driverNameSnapshot/supervisorNameSnapshot son NOT
       // NULL en esta tabla, pero las columnas equivalentes de las otras dos ramas
       // son nullable (join o texto libre): unionAll exige el mismo tipo en las
       // tres, así que se fuerza aquí con un cast explícito.
       equipmentCode: sql<string | null>`${fuelTaeSubmissions.equipmentCodeSnapshot}`.as("equipmentCode"),
-      plate: fuelTaeSubmissions.plateSnapshot,
-      equipmentTypeId: fuelEquipmentTypes.id,
-      equipmentTypeName: fuelEquipmentTypes.name,
+      plate: sql<string | null>`${fuelTaeSubmissions.plateSnapshot}`.as("plate"),
+      equipmentTypeId: sql<string | null>`${fuelEquipmentTypes.id}`.as("equipmentTypeId"),
+      equipmentTypeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("equipmentTypeName"),
       driverName: sql<string | null>`${fuelTaeSubmissions.driverNameSnapshot}`.as("driverName"),
       supervisorName: sql<string | null>`${fuelTaeSubmissions.supervisorNameSnapshot}`.as("supervisorName"),
       // productId es NOT NULL en esta tabla; nullable en el log operacional (sin
       // concepto de producto). Mismo motivo que equipmentCode/driverName arriba.
       productId: sql<string | null>`${fuelTaeSubmissions.productId}`.as("productId"),
-      productName: fuelProducts.name,
-      liters: fuelTaeSubmissions.liters,
-      meterReading: fuelTaeSubmissions.meterReading,
+      productName: sql<string | null>`${fuelProducts.name}`.as("productName"),
+      liters: sql<number>`${fuelTaeSubmissions.liters}`.as("liters"),
+      meterReading: sql<number | null>`${fuelTaeSubmissions.meterReading}`.as("meterReading"),
       meterLabel: sql<string | null>`case ${fuelTaeSubmissions.meterType} when 'odometer' then 'Odómetro' when 'hour_meter' then 'Horómetro' else NULL end`.as("meterLabel"),
       performanceValue: sql<number | null>`NULL::numeric`.as("performanceValue"),
       performanceUnit: sql<string | null>`NULL`.as("performanceUnit"),
-      sealRemoved: fuelTaeSubmissions.removedSealNumber,
-      sealInstalled: fuelTaeSubmissions.installedSealNumber,
+      sealRemoved: sql<string | null>`${fuelTaeSubmissions.removedSealNumber}`.as("sealRemoved"),
+      sealInstalled: sql<string | null>`${fuelTaeSubmissions.installedSealNumber}`.as("sealInstalled"),
       evidenceCount: sql<number | null>`(select count(*)::int from fuel_tae_evidence where fuel_tae_evidence.submission_id = ${fuelTaeSubmissions.id})`.as("evidenceCount"),
-      notes: fuelTaeSubmissions.notes,
-      statusLabel: fuelTaeSubmissions.status,
+      notes: sql<string | null>`${fuelTaeSubmissions.notes}`.as("notes"),
+      statusLabel: sql<string>`${fuelTaeSubmissions.status}`.as("statusLabel"),
       createdByName: sql<string | null>`NULL`.as("createdByName"),
-      updatedByName: users.name,
-      createdAt: fuelTaeSubmissions.createdAt,
+      updatedByName: sql<string | null>`${users.name}`.as("updatedByName"),
+      createdAt: sql<string>`${fuelTaeSubmissions.createdAt}`.as("createdAt"),
       // Igual que arriba: NOT NULL aquí, pero el log operacional no tiene un
       // "modificado" por fila — se fuerza nullable para que coincida en las tres ramas.
       updatedAt: sql<string | null>`${fuelTaeSubmissions.updatedAt}`.as("updatedAt"),
+      anomalyCount: anomalyCountSql("fuel_tae_submission", fuelTaeSubmissions.id),
+      reviewMark: reviewMarkSql("fuel_tae_submission", fuelTaeSubmissions.id),
+      reviewMarkNotes: reviewMarkNotesSql("fuel_tae_submission", fuelTaeSubmissions.id),
+      reviewMarkId: reviewMarkIdSql("fuel_tae_submission", fuelTaeSubmissions.id),
     })
     .from(fuelTaeSubmissions)
     .leftJoin(worksites, eq(fuelTaeSubmissions.worksiteId, worksites.id))
@@ -162,30 +265,43 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
       filters.productId ? eq(fuelTaeSubmissions.productId, filters.productId) : undefined,
       filters.equipmentTypeId ? eq(fuelEquipmentTypes.id, filters.equipmentTypeId) : undefined,
       filters.hasNotes ? sql`${fuelTaeSubmissions.notes} is not null and btrim(${fuelTaeSubmissions.notes}) <> ''` : undefined,
+      // Marca/modelo: TAE se asocia vía fuelVehicles.
+      filters.brand ? ilike(fuelVehicles.brand, `%${filters.brand}%`) : undefined,
+      filters.model ? ilike(fuelVehicles.model, `%${filters.model}%`) : undefined,
+      filters.driverName ? ilike(fuelTaeSubmissions.driverNameSnapshot, `%${filters.driverName}%`) : undefined,
+      filters.supervisorName ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${filters.supervisorName}%`) : undefined,
+      filters.loadingPointId ? eq(fuelTaeLoadingPoints.id, filters.loadingPointId) : undefined,
+      filters.performanceUnit ? eq(fuelVehicles.performanceUnit, filters.performanceUnit) : undefined,
+      filters.operationalStatus ? eq(fuelVehicles.operationalStatus, filters.operationalStatus) : undefined,
+      filters.sealRemoved ? ilike(fuelTaeSubmissions.removedSealNumber, `%${filters.sealRemoved}%`) : undefined,
+      filters.sealInstalled ? ilike(fuelTaeSubmissions.installedSealNumber, `%${filters.sealInstalled}%`) : undefined,
+      filters.evidenceKind ? sql`exists (select 1 from fuel_tae_evidence e where e.submission_id = ${fuelTaeSubmissions.id} and e.kind = ${filters.evidenceKind})` : undefined,
+      anomalyFilterSql("fuel_tae_submission", fuelTaeSubmissions.id, filters),
+      filters.hasReviewMark ? sql`exists (select 1 from fuel_review_marks rm where rm.entity_type = 'fuel_tae_submission' and rm.entity_id = ${fuelTaeSubmissions.id})` : undefined,
     ))
 }
 
 function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[]) {
   return db
     .select({
-      id: fuelLoads.id,
-      detailId: fuelLoads.id,
+      id: sql<string>`${fuelLoads.id}`.as("id"),
+      detailId: sql<string>`${fuelLoads.id}`.as("detailId"),
       source: sql<FuelLogSource>`'invoiced'`.as("source"),
       occurredAt: sql<string>`(${fuelLoads.loadDate})::timestamptz`.as("occurredAt"),
-      worksiteName: worksites.name,
-      supplierId: fuelSuppliers.id,
-      supplierName: fuelSuppliers.name,
+      worksiteName: sql<string | null>`${worksites.name}`.as("worksiteName"),
+      supplierId: sql<string | null>`${fuelSuppliers.id}`.as("supplierId"),
+      supplierName: sql<string | null>`${fuelSuppliers.name}`.as("supplierName"),
       loadingPointName: sql<string | null>`NULL`.as("loadingPointName"),
-      equipmentCode: fuelVehicles.code,
-      plate: fuelVehicles.plate,
-      equipmentTypeId: fuelEquipmentTypes.id,
-      equipmentTypeName: fuelEquipmentTypes.name,
+      equipmentCode: sql<string | null>`${fuelVehicles.code}`.as("equipmentCode"),
+      plate: sql<string | null>`${fuelVehicles.plate}`.as("plate"),
+      equipmentTypeId: sql<string | null>`${fuelEquipmentTypes.id}`.as("equipmentTypeId"),
+      equipmentTypeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("equipmentTypeName"),
       driverName: sql<string | null>`NULL`.as("driverName"),
       supervisorName: sql<string | null>`NULL`.as("supervisorName"),
       // productId es NOT NULL aquí; nullable en el log operacional.
       productId: sql<string | null>`${fuelLoads.productId}`.as("productId"),
-      productName: fuelProducts.name,
-      liters: fuelLoads.liters,
+      productName: sql<string | null>`${fuelProducts.name}`.as("productName"),
+      liters: sql<number>`${fuelLoads.liters}`.as("liters"),
       meterReading: sql<number | null>`coalesce(${fuelLoads.odometerReading}, ${fuelLoads.hourMeterReading})`.as("meterReading"),
       meterLabel: sql<string | null>`case when ${fuelLoads.odometerReading} is not null then 'Odómetro' when ${fuelLoads.hourMeterReading} is not null then 'Horómetro' else NULL end`.as("meterLabel"),
       performanceValue: sql<number | null>`NULL::numeric`.as("performanceValue"),
@@ -193,12 +309,16 @@ function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPa
       sealRemoved: sql<string | null>`NULL`.as("sealRemoved"),
       sealInstalled: sql<string | null>`NULL`.as("sealInstalled"),
       evidenceCount: sql<number | null>`NULL::int`.as("evidenceCount"),
-      notes: fuelLoads.notes,
-      statusLabel: fuelLoads.status,
-      createdByName: users.name,
+      notes: sql<string | null>`${fuelLoads.notes}`.as("notes"),
+      statusLabel: sql<string>`${fuelLoads.status}`.as("statusLabel"),
+      createdByName: sql<string | null>`${users.name}`.as("createdByName"),
       updatedByName: sql<string | null>`NULL`.as("updatedByName"),
-      createdAt: fuelLoads.createdAt,
+      createdAt: sql<string>`${fuelLoads.createdAt}`.as("createdAt"),
       updatedAt: sql<string | null>`${fuelLoads.updatedAt}`.as("updatedAt"),
+      anomalyCount: anomalyCountSql("fuel_load", fuelLoads.id),
+      reviewMark: reviewMarkSql("fuel_load", fuelLoads.id),
+      reviewMarkNotes: reviewMarkNotesSql("fuel_load", fuelLoads.id),
+      reviewMarkId: reviewMarkIdSql("fuel_load", fuelLoads.id),
     })
     .from(fuelLoads)
     .leftJoin(worksites, eq(fuelLoads.worksiteId, worksites.id))
@@ -223,43 +343,61 @@ function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPa
       filters.productId ? eq(fuelLoads.productId, filters.productId) : undefined,
       filters.equipmentTypeId ? eq(fuelEquipmentTypes.id, filters.equipmentTypeId) : undefined,
       filters.hasNotes ? sql`${fuelLoads.notes} is not null and btrim(${fuelLoads.notes}) <> ''` : undefined,
+      filters.brand ? ilike(fuelVehicles.brand, `%${filters.brand}%`) : undefined,
+      filters.model ? ilike(fuelVehicles.model, `%${filters.model}%`) : undefined,
+      // Facturación no tiene conductor/supervisor ni lugar de carga.
+      filters.driverName ? sql`false` : undefined,
+      filters.supervisorName ? sql`false` : undefined,
+      filters.loadingPointId ? sql`false` : undefined,
+      filters.performanceUnit ? eq(fuelVehicles.performanceUnit, filters.performanceUnit) : undefined,
+      filters.operationalStatus ? eq(fuelVehicles.operationalStatus, filters.operationalStatus) : undefined,
+      // Sellos: sólo TAE los tiene.
+      filters.sealRemoved ? sql`false` : undefined,
+      filters.sealInstalled ? sql`false` : undefined,
+      filters.evidenceKind ? sql`false` : undefined,
+      anomalyFilterSql("fuel_load", fuelLoads.id, filters),
+      filters.hasReviewMark ? sql`exists (select 1 from fuel_review_marks rm where rm.entity_type = 'fuel_load' and rm.entity_id = ${fuelLoads.id})` : undefined,
     ))
 }
 
 function buildOperationBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[]) {
   return db
     .select({
-      id: fuelOperationRecords.id,
-      detailId: fuelOperationRecords.batchId, // sin página de detalle por fila: se abre el lote que la contiene
+      id: sql<string>`${fuelOperationRecords.id}`.as("id"),
+      detailId: sql<string>`${fuelOperationRecords.batchId}`.as("detailId"), // sin página de detalle por fila: se abre el lote que la contiene
       source: sql<FuelLogSource>`'operation_manual'`.as("source"),
       occurredAt: sql<string>`(${fuelOperationRecords.fecha} || ' ' || coalesce(${fuelOperationRecords.horaCarga}, '00:00'))::timestamptz`.as("occurredAt"),
-      worksiteName: worksites.name,
-      supplierId: fuelSuppliers.id,
+      worksiteName: sql<string | null>`${worksites.name}`.as("worksiteName"),
+      supplierId: sql<string | null>`${fuelSuppliers.id}`.as("supplierId"),
       supplierName: sql<string | null>`coalesce(${fuelSuppliers.name}, ${fuelOperationRecords.proveedorNombre})`.as("supplierName"),
       loadingPointName: sql<string | null>`NULL`.as("loadingPointName"),
-      equipmentCode: fuelOperationRecords.code,
+      equipmentCode: sql<string | null>`${fuelOperationRecords.code}`.as("equipmentCode"),
       // plate es NOT NULL en esta tabla; nullable en las otras dos ramas.
       plate: sql<string | null>`${fuelOperationRecords.plate}`.as("plate"),
-      equipmentTypeId: fuelEquipmentTypes.id,
-      equipmentTypeName: fuelEquipmentTypes.name,
-      driverName: fuelOperationRecords.operador,
-      supervisorName: fuelOperationRecords.supervisor,
+      equipmentTypeId: sql<string | null>`${fuelEquipmentTypes.id}`.as("equipmentTypeId"),
+      equipmentTypeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("equipmentTypeName"),
+      driverName: sql<string | null>`${fuelOperationRecords.operador}`.as("driverName"),
+      supervisorName: sql<string | null>`${fuelOperationRecords.supervisor}`.as("supervisorName"),
       productId: sql<string | null>`NULL`.as("productId"),
       productName: sql<string | null>`NULL`.as("productName"),
-      liters: fuelOperationRecords.liters,
-      meterReading: fuelOperationRecords.horometro,
+      liters: sql<number>`${fuelOperationRecords.liters}`.as("liters"),
+      meterReading: sql<number | null>`${fuelOperationRecords.horometro}`.as("meterReading"),
       meterLabel: sql<string | null>`case when ${fuelOperationRecords.horometro} is not null then 'Medidor (' || coalesce(${fuelOperationRecords.medidoPor}, 'sin unidad') || ')' else NULL end`.as("meterLabel"),
-      performanceValue: fuelOperationRecords.rendimiento,
-      performanceUnit: fuelOperationRecords.tipoRendimiento,
+      performanceValue: sql<number | null>`${fuelOperationRecords.rendimiento}`.as("performanceValue"),
+      performanceUnit: sql<string | null>`${fuelOperationRecords.tipoRendimiento}`.as("performanceUnit"),
       sealRemoved: sql<string | null>`NULL`.as("sealRemoved"),
       sealInstalled: sql<string | null>`NULL`.as("sealInstalled"),
       evidenceCount: sql<number | null>`NULL::int`.as("evidenceCount"),
       notes: sql<string | null>`NULL`.as("notes"),
-      statusLabel: fuelOperationBatches.estado,
-      createdByName: users.name,
+      statusLabel: sql<string>`${fuelOperationBatches.estado}`.as("statusLabel"),
+      createdByName: sql<string | null>`${users.name}`.as("createdByName"),
       updatedByName: sql<string | null>`NULL`.as("updatedByName"),
-      createdAt: fuelOperationRecords.createdAt,
+      createdAt: sql<string>`${fuelOperationRecords.createdAt}`.as("createdAt"),
       updatedAt: sql<string | null>`NULL`.as("updatedAt"),
+      anomalyCount: anomalyCountSql("fuel_operation_record", fuelOperationRecords.id),
+      reviewMark: reviewMarkSql("fuel_operation_record", fuelOperationRecords.id),
+      reviewMarkNotes: reviewMarkNotesSql("fuel_operation_record", fuelOperationRecords.id),
+      reviewMarkId: reviewMarkIdSql("fuel_operation_record", fuelOperationRecords.id),
     })
     .from(fuelOperationRecords)
     .innerJoin(fuelOperationBatches, eq(fuelOperationRecords.batchId, fuelOperationBatches.id))
@@ -287,6 +425,19 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       filters.equipmentTypeId ? eq(fuelEquipmentTypes.id, filters.equipmentTypeId) : undefined,
       // Tampoco tiene observaciones por fila.
       filters.hasNotes ? sql`false` : undefined,
+      filters.brand ? ilike(fuelOperationRecords.marca, `%${filters.brand}%`) : undefined,
+      filters.model ? ilike(fuelOperationRecords.modelo, `%${filters.model}%`) : undefined,
+      filters.driverName ? ilike(fuelOperationRecords.operador, `%${filters.driverName}%`) : undefined,
+      filters.supervisorName ? ilike(fuelOperationRecords.supervisor, `%${filters.supervisorName}%`) : undefined,
+      // Tampoco tiene lugar de carga ni observaciones.
+      filters.loadingPointId ? sql`false` : undefined,
+      filters.performanceUnit ? eq(fuelOperationRecords.tipoRendimiento, filters.performanceUnit) : undefined,
+      filters.operationalStatus ? eq(fuelVehicles.operationalStatus, filters.operationalStatus) : undefined,
+      filters.sealRemoved ? sql`false` : undefined,
+      filters.sealInstalled ? sql`false` : undefined,
+      filters.evidenceKind ? sql`false` : undefined,
+      anomalyFilterSql("fuel_operation_record", fuelOperationRecords.id, filters),
+      filters.hasReviewMark ? sql`exists (select 1 from fuel_review_marks rm where rm.entity_type = 'fuel_operation_record' and rm.entity_id = ${fuelOperationRecords.id})` : undefined,
     ))
 }
 

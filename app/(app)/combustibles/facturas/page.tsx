@@ -3,7 +3,8 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { fuelLoads, fuelProducts, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { desc, eq, inArray, sql } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
+import { settle } from "@/lib/async-settle"
+import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { buildFuelLoadsWhere, buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -35,7 +36,7 @@ export default async function CombustiblesFacturasPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   let session
-  try { session = await requirePermission("combustibles:view") }
+  try { session = await requirePermission("combustibles:view_costs") }
   catch { redirect("/forbidden") }
 
   const sp = await searchParams
@@ -61,61 +62,105 @@ export default async function CombustiblesFacturasPage({
 
   // Fetch data
   const [rows, countResult, vehicles, suppliersList, worksitesList, products] = await Promise.all([
-    db.query.fuelLoads.findMany({
-      where,
-      with: { vehicle: true, supplier: true, worksite: true },
-      orderBy: [desc(fuelLoads.loadDate), desc(fuelLoads.createdAt)],
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
-    }),
-    db.select({ count: sql<number>`count(*)` }).from(fuelLoads).where(where),
-    db.query.fuelVehicles.findMany({
-      where: buildFuelVehiclesWhere(session),
-      orderBy: [fuelVehicles.plate],
-    }),
-    db.query.fuelSuppliers.findMany({ orderBy: [fuelSuppliers.name] }),
-    worksiteScope.mode === "none"
-      ? Promise.resolve([])
-      : db.query.worksites.findMany({
-          where: worksiteScope.mode === "some" ? inArray(worksites.id, worksiteScope.ids) : undefined,
-          orderBy: [worksites.name],
-        }),
-    db.query.fuelProducts.findMany({ where: eq(fuelProducts.isActive, true), orderBy: [fuelProducts.name] }),
+    settle(
+      db.query.fuelLoads.findMany({
+        where,
+        with: { vehicle: true, supplier: true, worksite: true },
+        orderBy: [desc(fuelLoads.loadDate), desc(fuelLoads.createdAt)],
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      }),
+      [],
+      "facturas-rows",
+    ),
+    settle(
+      db.select({ count: sql<number>`count(*)` }).from(fuelLoads).where(where),
+      [{ count: 0 }],
+      "facturas-count",
+    ),
+    settle(
+      db.query.fuelVehicles.findMany({
+        where: buildFuelVehiclesWhere(session),
+        orderBy: [fuelVehicles.plate],
+      }),
+      [],
+      "facturas-vehicles",
+    ),
+    settle(
+      db.query.fuelSuppliers.findMany({ orderBy: [fuelSuppliers.name] }),
+      [],
+      "facturas-suppliers",
+    ),
+    settle(
+      worksiteScope.mode === "none"
+        ? Promise.resolve([])
+        : db.query.worksites.findMany({
+            where: worksiteScope.mode === "some" ? inArray(worksites.id, worksiteScope.ids) : undefined,
+            orderBy: [worksites.name],
+          }),
+      [] as Array<{ id: string; name: string }>,
+      "facturas-worksites",
+    ),
+    settle(
+      db.query.fuelProducts.findMany({ where: eq(fuelProducts.isActive, true), orderBy: [fuelProducts.name] }),
+      [],
+      "facturas-products",
+    ),
   ])
 
   const total = countResult[0]?.count ?? 0
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   // KPIs over the filtered set (all data when no filter), consistent with the charts.
-  const [kpiRow] = await db.select({
-    totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
-    totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
-    count: sql<number>`count(*)`,
-  }).from(fuelLoads).where(where)
-
-  // Chart data
-  const [chartByMonth, chartByWorksite, chartByProduct, chartByVehicle] = await Promise.all([
+  const [kpiRow] = await settle(
     db.select({
-      group: fuelLoads.month,
       totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
       totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
       count: sql<number>`count(*)`,
-    }).from(fuelLoads).where(where).groupBy(fuelLoads.month).orderBy(fuelLoads.month),
-    db.select({
-      group: worksites.name,
-      totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
-      totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
-    }).from(fuelLoads).leftJoin(worksites, eq(fuelLoads.worksiteId, worksites.id)).where(where).groupBy(worksites.name).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
-    db.select({
-      group: fuelLoads.product,
-      totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
-      totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
-    }).from(fuelLoads).where(where).groupBy(fuelLoads.product).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
-    db.select({
-      group: fuelVehicles.plate,
-      totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
-      totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
-    }).from(fuelLoads).leftJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id)).where(where).groupBy(fuelVehicles.plate).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+    }).from(fuelLoads).where(where),
+    [{ totalLiters: 0, totalAmount: 0, count: 0 }],
+    "facturas-kpis",
+  )
+
+  // Chart data
+  const [chartByMonth, chartByWorksite, chartByProduct, chartByVehicle] = await Promise.all([
+    settle(
+      db.select({
+        group: fuelLoads.month,
+        totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
+        totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+        count: sql<number>`count(*)`,
+      }).from(fuelLoads).where(where).groupBy(fuelLoads.month).orderBy(fuelLoads.month),
+      [] as Array<{ group: string | null; totalLiters: number; totalAmount: number; count: number }>,
+      "facturas-chart-month",
+    ),
+    settle(
+      db.select({
+        group: worksites.name,
+        totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
+        totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+      }).from(fuelLoads).leftJoin(worksites, eq(fuelLoads.worksiteId, worksites.id)).where(where).groupBy(worksites.name).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+      [] as Array<{ group: string | null; totalLiters: number; totalAmount: number }>,
+      "facturas-chart-worksite",
+    ),
+    settle(
+      db.select({
+        group: fuelLoads.product,
+        totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
+        totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+      }).from(fuelLoads).where(where).groupBy(fuelLoads.product).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+      [] as Array<{ group: string | null; totalLiters: number; totalAmount: number }>,
+      "facturas-chart-product",
+    ),
+    settle(
+      db.select({
+        group: fuelVehicles.plate,
+        totalLiters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
+        totalAmount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+      }).from(fuelLoads).leftJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id)).where(where).groupBy(fuelVehicles.plate).orderBy(desc(sql`sum(${fuelLoads.totalAmount})`)),
+      [] as Array<{ group: string | null; totalLiters: number; totalAmount: number }>,
+      "facturas-chart-vehicle",
+    ),
   ])
 
   // Period label for the KPI header (range of months present in the filtered set).
@@ -134,7 +179,7 @@ export default async function CombustiblesFacturasPage({
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Facturas" }]} />}
         headerActions={
           <div className="flex gap-2">
-            <ExportXlsxButton filters={{ month, startDate, endDate, serviceType, vehicleId, worksiteId, fuelSupplierId: supplierId, product, productId, status }} />
+            {can(session, "combustibles:export_sensitive") && <ExportXlsxButton filters={{ month, startDate, endDate, serviceType, vehicleId, worksiteId, fuelSupplierId: supplierId, product, productId, status }} />}
             <ImportFuelLoadsModal worksites={worksitesList} />
             <Button asChild size="sm">
               <Link href="/combustibles/nueva">+ Nueva carga</Link>

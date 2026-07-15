@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
   Table,
   TableBody,
@@ -236,6 +237,12 @@ export function PdtpSheetTable({
                                         evidencePhotos={exec.evidencePhotos}
                                         evidenceText={exec.evidenceText}
                                       />
+                                      <Link
+                                        href={`/prevencion/pdtp/${view.program.id}/ejecucion/${exec.id}`}
+                                        className="mt-1 inline-block text-[10px] font-medium text-[var(--color-primary)] hover:underline"
+                                      >
+                                        Ver verificación →
+                                      </Link>
                                     </div>
                                   ))}
                                 </div>
@@ -356,6 +363,12 @@ export function PdtpSheetTable({
                                           evidencePhotos={exec.evidencePhotos}
                                           evidenceText={exec.evidenceText}
                                         />
+                                        <Link
+                                          href={`/prevencion/pdtp/${view.program.id}/ejecucion/${exec.id}`}
+                                          className="mt-1 inline-block text-[10px] font-medium text-[var(--color-primary)] hover:underline"
+                                        >
+                                          Ver verificación →
+                                        </Link>
                                       </div>
                                     ))}
                                   </div>

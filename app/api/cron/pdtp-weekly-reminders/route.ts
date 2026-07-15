@@ -10,7 +10,7 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server"
-import { runPdtpWeeklyReminders } from "@/lib/services/prevention-pdtp"
+import { runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders } from "@/lib/services/prevention-pdtp"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 
@@ -32,8 +32,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   try {
     const result = await runPdtpWeeklyReminders()
-    logger.info("[cron/pdtp-weekly-reminders] Completed", result)
-    return NextResponse.json({ ok: true, ...result })
+    const vencidas = await runPdtpActionPlanVencidasReminders()
+    logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas })
+    return NextResponse.json({ ok: true, ...result, vencidas })
   } catch (err) {
     // H-B11: en producción, no exponer err.message al cliente porque
     // puede filtrar paths internos, queries SQL, etc. Loguear el

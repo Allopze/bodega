@@ -11,7 +11,7 @@ export default async function ReportesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   let session
-  try { session = await requirePermission("combustibles:view") }
+  try { session = await requirePermission("combustibles:view_costs") }
   catch { redirect("/forbidden") }
 
   const sp = await searchParams

@@ -181,6 +181,23 @@ export const FUEL_VEHICLE_STATUS_LABELS: Record<(typeof FUEL_VEHICLE_STATUSES)[n
   fuera_servicio: "Fuera de servicio",
 }
 
+export const ANOMALY_RULE_SEVERITIES = ["low", "medium", "high", "critical"] as const
+export const ANOMALY_RULE_SEVERITY_LABELS: Record<(typeof ANOMALY_RULE_SEVERITIES)[number], string> = {
+  low: "Baja", medium: "Media", high: "Alta", critical: "Crítica",
+}
+
+export const anomalyRuleSchema = z.object({
+  code: z.string().trim().min(2, "Código requerido").max(60).regex(/^[a-z0-9_]+$/, "Usa minúsculas, números o guion bajo"),
+  name: z.string().trim().min(2, "Nombre requerido").max(150),
+  description: z.string().trim().max(500).optional(),
+  severity: z.enum(ANOMALY_RULE_SEVERITIES),
+  isActive: z.boolean(),
+  config: z.string().trim().max(2000).refine((value) => {
+    if (!value) return true
+    try { JSON.parse(value); return true } catch { return false }
+  }, "El JSON de configuración no es válido"),
+})
+
 export const fuelEquipmentTypeSchema = z.object({
   name: z.string().trim().min(2, "Nombre requerido").max(100),
   category: z.enum(FUEL_EQUIPMENT_CATEGORIES),

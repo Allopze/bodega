@@ -14,6 +14,7 @@ import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, wor
 import { currentPdtpPeriod, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
 import { createNotifications, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
+import { listVencidas } from "./followups"
 
 export type PdtpPendingTarget = {
   worksiteId: string
@@ -170,4 +171,52 @@ export async function runPdtpWeeklyReminders(period: PdtpPeriod = currentPdtpPer
     targets,
     notifiedUsers: notifiedUserIds.size,
   }
+}
+
+export type PdtpActionVencidasReminderResult = {
+  vencidas: number
+  notifiedUsers: number
+}
+
+/**
+ * Notifica acciones correctivas vencidas del plan de acción (plan §2.4/§4).
+ * Si la acción tiene responsableUserId, notifica directo; si no, notifica a
+ * quienes tengan `prevention:pdtp:action:manage` en la faena de la ejecución.
+ */
+export async function runPdtpActionPlanVencidasReminders(): Promise<PdtpActionVencidasReminderResult> {
+  const vencidas = await listVencidas()
+  if (vencidas.length === 0) {
+    logger.info("[pdtp/reminders] no vencidas action-plan items, nothing to do")
+    return { vencidas: 0, notifiedUsers: 0 }
+  }
+
+  const executionIds = [...new Set(vencidas.map((v) => v.executionId))]
+  const executionRows = await db.select({ id: pdtpExecutions.id, worksiteId: pdtpExecutions.worksiteId })
+    .from(pdtpExecutions).where(inArray(pdtpExecutions.id, executionIds))
+  const worksiteByExecution = new Map(executionRows.map((r) => [r.id, r.worksiteId]))
+
+  const notifiedUserIds = new Set<string>()
+  for (const item of vencidas) {
+    const worksiteId = worksiteByExecution.get(item.executionId)
+    const targetUserIds = item.responsableUserId
+      ? [item.responsableUserId]
+      : worksiteId ? await getUserIdsWithPermissionForWorksite("prevention:pdtp:action:manage", worksiteId) : []
+
+    for (const userId of targetUserIds) {
+      notifiedUserIds.add(userId)
+      // dedupeKey estable por acción+plazo: no repite hasta que cambie el plazo o se cierre.
+      const dedupeKey = `pdtp-action-vencida:${item.id}:${item.plazo}`
+      await createNotifications([userId], {
+        type: "system_alert",
+        title: `⏰ Acción PDTP vencida: ${item.hallazgo.slice(0, 60)}`,
+        body: `La acción correctiva N°${item.n} venció el ${item.plazo} y sigue en estado "${item.estado}".`,
+        entityType: "pdtp_action_plan",
+        entityId: item.id,
+        entityHref: "/prevencion/pdtp",
+        dedupeKey,
+      })
+    }
+  }
+
+  return { vencidas: vencidas.length, notifiedUsers: notifiedUserIds.size }
 }

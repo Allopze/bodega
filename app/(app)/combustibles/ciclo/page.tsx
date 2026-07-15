@@ -2,6 +2,7 @@ import Link from "next/link"
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { ArrowLeft, ArrowSquareOut, Database, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import { settle } from "@/lib/async-settle"
 import { db } from "@/db"
 import { fuelCycleMovements, fuelProducts, fuelStorageLocations, fuelSuppliers, fuelVehicles, worksites } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -66,41 +67,55 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
       : undefined
   const scope = worksiteScopeSql(session, worksites.id)
 
+  const CYCLE_FALLBACK = { received: null, registered: null, delivered: null, consumed: null, differences: { receivedVsRegistered: { status: "unavailable" as const, absolute: null, percent: null }, receivedVsDelivered: { status: "unavailable" as const, absolute: null, percent: null } } }
+
   const [comparison, balances, worksitesList, products, suppliers, locations, vehicles, movements] = await Promise.all([
-    getFuelCycleComparison(session, { from: fromTimestamp, to: toTimestamp, worksiteId, productId }),
-    getFuelStorageBalances(session, { from: fromTimestamp, to: toTimestamp, worksiteId, productId }),
-    db.query.worksites.findMany({ where: scope, orderBy: [worksites.name] }),
-    db.query.fuelProducts.findMany({ where: eq(fuelProducts.isActive, true), orderBy: [fuelProducts.name] }),
-    db.query.fuelSuppliers.findMany({ where: eq(fuelSuppliers.isActive, true), orderBy: [fuelSuppliers.name] }),
-    db.query.fuelStorageLocations.findMany({
-      where: and(eq(fuelStorageLocations.isActive, true), worksiteScopeSql(session, fuelStorageLocations.worksiteId)),
-      with: { worksite: { columns: { name: true } }, product: { columns: { name: true } } },
-      orderBy: [fuelStorageLocations.name],
-    }),
-    db.query.fuelVehicles.findMany({
-      where: and(eq(fuelVehicles.isActive, true), worksiteScopeSql(session, fuelVehicles.worksiteId)),
-      orderBy: [fuelVehicles.plate],
-    }),
-    db.query.fuelCycleMovements.findMany({
-      where: and(
-        gte(fuelCycleMovements.occurredAt, fromTimestamp),
-        lte(fuelCycleMovements.occurredAt, toTimestamp),
-        worksiteScopeSql(session, fuelCycleMovements.worksiteId),
-        worksiteId ? eq(fuelCycleMovements.worksiteId, worksiteId) : undefined,
-        productId ? eq(fuelCycleMovements.productId, productId) : undefined,
-        stageTypes ? inArray(fuelCycleMovements.eventType, stageTypes) : undefined,
-      ),
-      with: {
-        worksite: { columns: { name: true } },
-        product: { columns: { name: true } },
-        sourceLocation: { columns: { name: true } },
-        targetLocation: { columns: { name: true } },
-        vehicle: { columns: { plate: true, code: true } },
-        supplier: { columns: { name: true } },
-      },
-      orderBy: [desc(fuelCycleMovements.occurredAt)],
-      limit: 100,
-    }),
+    settle(getFuelCycleComparison(session, { from: fromTimestamp, to: toTimestamp, worksiteId, productId }), CYCLE_FALLBACK, "cycle-comparison"),
+    settle(getFuelStorageBalances(session, { from: fromTimestamp, to: toTimestamp, worksiteId, productId }), [], "cycle-balances"),
+    settle(db.query.worksites.findMany({ where: scope, orderBy: [worksites.name] }), [], "cycle-worksites"),
+    settle(db.query.fuelProducts.findMany({ where: eq(fuelProducts.isActive, true), orderBy: [fuelProducts.name] }), [], "cycle-products"),
+    settle(db.query.fuelSuppliers.findMany({ where: eq(fuelSuppliers.isActive, true), orderBy: [fuelSuppliers.name] }), [], "cycle-suppliers"),
+    settle(
+      db.query.fuelStorageLocations.findMany({
+        where: and(eq(fuelStorageLocations.isActive, true), worksiteScopeSql(session, fuelStorageLocations.worksiteId)),
+        with: { worksite: { columns: { name: true } }, product: { columns: { name: true } } },
+        orderBy: [fuelStorageLocations.name],
+      }),
+      [],
+      "cycle-locations",
+    ),
+    settle(
+      db.query.fuelVehicles.findMany({
+        where: and(eq(fuelVehicles.isActive, true), worksiteScopeSql(session, fuelVehicles.worksiteId)),
+        orderBy: [fuelVehicles.plate],
+      }),
+      [],
+      "cycle-vehicles",
+    ),
+    settle(
+      db.query.fuelCycleMovements.findMany({
+        where: and(
+          gte(fuelCycleMovements.occurredAt, fromTimestamp),
+          lte(fuelCycleMovements.occurredAt, toTimestamp),
+          worksiteScopeSql(session, fuelCycleMovements.worksiteId),
+          worksiteId ? eq(fuelCycleMovements.worksiteId, worksiteId) : undefined,
+          productId ? eq(fuelCycleMovements.productId, productId) : undefined,
+          stageTypes ? inArray(fuelCycleMovements.eventType, stageTypes) : undefined,
+        ),
+        with: {
+          worksite: { columns: { name: true } },
+          product: { columns: { name: true } },
+          sourceLocation: { columns: { name: true } },
+          targetLocation: { columns: { name: true } },
+          vehicle: { columns: { plate: true, code: true } },
+          supplier: { columns: { name: true } },
+        },
+        orderBy: [desc(fuelCycleMovements.occurredAt)],
+        limit: 100,
+      }),
+      [],
+      "cycle-movements",
+    ),
   ])
 
   const canCreate = can(session, "combustibles:create")

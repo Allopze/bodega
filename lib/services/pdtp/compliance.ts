@@ -1,6 +1,7 @@
-import { desc, eq } from "drizzle-orm"
+import { desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpPrograms } from "@/db/schema"
+import { pdtpActivities, pdtpActionPlan, pdtpPrograms } from "@/db/schema"
+import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { loadProgramScheduleAndExecutions } from "./helpers"
 
 export type PdtpComplianceMonth = {
@@ -86,4 +87,101 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   }
 
   return { programId: program.id, year, target: program.complianceTarget, monthly, quarterly, annual }
+}
+
+/* ── Cumplimiento integral (3 ejes: ejecución + verificación + cierre) ────── */
+
+export type PdtpIntegralComplianceAxes = {
+  ejecucion: number | null   // 0-1: ejecutado / planificado
+  verificacion: number | null // 0-100: % items cumple del checklist
+  cierre: number | null      // 0-100: % acciones cerradas
+}
+
+export type PdtpIntegralCompliance = PdtpIntegralComplianceAxes & {
+  programId: string
+  year: number
+  integral: number | null     // 0-100: ponderado
+  pesos: { ejecucion: number; verificacion: number; cierre: number }
+}
+
+/**
+ * Calcula el cumplimiento integral del programa: 0.5*ejec + 0.3*verif + 0.2*cierre.
+ * Los pesos vienen de pdtpPrograms (defaults 0.5/0.3/0.2).
+ */
+export async function getPdtpIntegralCompliance(
+  yearOrProgramId: number | string,
+  worksiteId?: string,
+): Promise<PdtpIntegralCompliance | null> {
+  let program: typeof pdtpPrograms.$inferSelect | null = null
+
+  if (typeof yearOrProgramId === "string") {
+    const [found] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, yearOrProgramId)).limit(1)
+    program = found ?? null
+  } else {
+    const programs = await db.select().from(pdtpPrograms)
+      .where(eq(pdtpPrograms.year, yearOrProgramId)).orderBy(desc(pdtpPrograms.version)).limit(10)
+    program = programs.find((p) => p.status === "active") ?? programs[0] ?? null
+  }
+  if (!program) return null
+
+  // Eje 1: ejecución (reutiliza el cálculo existente)
+  const base = await getPdtpComplianceIndicators(program.id, worksiteId)
+  const ejecucion = base?.annual.percent ?? null
+
+  // Obtener todas las ejecuciones válidas del programa/faena
+  const activityRows = await db.select({ id: pdtpActivities.id }).from(pdtpActivities)
+    .where(eq(pdtpActivities.programId, program.id))
+  const activityIds = activityRows.map((r) => r.id)
+
+  let verificacion: number | null = null
+  let cierre: number | null = null
+
+  if (activityIds.length > 0) {
+    const { executionRows } = await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)
+    const validExecutions = executionRows.filter((r) => r.status === "submitted" || r.status === "approved")
+    const executionIds = validExecutions.map((r) => r.id)
+
+    if (executionIds.length > 0) {
+      // Eje 2: verificación — promedio de porcentajeCumplimiento de las instancias
+      const instances = await db.query.pdtpExecutionChecklists.findMany({
+        where: (t, { inArray: ia }) => ia(t.executionId, executionIds),
+      })
+      const validPct = instances
+        .map((i) => i.porcentajeCumplimiento)
+        .filter((p): p is number => p !== null)
+      if (validPct.length > 0) {
+        verificacion = Math.round((validPct.reduce((s, p) => s + p, 0) / validPct.length) * 100) / 100
+      }
+
+      // Eje 3: cierre — acciones cerradas / total
+      const actions = await db.select({ estado: pdtpActionPlan.estado, plazo: pdtpActionPlan.plazo })
+        .from(pdtpActionPlan).where(inArray(pdtpActionPlan.executionId, executionIds))
+      if (actions.length > 0) {
+        const cerradas = actions.filter((a) => PDTP_ESTADOS_CERRADOS.has(a.estado)).length
+        cierre = Math.round((cerradas / actions.length) * 10000) / 100
+      }
+    }
+  }
+
+  // Integral ponderado
+  const pesos = {
+    ejecucion: program.pesoEjecucion,
+    verificacion: program.pesoVerificacion,
+    cierre: program.pesoCierre,
+  }
+  let integral: number | null = null
+  if (ejecucion !== null || verificacion !== null || cierre !== null) {
+    const e = (ejecucion ?? 0) * 100
+    const v = verificacion ?? 0
+    const c = cierre ?? 0
+    integral = Math.round((pesos.ejecucion * e + pesos.verificacion * v + pesos.cierre * c) * 100) / 100
+  }
+
+  return {
+    programId: program.id,
+    year: program.year,
+    ejecucion, verificacion, cierre,
+    integral,
+    pesos,
+  }
 }

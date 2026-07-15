@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { and, eq } from "drizzle-orm"
+import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
 import { fuelTaeImportBatches, fuelTaeSubmissions, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
 import { can, guardPermission } from "@/lib/auth/can"
@@ -10,6 +11,7 @@ import { generateTaeImportDryRunReport, generateTaeImportPreview } from "@/lib/s
 import { importTaeLegacyWorkbook, reprocessTaeImportRejectedRows, type TaeImportMappingDecision } from "@/lib/combustibles/tae-import-service"
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { logger } from "@/lib/logger"
 
 const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024
 
@@ -61,7 +63,9 @@ export async function generateTaeImportReportAction(formData: FormData) {
       },
     }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo generar el reporte" }
+    logger.error("[generateTaeImportReportAction]", error)
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo generar el reporte"
+    return { ok: false, message: msg }
   }
 }
 
@@ -84,7 +88,9 @@ export async function importTaeHistoryAction(formData: FormData) {
     })
     return { ok: true as const, data: result, message: `${result.importedRows} cargas históricas importadas` }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo importar el histórico TAE" }
+    logger.error("[importTaeHistoryAction]", error)
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo importar el histórico TAE"
+    return { ok: false, message: msg }
   }
 }
 
@@ -147,7 +153,9 @@ export async function revertTaeImportBatchAction(batchId: string) {
     revalidatePath(`/combustibles/tae/importar/${batchId}`)
     return { ok: true as const, message: `Lote revertido: ${result.removed} cargas eliminadas`, data: result }
   } catch (error) {
-    return { ok: false as const, message: error instanceof Error ? error.message : "No se pudo revertir el lote" }
+    logger.error("[revertTaeImportBatchAction]", error)
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo revertir el lote"
+    return { ok: false as const, message: msg }
   }
 }
 
@@ -169,7 +177,9 @@ export async function reprocessTaeImportBatchAction(batchId: string) {
     revalidatePath(`/combustibles/tae/importar/${batchId}`)
     return { ok: true as const, data: result, message: result.reprocessedRows ? `Se reprocesaron ${result.reprocessedRows} filas rechazadas` : "No hubo filas rechazadas listas para reprocesar" }
   } catch (error) {
-    return { ok: false as const, message: error instanceof Error ? error.message : "No se pudieron reprocesar las filas" }
+    logger.error("[reprocessTaeImportBatchAction]", error)
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudieron reprocesar las filas"
+    return { ok: false as const, message: msg }
   }
 }
 

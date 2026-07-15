@@ -38,7 +38,9 @@ export async function getFleetOverview(session: Session) {
         totalLiters: sql<number>`COALESCE(SUM(${fuelLoads.liters}), 0)`,
         loadCount: sql<number>`COUNT(*)`,
         lastOdometerReading: sql<number>`MAX(${fuelLoads.odometerReading}) FILTER (WHERE ${fuelLoads.odometerReading} IS NOT NULL)`,
+        firstOdometerReading: sql<number>`MIN(${fuelLoads.odometerReading}) FILTER (WHERE ${fuelLoads.odometerReading} IS NOT NULL)`,
         lastHourMeterReading: sql<number>`MAX(${fuelLoads.hourMeterReading}) FILTER (WHERE ${fuelLoads.hourMeterReading} IS NOT NULL)`,
+        firstHourMeterReading: sql<number>`MIN(${fuelLoads.hourMeterReading}) FILTER (WHERE ${fuelLoads.hourMeterReading} IS NOT NULL)`,
       })
       .from(fuelLoads)
       .where(and(
@@ -70,6 +72,18 @@ export async function getFleetOverview(session: Session) {
     const maintenance = maintenanceByVehicle.get(vehicle.id)
     const totalFuelAmount = Number(fuel?.totalFuelAmount ?? 0)
     const totalMaintenanceAmount = Number(maintenance?.totalMaintenanceAmount ?? 0)
+    const totalOperationalCost = totalFuelAmount + totalMaintenanceAmount
+    const firstOdometer = fuel?.firstOdometerReading == null ? null : Number(fuel.firstOdometerReading)
+    const lastOdometer = fuel?.lastOdometerReading == null ? null : Number(fuel.lastOdometerReading)
+    const firstHourMeter = fuel?.firstHourMeterReading == null ? null : Number(fuel.firstHourMeterReading)
+    const lastHourMeter = fuel?.lastHourMeterReading == null ? null : Number(fuel.lastHourMeterReading)
+    // Costo operacional (combustible + mantención) por unidad de uso, sólo con la unidad
+    // canónica del equipo (sección 2) y al menos dos lecturas distintas en el período —
+    // con una sola carga no hay recorrido/uso que dividir.
+    const kmDriven = vehicle.performanceUnit === "km_per_liter" && firstOdometer != null && lastOdometer != null && lastOdometer > firstOdometer
+      ? lastOdometer - firstOdometer : null
+    const hoursRun = vehicle.performanceUnit === "liters_per_hour" && firstHourMeter != null && lastHourMeter != null && lastHourMeter > firstHourMeter
+      ? lastHourMeter - firstHourMeter : null
     return {
       id: vehicle.id,
       plate: vehicle.plate,
@@ -94,13 +108,17 @@ export async function getFleetOverview(session: Session) {
       ]),
       totalFuelAmount,
       totalMaintenanceAmount,
-      totalOperationalCost: totalFuelAmount + totalMaintenanceAmount,
+      totalOperationalCost,
       totalLiters: Number(fuel?.totalLiters ?? 0),
       loadCount: Number(fuel?.loadCount ?? 0),
       maintenanceCount: Number(maintenance?.maintenanceCount ?? 0),
       lastMaintenanceDate: maintenance?.lastMaintenanceDate ?? null,
-      lastOdometerReading: fuel?.lastOdometerReading == null ? null : Number(fuel.lastOdometerReading),
-      lastHourMeterReading: fuel?.lastHourMeterReading == null ? null : Number(fuel.lastHourMeterReading),
+      lastOdometerReading: lastOdometer,
+      lastHourMeterReading: lastHourMeter,
+      kmDriven,
+      hoursRun,
+      costPerKm: kmDriven ? totalOperationalCost / kmDriven : null,
+      costPerHour: hoursRun ? totalOperationalCost / hoursRun : null,
     }
   })
 }
@@ -153,11 +171,31 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     }),
   ])
 
+  // Comparar rendimiento 30 días antes/después de cada mantención (sección 13).
+  // Consulta aparte por registro (a lo más 10, límite de `recentMaintenance`
+  // arriba) en vez de derivarlo de `recentOperations`: ese array ya viene
+  // acotado a las 20 lecturas más recientes del vehículo, así que para
+  // mantenciones antiguas no cubriría la ventana de comparación completa.
+  const maintenanceConsumptionImpact = await Promise.all(
+    recentMaintenance.filter((m) => m.status !== "cancelled").map(async (m) => {
+      const [row] = await db.select({
+        avgBefore: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} >= (${m.maintenanceDate}::date - interval '30 days')::text and ${fuelOperationRecords.fecha} < ${m.maintenanceDate})`,
+        avgAfter: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} > ${m.maintenanceDate} and ${fuelOperationRecords.fecha} <= (${m.maintenanceDate}::date + interval '30 days')::text)`,
+      }).from(fuelOperationRecords).where(and(eq(fuelOperationRecords.vehicleId, id), isNotNull(fuelOperationRecords.rendimiento)))
+      return {
+        maintenanceId: m.id, maintenanceDate: m.maintenanceDate, maintenanceType: m.maintenanceType,
+        avgBefore: row?.avgBefore != null ? Number(row.avgBefore) : null,
+        avgAfter: row?.avgAfter != null ? Number(row.avgAfter) : null,
+      }
+    }),
+  )
+
   return {
     vehicle,
     documents,
     recentLoads,
     recentMaintenance,
+    maintenanceConsumptionImpact,
     // Última lectura de horómetro/odómetro con fecha real, y los operadores
     // más frecuentes — derivados del log operacional de combustible.
     currentReading: recentOperations[0] ?? null,

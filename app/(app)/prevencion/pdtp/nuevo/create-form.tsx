@@ -3,35 +3,95 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { useRouter } from "next/navigation"
-import { CalendarBlank, Copy, NotePencil } from "@phosphor-icons/react/dist/ssr"
+import {
+  CheckCircle,
+  ClipboardText,
+  Sparkle,
+} from "@phosphor-icons/react/dist/ssr"
+import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { toast } from "@/lib/toast"
 import { createPdtpProgramAction } from "../actions"
 
 const CURRENT_YEAR = new Date().getFullYear()
+const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1]
 
-type ExistingProgram = { id: string; title: string; year: number; version: number }
+type EnrichedProgram = {
+  id: string
+  title: string
+  year: number
+  version: number
+  status: string
+  compliancePercent: number | null
+  activityCount: number
+}
 
-export function PdtpCreateProgramForm({ userId, existingPrograms = [] }: { userId: string; existingPrograms?: ExistingProgram[] }) {
+export function PdtpCreateProgramForm({
+  userId,
+  existingPrograms = [],
+  suggestedYear = CURRENT_YEAR,
+  hasActiveProgram = false,
+}: {
+  userId: string
+  existingPrograms?: EnrichedProgram[]
+  suggestedYear?: number
+  hasActiveProgram?: boolean
+}) {
   const router = useRouter()
   const [state, formAction] = useActionState(createPdtpProgramAction, null)
   const [copyFrom, setCopyFrom] = React.useState("")
-  const [year, setYear] = React.useState(CURRENT_YEAR)
+  const [year, setYear] = React.useState(suggestedYear)
   const [title, setTitle] = React.useState("")
+  const [titleManuallyEdited, setTitleManuallyEdited] = React.useState(false)
+  const [customYear, setCustomYear] = React.useState(false)
 
-  // Bug B: router.push() en el cuerpo del componente es un side-effect de
-  // render (dispara el warning de React y puede re-ejecutarse en cada
-  // render mientras el estado siga "ok"). Navegar al builder en un efecto.
+  // ── Auto-generar título cuando cambia el año ─────────────────────────────
+  React.useEffect(() => {
+    if (!titleManuallyEdited) {
+      setTitle(`Programa de Trabajo Preventivo SG-SST ${year}`)
+    }
+  }, [year, titleManuallyEdited])
+
+  // ── Navegar al editor después de crear ────────────────────────────────────
   React.useEffect(() => {
     if (state?.ok && state.programId) {
-      toast.success("Programa creado exitosamente")
+      toast.success("¡Programa creado!", {
+        description: "Redirigiendo al editor para completar actividades…",
+      })
       router.push(`/prevencion/pdtp/${state.programId}/editar`)
     }
   }, [state, router])
+
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value === "") {
+      setTitleManuallyEdited(false)
+    } else {
+      setTitleManuallyEdited(true)
+    }
+    setTitle(e.target.value)
+  }
+
+  const handleYearSelect = (y: number) => {
+    setCustomYear(false)
+    setYear(y)
+  }
+
+  const handleCustomYear = () => {
+    setCustomYear(true)
+    setYear(CURRENT_YEAR)
+  }
+
+  // Si el año seleccionado coincide con uno de los predefinidos,
+  // pero customYear está activo, sincronizar el flag.
+  const isCustomYearActive = customYear || !YEAR_OPTIONS.includes(year)
+
+  const programsForThisYear = existingPrograms.filter((p) => p.year === year)
+  const programsForOtherYears = existingPrograms.filter((p) => p.year !== year)
+  const sortedPrograms = [...programsForThisYear, ...programsForOtherYears]
 
   return (
     <form
@@ -40,129 +100,326 @@ export function PdtpCreateProgramForm({ userId, existingPrograms = [] }: { userI
     >
       <input type="hidden" name="userId" value={userId} />
 
-      {/* Header */}
+      {/* ── D: Timeline/stepper del journey ───────────────────────────────── */}
       <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-4 sm:px-6">
-        <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
-            <CalendarBlank size={18} weight="bold" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Nuevo programa</p>
-            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
-              Define el año y título del programa. Luego podrás agregar hojas, actividades y planificación desde el editor.
-            </p>
-          </div>
+        <div className="flex items-center gap-1 sm:gap-2">
+          {[
+            { step: 1, label: "Crear", active: true },
+            { step: 2, label: "Editar actividades", active: false },
+            { step: 3, label: "Aprobar", active: false },
+            { step: 4, label: "Activar", active: false },
+          ].map((s, i) => (
+            <React.Fragment key={s.step}>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold transition-colors",
+                    s.active
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "bg-[var(--color-surface)] text-[var(--color-text-faint)]",
+                  )}
+                >
+                  {s.active ? <Sparkle size={12} weight="fill" /> : s.step}
+                </span>
+                <span
+                  className={cn(
+                    "hidden text-xs font-medium sm:inline",
+                    s.active ? "text-[var(--color-text)]" : "text-[var(--color-text-faint)]",
+                  )}
+                >
+                  {s.label}
+                </span>
+              </div>
+              {i < 3 && (
+                <div
+                  className={cn(
+                    "h-px flex-1 min-w-[1rem]",
+                    s.active ? "bg-[var(--color-primary)]/30" : "bg-[var(--color-border)]",
+                  )}
+                  aria-hidden
+                />
+              )}
+            </React.Fragment>
+          ))}
         </div>
+        <p className="mt-3 text-xs text-[var(--color-text-muted)]">
+          Paso 1: Definir año y título. Después podrás editar actividades, hojas y planificación.
+        </p>
       </div>
 
-      <FieldGroup className="gap-5 p-5 sm:p-6">
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Año del programa" htmlFor="pdtp-year" required>
-            <Input
-              id="pdtp-year"
-              name="year"
-              type="number"
-              min={2024}
-              max={CURRENT_YEAR + 2}
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              required
-            />
-          </Field>
+      <FieldGroup className="gap-6 p-5 sm:p-6">
+        {/* ── A: Year picker visual ──────────────────────────────────────── */}
+        <div role="group" aria-label="¿Qué año quieres planificar?">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle mb-2">
+            ¿Qué año quieres planificar?
+          </p>
+          <input type="hidden" name="year" value={year} />
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Seleccionar año">
+            {YEAR_OPTIONS.map((y) => {
+              const programForYear = existingPrograms.find(
+                (p) => p.year === y && p.status === "active",
+              )
+              const isActiveYear = y === CURRENT_YEAR && hasActiveProgram
+              const isRecommended = y === suggestedYear && suggestedYear > CURRENT_YEAR
+              const isSelected = year === y && !isCustomYearActive
 
-          <Field label="Título del programa" htmlFor="pdtp-title" required>
-            <Input
-              id="pdtp-title"
-              name="title"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={`Programa de Trabajo Preventivo SG-SST ${CURRENT_YEAR}`}
-            />
-          </Field>
-        </div>
+              return (
+                <button
+                  key={y}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => handleYearSelect(y)}
+                  className={cn(
+                    "group relative flex flex-col items-center gap-1 rounded-[var(--radius)] border px-4 py-2.5 text-center transition-all",
+                    isSelected
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
+                      : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "text-sm font-semibold",
+                      isSelected
+                        ? "text-[var(--color-primary-ink)]"
+                        : "text-[var(--color-text)]",
+                    )}
+                  >
+                    {y}
+                  </span>
+                  {isRecommended && (
+                    <span className="text-[9px] uppercase tracking-wider text-[var(--color-primary)]">
+                      Sugerido
+                    </span>
+                  )}
+                  {isActiveYear && (
+                    <span className="text-[9px] uppercase tracking-wider text-[var(--color-success)]">
+                      En curso
+                    </span>
+                  )}
+                  {y < CURRENT_YEAR && !programForYear && (
+                    <span className="text-[9px] text-[var(--color-text-faint)]">Pasado</span>
+                  )}
+                </button>
+              )
+            })}
 
-        {/* Summary */}
-        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 sm:p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Resumen antes de crear</p>
-          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-            {/* Year */}
-            <div className="flex min-w-0 items-start gap-2 rounded-[var(--radius)] bg-[var(--color-surface)] px-3 py-2">
-              <span className="mt-0.5 shrink-0 text-[var(--color-primary)]">
-                <CalendarBlank size={15} weight="bold" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">Año</p>
-                <p className="truncate text-sm font-medium text-[var(--color-text)]">{year}</p>
-              </div>
-            </div>
-            {/* Title */}
-            <div className="flex min-w-0 items-start gap-2 rounded-[var(--radius)] bg-[var(--color-surface)] px-3 py-2">
-              <span className={title ? "mt-0.5 shrink-0 text-[var(--color-primary)]" : "mt-0.5 shrink-0 text-text-faint"}>
-                <NotePencil size={15} weight="bold" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">Título</p>
-                <p className={title ? "truncate text-sm font-medium text-[var(--color-text)]" : "truncate text-sm text-text-subtle"}>
-                  {title || "Pendiente"}
-                </p>
-              </div>
-            </div>
-            {/* Duplicate source */}
-            {existingPrograms.length > 0 && (
-              <div className="flex min-w-0 items-start gap-2 rounded-[var(--radius)] bg-[var(--color-surface)] px-3 py-2 sm:col-span-2">
-                <span className={copyFrom ? "mt-0.5 shrink-0 text-[var(--color-primary)]" : "mt-0.5 shrink-0 text-text-faint"}>
-                  <Copy size={15} weight="bold" aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">Duplicar desde</p>
-                  <p className={copyFrom ? "truncate text-sm font-medium text-[var(--color-text)]" : "truncate text-sm text-text-subtle"}>
-                    {copyFrom ? existingPrograms.find((p) => p.id === copyFrom)?.title ?? "—" : "Programa vacío con 8 hojas plantilla"}
-                  </p>
-                </div>
-              </div>
+            {/* Botón "Otro año" */}
+            {customYear ? (
+              <Input
+                id="pdtp-year-custom"
+                type="number"
+                min={2024}
+                max={CURRENT_YEAR + 2}
+                value={year}
+                onChange={(e) => {
+                  setCustomYear(true)
+                  setYear(Number(e.target.value))
+                }}
+                className="w-24"
+                aria-label="Año personalizado"
+              />
+            ) : (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={false}
+                onClick={handleCustomYear}
+                className={cn(
+                  "flex items-center justify-center rounded-[var(--radius)] border border-dashed px-4 py-2.5 text-xs text-[var(--color-text-muted)] transition-colors",
+                  "border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]",
+                )}
+              >
+                Otro año…
+              </button>
             )}
           </div>
         </div>
 
+        {/* ── B: Título con auto-generación ─────────────────────────────── */}
+        <Field label="Título del programa" htmlFor="pdtp-title" required>
+          <Input
+            id="pdtp-title"
+            name="title"
+            required
+            value={title}
+            onChange={handleTitleChange}
+            placeholder={`Programa de Trabajo Preventivo SG-SST ${year}`}
+          />
+          <p className="mt-1 text-[11px] text-[var(--color-text-faint)]">
+            Se genera automáticamente. Puedes editarlo si lo necesitas.
+          </p>
+        </Field>
+
+        {/* ── C: Selector visual de origen ──────────────────────────────── */}
         {existingPrograms.length > 0 && (
-          <Field
-            label="Duplicar estructura de un programa existente"
-            htmlFor="pdtp-copy"
-            helper={`Copia hojas, actividades y planificación del programa elegido hacia el año ${CURRENT_YEAR}+. Las ejecuciones y cumplimiento no se copian: el nuevo programa arranca en borrador.`}
-          >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">
+                Partir desde un programa existente
+              </p>
+              {copyFrom && (
+                <button
+                  type="button"
+                  onClick={() => setCopyFrom("")}
+                  className="text-xs text-[var(--color-text-muted)] underline hover:text-[var(--color-text)]"
+                >
+                  No duplicar
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Copia hojas, actividades y planificación. Las ejecuciones no se copian.
+            </p>
             <input type="hidden" name="copySheetsFromProgramId" value={copyFrom} />
-            <Select value={copyFrom} onValueChange={setCopyFrom}>
-              <SelectTrigger id="pdtp-copy">
-                <SelectValue placeholder="Ninguno — programa vacío con las 8 hojas plantilla" />
-              </SelectTrigger>
-              <SelectContent>
-                {existingPrograms.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.title} ({p.year} · v{p.version})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+
+            {/* Opción vacía */}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!copyFrom}
+              onClick={() => setCopyFrom("")}
+              className={cn(
+                "w-full rounded-[var(--radius)] border p-3 text-left transition-all",
+                !copyFrom
+                  ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold",
+                    !copyFrom
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                      : "border-[var(--color-border)] text-[var(--color-text-faint)]",
+                  )}
+                >
+                  <ClipboardText size={13} />
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-[var(--color-text)]">
+                    Programa vacío
+                  </p>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Empieza con las 8 hojas plantilla. Luego agregarás actividades desde el editor.
+                  </p>
+                </div>
+              </div>
+            </button>
+
+            {/* Cards de programas existentes */}
+            <div className="space-y-2" role="radiogroup" aria-label="Programas existentes">
+              {sortedPrograms.map((p) => {
+                const isSelected = copyFrom === p.id
+                const statusBadge = {
+                  active: { label: "Activo", variant: "success" as const },
+                  closed: { label: "Cerrado", variant: "default" as const },
+                  draft: { label: "Borrador", variant: "warning" as const },
+                }[p.status] ?? { label: p.status, variant: "default" as const }
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    onClick={() => setCopyFrom(p.id)}
+                    className={cn(
+                      "w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm",
+                      isSelected
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
+                        : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <span
+                          className={cn(
+                            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
+                            isSelected
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                              : "border-[var(--color-border)] text-[var(--color-text-faint)]",
+                          )}
+                        >
+                          {p.year.toString().slice(-2)}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-medium text-[var(--color-text)]">
+                              {p.title}
+                            </p>
+                            <Badge variant={statusBadge.variant} size="sm">
+                              {statusBadge.label}
+                            </Badge>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
+                            <span>Año {p.year} · v{p.version}</span>
+                            <span>{p.activityCount} actividades</span>
+                            {p.compliancePercent !== null && (
+                              <span
+                                className={cn(
+                                  "font-medium",
+                                  p.compliancePercent >= 80
+                                    ? "text-[var(--color-success)]"
+                                    : "text-[var(--color-signal)]",
+                                )}
+                              >
+                                {p.compliancePercent}% cumplimiento
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {isSelected && (
+                        <CheckCircle
+                          size={16}
+                          weight="fill"
+                          className="mt-0.5 shrink-0 text-[var(--color-primary)]"
+                        />
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         )}
 
+        {/* ── Feedback ──────────────────────────────────────────────────── */}
         {state?.message && !state.ok && (
-          <p role="alert" className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
+          <p
+            role="alert"
+            className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]"
+          >
             {state.message}
           </p>
         )}
         {state?.ok && state.programId && (
-          <p role="status" className="rounded-[var(--radius)] border border-[var(--color-success-line)] bg-[var(--color-success-tint)] px-3 py-2 text-sm text-[var(--color-success)]">
-            Programa creado. Redirigiendo al editor…
+          <p
+            role="status"
+            className="rounded-[var(--radius)] border border-[var(--color-success-line)] bg-[var(--color-success-tint)] px-3 py-2 text-sm text-[var(--color-success)]"
+          >
+            <span className="flex items-center gap-2">
+              <CheckCircle size={16} weight="fill" />
+              ¡Programa creado! Redirigiendo al editor…
+            </span>
           </p>
         )}
 
-        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-5 sm:flex-row sm:items-center sm:justify-end">
+        {/* ── Acciones ──────────────────────────────────────────────────── */}
+        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-5 sm:flex-row sm:items-center sm:justify-between">
           <Button type="button" variant="ghost" onClick={() => router.back()}>
             Cancelar
           </Button>
-          <SubmitButton label="Crear programa" loadingLabel="Creando..." />
+          <div className="flex items-center gap-3">
+            <p className="hidden text-xs text-[var(--color-text-faint)] sm:block">
+              {copyFrom
+                ? `Se duplicarán actividades desde el programa seleccionado`
+                : `Programa vacío con 8 hojas plantilla`}
+            </p>
+            <SubmitButton label="Crear programa" loadingLabel="Creando..." />
+          </div>
         </div>
       </FieldGroup>
     </form>

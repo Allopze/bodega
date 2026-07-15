@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowSquareOut, Camera, ClockCounterClockwise, GearSix } from "@phosphor-icons/react"
+import { useSearchParams } from "next/navigation"
+import { ArrowSquareOut, Camera, ClockCounterClockwise, Flag, GearSix } from "@phosphor-icons/react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -10,7 +11,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { FUEL_LOG_SOURCE_LABEL, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log"
 import { formatDateTime } from "@/lib/utils"
+import { toast } from "@/lib/toast"
 import { BitacoraSelectionExport } from "./export-button"
+import { toggleReviewMarkAction } from "./actions"
 
 type EnrichedRow = FuelLogRow & { detailHref: string; auditEntity: { entityType: string; entityId: string } | null }
 
@@ -26,23 +29,47 @@ const STATUS_LABEL: Record<string, string> = {
   importado: "Importado (lote)", revertido: "Revertido (lote)",
 }
 
+/** Construye el href de la misma bitácora con un filtro adicional aplicado, preservando los demás. */
+type FilterHref = (params: Record<string, string>) => string
+
 interface ColumnDef {
   key: string
   label: string
   defaultVisible: boolean
-  render: (row: EnrichedRow) => React.ReactNode
+  render: (row: EnrichedRow, filterHref: FilterHref) => React.ReactNode
   numeric?: boolean
+}
+
+/** Celda de valor con selección cruzada: clic aplica ese valor como filtro sin perder los demás (mismo mecanismo que la selección cruzada desde barras en /combustibles). */
+function CrossFilterCell({ value, filterHref, params }: { value: string | null; filterHref: FilterHref; params: Record<string, string> }) {
+  if (!value) return "—"
+  return <Link href={filterHref(params)} className="hover:underline" title="Filtrar por este valor">{value}</Link>
 }
 
 const COLUMNS: ColumnDef[] = [
   { key: "occurredAt", label: "Fecha y hora", defaultVisible: true, render: (r) => <span className="font-mono text-xs">{formatDateTime(r.occurredAt)}</span> },
   { key: "source", label: "Fuente", defaultVisible: true, render: (r) => <Badge variant={SOURCE_BADGE[r.source]} size="sm">{FUEL_LOG_SOURCE_LABEL[r.source]}</Badge> },
   { key: "worksiteName", label: "Faena", defaultVisible: true, render: (r) => r.worksiteName ?? "—" },
-  { key: "equipment", label: "Equipo", defaultVisible: true, render: (r) => <span>{r.equipmentCode ?? "—"}{r.plate ? ` · ${r.plate}` : ""}</span> },
-  { key: "equipmentTypeName", label: "Tipo de equipo", defaultVisible: false, render: (r) => r.equipmentTypeName ?? "—" },
+  {
+    key: "equipment", label: "Equipo", defaultVisible: true,
+    render: (r, filterHref) => r.plate
+      ? <CrossFilterCell value={`${r.equipmentCode ?? "—"} · ${r.plate}`} filterHref={filterHref} params={{ q: r.plate }} />
+      : <span>{r.equipmentCode ?? "—"}</span>,
+  },
+  {
+    key: "equipmentTypeName", label: "Tipo de equipo", defaultVisible: false,
+    render: (r, filterHref) => r.equipmentTypeId
+      ? <CrossFilterCell value={r.equipmentTypeName} filterHref={filterHref} params={{ tipo: r.equipmentTypeId }} />
+      : (r.equipmentTypeName ?? "—"),
+  },
   { key: "driverName", label: "Conductor", defaultVisible: true, render: (r) => r.driverName ?? "—" },
   { key: "supervisorName", label: "Supervisor", defaultVisible: true, render: (r) => r.supervisorName ?? "—" },
-  { key: "supplierName", label: "Proveedor", defaultVisible: false, render: (r) => r.supplierName ?? "—" },
+  {
+    key: "supplierName", label: "Proveedor", defaultVisible: false,
+    render: (r, filterHref) => r.supplierId
+      ? <CrossFilterCell value={r.supplierName} filterHref={filterHref} params={{ proveedor: r.supplierId }} />
+      : (r.supplierName ?? "—"),
+  },
   { key: "loadingPointName", label: "Lugar de carga", defaultVisible: false, render: (r) => r.loadingPointName ?? "—" },
   { key: "productName", label: "Producto", defaultVisible: true, render: (r) => r.productName ?? "—" },
   { key: "liters", label: "Litros", defaultVisible: true, numeric: true, render: (r) => `${Number(r.liters).toLocaleString("es-CL")} L` },
@@ -54,16 +81,62 @@ const COLUMNS: ColumnDef[] = [
   { key: "statusLabel", label: "Estado", defaultVisible: true, render: (r) => r.statusLabel ? STATUS_LABEL[r.statusLabel] ?? r.statusLabel : "—" },
   { key: "createdByName", label: "Creado por", defaultVisible: false, render: (r) => r.createdByName ?? "—" },
   { key: "updatedByName", label: "Modificado por", defaultVisible: false, render: (r) => r.updatedByName ?? "—" },
+  { key: "anomalyCount", label: "Anomalías", defaultVisible: true, render: (r) => r.anomalyCount != null && r.anomalyCount > 0 ? <Link href={`/combustibles/anomalias?ref=${r.source}:${r.id}`}><Badge variant="danger" size="sm">{r.anomalyCount}</Badge></Link> : <span className="text-(--color-text-muted)">—</span> },
+  { key: "reviewMark", label: "Revisión", defaultVisible: true, render: (r) => r.reviewMark ? <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400" title={r.reviewMarkNotes ?? "Marcado para revisión"}><Flag size={14} weight="fill" />{r.reviewMarkNotes ? <span className="text-xs max-w-[120px] truncate">{r.reviewMarkNotes}</span> : null}</span> : null },
   { key: "createdAt", label: "Creado", defaultVisible: false, render: (r) => r.createdAt ? formatDateTime(r.createdAt) : "—" },
   { key: "updatedAt", label: "Modificado", defaultVisible: false, render: (r) => r.updatedAt ? formatDateTime(r.updatedAt) : "—" },
 ]
 
+/** Botón de toggle para marcar/desmarcar una fila para revisión. */
+function ReviewToggle({ row }: { row: EnrichedRow }) {
+  const [busy, setBusy] = React.useState(false)
+  const [marked, setMarked] = React.useState(row.reviewMark)
+
+  async function handleClick() {
+    setBusy(true)
+    try {
+      const res = await toggleReviewMarkAction(row.source, row.id)
+      if (res.ok) {
+        setMarked(res.marked)
+        toast.success(res.marked ? "Marcado para revisión" : "Marca de revisión eliminada")
+      } else {
+        toast.error(res.message)
+      }
+    } catch {
+      toast.error("Error al cambiar marca de revisión")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={busy}
+      className={`inline-flex items-center gap-1 text-xs transition-colors hover:opacity-80 ${marked ? "text-amber-600 dark:text-amber-400" : "text-(--color-text-muted) hover:text-amber-600 dark:hover:text-amber-400"}`}
+      title={marked ? "Quitar marca de revisión" : "Marcar para revisión"}
+    >
+      <Flag size={14} weight={marked ? "fill" : "regular"} />
+    </button>
+  )
+}
+
 export function BitacoraTable({ rows }: { rows: EnrichedRow[] }) {
   const [visible, setVisible] = React.useState<Set<string>>(() => new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key)))
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
+  const searchParams = useSearchParams()
   const rowKey = (row: EnrichedRow) => `${row.source}:${row.id}`
   const columns = COLUMNS.filter((c) => visible.has(c.key))
   const allSelected = rows.length > 0 && rows.every((row) => selected.has(rowKey(row)))
+
+  const filterHref: FilterHref = (params) => {
+    const next = new URLSearchParams(searchParams.toString())
+    for (const [key, value] of Object.entries(params)) next.set(key, value)
+    next.delete("page")
+    const query = next.toString()
+    return query ? `/combustibles/bitacora?${query}` : "/combustibles/bitacora"
+  }
 
   function toggleColumn(key: string) {
     setVisible((prev) => {
@@ -124,11 +197,12 @@ export function BitacoraTable({ rows }: { rows: EnrichedRow[] }) {
             {rows.map((row) => {
               const key = rowKey(row)
               return (
-                <TableRow key={key}>
+                <TableRow key={key} className={row.reviewMark ? "bg-amber-50/40 dark:bg-amber-900/10" : ""}>
                   <TableCell><Checkbox id={`select-${key}`} label="" checked={selected.has(key)} onChange={() => toggleRow(key)} aria-label={`Seleccionar fila ${key}`} /></TableCell>
-                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono" : ""}>{column.render(row)}</TableCell>)}
+                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono" : ""}>{column.render(row, filterHref)}</TableCell>)}
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      <ReviewToggle row={row} />
                       <Link href={row.detailHref} className="inline-flex items-center gap-1 text-xs text-(--color-primary-ink) hover:underline" title="Abrir detalle"><ArrowSquareOut size={14} /></Link>
                       {row.source === "tae_pwa" && (row.evidenceCount ?? 0) > 0 && (
                         <Link href={`${row.detailHref}#evidencia`} className="inline-flex items-center gap-1 text-xs text-(--color-primary-ink) hover:underline" title="Ver evidencias"><Camera size={14} /></Link>

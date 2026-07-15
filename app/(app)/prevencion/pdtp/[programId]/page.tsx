@@ -8,6 +8,7 @@ import {
   getPdtpSheetViewByProgram,
   getPdtpProgram,
   getPdtpComplianceIndicators,
+  getPdtpIntegralCompliance,
   listPdtpResponsibleCatalog,
   listPdtpProgramSheets,
 } from "@/lib/services/prevention-pdtp"
@@ -78,6 +79,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
     : worksites[0]?.id
   const view = await getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId)
   const indicators = await getPdtpComplianceIndicators(programId, selectedWorksiteId)
+  const integral = await getPdtpIntegralCompliance(programId, selectedWorksiteId)
 
   const canApprove = can(session, "prevention:pdtp:approve")
 
@@ -171,7 +173,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         />
 
         {/* Compliance indicators */}
-        {indicators && <PdtpIndicatorsPanel data={indicators} />}
+        {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} />}
 
         <div className="flex flex-wrap items-start gap-6">
           <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} programId={programId} />

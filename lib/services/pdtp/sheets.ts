@@ -4,7 +4,9 @@ import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdt
 import { SHEET_EXPORT_NAMES, MONTH_LABELS } from "./constants"
 import { emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
-import type { ReportData, ReportCell } from "@/lib/reports/export"
+import type { ReportData, ReportCell, ReportSheet } from "@/lib/reports/export"
+import { listActionsByProgram } from "./action-plan"
+import { listFollowups } from "./followups"
 
 export type PdtpSheetView = {
   program: typeof pdtpPrograms.$inferSelect
@@ -146,10 +148,45 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId }
     return [activity.n, activity.objective, activity.activity, activity.program, activity.responsibleDisplay, ...monthly, activity.totalPlanned, activity.totalExecuted, percent]
   })
 
+  const actionItems = await listActionsByProgram(view.program.id, { worksiteId })
+  const actionPlanSheet = buildActionPlanSheet(actionItems)
+  const seguimientoSheet = await buildSeguimientoSheet(actionItems)
+
   // El filename usa el año real del programa (view.program.year), no el
   // arg `year`: cuando el caller pasa `programId`, ese `year` puede venir
   // de un `?year=` legado que no coincide con el programa resuelto.
-  return { filenameBase: `pdtp-sg-sst-${view.program.year}-${sheetCode}`, worksheetName: SHEET_EXPORT_NAMES[sheetCode], headers, rows }
+  return {
+    filenameBase: `pdtp-sg-sst-${view.program.year}-${sheetCode}`,
+    worksheetName: SHEET_EXPORT_NAMES[sheetCode],
+    headers,
+    rows,
+    sheets: [
+      { worksheetName: SHEET_EXPORT_NAMES[sheetCode], headers, rows },
+      actionPlanSheet,
+      seguimientoSheet,
+    ],
+  }
+}
+
+function buildActionPlanSheet(items: Awaited<ReturnType<typeof listActionsByProgram>>): ReportSheet {
+  const headers = ["N°", "Hallazgo", "Acción", "Responsable", "Rol", "Plazo", "Prioridad", "Estado", "Vencida"]
+  const rows: ReportCell[][] = items.map((item) => [
+    item.n, item.hallazgo, item.accion, item.responsable, item.responsableRole,
+    item.plazo, item.prioridad, item.estado, item.vencida ? "Sí" : "No",
+  ])
+  return { worksheetName: "Plan de acción", headers, rows }
+}
+
+async function buildSeguimientoSheet(items: Awaited<ReturnType<typeof listActionsByProgram>>): Promise<ReportSheet> {
+  const headers = ["Acción N°", "Fecha", "Estado anterior", "Estado nuevo", "Observación"]
+  const rows: ReportCell[][] = []
+  for (const item of items) {
+    const followups = await listFollowups(item.id)
+    for (const f of followups) {
+      rows.push([item.n, f.fecha, f.estadoAnterior, f.estadoNuevo, f.observacion])
+    }
+  }
+  return { worksheetName: "Seguimiento", headers, rows }
 }
 
 /**

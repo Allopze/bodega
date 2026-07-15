@@ -1,9 +1,11 @@
 /**
- * Helpers XLSX compartidos entre los parsers del módulo combustibles
- * (facturas — `import.ts` — y consumos por patente — `consumption-import.ts`).
+ * Helpers XLSX compartidos del módulo combustibles: parsers de importación
+ * (facturas — `import.ts` — y consumos por patente — `consumption-import.ts`)
+ * y la hoja de metadatos que llevan las 4 exportaciones del módulo.
  */
 
 import ExcelJS from "exceljs"
+import type { Session } from "next-auth"
 
 /** Normaliza un encabezado de columna: colapsa espacios/saltos de línea,
  *  recorta y pasa a minúsculas, para comparar de forma tolerante. */
@@ -67,4 +69,30 @@ export function nullableChileanNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null
   const parsed = parseChileanNumber(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * Hoja "Metadatos": hace cualquier exportación del módulo autocontenida y
+ * reproducible — quién, cuándo, con qué filtros y con qué alcance de faena
+ * la generó. Compartida por las 4 exportaciones XLSX del módulo (bitácora,
+ * TAE, facturas, conciliación TAE/Copec); antes sólo la tenía la de bitácora.
+ */
+export function addExportMetadataSheet(
+  wb: ExcelJS.Workbook,
+  session: Session,
+  context: { filters?: object | null; rowCount: number; from?: string | null; to?: string | null },
+) {
+  const ws = wb.addWorksheet("Metadatos")
+  ws.columns = [{ key: "label", width: 22 }, { key: "value", width: 60 }]
+  const entries: Array<[string, string]> = [
+    ["Generado", new Date().toLocaleString("es-CL")],
+    ["Generado por", session.user.email ?? session.user.name ?? session.user.id],
+    ["Alcance de faena", session.user.isGlobal ? "Todas las faenas (usuario global)" : (session.user.worksiteIds ?? []).join(", ") || "Sin faenas asignadas"],
+    ["Filas incluidas", String(context.rowCount)],
+    ["Período (desde)", context.from ?? "Sin filtro"],
+    ["Período (hasta)", context.to ?? "Sin filtro"],
+    ["Filtros aplicados", context.filters ? JSON.stringify(Object.fromEntries(Object.entries(context.filters).filter(([, v]) => v !== undefined))) : "Selección manual de filas"],
+  ]
+  for (const [label, value] of entries) ws.addRow({ label, value })
+  ws.getColumn("label").font = { bold: true }
 }

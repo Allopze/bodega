@@ -7,6 +7,14 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 
+/** ponytail: Umbral máximo de diferencia porcentual considerado "normal" en el
+ *  semáforo del ciclo. Pendiente de hacer configurable por faena (sección 12). */
+export const CYCLE_DIFF_NORMAL_PCT = 2
+
+/** ponytail: Umbral máximo de diferencia porcentual considerado "advertencia"
+ *  (por encima = crítico). Pendiente de hacer configurable por faena (sección 12). */
+export const CYCLE_DIFF_WARNING_PCT = 5
+
 export const fuelCycleMovementSchema = z.object({
   eventType: z.enum(["received", "transfer", "tank_delivery", "direct_delivery"]),
   worksiteId: z.string().min(1),
@@ -53,13 +61,11 @@ export function compareCycleAmounts(left: CycleAmount | null, right: CycleAmount
 
 export type DifferenceSeverity = "normal" | "warning" | "critical" | "unavailable"
 
-// ponytail: umbral fijo (±2% normal, ±5% advertencia, más allá crítico) hasta que
-// la sección 12 del checklist lo haga configurable por faena/tipo de equipo.
 export function differenceSeverity(difference: CycleDifference): DifferenceSeverity {
   if (difference.status === "unavailable" || difference.percent === null) return "unavailable"
   const magnitude = Math.abs(difference.percent)
-  if (magnitude <= 2) return "normal"
-  if (magnitude <= 5) return "warning"
+  if (magnitude <= CYCLE_DIFF_NORMAL_PCT) return "normal"
+  if (magnitude <= CYCLE_DIFF_WARNING_PCT) return "warning"
   return "critical"
 }
 

@@ -8,7 +8,8 @@ import { cn, formatCLP } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
-import { CheckCircle, ArrowRight } from "@phosphor-icons/react/dist/ssr"
+import { Button } from "@/components/ui/button"
+import { CheckCircle, ArrowRight, Plus } from "@phosphor-icons/react/dist/ssr"
 import { buildWorkTasks } from "@/lib/work-queue"
 import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getDashboardData, getWorkQueueSnapshot, buildActor } from "@/lib/services/dashboard"
@@ -16,6 +17,7 @@ import { MetricBar } from "./metric-bar"
 import { QuickActions } from "./quick-actions"
 import { RecentActivity } from "./recent-activity"
 import { loadPdtpComplianceSummary, PdtpComplianceCard } from "./pdtp-compliance-card"
+import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
 import { TaskRow } from "./dashboard-task-row"
 import { scopeToWorksiteIds } from "./dashboard-helpers"
 
@@ -44,9 +46,17 @@ export default async function DashboardPage() {
 
   // PDTP compliance summary — sólo si el usuario puede ver el módulo
   const canViewPdtp = can(session, "prevention:pdtp:view")
-  const pdtpSummary = canViewPdtp
-    ? await loadPdtpComplianceSummary(scopeToWorksiteIds(resolveWorksiteScope(session)))
-    : null
+  const canManagePdtp = can(session, "prevention:pdtp:manage")
+  const [pdtpSummary, activeProgram, allPrograms] = await Promise.all([
+    canViewPdtp
+      ? loadPdtpComplianceSummary(scopeToWorksiteIds(resolveWorksiteScope(session)))
+      : Promise.resolve(null),
+    canViewPdtp ? getActivePdtpProgram(new Date().getFullYear()) : Promise.resolve(null),
+    canViewPdtp ? listPdtpPrograms() : Promise.resolve([]),
+  ])
+  const currentYear = new Date().getFullYear()
+  const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
+  const shouldSuggestNextYear = activeProgram && !hasNextYearProgram && canManagePdtp
 
   const signalDefs: Array<HeaderSignal & { perm: Permission }> = [
     { key: "approvals", label: "Por aprobar",   value: data.metrics.pending_approvals,      href: "/aprobaciones",  tone: "signal", perm: "approvals:approve" },
@@ -125,15 +135,46 @@ export default async function DashboardPage() {
       </div>
 
       {/* ── Cumplimiento PDTP (gated por permiso) ── */}
-      {pdtpSummary && (
+      {canViewPdtp && (
         <section className="mt-6">
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-h2 text-[var(--color-text)]">Programa de Trabajo Preventivo</h2>
-            <p className="text-xs text-[var(--color-text-muted)]">Meta anual {Math.round(pdtpSummary.target * 100)}%</p>
+            <div className="flex items-center gap-3">
+              {pdtpSummary && (
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Meta anual {Math.round(pdtpSummary.target * 100)}%
+                </p>
+              )}
+              {shouldSuggestNextYear && (
+                <Button asChild size="sm" variant="secondary">
+                  <Link href={`/prevencion/pdtp/nuevo`}>
+                    <Plus size={13} />
+                    Preparar programa {currentYear + 1}
+                  </Link>
+                </Button>
+              )}
+              {!activeProgram && allPrograms.length === 0 && canManagePdtp && (
+                <Button asChild size="sm">
+                  <Link href={`/prevencion/pdtp/nuevo`}>
+                    <Plus size={13} />
+                    Crear programa {currentYear}
+                  </Link>
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <PdtpComplianceCard {...pdtpSummary} />
-          </div>
+          {pdtpSummary && (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <PdtpComplianceCard {...pdtpSummary} />
+            </div>
+          )}
+          {!pdtpSummary && (
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5">
+              <p className="text-sm text-[var(--color-text-muted)]">
+                No hay un programa activo para {currentYear}.
+              </p>
+            </div>
+          )}
         </section>
       )}
 

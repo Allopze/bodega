@@ -20,7 +20,7 @@ import { and, eq, gte, inArray, lte, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelEquipmentTypes, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { describe, periodVariation, sampleReliability, type DescriptiveStats, type SampleReliability } from "./performance-statistics"
+import { describe, linearTrend, periodVariation, sampleReliability, type DescriptiveStats, type SampleReliability, type TrendLine } from "./performance-statistics"
 
 export type PerformanceUnit = "km_per_liter" | "liters_per_hour"
 export type EquipmentPreset = "truck" | "loaders_pickups" | "heavy"
@@ -75,6 +75,14 @@ export interface PerformanceGroup {
   vehicleIds: string[]
   /** Patente única, para enlazar directo a la bitácora cuando el grupo es un solo equipo. */
   singlePlate: string | null
+  /** Regresión lineal sobre las medias de cada subperíodo. `null` si hay menos de 3 puntos. */
+  trend: TrendLine | null
+  /** Medias por subperíodo, en orden cronológico. */
+  periodMeans: number[]
+  /** Etiquetas de cada subperíodo ("Ene 1-15", "Ene 16-31", etc.). */
+  periodLabels: string[]
+  /** Valores crudos de rendimiento de este bucket, para histograma. */
+  values: number[]
 }
 
 async function fetchObservations(session: Session, filters: Pick<EquipmentPerformanceFilters, "preset" | "worksiteId">, from: string, to: string): Promise<RawObservation[]> {
@@ -192,6 +200,10 @@ function buildGroups(observations: RawObservation[], level: AggregationLevel, pr
       expectedRange: pool && pool.length >= 3 ? { low: describe(pool).p10, high: describe(pool).p90 } : null,
       vehicleIds: [...bucket.vehicleIds],
       singlePlate: bucket.plates.size === 1 ? [...bucket.plates][0]! : null,
+      trend: null,
+      periodMeans: [],
+      periodLabels: [],
+      values: bucket.values,
     }
   })
 }
@@ -205,12 +217,93 @@ function previousRange(from: string, to: string): { from: string; to: string } {
   return { from: previousStart.toISOString().slice(0, 10), to: previousEnd.toISOString().slice(0, 10) }
 }
 
+const MAX_TREND_PERIODS = 6
+
+/** Divide el rango [from, to] en subperíodos de igual duración, más el período
+ *  previo inmediato para la comparación de dos puntos. Cada subperíodo recibe
+ *  una etiqueta legible. */
+function periodWindows(from: string, to: string): Array<{ from: string; to: string; label: string }> {
+  const start = new Date(`${from}T00:00:00.000Z`)
+  const end = new Date(`${to}T00:00:00.000Z`)
+  const spanMs = end.getTime() - start.getTime()
+  // Menos de 45 días: muy poco para una tendencia multi-período significativa
+  if (spanMs < 45 * 24 * 60 * 60 * 1000) return [{ from, to, label: "Período actual" }]
+
+  // Dividir en tramos de ~30 días, con un máximo de MAX_TREND_PERIODS
+  const desiredSegments = Math.min(Math.max(Math.round(spanMs / (30 * 24 * 60 * 60 * 1000)), 2), MAX_TREND_PERIODS)
+  const segmentMs = spanMs / desiredSegments
+
+  const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+  const windows: Array<{ from: string; to: string; label: string }> = []
+
+  for (let i = 0; i < desiredSegments; i++) {
+    const wStart = new Date(start.getTime() + i * segmentMs)
+    const wEnd = new Date(i === desiredSegments - 1 ? end.getTime() : start.getTime() + (i + 1) * segmentMs - 24 * 60 * 60 * 1000)
+    const midMonth = monthNames[wStart.getUTCMonth()] ?? ""
+    windows.push({
+      from: wStart.toISOString().slice(0, 10),
+      to: wEnd.toISOString().slice(0, 10),
+      label: `${midMonth} ${wStart.getUTCDate()}-${wEnd.getUTCDate()}`,
+    })
+  }
+  return windows
+}
+
+function trendLabel(t: TrendLine | null): string {
+  if (!t) return "—"
+  const arrow = t.direction === "up" ? "↑" : "↓"
+  return `${arrow} ${Math.abs(t.slope).toFixed(2)}/período`
+}
+
+export { trendLabel }
+
+
 export async function getEquipmentPerformanceAnalysis(session: Session, filters: EquipmentPerformanceFilters): Promise<PerformanceGroup[]> {
   const previous = previousRange(filters.from, filters.to)
+  const windows = periodWindows(filters.from, filters.to)
+
   const [observations, previousObservations] = await Promise.all([
     fetchObservations(session, filters, filters.from, filters.to),
     fetchObservations(session, filters, previous.from, previous.to),
   ])
-  return buildGroups(observations, filters.aggregateBy, previousObservations)
-    .sort((a, b) => b.stats.count - a.stats.count)
+
+  const groups = buildGroups(observations, filters.aggregateBy, previousObservations)
+
+  // Tendencia multi-período: si el rango se dividió en 2+ ventanas, calcular
+  // media por ventana y regresión lineal sobre esa serie.
+  if (windows.length >= 2) {
+    const periodResults = await Promise.all(
+      windows.map((w) => fetchObservations(session, filters, w.from, w.to)),
+    )
+
+    const periodMeansByBucket = new Map<string, Array<{ label: string; value: number }>>()
+    for (let i = 0; i < windows.length; i++) {
+      const label = windows[i]!.label
+      const obs = periodResults[i]!
+      const buckets = new Map<string, number[]>()
+      for (const o of obs) {
+        const { key } = groupKey(o, filters.aggregateBy)
+        const bk = `${key}::${o.performanceUnit}`
+        const list = buckets.get(bk) ?? []
+        list.push(o.rendimiento)
+        buckets.set(bk, list)
+      }
+      for (const [bk, values] of buckets) {
+        const entry = periodMeansByBucket.get(bk) ?? []
+        entry.push({ label, value: values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0 })
+        periodMeansByBucket.set(bk, entry)
+      }
+    }
+
+    for (const group of groups) {
+      const entries = periodMeansByBucket.get(group.key)
+      if (entries && entries.filter((e) => e.value > 0).length >= 2) {
+        group.periodLabels = entries.map((e) => e.label)
+        group.periodMeans = entries.map((e) => e.value)
+        group.trend = linearTrend(group.periodMeans)
+      }
+    }
+  }
+
+  return groups.sort((a, b) => b.stats.count - a.stats.count)
 }
