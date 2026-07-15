@@ -13,8 +13,6 @@ export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 import { db } from "@/db"
 import { sql } from "drizzle-orm"
-import { access } from "node:fs/promises"
-import { constants } from "node:fs"
 import { writeFile, unlink } from "node:fs/promises"
 import path from "node:path"
 
@@ -52,8 +50,8 @@ export async function GET() {
 
   // 2. Check storage volume writability
   try {
-    await access(path.dirname(STORAGE_PATH), constants.W_OK | constants.R_OK)
-    // Write and remove a temp file to verify actual writability
+    // Probe the configured volume itself. Its parent may intentionally be owned
+    // by root while the mounted storage directory is writable by the app user.
     const probePath = path.join(STORAGE_PATH, `.health-${Date.now()}.tmp`)
     await writeFile(probePath, "ok", "utf-8")
     await unlink(probePath).catch(() => {})
@@ -66,15 +64,21 @@ export async function GET() {
   // 3. Check disk space (Linux only)
   if (process.platform === "linux") {
     try {
-      const { execSync } = await import("node:child_process")
-      const df = execSync("df --output=pcent,avail / 2>/dev/null | tail -1", {
+      const { execFileSync } = await import("node:child_process")
+      // `df -Pk` is specified by POSIX and works in both GNU coreutils and
+      // BusyBox, unlike GNU's `df --output` option used by Alpine images.
+      const df = execFileSync("df", ["-Pk", "/"], {
         encoding: "utf-8",
         timeout: 2000,
-      }).trim()
-      const [pctStr, availBlocks] = df.split(/\s+/)
-      const usedPct = Number.parseInt(pctStr?.replace("%", "") ?? "0", 10)
+      })
+      const row = df.trim().split("\n").at(-1)?.trim().split(/\s+/)
+      const availBlocks = Number.parseInt(row?.[3] ?? "", 10)
+      const usedPct = Number.parseInt(row?.[4]?.replace("%", "") ?? "", 10)
+      if (!Number.isFinite(availBlocks) || !Number.isFinite(usedPct)) {
+        throw new Error("No se pudo interpretar la salida de df")
+      }
       const freePct = 100 - usedPct
-      const freeBytes = (Number.parseInt(availBlocks ?? "0", 10) || 0) * 1024
+      const freeBytes = availBlocks * 1024
 
       result.disk = {
         status: freePct >= 10 && freeBytes >= 1_073_741_824 ? "ok" : "low_space",

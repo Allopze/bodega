@@ -87,7 +87,6 @@ services:
   #   docker compose run --rm sync-rbac
   # Uses `target: build` (like `seed`) because scripts/sync-rbac.ts needs tsx.
   sync-rbac:
-    profiles: ["deploy"]
     build:
       context: .
       target: build
