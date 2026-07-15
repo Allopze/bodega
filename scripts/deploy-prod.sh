@@ -57,6 +57,9 @@ docker build --target prod -t "$IMAGE" .
 echo "==> Applying migrations"
 (cd "$PROD_DIR" && docker compose run --rm migrate)
 
+echo "==> Syncing RBAC permissions from module manifests"
+(cd "$PROD_DIR" && docker compose run --rm sync-rbac)
+
 echo "==> Recreating app container"
 (cd "$PROD_DIR" && docker compose up -d --no-deps app)
 

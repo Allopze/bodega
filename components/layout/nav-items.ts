@@ -125,6 +125,10 @@ export function isHrefActive(href: string, pathname: string): boolean {
       return false
     }
   }
+  // Excluir rutas hijas que son ítems de navegación independientes
+  if (href === "/prevencion/pdtp" && pathname.startsWith("/prevencion/pdtp/acciones")) {
+    return false
+  }
   return pathname === href || pathname.startsWith(href + "/")
 }
 const matchesHref = isHrefActive

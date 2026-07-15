@@ -87,4 +87,17 @@ describe("sidebar navigation", () => {
     expect(isHrefActive("/prevencion", "/prevencion/documentacion")).toBe(false)
     expect(isHrefActive("/prevencion", "/prevencion/ppa")).toBe(false)
   })
+
+  it("does not mark Programa preventivo SG-SST active while browsing Plan de acción PDTP", () => {
+    // Exact match should be active
+    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp")).toBe(true)
+    // Sub-rutas del programa (nuevo, aprobaciones, detalle) deben estar activas
+    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/nuevo")).toBe(true)
+    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/aprobaciones")).toBe(true)
+    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/prog-123")).toBe(true)
+    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/prog-123/editar")).toBe(true)
+    // Plan de acción es un ítem de navegación independiente — NO debe marcar el programa
+    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/acciones")).toBe(false)
+    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/acciones?page=1")).toBe(false)
+  })
 })

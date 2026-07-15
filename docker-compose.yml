@@ -82,6 +82,24 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/migrate.mjs"]
 
+  # One-shot: sync RBAC permissions from module manifests to the database.
+  # Run automatically by deploy-prod.sh after migrations. Also run manually:
+  #   docker compose run --rm sync-rbac
+  # Uses `target: build` (like `seed`) because scripts/sync-rbac.ts needs tsx.
+  sync-rbac:
+    profiles: ["deploy"]
+    build:
+      context: .
+      target: build
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["npx", "tsx", "scripts/sync-rbac.ts"]
+
   # One-shot, MANUAL: bootstrap seed (worksites/workers and EPP catalog).
   # Not part of the default `up` (guarded by the `seed` profile). Run explicitly:
   #   docker compose run --rm seed
