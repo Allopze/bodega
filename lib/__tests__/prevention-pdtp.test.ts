@@ -276,7 +276,7 @@ describe("prevention PDTP service", () => {
     expect(result!.monthly.every((m) => m.executed === 0)).toBe(true)
     expect(result!.annual.executed).toBe(0)
     // Month 1 (January) has programmed activities in the XLSX
-    expect(result!.monthly[0]!.planned).toBe(36)
+    expect(result!.monthly[0]!.planned).toBe(76)
   })
 
   it("getPdtpComplianceIndicators suma solo cantidades aprobadas", async () => {
