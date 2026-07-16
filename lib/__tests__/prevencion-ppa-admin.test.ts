@@ -90,7 +90,7 @@ describe("prevencion SST actions", () => {
     it("denies scope when worksite not in user scope", async () => {
       mockAuthFn.mockResolvedValue(makeSession("sst:create", ["ws-2"]))
       const { createEvaluationAction } = await import("@/app/(app)/prevencion/actions")
-      const r = await createEvaluationAction({ worksiteId: "ws-1", workerId: "w-1" } as Parameters<typeof createEvaluationAction>[0])
+      const r = await createEvaluationAction({ worksiteId: "ws-1", workerId: "w-1", definicionCode: "trabajador_nuevo", tipo: "nuevo", fechaEvaluacion: "2026-07-16", cargos: ["admin_contrato"] } as Parameters<typeof createEvaluationAction>[0])
       expect(r.ok).toBe(false); expect(r.message).toContain("No tienes acceso")
     })
 
@@ -102,7 +102,7 @@ describe("prevencion SST actions", () => {
       const { db } = await import("@/db")
       vi.mocked(db.select).mockReturnValue({ from: mockFrom, where: mockWhere, then: (resolve: (v: unknown[]) => void) => Promise.resolve([{ worksiteId: "ws-1" }]).then(resolve) } as unknown as ReturnType<typeof db.select>)
       const { createEvaluationAction } = await import("@/app/(app)/prevencion/actions")
-      const r = await createEvaluationAction({ worksiteId: "ws-1", workerId: "w-1" } as Parameters<typeof createEvaluationAction>[0])
+      const r = await createEvaluationAction({ worksiteId: "ws-1", workerId: "w-1", definicionCode: "trabajador_nuevo", tipo: "nuevo", fechaEvaluacion: "2026-07-16", cargos: ["admin_contrato"] } as Parameters<typeof createEvaluationAction>[0])
       expect(r.ok).toBe(true); expect(r.data?.id).toBe("eval-1")
     })
   })
@@ -199,8 +199,9 @@ describe("prevencion PPA admin actions", () => {
 
     it("reviews PPA on happy path", async () => {
       mockAuthFn.mockResolvedValue(makeSession("ppa:review", [], true))
+      mockReviewPpa.mockResolvedValue({ id: "ppa-1" })
       const { reviewPpaAction } = await import("@/app/(app)/prevencion/ppa/actions")
-      const r = await reviewPpaAction({ ppaId: "ppa-1", fuiAlLugar: true, decision: "autorizado", accionCorrectiva: "Se verificó EPP completo" })
+      const r = await reviewPpaAction({ ppaId: "ppa-1", fuiAlLugar: true, decision: "autorizado", accionCorrectiva: "Se verificó EPP completo", responsibleRole: "prevencionista_faena", responsible: "Juan Pérez", dueDate: "2026-08-01", priority: "alta" })
       expect(r.ok).toBe(true)
     })
 
@@ -208,7 +209,7 @@ describe("prevencion PPA admin actions", () => {
       mockAuthFn.mockResolvedValue(makeSession("ppa:review", [], true))
       mockReviewPpa.mockRejectedValue(new Error("PPA no encontrado"))
       const { reviewPpaAction } = await import("@/app/(app)/prevencion/ppa/actions")
-      const r = await reviewPpaAction({ ppaId: "ppa-1", fuiAlLugar: true, decision: "autorizado", accionCorrectiva: "Se verificó EPP completo" })
+      const r = await reviewPpaAction({ ppaId: "ppa-1", fuiAlLugar: true, decision: "correccion", accionCorrectiva: "Se necesita corrección" })
       expect(r.ok).toBe(false); expect(r.message).toContain("no encontrado")
     })
   })

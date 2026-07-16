@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { PropsWithChildren } from "react"
 import type { SafetyIndicator } from "@/db/schema"
 
+vi.mock("next/server", () => ({}))
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock("next/dynamic", () => ({ default: () => () => null }))
 vi.mock("@/app/(app)/analitica/analytics-kpi-card", () => ({ KpiCard: () => null }))

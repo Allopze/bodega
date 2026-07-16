@@ -38,7 +38,9 @@ const dynamicSamples: Record<string, string> = {
   "/flota/[id]": "/flota/fuel-veh-audit-1",
   "/prevencion/pdtp/[programId]": "/prevencion/pdtp/prog-audit-1",
   "/prevencion/pdtp/[programId]/editar": "/prevencion/pdtp/prog-audit-1/editar",
+  "/prevencion/pdtp/[programId]/ejecucion/[executionId]": "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1",
   "/prevencion/pdtp/nuevo": "/prevencion/pdtp/nuevo",
+  "/combustibles/bitacora/historial/[entityType]/[entityId]": "/combustibles/bitacora/historial/sst/entity-audit-1",
 }
 
 describe("capture-all-routes route inventory", () => {
