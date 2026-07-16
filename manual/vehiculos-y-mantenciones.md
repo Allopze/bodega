@@ -23,14 +23,16 @@ combustible, mantenciones e imputaciones.
 La pantalla `Mantenciones` se usa para planificar y registrar mantenciones de
 vehiculos.
 
-- La creacion aparece como el bloque `Nueva mantención`.
+- Al entrar ves primero el historial y los filtros; la creacion esta en el
+  boton `Nueva mantención` de la barra superior.
 - Filtra por estado o por vehiculo.
 - En la tabla puedes editar o cancelar una mantencion si tu rol lo permite.
 
 ### Como registrar una mantencion
 
 1. Abre `Mantenciones`.
-2. Busca el bloque `Nueva mantención`.
+2. Pulsa `Nueva mantención` (barra superior). Se abre una ventana con el
+   formulario.
 3. Elige vehiculo, proveedor, faena y centro de costo cuando corresponda.
 4. Completa fecha, tipo de servicio, kilometraje, horometro y observaciones.
 5. Guarda el registro.

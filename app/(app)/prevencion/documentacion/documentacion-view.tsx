@@ -26,6 +26,7 @@ export function DocumentacionView(props: Props) {
   const router = useRouter()
   const {
     documents,
+    counters,
     folders = [],
     folderOptions = [],
     currentFolderId = null,
@@ -34,7 +35,7 @@ export function DocumentacionView(props: Props) {
     userId,
   } = props
 
-  const f = useDocumentacionView(documents, folders, folderOptions, currentFolderId, canManage, canArchive, userId)
+  const f = useDocumentacionView(documents, folders, folderOptions, currentFolderId, props.searchParams, canManage, canArchive, userId)
 
   const gridFolders: GridFolder[] = f.filteredFolders
   const gridDocuments: GridDocument[] = f.filteredDocuments.map((d) => ({
@@ -44,9 +45,21 @@ export function DocumentacionView(props: Props) {
     mimeType: d.mimeType ?? null,
     updatedAt: d.updatedAt,
   }))
+  const attentionItems = [
+    counters?.pendingReview ? `${counters.pendingReview} por revisar` : null,
+    counters?.observed ? `${counters.observed} observados` : null,
+    counters?.ackPending ? `${counters.ackPending} acuses pendientes` : null,
+    counters?.expiringSoon.within30 ? `${counters.expiringSoon.within30} vencen en 30 días` : null,
+  ].filter((item): item is string => Boolean(item))
 
   return (
     <div className="space-y-5">
+      {attentionItems.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-(--color-border) py-2 text-xs text-(--color-text-muted)" role="status">
+          <span className="font-semibold text-(--color-text)">Atención documental</span>
+          {attentionItems.map((item) => <span key={item}>{item}</span>)}
+        </div>
+      )}
       <div className="flex justify-end">
         <ViewModeToggle userId={userId} value={f.viewMode} onChange={f.setViewMode} />
       </div>
@@ -54,7 +67,7 @@ export function DocumentacionView(props: Props) {
       {!f.hasContent ? (
         <EmptyState
           title={f.isFiltering ? "Sin resultados" : "Carpeta vacía"}
-          description={f.isFiltering ? "No hay carpetas ni documentos que coincidan con la búsqueda del header." : "Sube documentos o crea una carpeta para ordenar la documentación preventiva."}
+          description={f.isFiltering ? "No hay carpetas ni documentos que coincidan con los filtros aplicados." : "Sube documentos o crea una carpeta para ordenar la documentación preventiva."}
         />
       ) : (
         <div className="space-y-3">

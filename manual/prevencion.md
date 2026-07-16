@@ -1,10 +1,17 @@
-# Prevencion
+# Prevención
 
-Indice de la seccion:
+`Prevención` abre un inicio que muestra solo los módulos habilitados para tu
+rol y las faenas a las que tienes acceso. Desde ahí puedes continuar al
+programa, las evaluaciones, PPA, documentación o indicadores.
+
+## Módulos
 
 - [Evaluaciones SST](./prevencion/evaluaciones-sst.md)
 - [Programa de Trabajo Preventivo SG-SST](./prevencion/pdtp.md)
-- [PPA Digital](./prevencion/ppa-digital.md)
-- [Documentacion preventiva](./prevencion/documentacion.md)
+- [Para, Piensa y Actúa (PPA)](./prevencion/ppa-digital.md)
+- [Documentación preventiva](./prevencion/documentacion.md)
+- [Indicadores de accidentabilidad](./prevencion/indicadores.md)
 
-Tambien incluye vistas por trabajador y revisiones de casos.
+El acceso `PPA por revisar` abre directamente los casos que requieren
+revisión. Usa el enlace de regreso del detalle o el botón Atrás del navegador
+para volver a la misma lista y sus filtros.

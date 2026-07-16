@@ -46,7 +46,12 @@ export interface BreadcrumbItem {
 }
 
 export interface Props {
-  counters?: unknown
+  counters?: {
+    pendingReview: number
+    observed: number
+    ackPending: number
+    expiringSoon: { within7: number; within15: number; within30: number }
+  }
   expiring?: unknown[]
   documents: DocumentRow[]
   folders?: FolderRow[]
@@ -55,7 +60,7 @@ export interface Props {
   currentFolderId?: string | null
   categories?: unknown[]
   types?: unknown[]
-  searchParams: { q?: string; category?: string; status?: string; worksiteId?: string }
+  searchParams: { q?: string; category?: string; status?: string; worksiteId?: string; folder?: string; page?: string }
   total: number
   canManage: boolean
   canArchive: boolean

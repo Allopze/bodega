@@ -30,6 +30,7 @@ import {
   plazoFromPrioridad,
 } from "./checklist-domain"
 import type { ChecklistDefinition } from "@/lib/sst/types"
+import type { WorksiteScope } from "./helpers"
 
 export type PdtpActionPlanItemInput = {
   executionId: string
@@ -265,8 +266,10 @@ export async function listActionsByProgram(
     estado?: string
     prioridad?: string
     soloVencidas?: boolean
+    scope?: WorksiteScope
   },
 ) {
+  if (opts?.scope !== undefined && opts.scope !== "all" && opts.scope.length === 0) return []
   // Join implícito: action_plan → executions → activities (para filtrar por programa)
   const rows = await db.select({
     item: pdtpActionPlan,
@@ -280,6 +283,7 @@ export async function listActionsByProgram(
       opts?.estado ? eq(pdtpActionPlan.estado, opts.estado) : sql`true`,
       opts?.prioridad ? eq(pdtpActionPlan.prioridad, opts.prioridad) : sql`true`,
       opts?.worksiteId ? eq(pdtpExecutions.worksiteId, opts.worksiteId) : sql`true`,
+      opts?.scope && opts.scope !== "all" ? inArray(pdtpExecutions.worksiteId, opts.scope) : sql`true`,
       sql`EXISTS (
         SELECT 1 FROM pdtp_activities a
         WHERE a.id = ${pdtpExecutions.activityId}

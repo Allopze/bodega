@@ -1,6 +1,6 @@
 import { eq, and, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { ppaSubmissions, type PpaSubmission } from "@/db/schema/ppa"
+import { ppaCorrectiveActions, ppaSubmissions, type PpaCorrectiveAction, type PpaSubmission } from "@/db/schema/ppa"
 import { worksites } from "@/db/schema/worksites"
 import { ppaReviewSchema, type PpaReviewInput } from "@/lib/validation/ppa"
 import {
@@ -12,6 +12,7 @@ import {
 import { estadoPpaLabel, decisionPpaLabel } from "@/lib/ppa/badges"
 import type { ReportData } from "@/lib/reports/export"
 import { listPpa, getPpa } from "./calculos"
+import { nanoid } from "@/lib/id"
 
 export async function reviewPpa(
   input: PpaReviewInput,
@@ -36,28 +37,51 @@ export async function reviewPpa(
 
   const now = new Date().toISOString()
 
-  const result = await db.update(ppaSubmissions)
-    .set({
-      reviewedBy:       userId,
-      fuiAlLugar:       data.fuiAlLugar,
-      accionCorrectiva: data.accionCorrectiva || null,
-      reviewNota:       data.reviewNota || null,
-      decision:         data.decision,
-      estado,
-      reviewedAt:       now,
-      updatedAt:        now,
-    })
-    .where(and(
-      eq(ppaSubmissions.id, data.ppaId),
-      inArray(ppaSubmissions.estado, ["detenido", "en_correccion"]),
-    ))
-    .returning()
+  const result = await db.transaction(async (tx) => {
+    const updated = await tx.update(ppaSubmissions)
+      .set({
+        reviewedBy:       userId,
+        fuiAlLugar:       data.fuiAlLugar,
+        accionCorrectiva: data.accionCorrectiva || null,
+        reviewNota:       data.reviewNota || null,
+        decision:         data.decision,
+        estado,
+        reviewedAt:       now,
+        updatedAt:        now,
+      })
+      .where(and(
+        eq(ppaSubmissions.id, data.ppaId),
+        inArray(ppaSubmissions.estado, ["detenido", "en_correccion"]),
+      ))
+      .returning()
 
-  if (!result[0]) {
+    if (!updated[0]) return null
+
+    if (data.decision === "autorizado") {
+      await tx.insert(ppaCorrectiveActions).values({
+        id: nanoid(),
+        ppaId: current.id,
+        worksiteId: current.worksiteId,
+        description: data.accionCorrectiva!.trim(),
+        responsibleRole: data.responsibleRole!,
+        responsible: data.responsible!.trim(),
+        dueDate: data.dueDate!,
+        priority: data.priority!,
+        status: "pendiente",
+        createdBy: userId,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    return updated[0]
+  })
+
+  if (!result) {
     throw new Error("Este PPA ya fue procesado por otro responsable. Recarga la página.")
   }
 
-  return result[0]
+  return result
 }
 
 export async function closePpa(
@@ -84,6 +108,21 @@ export async function closePpa(
   }
 
   return result[0]
+}
+
+/** Obtiene la acción que nació de un PPA dentro del alcance ya validado. */
+export async function getPpaCorrectiveAction(
+  ppaId: string,
+  worksiteIds: string[] | "all",
+): Promise<PpaCorrectiveAction | null> {
+  const current = await getPpa(ppaId, worksiteIds)
+  if (!current) return null
+  const [action] = await db
+    .select()
+    .from(ppaCorrectiveActions)
+    .where(eq(ppaCorrectiveActions.ppaId, ppaId))
+    .limit(1)
+  return action ?? null
 }
 
 export interface PpaExportFilters {

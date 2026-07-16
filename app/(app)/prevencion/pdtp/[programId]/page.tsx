@@ -32,6 +32,7 @@ import { PdtpAddActivityForm } from "../pdtp-add-activity-form"
 import { approvePdtpProgramJdprAction, signPdtpProgramLegalAction, activatePdtpProgramAction } from "../actions"
 import { db } from "@/db"
 import { pdtpExecutions, pdtpChangeLog } from "@/db/schema"
+import { resolveSelectedWorksiteId } from "../pdtp-context"
 
 export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
 
@@ -74,14 +75,14 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const worksites = await listScopedWorksites(worksiteIds)
-  const selectedWorksiteId = worksites.some((worksite) => worksite.id === requestedWorksite)
-    ? requestedWorksite
-    : worksites[0]?.id
-  const [view, indicators, integral] = await Promise.all([
-    getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId),
-    getPdtpComplianceIndicators(programId, selectedWorksiteId),
-    getPdtpIntegralCompliance(programId, selectedWorksiteId),
-  ])
+  const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
+  const [view, indicators, integral] = selectedWorksiteId
+    ? await Promise.all([
+      getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId),
+      getPdtpComplianceIndicators(programId, selectedWorksiteId),
+      getPdtpIntegralCompliance(programId, selectedWorksiteId),
+    ])
+    : [null, null, null]
 
   const canApprove = can(session, "prevention:pdtp:approve")
 
@@ -179,9 +180,9 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} />}
 
         <div className="flex flex-wrap items-start gap-6">
-          <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} programId={programId} />
+          <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
           {worksites.length > 1 && (
-            <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} />
+            <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} />
           )}
           <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={programId} />
         </div>
@@ -192,7 +193,12 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           </p>
         )}
 
-        {view ? (
+        {!selectedWorksiteId && worksites.length > 1 ? (
+          <div className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-5">
+            <p className="font-medium text-[var(--color-warning-ink)]">Selecciona una faena para continuar</p>
+            <p className="mt-1 text-sm text-[var(--color-warning-ink)]">El programa anual se adapta por faena; no se combinan sus métricas ni actividades sin una selección explícita.</p>
+          </div>
+        ) : view ? (
           <PdtpSheetTable
             view={view}
             worksiteId={selectedWorksiteId}

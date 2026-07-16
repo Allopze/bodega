@@ -94,8 +94,14 @@ function BranchRow({
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <Collapsible.Trigger asChild>
-        <button type="button" aria-expanded={open} className={cn(itemRowClass(active), "w-full text-left", !active && childActive && "text-(--color-text)")}>
+      <div className={cn(itemRowClass(active), "w-full", !active && childActive && "text-(--color-text)")}>
+        <Link
+          href={item.href}
+          onClick={onNavigate}
+          aria-current={active ? "page" : undefined}
+          data-pressable
+          className="flex h-full min-w-0 flex-1 items-center gap-2.5 text-left"
+        >
           {Icon && (
             <Icon
               size={18}
@@ -105,9 +111,13 @@ function BranchRow({
           )}
           <span className="flex-1 truncate">{item.label}</span>
           {count > 0 && <CountBadge count={count} />}
+        </Link>
+        <Collapsible.Trigger asChild>
+          <button type="button" aria-label={`Mostrar destinos de ${item.label}`} aria-expanded={open} className="flex h-full shrink-0 items-center px-2 text-text-faint hover:text-(--color-text)">
           <CaretDown size={13} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
-        </button>
-      </Collapsible.Trigger>
+          </button>
+        </Collapsible.Trigger>
+      </div>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
         <ul className="mb-1 ml-[1.6rem] space-y-0.5 border-l border-(--color-border) pl-2 pt-0.5">
           {(item.children ?? []).map((child) => {

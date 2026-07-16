@@ -27,6 +27,7 @@ vi.mock("@/lib/id", () => ({ nanoid: vi.fn(() => "sst-nanoid-123") }))
 vi.mock("@/lib/sst/date", () => ({ addDays: vi.fn((_d: string, n: number) => `2026-02-${1 + n}`) }))
 vi.mock("@/lib/sst/definitions/index", () => ({
   getDefinition: vi.fn(() => ({ version: "1.0", sections: [] })),
+  isPersonEvaluationDefinition: vi.fn((code: string) => ["trabajador_nuevo", "trabajador_antiguo"].includes(code)),
 }))
 vi.mock("@/lib/sst/checklist", () => ({
   getApplicableItems: vi.fn(() => []),
@@ -353,7 +354,7 @@ describe("createEvaluation", () => {
 
     expect(result.id).toBe("sst-nanoid-123")
     expect(mockTransactionFn).toHaveBeenCalled()
-    expect(mockTx.insert).toHaveBeenCalled()
+    expect(mockTx.insert).toHaveBeenCalledTimes(2) // visit + evaluation
   })
 
   it("creates scheduled followups for seguimiento type", async () => {
@@ -373,7 +374,7 @@ describe("createEvaluation", () => {
     }, "usr-1")
 
     expect(result.id).toBe("sst-nanoid-123")
-    expect(mockTx.insert).toHaveBeenCalledTimes(5) // 1 evaluation + 4 followups
+    expect(mockTx.insert).toHaveBeenCalledTimes(6) // visit + evaluation + 4 followups
   })
 })
 

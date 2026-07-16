@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getMaintenancePageData, getUpcomingMaintenance, getUsageMaintenanceAlerts } from "@/lib/services/maintenance"
-import { MaintenanceForm } from "./maintenance-form"
+import { MaintenanceCreateButton } from "./maintenance-create-button"
 import { MaintenanceRowActions } from "./maintenance-row-actions"
 import { MaintenanceFilters } from "./maintenance-filters"
 
@@ -66,10 +66,20 @@ export default async function MantencionesPage({
             { label: "Mantenciones" },
           ]} />
         }
-        headerActions={
-          <Button asChild size="sm" variant="secondary">
-            <Link href="/flota">Ver flota</Link>
-          </Button>
+        actions={
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="secondary">
+              <Link href="/flota">Ver flota</Link>
+            </Button>
+            {canCreate && (
+              <MaintenanceCreateButton
+                vehicles={vehicleOptions}
+                suppliers={supplierOptions}
+                worksites={worksiteOptions}
+                costCenters={costCenterOptions}
+              />
+            )}
+          </div>
         }
       />
 
@@ -140,22 +150,6 @@ export default async function MantencionesPage({
                 </p>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {canCreate && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Nueva mantención</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MaintenanceForm
-              vehicles={vehicleOptions}
-              suppliers={supplierOptions}
-              worksites={worksiteOptions}
-              costCenters={costCenterOptions}
-            />
           </CardContent>
         </Card>
       )}

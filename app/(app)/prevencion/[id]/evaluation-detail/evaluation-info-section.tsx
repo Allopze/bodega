@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +14,7 @@ import { formatDateDisplay } from "@/lib/sst/date"
 import { RESULTADO_LABELS, resultadoBadgeVariant, estadoBadgeVariant, tipoBadgeVariant } from "@/lib/sst/badges"
 import { Check, LockSimple, Printer, Warning } from "@phosphor-icons/react"
 import { ROLE_LABELS } from "./helpers"
+import type { EvaluationProgress } from "./evaluation-progress"
 
 interface Props {
   workerName: string
@@ -33,6 +35,7 @@ interface Props {
   canClose: boolean
   closePending: boolean
   compliance: { total: number; percentage: number; cumplidos: number; noCumplidos: number }
+  progress: EvaluationProgress
   saveState: null | "saving" | { ts: string } | "error"
   canEditAnyVisible: boolean
   closeOpen: boolean
@@ -46,6 +49,7 @@ interface Props {
   hasReincidence: boolean
   setHasReincidence: (v: boolean) => void
   handleClose: () => void
+  goToNextPending: () => void
 }
 
 export function EvaluationInfoSection({
@@ -59,6 +63,7 @@ export function EvaluationInfoSection({
   canClose,
   closePending,
   compliance,
+  progress,
   saveState,
   canEditAnyVisible,
   closeOpen,
@@ -72,6 +77,7 @@ export function EvaluationInfoSection({
   hasReincidence,
   setHasReincidence,
   handleClose,
+  goToNextPending,
 }: Props) {
   return (
     <div className="border border-(--color-border) bg-(--color-surface) p-5 space-y-4">
@@ -108,20 +114,30 @@ export function EvaluationInfoSection({
           </div>
 
           {canViewFullEvaluation && (
-          <div className="text-right">
-            {compliance.total === 0 ? (
-              <p className="text-sm text-text-subtle">Sin respuestas aún</p>
-            ) : (
-              <>
-                <p className="text-2xl font-bold text-(--color-text) tabular-nums">
-                  {compliance.percentage.toFixed(1)}%
+            <div className="space-y-1 text-right">
+              <div>
+                <p className="text-sm font-semibold tabular-nums text-(--color-text)">
+                  Avance {progress.percentage.toFixed(0)}%
                 </p>
                 <p className="text-xs text-text-subtle">
-                  cumplimiento ({compliance.cumplidos}/{compliance.cumplidos + compliance.noCumplidos})
+                  {progress.answered}/{progress.total} ítems respondidos
                 </p>
-              </>
-            )}
-          </div>
+              </div>
+              <div>
+                {compliance.total === 0 ? (
+                  <p className="text-xs text-text-subtle">Sin resultado de cumplimiento</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold tabular-nums text-(--color-text)">
+                      Cumplimiento {compliance.percentage.toFixed(1)}%
+                    </p>
+                    <p className="text-xs text-text-subtle">
+                      {compliance.cumplidos} cumple, {compliance.noCumplidos} no cumple
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
           )}
 
           {canViewFullEvaluation && evaluation.resultadoFinal && (
@@ -132,12 +148,23 @@ export function EvaluationInfoSection({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 pt-1 border-t border-(--color-border)">
+      {canClose && !isCerrado && progress.pending.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-(--color-border) pt-3" role="status" aria-live="polite" aria-atomic="true">
+          <p className="text-sm text-(--color-text-muted)">
+            Cierre bloqueado: faltan {progress.pending.length} ítem(s) aplicable(s). Primero: {progress.pending[0]!.sectionTitle}, {progress.pending[0]!.itemLabel}.
+          </p>
+          <Button type="button" size="sm" variant="secondary" className="min-h-11" onClick={goToNextPending}>
+            Ir al siguiente pendiente
+          </Button>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 pt-1 border-t border-(--color-border)" aria-live="polite" aria-atomic="true">
         {saveState === "saving" && (
-          <span className="text-xs text-text-subtle">Guardando…</span>
+          <span role="status" className="text-xs text-text-subtle">Guardando…</span>
         )}
         {saveState === "error" && (
-          <span className="text-xs text-danger font-medium">
+          <span role="alert" className="text-xs text-danger font-medium">
             Error al guardar — verifica tu conexión
           </span>
         )}
@@ -167,16 +194,22 @@ export function EvaluationInfoSection({
           )}
 
           {canClose && !isCerrado && (
-            <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="signal">
-                  <LockSimple size={14} className="mr-1.5" />
-                  Cerrar evaluación
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
+            progress.pending.length > 0 ? (
+              <Button type="button" size="sm" variant="secondary" className="min-h-11" onClick={goToNextPending}>
+                Completar pendientes
+              </Button>
+            ) : (
+              <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="signal" className="min-h-11">
+                    <LockSimple size={14} className="mr-1.5" />
+                    Cerrar evaluación
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Cerrar evaluación</DialogTitle>
+                  <DialogDescription>Confirma los datos finales antes de dejar el registro en solo lectura.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-2">
                   <div className="flex items-start gap-2 rounded-(--radius) bg-(--color-warning-tint) border border-(--color-warning-line) p-3">
@@ -230,13 +263,14 @@ export function EvaluationInfoSection({
                     <DialogClose asChild>
                       <Button variant="ghost" disabled={closePending}>Cancelar</Button>
                     </DialogClose>
-                    <Button onClick={handleClose} disabled={closePending}>
+                    <Button onClick={handleClose} disabled={closePending} aria-busy={closePending}>
                       {closePending ? "Cerrando…" : "Confirmar cierre"}
                     </Button>
                   </div>
                 </div>
-              </DialogContent>
-            </Dialog>
+                </DialogContent>
+              </Dialog>
+            )
           )}
         </div>
       </div>

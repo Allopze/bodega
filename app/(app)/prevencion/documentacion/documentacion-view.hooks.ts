@@ -2,10 +2,8 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { useSafeShellHeader } from "@/components/layout/header-context"
 import { usePersistedViewMode } from "@/components/prevention/view-mode-toggle"
 import { buildFolderOptionLabels } from "@/lib/services/prevention-documents/labels"
-import { matchesQuery } from "@/lib/utils"
 import type { DocumentRow, FolderRow, MenuState } from "./documentacion-view.types"
 import { DRAG_MIME } from "./documentacion-view.types"
 import {
@@ -46,12 +44,12 @@ export function useDocumentacionView(
   folders: FolderRow[],
   folderOptions: { id: string; name: string; parentId: string | null }[],
   currentFolderId: string | null,
+  searchParams: { q?: string; category?: string; status?: string; worksiteId?: string; folder?: string; page?: string },
   canManage: boolean,
   canArchive: boolean,
   userId: string,
 ) {
   const router = useRouter()
-  const { searchQuery } = useSafeShellHeader()
 
   const [pending, startTransition] = React.useTransition()
   const [moveDocumentId, setMoveDocumentId] = React.useState<string | null>(null)
@@ -259,33 +257,20 @@ export function useDocumentacionView(
   }, [router])
 
   const folderHref = React.useCallback((folderId: string | null) => {
-    if (!folderId) return "/prevencion/documentacion"
-    return `/prevencion/documentacion?folder=${encodeURIComponent(folderId)}`
-  }, [])
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (value && key !== "folder" && key !== "page") params.set(key, value)
+    }
+    if (folderId) params.set("folder", folderId)
+    const query = params.toString()
+    return `/prevencion/documentacion${query ? `?${query}` : ""}`
+  }, [searchParams])
 
   // ── Filtering ────────────────────────────────────────────────────────────
 
-  const matchesSearch = React.useCallback(
-    (values: Array<string | null | undefined>) => matchesQuery(searchQuery, values),
-    [searchQuery],
-  )
-  const isFilteringQuery = searchQuery.trim().length > 0
-
-  const filteredFolders = React.useMemo(
-    () => folders.filter((folder) => matchesSearch([folder.name, folder.worksiteName])),
-    [folders, matchesSearch],
-  )
-  const filteredDocuments = React.useMemo(
-    () => documents.filter((document) => matchesSearch([
-      document.title,
-      document.fileName,
-      document.internalCode,
-      document.worksiteName,
-      document.uploaderName,
-    ])),
-    [documents, matchesSearch],
-  )
-  const isFiltering = isFilteringQuery
+  const filteredFolders = folders
+  const filteredDocuments = documents
+  const isFiltering = Boolean(searchParams.q || searchParams.category || searchParams.status || searchParams.worksiteId)
   const hasContent = filteredFolders.length > 0 || filteredDocuments.length > 0
 
   // ── Drag handlers ────────────────────────────────────────────────────────

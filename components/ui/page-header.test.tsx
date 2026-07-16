@@ -10,13 +10,20 @@ vi.mock("next/navigation", () => ({
 }))
 
 describe("PageHeader", () => {
-  it("does not reserve a visible desktop spacer when actions are promoted to the shell header", () => {
-    const { container } = render(
+  it("keeps the title, description and actions available on mobile while hiding the duplicate header on desktop", () => {
+    const { container, getByRole, getByText } = render(
       <ShellHeaderProvider>
-        <PageHeader title="Documentación" actions={<button type="button">Nueva carpeta</button>} />
+        <PageHeader
+          title="Documentación"
+          description="Biblioteca preventiva"
+          actions={<button type="button">Nueva carpeta</button>}
+        />
       </ShellHeaderProvider>,
     )
 
     expect(container.firstElementChild).toHaveClass("lg:sr-only")
+    expect(getByRole("heading", { name: "Documentación" })).toBeDefined()
+    expect(getByText("Biblioteca preventiva")).toBeDefined()
+    expect(getByRole("button", { name: "Nueva carpeta" })).toBeDefined()
   })
 })

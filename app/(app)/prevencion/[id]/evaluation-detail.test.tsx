@@ -27,7 +27,7 @@ vi.mock("@/app/(app)/prevencion/actions", () => ({
 
 vi.mock("@/components/ui/select", () => ({
   Select: ({ children }: PropsWithChildren) => <div data-testid="select">{children}</div>,
-  SelectTrigger: ({ children }: PropsWithChildren) => <div>{children}</div>,
+  SelectTrigger: ({ children }: PropsWithChildren<ComponentPropsWithoutRef<"button">>) => <div>{children}</div>,
   SelectValue: () => null,
   SelectContent: ({ children }: PropsWithChildren) => <div>{children}</div>,
   SelectItem: ({ children, value }: PropsWithChildren<{ value: string }>) => <div data-value={value}>{children}</div>,
@@ -39,6 +39,7 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogContent: ({ children }: PropsWithChildren) => <div>{children}</div>,
   DialogHeader: ({ children }: PropsWithChildren) => <div>{children}</div>,
   DialogTitle: ({ children }: PropsWithChildren) => <div>{children}</div>,
+  DialogDescription: ({ children }: PropsWithChildren) => <div>{children}</div>,
   DialogClose: ({ children }: PropsWithChildren) => <div>{children}</div>,
 }))
 
@@ -105,6 +106,7 @@ function makeEvaluation(overrides: Partial<SstEvaluation> = {}): SstEvaluation {
     updatedAt: "2026-06-15T10:00:00Z",
     evaluatorRole: null,
     ...overrides,
+    visitId: overrides.visitId ?? null,
   }
 }
 
@@ -168,9 +170,12 @@ describe("EvaluationDetail", () => {
       expect(screen.getByText("Cerrado")).toBeDefined()
     })
 
-    it("shows 'Sin respuestas aún' when no responses exist", () => {
+    it("shows zero progress when no responses exist", () => {
       render(<EvaluationDetail {...defaultProps} />)
-      expect(screen.getByText("Sin respuestas aún")).toBeDefined()
+      expect(screen.getByText("Avance 0%")).toBeDefined()
+      const closeStatus = screen.getByRole("status")
+      expect(closeStatus).toHaveTextContent(/Cierre bloqueado: faltan/)
+      expect(closeStatus).toHaveAttribute("aria-live", "polite")
     })
   })
 
@@ -182,13 +187,13 @@ describe("EvaluationDetail", () => {
       ]
       render(<EvaluationDetail {...defaultProps} responses={responses} />)
       // Compliance shows percentage and cumplimiento label — at least one must appear
-      const complianceTexts = screen.getAllByText(/cumplimiento/)
+      const complianceTexts = screen.getAllByText(/Cumplimiento/)
       expect(complianceTexts.length).toBeGreaterThanOrEqual(1)
     })
 
-    it("shows 'Sin respuestas aún' when compliance total is 0", () => {
+    it("separates zero completion from compliance without data", () => {
       render(<EvaluationDetail {...defaultProps} responses={[]} />)
-      expect(screen.getByText("Sin respuestas aún")).toBeDefined()
+      expect(screen.getByText("Sin resultado de cumplimiento")).toBeDefined()
     })
   })
 
@@ -231,6 +236,7 @@ describe("EvaluationDetail", () => {
         expect(button).toHaveAttribute("disabled")
       }
     })
+
   })
 
   describe("acta de cierre", () => {

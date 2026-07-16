@@ -32,7 +32,9 @@ function makeActivity(
     objective: `Objetivo ${n}`,
     program: "Programa X",
     responsibleDisplay: "Responsable X",
-    schedule: [],
+    schedule: monthlyPlanned.flatMap((plannedQuantity, index) => plannedQuantity > 0
+      ? [{ month: index + 1, week: 2, plannedQuantity }]
+      : []),
     monthlyPlanned,
     monthlyExecuted,
     totalPlanned,
@@ -76,7 +78,7 @@ describe("PdtpSheetTable — weekly filter", () => {
   )
   const notScheduledActivity = makeActivity("act-not-scheduled", "4", "Actividad sin plan este mes", ZERO12, ZERO12)
 
-  it("includes only activities planned for the current month and shows their status chip", () => {
+  it("includes only activities planned for the current week and shows their status chip", () => {
     const view = makeView([executedActivity, pendingActivity, overdueActivity, notScheduledActivity])
     render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
 
@@ -94,12 +96,24 @@ describe("PdtpSheetTable — weekly filter", () => {
     expect(within(overdueRow).getByText(/Atrasado/)).toBeDefined()
   })
 
-  it("renders a friendly empty state when nothing is planned for the current month", () => {
+  it("renders a friendly empty state when nothing is planned for the current week", () => {
     const view = makeView([notScheduledActivity])
     render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
 
-    expect(screen.getByText("No hay actividades planificadas para este mes.")).toBeDefined()
+    expect(screen.getByText("No hay actividades planificadas para esta semana.")).toBeDefined()
     expect(screen.queryByText("Actividad sin plan este mes")).toBeNull()
+  })
+
+  it("excludes activities planned later in the same month", () => {
+    const thisWeek = makeActivity("act-this-week", "5", "Actividad de esta semana", withPlanned(7, 1), ZERO12)
+    const laterWeek = makeActivity("act-later-week", "6", "Actividad de otra semana", withPlanned(7, 1), ZERO12)
+    laterWeek.schedule = [{ month: 7, week: 3, plannedQuantity: 1 }] as never
+    const view = makeView([thisWeek, laterWeek])
+
+    render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    expect(screen.getByText("Actividad de esta semana")).toBeDefined()
+    expect(screen.queryByText("Actividad de otra semana")).toBeNull()
   })
 
   it("shows the 'Registrar' trigger button when canExecute and worksiteId are provided", () => {

@@ -264,6 +264,30 @@ describe("pdtp action plan lifecycle", () => {
   })
 })
 
+describe("pdtp checklist and action-plan scope", () => {
+  it("rejects execution, checklist and action access outside the assigned worksite", async () => {
+    const { assertPdtpActionPlanItemAccess, assertPdtpChecklistInstanceAccess, assertPdtpExecutionAccess } = await import("@/lib/services/prevention-pdtp")
+    const { getOrCreateExecutionChecklist } = await import("@/lib/services/pdtp/execution-checklists")
+    const { createActionPlanItem, listActionsByProgram } = await import("@/lib/services/pdtp/action-plan")
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    const action = await createActionPlanItem({
+      executionId: "exec-1",
+      hallazgo: "Hallazgo",
+      accion: "Corregir",
+      responsableRole: "prevencionista_faena",
+      responsable: "Responsable",
+      plazo: "2026-01-01",
+      prioridad: "media",
+    }, "u1")
+
+    await expect(assertPdtpExecutionAccess("exec-1", ["w2"])).rejects.toThrow(/sin acceso/i)
+    await expect(assertPdtpChecklistInstanceAccess(instance.id, ["w2"])).rejects.toThrow(/sin acceso/i)
+    await expect(assertPdtpActionPlanItemAccess(action.id, ["w2"])).rejects.toThrow(/sin acceso/i)
+    await expect(listActionsByProgram("prog-1", { scope: ["w2"] })).resolves.toEqual([])
+  })
+})
+
 describe("pdtp checklist multi-sujeto", () => {
   it("una ejecución sostiene N instancias por sujeto, cada una con su plan de acción prefijado", async () => {
     const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
@@ -361,6 +385,7 @@ describe("pdtp cumplimiento integral", () => {
     const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
     const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
     const { submitExecutionChecklist, verifyActionPlanItem, listActionPlanItems } = await import("@/lib/services/pdtp/action-plan")
+    const { approvePdtpExecution } = await import("@/lib/services/pdtp/executions")
     const { getPdtpIntegralCompliance } = await import("@/lib/services/pdtp/compliance")
 
     await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
@@ -380,6 +405,7 @@ describe("pdtp cumplimiento integral", () => {
     const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
     await upsertChecklistResponses(instance.id, [{ seccionId: "s1", itemId: "i1", estado: "no_cumple", observacion: "Falla" }], "u1")
     await submitExecutionChecklist(instance.id, "u1")
+    await approvePdtpExecution("exec-1", "u1", ["w1"])
 
     const items = await listActionPlanItems("exec-1")
     await verifyActionPlanItem(items[0]!.id, "u1")

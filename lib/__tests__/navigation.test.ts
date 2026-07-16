@@ -79,25 +79,78 @@ describe("sidebar navigation", () => {
     expect(commandTargets.map((target) => target.href)).toContain("/analitica")
   })
 
-  it("does not mark Evaluaciones SST active while browsing explicit Prevencion submodules", () => {
-    expect(isHrefActive("/prevencion", "/prevencion")).toBe(true)
-    expect(isHrefActive("/prevencion", "/prevencion/nueva")).toBe(true)
-    expect(isHrefActive("/prevencion", "/prevencion/pdtp")).toBe(false)
-    expect(isHrefActive("/prevencion", "/prevencion/pdtp/cronograma")).toBe(false)
-    expect(isHrefActive("/prevencion", "/prevencion/documentacion")).toBe(false)
-    expect(isHrefActive("/prevencion", "/prevencion/ppa")).toBe(false)
+  it("orders Prevención by its operational groups", () => {
+    const session = {
+      ...adminSession,
+      user: {
+        ...adminSession.user,
+        permissions: [
+          "sst:view",
+          "ppa:view",
+          "prevention:pdtp:view",
+          "prevention:pdtp:approve",
+          "prevention:docs:view",
+          "prevention:indicadores:view",
+        ],
+      },
+    } satisfies Session
+
+    const prevention = getVisibleAreas(session).find((area) => area.id === "prevencion")
+    expect(prevention?.items.map((item) => [item.label, item.group])).toEqual([
+      ["Inicio de Prevención", undefined],
+      ["Programa preventivo SG-SST", "Programa"],
+      ["Evaluaciones SST", "Control en terreno"],
+      ["Para, Piensa y Actúa", "Control en terreno"],
+      ["Documentación", "Evidencia y resultados"],
+      ["Indicadores de accidentabilidad", "Evidencia y resultados"],
+    ])
+    expect(prevention?.items[1]?.children?.map((item) => item.label)).toEqual([
+      "Aprobaciones",
+      "Acciones correctivas",
+    ])
   })
 
-  it("does not mark Programa preventivo SG-SST active while browsing Plan de acción PDTP", () => {
+  it("hides Inicio de Prevención when no prevention module is visible", () => {
+    const prevention = getVisibleAreas(adminSession).find((area) => area.id === "prevencion")
+    expect(prevention).toBeUndefined()
+  })
+
+  it("hides Inicio de Prevención together with a module disabled by feature toggle", () => {
+    const session = {
+      ...adminSession,
+      user: { ...adminSession.user, permissions: ["sst:view"] },
+    } satisfies Session
+
+    const prevention = getVisibleAreas(session, new Set(["ppa", "prevention"]))
+      .find((area) => area.id === "prevencion")
+
+    expect(prevention).toBeUndefined()
+  })
+
+  it("keeps Evaluaciones SST active for its list, creation and worker detail routes only", () => {
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/evaluaciones")).toBe(true)
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/nueva")).toBe(true)
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/trabajador/worker-123")).toBe(true)
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/evaluation-123")).toBe(true)
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/pdtp")).toBe(false)
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/pdtp/cronograma")).toBe(false)
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/documentacion")).toBe(false)
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/indicadores")).toBe(false)
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/ppa")).toBe(false)
+  })
+
+  it("keeps Programa and its internal destinations mutually active", () => {
     // Exact match should be active
     expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp")).toBe(true)
-    // Sub-rutas del programa (nuevo, aprobaciones, detalle) deben estar activas
+    // Sub-rutas propias del programa permanecen activas en el padre.
     expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/nuevo")).toBe(true)
-    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/aprobaciones")).toBe(true)
     expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/prog-123")).toBe(true)
     expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/prog-123/editar")).toBe(true)
-    // Plan de acción es un ítem de navegación independiente — NO debe marcar el programa
+    // Destinos internos: el padre no se marca activo, el hijo correspondiente sí.
     expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/acciones")).toBe(false)
     expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/acciones?page=1")).toBe(false)
+    expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/aprobaciones")).toBe(false)
+    expect(isHrefActive("/prevencion/pdtp/aprobaciones", "/prevencion/pdtp/aprobaciones")).toBe(true)
+    expect(isHrefActive("/prevencion/pdtp/acciones", "/prevencion/pdtp/acciones")).toBe(true)
   })
 })

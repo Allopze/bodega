@@ -23,9 +23,10 @@ export const sstModule = {
       items: [
         {
           label: "Evaluaciones SST",
-          href: "/prevencion",
+          href: "/prevencion/evaluaciones",
           iconName: "ClipboardText",
           permissions: ["sst:view", "sst:evaluate_acompanamiento"],
+          group: "Control en terreno",
         },
       ],
     },
@@ -45,6 +46,5 @@ export const sstModule = {
     { roleSlug: "conductor_lider", permission: "sst:evaluate_acompanamiento" },
     { roleSlug: "admin_contrato", permission: "sst:view" },
     { roleSlug: "admin_contrato", permission: "sst:create" },
-    { roleSlug: "admin_contrato", permission: "sst:close" },
   ],
 } as const satisfies ModuleManifest

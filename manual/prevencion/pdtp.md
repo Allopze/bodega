@@ -53,6 +53,13 @@ ponderado resultante.
 - Usa `Exportar XLSX` para descargar el programa junto con hojas separadas de
   plan de accion y seguimiento.
 
+## Navegación del programa
+
+- En `Programa` se consulta y ejecuta el plan de la faena y período elegidos.
+- `Aprobaciones` y `Acciones correctivas` son vistas internas del mismo
+  programa: se accede a ellas desde el submenú de Programa y conservan sus
+  permisos propios.
+
 ## Acciones principales
 
 - `Aprobaciones`

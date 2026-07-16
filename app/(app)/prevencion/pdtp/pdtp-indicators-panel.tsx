@@ -1,10 +1,10 @@
-import { CheckCircle, Target, CalendarBlank, ChartBar } from "@phosphor-icons/react/dist/ssr"
+import { CheckCircle, Target, ChartBar } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import type { PdtpComplianceIndicators, PdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-const QUARTER_LABELS = ["T1", "T2", "T3", "T4"]
+const QUARTER_LABELS = ["Trim. 1", "Trim. 2", "Trim. 3", "Trim. 4"]
 
 function fmtPct(ratio: number | null): string {
   if (ratio === null) return "—"
@@ -32,12 +32,14 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
       <p className="text-xs text-[var(--color-text-muted)]">
         El cumplimiento formal considera únicamente ejecuciones aprobadas.
       </p>
-      {integral && <IntegralComplianceRow integral={integral} />}
 
-      {/* Annual + quarterly summary */}
+      {/* Cabecera compacta: integral (con desglose de ejes en una línea) + anual + meta.
+          Los trimestres viven en el desglose plegable para no saturar la entrada. */}
       <div className="overflow-hidden border-y border-[var(--color-border)]">
         <div className="-ml-px -mt-px flex flex-wrap">
-          {/* Annual */}
+          {integral && <IntegralTile integral={integral} />}
+
+          {/* Cumplimiento anual */}
           <div className="flex-1 min-w-[10rem] border-l border-t border-[var(--color-border)]">
             <div className="px-4 py-3">
               <div className="flex items-center gap-1.5">
@@ -59,12 +61,12 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
             </div>
           </div>
 
-          {/* Target */}
+          {/* Meta */}
           <div className="flex-1 min-w-[8rem] border-l border-t border-[var(--color-border)]">
             <div className="px-4 py-3">
               <div className="flex items-center gap-1.5">
                 <Target size={13} className="shrink-0 text-[var(--color-text-faint)]" />
-                <span className="text-eyebrow">Meta</span>
+                <span className="text-eyebrow">Meta anual</span>
               </div>
               <div className="mt-2">
                 <span className="font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight text-[var(--color-text)]">
@@ -73,31 +75,10 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
               </div>
             </div>
           </div>
-
-          {/* Quarterly */}
-          {quarterly.map((q) => (
-            <div key={q.quarter} className="flex-1 min-w-[7rem] border-l border-t border-[var(--color-border)]">
-              <div className="px-4 py-3">
-                <div className="flex items-center gap-1.5">
-                  <CalendarBlank size={13} className="shrink-0 text-[var(--color-text-faint)]" />
-                  <span className="text-eyebrow">{QUARTER_LABELS[q.quarter - 1]}</span>
-                </div>
-                <div className="mt-2 flex items-end gap-1.5">
-                  <span className={cn(
-                    "font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
-                    q.percent !== null && q.percent >= target ? "text-[var(--color-success)]" : "text-[var(--color-text)]"
-                  )}>
-                    {fmtPct(q.percent)}
-                  </span>
-                </div>
-                <ComplianceBar value={q.percent} target={target} />
-              </div>
-            </div>
-          ))}
         </div>
       </div>
 
-      {/* Monthly grid — collapsible */}
+      {/* Desglose mensual + trimestral — colapsable */}
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors">
           <svg
@@ -109,9 +90,26 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
           >
             <path d="M4 2.5L8.5 6L4 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>
-          Ver desglose mensual
+          Ver desglose mensual y trimestral
         </summary>
-        <div className="mt-2">
+
+        {/* Resumen trimestral */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {quarterly.map((q) => {
+            const meetsTarget = q.percent !== null && q.percent >= target
+            return (
+              <div key={q.quarter} className="min-w-[6rem] flex-1 rounded-(--radius) border border-[var(--color-border)] px-3 py-2">
+                <span className="text-eyebrow">{QUARTER_LABELS[q.quarter - 1]}</span>
+                <div className="mt-1 font-mono text-base font-semibold tabular-nums">
+                  <span className={meetsTarget ? "text-[var(--color-success)]" : "text-[var(--color-text)]"}>{fmtPct(q.percent)}</span>
+                </div>
+                <ComplianceBar value={q.percent} target={target} />
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-3">
           <TableRoot>
             <Table>
               <TableHeader>
@@ -149,8 +147,12 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
   )
 }
 
-/** Cumplimiento integral (plan §3): 3 ejes ponderados + el resultado combinado. */
-function IntegralComplianceRow({ integral }: { integral: PdtpIntegralCompliance }) {
+/**
+ * Cumplimiento integral en un solo tile: el resultado combinado grande y, debajo,
+ * los tres ejes ponderados en una línea compacta (antes eran tres tiles aparte).
+ * El peso de cada eje va en el `title` para no cargar la vista con "peso 50%".
+ */
+function IntegralTile({ integral }: { integral: PdtpIntegralCompliance }) {
   const axes: Array<{ label: string; value: number | null; weight: number }> = [
     { label: "Ejecución", value: integral.ejecucion !== null ? integral.ejecucion * 100 : null, weight: integral.pesos.ejecucion },
     { label: "Verificación", value: integral.verificacion, weight: integral.pesos.verificacion },
@@ -158,34 +160,29 @@ function IntegralComplianceRow({ integral }: { integral: PdtpIntegralCompliance 
   ]
 
   return (
-    <div className="overflow-hidden rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface)">
-      <div className="flex flex-wrap items-stretch divide-x divide-(--color-border)">
-        <div className="flex-1 min-w-[10rem] px-4 py-3">
-          <div className="flex items-center gap-1.5">
-            <ChartBar size={13} className="shrink-0 text-(--color-text-faint)" />
-            <span className="text-eyebrow">Cumplimiento integral</span>
-          </div>
-          <div className="mt-2">
-            <span className="font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight text-(--color-text)">
-              {integral.integral !== null ? `${integral.integral}%` : "—"}
-            </span>
-          </div>
-          <p className="mt-1 text-[10px] text-text-subtle">0.5·ejecución + 0.3·verificación + 0.2·cierre</p>
+    <div className="flex-1 min-w-[16rem] border-l border-t border-[var(--color-border)]">
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-1.5">
+          <ChartBar size={13} className="shrink-0 text-[var(--color-text-faint)]" />
+          <span
+            className="text-eyebrow"
+            title="Resultado combinado del programa: 50% ejecución + 30% verificación + 20% cierre"
+          >
+            Cumplimiento integral
+          </span>
         </div>
-        {axes.map((axis) => (
-          <div key={axis.label} className="flex-1 min-w-[9rem] px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-eyebrow">{axis.label}</span>
-              <span className="text-[10px] text-text-subtle">peso {Math.round(axis.weight * 100)}%</span>
-            </div>
-            <div className="mt-2">
-              <span className="font-mono text-base font-semibold leading-none tabular-nums text-(--color-text)">
-                {axis.value !== null ? `${Math.round(axis.value)}%` : "—"}
-              </span>
-            </div>
-            <ComplianceBar value={axis.value !== null ? axis.value / 100 : null} target={1} />
-          </div>
-        ))}
+        <div className="mt-2 flex items-end gap-2">
+          <span className="font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight text-[var(--color-text)]">
+            {integral.integral !== null ? `${integral.integral}%` : "—"}
+          </span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-text-muted)]">
+          {axes.map((axis) => (
+            <span key={axis.label} title={`Peso ${Math.round(axis.weight * 100)}% en el cumplimiento integral`}>
+              {axis.label} <span className="font-mono font-semibold text-[var(--color-text)]">{axis.value !== null ? `${Math.round(axis.value)}%` : "—"}</span>
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )

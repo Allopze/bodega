@@ -4,6 +4,9 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Field } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -35,12 +38,17 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
   const [fuiAlLugar, setFuiAlLugar] = React.useState(false)
   const [decision, setDecision] = React.useState<PpaDecision | "">("")
   const [accionCorrectiva, setAccionCorrectiva] = React.useState("")
+  const [responsibleRole, setResponsibleRole] = React.useState("")
+  const [responsible, setResponsible] = React.useState("")
+  const [dueDate, setDueDate] = React.useState("")
+  const [priority, setPriority] = React.useState("alta")
   const [reviewNota, setReviewNota] = React.useState("")
   const [errors, setErrors] = React.useState<Record<string, string[]>>({})
   const [confirmOpen, setConfirmOpen] = React.useState(false)
 
-  // Espejo de la regla del backend: no autorizar un trabajo detenido sin acción correctiva.
-  const needsCorrectiva = detenido && accionCorrectiva.trim().length < 4
+  // Autorizar un PPA detenido crea una acción estructurada, así que sus datos
+  // mínimos se completan en esta misma revisión.
+  const actionIncomplete = accionCorrectiva.trim().length < 4 || !responsibleRole || responsible.trim().length < 2 || !dueDate || !priority
 
   function doReview() {
     setConfirmOpen(false)
@@ -50,6 +58,10 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
         fuiAlLugar,
         decision: decision as PpaDecision,
         accionCorrectiva,
+        responsibleRole: responsibleRole as "prevencionista_faena" | "admin_contrato" | "jefe_faena" | "prevencionista" | undefined,
+        responsible,
+        dueDate,
+        priority: priority as "alta" | "media" | "baja",
         reviewNota,
       })
       if (res.ok) {
@@ -65,8 +77,8 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
   function submit() {
     setErrors({})
     if (!decision) { toast.error("Selecciona una decisión."); return }
-    if (decision === "autorizado" && needsCorrectiva) {
-      setErrors({ accionCorrectiva: ["Registra la acción correctiva para autorizar el inicio."] })
+    if (decision === "autorizado" && actionIncomplete) {
+      setErrors({ accionCorrectiva: ["Completa la acción, responsable, plazo y prioridad antes de autorizar."] })
       return
     }
     // Confirmar la autorización de un trabajo que estaba detenido.
@@ -88,10 +100,40 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
           onChange={(e) => setFuiAlLugar(e.currentTarget.checked)}
         />
 
-        <Field label="Acción correctiva implementada" htmlFor="accion" error={errors.accionCorrectiva?.[0]}
-          helper={detenido ? "Obligatoria para autorizar un trabajo detenido." : undefined}>
+        <Field label="Acción correctiva" htmlFor="accion" error={errors.accionCorrectiva?.[0]}
+          helper={detenido ? "Al autorizar se crea como acción pendiente con responsable y plazo." : undefined}>
           <Textarea id="accion" rows={3} value={accionCorrectiva} onChange={(e) => setAccionCorrectiva(e.target.value)} />
         </Field>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Responsable" htmlFor="responsible" error={errors.responsible?.[0]}>
+            <Input id="responsible" value={responsible} onChange={(e) => setResponsible(e.target.value)} maxLength={200} />
+          </Field>
+          <Field label="Rol responsable" htmlFor="responsible-role" error={errors.responsibleRole?.[0]}>
+            <Select value={responsibleRole} onValueChange={setResponsibleRole}>
+              <SelectTrigger id="responsible-role"><SelectValue placeholder="Selecciona un rol" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="prevencionista_faena">Prevencionista de faena</SelectItem>
+                <SelectItem value="admin_contrato">Supervisor de faena</SelectItem>
+                <SelectItem value="jefe_faena">Jefe de faena</SelectItem>
+                <SelectItem value="prevencionista">Jefa Dpto. Prevención</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Plazo" htmlFor="due-date" error={errors.dueDate?.[0]}>
+            <DatePicker id="due-date" value={dueDate} onChange={setDueDate} />
+          </Field>
+          <Field label="Prioridad" htmlFor="priority" error={errors.priority?.[0]}>
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger id="priority"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="alta">Alta</SelectItem>
+                <SelectItem value="media">Media</SelectItem>
+                <SelectItem value="baja">Baja</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
 
         <Field label="Nota / observación (opcional)" htmlFor="nota">
           <Textarea id="nota" rows={2} value={reviewNota} onChange={(e) => setReviewNota(e.target.value)} />
@@ -104,7 +146,7 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
           <div className="flex flex-col gap-2">
             {DECISIONS.map((d) => {
               const active = decision === d.value
-              const disabled = d.value === "autorizado" && needsCorrectiva
+              const disabled = d.value === "autorizado" && actionIncomplete
               return (
                 <button
                   key={d.value}
@@ -123,7 +165,7 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
                 >
                   <span className="block text-sm font-medium">{d.label}</span>
                   <span className="block text-xs text-[var(--color-text-subtle)]">
-                    {disabled ? "Registra la acción correctiva para habilitar." : d.desc}
+                    {disabled ? "Completa los datos de la acción para habilitar." : d.desc}
                   </span>
                 </button>
               )

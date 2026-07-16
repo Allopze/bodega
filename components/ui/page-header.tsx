@@ -40,23 +40,23 @@ export function PageHeader({ title, description, actions, headerActions, breadcr
   }, [breadcrumbNode, description, desktopActions, pathname, setHeader, title])
 
   return (
-    <div className={cn(actions ? "pb-2 mb-3 lg:sr-only" : "sr-only", className)}>
+    <div className={cn("mb-3 pb-2 lg:sr-only", className)}>
       <div className="flex min-h-[2rem] flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="min-w-0">
           {eyebrow && (
             <p className="text-eyebrow mb-1.5">{eyebrow}</p>
           )}
-          <h1 className={cn("text-h1 text-[var(--color-text)]", actions && "sr-only")}>
+          <h1 className="text-h1 text-[var(--color-text)]">
             {title}
           </h1>
-          {description && !actions && (
+          {description && (
             <p className="mt-1.5 max-w-[68ch] text-sub">
               {description}
             </p>
           )}
         </div>
         {actions && (
-          <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0 lg:hidden">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 lg:hidden">
             {actions}
           </div>
         )}

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import {
   savePdtpActivityChecklist,
@@ -17,6 +18,9 @@ import {
   verifyActionPlanItem,
   reopenActionPlanItem,
   addFollowup,
+  assertPdtpActionPlanItemAccess,
+  assertPdtpChecklistInstanceAccess,
+  assertPdtpExecutionAccess,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
@@ -35,6 +39,11 @@ import {
 } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/pdtp"
+
+function pdtpScopeForSession(session: Parameters<typeof resolveWorksiteScope>[0]) {
+  const scope = resolveWorksiteScope(session)
+  return scope.mode === "all" ? "all" : scope.ids
+}
 
 function fail(e: unknown): ActionState {
   if (e instanceof ZodError) {
@@ -106,6 +115,7 @@ export async function startPdtpExecutionChecklistAction(input: unknown): Promise
   const session = guard.session
   try {
     const parsed = pdtpChecklistStartSchema.parse(input)
+    await assertPdtpExecutionAccess(parsed.executionId, pdtpScopeForSession(session))
     const instance = await getOrCreateExecutionChecklist(parsed.executionId, session.user.id, {
       subjectType: parsed.subjectType,
       subjectId: parsed.subjectId,
@@ -123,6 +133,7 @@ export async function upsertPdtpChecklistResponsesAction(input: unknown): Promis
   const session = guard.session
   try {
     const parsed = pdtpChecklistResponsesUpsertSchema.parse(input)
+    await assertPdtpChecklistInstanceAccess(parsed.instanceId, pdtpScopeForSession(session))
     await upsertChecklistResponses(parsed.instanceId, parsed.responses, session.user.id)
     revalidatePath(`${REVALIDATE}/${parsed.programId}`, "layout")
     return { ok: true }
@@ -137,6 +148,7 @@ export async function submitPdtpExecutionChecklistAction(input: unknown): Promis
   const session = guard.session
   try {
     const parsed = pdtpChecklistSubmitSchema.parse(input)
+    await assertPdtpChecklistInstanceAccess(parsed.instanceId, pdtpScopeForSession(session))
     const result = await submitExecutionChecklist(parsed.instanceId, session.user.id)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.programId}`, "layout")
@@ -154,6 +166,7 @@ export async function createPdtpActionPlanItemAction(input: unknown): Promise<Ac
   const session = guard.session
   try {
     const parsed = pdtpActionPlanCreateSchema.parse(input)
+    await assertPdtpExecutionAccess(parsed.executionId, pdtpScopeForSession(session))
     await createActionPlanItem(parsed, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
@@ -168,6 +181,7 @@ export async function updatePdtpActionPlanItemAction(input: unknown): Promise<Ac
   const session = guard.session
   try {
     const { itemId, ...update } = pdtpActionPlanUpdateSchema.parse(input)
+    await assertPdtpActionPlanItemAccess(itemId, pdtpScopeForSession(session))
     await updateActionPlanItem(itemId, update, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
@@ -181,6 +195,7 @@ export async function deletePdtpActionPlanItemAction(input: unknown): Promise<Ac
   if (guard.error) return guard.error
   try {
     const parsed = pdtpActionPlanDeleteSchema.parse(input)
+    await assertPdtpActionPlanItemAccess(parsed.itemId, pdtpScopeForSession(guard.session))
     await deleteActionPlanItem(parsed.itemId)
     revalidatePath(REVALIDATE)
     return { ok: true }
@@ -195,6 +210,7 @@ export async function verifyPdtpActionPlanItemAction(input: unknown): Promise<Ac
   const session = guard.session
   try {
     const parsed = pdtpActionPlanVerifySchema.parse(input)
+    await assertPdtpActionPlanItemAccess(parsed.itemId, pdtpScopeForSession(session))
     await verifyActionPlanItem(parsed.itemId, session.user.id, parsed.observacion)
     revalidatePath(REVALIDATE)
     return { ok: true }
@@ -209,6 +225,7 @@ export async function reopenPdtpActionPlanItemAction(input: unknown): Promise<Ac
   const session = guard.session
   try {
     const parsed = pdtpActionPlanReopenSchema.parse(input)
+    await assertPdtpActionPlanItemAccess(parsed.itemId, pdtpScopeForSession(session))
     await reopenActionPlanItem(parsed.itemId, session.user.id, parsed.motivo)
     revalidatePath(REVALIDATE)
     return { ok: true }
@@ -225,6 +242,7 @@ export async function addPdtpFollowupAction(input: unknown): Promise<ActionState
   const session = guard.session
   try {
     const parsed = pdtpFollowupAddSchema.parse(input)
+    await assertPdtpActionPlanItemAccess(parsed.actionPlanItemId, pdtpScopeForSession(session))
     await addFollowup(parsed, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }

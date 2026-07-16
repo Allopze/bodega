@@ -20,6 +20,7 @@ export const preventionModule = {
     "prevention:docs:manage_restricted",
     "prevention:indicadores:view",
     "prevention:indicadores:manage",
+    "prevention:indicadores:close",
   ] as const,
 
   permissionMeta: {
@@ -39,6 +40,7 @@ export const preventionModule = {
     "prevention:docs:manage_restricted":  { id: "p-prev-docs-rest", description: "Gestionar documentos con confidencialidad 'restringido'" },
     "prevention:indicadores:view":   { id: "p-prev-ind-view",   description: "Ver indicadores de accidentabilidad" },
     "prevention:indicadores:manage": { id: "p-prev-ind-manage", description: "Registrar/editar indicadores de accidentabilidad" },
+    "prevention:indicadores:close":  { id: "p-prev-ind-close", description: "Cerrar períodos y corregir indicadores cerrados" },
   },
 
   nav: [
@@ -50,24 +52,33 @@ export const preventionModule = {
           href: "/prevencion/pdtp",
           iconName: "ClipboardText",
           permissions: ["prevention:pdtp:view"],
-        },
-        {
-          label: "Plan de acción PDTP",
-          href: "/prevencion/pdtp/acciones",
-          iconName: "CheckSquare",
-          permissions: ["prevention:pdtp:view"],
+          group: "Programa",
+          children: [
+            {
+              label: "Aprobaciones",
+              href: "/prevencion/pdtp/aprobaciones",
+              permissions: ["prevention:pdtp:approve"],
+            },
+            {
+              label: "Acciones correctivas",
+              href: "/prevencion/pdtp/acciones",
+              permissions: ["prevention:pdtp:view"],
+            },
+          ],
         },
         {
           label: "Documentación",
           href: "/prevencion/documentacion",
           iconName: "FolderOpen",
           permissions: ["prevention:docs:view"],
+          group: "Evidencia y resultados",
         },
         {
           label: "Indicadores de accidentabilidad",
           href: "/prevencion/indicadores",
           iconName: "ChartLineUp",
           permissions: ["prevention:indicadores:view"],
+          group: "Evidencia y resultados",
         },
       ],
     },
@@ -96,6 +107,7 @@ export const preventionModule = {
     { roleSlug: "administrador",       permission: "prevention:pdtp:sign_legal" },
     // PDTP — Checklist / Plan de acción / Seguimiento
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:checklist:manage" },
+    { roleSlug: "prevencionista",      permission: "prevention:pdtp:action:manage" },
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:action:verify" },
     { roleSlug: "prevencionista_faena", permission: "prevention:pdtp:checklist:fill" },
     { roleSlug: "prevencionista_faena", permission: "prevention:pdtp:action:manage" },
@@ -123,11 +135,15 @@ export const preventionModule = {
     // Indicadores de accidentabilidad
     { roleSlug: "prevencionista",      permission: "prevention:indicadores:view" },
     { roleSlug: "prevencionista",      permission: "prevention:indicadores:manage" },
+    { roleSlug: "prevencionista",      permission: "prevention:indicadores:close" },
     { roleSlug: "prevencionista_faena", permission: "prevention:indicadores:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:indicadores:manage" },
+    { roleSlug: "admin_contrato",       permission: "prevention:indicadores:view" },
+    { roleSlug: "admin_contrato",       permission: "prevention:indicadores:manage" },
     { roleSlug: "jefa_chome",          permission: "prevention:indicadores:view" },
     { roleSlug: "cphs",                permission: "prevention:indicadores:view" },
     { roleSlug: "administrador",       permission: "prevention:indicadores:view" },
     { roleSlug: "administrador",       permission: "prevention:indicadores:manage" },
+    { roleSlug: "administrador",       permission: "prevention:indicadores:close" },
   ],
 } as const satisfies ModuleManifest

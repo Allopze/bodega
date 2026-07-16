@@ -43,6 +43,25 @@ export const DASHBOARD_ITEM = {
   iconName: "SquaresFour",
 } as const
 
+const PREVENTION_HOME_ITEM: NavItem = {
+  label: "Inicio de Prevención",
+  href: "/prevencion",
+  iconName: "House",
+}
+
+const PREVENTION_GROUP_ORDER = ["Programa", "Control en terreno", "Evidencia y resultados"]
+const PREVENTION_GROUP_ORDERS = new Map(PREVENTION_GROUP_ORDER.map((group, index) => [group, index]))
+
+function groupOrder(group: string | undefined): number {
+  return PREVENTION_GROUP_ORDERS.get(group ?? "") ?? Number.MAX_SAFE_INTEGER
+}
+
+function sortAreaItems(areaId: string, items: NavItem[]): NavItem[] {
+  if (areaId !== "prevencion") return items
+
+  return [...items].sort((left, right) => groupOrder(left.group) - groupOrder(right.group))
+}
+
 /** Árbol completo de áreas (sin filtrar), derivado del registry una sola vez. */
 function buildAreaTree(): AreaNode[] {
   const itemsByArea = new Map<string, NavItem[]>()
@@ -54,10 +73,12 @@ function buildAreaTree(): AreaNode[] {
       itemsByArea.set(entry.areaId, list)
     }
   }
-  return [...AREAS]
-    .sort((a, b) => a.order - b.order)
-    .map((area) => ({ ...area, items: itemsByArea.get(area.id) ?? [] }))
-    .filter((area) => area.items.length > 0)
+  const areas: AreaNode[] = []
+  for (const area of [...AREAS].sort((left, right) => left.order - right.order)) {
+    const items = sortAreaItems(area.id, itemsByArea.get(area.id) ?? [])
+    if (items.length > 0) areas.push({ ...area, items })
+  }
+  return areas
 }
 
 export const AREA_TREE: AreaNode[] = buildAreaTree()
@@ -79,10 +100,10 @@ const HREF_TO_MODULE = new Map<string, string>(
 /** ANY-of permisos/roles concede visibilidad; sin restricción = visible. */
 export function canSeeNav(entry: { permissions?: string[]; roles?: string[] }, session: Session): boolean {
   if (!entry.permissions && !entry.roles) return true
-  const perms = session.user.permissions ?? []
-  const roles = session.user.roles ?? []
-  if (entry.roles?.some((r) => roles.includes(r))) return true
-  if (entry.permissions?.some((p) => perms.includes(p))) return true
+  const permissions = new Set(session.user.permissions ?? [])
+  const roles = new Set(session.user.roles ?? [])
+  if (entry.roles?.some((role) => roles.has(role))) return true
+  if (entry.permissions?.some((permission) => permissions.has(permission))) return true
   return false
 }
 
@@ -93,31 +114,43 @@ export function canSeeNav(entry: { permissions?: string[]; roles?: string[] }, s
  * @param enabledModuleIds Si se provee, oculta ítems de módulos deshabilitados.
  */
 export function getVisibleAreas(session: Session, enabledModuleIds?: Set<string>): AreaNode[] {
-  return AREA_TREE
-    .map((area) => ({
+  const areas: AreaNode[] = []
+  for (const area of AREA_TREE) {
+    const items: NavItem[] = []
+    for (const item of area.items) {
+      if (!canSeeNav(item, session)) continue
+      const moduleId = HREF_TO_MODULE.get(item.href)
+      if (enabledModuleIds && moduleId && !enabledModuleIds.has(moduleId)) continue
+
+      items.push({
+        ...item,
+        children: item.children?.filter((child) => canSeeNav(child, session)),
+      })
+    }
+
+    if (items.length === 0) continue
+    areas.push({
       ...area,
-      items: area.items
-        .filter((item) => canSeeNav(item, session))
-        .filter((item) => {
-          if (!enabledModuleIds) return true
-          const moduleId = HREF_TO_MODULE.get(item.href)
-          // Si el ítem no pertenece a ningún módulo conocido, mostrarlo
-          if (!moduleId) return true
-          return enabledModuleIds.has(moduleId)
-        })
-        .map((item) => ({
-          ...item,
-          children: item.children?.filter((child) => canSeeNav(child, session)),
-        })),
-    }))
-    .filter((area) => area.items.length > 0)
+      items: area.id === "prevencion" ? [PREVENTION_HOME_ITEM, ...items] : items,
+    })
+  }
+  return areas
 }
 
 export function isHrefActive(href: string, pathname: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard"
+  if (href === "/prevencion/evaluaciones") {
+    if (pathname === href) return true
+    if (pathname === "/prevencion/nueva" || pathname.startsWith("/prevencion/trabajador/")) return true
+    if (pathname.startsWith("/prevencion/")) {
+      const submodule = pathname.split("/")[2] ?? ""
+      return !["documentacion", "evaluaciones", "indicadores", "pdtp", "ppa"].includes(submodule)
+    }
+  }
   if (href === "/prevencion") {
     const preventionSubmodulePrefixes = [
       "/prevencion/documentacion",
+      "/prevencion/indicadores",
       "/prevencion/pdtp",
       "/prevencion/ppa",
     ]
@@ -125,8 +158,11 @@ export function isHrefActive(href: string, pathname: string): boolean {
       return false
     }
   }
-  // Excluir rutas hijas que son ítems de navegación independientes
-  if (href === "/prevencion/pdtp" && pathname.startsWith("/prevencion/pdtp/acciones")) {
+  // Acciones y aprobaciones son destinos internos del Programa, no el Programa mismo.
+  if (href === "/prevencion/pdtp" && (
+    pathname.startsWith("/prevencion/pdtp/acciones")
+    || pathname.startsWith("/prevencion/pdtp/aprobaciones")
+  )) {
     return false
   }
   return pathname === href || pathname.startsWith(href + "/")

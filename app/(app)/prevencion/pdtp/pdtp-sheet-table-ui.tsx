@@ -41,6 +41,22 @@ export function PdtpStatusBadge({
 }
 
 // ---------------------------------------------------------------------------
+// PdtpExecutionStatusBadge — estado de una ejecución registrada
+// ---------------------------------------------------------------------------
+
+const EXECUTION_STATUS_BADGE: Record<string, { label: string; variant: "default" | "success" | "danger" | "warning" }> = {
+  draft:     { label: "Borrador", variant: "default" },
+  submitted: { label: "Enviada", variant: "warning" },
+  approved:  { label: "Aprobada", variant: "success" },
+  rejected:  { label: "Rechazada", variant: "danger" },
+}
+
+export function PdtpExecutionStatusBadge({ status }: { status: string }) {
+  const config = EXECUTION_STATUS_BADGE[status] ?? { label: status, variant: "default" as const }
+  return <Badge variant={config.variant} size="sm">{config.label}</Badge>
+}
+
+// ---------------------------------------------------------------------------
 // PdtpResponsibleChips
 // ---------------------------------------------------------------------------
 
@@ -293,12 +309,10 @@ export function usePdtpDensity(): ["compact" | "comfortable", () => void] {
   })
 
   const toggle = React.useCallback(() => {
-    setDensity((prev) => {
-      const next = prev === "compact" ? "comfortable" : "compact"
-      localStorage.setItem(DENSITY_KEY, next)
-      return next
-    })
-  }, [])
+    const next = density === "compact" ? "comfortable" : "compact"
+    setDensity(next)
+    localStorage.setItem(DENSITY_KEY, next)
+  }, [density])
 
   return [density, toggle]
 }
@@ -351,11 +365,13 @@ export function PdtpWorksitePicker({
   sheetCode,
   worksites,
   programId,
+  viewMode = "semana",
 }: {
   current?: string
   sheetCode: string
   worksites: Array<{ id: string; name: string }>
   programId?: string
+  viewMode?: "semana" | "anual"
 }) {
   return (
     <SegmentedControl
@@ -366,8 +382,8 @@ export function PdtpWorksitePicker({
         key: worksite.id,
         label: worksite.name,
         href: programId
-          ? `${PDT_BASE}/${programId}?hoja=${sheetCode}&faena=${worksite.id}`
-          : `${PDT_BASE}?hoja=${sheetCode}&faena=${worksite.id}`,
+          ? `${PDT_BASE}/${programId}?hoja=${sheetCode}&faena=${worksite.id}&vista=${viewMode}`
+          : `${PDT_BASE}?hoja=${sheetCode}&faena=${worksite.id}&vista=${viewMode}`,
         active: worksite.id === current,
       }))}
     />
@@ -410,10 +426,14 @@ export function PdtpSheetPicker({
   current,
   options,
   programId,
+  worksiteId,
+  viewMode = "semana",
 }: {
   current: string
   options: Array<{ code: string; label: string }>
   programId?: string
+  worksiteId?: string
+  viewMode?: "semana" | "anual"
 }) {
   return (
     <SegmentedControl
@@ -424,8 +444,8 @@ export function PdtpSheetPicker({
         key: option.code,
         label: option.label,
         href: programId
-          ? `${PDT_BASE}/${programId}?hoja=${option.code}`
-          : `${PDT_BASE}?hoja=${option.code}`,
+          ? `${PDT_BASE}/${programId}?hoja=${option.code}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${viewMode}`
+          : `${PDT_BASE}?hoja=${option.code}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${viewMode}`,
         active: option.code === current,
       }))}
     />

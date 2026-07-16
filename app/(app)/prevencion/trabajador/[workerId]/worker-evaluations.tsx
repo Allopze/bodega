@@ -18,6 +18,7 @@ export function WorkerEvaluations({
   weeklyEvals,
   permissions,
   userEvaluatorRole,
+  openVisits,
 }: WorkerEvaluationsProps) {
   const router = useRouter()
   const [deleteTarget, setDeleteTarget] = useState<SstEvaluation | null>(null)
@@ -28,6 +29,7 @@ export function WorkerEvaluations({
   const prevEval = evaluations.find(e => e.evaluatorRole === 'prevencionista_faena' || e.evaluatorRole === null)
   const adminEval = evaluations.find(e => e.evaluatorRole === 'admin_contrato')
   const condEval = evaluations.find(e => e.evaluatorRole === 'conductor_lider')
+  const defaultVisitId = openVisits.length === 1 ? openVisits.at(0)?.id : undefined
 
   const handleDelete = () => {
     if (!deleteTarget) return
@@ -48,6 +50,13 @@ export function WorkerEvaluations({
   return (
     <div className="space-y-6">
       {/* 3-Column Grid */}
+      {openVisits.length !== 1 && (
+        <div className="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+          {openVisits.length === 0
+            ? "No hay una visita en borrador. Al iniciar una evaluación se creará una nueva visita."
+            : "Hay varias visitas en borrador. Elige la visita correspondiente antes de agregar una participación."}
+        </div>
+      )}
       <div className="grid gap-6 md:grid-cols-3">
         <EvaluationCard
           title="Prevencionista de Faena"
@@ -61,7 +70,7 @@ export function WorkerEvaluations({
           onDelete={setDeleteTarget}
         />
         <EvaluationCard
-          title="Admin Contrato / Supervisor"
+          title="Supervisor de faena"
           role="admin_contrato"
           icon={<Briefcase size={18} />}
           evaluation={adminEval}
@@ -102,6 +111,8 @@ export function WorkerEvaluations({
         open={createOpen}
         onOpenChange={setCreateOpen}
         initialRole={startRole}
+        defaultVisitId={defaultVisitId}
+        openVisits={openVisits}
       />
     </div>
   )

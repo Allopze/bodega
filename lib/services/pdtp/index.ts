@@ -26,7 +26,13 @@ export {
 } from "./checklist-domain"
 export type { PdtpDanoPotencial } from "./checklist-domain"
 
-export { assertWorksiteAccess, getPdtpProgramActivityCount } from "./helpers"
+export {
+  assertWorksiteAccess,
+  assertPdtpActionPlanItemAccess,
+  assertPdtpChecklistInstanceAccess,
+  assertPdtpExecutionAccess,
+  getPdtpProgramActivityCount,
+} from "./helpers"
 
 export { loadPdtpCatalog, listPdtpResponsibleCatalog } from "./catalog"
 export { getActivePdtpProgram } from "./lifecycle"

@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { requirePermission, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getPpa } from "@/lib/services/ppa"
+import { getPpa, getPpaCorrectiveAction } from "@/lib/services/ppa"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +16,7 @@ import { ReviewPanel } from "./review-panel"
 import { CloseCaseButton } from "./close-case-button"
 import { RevokeTokenButton } from "./revoke-token-button"
 import { scopeToIds } from "@/lib/ppa/utils"
+import { readPpaReturnHref } from "../list-filters"
 
 export const metadata: Metadata = { title: "Detalle PPA" }
 
@@ -73,8 +74,16 @@ function Timeline({ events }: { events: { title: string; time: string; sub?: str
   )
 }
 
-export default async function PpaDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PpaDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ returnTo?: string | string[] }>
+}) {
   const { id } = await params
+  const { returnTo } = await searchParams
+  const listHref = readPpaReturnHref(returnTo)
 
   let session
   try { session = await requirePermission("ppa:view") }
@@ -83,6 +92,7 @@ export default async function PpaDetailPage({ params }: { params: Promise<{ id: 
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))
   const ppa = await getPpa(id, worksiteIds)
   if (!ppa) notFound()
+  const correctiveAction = await getPpaCorrectiveAction(id, worksiteIds)
 
   const answers = ppa.answersJson as PpaAnswers
   const reasons = (ppa.triggeredReasons as PpaStopReason[] | null) ?? []
@@ -122,7 +132,7 @@ export default async function PpaDetailPage({ params }: { params: Promise<{ id: 
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "PPA Digital", href: "/prevencion/ppa" },
+            { label: "Para, Piensa y Actúa", href: listHref },
             { label: ppa.workerName },
           ]} />
         }
@@ -209,6 +219,17 @@ export default async function PpaDetailPage({ params }: { params: Promise<{ id: 
                 <Row label="Nota" value={ppa.reviewNota} />
                 <Row label="Revisado" value={ppa.reviewedAt ? new Date(ppa.reviewedAt).toLocaleString("es-CL") : "—"} />
               </dl>
+              {correctiveAction && (
+                <div className="mt-3 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3">
+                  <p className="text-sm font-medium">Acción correctiva pendiente</p>
+                  <dl className="mt-2">
+                    <Row label="Responsable" value={`${correctiveAction.responsible} · ${correctiveAction.responsibleRole === "admin_contrato" ? "Supervisor de faena" : correctiveAction.responsibleRole === "prevencionista_faena" ? "Prevencionista de faena" : correctiveAction.responsibleRole === "prevencionista" ? "Jefa Dpto. Prevención" : "Jefe de faena"}`} />
+                    <Row label="Plazo" value={correctiveAction.dueDate} />
+                    <Row label="Prioridad" value={correctiveAction.priority} />
+                    <Row label="Estado" value={correctiveAction.status} />
+                  </dl>
+                </div>
+              )}
               {canReview && resuelto && (
                 <div className="mt-3">
                   <CloseCaseButton ppaId={ppa.id} />

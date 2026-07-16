@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { MagnifyingGlass, ShieldCheck } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -15,72 +16,143 @@ import {
 } from "@/components/ui/select"
 import { Pagination } from "@/components/ui/pagination"
 import { cn, formatDateTime } from "@/lib/utils"
-import type { PpaRow } from "@/lib/services/ppa"
-import { estadoPpaLabel, estadoPpaBadgeVariant, ESTADO_PPA_LABELS } from "@/lib/ppa/badges"
+import type { PpaRow, PpaStats } from "@/lib/services/ppa"
+import { estadoPpaLabel, estadoPpaBadgeVariant } from "@/lib/ppa/badges"
 import { tipoTrabajoLabel } from "@/lib/ppa/types"
 import { listPpaAction, type PpaListClientFilters } from "./actions"
-import { buildPpaListFilters } from "./list-filters"
+import { buildPpaDetailHref, buildPpaListFilters, buildPpaListHref, type PpaListFilterState } from "./list-filters"
 
-const QUICK_FILTERS: { value: string; label: string; tone?: "signal" }[] = [
-  { value: "",            label: "Todos" },
-  { value: "pendientes",  label: "Por revisar", tone: "signal" },
-  { value: "detenido",    label: "Detenidos",   tone: "signal" },
-  { value: "autorizado",  label: "Autorizados" },
-  { value: "rechazado",   label: "Rechazados" },
+// Un único control de estado: estas pestañas. (Antes había además un <Select> que
+// filtraba el mismo campo — la misma dimensión representada dos veces.) `countKey`
+// apunta al contador en PpaStats; los estados sin contador propio no muestran número.
+const QUICK_FILTERS: { value: string; label: string; tone?: "signal"; countKey?: keyof PpaStats }[] = [
+  { value: "",              label: "Todos",         countKey: "total" },
+  { value: "pendientes",    label: "Por revisar",   tone: "signal", countKey: "pendientes" },
+  { value: "detenido",      label: "Detenidos",     tone: "signal", countKey: "detenidos" },
+  { value: "autorizado",    label: "Autorizados",   countKey: "autorizados" },
+  { value: "rechazado",     label: "Rechazados",    countKey: "rechazados" },
+  { value: "aprobado_auto", label: "Aprob. auto",   countKey: "aprobadosAuto" },
+  { value: "en_correccion", label: "En corrección" },
+  { value: "cerrado",       label: "Cerrados" },
 ]
 
 interface Props {
   initialRows: PpaRow[]
   total: number
   pageSize: number
+  initialFilterState: PpaListFilterState
+  initialPage: number
   worksiteOptions: { id: string; name: string }[]
   canReview: boolean
+  stats?: PpaStats
 }
 
-export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOptions, canReview }: Props) {
-  const [rows, setRows] = React.useState(initialRows)
-  const [total, setTotal] = React.useState(initialTotal)
-  const [page, setPage] = React.useState(1)
-  const [pending, startTransition] = React.useTransition()
+interface PpaListState {
+  rows: PpaRow[]
+  total: number
+  page: number
+  filters: PpaListFilterState
+  loadError: string | null
+}
 
-  const [search, setSearch] = React.useState("")
-  const [estado, setEstado] = React.useState("")
-  const [worksiteId, setWorksiteId] = React.useState("")
-  const [dateFrom, setDateFrom] = React.useState("")
-  const [dateTo, setDateTo] = React.useState("")
+type PpaListAction =
+  | { type: "sync"; rows: PpaRow[]; total: number; page: number; filters: PpaListFilterState }
+  | { type: "filters"; patch: Partial<PpaListFilterState> }
+  | { type: "clearFilters" }
+  | { type: "page"; page: number }
+  | { type: "loaded"; rows: PpaRow[]; total: number }
+  | { type: "loadError"; message: string | null }
+
+function createPpaListState({ initialRows, total, initialPage, initialFilterState }: Pick<Props, "initialRows" | "total" | "initialPage" | "initialFilterState">): PpaListState {
+  return { rows: initialRows, total, page: initialPage, filters: initialFilterState, loadError: null }
+}
+
+function ppaListReducer(state: PpaListState, action: PpaListAction): PpaListState {
+  switch (action.type) {
+    case "sync":
+      return { rows: action.rows, total: action.total, page: action.page, filters: action.filters, loadError: null }
+    case "filters":
+      return { ...state, page: 1, filters: { ...state.filters, ...action.patch } }
+    case "clearFilters":
+      return { ...state, page: 1, filters: { estado: "", worksiteId: "", search: "", dateFrom: "", dateTo: "" } }
+    case "page":
+      return { ...state, page: action.page }
+    case "loaded":
+      return { ...state, rows: action.rows, total: action.total, loadError: null }
+    case "loadError":
+      return { ...state, loadError: action.message }
+  }
+}
+
+export function PpaList({
+  initialRows,
+  total: initialTotal,
+  pageSize,
+  initialFilterState,
+  initialPage,
+  worksiteOptions,
+  canReview,
+  stats,
+}: Props) {
+  const router = useRouter()
+  const [state, dispatch] = React.useReducer(
+    ppaListReducer,
+    { initialRows, total: initialTotal, initialPage, initialFilterState },
+    createPpaListState,
+  )
+  const [pending, startTransition] = React.useTransition()
+  const { rows, total, page, filters: filterState, loadError } = state
+  const { search, estado, worksiteId, dateFrom, dateTo } = filterState
 
   const filtersActive = !!(estado || worksiteId || search.trim() || dateFrom || dateTo)
   const firstRender = React.useRef(true)
 
   const filters = React.useMemo<PpaListClientFilters>(
-    () => buildPpaListFilters({ estado, worksiteId, search, dateFrom, dateTo }),
-    [estado, worksiteId, search, dateFrom, dateTo],
+    () => buildPpaListFilters(filterState),
+    [filterState],
   )
+
+  // Browser navigation and shared links restore the list exactly as it was.
+  React.useEffect(() => {
+    firstRender.current = true
+    dispatch({ type: "sync", rows: initialRows, total: initialTotal, page: initialPage, filters: initialFilterState })
+  }, [
+    initialRows,
+    initialTotal,
+    initialPage,
+    initialFilterState,
+    initialFilterState.search,
+    initialFilterState.estado,
+    initialFilterState.worksiteId,
+    initialFilterState.dateFrom,
+    initialFilterState.dateTo,
+  ])
 
   // Re-consulta server-side cuando cambian filtros (con debounce) o página.
   React.useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return }
     const handle = setTimeout(() => {
+      router.replace(buildPpaListHref(filterState, page))
+      dispatch({ type: "loadError", message: null })
       startTransition(async () => {
         const res = await listPpaAction(filters, pageSize, (page - 1) * pageSize)
         if (res.ok && res.data) {
-          setRows(res.data.rows)
-          setTotal(res.data.total)
+          dispatch({ type: "loaded", rows: res.data.rows, total: res.data.total })
+        } else {
+          dispatch({ type: "loadError", message: res.message ?? "No fue posible actualizar la lista de PPA." })
         }
       })
     }, 250)
     return () => clearTimeout(handle)
-  }, [filters, page, pageSize])
+  }, [filters, page, pageSize, router, filterState])
 
   // Cambiar un filtro vuelve a la primera página.
-  function onFilterChange(fn: () => void) {
-    setPage(1)
-    fn()
+  function onFilterChange(patch: Partial<PpaListFilterState>) {
+    dispatch({ type: "filters", patch })
   }
 
   function clearFilters() {
-    setPage(1)
-    setEstado(""); setWorksiteId(""); setDateFrom(""); setDateTo(""); setSearch("")
+    dispatch({ type: "clearFilters" })
   }
 
   return (
@@ -89,11 +161,12 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
       <div className="flex items-end gap-0 border-b border-[var(--color-border)]">
         {QUICK_FILTERS.map((f) => {
           const active = estado === f.value
+          const count = stats && f.countKey ? (stats[f.countKey] as number) : null
           return (
             <button
               key={f.value || "all"}
               type="button"
-              onClick={() => onFilterChange(() => setEstado(f.value))}
+              onClick={() => onFilterChange({ estado: f.value })}
               className={cn(
                 "-mb-px px-3.5 pb-2.5 pt-1 text-sm font-medium",
                 "border-b-2 transition-[color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
@@ -106,12 +179,20 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
               aria-pressed={active}
             >
               {f.label}
+              {count !== null && (
+                <span className={cn(
+                  "ml-1.5 font-mono text-xs tabular-nums",
+                  active ? "opacity-80" : "text-[var(--color-text-faint)]",
+                )}>
+                  {count}
+                </span>
+              )}
             </button>
           )
         })}
         {canReview && (
           <span className="ml-auto hidden pb-2.5 text-xs text-[var(--color-text-subtle)] sm:inline">
-            Abre un PPA detenido para revisarlo.
+            Revisa los trabajos detenidos desde su detalle.
           </span>
         )}
       </div>
@@ -126,28 +207,15 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
           <Input
             type="search"
             value={search}
-            onChange={(e) => onFilterChange(() => setSearch(e.target.value))}
+            onChange={(e) => onFilterChange({ search: e.target.value })}
             placeholder="Buscar por trabajador o tarea..."
             aria-label="Buscar"
             className="h-8 w-48 pl-8 text-xs sm:w-64"
           />
         </div>
 
-        <Select value={estado || "all"} onValueChange={(v) => onFilterChange(() => setEstado(v === "all" ? "" : v))}>
-          <SelectTrigger className="w-44" aria-label="Filtrar por estado">
-            <SelectValue placeholder="Estado" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los estados</SelectItem>
-            <SelectItem value="pendientes">Por revisar</SelectItem>
-            {Object.entries(ESTADO_PPA_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         {worksiteOptions.length > 1 && (
-          <Select value={worksiteId || "all"} onValueChange={(v) => onFilterChange(() => setWorksiteId(v === "all" ? "" : v))}>
+          <Select value={worksiteId || "all"} onValueChange={(v) => onFilterChange({ worksiteId: v === "all" ? "" : v })}>
             <SelectTrigger className="w-44" aria-label="Filtrar por faena">
               <SelectValue placeholder="Faena" />
             </SelectTrigger>
@@ -162,13 +230,13 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
 
         <DatePicker
           value={dateFrom}
-          onChange={(iso) => onFilterChange(() => setDateFrom(iso))}
+          onChange={(iso) => onFilterChange({ dateFrom: iso })}
           className="w-[9.5rem]"
           placeholder="Desde"
         />
         <DatePicker
           value={dateTo}
-          onChange={(iso) => onFilterChange(() => setDateTo(iso))}
+          onChange={(iso) => onFilterChange({ dateTo: iso })}
           className="w-[9.5rem]"
           placeholder="Hasta"
         />
@@ -183,6 +251,9 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
           </button>
         )}
       </div>
+
+      {pending && <p role="status" aria-live="polite" className="text-xs text-[var(--color-text-subtle)]">Actualizando resultados…</p>}
+      {loadError && <p role="alert" className="text-sm text-[var(--color-danger-ink)]">{loadError}</p>}
 
       {rows.length === 0 ? (
         filtersActive ? (
@@ -225,7 +296,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
               </TableHeader>
               <TableBody>
                 {rows.map((r) => {
-                  const href = `/prevencion/ppa/${r.id}`
+                  const href = buildPpaDetailHref(r.id, { estado, worksiteId, search, dateFrom, dateTo }, page)
                   return (
                     <TableRow key={r.id} className="cursor-pointer hover:bg-[var(--color-primary-tint)]">
                       <TableCell><Link href={href} className="block">{formatDateTime(r.createdAt)}</Link></TableCell>
@@ -243,7 +314,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
                         <Link href={href} className="block">
                           {r.resultado === "detenido"
                             ? <span className="text-[var(--color-danger-ink)]">Detenido</span>
-                            : <span className="text-[var(--color-text-muted)]">Auto</span>}
+                            : <span className="text-[var(--color-text-muted)]">Sin detención</span>}
                         </Link>
                       </TableCell>
                       <TableCell>
@@ -258,7 +329,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
                 })}
               </TableBody>
             </Table>
-            <Pagination page={page} total={total} perPage={pageSize} onPage={setPage} />
+            <Pagination page={page} total={total} perPage={pageSize} onPage={(nextPage) => dispatch({ type: "page", page: nextPage })} />
           </TableRoot>
 
           {/* Cards (mobile) */}
@@ -266,7 +337,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
             {rows.map((r) => (
               <Link
                 key={r.id}
-                href={`/prevencion/ppa/${r.id}`}
+                href={buildPpaDetailHref(r.id, { estado, worksiteId, search, dateFrom, dateTo }, page)}
                 data-pressable
                 className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
               >
@@ -287,7 +358,7 @@ export function PpaList({ initialRows, total: initialTotal, pageSize, worksiteOp
                 <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{formatDateTime(r.createdAt)}</p>
               </Link>
             ))}
-            <Pagination page={page} total={total} perPage={pageSize} onPage={setPage} />
+            <Pagination page={page} total={total} perPage={pageSize} onPage={(nextPage) => dispatch({ type: "page", page: nextPage })} />
           </div>
         </>
       )}

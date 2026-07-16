@@ -13,6 +13,7 @@ import { ANOMALY_RULE_SEVERITY_LABELS, ANOMALY_RULE_SEVERITIES } from "@/lib/com
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { X } from "@phosphor-icons/react/dist/ssr"
@@ -152,6 +153,15 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
     filters.anomalyAssigneeId ? { key: "anomalia_responsable", label: `Responsable: ${anomalyAssigneesList.find((u) => u.id === filters.anomalyAssigneeId)?.name ?? filters.anomalyAssigneeId}` } : null,
   ].filter((chip): chip is { key: keyof BitacoraSearchParams; label: string } => chip !== null)
 
+  // Filtros secundarios: viven plegados en "Más filtros". Contamos los activos para
+  // rotular el disclosure y abrirlo por defecto cuando alguno viene aplicado.
+  const ADVANCED_FILTER_KEYS: Array<keyof BitacoraSearchParams> = [
+    "proveedor", "producto", "tipo", "observaciones", "marca", "modelo", "conductor", "supervisor",
+    "punto_carga", "unidad_rendimiento", "estado_operativo", "sello_retirado", "sello_instalado",
+    "evidencia_tipo", "anomalia", "revision", "anomalia_tipo", "anomalia_severidad", "anomalia_responsable",
+  ]
+  const advancedActiveCount = ADVANCED_FILTER_KEYS.filter((key) => Boolean(sp[key])).length
+
   return (
     <PageContainer width="full">
       <PageHeader
@@ -161,39 +171,61 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
         actions={<BitacoraExportButton filters={filters} />}
       />
 
-      <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-4">
-        <Input name="q" defaultValue={sp.q} placeholder="Equipo, patente, conductor, supervisor, proveedor…" className="md:col-span-2" />
-        <input type="date" name="desde" defaultValue={sp.desde} className="control" />
-        <input type="date" name="hasta" defaultValue={sp.hasta} className="control" />
-        <select name="faena" defaultValue={sp.faena} className="control"><option value="">Todas las faenas autorizadas</option>{worksitesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <select name="fuente" defaultValue={sp.fuente} className="control"><option value="">Todas las fuentes</option>{SOURCE_OPTIONS.map((source) => <option key={source} value={source}>{FUEL_LOG_SOURCE_LABEL[source]}</option>)}</select>
-        <select name="proveedor" defaultValue={sp.proveedor} className="control"><option value="">Todos los proveedores</option>{suppliersList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <select name="producto" defaultValue={sp.producto} className="control"><option value="">Todos los productos</option>{productsList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <select name="tipo" defaultValue={sp.tipo} className="control"><option value="">Todos los tipos de equipo</option>{equipmentTypesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="observaciones" value="si" defaultChecked={sp.observaciones === "si"} />Sólo con observaciones</label>
-        <Input name="marca" defaultValue={sp.marca} placeholder="Marca del vehículo" className="control" />
-        <Input name="modelo" defaultValue={sp.modelo} placeholder="Modelo del vehículo" className="control" />
-        <Input name="conductor" defaultValue={sp.conductor} placeholder="Nombre del conductor" className="control" />
-        <Input name="supervisor" defaultValue={sp.supervisor} placeholder="Nombre del supervisor" className="control" />
-        <select name="punto_carga" defaultValue={sp.punto_carga} className="control"><option value="">Todos los puntos de carga</option>{loadingPointsList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <select name="unidad_rendimiento" defaultValue={sp.unidad_rendimiento} className="control"><option value="">Cualquier unidad</option><option value="km_per_liter">km/L</option><option value="liters_per_hour">L/h</option></select>
-        <select name="estado_operativo" defaultValue={sp.estado_operativo} className="control"><option value="">Cualquier estado</option><option value="operativo">Operativo</option><option value="inactivo_mantencion">Inactivo — mantención</option><option value="inactivo_fuera_servicio">Inactivo — fuera de servicio</option><option value="inactivo_revision">Inactivo — revisión</option></select>
-        <Input name="sello_retirado" defaultValue={sp.sello_retirado} placeholder="Número de sello retirado" className="control" />
-        <Input name="sello_instalado" defaultValue={sp.sello_instalado} placeholder="Número de sello instalado" className="control" />
-        <select name="evidencia_tipo" defaultValue={sp.evidencia_tipo} className="control"><option value="">Cualquier tipo de evidencia</option><option value="odometer">Odómetro / horómetro</option><option value="liter_meter">Medidor de litros</option><option value="removed_seal">Sello retirado</option><option value="installed_seal">Sello instalado</option></select>
-        <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="anomalia" value="si" defaultChecked={sp.anomalia === "si"} />Sólo con anomalías</label>
-        <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="revision" value="si" defaultChecked={sp.revision === "si"} />Sólo marcados para revisión</label>
-        <select name="anomalia_tipo" defaultValue={sp.anomalia_tipo} className="control"><option value="">Cualquier tipo de anomalía</option>{anomalyRulesList.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}</select>
-        <select name="anomalia_severidad" defaultValue={sp.anomalia_severidad} className="control"><option value="">Cualquier severidad</option>{ANOMALY_RULE_SEVERITIES.map((item) => <option key={item} value={item}>{ANOMALY_RULE_SEVERITY_LABELS[item]}</option>)}</select>
-        <select name="anomalia_responsable" defaultValue={sp.anomalia_responsable} className="control"><option value="">Cualquier responsable</option>{anomalyAssigneesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <div className="flex flex-wrap items-center gap-2 md:col-span-4">
-          <Button type="submit" variant="secondary">Aplicar</Button>
-          {chips.length > 0 && <Link href="/combustibles/bitacora" className="text-xs text-(--color-text-muted) hover:underline">Limpiar filtros</Link>}
-          <label className="ml-auto flex items-center gap-2 text-xs text-(--color-text-muted)">
-            Orden
-            <select name="orden" defaultValue={sp.orden === "asc" ? "asc" : "desc"} className="control w-44"><option value="desc">Más reciente primero</option><option value="asc">Más antiguo primero</option></select>
-          </label>
+      <form className="mb-4 flex flex-col gap-3 border-y border-(--color-border) py-4">
+        {/* Filtros primarios: lo que se usa a diario. La tabla arranca justo debajo. */}
+        <div className="grid gap-3 md:grid-cols-4">
+          <Input name="q" defaultValue={sp.q} placeholder="Equipo, patente, conductor, supervisor, proveedor…" className="md:col-span-2" />
+          <DatePicker name="desde" defaultValue={sp.desde} placeholder="Desde" />
+          <DatePicker name="hasta" defaultValue={sp.hasta} placeholder="Hasta" />
+          <select name="faena" defaultValue={sp.faena} className="control"><option value="">Todas las faenas autorizadas</option>{worksitesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          <select name="fuente" defaultValue={sp.fuente} className="control"><option value="">Todas las fuentes</option>{SOURCE_OPTIONS.map((source) => <option key={source} value={source}>{FUEL_LOG_SOURCE_LABEL[source]}</option>)}</select>
+          <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+            <Button type="submit" variant="secondary">Aplicar</Button>
+            {chips.length > 0 && <Link href="/combustibles/bitacora" className="text-xs text-(--color-text-muted) hover:underline">Limpiar filtros</Link>}
+            <label className="ml-auto flex items-center gap-2 text-xs text-(--color-text-muted)">
+              Orden
+              <select name="orden" defaultValue={sp.orden === "asc" ? "asc" : "desc"} className="control w-44"><option value="desc">Más reciente primero</option><option value="asc">Más antiguo primero</option></select>
+            </label>
+          </div>
         </div>
+
+        {/* Filtros secundarios: plegados por defecto (abiertos si vienen activos). Las
+            entradas siguen en el DOM aunque estén ocultas, así que se envían igual. */}
+        <details open={advancedActiveCount > 0} className="border-t border-(--color-border) pt-3">
+          <summary className="cursor-pointer text-sm font-medium text-(--color-text-muted) hover:text-(--color-text)">
+            Más filtros{advancedActiveCount > 0 ? ` · ${advancedActiveCount} activo${advancedActiveCount === 1 ? "" : "s"}` : ""}
+          </summary>
+          <div className="mt-4 flex flex-col gap-5">
+            <fieldset className="grid gap-3 md:grid-cols-4">
+              <legend className="text-eyebrow mb-2 md:col-span-4">Vehículo</legend>
+              <Input name="marca" defaultValue={sp.marca} placeholder="Marca del vehículo" className="control" />
+              <Input name="modelo" defaultValue={sp.modelo} placeholder="Modelo del vehículo" className="control" />
+              <select name="tipo" defaultValue={sp.tipo} className="control"><option value="">Todos los tipos de equipo</option>{equipmentTypesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+              <Input name="conductor" defaultValue={sp.conductor} placeholder="Nombre del conductor" className="control" />
+              <Input name="supervisor" defaultValue={sp.supervisor} placeholder="Nombre del supervisor" className="control" />
+            </fieldset>
+            <fieldset className="grid gap-3 md:grid-cols-4">
+              <legend className="text-eyebrow mb-2 md:col-span-4">Operación</legend>
+              <select name="proveedor" defaultValue={sp.proveedor} className="control"><option value="">Todos los proveedores</option>{suppliersList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+              <select name="producto" defaultValue={sp.producto} className="control"><option value="">Todos los productos</option>{productsList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+              <select name="punto_carga" defaultValue={sp.punto_carga} className="control"><option value="">Todos los puntos de carga</option>{loadingPointsList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+              <select name="unidad_rendimiento" defaultValue={sp.unidad_rendimiento} className="control"><option value="">Cualquier unidad</option><option value="km_per_liter">km/L</option><option value="liters_per_hour">L/h</option></select>
+              <select name="estado_operativo" defaultValue={sp.estado_operativo} className="control"><option value="">Cualquier estado</option><option value="operativo">Operativo</option><option value="inactivo_mantencion">Inactivo — mantención</option><option value="inactivo_fuera_servicio">Inactivo — fuera de servicio</option><option value="inactivo_revision">Inactivo — revisión</option></select>
+              <Input name="sello_retirado" defaultValue={sp.sello_retirado} placeholder="Número de sello retirado" className="control" />
+              <Input name="sello_instalado" defaultValue={sp.sello_instalado} placeholder="Número de sello instalado" className="control" />
+              <select name="evidencia_tipo" defaultValue={sp.evidencia_tipo} className="control"><option value="">Cualquier tipo de evidencia</option><option value="odometer">Odómetro / horómetro</option><option value="liter_meter">Medidor de litros</option><option value="removed_seal">Sello retirado</option><option value="installed_seal">Sello instalado</option></select>
+              <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="observaciones" value="si" defaultChecked={sp.observaciones === "si"} />Sólo con observaciones</label>
+            </fieldset>
+            <fieldset className="grid gap-3 md:grid-cols-4">
+              <legend className="text-eyebrow mb-2 md:col-span-4">Anomalías</legend>
+              <select name="anomalia_tipo" defaultValue={sp.anomalia_tipo} className="control"><option value="">Cualquier tipo de anomalía</option>{anomalyRulesList.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}</select>
+              <select name="anomalia_severidad" defaultValue={sp.anomalia_severidad} className="control"><option value="">Cualquier severidad</option>{ANOMALY_RULE_SEVERITIES.map((item) => <option key={item} value={item}>{ANOMALY_RULE_SEVERITY_LABELS[item]}</option>)}</select>
+              <select name="anomalia_responsable" defaultValue={sp.anomalia_responsable} className="control"><option value="">Cualquier responsable</option>{anomalyAssigneesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+              <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="anomalia" value="si" defaultChecked={sp.anomalia === "si"} />Sólo con anomalías</label>
+              <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="revision" value="si" defaultChecked={sp.revision === "si"} />Sólo marcados para revisión</label>
+            </fieldset>
+          </div>
+        </details>
       </form>
 
       {chips.length > 0 && (

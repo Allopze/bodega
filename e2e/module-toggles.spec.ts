@@ -54,7 +54,6 @@ test.describe("Module toggles", () => {
     // The Flota link should no longer be visible in the main nav
     // (it might still be in the collapsed rail, but the main panel item should be gone)
     await page.waitForTimeout(500) // Allow nav to re-render
-    const flotaLinks = page.getByRole("link", { name: "Flota" })
     // There might be icons/avatars with "Flota" text elsewhere;
     // check that it's NOT in the sidebar navigation
     const sidebarFlota = page.locator('nav[aria-label="Navegación"], nav[aria-label="Áreas"]').getByRole("link", { name: "Flota" })

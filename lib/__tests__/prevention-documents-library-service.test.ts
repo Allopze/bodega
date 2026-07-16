@@ -32,6 +32,7 @@ vi.mock("@/lib/audit", () => ({
 
 import { recordStatusChange } from "@/lib/audit"
 import { restoreDocument, updateDocumentMetadata } from "@/lib/services/prevention-documents-library"
+import { getDashboardCounters, searchDocuments } from "@/lib/services/prevention-documents/search"
 
 const ctx = {
   userId: "user-1",
@@ -112,5 +113,21 @@ describe("prevention documents library service", () => {
       fromStatus: "archivado",
       toStatus: "borrador",
     }))
+  })
+})
+
+describe("prevention documents library scope", () => {
+  it("returns no documents or counters without worksite scope", async () => {
+    const noScope = { mode: "none" as const, ids: [] as [] }
+
+    await expect(searchDocuments({ page: 1, pageSize: 50 }, noScope)).resolves.toEqual({ rows: [], total: 0 })
+    await expect(getDashboardCounters(noScope)).resolves.toEqual({
+      total: 0,
+      byStatus: { borrador: 0, en_revision: 0, observado: 0, aprobado: 0, vigente: 0, vencido: 0, reemplazado: 0, archivado: 0 },
+      expiringSoon: { within7: 0, within15: 0, within30: 0 },
+      pendingReview: 0,
+      observed: 0,
+      ackPending: 0,
+    })
   })
 })

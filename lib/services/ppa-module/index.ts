@@ -21,6 +21,7 @@ export {
   type PpaExportFilters,
   reviewPpa,
   closePpa,
+  getPpaCorrectiveAction,
   buildPpaExport,
   listScopedWorksites,
 } from "./reportes"

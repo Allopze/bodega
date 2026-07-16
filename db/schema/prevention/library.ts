@@ -112,16 +112,21 @@ export const sstDocumentVersions = pgTable("sst_document_versions", {
 ])
 
 export const sstDocumentLinks = pgTable("sst_document_links", {
-  id:         text("id").primaryKey(),
-  documentId: text("document_id").notNull().references(() => sstDocuments.id, { onDelete: "cascade" }),
-  entityType: text("entity_type").notNull(),
-  entityId:   text("entity_id").notNull(),
-  notes:      text("notes"),
-  createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  id:              text("id").primaryKey(),
+  documentId:      text("document_id").notNull().references(() => sstDocuments.id, { onDelete: "cascade" }),
+  entityType:      text("entity_type").notNull(),
+  entityId:        text("entity_id").notNull(),
+  notes:           text("notes"),
+  createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  removedByUserId: text("removed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  removedAt:       timestamp("removed_at", { withTimezone: true, mode: "string" }),
+  removalReason:   text("removal_reason"),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   uniqueIndex("sst_document_links_doc_entity_unique").on(table.documentId, table.entityType, table.entityId),
   index("sst_document_links_entity_idx").on(table.entityType, table.entityId),
-  check("sst_document_links_entity_type_valid", sql`${table.entityType} IN ('worker', 'worksite', 'vehicle', 'equipment', 'incident', 'training', 'committee', 'epp_delivery', 'corrective_action', 'emergency_plan')`),
+  check("sst_document_links_entity_type_valid", sql`${table.entityType} IN ('worker', 'worksite', 'vehicle', 'equipment', 'incident', 'training', 'committee', 'epp_delivery', 'corrective_action', 'emergency_plan', 'pdtp_activity', 'pdtp_execution', 'pdtp_checklist', 'sst_evaluation', 'ppa')`),
+  check("sst_document_links_removal_valid", sql`(${table.removedAt} IS NULL AND ${table.removedByUserId} IS NULL AND ${table.removalReason} IS NULL) OR (${table.removedAt} IS NOT NULL AND ${table.removedByUserId} IS NOT NULL AND length(${table.removalReason}) >= 3)`),
 ])
 
 export const sstDocumentAcknowledgments = pgTable("sst_document_acks", {
@@ -190,6 +195,8 @@ export const sstDocumentVersionsRelations = relations(sstDocumentVersions, ({ on
 
 export const sstDocumentLinksRelations = relations(sstDocumentLinks, ({ one }) => ({
   document: one(sstDocuments, { fields: [sstDocumentLinks.documentId], references: [sstDocuments.id] }),
+  createdByUser: one(users, { fields: [sstDocumentLinks.createdByUserId], references: [users.id], relationName: "sstDocumentLinkCreatedBy" }),
+  removedByUser: one(users, { fields: [sstDocumentLinks.removedByUserId], references: [users.id], relationName: "sstDocumentLinkRemovedBy" }),
 }))
 
 export const sstDocumentAcknowledgmentsRelations = relations(sstDocumentAcknowledgments, ({ one }) => ({

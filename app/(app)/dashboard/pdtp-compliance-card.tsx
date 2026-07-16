@@ -7,8 +7,9 @@ import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 
 type PdtpComplianceCardProps = {
   year: number
-  /** Faena a la que pertence el usuario, o undefined para "todas" (admin global). */
+  /** Faena única seleccionada para calcular cumplimiento. */
   worksiteId?: string
+  requiresWorksiteSelection?: boolean
   pendingCount: number
   target: number
   percent: number | null
@@ -27,10 +28,10 @@ const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "S
  * meta, Nº de pendientes de aprobación y la semana actual.
  */
 export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
-  const { year, worksiteId, pendingCount, target, percent, integralPercent, month, week } = props
+  const { year, worksiteId, requiresWorksiteSelection = false, pendingCount, target, percent, integralPercent, month, week } = props
   const targetPct = Math.round(target * 100)
-  const value = percent ?? 0
-  const belowTarget = percent !== null && percent < targetPct
+  const value = percent === null ? 0 : Math.round(percent * 100)
+  const belowTarget = percent !== null && percent < target
   const monthLabel = MONTH_LABELS[month - 1] ?? "—"
 
   return (
@@ -53,6 +54,8 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         </div>
         {worksiteId ? (
           <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">Por faena</span>
+        ) : requiresWorksiteSelection ? (
+          <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">Selecciona faena</span>
         ) : (
           <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">Global</span>
         )}
@@ -69,7 +72,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
                 : "text-[var(--color-text)]",
           )}
         >
-          {percent === null ? "—" : `${percent}%`}
+          {percent === null ? "—" : `${value}%`}
         </span>
         <span className="mb-0.5 text-xs text-[var(--color-text-subtle)]">de meta {targetPct}%</span>
         {integralPercent !== null && (
@@ -83,13 +86,17 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
             "h-full rounded-full transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-out)]",
             belowTarget ? "bg-[var(--color-signal)]" : "bg-[var(--color-primary)]",
           )}
-          style={{ width: `${Math.min(100, Math.max(2, value))}%` }}
+          style={{ width: `${percent === null ? 0 : Math.min(100, Math.max(2, value))}%` }}
         />
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-muted)]">
         <span>
-          {pendingCount > 0 ? (
+          {requiresWorksiteSelection ? (
+            <span className="font-medium text-[var(--color-primary-ink)] group-hover:underline">
+              Abrir PDTP y elegir faena →
+            </span>
+          ) : pendingCount > 0 ? (
             <>
               <span className="font-semibold text-[var(--color-signal-ink)]">{pendingCount}</span>{" "}
               por aprobar
@@ -106,19 +113,23 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
 
 export async function loadPdtpComplianceSummary(worksiteIds: string[] | "all") {
   const period = currentPdtpPeriod()
-  const targetWorksiteId = worksiteIds === "all" ? undefined : worksiteIds[0]
+  const targetWorksiteId = Array.isArray(worksiteIds) && worksiteIds.length === 1
+    ? worksiteIds[0]
+    : undefined
+  const requiresWorksiteSelection = targetWorksiteId === undefined
   const indicators = await getPdtpComplianceIndicators(period.year, targetWorksiteId)
   if (!indicators) return null
   const [pending, integral] = await Promise.all([
     listPendingPdtpExecutions(worksiteIds, { year: period.year }),
-    getPdtpIntegralCompliance(period.year, targetWorksiteId),
+    targetWorksiteId ? getPdtpIntegralCompliance(period.year, targetWorksiteId) : Promise.resolve(null),
   ])
   return {
     year: period.year,
     worksiteId: targetWorksiteId,
+    requiresWorksiteSelection,
     pendingCount: pending.length,
     target: indicators.target,
-    percent: indicators.annual.percent === null ? null : Math.round(indicators.annual.percent),
+    percent: requiresWorksiteSelection ? null : indicators.annual.percent,
     integralPercent: integral?.integral ?? null,
     month: period.month,
     week: period.week,

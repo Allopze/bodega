@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { safetyIndicators, worksites } from "@/db/schema"
+import { safetyIndicatorPeriods, safetyIndicators, worksites } from "@/db/schema"
 import { safetyIndicatorMonthSchema, type SafetyIndicatorMonthInput } from "@/lib/validation/prevention"
 
 export type WorksiteScope = string[] | "all"
@@ -36,6 +36,14 @@ export async function getSafetyIndicators(year: number, scope: WorksiteScope) {
     ))
 }
 
+export async function getSafetyIndicatorPeriods(year: number, scope: WorksiteScope) {
+  if (scope !== "all" && scope.length === 0) return []
+  return db.select().from(safetyIndicatorPeriods).where(and(
+    eq(safetyIndicatorPeriods.year, year),
+    scope === "all" ? undefined : inArray(safetyIndicatorPeriods.worksiteId, scope),
+  ))
+}
+
 /* ── Escritura ─────────────────────────────────────────────────────────────── */
 
 function safetyIndicatorId(worksiteId: string, year: number, month: number) {
@@ -46,9 +54,14 @@ export async function upsertSafetyIndicatorMonth(
   input: unknown,
   userId: string,
   scope: WorksiteScope,
+  canEditClosed: boolean,
 ): Promise<SafetyIndicatorMonthInput> {
   const data = safetyIndicatorMonthSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
+
+  const [period] = await db.select({ id: safetyIndicatorPeriods.id }).from(safetyIndicatorPeriods)
+    .where(and(eq(safetyIndicatorPeriods.worksiteId, data.worksiteId), eq(safetyIndicatorPeriods.year, data.year), eq(safetyIndicatorPeriods.month, data.month))).limit(1)
+  if (period && !canEditClosed) throw new Error("El período está cerrado y solo Jefatura de Prevención puede corregirlo.")
 
   const [worksite] = await db.select({ id: worksites.id }).from(worksites).where(eq(worksites.id, data.worksiteId)).limit(1)
   if (!worksite) throw new Error("Faena no encontrada.")
@@ -89,4 +102,21 @@ export async function upsertSafetyIndicatorMonth(
   })
 
   return data
+}
+
+export async function closeSafetyIndicatorPeriod(
+  input: { worksiteId: string; year: number; month: number },
+  userId: string,
+  scope: WorksiteScope,
+) {
+  assertWorksiteAccess(input.worksiteId, scope)
+  if (!Number.isInteger(input.year) || input.year < 2024 || input.year > 2100 || !Number.isInteger(input.month) || input.month < 1 || input.month > 12) {
+    throw new Error("Período inválido.")
+  }
+  const now = new Date().toISOString()
+  await db.insert(safetyIndicatorPeriods).values({
+    id: `sip-${input.worksiteId}-${input.year}-${String(input.month).padStart(2, "0")}`,
+    worksiteId: input.worksiteId, year: input.year, month: input.month,
+    closedByUserId: userId, closedAt: now,
+  }).onConflictDoNothing()
 }

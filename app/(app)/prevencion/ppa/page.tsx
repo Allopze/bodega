@@ -12,8 +12,9 @@ import { PpaList } from "./ppa-list"
 import { PpaAccessPanel } from "./ppa-access-panel"
 import { PpaExportButton } from "./ppa-export-button"
 import { scopeToIds } from "@/lib/ppa/utils"
+import { buildPpaListFilters, readPpaListFilterState, readPpaListPage, type PpaListQuery } from "./list-filters"
 
-export const metadata: Metadata = { title: "PPA Digital" }
+export const metadata: Metadata = { title: "Para, Piensa y Actúa" }
 
 const PAGE_SIZE = 20
 
@@ -49,15 +50,19 @@ function RankPanel({
   )
 }
 
-export default async function PpaPanelPage() {
+export default async function PpaPanelPage({ searchParams }: { searchParams: Promise<PpaListQuery> }) {
   let session
   try { session = await requirePermission("ppa:view") }
   catch { redirect("/forbidden") }
 
+  const query = await searchParams
+  const initialFilterState = readPpaListFilterState(query)
+  const page = readPpaListPage(query)
+  const filters = buildPpaListFilters(initialFilterState)
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))
   const [rows, total, stats, worksiteOptions] = await Promise.all([
-    listPpa({ worksiteIds }, PAGE_SIZE, 0),
-    countPpa({ worksiteIds }),
+    listPpa({ worksiteIds, ...filters }, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+    countPpa({ worksiteIds, ...filters }),
     getPpaStats(worksiteIds),
     listScopedWorksites(worksiteIds),
   ])
@@ -67,12 +72,12 @@ export default async function PpaPanelPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="PPA Digital"
-        description="Para, Piensa y Actúa — evaluaciones preventivas, trabajos detenidos e indicadores."
+        title="Para, Piensa y Actúa"
+        description="PPA: evaluaciones preventivas, trabajos detenidos e indicadores."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "PPA Digital" },
+            { label: "Para, Piensa y Actúa" },
           ]} />
         }
         actions={
@@ -107,11 +112,14 @@ export default async function PpaPanelPage() {
         )}
 
         <PpaList
-        initialRows={rows}
-        total={total}
-        pageSize={PAGE_SIZE}
-        worksiteOptions={worksiteOptions}
-        canReview={canReview}
+          initialRows={rows}
+          total={total}
+          pageSize={PAGE_SIZE}
+          initialFilterState={initialFilterState}
+          initialPage={page}
+          worksiteOptions={worksiteOptions}
+          canReview={canReview}
+          stats={stats}
         />
       </div>
     </PageContainer>

@@ -25,6 +25,7 @@ import { Package, User } from "@phosphor-icons/react/dist/ssr"
 import { and, asc, desc, eq, inArray, isNotNull, count } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
+import { DeliveryFormPanel } from "./delivery-form-panel"
 
 export const metadata: Metadata = { title: "Entregas" }
 
@@ -284,29 +285,29 @@ export default async function Page({
 
       <div className="flex flex-col gap-6">
         {/* ── Registrar entrega ── */}
-        <section className="flex flex-col gap-3">
-          {deliverableItems.length === 0 ? (
-            <>
-              <div>
-                <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>
-                <p className="mt-1 text-sm text-(--color-text-muted)">
-                  Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
-                </p>
-              </div>
-              <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-                <EmptyState
-                  icon={<Package size={24} />}
-                  title="Sin EPP pendiente de entrega"
-                  description="Recepciona EPP en el módulo de Recepción para que aparezca aquí disponible para asignar."
-                  action={
-                    <Button asChild variant="secondary">
-                      <Link href="/recepcion">Ir a Recepción</Link>
-                    </Button>
-                  }
-                />
-              </div>
-            </>
-          ) : (
+        {deliverableItems.length === 0 ? (
+          <section className="flex flex-col gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>
+              <p className="mt-1 text-sm text-(--color-text-muted)">
+                Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
+              </p>
+            </div>
+            <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+              <EmptyState
+                icon={<Package size={24} />}
+                title="Sin EPP pendiente de entrega"
+                description="Recepciona EPP en el módulo de Recepción para que aparezca aquí disponible para asignar."
+                action={
+                  <Button asChild variant="secondary">
+                    <Link href="/recepcion">Ir a Recepción</Link>
+                  </Button>
+                }
+              />
+            </div>
+          </section>
+        ) : (
+          <DeliveryFormPanel>
             <DeliveryForm
               worksites={worksiteOptions}
               workers={workerOptions}
@@ -315,8 +316,8 @@ export default async function Page({
               initialWorksiteId={initialWorksiteId}
               initialRequestItemId={initialDeliverable?.requestItemId}
             />
-          )}
-        </section>
+          </DeliveryFormPanel>
+        )}
 
         {/* ── Historial de entregas ── */}
         <section className="flex flex-col gap-3">

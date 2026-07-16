@@ -4,10 +4,14 @@ La pantalla `Entregas` registra la salida de EPP hacia trabajadores.
 
 ## Como usarla
 
-1. Entra a `Entregas`.
-2. Pulsa `Registrar entrega de EPP`.
-3. Selecciona faena.
-4. Selecciona trabajador.
-5. Elige el EPP pendiente.
-6. Ingresa cantidad y guarda.
+1. Entra a `Entregas`. El formulario de registro aparece abierto arriba y el
+   historial debajo.
+2. Selecciona faena.
+3. Selecciona trabajador.
+4. Elige el EPP pendiente.
+5. Ingresa cantidad y guarda.
+
+Si solo quieres consultar el historial, pulsa `Ocultar` para plegar el
+formulario; la plataforma recuerda tu preferencia. Para volver a registrar,
+pulsa `Registrar entrega`.
 

@@ -52,7 +52,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
             <TableHead>Trabajador</TableHead>
             <TableHead>Faena</TableHead>
             <TableHead>Prevencionista</TableHead>
-            <TableHead>Admin Contrato / Supervisor</TableHead>
+            <TableHead>Supervisor de faena</TableHead>
             <TableHead>Conductor Líder</TableHead>
             <TableHead><span className="sr-only">Ver</span></TableHead>
           </TableRow>
@@ -159,4 +159,3 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
     </TableRoot>
   )
 }
-

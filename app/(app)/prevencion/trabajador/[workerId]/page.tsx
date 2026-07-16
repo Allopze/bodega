@@ -10,6 +10,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { resolveEvaluatorRole } from "@/lib/sst/resolve-evaluator-role"
 import { WorkerEvaluations } from "./worker-evaluations"
+import { evaluationsForVisit, listOpenEvaluationVisits } from "./visit-context"
 
 export const metadata: Metadata = { title: "Evaluaciones del Trabajador - SST" }
 
@@ -69,8 +70,14 @@ export default async function WorkerEvaluationsPage({ params }: Props) {
     .where(eq(sstEvaluations.workerId, workerId))
     .orderBy(desc(sstEvaluations.createdAt))
 
-  // Fetch weekly evaluations if conductor_lider evaluation exists
-  const condEval = evaluations.find(e => e.evaluatorRole === 'conductor_lider')
+  const openVisits = listOpenEvaluationVisits(evaluations, worker.worksiteId)
+  // Con una sola visita en borrador se muestra como el caso de trabajo actual.
+  // Con varias, el usuario la elige antes de añadir otra participación.
+  const activeVisitId = openVisits.length === 1 ? openVisits.at(0)?.id ?? null : null
+  const currentVisitEvaluations = evaluationsForVisit(evaluations, activeVisitId)
+
+  // Fetch weekly evaluations only for the active visit; older visits are history.
+  const condEval = currentVisitEvaluations.find(e => e.evaluatorRole === 'conductor_lider')
   let weeklyEvals: typeof sstWeeklyEvaluations.$inferSelect[] = []
   if (condEval) {
     weeklyEvals = await db
@@ -111,10 +118,11 @@ export default async function WorkerEvaluationsPage({ params }: Props) {
       />
       <WorkerEvaluations
         worker={worker}
-        evaluations={evaluations}
+        evaluations={currentVisitEvaluations}
         weeklyEvals={weeklyEvals}
         permissions={permissions}
         userEvaluatorRole={userEvaluatorRole}
+        openVisits={openVisits}
       />
     </PageContainer>
   )

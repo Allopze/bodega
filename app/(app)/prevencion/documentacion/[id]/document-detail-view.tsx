@@ -77,6 +77,21 @@ export function DocumentDetailView(props: DetailViewProps) {
           </div>
 
           <div className="space-y-4">
+            {bundle.links.length > 0 && (
+              <Card>
+                <CardHeader><CardTitle>Vínculos</CardTitle></CardHeader>
+                <CardContent>
+                  <ul className="space-y-2 text-sm">
+                    {bundle.links.map((link) => (
+                      <li key={link.id} className="border-b border-(--color-border) pb-2 last:border-0">
+                        <p className="font-medium">{link.entityType}</p>
+                        <p className="text-xs text-(--color-text-muted)">{link.entityId}{link.notes ? ` · ${link.notes}` : ""}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
             {(canArchive || canManage) ? (
               <Card>
                 <CardHeader><CardTitle>Acciones de archivo</CardTitle></CardHeader>
