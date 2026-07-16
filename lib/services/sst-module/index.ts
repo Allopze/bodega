@@ -1,5 +1,5 @@
 export type { WorkerEvaluationGroup } from "./evaluations"
-export { getEvaluation, createEvaluation, listEvaluations, listEvaluationsGroupedByWorker, closeEvaluation, deleteEvaluation } from "./evaluations"
+export { getEvaluation, createEvaluation, listEvaluations, listEvaluationsGroupedByWorker, closeEvaluation, closeEvaluationVisit, reopenEvaluationVisit, deleteEvaluation } from "./evaluations"
 export { archiveEvaluationPdf } from "./evaluation-archive"
 export { saveResponses } from "./responses"
 export { getWeeklyEvaluations, markWeekCompleted } from "./weekly"

@@ -25,6 +25,7 @@ export const sstEvaluationCreateSchema = z.object({
   fechaEvaluacion:  z.string().min(1, 'Fecha de evaluación requerida'),
   cargos:           z.array(z.string().min(1)).min(1, 'Selecciona al menos un cargo'),
   evaluatorRole:    z.enum(['prevencionista_faena', 'admin_contrato', 'conductor_lider']).optional(),
+  visitId:          z.string().min(1, 'Visita inválida').optional(),
   motivo:           z.enum([
     'control_periodico',
     'post_incidente_persona',

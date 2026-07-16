@@ -58,6 +58,7 @@ vi.mock("@/lib/services/sst", () => ({
 }))
 vi.mock("@/lib/sst/definitions/index", () => ({
   getDefinition: vi.fn(() => ({ sections: [] })),
+  isPersonEvaluationDefinition: vi.fn((code: string) => ["trabajador_nuevo", "trabajador_antiguo"].includes(code)),
 }))
 vi.mock("@/lib/sst/checklist", () => ({
   writableSectionIds: vi.fn(() => new Set(["sst-1", "sst-2"])),
@@ -176,6 +177,25 @@ describe("createEvaluationAction", () => {
     )
   })
 
+  it("passes an existing visit to keep role participations in the same case", async () => {
+    const res = await createEvaluationAction({
+      tipo: "nuevo",
+      definicionCode: "trabajador_nuevo",
+      workerId: "worker-1",
+      worksiteId: "ws-1",
+      fechaEvaluacion: "2026-06-29",
+      cargos: ["conductor_ampliroll"],
+      visitId: "visit-1",
+    })
+
+    expect(res.ok).toBe(true)
+    expect(mockCreateEvaluation).toHaveBeenCalledWith(
+      expect.objectContaining({ visitId: "visit-1" }),
+      "user-1",
+      "conductor_lider",
+    )
+  })
+
   it("blocks conductor_lider from creating seguimiento evaluations", async () => {
     const res = await createEvaluationAction({
       tipo: "seguimiento",
@@ -189,6 +209,21 @@ describe("createEvaluationAction", () => {
 
     expect(res.ok).toBe(false)
     expect(res.message).toContain("conductor líder solo puede")
+    expect(mockCreateEvaluation).not.toHaveBeenCalled()
+  })
+
+  it("blocks inspections from the person-evaluation flow", async () => {
+    const res = await createEvaluationAction({
+      tipo: "nuevo",
+      definicionCode: "inspeccion_taller",
+      workerId: "worker-1",
+      worksiteId: "ws-1",
+      fechaEvaluacion: "2026-06-29",
+      cargos: ["conductor_ampliroll"],
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("inspección")
     expect(mockCreateEvaluation).not.toHaveBeenCalled()
   })
 })

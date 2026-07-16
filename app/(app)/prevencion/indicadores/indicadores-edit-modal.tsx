@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { CaretLeft, CaretRight } from "@phosphor-icons/react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,12 +28,15 @@ export function IndicadoresEditModal({
   month,
   initial,
   onClose,
+  onNavigate,
 }: {
   worksiteId: string
   year: number
   month: number
   initial: IndicatorCounters
   onClose: () => void
+  /** Cargar otro mes sin cerrar el modal (los cambios sin guardar se descartan). */
+  onNavigate?: (month: number) => void
 }) {
   const [values, setValues] = useState<IndicatorCounters>(initial)
   const [pending, startTransition] = useTransition()
@@ -59,7 +63,19 @@ export function IndicadoresEditModal({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{MONTHS[month - 1]}</DialogTitle>
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle>{MONTHS[month - 1]} {year}</DialogTitle>
+            {onNavigate && (
+              <div className="flex items-center gap-1">
+                <Button type="button" variant="ghost" size="sm" disabled={pending || month <= 1} onClick={() => onNavigate(month - 1)} aria-label="Mes anterior">
+                  <CaretLeft size={16} />
+                </Button>
+                <Button type="button" variant="ghost" size="sm" disabled={pending || month >= 12} onClick={() => onNavigate(month + 1)} aria-label="Mes siguiente">
+                  <CaretRight size={16} />
+                </Button>
+              </div>
+            )}
+          </div>
         </DialogHeader>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -21,6 +21,7 @@ import { PdtpOverrideForm } from "./pdtp-override-form"
 import { PdtpEvidenceThumbs } from "./pdtp-evidence-thumbs"
 import {
   PdtpStatusBadge,
+  PdtpExecutionStatusBadge,
   PdtpMetric,
   PdtpProgressRing,
   PdtpResponsibleChips,
@@ -87,8 +88,13 @@ export function PdtpSheetTable({
   const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">("all")
   const [density, toggleDensity] = usePdtpDensity()
 
+  const plannedQuantityForCurrentWeek = (activity: PdtpSheetView["activities"][number]) =>
+    activity.schedule
+      .filter((cell) => cell.month === currentPeriod.month && cell.week === currentPeriod.week)
+      .reduce((total, cell) => total + cell.plannedQuantity, 0)
+
   const weeklyActivities = view.activities.filter(
-    (activity) => (activity.monthlyPlanned[currentPeriod.month - 1] ?? 0) > 0,
+    (activity) => plannedQuantityForCurrentWeek(activity) > 0,
   )
 
   // Derive status for all activities in the current view
@@ -192,7 +198,7 @@ export function PdtpSheetTable({
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5">
             <p className="font-medium text-[var(--color-text)]">Sin actividades esta semana</p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              No hay actividades planificadas para este mes.
+              No hay actividades planificadas para esta semana.
             </p>
           </div>
         ) : filteredActivities.length === 0 ? (
@@ -250,11 +256,10 @@ export function PdtpSheetTable({
                                   {activity.executions.map((exec) => (
                                     <div key={exec.id} className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5">
                                       <div className="mb-1 flex items-center gap-2 text-[10px] text-[var(--color-text-subtle)]">
-                                        <span className="font-mono">M{exec.month}/S{exec.week}</span>
+                                        <span className="font-mono">{MONTH_LABELS[exec.month - 1]} · Sem {exec.week}</span>
                                         <span>·</span>
                                         <span>{exec.executedQuantity}</span>
-                                        <span>·</span>
-                                        <span className="uppercase tracking-wide">{exec.status}</span>
+                                        <PdtpExecutionStatusBadge status={exec.status} />
                                       </div>
                                       <PdtpEvidenceThumbs
                                         evidenceUrl={exec.evidenceUrl}
@@ -301,7 +306,7 @@ export function PdtpSheetTable({
                                   year={view.program.year}
                                   defaultMonth={currentPeriod.month}
                                   defaultWeek={currentPeriod.week}
-                                  globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}
+                                  globalQuantity={plannedQuantityForCurrentWeek(activity)}
                                   hoja={sheetCode}
                                 />}
                               </div>

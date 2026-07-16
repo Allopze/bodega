@@ -10,11 +10,9 @@ import { PageContainer } from "@/components/ui/page-container"
 import { resolvePagination } from "@/lib/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Warehouse } from "@phosphor-icons/react/dist/ssr"
-import { ReturnPanel } from "./return-panel"
 import { WarehouseHeaderMetrics } from "./bodega-header-metrics"
 import { StockSection, KardexSection } from "./bodega-sections"
-import { AdjustPanel } from "./adjust-panel"
-import { PhysicalInventoryPanel } from "./physical-inventory-panel"
+import { BodegaMovementSheet } from "./movement-sheet"
 import type { ReturnPanelStockOption } from "./return-panel"
 import type { AdjustPanelStockOption } from "./adjust-panel"
 import type { PhysicalInventoryStockOption } from "./physical-inventory-panel"
@@ -155,39 +153,34 @@ export default async function BodegaPage({
             movementCount={kardexPagination.totalItems}
           />
         )}
+        actions={
+          <BodegaMovementSheet
+            worksites={worksiteOptions}
+            canReturn={showReturnPanel}
+            returnProducts={returnProducts}
+            canCount={showPhysicalInventoryPanel}
+            countProducts={physicalInventoryProducts}
+            canAdjust={showAdjustPanel}
+            adjustProducts={adjustProducts}
+          />
+        }
       />
-      <div className={(showReturnPanel || showAdjustPanel || showPhysicalInventoryPanel) ? "grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start" : "flex flex-col gap-8"}>
-        <div className="min-w-0 space-y-8">
-          <StockSection
-            worksites={worksiteOptions}
-            stockByWorksite={stockByWorksite}
-            initialWorksiteId={initialWorksiteId}
-            receivingHref={canViewReceiving ? "/recepcion" : undefined}
-            canExportStock={canExportStock}
-          />
+      <div className="flex flex-col gap-8">
+        <StockSection
+          worksites={worksiteOptions}
+          stockByWorksite={stockByWorksite}
+          initialWorksiteId={initialWorksiteId}
+          receivingHref={canViewReceiving ? "/recepcion" : undefined}
+          canExportStock={canExportStock}
+        />
 
-          <KardexSection
-            movements={visibleMovements as InventoryMovementWithRelations[]}
-            worksites={worksiteOptions}
-            canExport={canExportStock}
-            pagination={kardexPagination}
-            searchParams={sp}
-          />
-        </div>
-
-        {(showReturnPanel || showAdjustPanel || showPhysicalInventoryPanel) && (
-          <aside className="xl:sticky xl:top-6 flex flex-col gap-6">
-            {showReturnPanel && (
-              <ReturnPanel products={returnProducts} worksites={worksiteOptions} />
-            )}
-            {showPhysicalInventoryPanel && (
-              <PhysicalInventoryPanel products={physicalInventoryProducts} worksites={worksiteOptions} />
-            )}
-            {showAdjustPanel && (
-              <AdjustPanel products={adjustProducts} worksites={worksiteOptions} />
-            )}
-          </aside>
-        )}
+        <KardexSection
+          movements={visibleMovements as InventoryMovementWithRelations[]}
+          worksites={worksiteOptions}
+          canExport={canExportStock}
+          pagination={kardexPagination}
+          searchParams={sp}
+        />
       </div>
     </PageContainer>
   )

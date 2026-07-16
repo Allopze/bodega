@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getSafetyIndicators, listVisibleWorksites } from "@/lib/services/prevention-indicadores"
+import { getSafetyIndicatorPeriods, getSafetyIndicators, listVisibleWorksites } from "@/lib/services/prevention-indicadores"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { IndicadoresDashboard } from "./indicadores-dashboard"
@@ -27,14 +27,16 @@ export default async function IndicadoresPage({ searchParams }: IndicadoresPageP
   if (!can(session, "prevention:indicadores:view")) redirect("/forbidden")
 
   const canManage = can(session, "prevention:indicadores:manage")
+  const canClose = can(session, "prevention:indicadores:close")
   const query = await searchParams
   const currentYear = new Date().getFullYear()
   const year = Number(query.year) || currentYear
 
   const scope = scopeToIds(resolveWorksiteScope(session))
-  const [worksites, indicatorRows] = await Promise.all([
+  const [worksites, indicatorRows, closedPeriods] = await Promise.all([
     listVisibleWorksites(scope),
     getSafetyIndicators(year, scope),
+    getSafetyIndicatorPeriods(year, scope),
   ])
 
   return (
@@ -57,6 +59,8 @@ export default async function IndicadoresPage({ searchParams }: IndicadoresPageP
         year={year}
         currentYear={currentYear}
         canManage={canManage}
+        canClose={canClose}
+        closedPeriodKeys={closedPeriods.map((period) => `${period.worksiteId}:${period.month}`)}
       />
     </PageContainer>
   )

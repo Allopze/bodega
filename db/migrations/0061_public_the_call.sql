@@ -1,0 +1,9 @@
+ALTER TABLE "sst_document_links" DROP CONSTRAINT "sst_document_links_entity_type_valid";--> statement-breakpoint
+ALTER TABLE "sst_document_links" ADD COLUMN "created_by_user_id" text;--> statement-breakpoint
+ALTER TABLE "sst_document_links" ADD COLUMN "removed_by_user_id" text;--> statement-breakpoint
+ALTER TABLE "sst_document_links" ADD COLUMN "removed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "sst_document_links" ADD COLUMN "removal_reason" text;--> statement-breakpoint
+ALTER TABLE "sst_document_links" ADD CONSTRAINT "sst_document_links_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sst_document_links" ADD CONSTRAINT "sst_document_links_removed_by_user_id_users_id_fk" FOREIGN KEY ("removed_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sst_document_links" ADD CONSTRAINT "sst_document_links_removal_valid" CHECK (("sst_document_links"."removed_at" IS NULL AND "sst_document_links"."removed_by_user_id" IS NULL AND "sst_document_links"."removal_reason" IS NULL) OR ("sst_document_links"."removed_at" IS NOT NULL AND "sst_document_links"."removed_by_user_id" IS NOT NULL AND length("sst_document_links"."removal_reason") >= 3));--> statement-breakpoint
+ALTER TABLE "sst_document_links" ADD CONSTRAINT "sst_document_links_entity_type_valid" CHECK ("sst_document_links"."entity_type" IN ('worker', 'worksite', 'vehicle', 'equipment', 'incident', 'training', 'committee', 'epp_delivery', 'corrective_action', 'emergency_plan', 'pdtp_activity', 'pdtp_execution', 'pdtp_checklist', 'sst_evaluation', 'ppa'));

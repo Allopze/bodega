@@ -8,20 +8,24 @@ import {
   listDocumentFolders,
   listFolderOptions,
   getFolderBreadcrumbItems,
+  listDocumentCategories,
+  getDashboardCounters,
 } from "@/lib/services/prevention-documents-library"
+import { SST_DOCUMENT_CATEGORY_SLUGS, SST_DOCUMENT_STATUSES } from "@/lib/validation/prevention"
 import { db } from "@/db"
 import { sstDocumentVersions, worksites } from "@/db/schema"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { DocumentacionHeaderActions } from "./documentacion-header-actions"
 import { DocumentacionView } from "./documentacion-view"
+import { DocumentacionFilters } from "./documentacion-filters"
 
 export const metadata: Metadata = { title: "Documentación" }
 
 export default async function DocumentacionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; category?: string; status?: string; worksiteId?: string; folder?: string }>
+  searchParams: Promise<{ q?: string; category?: string; status?: string; worksiteId?: string; folder?: string; page?: string }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -32,19 +36,34 @@ export default async function DocumentacionPage({
   const params = await searchParams
 
   const activeFolderId = params.folder || null
+  const page = Math.max(1, Number(params.page) || 1)
+  const pageSize = 50
+  const category = SST_DOCUMENT_CATEGORY_SLUGS.includes(params.category as typeof SST_DOCUMENT_CATEGORY_SLUGS[number]) ? params.category as typeof SST_DOCUMENT_CATEGORY_SLUGS[number] : ""
+  const status = SST_DOCUMENT_STATUSES.includes(params.status as typeof SST_DOCUMENT_STATUSES[number]) ? params.status as typeof SST_DOCUMENT_STATUSES[number] : ""
+  const hasGlobalDocumentFilters = Boolean(params.q || category || status || params.worksiteId)
+  const documentFolderId = activeFolderId ?? (hasGlobalDocumentFilters ? undefined : null)
 
-  const [folders, folderOptions, breadcrumbs, searchResult] = await Promise.all([
-    listDocumentFolders({ parentId: activeFolderId, scope, includeArchived: params.status === "archivado" }),
+  const [folders, folderOptions, breadcrumbs, categories, visibleWorksites, counters, searchResult] = await Promise.all([
+    hasGlobalDocumentFilters && !activeFolderId
+      ? Promise.resolve([])
+      : listDocumentFolders({ parentId: activeFolderId, scope, includeArchived: params.status === "archivado" }),
     listFolderOptions(scope),
     getFolderBreadcrumbItems(activeFolderId, scope),
+    listDocumentCategories(true),
+    scope.mode === "none"
+      ? Promise.resolve([] as Array<{ id: string; name: string }>)
+      : db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(
+        scope.mode === "some" ? inArray(worksites.id, scope.ids) : undefined,
+      ),
+    getDashboardCounters(scope),
     searchDocuments({
       q: params.q ?? "",
-      folderId: activeFolderId,
-      categorySlug: "",
-      status: "",
-      worksiteId: "",
-      page: 1,
-      pageSize: 50,
+      folderId: documentFolderId,
+      categorySlug: category,
+      status,
+      worksiteId: params.worksiteId ?? "",
+      page,
+      pageSize,
     }, scope),
   ])
 
@@ -90,7 +109,16 @@ export default async function DocumentacionPage({
         breadcrumb={<Breadcrumbs items={breadcrumbs} />}
         actions={canManage ? <DocumentacionHeaderActions currentFolderId={activeFolderId} /> : undefined}
       />
+      <DocumentacionFilters
+        query={params}
+        categories={categories.map((category) => ({ slug: category.slug, name: category.name }))}
+        worksites={visibleWorksites}
+        total={searchResult.total}
+        page={page}
+        pageSize={pageSize}
+      />
       <DocumentacionView
+        counters={counters}
         documents={docsWithRefs}
         folders={foldersWithRefs}
         folderOptions={folderOptions}

@@ -48,13 +48,29 @@ export const ppaReviewSchema = z.object({
     error: "Selecciona una decisión",
   }),
   accionCorrectiva: z.string().trim().max(1000).optional().or(z.literal("")),
+  responsibleRole: z.enum(["prevencionista_faena", "admin_contrato", "jefe_faena", "prevencionista"]).optional(),
+  responsible: z.string().trim().max(200).optional().or(z.literal("")),
+  dueDate: z.string().trim().max(10).optional().or(z.literal("")),
+  priority: z.enum(["alta", "media", "baja"]).optional(),
   reviewNota:       z.string().trim().max(1000).optional().or(z.literal("")),
 })
-  // No se puede autorizar sin registrar una acción correctiva cuando el trabajo
-  // fue detenido por riesgo/condición insegura.
-  .refine(
-    (v) => v.decision !== "autorizado" || (v.accionCorrectiva ?? "").trim().length >= 4,
-    { path: ["accionCorrectiva"], error: "Debes registrar la acción correctiva implementada para autorizar el inicio." },
-  )
+  .superRefine((value, ctx) => {
+    if (value.decision !== "autorizado") return
+    if ((value.accionCorrectiva ?? "").trim().length < 4) {
+      ctx.addIssue({ code: "custom", path: ["accionCorrectiva"], message: "Describe la acción correctiva para autorizar el inicio." })
+    }
+    if (!value.responsibleRole) {
+      ctx.addIssue({ code: "custom", path: ["responsibleRole"], message: "Selecciona el rol responsable de la acción." })
+    }
+    if ((value.responsible ?? "").trim().length < 2) {
+      ctx.addIssue({ code: "custom", path: ["responsible"], message: "Indica la persona responsable de la acción." })
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value.dueDate ?? "")) {
+      ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Indica un plazo válido para la acción." })
+    }
+    if (!value.priority) {
+      ctx.addIssue({ code: "custom", path: ["priority"], message: "Selecciona la prioridad de la acción." })
+    }
+  })
 
 export type PpaReviewInput = z.infer<typeof ppaReviewSchema>

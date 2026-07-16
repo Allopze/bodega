@@ -12,6 +12,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { PerformanceGroupChart } from "./performance-charts"
@@ -91,8 +92,8 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
         <input type="hidden" name="preset" value={preset} />
         <select name="agrupar" defaultValue={aggregateBy} className="control">{AGGREGATIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}</select>
         <select name="faena" defaultValue={worksiteId} className="control"><option value="">Todas las autorizadas</option>{worksitesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <input type="date" name="desde" defaultValue={from} className="control" />
-        <input type="date" name="hasta" defaultValue={to} className="control" />
+        <DatePicker name="desde" defaultValue={from} placeholder="Desde" />
+        <DatePicker name="hasta" defaultValue={to} placeholder="Hasta" />
         <Button type="submit" variant="secondary">Aplicar</Button>
       </form>
 

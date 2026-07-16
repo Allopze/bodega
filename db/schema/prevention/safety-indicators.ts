@@ -40,10 +40,30 @@ export const safetyIndicators = pgTable("safety_indicators", {
   check("safety_indicators_dano_ambiental_check", sql`${table.danoAmbiental} >= 0`),
 ])
 
+/** Cierre administrativo de un mes; el registro del indicador no se duplica. */
+export const safetyIndicatorPeriods = pgTable("safety_indicator_periods", {
+  id:           text("id").primaryKey(),
+  worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
+  year:         integer("year").notNull(),
+  month:        integer("month").notNull(),
+  closedByUserId: text("closed_by_user_id").notNull().references(() => users.id),
+  closedAt:     timestamp("closed_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("safety_indicator_periods_worksite_period_unique").on(table.worksiteId, table.year, table.month),
+  check("safety_indicator_periods_month_check", sql`${table.month} BETWEEN 1 AND 12`),
+  check("safety_indicator_periods_year_check", sql`${table.year} BETWEEN 2024 AND 2100`),
+])
+
 export const safetyIndicatorsRelations = relations(safetyIndicators, ({ one }) => ({
   worksite:        one(worksites, { fields: [safetyIndicators.worksiteId], references: [worksites.id] }),
   updatedByUser:   one(users, { fields: [safetyIndicators.updatedByUserId], references: [users.id] }),
 }))
 
+export const safetyIndicatorPeriodsRelations = relations(safetyIndicatorPeriods, ({ one }) => ({
+  worksite: one(worksites, { fields: [safetyIndicatorPeriods.worksiteId], references: [worksites.id] }),
+  closedByUser: one(users, { fields: [safetyIndicatorPeriods.closedByUserId], references: [users.id] }),
+}))
+
 export type SafetyIndicator = typeof safetyIndicators.$inferSelect
 export type NewSafetyIndicator = typeof safetyIndicators.$inferInsert
+export type SafetyIndicatorPeriod = typeof safetyIndicatorPeriods.$inferSelect

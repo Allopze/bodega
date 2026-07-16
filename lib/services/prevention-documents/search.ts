@@ -2,6 +2,7 @@ import { and, count, desc, eq, gte, inArray, isNull, like, lte, or, sql, type SQ
 import { db } from "@/db"
 import {
   sstDocuments,
+  sstDocumentLinks,
   sstDocumentVersions,
   sstDocumentAudit,
 } from "@/db/schema"
@@ -24,17 +25,21 @@ export async function getDocumentBundle(id: string, scope: WorksiteScope) {
   if (!doc) return null
   assertScopeAccess(doc.worksiteId, scope)
 
-  const versions = await db.select().from(sstDocumentVersions).where(eq(sstDocumentVersions.documentId, id)).orderBy(desc(sstDocumentVersions.version))
-  const audit = await db.select().from(sstDocumentAudit).where(eq(sstDocumentAudit.documentId, id)).orderBy(desc(sstDocumentAudit.createdAt)).limit(200)
+  const [versions, links, audit] = await Promise.all([
+    db.select().from(sstDocumentVersions).where(eq(sstDocumentVersions.documentId, id)).orderBy(desc(sstDocumentVersions.version)),
+    db.select().from(sstDocumentLinks).where(and(eq(sstDocumentLinks.documentId, id), isNull(sstDocumentLinks.removedAt))),
+    db.select().from(sstDocumentAudit).where(eq(sstDocumentAudit.documentId, id)).orderBy(desc(sstDocumentAudit.createdAt)).limit(200),
+  ])
 
   const effective = { ...doc, status: effectiveStatus(doc.status as SstDocumentStatus, doc.expiresAt) }
-  return { doc: effective, versions, links: [], acks: [], audit }
+  return { doc: effective, versions, links, acks: [], audit }
 }
 
 /* ── Búsqueda ───────────────────────────────────────────────────────────── */
 
 export async function searchDocuments(input: SstDocumentSearchInput, scope: WorksiteScope) {
   const data = sstDocumentSearchSchema.parse(input)
+  if (scope.mode === "none") return { rows: [], total: 0 }
   const conditions: (SQL | undefined)[] = []
 
   if (data.q) {
@@ -72,6 +77,16 @@ export async function searchDocuments(input: SstDocumentSearchInput, scope: Work
 /* ── Dashboard ──────────────────────────────────────────────────────────── */
 
 export async function getDashboardCounters(scope: WorksiteScope): Promise<DashboardCounters> {
+  if (scope.mode === "none") {
+    return {
+      total: 0,
+      byStatus: { borrador: 0, en_revision: 0, observado: 0, aprobado: 0, vigente: 0, vencido: 0, reemplazado: 0, archivado: 0 },
+      expiringSoon: { within7: 0, within15: 0, within30: 0 },
+      pendingReview: 0,
+      observed: 0,
+      ackPending: 0,
+    }
+  }
   const baseWhere = scope.mode === "some"
     ? or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId))
     : undefined

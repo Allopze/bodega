@@ -12,6 +12,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { CycleWorkbench } from "./cycle-workbench"
 import { CycleStageChart, type CycleStagePoint } from "./cycle-stage-chart"
 
@@ -140,8 +141,8 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
       />
 
       <form className="mb-5 grid gap-3 border-y border-[var(--color-border)] py-4 md:grid-cols-5">
-        <label className="grid gap-1 text-xs font-medium">Desde<input name="desde" type="date" defaultValue={from} className="control" /></label>
-        <label className="grid gap-1 text-xs font-medium">Hasta<input name="hasta" type="date" defaultValue={to} className="control" /></label>
+        <label className="grid gap-1 text-xs font-medium">Desde<DatePicker name="desde" defaultValue={from} placeholder="Desde" /></label>
+        <label className="grid gap-1 text-xs font-medium">Hasta<DatePicker name="hasta" defaultValue={to} placeholder="Hasta" /></label>
         <label className="grid gap-1 text-xs font-medium">Faena<select name="faena" defaultValue={worksiteId} className="control"><option value="">Todas las autorizadas</option>{worksitesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="grid gap-1 text-xs font-medium">Producto<select name="producto" defaultValue={productId} className="control"><option value="">Todos</option>{products.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <div className="flex items-end"><Button type="submit" variant="secondary" className="w-full">Aplicar</Button></div>
@@ -149,7 +150,7 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
 
       <section className="grid gap-px overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-border)] md:grid-cols-3" aria-label="Etapas del ciclo">
         <Metric label="Recibido físico" value={amount(comparison.received)} detail={comparison.received ? `${comparison.received.records} eventos` : "Registra una recepción"} trace={<TraceLink href={receivedHref}>Abrir recepciones</TraceLink>} />
-        <Metric label="Cargas registradas" value={amount(comparison.registered)} detail={comparison.registered ? `${comparison.registered.records} registros` : "Sin fuente homologada"} trace={<TraceLink href={registeredHref}>Abrir cargas</TraceLink>} />
+        <Metric label="Cargas registradas" value={amount(comparison.registered)} detail={comparison.registered ? `${comparison.registered.records} registros` : "Registra una carga"} trace={<TraceLink href={registeredHref}>Abrir cargas</TraceLink>} />
         <Metric label="Entregado a equipos" value={amount(comparison.delivered)} detail={comparison.delivered ? `${comparison.delivered.records} eventos` : "Sin entregas físicas"} trace={<TraceLink href={deliveredHref}>Abrir entregas</TraceLink>} />
       </section>
 
@@ -164,7 +165,7 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
           difference={receivedVsDelivered}
           trace={<span className="flex flex-wrap gap-x-3"><TraceLink href={receivedHref}>Origen recibido</TraceLink><TraceLink href={deliveredHref}>Origen entregado</TraceLink></span>}
         />
-        <Metric label="Consumido" value="Sin fuente disponible" detail="No se infiere desde recibido/entregado mientras no exista un evento canónico de consumo." />
+        <Metric label="Consumido" value="Aún no disponible" detail="Se calculará cuando se registren entregas a equipos en el período. El consumo no se estima a partir de recibido o entregado." trace={<TraceLink href={deliveredHref}>Registrar entrega</TraceLink>} />
       </section>
 
       <section className="mt-7">
@@ -239,7 +240,7 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
                       <td>{movement.worksite.name}<span className="block text-xs text-[var(--color-text-muted)]">{movement.product.name}</span></td>
                       <td>{movement.sourceLocation?.name ?? movement.supplier?.name ?? "—"} <span className="text-[var(--color-text-muted)]">→</span> {movement.targetLocation?.name ?? movement.vehicle?.code ?? movement.vehicle?.plate ?? "—"}</td>
                       <td className="font-mono">{liters.format(movement.quantity)} L</td>
-                      <td>{href ? <Link className="inline-flex items-center gap-1 text-[var(--color-primary-ink)] hover:underline" href={href}>Abrir registro <ArrowSquareOut size={14} /></Link> : <span className="inline-flex items-center gap-1 text-[var(--color-text-muted)]"><WarningCircle size={14} />Sin fuente disponible</span>}</td>
+                      <td>{href ? <Link className="inline-flex items-center gap-1 text-[var(--color-primary-ink)] hover:underline" href={href}>Abrir registro <ArrowSquareOut size={14} /></Link> : <span className="inline-flex items-center gap-1 text-[var(--color-text-muted)]"><WarningCircle size={14} />Sin registro asociado</span>}</td>
                     </tr>
                   )
                 })}
@@ -264,7 +265,7 @@ const SEVERITY_BADGE = {
   normal:      { label: "Normal", variant: "success" as const },
   warning:     { label: "Advertencia", variant: "warning" as const },
   critical:    { label: "Crítico", variant: "danger" as const },
-  unavailable: { label: "Sin fuente", variant: "default" as const },
+  unavailable: { label: "Sin datos", variant: "default" as const },
 }
 
 function DifferenceMetric({ label, difference, trace }: { label: string; difference: CycleDifference; trace?: React.ReactNode }) {
@@ -273,8 +274,8 @@ function DifferenceMetric({ label, difference, trace }: { label: string; differe
   return (
     <div className="bg-[var(--color-surface)] p-4">
       <div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-[var(--color-text-muted)]">{label}</p><Badge variant={badge.variant} size="sm">{badge.label}</Badge></div>
-      <p className="mt-2 text-xl font-semibold tracking-tight">{difference.status === "available" ? `${liters.format(difference.absolute)} L` : "No disponible"}</p>
-      <p className="mt-1 text-xs text-[var(--color-text-muted)]">{difference.status === "available" ? (difference.percent === null ? "base cero" : `${difference.percent.toFixed(1)}%`) : "Falta una de las fuentes"}</p>
+      <p className="mt-2 text-xl font-semibold tracking-tight">{difference.status === "available" ? `${liters.format(difference.absolute)} L` : "—"}</p>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">{difference.status === "available" ? (difference.percent === null ? "base cero" : `${difference.percent.toFixed(1)}%`) : "Registra las dos etapas para comparar"}</p>
       {trace && <div className="mt-3">{trace}</div>}
     </div>
   )

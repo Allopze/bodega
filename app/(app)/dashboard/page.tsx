@@ -3,11 +3,9 @@ import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import type { Permission } from "@/modules/permissions"
 import { cn, formatCLP } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
-import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { Button } from "@/components/ui/button"
 import { CheckCircle, ArrowRight, Plus } from "@phosphor-icons/react/dist/ssr"
 import { buildWorkTasks } from "@/lib/work-queue"
@@ -58,20 +56,12 @@ export default async function DashboardPage() {
   const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
   const shouldSuggestNextYear = activeProgram && !hasNextYearProgram && canManagePdtp
 
-  const signalDefs: Array<HeaderSignal & { perm: Permission }> = [
-    { key: "approvals", label: "Por aprobar",   value: data.metrics.pending_approvals,      href: "/aprobaciones",  tone: "signal", perm: "approvals:approve" },
-    { key: "no-oc",     label: "Sin OC",        value: data.metrics.approved_without_oc,    href: "/compras/nueva", tone: "signal", perm: "purchasing:create_order" },
-    { key: "receive",   label: "Por recibir",   value: data.metrics.orders_pending_receipt, href: "/recepcion",                     perm: "receiving:view" },
-    { key: "stock",     label: "Alertas stock", value: stockAlertCount,                     href: "/bodega",        tone: "signal", perm: "warehouse:view_stock" },
-  ]
-  const headerSignals: HeaderSignal[] = signalDefs.filter((s) => can(session, s.perm))
-
+  // Los conteos accionables (por aprobar, sin OC, por recibir, alertas de stock) ya viven
+  // en la MetricBar de abajo, que es responsive y se ve en desktop y móvil. Duplicarlos en
+  // el TopBar (headerActions, solo desktop) creaba dos representaciones del mismo dato.
   return (
     <PageContainer>
-      <PageHeader
-        title="Dashboard"
-        headerActions={<HeaderSignals signals={headerSignals} />}
-      />
+      <PageHeader title="Dashboard" />
       <div className="animate-in fade-in duration-[var(--duration-default)]">
 
       {/* ── Cabecera: saludo + estado ── */}

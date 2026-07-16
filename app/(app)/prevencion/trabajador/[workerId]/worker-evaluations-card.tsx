@@ -164,7 +164,7 @@ export function EvaluationCard({
               <p className="text-xs text-text-subtle">
                 {canUserCreateThis
                   ? "Puedes iniciar una nueva evaluación para este rol."
-                  : `Solo el rol "${role === 'prevencionista_faena' ? 'Prevencionista' : role === 'admin_contrato' ? 'Admin de Contrato' : 'Conductor Líder'}" puede iniciar esta evaluación.`
+                  : `Solo el rol "${role === 'prevencionista_faena' ? 'Prevencionista de faena' : role === 'admin_contrato' ? 'Supervisor de faena' : 'Conductor Líder'}" puede iniciar esta evaluación.`
                 }
               </p>
             </div>

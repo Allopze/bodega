@@ -29,7 +29,7 @@ import { EvolutionByVehicleChart } from "./evolution-by-vehicle-chart"
 import { WorksiteEquipmentHeatmap } from "./worksite-equipment-heatmap"
 import { AnomalyDistributionChart } from "./anomalias/anomaly-charts-lazy"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
-import { formatCLP, formatQty } from "@/lib/utils"
+import { formatCLP, formatQty, cn } from "@/lib/utils"
 import { FuelControlOverviewPanel } from "./fuel-control-overview"
 
 export const metadata: Metadata = { title: "Combustibles" }
@@ -54,6 +54,9 @@ export default async function CombustiblesPage({
   const patente = str("patente")
   const associated = str("asociacion") as "yes" | "no" | undefined
   const proveedor = str("proveedor")
+  const requestedVista = str("vista")
+  const vista: "resumen" | "analisis" | "registros" =
+    requestedVista === "analisis" || requestedVista === "registros" ? requestedVista : "resumen"
   const page = typeof sp.page === "string" ? Math.max(1, Number(sp.page)) : 1
   const requestedFilters = normalizeConsumptionFilters({ fromDate, toDate, worksiteId, fuente, patente, associated })
 
@@ -125,6 +128,29 @@ export default async function CombustiblesPage({
   const totalDetailPages = Math.ceil(totalDetail / PAGE_SIZE)
 
   const fuentes = fuentesRows.map((r) => r.fuente).filter((f): f is string => !!f).sort()
+
+  // Navegación por pestañas conservando los filtros activos en la URL. El split
+  // separa el uso diario (Resumen), el análisis profundo (Análisis) y el detalle
+  // transaccional (Registros) — antes todo vivía apilado en una sola página.
+  const vistaHref = (target: "resumen" | "analisis" | "registros") => {
+    const params = new URLSearchParams()
+    for (const [k, v] of Object.entries(sp)) {
+      if (k === "vista" || k === "page") continue
+      if (typeof v === "string" && v) params.set(k, v)
+    }
+    if (target !== "resumen") params.set("vista", target)
+    const qs = params.toString()
+    return `/combustibles${qs ? `?${qs}` : ""}`
+  }
+  const VISTA_TABS: Array<{ key: "resumen" | "analisis" | "registros"; label: string }> = [
+    { key: "resumen", label: "Resumen" },
+    { key: "analisis", label: "Análisis" },
+    { key: "registros", label: `Registros${totalDetail > 0 ? ` · ${totalDetail}` : ""}` },
+  ]
+  const hasAnalysisContent = byEquipmentType.length > 0 || scatterKm.length > 0 || scatterHora.length > 0
+    || evolutionByVehicle.length > 0 || heatmapCells.length > 0 || anomalyDistribution.total > 0
+    || Boolean(dashboard) || Boolean(operationsSummary)
+
   return (
     <PageContainer>
       <PageHeader
@@ -174,9 +200,6 @@ export default async function CombustiblesPage({
         />
       )}
 
-      <div id="analisis-tct" className="scroll-mt-24" />
-      {dashboard && <ConsumptionKpis kpis={dashboard.kpis} />}
-
       <ConsumptionFiltersBar
         worksites={worksitesList}
         fuentes={fuentes}
@@ -184,6 +207,31 @@ export default async function CombustiblesPage({
         hasExplicitDateRange={Boolean(fromDate || toDate)}
         proveedor={proveedor}
       />
+
+      <div className="mb-6 mt-2 flex items-end gap-0 border-b border-[var(--color-border)]">
+        {VISTA_TABS.map((tab) => {
+          const active = vista === tab.key
+          return (
+            <Link
+              key={tab.key}
+              href={vistaHref(tab.key)}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "-mb-px border-b-2 px-4 pb-2.5 pt-1 text-sm font-medium transition-[color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+                active
+                  ? "border-[var(--color-text)] text-[var(--color-text)]"
+                  : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]",
+              )}
+            >
+              {tab.label}
+            </Link>
+          )
+        })}
+      </div>
+
+      {vista === "resumen" && (
+        <>
+      {dashboard && <ConsumptionKpis kpis={dashboard.kpis} />}
 
       {dashboard && (
         <section aria-labelledby="consumo-evolucion-title" className="mb-8">
@@ -219,6 +267,18 @@ export default async function CombustiblesPage({
         </section>
       )}
 
+      {dashboard && <ConsumptionAlerts alerts={dashboard.alerts} />}
+
+      <div className="mt-2 border-t border-[var(--color-border)] pt-4">
+        <Link href={vistaHref("registros")} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">
+          Ver {totalDetail} {totalDetail === 1 ? "registro" : "registros"} del período →
+        </Link>
+      </div>
+        </>
+      )}
+
+      {vista === "analisis" && (
+        <>
       {byEquipmentType.length > 0 && (
         <section aria-labelledby="consumo-por-tipo-title" className="mb-8">
           <div className="mb-3">
@@ -436,14 +496,23 @@ export default async function CombustiblesPage({
         </section>
       )}
 
-      {dashboard && <ConsumptionAlerts alerts={dashboard.alerts} />}
+      {!hasAnalysisContent && (
+        <div className="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 py-10 text-center">
+          <p className="text-sm font-medium text-[var(--color-text)]">Sin datos de análisis en el período</p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Ajusta el rango de fechas o la faena, o importa consumos para ver gráficos de tendencia, rendimiento y anomalías.</p>
+        </div>
+      )}
+        </>
+      )}
 
-      <ConsumptionDetailTable
-        rows={detailRows}
-        page={page}
-        totalPages={totalDetailPages}
-        total={totalDetail}
-      />
+      {vista === "registros" && (
+        <ConsumptionDetailTable
+          rows={detailRows}
+          page={page}
+          totalPages={totalDetailPages}
+          total={totalDetail}
+        />
+      )}
     </PageContainer>
   )
 }

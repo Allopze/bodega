@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getDefinition, CHECKLIST_DEFINITIONS, TRABAJADOR_NUEVO, TRABAJADOR_ANTIGUO } from '../definitions'
+import { getDefinition, CHECKLIST_DEFINITIONS, TRABAJADOR_NUEVO, TRABAJADOR_ANTIGUO, isPersonEvaluationDefinition } from '../definitions'
 
 // ── CHECKLIST_DEFINITIONS ───────────────────────────────────────────────────
 
@@ -16,8 +16,11 @@ describe('CHECKLIST_DEFINITIONS', () => {
     expect(definition?.code).toBe('trabajador_antiguo')
   })
 
-  it('has exactly 2 definitions', () => {
-    expect(Object.keys(CHECKLIST_DEFINITIONS)).toHaveLength(2)
+  it('keeps the person-only subset explicit even when the catalog also contains inspections', () => {
+    expect(isPersonEvaluationDefinition('trabajador_nuevo')).toBe(true)
+    expect(isPersonEvaluationDefinition('trabajador_antiguo')).toBe(true)
+    expect(isPersonEvaluationDefinition('inspeccion_taller')).toBe(false)
+    expect(Object.keys(CHECKLIST_DEFINITIONS).length).toBeGreaterThanOrEqual(2)
   })
 })
 

@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 
-import * as React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ShellHeaderProvider, useShellHeader } from "@/components/layout/header-context"
 import { DocumentacionView } from "./documentacion-view"
 
 vi.mock("next/navigation", () => ({
@@ -90,25 +88,6 @@ const DOCUMENT = {
   updatedAt: "2026-07-02T00:00:00.000Z",
 }
 
-function HeaderSearchSetter({ value }: { value: string }) {
-  const { setSearchQuery } = useShellHeader()
-
-  React.useEffect(() => {
-    setSearchQuery(value)
-  }, [setSearchQuery, value])
-
-  return null
-}
-
-function renderWithHeaderSearch(ui: React.ReactElement, value: string) {
-  return render(
-    <ShellHeaderProvider>
-      <HeaderSearchSetter value={value} />
-      {ui}
-    </ShellHeaderProvider>,
-  )
-}
-
 describe("DocumentacionView", () => {
   it("renders the document library with a view-mode toggle, no governance columns or state filters", () => {
     render(
@@ -143,8 +122,29 @@ describe("DocumentacionView", () => {
     expect(screen.queryByPlaceholderText("Buscar en documentación...")).not.toBeInTheDocument()
   })
 
-  it("filters folders and documents with the shell header search", async () => {
-    renderWithHeaderSearch(
+  it("shows only nonzero attention counters authorized for the current scope", () => {
+    render(
+      <DocumentacionView
+        counters={{ ...counters, pendingReview: 2, observed: 1, ackPending: 3, expiringSoon: { within7: 1, within15: 2, within30: 4 } }}
+        documents={[DOCUMENT]}
+        folders={[]}
+        folderOptions={[]}
+        breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
+        searchParams={{}}
+        total={1}
+        canManage
+        canArchive
+        userId="test-user"
+      />,
+    )
+
+    expect(screen.getByText("Atención documental")).toBeInTheDocument()
+    expect(screen.getByText("2 por revisar")).toBeInTheDocument()
+    expect(screen.getByText("4 vencen en 30 días")).toBeInTheDocument()
+  })
+
+  it("renders the server-filtered result without a second client-side search", () => {
+    render(
       <DocumentacionView
         counters={counters}
         expiring={[]}
@@ -168,12 +168,11 @@ describe("DocumentacionView", () => {
         canArchive
         userId="test-user"
       />,
-      "matriz",
     )
 
-    await waitFor(() => expect(screen.getAllByLabelText(/Documento Matriz de riesgos/i).length).toBeGreaterThan(0))
-    expect(screen.queryAllByLabelText(/Carpeta Protocolos MINSAL/i)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(/Documento Procedimiento trabajo seguro/i)).toHaveLength(0)
+    expect(screen.getAllByLabelText(/Carpeta Protocolos MINSAL/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(/Documento Procedimiento trabajo seguro/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(/Documento Matriz de riesgos/i).length).toBeGreaterThan(0)
   })
 
   it("lets the user switch between list and grid via the toggle", () => {

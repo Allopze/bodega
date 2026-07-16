@@ -42,7 +42,7 @@ export function CycleStageChart({ stages }: { stages: CycleStagePoint[] }) {
               return (
                 <div className="min-w-40 border border-(--color-border-strong) bg-(--color-surface) px-3 py-2 shadow-(--shadow-md) text-xs">
                   <p className="mb-1 font-semibold text-(--color-text)">{point.stage}</p>
-                  {point.liters == null ? <p className="text-(--color-text-muted)">Sin fuente disponible</p> : (
+                  {point.liters == null ? <p className="text-(--color-text-muted)">Sin registros aún</p> : (
                     <>
                       <div className="flex justify-between gap-4"><span className="text-(--color-text-muted)">Litros</span><span className="font-mono">{liters.format(point.liters)} L</span></div>
                       <div className="flex justify-between gap-4"><span className="text-(--color-text-muted)">Registros</span><span className="font-mono">{point.records}</span></div>

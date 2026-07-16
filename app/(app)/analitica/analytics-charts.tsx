@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import {
   Bar,
   BarChart,
@@ -41,7 +42,7 @@ function tooltipStyle() {
 }
 
 export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
-  if (data.length === 0) return <EmptyChart label="Sin gasto mensual para el período filtrado." />
+  if (data.length === 0) return <EmptyChart label="Aún no hay gasto en el período" hint="No se registraron órdenes de compra ni cargas de combustible en las fechas y faenas seleccionadas. Prueba ampliar el rango o revisa que existan movimientos." ctaLabel="Ver compras" ctaHref="/compras" />
 
   return (
     <div className="h-72">
@@ -64,7 +65,7 @@ export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
 }
 
 export function ModuleSpendChart({ data }: { data: SpendByModuleRow[] }) {
-  if (data.length === 0) return <EmptyChart label="Sin distribución de gasto suficiente." />
+  if (data.length === 0) return <EmptyChart label="Sin gasto para distribuir" hint="La distribución por módulo aparece cuando hay compras o combustible registrados en el período." />
 
   return (
     <div className="h-72">
@@ -122,10 +123,16 @@ export function RankingBarChart({
   )
 }
 
-function EmptyChart({ label }: { label: string }) {
+function EmptyChart({ label, hint, ctaLabel, ctaHref }: { label: string; hint?: string; ctaLabel?: string; ctaHref?: string }) {
   return (
-    <div className="flex h-64 items-center justify-center rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 text-center text-sm text-[var(--color-text-muted)]">
-      {label}
+    <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 text-center">
+      <p className="text-sm font-medium text-[var(--color-text)]">{label}</p>
+      {hint && <p className="max-w-sm text-xs text-[var(--color-text-muted)]">{hint}</p>}
+      {ctaLabel && ctaHref && (
+        <Link href={ctaHref} className="mt-1 text-xs font-medium text-[var(--color-primary-ink)] hover:underline">
+          {ctaLabel} →
+        </Link>
+      )}
     </div>
   )
 }

@@ -307,7 +307,6 @@ export async function deletePdtpProgramAction(
 ): Promise<ActionState> {
   const guard = await guardPermission("prevention:pdtp:program:manage")
   if (guard.error) return guard.error
-  const session = guard.session
 
   try {
     const parsed = pdtpProgramDeleteSchema.parse({ programId: formData.get("programId") })

@@ -227,3 +227,61 @@ If your page needs server-side search:
 3. Do NOT use `useSafeShellHeader()` for filtering — the TopBar search is
    hidden on these routes
 <!-- END:search-architecture -->
+
+<!-- BEGIN:screen-density-rules -->
+# Screen density rules (avoid the "wall of stuff" screen)
+
+Cada pantalla debe pasar el **test de los 5 segundos**: al abrirla, sin
+scrollear, el usuario entiende *qué es*, *en qué estado está su trabajo* y
+*qué acción se espera de él*. Estas seis reglas (A1–A6) existen para eso.
+Derivan de la auditoría `PLAN_MEJORA_UX_PANTALLAS_2026-07-16.md`.
+
+## A1 — Máximo 4 tiles de KPI sobre el contenido
+
+- No más de **4 tarjetas** de métrica arriba del contenido principal. Cada
+  una debe ser accionable (clic = filtra o navega); si un número no cambia
+  ninguna decisión, va abajo o se elimina.
+- Los KPIs secundarios van en una fila compacta de texto (patrón
+  `WarehouseHeaderMetrics` / la "tira editorial" `MetricBar`), no en tarjetas.
+- Un tile en estado vacío muestra la acción para dejar de estarlo, nunca "0"
+  ni "—" pelados.
+
+## A2 — Muro de filtros: 4–6 primarios + "Más filtros (N)"
+
+- Máximo 4–6 filtros primarios visibles (los de uso diario: período, faena,
+  estado/fuente, búsqueda). El resto va en un `<details>`/Collapsible o
+  `Sheet` rotulado "Más filtros" **con contador de activos**.
+- Chips removibles de filtros activos bajo la barra (ver
+  `combustibles/bitacora/page.tsx`).
+
+## A3 — Lista + acción en el header, no formulario permanente
+
+- La página **es la lista/tabla**. Crear/registrar se dispara desde
+  `PageHeader.actions` y abre un `Dialog`/`Sheet` — nunca un formulario
+  siempre abierto ocupando el flujo (repite la regla 5 de layout).
+- Excepción: estaciones de captura repetitiva (p. ej. `entregas`) pueden
+  dejar el form inline pero **plegable**, con la preferencia persistida.
+- Si hay varios flujos de alta, un solo botón que pregunta *qué* (ver
+  `bodega/movement-sheet.tsx`).
+
+## A4 — Estados vacíos en lenguaje de usuario, con CTA
+
+Todo empty-state tiene tres partes: *qué significa* (sin jerga de modelo de
+datos) + *qué hacer para llenarlo* + *CTA real* (botón/Link, no una ruta
+pegada como texto). Usa `EmptyState` (`components/ui/empty-state.tsx`).
+
+## A5 — Una dimensión = una representación interactiva
+
+Si hay pestañas por estado, no hay además un `Select` de estado ni un tile
+por estado. Los contadores van sobre las pestañas (ver `prevencion/ppa`). No
+repitas la misma cifra en dos controles.
+
+## A6 — Consistencia de controles y vocabulario
+
+- **Fechas**: usa el `DatePicker` del design system, no `<input type="date">`
+  nativo (su formato depende del locale del navegador).
+- **Estados**: nunca muestres el valor crudo de enum (`SUBMITTED`); mapéalo a
+  label en español + `Badge`.
+- **Abreviaturas de dominio** (`Acc. c/TP`, `HH`, `T1`) llevan `title`/Tooltip
+  con el nombre completo, o se renombran.
+<!-- END:screen-density-rules -->

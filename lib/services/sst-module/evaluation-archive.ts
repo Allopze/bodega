@@ -105,7 +105,7 @@ export async function archiveEvaluationPdf(evaluationId: string, session: Sessio
 
     await db.insert(sstDocumentLinks).values({
       id: `sdlink-${nanoid()}`, documentId: docId, entityType: "worker",
-      entityId: evaluation.workerId, notes: "Evaluación SST", createdAt: now,
+      entityId: evaluation.workerId, notes: "Evaluación SST", createdByUserId: session.user.id, createdAt: now,
     }).onConflictDoNothing()
 
     await recordAuditEntry({

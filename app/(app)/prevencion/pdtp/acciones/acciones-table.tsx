@@ -104,9 +104,9 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
         </Select>
 
         <Select value={filters.soloVencidas ? "1" : "0"} onValueChange={(v) => updateFilter("vencidas", v === "1" ? "1" : null)}>
-          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-48"><SelectValue placeholder="Vencimiento" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="0">Todas</SelectItem>
+            <SelectItem value="0">Cualquier vencimiento</SelectItem>
             <SelectItem value="1">Solo vencidas</SelectItem>
           </SelectContent>
         </Select>

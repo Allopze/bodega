@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
   [
-    "inline-flex items-center justify-center gap-2",
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap",
     "font-sans font-semibold text-[13px] leading-[var(--leading-label)]",
     "rounded-[var(--radius)]",
     "select-none cursor-pointer",

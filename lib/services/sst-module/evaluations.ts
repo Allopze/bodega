@@ -1,11 +1,12 @@
 import { z } from "zod"
 import { eq, and, inArray, desc, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { sstEvaluations, sstResponses, sstScheduledFollowups, sstWeeklyEvaluations, sstActionPlan, type SstEvaluation } from "@/db/schema/sst"
+import { sstEvaluations, sstEvaluationVisits, sstResponses, sstScheduledFollowups, sstWeeklyEvaluations, sstActionPlan, type SstEvaluation } from "@/db/schema/sst"
 import { workers, worksites } from "@/db/schema/worksites"
 import { nanoid } from "@/lib/id"
 import { addDays } from "@/lib/sst/date"
 import { getDefinition } from "@/lib/sst/definitions/index"
+import { isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import { calculateCompliance, getAutomaticResultadoFinal, classifyEfficacy } from "@/lib/sst/compliance"
 import { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/validation/sst"
 import type { StatusValue, EvaluatorRole } from "@/lib/sst/types"
@@ -13,14 +14,35 @@ import { assertEditable, getEvaluationApplicableItems, SECTIONS_EXCLUDED_FROM_PE
 
 export async function createEvaluation(input: z.infer<typeof sstEvaluationCreateSchema>, userId: string, evaluatorRole?: EvaluatorRole): Promise<SstEvaluation> {
   const data = sstEvaluationCreateSchema.parse(input)
+  if (!isPersonEvaluationDefinition(data.definicionCode)) {
+    throw new Error("Esta definición corresponde a una inspección y debe ejecutarse desde el Programa preventivo.")
+  }
   const id = nanoid()
   const now = new Date().toISOString()
   const definition = getDefinition(data.definicionCode)
   const resolvedRole: EvaluatorRole | null = evaluatorRole ?? data.evaluatorRole ?? null
 
   await db.transaction(async (tx) => {
+    const visitId = data.visitId ?? nanoid()
+    if (data.visitId) {
+      const [visit] = await tx.select().from(sstEvaluationVisits).where(eq(sstEvaluationVisits.id, data.visitId)).limit(1)
+      if (!visit || visit.workerId !== data.workerId || visit.worksiteId !== data.worksiteId) {
+        throw new Error("La visita seleccionada no corresponde al trabajador y faena de esta evaluación.")
+      }
+    } else {
+      await tx.insert(sstEvaluationVisits).values({
+        id: visitId,
+        worksiteId: data.worksiteId,
+        workerId: data.workerId,
+        fechaVisita: data.fechaEvaluacion,
+        createdBy: userId,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
     await tx.insert(sstEvaluations).values({
-      id, worksiteId: data.worksiteId, workerId: data.workerId, createdBy: userId,
+      id, visitId, worksiteId: data.worksiteId, workerId: data.workerId, createdBy: userId,
       definicionCode: data.definicionCode, definicionVersion: definition.version,
       tipo: data.tipo, evaluatorRole: resolvedRole, motivo: data.motivo ?? null,
       motivoOtro: data.motivoOtro ?? null, descripcionEvento: data.descripcionEvento ?? null,
@@ -65,7 +87,7 @@ export async function listEvaluations(filters: { worksiteIds: string[] | "all"; 
   if (filters.workerId) conditions.push(eq(sstEvaluations.workerId, filters.workerId))
 
   const rows = await db.select({
-    id: sstEvaluations.id, worksiteId: sstEvaluations.worksiteId, workerId: sstEvaluations.workerId,
+    id: sstEvaluations.id, visitId: sstEvaluations.visitId, worksiteId: sstEvaluations.worksiteId, workerId: sstEvaluations.workerId,
     createdBy: sstEvaluations.createdBy, definicionCode: sstEvaluations.definicionCode,
     definicionVersion: sstEvaluations.definicionVersion, tipo: sstEvaluations.tipo,
     evaluatorRole: sstEvaluations.evaluatorRole, motivo: sstEvaluations.motivo,
@@ -116,7 +138,7 @@ export async function listEvaluationsGroupedByWorker(worksiteIds: string[] | "al
 
   // Phase 2: fetch all evaluations for those workers
   const rows = await db.select({
-    id: sstEvaluations.id, worksiteId: sstEvaluations.worksiteId, workerId: sstEvaluations.workerId,
+    id: sstEvaluations.id, visitId: sstEvaluations.visitId, worksiteId: sstEvaluations.worksiteId, workerId: sstEvaluations.workerId,
     createdBy: sstEvaluations.createdBy, definicionCode: sstEvaluations.definicionCode,
     definicionVersion: sstEvaluations.definicionVersion, tipo: sstEvaluations.tipo,
     evaluatorRole: sstEvaluations.evaluatorRole, motivo: sstEvaluations.motivo,
@@ -134,7 +156,7 @@ export async function listEvaluationsGroupedByWorker(worksiteIds: string[] | "al
 
   const groupMap = new Map<string, WorkerEvaluationGroup>()
   for (const r of rows) {
-    const ev: SstEvaluation & { workerName: string; worksiteName: string; workerRut: string } = { id: r.id, worksiteId: r.worksiteId, workerId: r.workerId, createdBy: r.createdBy, definicionCode: r.definicionCode, definicionVersion: r.definicionVersion, tipo: r.tipo, evaluatorRole: r.evaluatorRole, motivo: r.motivo, motivoOtro: r.motivoOtro, descripcionEvento: r.descripcionEvento, equipoPatente: r.equipoPatente, fechaEvaluacion: r.fechaEvaluacion, estado: r.estado, cargosJson: r.cargosJson, resultadoFinal: r.resultadoFinal, porcentajeCumplimiento: r.porcentajeCumplimiento, resultadoEficacia: r.resultadoEficacia, restricciones: r.restricciones, observacionesGenerales: r.observacionesGenerales, schemaJson: r.schemaJson, createdAt: r.createdAt, updatedAt: r.updatedAt, workerName: `${r.workerFirstName ?? ""} ${r.workerLastName ?? ""}`.trim(), worksiteName: r.worksiteName ?? "", workerRut: r.workerRut ?? "" }
+    const ev: SstEvaluation & { workerName: string; worksiteName: string; workerRut: string } = { id: r.id, visitId: r.visitId, worksiteId: r.worksiteId, workerId: r.workerId, createdBy: r.createdBy, definicionCode: r.definicionCode, definicionVersion: r.definicionVersion, tipo: r.tipo, evaluatorRole: r.evaluatorRole, motivo: r.motivo, motivoOtro: r.motivoOtro, descripcionEvento: r.descripcionEvento, equipoPatente: r.equipoPatente, fechaEvaluacion: r.fechaEvaluacion, estado: r.estado, cargosJson: r.cargosJson, resultadoFinal: r.resultadoFinal, porcentajeCumplimiento: r.porcentajeCumplimiento, resultadoEficacia: r.resultadoEficacia, restricciones: r.restricciones, observacionesGenerales: r.observacionesGenerales, schemaJson: r.schemaJson, createdAt: r.createdAt, updatedAt: r.updatedAt, workerName: `${r.workerFirstName ?? ""} ${r.workerLastName ?? ""}`.trim(), worksiteName: r.worksiteName ?? "", workerRut: r.workerRut ?? "" }
     const existing = groupMap.get(r.workerId)
     if (existing) existing.evaluations.push(ev)
     else groupMap.set(r.workerId, { workerId: r.workerId, workerName: `${r.workerFirstName ?? ""} ${r.workerLastName ?? ""}`.trim(), workerRut: r.workerRut ?? "", worksiteId: r.worksiteId, worksiteName: r.worksiteName ?? "", evaluations: [ev] })
@@ -195,4 +217,25 @@ export async function deleteEvaluation(id: string, worksiteIds: string[] | "all"
     await tx.delete(sstResponses).where(eq(sstResponses.evaluationId, id))
     await tx.delete(sstEvaluations).where(eq(sstEvaluations.id, id))
   })
+}
+
+export async function closeEvaluationVisit(visitId: string, worksiteIds: string[] | "all", userId: string) {
+  const [visit] = await db.select().from(sstEvaluationVisits).where(eq(sstEvaluationVisits.id, visitId)).limit(1)
+  if (!visit || (worksiteIds !== "all" && !worksiteIds.includes(visit.worksiteId))) throw new Error("Visita no encontrada o sin acceso.")
+  if (visit.estado === "cerrada") return visit
+  const evaluations = await db.select({ estado: sstEvaluations.estado }).from(sstEvaluations).where(eq(sstEvaluations.visitId, visitId))
+  if (evaluations.length === 0 || evaluations.some((evaluation) => evaluation.estado !== "cerrado")) throw new Error("No se puede cerrar la visita mientras existan participaciones pendientes.")
+  const now = new Date().toISOString()
+  const [closed] = await db.update(sstEvaluationVisits).set({ estado: "cerrada", closedByUserId: userId, closedAt: now, updatedAt: now }).where(eq(sstEvaluationVisits.id, visitId)).returning()
+  return closed!
+}
+
+export async function reopenEvaluationVisit(visitId: string, reason: string, worksiteIds: string[] | "all", userId: string) {
+  if (reason.trim().length < 3) throw new Error("Indica el motivo de la reapertura.")
+  const [visit] = await db.select().from(sstEvaluationVisits).where(eq(sstEvaluationVisits.id, visitId)).limit(1)
+  if (!visit || (worksiteIds !== "all" && !worksiteIds.includes(visit.worksiteId))) throw new Error("Visita no encontrada o sin acceso.")
+  if (visit.estado !== "cerrada") throw new Error("Solo se puede reabrir una visita cerrada.")
+  const now = new Date().toISOString()
+  const [reopened] = await db.update(sstEvaluationVisits).set({ estado: "borrador", reopenedByUserId: userId, reopenedAt: now, reopeningReason: reason.trim(), updatedAt: now }).where(eq(sstEvaluationVisits.id, visitId)).returning()
+  return reopened!
 }

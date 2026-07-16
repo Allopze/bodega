@@ -18,10 +18,11 @@ export const ppaModule = {
       areaId: "prevencion",
       items: [
         {
-          label: "PPA Digital",
+          label: "Para, Piensa y Actúa",
           href: "/prevencion/ppa",
           iconName: "ShieldCheck",
           permissions: ["ppa:view"],
+          group: "Control en terreno",
         },
       ],
     },

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useTransition } from "react"
+import { useState, useCallback, useMemo, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { markWeekCompletedAction } from "@/app/(app)/prevencion/actions"
@@ -11,6 +11,7 @@ import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan, S
 import { useChecklistResponses } from "./use-checklist-responses"
 import { useEvaluationClose } from "./use-evaluation-close"
 import { useEvaluationNavigation, type NavigationItem } from "./use-evaluation-navigation"
+import { getEvaluationProgress } from "./evaluation-progress"
 
 interface Props {
   evaluation: SstEvaluation
@@ -69,6 +70,7 @@ export function useEvaluationDetail({
 
   const [followups, setFollowups] = useState(initialFollowups)
   const [actionPlan, setActionPlan] = useState(initialActionPlan)
+  const [sectionFocusRequest, setSectionFocusRequest] = useState(0)
   const [isPending, startTransition] = useTransition()
 
   const visibleResponses = Object.entries(responses.responseMap).flatMap(([seccionId, items]) =>
@@ -80,6 +82,10 @@ export function useEvaluationDetail({
   )
   const allResponses = getApplicableResponseStatuses(definition, cargos, visibleResponses)
   const compliance = calculateCompliance(allResponses)
+  const progress = useMemo(
+    () => getEvaluationProgress(nav.visibleSections, responses.responseMap),
+    [nav.visibleSections, responses.responseMap],
+  )
 
   const handleClose = useCallback(() => {
     cls.handleClose(() => router.refresh())
@@ -97,6 +103,14 @@ export function useEvaluationDetail({
     })
   }, [router, startTransition])
 
+  const goToNextPending = () => {
+    const next = progress.pending[0]
+    if (next) {
+      nav.setActiveSection(next.sectionId)
+      setSectionFocusRequest((request) => request + 1)
+    }
+  }
+
   return {
     evaluation,
     definition,
@@ -108,6 +122,7 @@ export function useEvaluationDetail({
     navigationItems: nav.navigationItems,
     activeNavigationIndex: nav.activeNavigationIndex,
     activeSection: nav.activeSection,
+    sectionFocusRequest,
     setActiveSection: nav.setActiveSection,
     responseMap: responses.responseMap,
     followups,
@@ -128,6 +143,7 @@ export function useEvaluationDetail({
     hasReincidence: cls.hasReincidence,
     setHasReincidence: cls.setHasReincidence,
     compliance,
+    progress,
     canClose,
     canManage,
     canViewFullEvaluation,
@@ -137,5 +153,6 @@ export function useEvaluationDetail({
     moveActiveSection: nav.moveActiveSection,
     handleClose,
     handleMarkWeekComplete,
+    goToNextPending,
   }
 }

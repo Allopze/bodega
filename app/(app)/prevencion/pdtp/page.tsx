@@ -7,6 +7,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
+import { buildPdtpProgramHref, resolvePdtpYear } from "./pdtp-context"
 
 export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
 
@@ -22,17 +23,13 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
 
   const query = await searchParams
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
-  const programs = await listPdtpPrograms()
+  const year = resolvePdtpYear(query.anio)
+  const programs = await listPdtpPrograms({ year })
 
-  // If coming from old URL with hoja param and there's exactly one 2026 program, redirect
-  if (query.hoja && programs.length === 1) {
-    const params = new URLSearchParams()
-    if (query.hoja) params.set("hoja", String(query.hoja))
-    if (query.faena) params.set("faena", String(query.faena))
-    if (query.vista) params.set("vista", String(query.vista))
-    if (query.anio) params.set("anio", String(query.anio))
-    const qs = params.toString()
-    redirect(`/prevencion/pdtp/${programs[0]!.id}${qs ? `?${qs}` : ""}`)
+  // Un único programa anual es contexto predeterminado. Con varios programas
+  // nunca elegimos silenciosamente una versión: se muestra el selector.
+  if (programs.length === 1) {
+    redirect(buildPdtpProgramHref(programs[0]!.id, query))
   }
 
   // Fetch quick compliance for each program. Antes se limitaba a los
@@ -52,7 +49,7 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
     <PageContainer>
       <PageHeader
         title="Programa de Trabajo Preventivo SG-SST"
-        description="Crea y gestiona programas de trabajo preventivo por año."
+        description={`Programa anual ${year}: adapta y ejecuta el trabajo por faena.`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -74,9 +71,9 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
 
       {programs.length === 0 ? (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 text-center">
-          <p className="font-medium text-[var(--color-text)]">Sin programas PDTP</p>
+          <p className="font-medium text-[var(--color-text)]">Sin programa para {year}</p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            No hay programas de trabajo preventivo registrados. Crea el primero para comenzar.
+            No hay programas de trabajo preventivo registrados para este año. Crea el primero para comenzar.
           </p>
           {canManageProgram && (
             <Button asChild className="mt-4" size="sm">
@@ -98,7 +95,7 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
             return (
               <Link
                 key={program.id}
-                href={`/prevencion/pdtp/${program.id}`}
+                href={buildPdtpProgramHref(program.id, query)}
                 className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md"
               >
                 <div className="flex items-start justify-between">

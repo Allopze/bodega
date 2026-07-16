@@ -1,5 +1,5 @@
-import { relations } from "drizzle-orm"
-import { pgTable, text, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core"
+import { relations, sql } from "drizzle-orm"
+import { pgTable, text, timestamp, boolean, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core"
 import { worksites, workers } from "./worksites"
 import { users } from "./users"
 
@@ -55,13 +55,43 @@ export const ppaSubmissions = pgTable("ppa_submissions", {
   index("idx_ppa_worker").on(table.workerId, table.worksiteId),
 ])
 
+/* Una acción nace solo cuando se autoriza un PPA detenido. */
+export const ppaCorrectiveActions = pgTable("ppa_corrective_actions", {
+  id:              text("id").primaryKey(),
+  ppaId:           text("ppa_id").notNull().references(() => ppaSubmissions.id, { onDelete: "cascade" }),
+  worksiteId:      text("worksite_id").notNull().references(() => worksites.id),
+  description:     text("description").notNull(),
+  responsibleRole: text("responsible_role").notNull(),
+  responsible:     text("responsible").notNull(),
+  dueDate:         text("due_date").notNull(),
+  priority:        text("priority").notNull().default("alta"),
+  status:          text("status").notNull().default("pendiente"),
+  createdBy:       text("created_by").notNull().references(() => users.id),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("ppa_corrective_actions_ppa_unique").on(table.ppaId),
+  index("ppa_corrective_actions_worksite_status_idx").on(table.worksiteId, table.status),
+  index("ppa_corrective_actions_due_date_idx").on(table.dueDate),
+  check("ppa_corrective_actions_priority_check", sql`${table.priority} IN ('alta', 'media', 'baja')`),
+  check("ppa_corrective_actions_status_check", sql`${table.status} IN ('pendiente', 'en_proceso', 'completada', 'verificada', 'cerrada')`),
+])
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const ppaSubmissionsRelations = relations(ppaSubmissions, ({ one }) => ({
   worksite:      one(worksites, { fields: [ppaSubmissions.worksiteId], references: [worksites.id] }),
   worker:        one(workers,   { fields: [ppaSubmissions.workerId],   references: [workers.id] }),
   reviewedByUser: one(users,    { fields: [ppaSubmissions.reviewedBy], references: [users.id] }),
+  correctiveAction: one(ppaCorrectiveActions),
+}))
+
+export const ppaCorrectiveActionsRelations = relations(ppaCorrectiveActions, ({ one }) => ({
+  ppa: one(ppaSubmissions, { fields: [ppaCorrectiveActions.ppaId], references: [ppaSubmissions.id] }),
+  worksite: one(worksites, { fields: [ppaCorrectiveActions.worksiteId], references: [worksites.id] }),
+  createdByUser: one(users, { fields: [ppaCorrectiveActions.createdBy], references: [users.id] }),
 }))
 
 /* ── Inferred Types ──────────────────────────────────────────────────────── */
 export type PpaSubmission    = typeof ppaSubmissions.$inferSelect
 export type NewPpaSubmission = typeof ppaSubmissions.$inferInsert
+export type PpaCorrectiveAction = typeof ppaCorrectiveActions.$inferSelect

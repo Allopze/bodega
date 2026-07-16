@@ -23,20 +23,24 @@ import { sstEvaluationCreateSchema } from "@/lib/validation/sst"
 import type { z } from "zod"
 import { MOTIVO_OPTIONS, todayStr } from "./worker-evaluations.types"
 import type { Worker } from "./worker-evaluations.types"
+import type { OpenEvaluationVisit } from "./visit-context"
 
 interface Props {
   worker: Worker
   open: boolean
   onOpenChange: (open: boolean) => void
   initialRole: 'prevencionista_faena' | 'admin_contrato' | 'conductor_lider'
+  defaultVisitId?: string
+  openVisits: OpenEvaluationVisit[]
 }
 
 type CreateRole = 'prevencionista_faena' | 'admin_contrato' | 'conductor_lider'
 
-export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole }: Props) {
+export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole, defaultVisitId, openVisits }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [createRole, setCreateRole] = useState<CreateRole | null>(null)
+  const [selectedVisitId, setSelectedVisitId] = useState("__new")
 
   // Form state
   const [fechaEvaluacion, setFecha] = useState(todayStr)
@@ -60,6 +64,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
   React.useEffect(() => {
     if (open) {
       setCreateRole(initialRole)
+      setSelectedVisitId(defaultVisitId ?? "__new")
       if (initialRole === 'conductor_lider') {
         setDefinicion("trabajador_nuevo")
       } else {
@@ -76,7 +81,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
         : []
       setSelectedCargos(defaultCargo)
     }
-  }, [open, worker.position, initialRole])
+  }, [open, worker.position, initialRole, defaultVisitId])
 
   const validate = (): boolean => {
     const errors: Record<string, string> = {}
@@ -103,6 +108,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
         motivoOtro: motivoOtro || undefined,
         equipoPatente: equipoPatente || undefined,
         descripcionEvento: descripcionEvento || undefined,
+        visitId: selectedVisitId === "__new" ? undefined : selectedVisitId,
       })
 
       if (!result.ok) {
@@ -127,7 +133,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            Iniciar Evaluación como {createRole === 'prevencionista_faena' ? 'Prevencionista' : createRole === 'admin_contrato' ? 'Admin de Contrato' : 'Conductor Líder'}
+            Iniciar Evaluación como {createRole === 'prevencionista_faena' ? 'Prevencionista de faena' : createRole === 'admin_contrato' ? 'Supervisor de faena' : 'Conductor Líder'}
           </DialogTitle>
         </DialogHeader>
 
@@ -151,6 +157,26 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               value={worker.worksiteName ?? ""}
             />
           </Field>
+
+          {openVisits.length > 0 && (
+            <Field
+              label="Visita"
+              htmlFor={uid + "-visit"}
+              helper="Selecciona el caso al que pertenece esta participación o inicia una visita distinta."
+            >
+              <Select value={selectedVisitId} onValueChange={setSelectedVisitId}>
+                <SelectTrigger id={uid + "-visit"}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__new">Nueva visita</SelectItem>
+                  {openVisits.map((visit) => (
+                    <SelectItem key={visit.id} value={visit.id}>
+                      {visit.fecha} · {visit.context}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Fecha de Evaluación" htmlFor={uid + "-fecha"} error={formErrors.fecha}>

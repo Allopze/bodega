@@ -1,6 +1,14 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { pdtpActivities, pdtpActivitySchedule, pdtpChangeLog, pdtpExecutions, pdtpSheets } from "@/db/schema"
+import {
+  pdtpActionPlan,
+  pdtpActivities,
+  pdtpActivitySchedule,
+  pdtpChangeLog,
+  pdtpExecutionChecklists,
+  pdtpExecutions,
+  pdtpSheets,
+} from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { ROLE_RESPONSIBLE_SLUGS } from "./constants"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
@@ -17,6 +25,38 @@ export function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): 
   if (!scope.includes(worksiteId)) {
     throw new Error("Actividad PDTP no encontrada o sin acceso a la faena.")
   }
+}
+
+/** Verifica que una ejecución exista y pertenezca a una faena visible. */
+export async function assertPdtpExecutionAccess(executionId: string, scope: WorksiteScope): Promise<void> {
+  const [execution] = await db.select({ worksiteId: pdtpExecutions.worksiteId })
+    .from(pdtpExecutions)
+    .where(eq(pdtpExecutions.id, executionId))
+    .limit(1)
+  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
+  assertWorksiteAccess(execution.worksiteId, scope)
+}
+
+/** Verifica el alcance a partir de una instancia de checklist. */
+export async function assertPdtpChecklistInstanceAccess(instanceId: string, scope: WorksiteScope): Promise<void> {
+  const [instance] = await db.select({ worksiteId: pdtpExecutions.worksiteId })
+    .from(pdtpExecutionChecklists)
+    .innerJoin(pdtpExecutions, eq(pdtpExecutionChecklists.executionId, pdtpExecutions.id))
+    .where(eq(pdtpExecutionChecklists.id, instanceId))
+    .limit(1)
+  if (!instance) throw new Error("Checklist de ejecución PDTP no encontrado.")
+  assertWorksiteAccess(instance.worksiteId, scope)
+}
+
+/** Verifica el alcance a partir de una acción correctiva. */
+export async function assertPdtpActionPlanItemAccess(itemId: string, scope: WorksiteScope): Promise<void> {
+  const [item] = await db.select({ worksiteId: pdtpExecutions.worksiteId })
+    .from(pdtpActionPlan)
+    .innerJoin(pdtpExecutions, eq(pdtpActionPlan.executionId, pdtpExecutions.id))
+    .where(eq(pdtpActionPlan.id, itemId))
+    .limit(1)
+  if (!item) throw new Error("Acción correctiva PDTP no encontrada.")
+  assertWorksiteAccess(item.worksiteId, scope)
 }
 
 export function emptyMonthlyTotals() {

@@ -21,6 +21,7 @@ import type { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/
 import type { z } from "zod"
 import { scopeToIds, resolveEvaluatorRole } from "./helpers"
 import { REVALIDATE } from "./revalidate"
+import { isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 
 // ── createEvaluationAction ────────────────────────────────────────────────────
 
@@ -31,6 +32,13 @@ export async function createEvaluationAction(
   if (error) return error
   if (!canAny(session, "sst:create", "sst:evaluate_acompanamiento")) {
     return { ok: false, message: "No tienes permisos para crear evaluaciones." }
+  }
+
+  if (!isPersonEvaluationDefinition(input.definicionCode)) {
+    return {
+      ok: false,
+      message: "Esta definición corresponde a una inspección y debe ejecutarse desde el Programa preventivo.",
+    }
   }
 
   const scope = resolveWorksiteScope(session)

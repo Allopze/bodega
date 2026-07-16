@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { Tabs } from "@/components/ui/tabs"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -11,6 +12,7 @@ interface Props {
   activeSection: string
   setActiveSection: (v: string) => void
   activeNavigationIndex: number
+  sectionFocusRequest: number
   children: React.ReactNode
 }
 
@@ -19,9 +21,17 @@ export function EvaluationSectionNav({
   activeSection,
   setActiveSection,
   activeNavigationIndex,
+  sectionFocusRequest,
   children,
 }: Props) {
   const selectedLabel = navigationItems[activeNavigationIndex]?.label ?? "Selecciona una sección"
+  const sectionTriggerRef = React.useRef<HTMLButtonElement>(null)
+
+  React.useEffect(() => {
+    if (sectionFocusRequest === 0) return
+    sectionTriggerRef.current?.scrollIntoView({ block: "center" })
+    sectionTriggerRef.current?.focus()
+  }, [sectionFocusRequest])
 
   return (
     <Tabs value={activeSection} onValueChange={setActiveSection}>
@@ -40,7 +50,7 @@ export function EvaluationSectionNav({
 
         <div className="mt-3">
           <Select value={activeSection} onValueChange={setActiveSection}>
-            <SelectTrigger aria-label="Seleccionar sección de evaluación" className="h-10">
+            <SelectTrigger ref={sectionTriggerRef} aria-label="Seleccionar sección de evaluación" className="h-11">
               <SelectValue placeholder="Selecciona una sección" />
             </SelectTrigger>
             <SelectContent>

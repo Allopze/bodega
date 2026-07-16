@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { and, eq } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
+import { canAccessWorksite } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { fuelVehicles, pdtpActivities, pdtpExecutions, workers } from "@/db/schema"
 import {
@@ -32,6 +33,7 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
 
   const [execution] = await db.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
   if (!execution) notFound()
+  if (!canAccessWorksite(session, execution.worksiteId)) notFound()
 
   const [activity] = await db.select().from(pdtpActivities).where(eq(pdtpActivities.id, execution.activityId)).limit(1)
   if (!activity || activity.programId !== programId) notFound()

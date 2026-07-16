@@ -22,9 +22,13 @@ inventario.
 
 ## Acciones principales
 
+Todos los movimientos se registran desde el boton `Registrar movimiento` en la
+barra superior. Al pulsarlo se abre un panel que primero te pregunta *que* tipo
+de movimiento quieres hacer. Asi es imposible confundir un formulario con otro.
+
 ### Registrar una devolucion
 
-1. Usa el panel `Devolver a stock`.
+1. Pulsa `Registrar movimiento` y elige `Devolucion a stock`.
 2. Selecciona `Faena`.
 3. Selecciona `Producto`.
 4. Ingresa `Cantidad a devolver`.
@@ -33,7 +37,7 @@ inventario.
 
 ### Hacer un ajuste de stock
 
-1. Usa el panel `Ajuste de inventario`.
+1. Pulsa `Registrar movimiento` y elige `Ajuste de inventario`.
 2. Selecciona `Faena` y `Producto`.
 3. Elige `Dirección`: `Egreso (- disminuir)` o `Ingreso (+ aumentar)`.
 4. Ingresa cantidad y motivo.
@@ -41,7 +45,7 @@ inventario.
 
 ### Inventario fisico
 
-1. Usa el panel `Conteo fisico`.
+1. Pulsa `Registrar movimiento` y elige `Conteo fisico`.
 2. Selecciona la faena.
 3. Revisa la cantidad que muestra el sistema por producto.
 4. Escribe la cantidad contada.

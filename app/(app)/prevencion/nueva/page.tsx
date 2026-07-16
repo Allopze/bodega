@@ -8,7 +8,7 @@ import { asc, inArray, eq, and } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { NuevaEvaluacionForm } from "./nueva-evaluacion-form"
-import { CHECKLIST_DEFINITIONS } from "@/lib/sst/definitions/index"
+import { CHECKLIST_DEFINITIONS, isPersonEvaluationDefinition } from "@/lib/sst/definitions/index"
 import { CARGO_OPTIONS } from "@/lib/sst/cargos"
 import { buildNuevaEvaluacionScope } from "./nueva-evaluacion-page.helpers"
 
@@ -59,6 +59,7 @@ export default async function NuevaEvaluacionPage() {
   const worksiteOptions = allWorksites.map((w) => ({ id: w.id, name: w.name }))
 
   const definicionOptions = Object.values(CHECKLIST_DEFINITIONS)
+    .filter((definition) => isPersonEvaluationDefinition(definition.code))
     .filter((d) => canCreateFullEvaluation || d.code === "trabajador_nuevo")
     .map((d) => ({
       code: d.code,

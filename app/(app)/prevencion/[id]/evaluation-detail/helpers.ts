@@ -28,6 +28,6 @@ export function getApplicableSections(
 
 export const ROLE_LABELS: Record<string, string> = {
   prevencionista_faena: "Prevencionista de faena",
-  admin_contrato: "Administrador de contrato / Supervisor de faena",
+  admin_contrato: "Supervisor de faena",
   conductor_lider: "Conductor líder",
 }

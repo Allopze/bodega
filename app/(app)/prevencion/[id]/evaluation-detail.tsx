@@ -44,6 +44,7 @@ export function EvaluationDetail(props: Props) {
         canClose={ctx.canClose}
         closePending={ctx.closePending}
         compliance={ctx.compliance}
+        progress={ctx.progress}
         saveState={ctx.saveState}
         canEditAnyVisible={ctx.canEditAnyVisible}
         closeOpen={ctx.closeOpen}
@@ -57,6 +58,7 @@ export function EvaluationDetail(props: Props) {
         hasReincidence={ctx.hasReincidence}
         setHasReincidence={ctx.setHasReincidence}
         handleClose={ctx.handleClose}
+        goToNextPending={ctx.goToNextPending}
       />
 
       <EvaluationSectionNav
@@ -64,6 +66,7 @@ export function EvaluationDetail(props: Props) {
         activeSection={ctx.activeSection}
         setActiveSection={ctx.setActiveSection}
         activeNavigationIndex={ctx.activeNavigationIndex}
+        sectionFocusRequest={ctx.sectionFocusRequest}
       >
         {ctx.visibleSections.map((sec) => (
           <EvaluationWeeklySection

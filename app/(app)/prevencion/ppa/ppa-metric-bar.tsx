@@ -1,10 +1,6 @@
 import type { ReactNode } from "react"
 import {
   ClipboardText,
-  HandPalm,
-  Clock,
-  CheckCircle,
-  XCircle,
   ChartLineUp,
   Timer,
 } from "@phosphor-icons/react/dist/ssr"
@@ -38,18 +34,12 @@ function formatResponseTime(minutes: number | null): string {
  * para lo accionable. Reemplaza la grilla de tarjetas idénticas.
  */
 export function PpaMetricBar({ stats }: { stats: PpaStats }) {
+  // Los conteos por estado (por revisar, detenidos, autorizados, rechazados) viven
+  // ahora en las pestañas de la lista, con su contador. Aquí quedan solo los
+  // indicadores que las pestañas no representan: volumen total y las dos métricas
+  // de desempeño. Así ninguna cifra aparece dos veces.
   const cells: Cell[] = [
     { key: "total",      label: "Total PPA",        value: stats.total,                          icon: <ClipboardText size={13} /> },
-    { key: "detenidos",  label: "Detenidos",        value: stats.detenidos,                      icon: <HandPalm size={13} weight="bold" />, tone: "signal" },
-    { key: "pendientes", label: "Por revisar",      value: stats.pendientes,                     icon: <Clock size={13} weight="bold" />,    tone: "signal" },
-    {
-      key: "aprobados",
-      label: "Aprobados",
-      value: stats.aprobadosAuto + stats.autorizados,
-      icon: <CheckCircle size={13} />,
-      secondary: `auto ${stats.aprobadosAuto} · revisor ${stats.autorizados}`,
-    },
-    { key: "rechazados", label: "Rechazados",       value: stats.rechazados,                     icon: <XCircle size={13} /> },
     { key: "desv",       label: "% desviaciones",   value: `${stats.porcentajeDesviaciones}%`,   icon: <ChartLineUp size={13} />, progress: stats.porcentajeDesviaciones },
     { key: "resp",       label: "Resp. promedio",   value: formatResponseTime(stats.avgResponseMinutes), icon: <Timer size={13} /> },
   ]

@@ -20,6 +20,7 @@ export interface WorkerEvaluationsProps {
     canDelete: boolean
   }
   userEvaluatorRole?: 'prevencionista_faena' | 'admin_contrato' | 'conductor_lider'
+  openVisits: { id: string; fecha: string; context: string }[]
 }
 
 export const MOTIVO_OPTIONS = [

@@ -11,6 +11,20 @@ import { OBSERVACION_AMPLIROLL } from './observacion-ampliroll'
 import { OBSERVACION_MAQUINARIA } from './observacion-maquinaria'
 import type { ChecklistDefinition } from '../types'
 
+/**
+ * Las evaluaciones SST vigentes tienen como sujeto a una persona. Las
+ * inspecciones permanecen disponibles para el flujo PDTP, pero no deben
+ * aparecer ni poder crearse desde el formulario de Evaluaciones.
+ */
+export const PERSON_EVALUATION_DEFINITION_CODES = [
+  'trabajador_nuevo',
+  'trabajador_antiguo',
+] as const
+
+export function isPersonEvaluationDefinition(code: string): code is typeof PERSON_EVALUATION_DEFINITION_CODES[number] {
+  return (PERSON_EVALUATION_DEFINITION_CODES as readonly string[]).includes(code)
+}
+
 export const CHECKLIST_DEFINITIONS: Record<string, ChecklistDefinition> = {
   'trabajador_nuevo': TRABAJADOR_NUEVO,
   'trabajador_antiguo': TRABAJADOR_ANTIGUO,

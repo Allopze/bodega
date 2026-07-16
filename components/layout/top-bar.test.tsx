@@ -75,7 +75,7 @@ describe("TopBar", () => {
     }
   })
 
-  it("keeps the header search on Prevención document library routes", async () => {
+  it("hides the generic header search on Prevención routes until each screen owns a complete search contract", async () => {
     pathname = "/prevencion/documentacion"
 
     render(
@@ -85,6 +85,6 @@ describe("TopBar", () => {
     )
 
     await screen.findByRole("button", { name: "Abrir menú de usuario" })
-    expect(screen.getByRole("searchbox", { name: "Filtrar en esta página" })).toBeInTheDocument()
+    expect(screen.queryByRole("searchbox", { name: "Filtrar en esta página" })).toBeNull()
   })
 })
