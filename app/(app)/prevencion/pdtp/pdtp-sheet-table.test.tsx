@@ -145,6 +145,31 @@ describe("PdtpSheetTable — weekly filter", () => {
     expect(screen.getAllByText("—").length).toBeGreaterThan(0)
   })
 
+  it("uses user-facing period and status labels in the annual execution details", () => {
+    const execution = {
+      id: "exec-1",
+      year: 2026,
+      month: 7,
+      week: 2,
+      executedQuantity: 1,
+      status: "submitted",
+      noCumpleCount: 0,
+      actionsPending: 0,
+      actionsOverdue: 0,
+      evidenceUrl: null,
+      evidencePhotos: [],
+      evidenceText: null,
+    } as PdtpSheetView["activities"][number]["executions"][number]
+    const activity = makeActivity("annual-execution", "5", "Actividad anual", withPlanned(7, 1), withPlanned(7, 1), [execution])
+
+    render(<PdtpSheetTable view={makeView([activity])} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" worksiteId="ws-1" />)
+
+    expect(screen.getByText("Jul · Sem 2")).toBeDefined()
+    expect(screen.getByText("Enviada")).toBeDefined()
+    expect(screen.queryByText("M7/S2")).toBeNull()
+    expect(screen.queryByText("submitted")).toBeNull()
+  })
+
   it("muestra la nota de la actividad (H-M7)", () => {
     const withNotes = makeActivity("a-note", "5", "Actividad con nota", withPlanned(7, 1), ZERO12, [], "Esta es una nota de prueba sobre la actividad")
     const view = makeView([withNotes])

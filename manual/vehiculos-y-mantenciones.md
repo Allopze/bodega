@@ -7,7 +7,9 @@ combustible, mantenciones e imputaciones.
 
 - Usa `Gestionar vehiculos` para ir a la administracion de vehiculos de
   combustibles.
-- Haz clic en un vehiculo para ver el detalle.
+- Haz clic en cualquier fila de vehiculo para ver el detalle. Las columnas de
+  kilometraje, costo por distancia y ultima mantencion solo aparecen cuando hay
+  datos para mostrarlas.
 - En el detalle puedes revisar documentos y antecedentes del vehiculo.
 
 ### Como registrar un vehiculo
@@ -31,11 +33,11 @@ vehiculos.
 ### Como registrar una mantencion
 
 1. Abre `Mantenciones`.
-2. Pulsa `Nueva mantención` (barra superior). Se abre una ventana con el
-   formulario.
+2. Pulsa `Nueva mantención` (barra superior). Se abre un panel de registro.
 3. Elige vehiculo, proveedor, faena y centro de costo cuando corresponda.
 4. Completa fecha, tipo de servicio, kilometraje, horometro y observaciones.
-5. Guarda el registro.
+5. Guarda el registro. El panel queda abierto con los valores para registrar
+   otra mantencion si corresponde.
 
 ## Como trabajar entre ambas pantallas
 

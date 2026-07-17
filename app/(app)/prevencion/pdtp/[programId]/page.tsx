@@ -18,6 +18,7 @@ import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -179,12 +180,14 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         {/* Compliance indicators */}
         {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} />}
 
-        <div className="flex flex-wrap items-start gap-6">
+        <div className="flex flex-col gap-3 border-y border-[var(--color-border)] py-3">
           <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
-          {worksites.length > 1 && (
-            <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} />
-          )}
-          <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={programId} />
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            {worksites.length > 1 && (
+              <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} />
+            )}
+            <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={programId} />
+          </div>
         </div>
 
         {overrideError && (
@@ -194,10 +197,14 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         )}
 
         {!selectedWorksiteId && worksites.length > 1 ? (
-          <div className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-5">
-            <p className="font-medium text-[var(--color-warning-ink)]">Selecciona una faena para continuar</p>
-            <p className="mt-1 text-sm text-[var(--color-warning-ink)]">El programa anual se adapta por faena; no se combinan sus métricas ni actividades sin una selección explícita.</p>
-          </div>
+          <EmptyState
+            compact
+            align="start"
+            tone="warning"
+            title="Selecciona una faena para ver ejecución y cumplimiento"
+            description="El programa se calcula por faena, por eso las actividades y métricas no se mezclan entre contratos."
+            action={<div className="flex flex-wrap gap-2">{worksites.map((worksite) => <Button key={worksite.id} asChild size="sm"><Link href={`/prevencion/pdtp/${programId}?hoja=${sheetCode}&faena=${worksite.id}&vista=${viewMode}`}>{worksite.name}</Link></Button>)}</div>}
+          />
         ) : view ? (
           <PdtpSheetTable
             view={view}

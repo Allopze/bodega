@@ -11,14 +11,14 @@ import { requirePermission } from "@/lib/auth/can"
 import { getFleetOverview } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { FleetFilters } from "./fleet-filters"
+import { FleetTableRow } from "./fleet-table-row"
 
 export const metadata: Metadata = { title: "Flota" }
 
-const formatCLP = (value: number) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(value)
-
-const formatNumber = (value: number) =>
-  new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(value)
+const CLP_FORMATTER = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 })
+const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
+const formatCLP = (value: number) => CLP_FORMATTER.format(value)
+const formatNumber = (value: number) => NUMBER_FORMATTER.format(value)
 
 export default async function FlotaPage({
   searchParams,
@@ -78,6 +78,10 @@ export default async function FlotaPage({
     vehicle.nextExpiryDate >= now.toISOString().slice(0, 10) &&
     vehicle.nextExpiryDate <= warningWindowEnd,
   )
+  const showCostPerDistance = filteredVehicles.some((vehicle) => vehicle.costPerKm != null || vehicle.costPerHour != null)
+  const showMeterReading = filteredVehicles.some((vehicle) => vehicle.lastOdometerReading != null || vehicle.lastHourMeterReading != null)
+  const showLastMaintenance = filteredVehicles.some((vehicle) => vehicle.lastMaintenanceDate != null)
+  const visibleColumnCount = 8 + Number(showCostPerDistance) + Number(showMeterReading) + Number(showLastMaintenance)
 
   return (
     <PageContainer>
@@ -140,7 +144,7 @@ export default async function FlotaPage({
           <CardTitle className="text-base">Vehículos</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <Table className="min-w-[980px]">
+          <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Vehículo</TableHead>
@@ -151,31 +155,28 @@ export default async function FlotaPage({
                 <TableHead className="text-right">Combustible</TableHead>
                 <TableHead className="text-right">Mantenciones</TableHead>
                 <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">$/km·h</TableHead>
-                <TableHead className="text-right">Km/Hr</TableHead>
-                <TableHead>Última mantención</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
+                {showCostPerDistance && <TableHead className="text-right">$/km·h</TableHead>}
+                {showMeterReading && <TableHead className="text-right">Km/Hr</TableHead>}
+                {showLastMaintenance && <TableHead>Última mantención</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {vehicles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={visibleColumnCount} className="py-8 text-center text-muted-foreground">
                     No hay vehículos visibles para tu alcance.
                   </TableCell>
                 </TableRow>
               ) : filteredVehicles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={visibleColumnCount} className="py-8 text-center text-muted-foreground">
                     No hay vehículos que coincidan con los filtros.
                   </TableCell>
                 </TableRow>
               ) : filteredVehicles.map((vehicle) => (
-                <TableRow key={vehicle.id}>
+                <FleetTableRow key={vehicle.id} href={`/flota/${vehicle.id}`}>
                   <TableCell>
-                    <Link href={`/flota/${vehicle.id}`} className="font-medium text-[var(--color-primary)] underline-offset-2 hover:underline">
-                      {vehicle.plate}
-                    </Link>
+                    <span className="font-medium text-[var(--color-primary)]">{vehicle.plate}</span>
                     <div className="text-xs text-muted-foreground">
                       {[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
                     </div>
@@ -191,35 +192,22 @@ export default async function FlotaPage({
                   <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount)}</TableCell>
                   <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost)}</TableCell>
-                  <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                  {showCostPerDistance && <TableCell className="text-right font-mono text-xs text-muted-foreground">
                     {vehicle.costPerKm != null
                       ? `${formatCLP(vehicle.costPerKm)}/km`
                       : vehicle.costPerHour != null
                         ? `${formatCLP(vehicle.costPerHour)}/h`
                         : "—"}
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
+                  </TableCell>}
+                  {showMeterReading && <TableCell className="text-right font-mono">
                     {vehicle.lastOdometerReading != null
                       ? formatNumber(vehicle.lastOdometerReading)
                       : vehicle.lastHourMeterReading != null
                         ? `${formatNumber(vehicle.lastHourMeterReading)} h`
                         : "—"}
-                  </TableCell>
-                  <TableCell>{vehicle.lastMaintenanceDate ?? "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button asChild size="sm" variant="ghost">
-                        <Link href={`/combustibles?vehicle=${vehicle.id}`}>Combustible</Link>
-                      </Button>
-                      <Button asChild size="sm" variant="ghost">
-                        <Link href={`/mantenciones?vehicle=${vehicle.id}`}>Mantenciones</Link>
-                      </Button>
-                      <Button asChild size="sm" variant="ghost">
-                        <Link href={`/flota/${vehicle.id}`}>Detalle</Link>
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                  </TableCell>}
+                  {showLastMaintenance && <TableCell>{vehicle.lastMaintenanceDate ?? "—"}</TableCell>}
+                </FleetTableRow>
               ))}
             </TableBody>
           </Table>

@@ -22,8 +22,6 @@ import { PdtpEvidenceThumbs } from "./pdtp-evidence-thumbs"
 import {
   PdtpStatusBadge,
   PdtpExecutionStatusBadge,
-  PdtpMetric,
-  PdtpProgressRing,
   PdtpResponsibleChips,
   PdtpActivitySummary,
   PdtpDensityToggle,
@@ -31,9 +29,9 @@ import {
   formatQuantity,
   type PdtpStatusCounts,
 } from "./pdtp-sheet-table-ui"
-import { ListChecks, CalendarDots, CheckSquare, ChartBar } from "@phosphor-icons/react"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+const EMPTY_PENDING_APPROVALS: PendingApproval[] = []
 
 type PendingApproval = { id: string; activityId: string; month: number; week: number }
 
@@ -75,16 +73,12 @@ export function PdtpSheetTable({
   canExecute = false,
   canManageProgram = false,
   canApprove = false,
-  pendingApprovals = [],
+  pendingApprovals = EMPTY_PENDING_APPROVALS,
   viewMode,
   currentPeriod,
   sheetCode,
 }: PdtpSheetTableProps) {
   const canOperate = canExecute || canManageProgram
-  const annualPlanned = view.monthlyTotals.reduce((sum, month) => sum + month.planned, 0)
-  const annualExecuted = view.monthlyTotals.reduce((sum, month) => sum + month.executed, 0)
-  const annualPercent = annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) : null
-
   const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">("all")
   const [density, toggleDensity] = usePdtpDensity()
 
@@ -131,56 +125,10 @@ export function PdtpSheetTable({
     return groups
   }, [filteredActivities])
 
-  // Compliance variant
-  const complianceVariant =
-    annualPercent === null ? "neutral"
-    : annualPercent >= 80 ? "success"
-    : annualPercent >= 50 ? "warning"
-    : "danger"
-
-  // Period label for subtitle
-  const monthName = MONTH_LABELS[currentPeriod.month - 1]
-  const periodLabel = `${monthName} ${currentPeriod.year} · S${currentPeriod.week}`
-
   const rowPy = density === "compact" ? "py-1.5" : "py-3"
 
   return (
     <div className="space-y-4">
-      {/* KPI cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <PdtpMetric
-          label="Actividades"
-          value={view.activities.length}
-          subtitle={`en ${viewMode === "semana" ? "esta semana" : "el programa"}`}
-          icon={<ListChecks size={13} />}
-          variant="neutral"
-        />
-        <PdtpMetric
-          label="Plan anual"
-          value={formatQuantity(annualPlanned)}
-          subtitle="ejecuciones planificadas"
-          icon={<CalendarDots size={13} />}
-          variant="neutral"
-        />
-        <PdtpMetric
-          label="Ejecutado"
-          value={worksiteId ? formatQuantity(annualExecuted) : "-"}
-          subtitle={worksiteId ? periodLabel : "Selecciona una faena"}
-          icon={<CheckSquare size={13} />}
-          variant={worksiteId ? "neutral" : "danger"}
-        />
-        <PdtpMetric
-          label="Cumplimiento"
-          value={annualPercent === null ? "-" : `${annualPercent}%`}
-          subtitle={`Meta: ${view.program.complianceTarget ? `${Math.round(Number(view.program.complianceTarget) * 100)}%` : "—"}`}
-          icon={<ChartBar size={13} />}
-          variant={complianceVariant}
-          ring={
-            <PdtpProgressRing percent={annualPercent} size={52} />
-          }
-        />
-      </div>
-
       {/* Activity status summary + density toggle */}
       {sourceActivities.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -334,16 +282,13 @@ export function PdtpSheetTable({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-12">N°</TableHead>
-                  <TableHead className="min-w-[22rem]">Actividad</TableHead>
-                  <TableHead className="min-w-[12rem]">Programa</TableHead>
-                  <TableHead className="min-w-[10rem]">Responsables</TableHead>
+                  <TableHead className="sticky left-0 z-20 w-12 bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)]">N°</TableHead>
+                  <TableHead className="sticky left-12 z-20 min-w-[22rem] bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)]">Actividad</TableHead>
                   <TableHead>Estado</TableHead>
                   {MONTH_LABELS.map((month) => (
                     <TableHead key={month} className="text-right">{month}</TableHead>
                   ))}
-                  <TableHead className="text-right">Plan</TableHead>
-                  <TableHead className="text-right">Ejecutado</TableHead>
+                  <TableHead className="min-w-[7.5rem] text-right">Plan / ejecutado</TableHead>
                   {canOperate && worksiteId && <TableHead className="w-48">Registrar</TableHead>}
                   {canApprove && worksiteId && pendingApprovals.length > 0 && <TableHead className="min-w-[10rem]">Aprobar</TableHead>}
                 </TableRow>
@@ -355,7 +300,7 @@ export function PdtpSheetTable({
                     <TableRow className="bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2)]">
                       <TableCell
                         colSpan={
-                          5 + 12 + 2
+                          3 + 12 + 1
                           + (canOperate && worksiteId ? 1 : 0)
                           + (canApprove && worksiteId && pendingApprovals.length > 0 ? 1 : 0)
                         }
@@ -369,12 +314,19 @@ export function PdtpSheetTable({
                       const overdueMonths = countOverdueMonths(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod)
                       return (
                         <TableRow key={activity.id}>
-                          <TableCell className={`font-mono text-xs text-[var(--color-text-faint)] ${rowPy}`}>
+                          <TableCell className={`sticky left-0 z-10 bg-[var(--color-surface)] font-mono text-xs text-[var(--color-text-faint)] shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
                             {activity.n}
                           </TableCell>
-                          <TableCell className={rowPy}>
+                          <TableCell className={`sticky left-12 z-10 bg-[var(--color-surface)] shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
                             <div className="max-w-[36rem]">
                               <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
+                              <details className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                                <summary className="cursor-pointer hover:text-[var(--color-text)]">Ver programa y responsables</summary>
+                                <div className="mt-1.5 space-y-1 border-l border-[var(--color-border)] pl-2">
+                                  <p>{activity.program}</p>
+                                  <PdtpResponsibleChips display={activity.responsibleDisplay} />
+                                </div>
+                              </details>
                               {worksiteId && activity.executions.length > 0 && (
                                 <details className="mt-2 text-[11px]">
                                   <summary className="cursor-pointer text-[var(--color-text-muted)]">
@@ -384,11 +336,10 @@ export function PdtpSheetTable({
                                     {activity.executions.map((exec) => (
                                       <div key={exec.id} className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5">
                                         <div className="mb-1 flex items-center gap-2 text-[10px] text-[var(--color-text-subtle)]">
-                                          <span className="font-mono">M{exec.month}/S{exec.week}</span>
+                                          <span className="font-mono">{MONTH_LABELS[exec.month - 1]} · Sem {exec.week}</span>
                                           <span>·</span>
                                           <span>{exec.executedQuantity}</span>
-                                          <span>·</span>
-                                          <span className="uppercase tracking-wide">{exec.status}</span>
+                                          <PdtpExecutionStatusBadge status={exec.status} />
                                         </div>
                                         <PdtpEvidenceThumbs
                                           evidenceUrl={exec.evidenceUrl}
@@ -411,34 +362,27 @@ export function PdtpSheetTable({
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className={`text-[var(--color-text-muted)] ${rowPy}`}>{activity.program}</TableCell>
-                          <TableCell className={rowPy}>
-                            <PdtpResponsibleChips display={activity.responsibleDisplay} />
-                          </TableCell>
                           <TableCell className={rowPy}>
                             <PdtpStatusBadge status={status} overdueMonths={overdueMonths} />
                           </TableCell>
                           {activity.monthlyPlanned.map((planned, index) => (
                             <TableCellNum
-                              key={index}
+                              key={MONTH_LABELS[index]}
                               className={[
                                 rowPy,
                                 planned > 0 ? "text-[var(--color-text)]" : "text-[var(--color-text-faint)]",
                               ].join(" ")}
                             >
-                              <div className="space-y-0.5">
-                                <div>{formatQuantity(planned)}</div>
+                              <div className="whitespace-nowrap">
+                                <span>{formatQuantity(planned)}</span>
                                 {worksiteId && (
-                                  <div className="text-[11px] text-[var(--color-success)]">
-                                    {formatQuantity(activity.monthlyExecuted[index] ?? 0)}
-                                  </div>
+                                  <span className="text-[11px] text-[var(--color-success)]"> / {formatQuantity(activity.monthlyExecuted[index] ?? 0)}</span>
                                 )}
                               </div>
                             </TableCellNum>
                           ))}
-                          <TableCellNum className={`font-semibold ${rowPy}`}>{formatQuantity(activity.totalPlanned)}</TableCellNum>
-                          <TableCellNum className={`font-semibold ${rowPy}`}>
-                            {worksiteId ? formatQuantity(activity.totalExecuted) : "-"}
+                          <TableCellNum className={`font-semibold whitespace-nowrap ${rowPy}`}>
+                            {formatQuantity(activity.totalPlanned)}{worksiteId && <span className="text-[var(--color-success)]"> / {formatQuantity(activity.totalExecuted)}</span>}
                           </TableCellNum>
                           {canOperate && worksiteId && (
                             <TableCell className={rowPy}>

@@ -3,7 +3,15 @@
 import { useState } from "react"
 import { Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import {
+  Sheet,
+  SheetBody,
+  SheetCloseButton,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/admin/sheet"
 import { MaintenanceForm } from "./maintenance-form"
 
 interface Option {
@@ -31,23 +39,30 @@ export function MaintenanceCreateButton({
   const [open, setOpen] = useState(false)
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus className="mr-1.5 h-4 w-4" />
-          Nueva mantención
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader><DialogTitle>Nueva mantención</DialogTitle></DialogHeader>
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}>
+        <Plus className="mr-1.5 h-4 w-4" />
+        Nueva mantención
+      </Button>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent className="sm:max-w-3xl">
+          <SheetHeader>
+            <div>
+              <SheetTitle>Nueva mantención</SheetTitle>
+              <SheetDescription>Guarda el servicio y deja el formulario abierto si necesitas registrar otro.</SheetDescription>
+            </div>
+            <SheetCloseButton />
+          </SheetHeader>
+          <SheetBody>
         <MaintenanceForm
           vehicles={vehicles}
           suppliers={suppliers}
           worksites={worksites}
           costCenters={costCenters}
-          onSuccess={() => setOpen(false)}
         />
-      </DialogContent>
-    </Dialog>
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }

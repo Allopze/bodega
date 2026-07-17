@@ -17,7 +17,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Upload, FileXls, QrCode, Drop } from "@phosphor-icons/react/dist/ssr"
-import { ConsumptionKpis } from "./consumption-kpis"
+import { ConsumptionAnalysisMetrics, ConsumptionKpis } from "./consumption-kpis"
 import { ConsumptionFiltersBar } from "./consumption-filters"
 import { ConsumptionAlerts } from "./consumption-alerts"
 import { ConsumptionDetailTable } from "./consumption-detail-table"
@@ -35,6 +35,7 @@ import { FuelControlOverviewPanel } from "./fuel-control-overview"
 export const metadata: Metadata = { title: "Combustibles" }
 
 const PAGE_SIZE = 50
+const ANOMALY_DIST_FALLBACK = { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] }
 
 export default async function CombustiblesPage({
   searchParams,
@@ -57,6 +58,10 @@ export default async function CombustiblesPage({
   const requestedVista = str("vista")
   const vista: "resumen" | "analisis" | "registros" =
     requestedVista === "analisis" || requestedVista === "registros" ? requestedVista : "resumen"
+  const needsSummary = vista === "resumen"
+  const needsAnalysis = vista === "analisis"
+  const needsDashboard = needsSummary || needsAnalysis
+  const needsRecords = vista === "registros"
   const page = typeof sp.page === "string" ? Math.max(1, Number(sp.page)) : 1
   const requestedFilters = normalizeConsumptionFilters({ fromDate, toDate, worksiteId, fuente, patente, associated })
 
@@ -64,10 +69,10 @@ export default async function CombustiblesPage({
   const canImport = can(session, "combustibles:import")
   const canViewTae = can(session, "combustibles:tae_view")
 
-  const ANOMALY_DIST_FALLBACK = { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] }
-
   const [dashboard, worksitesList, fuentesRows, operationsSummary, controlOverview, byEquipmentType, scatterPoints, evolutionByVehicle, heatmapCells, anomalyDistribution] = await Promise.all([
-    settle(getConsumptionDashboard(session, requestedFilters), null, "consumptionDashboard"),
+    needsDashboard
+      ? settle(getConsumptionDashboard(session, requestedFilters), null, "consumptionDashboard")
+      : Promise.resolve(null),
     settle(
       worksiteScope.mode === "none"
         ? Promise.resolve([] as Array<{ id: string; name: string }>)
@@ -85,20 +90,34 @@ export default async function CombustiblesPage({
       [],
       "fuentes",
     ),
-    settle(getOperationsSummary(session, {
-      fromDate: requestedFilters.fromDate,
-      toDate: requestedFilters.toDate,
-      worksiteId: requestedFilters.worksiteId,
-      patente: requestedFilters.patente,
-      associated: requestedFilters.associated,
-      proveedorNombre: proveedor,
-    }), null, "operationsSummary"),
-    settle(getFuelControlOverview(session, { filters: requestedFilters, includeTae: canViewTae }), null, "fuelControlOverview"),
-    settle(getConsumptionByEquipmentType(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId }), [], "byEquipmentType"),
-    settle(getScatterObservations(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId, patente: requestedFilters.patente, proveedorNombre: proveedor }), [], "scatterPoints"),
-    settle(getEvolutionByVehicle(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId, patente: requestedFilters.patente }), [], "evolutionByVehicle"),
-    settle(getWorksiteEquipmentMatrix(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId }), [], "heatmapCells"),
-    settle(getAnomalyDistribution({ worksiteId: requestedFilters.worksiteId }), ANOMALY_DIST_FALLBACK, "anomalyDistribution"),
+    needsAnalysis
+      ? settle(getOperationsSummary(session, {
+          fromDate: requestedFilters.fromDate,
+          toDate: requestedFilters.toDate,
+          worksiteId: requestedFilters.worksiteId,
+          patente: requestedFilters.patente,
+          associated: requestedFilters.associated,
+          proveedorNombre: proveedor,
+        }), null, "operationsSummary")
+      : Promise.resolve(null),
+    needsSummary
+      ? settle(getFuelControlOverview(session, { filters: requestedFilters, includeTae: canViewTae }), null, "fuelControlOverview")
+      : Promise.resolve(null),
+    needsAnalysis
+      ? settle(getConsumptionByEquipmentType(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId }), [], "byEquipmentType")
+      : Promise.resolve([]),
+    needsAnalysis
+      ? settle(getScatterObservations(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId, patente: requestedFilters.patente, proveedorNombre: proveedor }), [], "scatterPoints")
+      : Promise.resolve([]),
+    needsAnalysis
+      ? settle(getEvolutionByVehicle(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId, patente: requestedFilters.patente }), [], "evolutionByVehicle")
+      : Promise.resolve([]),
+    needsAnalysis
+      ? settle(getWorksiteEquipmentMatrix(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId }), [], "heatmapCells")
+      : Promise.resolve([]),
+    needsAnalysis
+      ? settle(getAnomalyDistribution({ worksiteId: requestedFilters.worksiteId }), ANOMALY_DIST_FALLBACK, "anomalyDistribution")
+      : Promise.resolve(ANOMALY_DIST_FALLBACK),
   ])
   const scatterKm = (scatterPoints ?? []).filter((p) => p.medidoPor === "km")
   const scatterHora = (scatterPoints ?? []).filter((p) => p.medidoPor === "hora")
@@ -107,7 +126,8 @@ export default async function CombustiblesPage({
 
   const detailWhere = buildConsumptionWhere(session, effectiveFilters)
   const [detailRows, detailCountResult] = await Promise.all([
-    settle(
+    needsRecords
+      ? settle(
       db.query.fuelConsumptionRecords.findMany({
         where: detailWhere,
         with: { vehicle: { columns: { id: true, plate: true, type: true } } },
@@ -117,7 +137,8 @@ export default async function CombustiblesPage({
       }),
       [],
       "detailRows",
-    ),
+      )
+      : Promise.resolve([]),
     settle(
       db.select({ count: sql<number>`count(*)` }).from(fuelConsumptionRecords).where(detailWhere),
       [{ count: 0 }],
@@ -179,7 +200,7 @@ export default async function CombustiblesPage({
         }
       />
 
-      {controlOverview && (
+      {needsSummary && controlOverview && (
         <FuelControlOverviewPanel
           data={controlOverview}
           canViewCosts={can(session, "combustibles:view_costs")}
@@ -279,6 +300,7 @@ export default async function CombustiblesPage({
 
       {vista === "analisis" && (
         <>
+      {dashboard && <ConsumptionAnalysisMetrics kpis={dashboard.kpis} />}
       {byEquipmentType.length > 0 && (
         <section aria-labelledby="consumo-por-tipo-title" className="mb-8">
           <div className="mb-3">

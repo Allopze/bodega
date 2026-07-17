@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useActionState } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { Warning, CaretDown, CaretUp } from "@phosphor-icons/react"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -23,6 +24,12 @@ import type {
   DeliveryReturnProductOption,
 } from "./delivery-form.types"
 import { DeliveryFormReturn } from "./delivery-form-return"
+
+function handleNotesInput(event: React.FormEvent<HTMLTextAreaElement>) {
+  const el = event.currentTarget
+  el.style.height = "auto"
+  el.style.height = `${el.scrollHeight}px`
+}
 
 export type {
   DeliveryWorksiteOption,
@@ -46,6 +53,7 @@ export function DeliveryForm({
   initialWorksiteId?: string
   initialRequestItemId?: string
 }) {
+  const router = useRouter()
   const [state, action] = useActionState<ActionState, FormData>(registerWorkerDeliveryAction, INITIAL_STATE)
   const defaultWorksiteId = initialWorksiteId ?? worksites[0]?.id ?? ""
   const [worksiteId, setWorksiteId] = React.useState(defaultWorksiteId)
@@ -57,21 +65,23 @@ export function DeliveryForm({
   const returnSectionRef = React.useRef<HTMLDivElement>(null)
   const notesRef = React.useRef<HTMLTextAreaElement>(null)
 
-  function handleNotesInput(event: React.FormEvent<HTMLTextAreaElement>) {
-    const el = event.currentTarget
-    el.style.height = "auto"
-    el.style.height = `${el.scrollHeight}px`
-  }
-
   React.useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
       if (notesRef.current) notesRef.current.style.height = ""
+      setWorkerId("")
+      setRequestItemId("")
+      setShowReturn(false)
+      setReturnProductId("")
+      router.refresh()
+      window.setTimeout(() => {
+        document.getElementById("delivery-history")?.scrollIntoView({ behavior: "smooth", block: "start" })
+      }, 250)
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
-  }, [state])
+  }, [router, state])
 
   React.useEffect(() => {
     if (showReturn) {

@@ -24,7 +24,9 @@ loadEnvConfig(process.cwd())
 const root = process.cwd()
 const port = Number(process.env.CAPTURE_PORT ?? 3127)
 const baseUrl = `http://127.0.0.1:${port}`
-const outputDir = path.join(root, "audit", "screenshots", "2026-06-09-playwright")
+const outputDir = process.env.CAPTURE_OUTPUT_DIR
+  ? path.resolve(root, process.env.CAPTURE_OUTPUT_DIR)
+  : path.join(root, "audit", "screenshots", `${new Date().toISOString().slice(0, 10)}-playwright`)
 const authSecret = "route-screenshot-audit-secret"
 
 export type RouteTarget = {
@@ -146,23 +148,12 @@ const routeTargets: RouteTarget[] = [
   //   /prevencion/epp/matriz y /stock
   //   /prevencion/salud/protocolos
   // Re-agregar cuando los módulos P3 estén implementados.
-  { slug: "prevencion-iper", path: "/prevencion/iper", auth: true },
-  { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },
-  { slug: "prevencion-capacitaciones", path: "/prevencion/capacitaciones", auth: true },
-  { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
-  { slug: "prevencion-alcotest", path: "/prevencion/alcotest", auth: true },
-  { slug: "prevencion-salud", path: "/prevencion/salud", auth: true },
-  { slug: "prevencion-emergencias", path: "/prevencion/emergencias", auth: true },
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
   { slug: "prevencion-documentacion-nuevo", path: "/prevencion/documentacion/nuevo", auth: true },
   { slug: "prevencion-documentacion-papelera", path: "/prevencion/documentacion/papelera", auth: true },
   { slug: "prevencion-documentacion-revisiones", path: "/prevencion/documentacion/revisiones", auth: true },
   { slug: "prevencion-documentacion-vencimientos", path: "/prevencion/documentacion/vencimientos", auth: true },
-  { slug: "prevencion-contratistas", path: "/prevencion/contratistas", auth: true },
-  { slug: "prevencion-comites", path: "/prevencion/comites", auth: true },
-  { slug: "prevencion-kpis", path: "/prevencion/kpis", auth: true },
-  { slug: "prevencion-permisos", path: "/prevencion/permisos", auth: true },
   { slug: "sst-print", path: "/sst/sst-audit-1/print", auth: true },
   { slug: "ppa-form", path: "/ppa", auth: false },
   { slug: "ppa-result", path: "/ppa/result/capture-ppa-token", auth: false },
@@ -219,10 +210,10 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "analitica", fixtures: ["compras", "combustible", "flota", "stock crítico", "EPP"] },
   { section: "flota", fixtures: ["vehículos activos", "cargas de combustible", "mantenciones"] },
   { section: "mantenciones", fixtures: ["vehículos", "proveedores", "mantenciones registradas"] },
-  { section: "combustibles", fixtures: ["cargas de combustible", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
+  { section: "combustibles", fixtures: ["cargas de combustible", "carga TAE con resultado público", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
-  { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción"] },
+  { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción", "indicadores mensuales de accidentabilidad"] },
   { section: "admin-faenas", fixtures: ["faenas activas"] },
   { section: "admin-plantillas", fixtures: ["plantillas de correo del sistema"] },
   { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos", "importación EPP"] },
@@ -420,6 +411,9 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "p-prev-docs-view", name: "prevention:docs:view", module: "prevention", description: "Ver documentación SST" },
     { id: "p-prev-docs-mng", name: "prevention:docs:manage", module: "prevention", description: "Gestionar documentación SST" },
     { id: "p-prev-docs-arch", name: "prevention:docs:archive", module: "prevention", description: "Archivar documentación SST" },
+    { id: "p-prev-ind-view", name: "prevention:indicadores:view", module: "prevention", description: "Ver indicadores de accidentabilidad" },
+    { id: "p-prev-ind-manage", name: "prevention:indicadores:manage", module: "prevention", description: "Registrar indicadores de accidentabilidad" },
+    { id: "p-prev-ind-close", name: "prevention:indicadores:close", module: "prevention", description: "Cerrar períodos de indicadores" },
     { id: "p-pur-del", name: "purchasing:delete_order", module: "purchasing", description: "Eliminar OC" },
     { id: "p-req-del", name: "requests:delete", module: "requests", description: "Eliminar solicitudes" },
     { id: "p-sst-acomp", name: "sst:evaluate_acompanamiento", module: "sst", description: "Evaluar acompañamiento" },
@@ -1026,6 +1020,24 @@ async function prepareDatabase(captureDbUrl: string) {
     },
   ])
 
+  await db.insert(schema.safetyIndicators).values({
+    id: "indicator-audit-2026-06",
+    worksiteId,
+    year: 2026,
+    month: 6,
+    trabajadores: 38,
+    horasHombre: 7600,
+    accConTiempoPerdido: 1,
+    accSinTiempoPerdido: 2,
+    diasPerdidos: 4,
+    incidentes: 3,
+    danoMaterial: 1,
+    danoAmbiental: 0,
+    updatedByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+
   await db.insert(schema.pdtpPrograms).values({
     id: "prog-audit-1",
     year: 2026,
@@ -1118,6 +1130,16 @@ async function prepareDatabase(captureDbUrl: string) {
     },
   ])
 
+  await db.insert(schema.fuelTaeLoadingPoints).values({
+    id: "tae-point-audit-1",
+    worksiteId,
+    name: "Estanque móvil Mininco",
+    type: "truck_dispenser",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+
   await db.insert(schema.fuelMonthlyStatements).values([
     {
       id: "cc-audit-1",
@@ -1167,6 +1189,35 @@ async function prepareDatabase(captureDbUrl: string) {
       updatedAt: now,
     },
   ])
+
+  await db.insert(schema.fuelTaeSubmissions).values({
+    id: "tae-audit-1",
+    clientSubmissionId: "capture-tae-submission-1",
+    source: "public_pwa",
+    publicResultToken: "capture-tae-result-token",
+    worksiteId,
+    loadingPointId: "tae-point-audit-1",
+    vehicleId: "fuel-veh-audit-1",
+    productId: "fuel-diesel",
+    equipmentCodeSnapshot: "FD-71-22",
+    plateSnapshot: "FD-71-22",
+    loadedAt: "2026-06-09T10:30:00.000Z",
+    submittedAt: now,
+    driverWorkerId: "worker-audit-1",
+    driverNameSnapshot: "Daniela Fuentes",
+    supervisorWorkerId: "worker-audit-2",
+    supervisorNameSnapshot: "Marco Silva",
+    meterType: "odometer",
+    meterReading: 45820,
+    meterReadingSource: "manual",
+    liters: 85.5,
+    status: "validated",
+    reviewNote: "Carga TAE validada para la auditoría visual.",
+    reviewedBy: userId,
+    reviewedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
 
   await db.insert(schema.fuelPayments).values([
     {
@@ -1740,8 +1791,8 @@ async function login(context: BrowserContext) {
 
 async function captureRoute(context: BrowserContext, viewport: string, route: RouteTarget): Promise<CaptureResult> {
   const requestedUrl = `${baseUrl}${route.path}`
-  const relativeScreenshot = path.join("audit", "screenshots", "2026-06-09-playwright", `${viewport}-${route.slug}.png`)
-  const screenshot = path.join(root, relativeScreenshot)
+  const screenshot = path.join(outputDir, `${viewport}-${route.slug}.png`)
+  const relativeScreenshot = path.relative(root, screenshot)
 
   const maxRetries = 2
   for (let attempt = 0; attempt <= maxRetries; attempt++) {

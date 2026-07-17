@@ -56,6 +56,14 @@ export function IndicadoresDashboard({
   const totalsRates = calcRates(totals)
   const selectedWorksiteName = worksites.find((worksite) => worksite.id === selectedWorksiteId)?.name
   const hasRecordsForSelection = !isTotalView && indicatorRows.some((row) => row.worksiteId === selectedWorksiteId)
+  const suggestedMonth = useMemo(() => {
+    const currentMonth = new Date().getMonth() + 1
+    if (year === currentYear) return currentMonth
+    return Array.from({ length: 12 }, (_, index) => index + 1).find((month) => !indicatorRows.some((row) => (
+      row.worksiteId === selectedWorksiteId && row.year === year && row.month === month
+    ))) ?? 1
+  }, [currentYear, indicatorRows, selectedWorksiteId, year])
+  const suggestedMonthLabel = MONTHS[suggestedMonth - 1]
 
   function handleYearChange(nextYear: string) {
     router.push(`/prevencion/indicadores?year=${nextYear}`)
@@ -149,8 +157,8 @@ export function IndicadoresDashboard({
                     Sin registros para {selectedWorksiteName ?? "esta faena"} en {year}.
                   </p>
                   {canManage && (
-                    <Button type="button" size="sm" onClick={() => setEditingMonth(1)}>
-                      Registrar enero
+                    <Button type="button" size="sm" onClick={() => setEditingMonth(suggestedMonth)}>
+                      {year === currentYear ? `Registrar mes actual · ${suggestedMonthLabel}` : `Registrar ${suggestedMonthLabel}`}
                     </Button>
                   )}
                 </div>

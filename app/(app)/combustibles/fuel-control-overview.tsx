@@ -26,9 +26,16 @@ interface FuelControlOverviewProps {
   period: { fromDate: string; toDate: string; worksiteId?: string; source?: string; plate?: string; associated?: "yes" | "no" }
 }
 
+const CHANNEL_BAR_COLORS = {
+  neutral: "bg-[var(--color-text-faint)]",
+  primary: "bg-[var(--color-primary)]",
+  info: "bg-[var(--color-info-ink)]",
+}
+
 export function FuelControlOverviewPanel({ data, canViewCosts, tct, period }: FuelControlOverviewProps) {
   const taeHref = buildHref("/combustibles/tae", period)
   const reconciliationHref = buildHref("/combustibles/tae/conciliacion", period)
+  const recordsHref = `${buildHref("/combustibles", period)}&vista=registros`
   const maxWorksiteVolume = Math.max(
     1,
     ...data.byWorksite.flatMap((row) => [row.billedLiters, row.taeLiters, row.tctLiters]),
@@ -76,7 +83,7 @@ export function FuelControlOverviewPanel({ data, canViewCosts, tct, period }: Fu
           value={formatQty(Math.round(tct.liters), "L")}
           detail={`${formatQty(tct.transactions)} transacciones · ${formatQty(tct.vehicles)} equipos`}
           trend={tct.variationLitersPct}
-          href="#analisis-tct"
+          href={recordsHref}
         />
       </div>
 
@@ -149,16 +156,11 @@ function ChannelSummary({ icon, label, value, detail, trend, href }: {
 }
 
 function ChannelBar({ label, value, max, tone }: { label: string; value: number; max: number; tone: "neutral" | "primary" | "info" }) {
-  const colors = {
-    neutral: "bg-[var(--color-text-faint)]",
-    primary: "bg-[var(--color-primary)]",
-    info: "bg-[var(--color-info-ink)]",
-  }
   const width = value <= 0 ? 0 : Math.max(2, (value / max) * 100)
   return (
     <span className="grid grid-cols-[4.5rem_minmax(0,1fr)_5.5rem] items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
       <span>{label}</span>
-      <span className="h-1.5 overflow-hidden bg-[var(--color-surface-3)]"><span className={`block h-full ${colors[tone]}`} style={{ width: `${width}%` }} /></span>
+      <span className="h-1.5 overflow-hidden bg-[var(--color-surface-3)]"><span className={`block h-full ${CHANNEL_BAR_COLORS[tone]}`} style={{ width: `${width}%` }} /></span>
       <span className="text-right font-mono tabular-nums">{formatQty(Math.round(value), "L")}</span>
     </span>
   )

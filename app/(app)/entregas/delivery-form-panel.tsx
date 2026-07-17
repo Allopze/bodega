@@ -3,6 +3,7 @@
 import * as React from "react"
 import { CaretDown, Plus } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
+import { OPEN_DELIVERY_FORM_EVENT } from "./delivery-form-trigger"
 
 const STORAGE_KEY = "entregas:form-open"
 
@@ -15,22 +16,33 @@ const STORAGE_KEY = "entregas:form-open"
  */
 export function DeliveryFormPanel({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(true)
+  const panelRef = React.useRef<HTMLElement>(null)
 
   React.useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY)
     if (stored === "closed") setOpen(false)
   }, [])
 
+  React.useEffect(() => {
+    function openAndFocus() {
+      setOpen(true)
+      window.localStorage.setItem(STORAGE_KEY, "open")
+      window.requestAnimationFrame(() => {
+        panelRef.current?.querySelector<HTMLElement>("select, input, textarea, button")?.focus()
+      })
+    }
+    window.addEventListener(OPEN_DELIVERY_FORM_EVENT, openAndFocus)
+    return () => window.removeEventListener(OPEN_DELIVERY_FORM_EVENT, openAndFocus)
+  }, [])
+
   function toggle() {
-    setOpen((prev) => {
-      const next = !prev
-      window.localStorage.setItem(STORAGE_KEY, next ? "open" : "closed")
-      return next
-    })
+    const next = !open
+    setOpen(next)
+    window.localStorage.setItem(STORAGE_KEY, next ? "open" : "closed")
   }
 
   return (
-    <section className="flex flex-col gap-3">
+    <section ref={panelRef} className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>

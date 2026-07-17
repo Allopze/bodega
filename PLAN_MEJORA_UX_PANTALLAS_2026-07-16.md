@@ -6,6 +6,14 @@
 
 **Criterio rector — el "test de los 5 segundos":** al abrir la pantalla, sin scrollear, el usuario debe poder responder: *(1) ¿qué es esto?, (2) ¿qué estado tiene mi trabajo?, (3) ¿cuál es la acción que se espera de mí?* Toda ficha de este plan usa ese test como criterio de aceptación.
 
+## Estado de implementación — 2026-07-16
+
+**Implementación técnica cerrada.** Se aplicaron los pendientes: resumen de combustibles separado por vistas y limitado a 4 KPI (secundarios en Análisis), consultas aisladas por vista y enlace TCT correcto; PDTP anual compacto, sticky y con estados legibles; mantenciones en Sheet; entregas plegables, persistentes y con atajo de cabecera; CTA del mes actual en indicadores; PPA sin filtro de estado duplicado; y filas de flota navegables con columnas condicionales.
+
+También se completó la cobertura de captura: el fixture TAE ahora incluye un resultado público válido, Indicadores tiene permisos y datos de auditoría, y el output puede dirigirse con `CAPTURE_OUTPUT_DIR`. La verificación final de build y `npm run screenshots` pasó con **242/242** rutas en desktop y móvil (`audit/screenshots/2026-07-17-playwright/manifest.json`).
+
+**Pendiente sólo de aceptación externa:** realizar el test de 5 segundos con los perfiles operativos indicados en la sección 7. No queda una corrección de implementación abierta en este plan.
+
 ---
 
 ## 1. Resumen ejecutivo

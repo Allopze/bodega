@@ -13,6 +13,11 @@ cada actividad ejecutada.
 5. Para verificar una ejecucion, abre `Ver verificacion` en la celda
    correspondiente.
 
+En `Vista anual`, las columnas N° y Actividad quedan visibles al desplazarte
+horizontalmente. Usa `Ver programa y responsables` dentro de la actividad para
+consultar ese contexto sin ensanchar la matriz. Los períodos y estados se
+muestran como, por ejemplo, `Jul · Sem 2` y `Enviada`.
+
 ## Checklist de verificacion
 
 1. En la ficha de una actividad (modo edicion del programa), abre la pestana

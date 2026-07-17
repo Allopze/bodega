@@ -6,8 +6,8 @@ preventivos. Al entrar desde Inicio se muestran primero los casos `Por revisar`.
 ## Como usarla
 
 1. Entra a `Para, Piensa y Actúa` o usa `PPA por revisar` desde Inicio.
-2. Revisa primero `Por revisar` y `Detenidos`; las métricas y rankings sirven
-   como contexto posterior.
+2. Revisa primero `Por revisar` y `Detenidos`; los contadores viven en esas
+   pestañas. Los rankings aparecen después de la lista como contexto.
 3. Usa los filtros de estado, faena, texto o fechas si necesitas acotar la
    lista. La dirección del navegador guarda esos filtros y la página actual.
 4. Abre un caso desde la lista. El enlace de regreso del detalle conserva el

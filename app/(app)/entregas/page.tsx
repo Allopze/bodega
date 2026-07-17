@@ -26,6 +26,7 @@ import { and, asc, desc, eq, inArray, isNotNull, count } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
 import { DeliveryFormPanel } from "./delivery-form-panel"
+import { DeliveryFormTrigger } from "./delivery-form-trigger"
 
 export const metadata: Metadata = { title: "Entregas" }
 
@@ -281,6 +282,7 @@ export default async function Page({
             { label: "Entregas" },
           ]} />
         }
+        actions={deliverableItems.length > 0 ? <DeliveryFormTrigger /> : undefined}
       />
 
       <div className="flex flex-col gap-6">
@@ -320,7 +322,7 @@ export default async function Page({
         )}
 
         {/* ── Historial de entregas ── */}
-        <section className="flex flex-col gap-3">
+        <section id="delivery-history" className="flex flex-col gap-3 scroll-mt-24">
           <div>
             <h2 className="text-base font-semibold text-(--color-text)">Historial de entregas</h2>
             <p className="mt-1 text-sm text-(--color-text-muted)">

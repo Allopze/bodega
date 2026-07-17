@@ -31,10 +31,15 @@ vi.mock("./indicadores-edit-modal", () => ({
 
 import { IndicadoresDashboard } from "./indicadores-dashboard"
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 describe("IndicadoresDashboard", () => {
   it("offers explicit register actions instead of relying on row clicks", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-16T12:00:00.000Z"))
     render(
       <IndicadoresDashboard
         worksites={[{ id: "faena-1", name: "Faena Norte" }]}
@@ -46,10 +51,10 @@ describe("IndicadoresDashboard", () => {
     )
 
     expect(screen.getByText("Sin registros para Faena Norte en 2026.")).toBeDefined()
-    const registerButtons = screen.getAllByRole("button", { name: "Registrar" })
-    expect(registerButtons).toHaveLength(24)
+    expect(screen.getAllByRole("button", { name: "Registrar" })).toHaveLength(24)
+    const registerCurrentMonth = screen.getByRole("button", { name: "Registrar mes actual · Julio" })
 
-    fireEvent.click(registerButtons[0]!)
-    expect(screen.getByText("Editor del mes 1")).toBeDefined()
+    fireEvent.click(registerCurrentMonth)
+    expect(screen.getByText("Editor del mes 7")).toBeDefined()
   })
 })

@@ -81,6 +81,16 @@ describe("capture-all-routes route inventory", () => {
     ]))
     expect(getCaptureSeedCoverage().every((area) => area.fixtures.length > 0)).toBe(true)
   })
+
+  it("keeps a public TAE result backed by a named capture fixture", () => {
+    expect(getCaptureRoutes()).toContainEqual(expect.objectContaining({
+      slug: "tae-resultado",
+      path: "/tae/resultado/capture-tae-result-token",
+      auth: false,
+    }))
+    expect(getCaptureSeedCoverage().find((area) => area.section === "combustibles")?.fixtures)
+      .toContain("carga TAE con resultado público")
+  })
 })
 
 function discoverConcretePagePaths() {

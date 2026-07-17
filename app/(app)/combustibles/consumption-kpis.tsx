@@ -1,4 +1,4 @@
-import { Drop, CurrencyCircleDollar, Gauge, ArrowsClockwise, Car, ChartLineUp, WarningDiamond } from "@phosphor-icons/react/dist/ssr"
+import { Drop, CurrencyCircleDollar, ArrowsClockwise, WarningDiamond } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/app/(app)/analitica/analytics-kpi-card"
 import { formatCLP, formatQty } from "@/lib/utils"
 import type { ConsumptionDashboardData } from "@/lib/combustibles/consumption-dashboard"
@@ -23,30 +23,10 @@ export function ConsumptionKpis({ kpis }: { kpis: ConsumptionDashboardData["kpis
         tone={kpis.variacionMontoPct != null && kpis.variacionMontoPct >= 30 ? "signal" : "neutral"}
       />
       <KpiCard
-        icon={<Gauge size={18} />}
-        label="Precio promedio"
-        value={kpis.precioPromedioUnidad != null ? `${formatCLP(kpis.precioPromedioUnidad)}/L` : "—"}
-        detail="Monto / cantidad consumida"
-        glossary="Precio promedio por unidad = monto total dividido por cantidad total consumida en el período."
-      />
-      <KpiCard
         icon={<ArrowsClockwise size={18} />}
         label="Transacciones"
         value={formatQty(kpis.totalTransacciones)}
         detail="Cargas registradas en el período"
-      />
-      <KpiCard
-        icon={<Car size={18} />}
-        label="Patentes únicas"
-        value={formatQty(kpis.patentesUnicas)}
-        detail="Vehículos/equipos con consumo"
-      />
-      <KpiCard
-        icon={<ChartLineUp size={18} />}
-        label="Rendimiento promedio"
-        value={kpis.rendimientoPromedioPonderado > 0 ? kpis.rendimientoPromedioPonderado.toFixed(2) : "—"}
-        detail="Ponderado por cantidad consumida"
-        glossary="Promedio ponderado: Σ(rendimiento × cantidad) / Σ cantidad, para que las patentes con más consumo pesen más en el promedio."
       />
       <KpiCard
         icon={<WarningDiamond size={18} />}
@@ -56,5 +36,28 @@ export function ConsumptionKpis({ kpis }: { kpis: ConsumptionDashboardData["kpis
         tone={kpis.patentesSinAsociacion > 0 ? "signal" : "neutral"}
       />
     </section>
+  )
+}
+
+/** Métricas secundarias: acompañan el análisis sin competir con las 4 decisiones del resumen. */
+export function ConsumptionAnalysisMetrics({ kpis }: { kpis: ConsumptionDashboardData["kpis"] }) {
+  const rendimiento = kpis.rendimientoPromedioPonderado > 0 ? kpis.rendimientoPromedioPonderado.toFixed(2) : "—"
+  const precio = kpis.precioPromedioUnidad != null ? `${formatCLP(kpis.precioPromedioUnidad)}/L` : "—"
+
+  return (
+    <dl className="mb-7 flex flex-wrap gap-x-6 gap-y-2 border-y border-[var(--color-border)] py-3 text-sm">
+      <div className="flex items-baseline gap-2">
+        <dt className="text-[var(--color-text-muted)]">Precio promedio</dt>
+        <dd className="font-mono font-semibold tabular-nums">{precio}</dd>
+      </div>
+      <div className="flex items-baseline gap-2">
+        <dt className="text-[var(--color-text-muted)]">Patentes únicas</dt>
+        <dd className="font-mono font-semibold tabular-nums">{formatQty(kpis.patentesUnicas)}</dd>
+      </div>
+      <div className="flex items-baseline gap-2">
+        <dt className="text-[var(--color-text-muted)]" title="Promedio ponderado por cantidad consumida">Rendimiento promedio</dt>
+        <dd className="font-mono font-semibold tabular-nums">{rendimiento}</dd>
+      </div>
+    </dl>
   )
 }

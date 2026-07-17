@@ -31,8 +31,8 @@ function RankPanel({
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4">
       <h3 className="mb-3 text-eyebrow">{title}</h3>
       <ul className="flex flex-col gap-2">
-        {rows.map((r, i) => (
-          <li key={i} className="flex flex-col gap-1">
+        {rows.map((r) => (
+          <li key={`${title}-${String(r.label)}`} className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between gap-2 text-sm">
               <span className="truncate text-[var(--color-text-muted)]">{r.label}</span>
               <span className="font-mono font-semibold tabular-nums">{r.count}</span>
@@ -91,8 +91,8 @@ export default async function PpaPanelPage({ searchParams }: { searchParams: Pro
       <div className="flex flex-col gap-8">
         <PpaMetricBar stats={stats} />
 
-        {(stats.topReasons.length > 0 || stats.topTareas.length > 0 || stats.topFaenas.length > 0) && (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {(stats.topReasons.length > 0 || stats.topFaenas.length > 0) && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <RankPanel
               title="Motivos de alerta más frecuentes"
               rows={stats.topReasons.map((r) => ({
@@ -103,10 +103,6 @@ export default async function PpaPanelPage({ searchParams }: { searchParams: Pro
             <RankPanel
               title="Faenas con más desviaciones"
               rows={stats.topFaenas.map((f) => ({ label: f.worksiteName, count: f.count }))}
-            />
-            <RankPanel
-              title="Tareas con más PPA"
-              rows={stats.topTareas.map((t) => ({ label: tipoTrabajoLabel(t.tipoTrabajo), count: t.count }))}
             />
           </div>
         )}
@@ -121,6 +117,13 @@ export default async function PpaPanelPage({ searchParams }: { searchParams: Pro
           canReview={canReview}
           stats={stats}
         />
+
+        {stats.topTareas.length > 0 && (
+          <RankPanel
+            title="Tareas con más PPA"
+            rows={stats.topTareas.map((t) => ({ label: tipoTrabajoLabel(t.tipoTrabajo), count: t.count }))}
+          />
+        )}
       </div>
     </PageContainer>
   )
