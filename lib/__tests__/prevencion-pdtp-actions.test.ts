@@ -269,12 +269,14 @@ describe("Program CRUD actions", () => {
     expect(res.ok).toBe(false)
   })
 
-  it("createPdtpProgramAction crea programa válido", async () => {
+  it("createPdtpProgramAction crea programa válido y redirige al editor", async () => {
+    // redirect() server-side en éxito, no un router.push cliente — evita la
+    // carrera con revalidatePath que dejaba el form varado en /nuevo (ver
+    // AUDITORIA_INTEGRAL_CHOME.md Pasada 9).
     const fd = makeFormData({ year: "2026", title: "Programa 2026" })
-    const res = await createPdtpProgramAction(null, fd)
-    expect(res.ok).toBe(true)
-    expect(res.programId).toBe("prog-1")
+    await expect(createPdtpProgramAction(null, fd)).rejects.toThrow("REDIRECT:")
     expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
+    expect(mockRedirect).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/editar")
   })
 
   it("createPdtpProgramAction retorna error con año inválido", async () => {

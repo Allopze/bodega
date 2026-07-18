@@ -52,9 +52,8 @@ export function PdtpOverrideForm(props: Props) {
         <Tooltip side="top" content="Fijar meta por faena">
           <Button
             type="button"
-            size="sm"
+            size="icon-mobile"
             variant="ghost"
-            className="h-8 w-8 p-0"
             aria-label="Fijar meta por faena"
           >
             <Sliders size={14} />

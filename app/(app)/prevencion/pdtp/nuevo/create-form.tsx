@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { SubmitButton } from "@/components/admin/submit-button"
-import { toast } from "@/lib/toast"
 import { createPdtpProgramAction } from "../actions"
 
 const CURRENT_YEAR = new Date().getFullYear()
@@ -55,16 +54,6 @@ export function PdtpCreateProgramForm({
       setTitle(`Programa de Trabajo Preventivo SG-SST ${year}`)
     }
   }, [year, titleManuallyEdited])
-
-  // ── Navegar al editor después de crear ────────────────────────────────────
-  React.useEffect(() => {
-    if (state?.ok && state.programId) {
-      toast.success("¡Programa creado!", {
-        description: "Redirigiendo al editor para completar actividades…",
-      })
-      router.push(`/prevencion/pdtp/${state.programId}/editar`)
-    }
-  }, [state, router])
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.value === "") {
@@ -395,18 +384,6 @@ export function PdtpCreateProgramForm({
             {state.message}
           </p>
         )}
-        {state?.ok && state.programId && (
-          <p
-            role="status"
-            className="rounded-[var(--radius)] border border-[var(--color-success-line)] bg-[var(--color-success-tint)] px-3 py-2 text-sm text-[var(--color-success)]"
-          >
-            <span className="flex items-center gap-2">
-              <CheckCircle size={16} weight="fill" />
-              ¡Programa creado! Redirigiendo al editor…
-            </span>
-          </p>
-        )}
-
         {/* ── Acciones ──────────────────────────────────────────────────── */}
         <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-5 sm:flex-row sm:items-center sm:justify-between">
           <Button type="button" variant="ghost" onClick={() => router.back()}>

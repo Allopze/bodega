@@ -47,7 +47,8 @@ export function EvidenceThumbnail({ evidence }: Props) {
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="absolute top-4 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            aria-label="Cerrar evidencia"
+            className="absolute top-4 right-4 z-10 flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
           >
             <X size={18} />
           </button>

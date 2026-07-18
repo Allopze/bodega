@@ -94,7 +94,7 @@ export function FolderTableRow({
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" size="icon" variant="ghost" aria-label={`Acciones de ${folder.name}`}>
+              <Button type="button" size="icon-mobile" variant="ghost" aria-label={`Acciones de ${folder.name}`}>
                 <DotsThreeVertical size={16} />
               </Button>
             </DropdownMenuTrigger>

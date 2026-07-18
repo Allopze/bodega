@@ -124,7 +124,7 @@ export function UserInvitationsPanel({ invitations }: { invitations: InvitationR
             {copied ? <Check size={14} /> : <Copy size={14} />}
             {copied ? "Copiado" : "Copiar"}
           </Button>
-          <Button type="button" size="icon-sm" variant="ghost" onClick={() => setCopyUrl(null)} aria-label="Cerrar enlace">
+          <Button type="button" size="icon-mobile-sm" variant="ghost" onClick={() => setCopyUrl(null)} aria-label="Cerrar enlace">
             <X size={16} />
           </Button>
         </div>

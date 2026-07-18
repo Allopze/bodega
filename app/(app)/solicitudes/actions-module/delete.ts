@@ -1,7 +1,6 @@
 "use server"
 
 import { revalidatePath, revalidateTag } from "next/cache"
-  revalidateTag("badge-counts", { expire: 0 })
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests } from "@/db/schema"

@@ -99,7 +99,7 @@ export const DocumentTile = React.memo(React.forwardRef<HTMLDivElement, Document
               draggable={false}
               onClick={onAction}
               aria-label={`Acciones de ${name}`}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--color-chrome) hover:text-(--color-text)"
+              className="inline-flex h-11 w-11 sm:h-7 sm:w-7 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--color-chrome) hover:text-(--color-text)"
             >
               <DotsThreeVertical size={18} weight="bold" />
             </button>

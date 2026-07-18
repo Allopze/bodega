@@ -12,6 +12,8 @@ async function createAndSubmitRepuesto(page: Page) {
   await page.getByPlaceholder("OEM o fabricante").fill("OEM-FLOW-001")
   await page.getByPlaceholder("Ej: Retroexcavadora, Camión grúa...").fill("Retroexcavadora E2E")
   await page.getByPlaceholder("Ej: ABCD-12").fill("FLOW-REP")
+  // submitRequest exige >= 3 cotizaciones o una justificación en notas.
+  await page.getByPlaceholder("Observaciones, contexto de la solicitud...").fill("E2E: menos de 3 cotizaciones, justificado en la prueba")
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
@@ -28,6 +30,8 @@ async function createAndSubmitServicio(page: Page) {
   await page.getByPlaceholder("Ej: Sector norte, sala de máquinas...").fill("Sala compresores E2E")
   await page.getByPlaceholder("Ej: Retroexcavadora, Generador...").fill("Compresor E2E")
   await page.getByPlaceholder("Ej: ABCD-12").fill("FLOW-SRV")
+  // submitRequest exige >= 3 cotizaciones o una justificación en notas.
+  await page.getByPlaceholder("Observaciones, contexto de la solicitud...").fill("E2E: menos de 3 cotizaciones, justificado en la prueba")
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
@@ -52,7 +56,7 @@ test.describe("Repuestos/Servicios — aprobación y visibilidad en compras", ()
 
     // The item should eventually be purchasable
     await page.goto("/compras/nueva")
-    await expect(page.locator("h1")).toContainText(/nueva orden/i)
+    await expect(page.locator("h1").first()).toContainText(/nueva orden/i)
     // At minimum, the page should load without error
   })
 
@@ -67,21 +71,23 @@ test.describe("Repuestos/Servicios — aprobación y visibilidad en compras", ()
     }
 
     await page.goto("/compras/nueva")
-    await expect(page.locator("h1")).toContainText(/nueva orden/i)
+    await expect(page.locator("h1").first()).toContainText(/nueva orden/i)
   })
 
   test("detalle de repuesto muestra panel de cotizaciones", async ({ page }) => {
     await createAndSubmitRepuesto(page)
 
-    // The detail page should show a quotation panel
-    await expect(page.getByText("Cotizaciones")).toBeVisible()
-    await expect(page.getByText("Subir cotización")).toBeVisible()
+    // The detail page should show a quotation panel. The request is already
+    // submitted (not draft/returned), so the "Agregar cotización" upload
+    // control is correctly hidden — isEditable-gated in quotation-panel.tsx.
+    await expect(page.getByRole("heading", { name: "Cotizaciones" })).toBeVisible()
+    await expect(page.getByText("No hay cotizaciones adjuntas.")).toBeVisible()
   })
 
   test("detalle de servicio muestra panel de cotizaciones", async ({ page }) => {
     await createAndSubmitServicio(page)
 
-    await expect(page.getByText("Cotizaciones")).toBeVisible()
-    await expect(page.getByText("Subir cotización")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Cotizaciones" })).toBeVisible()
+    await expect(page.getByText("No hay cotizaciones adjuntas.")).toBeVisible()
   })
 })

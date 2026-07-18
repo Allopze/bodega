@@ -147,7 +147,7 @@ export function EvaluationCard({
               {permissions.canDelete && (
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon-mobile-sm"
                   className="text-[var(--color-text-subtle)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
                   aria-label="Eliminar evaluación"
                   onClick={() => onDelete(evaluation)}

@@ -345,7 +345,12 @@ describe("PdtpCreateProgramForm", () => {
   })
 
   describe("E: Form submission", () => {
-    it("submit exitoso: llama a la action, redirige y muestra toast", async () => {
+    it("submit: llama a la action con el FormData correcto", async () => {
+      // El redirect al editor ahora ocurre server-side (redirect() dentro de
+      // createPdtpProgramAction, no un router.push cliente tras useActionState)
+      // para evitar la carrera con revalidatePath — ver AUDITORIA_INTEGRAL_CHOME.md
+      // Pasada 8/9. Ese redirect no es observable desde este test de componente,
+      // que mockea la action entera; sólo se verifica el FormData enviado.
       const mockAction = vi.mocked(
         (await import("../actions")).createPdtpProgramAction,
       )
@@ -359,7 +364,6 @@ describe("PdtpCreateProgramForm", () => {
         fireEvent.submit(form)
       })
 
-      // 1. Action was called with correct FormData
       await waitFor(() => {
         expect(mockAction).toHaveBeenCalled()
       })
@@ -370,23 +374,6 @@ describe("PdtpCreateProgramForm", () => {
       )
       expect(formData.get("userId")).toBe("user-1")
       expect(formData.get("copySheetsFromProgramId")).toBe("")
-
-      // 2. Toast de éxito
-      await waitFor(() => {
-        expect(toast.success).toHaveBeenCalledWith(
-          "¡Programa creado!",
-          expect.objectContaining({
-            description: expect.stringContaining("Redirigiendo"),
-          }),
-        )
-      })
-
-      // 3. Redirección al editor
-      await waitFor(() => {
-        expect(mockRouter.push).toHaveBeenCalledWith(
-          "/prevencion/pdtp/prog-new-123/editar",
-        )
-      })
     })
 
     it("submit exitoso: envía copySheetsFromProgramId al copiar de un programa", async () => {

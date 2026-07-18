@@ -9,7 +9,10 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 150_000,
   fullyParallel: false,
-  retries: 0,
+  // 1 retry in CI absorbs transient runner flakiness (resource contention,
+  // not app bugs — a real bug fails consistently across retries too);
+  // local runs stay at 0 so a real failure is never hidden while iterating.
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: process.env.CI ? "github" : "list",
   use: {

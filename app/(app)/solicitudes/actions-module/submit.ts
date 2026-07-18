@@ -1,7 +1,6 @@
 "use server"
 
 import { revalidatePath, revalidateTag } from "next/cache"
-  revalidateTag("badge-counts", { expire: 0 })
 import { redirect } from "next/navigation"
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"

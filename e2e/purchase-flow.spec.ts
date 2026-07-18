@@ -70,10 +70,15 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   await createCatalogRequest(page, "Rechazo E2E", "2", { freeText: true })
 
   await page.goto("/aprobaciones")
-  await page.getByRole("button", { name: "Rechazar" }).click()
+  // Scoped to this test's own item: other tests in the full suite leave
+  // pending approvals in the shared E2E DB, so an unscoped "Rechazar" click
+  // can race against unrelated items (intermittent strict-mode violations /
+  // dialog-not-found timeouts under the full run).
+  const ownItem = page.getByRole("listitem").filter({ hasText: "Rechazo E2E" })
+  await ownItem.getByRole("button", { name: "Rechazar" }).click()
   await page.getByPlaceholder("Explica por qué este ítem no puede ser aprobado...").fill("No corresponde comprar este implemento")
   await page.getByRole("button", { name: "Confirmar rechazo" }).click()
-  await expect(page.getByText("Sin ítems pendientes")).toBeVisible({ timeout: 30_000 })
+  await expect(ownItem).not.toBeVisible({ timeout: 30_000 })
 
   await page.goto("/trazabilidad?estado=rejected")
   await expect(page.getByRole("row", { name: /Rechazo E2E.*Rechazado/ }).first()).toBeVisible()

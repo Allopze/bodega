@@ -33,6 +33,10 @@ if (offenders.length > 0) {
 }
 
 const worst = [...stats].sort((a, b) => b.firstLoadUncompressedJsBytes - a.firstLoadUncompressedJsBytes)[0]
-console.log(
-  `Bundle budget OK: ${stats.length} rutas analizadas, peor caso ${worst.route} = ${(worst.firstLoadUncompressedJsBytes / 1024 / 1024).toFixed(2)} MB (presupuesto ${(BUDGET_BYTES / 1024 / 1024).toFixed(2)} MB).`,
-)
+if (worst) {
+  console.log(
+    `Bundle budget OK: ${stats.length} rutas analizadas, peor caso ${worst.route} = ${(worst.firstLoadUncompressedJsBytes / 1024 / 1024).toFixed(2)} MB (presupuesto ${(BUDGET_BYTES / 1024 / 1024).toFixed(2)} MB).`,
+  )
+} else {
+  console.log("Bundle budget OK: sin rutas en el reporte.")
+}

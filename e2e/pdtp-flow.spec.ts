@@ -33,9 +33,6 @@ test.describe("PDTP — Creación y edición de programas", () => {
     ).toBeVisible()
     await expect(page.getByLabel("Título del programa")).toBeVisible()
 
-    // Summary section
-    await expect(page.getByText("Resumen antes de crear")).toBeVisible()
-
     // Submit button
     await expect(page.getByRole("button", { name: "Crear programa" })).toBeVisible()
   })
@@ -54,7 +51,7 @@ test.describe("PDTP — Creación y edición de programas", () => {
     await expect(titleInput).toHaveValue("Mi Programa de Prueba")
 
     // Change year and verify summary updates
-    await page.getByRole("button", { name: "Otro año…" }).click()
+    await page.getByRole("radio", { name: "Otro año…" }).click()
     const yearInput = page.getByLabel("Año personalizado")
     await yearInput.fill("2027")
     await expect(page.getByText("2027", { exact: true }).first()).toBeVisible()
@@ -63,8 +60,7 @@ test.describe("PDTP — Creación y edición de programas", () => {
     await expect(page.getByText("Pendiente")).not.toBeVisible()
   })
 
-  // FIXME: El form se queda en /nuevo en vez de redirigir a /editar
-  test.skip("el formulario crea un programa y navega al editor", async ({ page }) => {
+  test("el formulario crea un programa y navega al editor", async ({ page }) => {
     await page.goto("/prevencion/pdtp/nuevo")
 
     const titleInput = page.getByLabel("Título del programa")
@@ -83,8 +79,7 @@ test.describe("PDTP — Creación y edición de programas", () => {
     await expect(page.getByRole("tab", { name: /Metadatos|Hoja|Actividad|Planificación/ }).first()).toBeVisible()
   })
 
-  // FIXME: Depende del test anterior que está skipeado
-  test.skip("el editor muestra las tabs del builder correctamente", async ({ page }) => {
+  test("el editor muestra las tabs del builder correctamente", async ({ page }) => {
     // First create a program
     await page.goto("/prevencion/pdtp/nuevo")
     await page.getByLabel("Título del programa").fill("Programa Tabs E2E")
@@ -101,7 +96,7 @@ test.describe("PDTP — Creación y edición de programas", () => {
     // Click on Metadatos tab and verify the form fields
     await page.getByRole("tab", { name: "Metadatos" }).click()
     await expect(page.getByLabel("Título del programa")).toBeVisible()
-    await expect(page.getByLabel("Estado de cumplimiento mínimo (%)")).toBeVisible()
+    await expect(page.getByLabel("Meta de cumplimiento")).toBeVisible()
   })
 })
 
@@ -109,9 +104,9 @@ test.describe("PDTP — Creación y edición de programas", () => {
  * E2E: PDTP — flujo checklist → plan de acción (Gap 5 del checklist de
  * seguimiento). Usa el fixture sembrado por e2e/setup-db.ts
  * (pdtp-prog-e2e / pdtp-act-e2e / pdtp-exec-e2e con un checklist activo de
- * 1 ítem) en vez de crear el programa por UI — el flujo de creación tiene
- * un bug conocido (ver test.skip arriba) que no es responsabilidad de este
- * spec. Solo verifica el camino UI; el cálculo de % y las reglas de negocio
+ * 1 ítem) en vez de crear el programa por UI — evita acoplar este spec al
+ * flujo de creación, cubierto por separado más arriba. Solo verifica el
+ * camino UI; el cálculo de % y las reglas de negocio
  * ya están cubiertos por lib/__tests__/pdtp-checklist-action-plan.test.ts.
  */
 test.describe("PDTP — Checklist de verificación y plan de acción", () => {

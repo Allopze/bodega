@@ -1,7 +1,6 @@
 "use server"
 
 import { revalidatePath, revalidateTag } from "next/cache"
-  revalidateTag("badge-counts", { expire: 0 })
 import type { Session } from "next-auth"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"

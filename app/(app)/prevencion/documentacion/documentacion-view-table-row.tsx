@@ -83,7 +83,7 @@ export function DocumentTableRow({
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" size="icon" variant="ghost" aria-label={`Acciones de ${d.title}`}>
+              <Button type="button" size="icon-mobile" variant="ghost" aria-label={`Acciones de ${d.title}`}>
                 <DotsThreeVertical size={16} />
               </Button>
             </DropdownMenuTrigger>

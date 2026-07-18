@@ -10,7 +10,8 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Full E2E suite (~10-16 min) added after build; prior steps run ~10-12 min.
+    timeout-minutes: 45
     strategy:
       matrix:
         node-version: [20]
@@ -80,6 +81,16 @@ jobs:
           APPROVALS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --reporter=verbose lib/__tests__/*concurrency-postgres.test.ts 2>&1
 
+      - name: Cross-faena scope tests (real Postgres)
+        env:
+          TRABAJADORES_SCOPE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          COMBUSTIBLES_SCOPE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          QUOTATION_SCOPE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          TRABAJADORES_SCOPE_ALLOW_DESTRUCTIVE_RESET: "true"
+          COMBUSTIBLES_SCOPE_ALLOW_DESTRUCTIVE_RESET: "true"
+          QUOTATION_SCOPE_ALLOW_DESTRUCTIVE_RESET: "true"
+        run: npx vitest run --reporter=verbose lib/__tests__/*scope-postgres.test.ts 2>&1
+
       - name: Performance queries (SLO 1000ms)
         env:
           PERF_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
@@ -95,8 +106,5 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: E2E accessibility audit
-        run: npx playwright test e2e/accessibility.spec.ts
-
-      - name: E2E critical route smoke
-        run: npx playwright test e2e/ci-smoke.spec.ts
+      - name: E2E full suite
+        run: npx playwright test

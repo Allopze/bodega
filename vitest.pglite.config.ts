@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": projectRoot,
+      "next/server": path.join(projectRoot, "node_modules/next/server.js"),
     },
   },
   test: {
@@ -21,6 +22,7 @@ export default defineConfig({
       DATABASE_URL: "postgres:///bodega_test",
       PGHOST:       "/var/run/postgresql",
     },
+    server: { deps: { inline: ["next-auth"] } },
     // Secuencial: PGlite satura CPU en paralelo
     fileParallelism: false,
     testTimeout: 20_000,

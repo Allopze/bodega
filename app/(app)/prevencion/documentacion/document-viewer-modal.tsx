@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react"
 import Link from "next/link"
 import { ArrowSquareOut, SpinnerGap, X, ArrowLeft, Warning } from "@phosphor-icons/react"
+import { Button } from "@/components/ui/button"
 import { Dialog, DialogOverlay, DialogContent } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { getDocumentDetailAction } from "./actions"
@@ -56,14 +57,15 @@ export function DocumentViewerModal({ documentId, open, onClose }: Props) {
       >
         {/* Header */}
         <div className="flex shrink-0 items-center gap-3 border-b border-(--color-border) px-6 py-3">
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-mobile"
             onClick={onClose}
-            className="flex shrink-0 items-center justify-center rounded-(--radius-md) h-8 w-8 text-(--color-text-subtle) hover:text-(--color-text) hover:bg-(--color-surface-2) transition-colors"
             aria-label="Cerrar"
           >
             <ArrowLeft size={18} weight="bold" />
-          </button>
+          </Button>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-(--color-text)">
               {isPending ? "Cargando..." : docTitle}
@@ -77,14 +79,15 @@ export function DocumentViewerModal({ documentId, open, onClose }: Props) {
             <ArrowSquareOut size={14} />
             Abrir en página completa
           </Link>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-mobile"
             onClick={onClose}
-            className="flex shrink-0 items-center justify-center rounded-(--radius-md) h-8 w-8 text-(--color-text-subtle) hover:text-(--color-text) hover:bg-(--color-surface-2) transition-colors"
             aria-label="Cerrar"
           >
             <X size={18} weight="bold" />
-          </button>
+          </Button>
         </div>
 
         {/* Body */}

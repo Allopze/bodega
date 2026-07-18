@@ -137,7 +137,7 @@ export default async function TrazabilidadPage({
             {safePage > 1 && (
               <a
                 href={pageHref(safePage - 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]"
+                className="inline-flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]"
                 aria-label="Página anterior"
               >
                 ←
@@ -149,7 +149,7 @@ export default async function TrazabilidadPage({
             {safePage < totalPages && (
               <a
                 href={pageHref(safePage + 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]"
+                className="inline-flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]"
                 aria-label="Página siguiente"
               >
                 →

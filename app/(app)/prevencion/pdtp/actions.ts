@@ -258,6 +258,7 @@ export async function createPdtpProgramAction(
   if (guard.error) return guard.error
   const session = guard.session
 
+  let programId: string
   try {
     const parsed = pdtpProgramCreateSchema.parse({
       year: formData.get("year"),
@@ -270,11 +271,12 @@ export async function createPdtpProgramAction(
       userId: session.user.id,
       copySheetsFromProgramId: parsed.copySheetsFromProgramId,
     })
-    revalidatePath(REVALIDATE)
-    return { ok: true, programId: program.id }
+    programId = program.id
   } catch (e) {
     return fail(e)
   }
+  revalidatePath(REVALIDATE)
+  redirect(`${REVALIDATE}/${programId}/editar`)
 }
 
 export async function updatePdtpProgramAction(
