@@ -42,9 +42,8 @@ describe("system-rbac → manifest parity", () => {
     expect(SYSTEM_ROLE_PERMISSIONS.some((grant) => grant.roleId === "rol-sup-faena")).toBe(false)
   })
 
-  // New admin areas declared in PLAN_ADMINISTRACION_FALTANTES must exist in the
-  // derived permission set, in the admin module manifest, and be granted to the
-  // expected non-admin roles.
+  // These permissions must exist in the derived permission set, in the admin
+  // module manifest, and be granted to the expected non-admin roles.
   const expectedAdminPermissions = [
     "admin:roles",
     "admin:cost_centers",

@@ -5,7 +5,7 @@
  *   • Responds 200 with Content-Type: application/pdf
  *   • Returns a non-empty body (actual PDF bytes)
  *   • Does NOT crash with MODULE_NOT_FOUND for playwright-core/browsers.json
- *     (regression guard for DEVOPS-03 in docs/auditoria/AUDITORIA_INTEGRAL_CHOME.md)
+ *     (regression guard for DEVOPS-03).
  *
  * Relies on the "sst-eval-e2e" fixture seeded by e2e/setup-db.ts.
  */

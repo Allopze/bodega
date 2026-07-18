@@ -79,19 +79,12 @@ Hace falta implementar:
 
 ## Documentación
 
-La documentación completa está en [`docs/`](docs/) — comienza por el [índice](docs/README.md) para orientarte.
-
-| Área | Documento | Contenido |
-|---|---|---|
-| **Índice** | [docs/README.md](docs/README.md) | Mapa completo de la documentación |
-| **Diseño** | [docs/diseño/DESIGN.md](docs/diseño/DESIGN.md) | Sistema de tokens, diseño visual, accesibilidad |
-| **Planificación** | [docs/planificacion/PLAN.md](docs/planificacion/PLAN.md) | Plan MVP y fases de implementación |
-| | [docs/planificacion/PRODUCT.md](docs/planificacion/PRODUCT.md) | Requisitos y especificaciones del producto |
-| | [docs/planificacion/chome_feature_list.md](docs/planificacion/chome_feature_list.md) | Catálogo detallado de funcionalidades |
-| **Arquitectura** | [docs/arquitectura/ARCHITECTURE.md](docs/arquitectura/ARCHITECTURE.md) | Stack técnico, BD, ciclo de vida, RBAC, patrones |
-| **Auditoría** | [docs/auditoria/AUDITORIA_INTEGRAL_CHOME.md](docs/auditoria/AUDITORIA_INTEGRAL_CHOME.md) | Análisis de seguridad, hallazgos, estado de remediación y recomendaciones |
-| **Operación** | [docs/deploy/DEPLOY.md](docs/deploy/DEPLOY.md) | Docker, migraciones, CI/CD y healthcheck |
-| | [docs/deploy/SERVIDOR_CASERO.md](docs/deploy/SERVIDOR_CASERO.md) | Deploy paso a paso en servidor propio |
-| | [docs/deploy/RUNBOOK.md](docs/deploy/RUNBOOK.md) | Backups, restore, monitoreo, SLO/RPO/RTO e incidentes |
-| | [docs/auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md](docs/auditoria/EPP_PROVEEDORES_ESTRUCTURADO.md) | Catálogo de proveedores y productos EPP |
-| **Pruebas** | [docs/pruebas/TESTING.md](docs/pruebas/TESTING.md) | Unitarias, E2E, manuales y cobertura |
+| Documento | Contenido |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Stack técnico, BD, ciclo de vida, RBAC, patrones |
+| [DESIGN.md](DESIGN.md) | Sistema de tokens, diseño visual, accesibilidad |
+| [STYLING.md](STYLING.md) | Guía de estilos y reglas de layout |
+| [docs/deploy/DEPLOY.md](docs/deploy/DEPLOY.md) | Docker, migraciones, CI/CD y healthcheck |
+| [docs/deploy/SERVIDOR_CASERO.md](docs/deploy/SERVIDOR_CASERO.md) | Deploy paso a paso en servidor propio |
+| [docs/deploy/RUNBOOK.md](docs/deploy/RUNBOOK.md) | Backups, restore, monitoreo, SLO/RPO/RTO e incidentes |
+| [docs/pruebas/TESTING.md](docs/pruebas/TESTING.md) | Unitarias, E2E, manuales y cobertura |

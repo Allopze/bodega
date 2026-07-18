@@ -18,8 +18,8 @@ export const metadata: Metadata = {
 // scope — dos SW compitiendo por /ppa producían una carrera de registro no
 // determinística (cuál gana el control de la página) que hacía fallar de
 // forma intermitente los tests E2E de offline/cache. /ppa-sw.js además era
-// una versión más simple sin los fixes P0-P3 de AUDITORIA_PWA_OFFLINE.md
-// (FIFO eviction, cache versionado) que ya tiene sw.js.
+// una versión más simple sin los fixes P0-P3 (FIFO eviction, cache versionado)
+// que ya tiene sw.js.
 export default function PpaLayout({ children }: { children: React.ReactNode }) {
   return <><PwaRegister />{children}</>
 }
