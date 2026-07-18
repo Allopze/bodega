@@ -5,6 +5,7 @@ import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Check, PencilSimple } from "@phosphor-icons/react"
 import type { WorksiteStockWithProduct } from "./types"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { formatQty, formatDate } from "@/lib/utils"
@@ -41,8 +42,9 @@ function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: nu
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="flex items-center gap-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors"
+        className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 flex items-center gap-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors"
         title="Configurar stock mínimo"
+        aria-label="Configurar stock mínimo"
       >
         <span className="font-mono tabular-nums">{currentMin > 0 ? formatQty(currentMin, "") : "—"}</span>
         <PencilSimple size={11} />
@@ -64,9 +66,15 @@ function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: nu
         autoFocus
         aria-label="Stock mínimo"
       />
-      <button type="submit" className="h-7 w-7 flex items-center justify-center rounded-sm text-[var(--color-success)] hover:bg-[var(--color-surface-2)] transition-colors">
+      <Button
+        type="submit"
+        variant="ghost"
+        size="icon-mobile-sm"
+        aria-label="Guardar stock mínimo"
+        className="text-[var(--color-success)]"
+      >
         <Check size={14} />
-      </button>
+      </Button>
     </form>
   )
 }

@@ -11,6 +11,7 @@ async function fillTaeForm(page: Page, liters: string) {
   await page.locator("#tae-driver").fill("Conductor E2E")
   await page.locator("#tae-supervisor").fill("Supervisor E2E")
   await selectRadixById(page, "tae-vehicle", /E2E-FUEL-1/)
+  await selectRadixById(page, "tae-product", /Di[eé]sel/i)
   await page.locator("#tae-liters").fill(liters)
   await page.locator("#tae-removed").fill("SELLO-ANTERIOR")
   await page.locator("#tae-installed").fill(`SELLO-${liters}`)

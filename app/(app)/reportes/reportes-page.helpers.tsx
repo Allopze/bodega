@@ -7,6 +7,7 @@ export type ReportMetric = {
   label: string
   value: string | number
   detail: string
+  href: string
 }
 
 export function BreakdownPanel({

@@ -43,7 +43,7 @@ export interface OperationalSettings {
 const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: number }> = {
   exportMaxRows:              { min: 100,    max: 100_000 },
   notificationRetentionDays:  { min: 7,      max: 3650 },
-  feedbackAttachmentMaxMb:    { min: 1,      max: 100 },
+  feedbackAttachmentMaxMb:    { min: 1,      max: 20 },
   pdtpEvidenceMaxMb:           { min: 1,      max: 100 },
   pdtpEvidenceRetentionDays:  { min: 30,     max: 3650 },
 }

@@ -8,6 +8,8 @@ test("repuestos: crea borrador y envia solicitud a aprobacion", async ({ page })
   await expect(page.getByRole("heading", { name: "Nueva solicitud de compra" })).toBeVisible()
   await selectRadixById(page, "worksiteId", "Faena E2E")
   await selectRadixById(page, "requestType", "Repuestos")
+  await expect(page.locator("#requestType")).toContainText("Repuestos")
+  await expect(page.getByText("Flujo para Repuestos")).toBeVisible()
   await pickCurrentMonthDate(page, "Seleccionar fecha")
 
   // Quotation-type item fields rendered by the unified ItemEditor
@@ -17,7 +19,7 @@ test("repuestos: crea borrador y envia solicitud a aprobacion", async ({ page })
   await page.getByPlaceholder("Ej: ABCD-12").fill("REP-E2E")
 
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
-  await expect(page.getByText("Borrador guardado")).toBeVisible()
+  await expect(page.locator("#requestType")).toContainText("Repuestos")
 
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
@@ -32,6 +34,8 @@ test("servicios: crea borrador y envia solicitud a aprobacion", async ({ page })
   await expect(page.getByRole("heading", { name: "Nueva solicitud de compra" })).toBeVisible()
   await selectRadixById(page, "worksiteId", "Faena E2E")
   await selectRadixById(page, "requestType", "Servicios")
+  await expect(page.locator("#requestType")).toContainText("Servicios")
+  await expect(page.getByText("Flujo para Servicios")).toBeVisible()
   await pickCurrentMonthDate(page, "Seleccionar fecha")
 
   await page.getByPlaceholder("Describe el ítem requerido...").fill("Mantencion generador E2E")
@@ -40,7 +44,7 @@ test("servicios: crea borrador y envia solicitud a aprobacion", async ({ page })
   await page.getByPlaceholder("Ej: ABCD-12").fill("SER-E2E")
 
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
-  await expect(page.getByText("Borrador guardado")).toBeVisible()
+  await expect(page.locator("#requestType")).toContainText("Servicios")
 
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })

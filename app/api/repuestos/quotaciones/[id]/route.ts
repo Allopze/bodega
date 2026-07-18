@@ -37,7 +37,8 @@ export async function GET(
     where: eq(purchaseRequests.id, quotation.requestId),
     columns: { worksiteId: true, requesterId: true },
   })
-  if (!request || !canAccessWorksite(session, request.worksiteId)) {
+  const canViewAll = can(session, "repuestos:view_all")
+  if (!request || !canAccessWorksite(session, request.worksiteId) || (!canViewAll && request.requesterId !== session.user.id)) {
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 
@@ -63,4 +64,3 @@ export async function GET(
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 }
-

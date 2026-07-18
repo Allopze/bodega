@@ -154,6 +154,7 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
                     error={!!state.fieldErrors?.name}
                     disabled={editRole?.isProtected}
                   />
+                  {editRole?.isProtected && <input type="hidden" name="name" value={editRole.name} />}
                 </Field>
                 <Field label="Etiqueta" htmlFor="role-label" required error={state.fieldErrors?.label?.[0]}>
                   <Input

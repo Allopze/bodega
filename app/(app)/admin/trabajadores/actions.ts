@@ -1,12 +1,13 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { workers } from "@/db/schema"
+import { workers, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
 import { workerSchema, type ActionState } from "@/lib/validation/masters"
@@ -162,6 +163,41 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
 
   try {
     await db.transaction(async (tx) => {
+      const worksiteScope = worksiteScopeSql(session, worksites.id)
+      const visibleWorksites = await tx.query.worksites.findMany({
+        columns: { id: true, name: true },
+        where: worksiteScope,
+      })
+      const worksiteByName = new Map(visibleWorksites.map((worksite) => [worksiteMatchKey(worksite.name), worksite.id]))
+      const updateIds = result.rows
+        .filter((row) => row.decision === "update" && row.existingId)
+        .map((row) => row.existingId!)
+      const visibleWorkers = updateIds.length > 0
+        ? await tx.query.workers.findMany({
+            columns: { id: true },
+            where: and(inArray(workers.id, updateIds), worksiteScopeSql(session, workers.worksiteId)),
+          })
+        : []
+      const visibleWorkerIds = new Set(visibleWorkers.map((worker) => worker.id))
+
+      for (const row of result.rows) {
+        if (!row.existingId || row.decision !== "update") continue
+        if (!visibleWorkerIds.has(row.existingId)) {
+          throw new Error(`Fila ${row.rowNumber}: el trabajador indicado no pertenece a una faena de tu alcance`)
+        }
+      }
+
+      const destinationByRow = new Map<number, string>()
+      for (const row of result.rows) {
+        if (row.decision !== "create" || !Object.values(row.values).some(Boolean)) continue
+        const worksiteName = (row.values["Faena"] ?? "").trim()
+        const worksiteId = worksiteByName.get(worksiteMatchKey(worksiteName))
+        if (!worksiteId) {
+          throw new Error(`Fila ${row.rowNumber}: indica una faena existente y accesible en la columna "Faena"`)
+        }
+        destinationByRow.set(row.rowNumber, worksiteId)
+      }
+
       for (const row of result.rows) {
         const v = row.values
         const firstName = (v["Nombre"] ?? "").trim()
@@ -170,16 +206,21 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
         const isActive = v["Activo"]?.trim() !== "No"
 
         if (row.decision === "update" && row.existingId) {
-          updated++
-          await tx.update(workers).set({
+          const changed = await tx.update(workers).set({
             rut: (v["RUT"] ?? "").trim() || null,
             firstName, lastName,
             position: (v["Cargo"] ?? "").trim() || null,
             supervisor: (v["Supervisor"] ?? "").trim() || null,
             prevencionista: (v["Prevencionista"] ?? "").trim() || null,
             isActive,
-          }).where(eq(workers.id, row.existingId!))
+          }).where(and(eq(workers.id, row.existingId), worksiteScopeSql(session, workers.worksiteId))).returning({ id: workers.id })
+          if (changed.length !== 1) {
+            throw new Error(`Fila ${row.rowNumber}: el trabajador dejó de pertenecer a una faena de tu alcance`)
+          }
+          updated++
         } else {
+          const worksiteId = destinationByRow.get(row.rowNumber)
+          if (!worksiteId) throw new Error(`Fila ${row.rowNumber}: falta una faena destino accesible`)
           created++
           await tx.insert(workers).values({
             id: nanoid(), rut: (v["RUT"] ?? "").trim() || null,
@@ -187,7 +228,7 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
             position: (v["Cargo"] ?? "").trim() || null,
             supervisor: (v["Supervisor"] ?? "").trim() || null,
             prevencionista: (v["Prevencionista"] ?? "").trim() || null,
-            worksiteId: session.user.primaryWorksiteId || "ws-default",
+            worksiteId,
             isActive,
             createdAt: new Date().toISOString(),
           })
@@ -201,4 +242,8 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
     logger.error("[admin/trabajadores] importXlsx", err)
     return { ok: false, message: (err as Error).message }
   }
+}
+
+function worksiteMatchKey(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim()
 }

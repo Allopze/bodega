@@ -54,13 +54,15 @@ describe("registerReceipt — validation", () => {
   it("throws if order not found in transaction", async () => {
     mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
-        query: {
-          purchaseOrders: { findFirst: vi.fn().mockResolvedValue(null) },
-          purchaseOrderItems: { findFirst: vi.fn() },
-        },
         insert: vi.fn(),
         update: vi.fn(),
-        select: vi.fn(),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              for: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
       }
       return fn(tx as unknown as Record<string, unknown>)
     })
@@ -76,18 +78,12 @@ describe("registerReceipt — validation", () => {
   it("throws if order in wrong status", async () => {
     mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
-        query: {
-          purchaseOrders: {
-            findFirst: vi.fn().mockResolvedValue({ id: "oc-1", status: "draft", worksiteId: "ws-1" }),
-          },
-          purchaseOrderItems: { findFirst: vi.fn() },
-        },
         insert: vi.fn(),
         update: vi.fn(),
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
-              for: vi.fn().mockResolvedValue([]),
+              for: vi.fn().mockResolvedValue([{ id: "oc-1", status: "draft", worksiteId: "ws-1" }]),
             }),
           }),
         }),
@@ -106,15 +102,15 @@ describe("registerReceipt — validation", () => {
   it("throws if faena stage when order still sent (not office_received)", async () => {
     mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
-        query: {
-          purchaseOrders: {
-            findFirst: vi.fn().mockResolvedValue({ id: "oc-1", status: "sent", worksiteId: "ws-1" }),
-          },
-          purchaseOrderItems: { findFirst: vi.fn() },
-        },
         insert: vi.fn(),
         update: vi.fn(),
-        select: vi.fn(),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              for: vi.fn().mockResolvedValue([{ id: "oc-1", status: "sent", worksiteId: "ws-1" }]),
+            }),
+          }),
+        }),
       }
       return fn(tx as unknown as Record<string, unknown>)
     })
@@ -131,15 +127,15 @@ describe("registerReceipt — validation", () => {
   it("throws if worksiteIds scope check fails", async () => {
     mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
-        query: {
-          purchaseOrders: {
-            findFirst: vi.fn().mockResolvedValue({ id: "oc-1", status: "sent", worksiteId: "ws-other" }),
-          },
-          purchaseOrderItems: { findFirst: vi.fn() },
-        },
         insert: vi.fn(),
         update: vi.fn(),
-        select: vi.fn(),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              for: vi.fn().mockResolvedValue([{ id: "oc-1", status: "sent", worksiteId: "ws-other" }]),
+            }),
+          }),
+        }),
       }
       return fn(tx as unknown as Record<string, unknown>)
     })

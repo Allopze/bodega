@@ -13,6 +13,7 @@ export const pgliteTestFiles = [
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
   "lib/__tests__/admin-user-scope.test.ts",
+  "lib/__tests__/admin-roles-service.test.ts",
   "lib/__tests__/bootstrap.test.ts",
   "lib/__tests__/code-sequences.test.ts",
   "lib/__tests__/equipment-performance-integration.test.ts",

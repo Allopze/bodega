@@ -372,10 +372,27 @@ async function seedMediumDataset(db: ReturnType<typeof drizzle<typeof schema>>) 
     updatedAt: now,
   })))
 
+  const performanceEquipmentTypeId = "perf-equipment-type"
+  await db.insert(schema.fuelEquipmentTypes).values({
+    id: performanceEquipmentTypeId,
+    slug: "perf-camioneta",
+    name: "Camioneta benchmark",
+    category: "light",
+    defaultMeterType: "odometer",
+    defaultPerformanceUnit: "km_per_liter",
+    isSystem: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoNothing({ target: schema.fuelEquipmentTypes.id })
+
   await insertChunks(db, schema.fuelVehicles, Array.from({ length: 60 }, (_, index) => ({
     id: `perf-vehicle-${index + 1}`,
     plate: `PERF-${index + 1}`,
     type: index % 3 === 0 ? "camion" : "camioneta",
+    equipmentTypeId: performanceEquipmentTypeId,
+    meterType: "odometer",
+    performanceUnit: "km_per_liter",
     brand: "Marca",
     model: `Modelo ${index + 1}`,
     year: 2020 + (index % 5),

@@ -14,8 +14,9 @@ import * as Sentry from "@sentry/nextjs"
 
 const SENTRY_DSN = process.env.SENTRY_DSN
 
-// Sentry is initialized eagerly by sentry.server.config.ts / sentry.client.config.ts
-// via withSentryConfig in next.config.ts. This wrapper re-exports the initialized
+// Sentry is initialized explicitly in instrumentation.ts (server/edge, via
+// register()/onRequestError) and instrumentation-client.ts (browser), per the
+// Next.js 16 instrumentation contract. This wrapper re-exports the initialized
 // Sentry client for use in logger.error and other manual capture calls.
 const isReady = !!SENTRY_DSN
 

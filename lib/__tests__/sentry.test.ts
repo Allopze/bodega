@@ -60,8 +60,9 @@ describe("sentry wrapper", () => {
   })
 })
 
-// NOTE: Sentry.init() and beforeSend header scrubbing are now tested via
-// sentry.server.config.ts and sentry.client.config.ts, which are loaded
-// eagerly by withSentryConfig in next.config.ts. These config files are
-// not unit-tested here because they are Sentry's official wiring pattern;
-// their beforeSend logic is verified by integration/E2E tests.
+// NOTE: Sentry.init() and beforeSend header scrubbing live in
+// sentry.server.config.ts, sentry.edge.config.ts and instrumentation-client.ts,
+// wired explicitly from instrumentation.ts per the Next.js 16 instrumentation
+// contract. These config files are not unit-tested here because they are
+// Sentry's official wiring pattern; their beforeSend logic is verified by
+// integration/E2E tests.

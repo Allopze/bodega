@@ -57,9 +57,8 @@ export async function registerReceipt(
 
   const code = await db.transaction(async (tx) => {
     // Read order INSIDE the transaction to avoid stale status checks.
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, input.purchaseOrderId),
-    })
+    const [order] = await tx.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.id, input.purchaseOrderId)).for("update")
     if (!order) throw new Error(`Purchase order ${input.purchaseOrderId} not found`)
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")

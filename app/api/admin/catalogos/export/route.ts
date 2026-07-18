@@ -6,8 +6,10 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server"
+import type { Session } from "next-auth"
 import { auth } from "@/lib/auth/auth"
 import { canAny } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { Permission } from "@/modules/permissions"
 import { buildXlsxBuffer, type ReportData } from "@/lib/reports/export"
 import { logger } from "@/lib/logger"
@@ -49,7 +51,7 @@ export async function GET(req: NextRequest) {
         report = await buildProveedoresReport()
         break
       case "trabajadores":
-        report = await buildTrabajadoresReport()
+        report = await buildTrabajadoresReport(session)
         break
       default:
         return NextResponse.json({ error: "Tipo no implementado" }, { status: 400 })
@@ -162,7 +164,7 @@ async function buildProveedoresReport(): Promise<ReportData> {
   }
 }
 
-async function buildTrabajadoresReport(): Promise<ReportData> {
+async function buildTrabajadoresReport(session: Session): Promise<ReportData> {
   const allWorkers = await db
     .select({
       id: workers.id,
@@ -177,6 +179,7 @@ async function buildTrabajadoresReport(): Promise<ReportData> {
     })
     .from(workers)
     .leftJoin(worksites, eq(workers.worksiteId, worksites.id))
+    .where(worksiteScopeSql(session, workers.worksiteId))
     .orderBy(asc(workers.lastName), asc(workers.firstName))
 
   const headers = ["ID", "RUT", "Nombre", "Apellido", "Cargo", "Supervisor", "Prevencionista", "Faena", "Activo"]

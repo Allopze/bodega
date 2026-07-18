@@ -19,6 +19,12 @@ const mockMarkAllNotificationsRead = vi.hoisted(() => vi.fn())
 const mockGetUserIdsWithPermission = vi.hoisted(() => vi.fn())
 const mockNotifyManyUser = vi.hoisted(() => vi.fn())
 const mockNotifyAfterCommit = vi.hoisted(() => vi.fn((fn: () => void) => fn()))
+const mockFs = vi.hoisted(() => ({
+  mkdir: vi.fn(),
+  writeFile: vi.fn(),
+  rename: vi.fn(),
+  unlink: vi.fn(),
+}))
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
@@ -32,6 +38,15 @@ vi.mock("@/lib/services/notifications", () => ({
   getUserIdsWithPermission: mockGetUserIdsWithPermission,
   notifyManyUser: mockNotifyManyUser,
   notifyAfterCommit: mockNotifyAfterCommit,
+}))
+vi.mock("node:fs", () => ({ promises: mockFs }))
+vi.mock("@/lib/storage/config", () => ({ resolveStorageDir: vi.fn(() => "/tmp/chome-test-storage") }))
+vi.mock("@/lib/services/system-settings", () => ({
+  getOperationalSettings: vi.fn(async () => ({ feedbackAttachmentMaxMb: 20 })),
+}))
+vi.mock("@/lib/file-validation", () => ({
+  MimeType: { PROOF: "proof" },
+  validateFileBuffer: vi.fn(() => ({ error: null, mimeType: "image/png" })),
 }))
 
 function makeSession(perm: string): Session {
@@ -53,6 +68,10 @@ describe("soporte actions", () => {
     mockUpdateReportStatus.mockResolvedValue({ id: "report-1", estado: "resuelto" })
     mockGetUserIdsWithPermission.mockResolvedValue(["admin-1"])
     mockNotifyManyUser.mockResolvedValue(undefined)
+    mockFs.mkdir.mockResolvedValue(undefined)
+    mockFs.writeFile.mockResolvedValue(undefined)
+    mockFs.rename.mockResolvedValue(undefined)
+    mockFs.unlink.mockResolvedValue(undefined)
   })
 
   describe("createReportAction", () => {
@@ -84,6 +103,26 @@ describe("soporte actions", () => {
       const { createReportAction } = await import("@/app/(app)/soporte/actions")
       const r = await createReportAction({ tipo: "bug", titulo: "Test", descripcion: "Desc" })
       expect(r.ok).toBe(false); expect(r.message).toContain("DB error")
+    })
+
+    it("cleans the temporary upload when finalization fails", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("feedback:create"))
+      mockFs.rename.mockRejectedValue(new Error("filesystem rename failure"))
+      const { createReportAction } = await import("@/app/(app)/soporte/actions")
+      const file = new File([new Uint8Array([1, 2, 3])], "captura.png", { type: "image/png" })
+
+      const r = await createReportAction({
+        tipo: "bug",
+        titulo: "Fallo al finalizar",
+        descripcion: "Debe limpiar el temporal",
+        attachment: file,
+      })
+
+      expect(mockFs.rename).toHaveBeenCalled()
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain("filesystem rename failure")
+      expect(mockFs.writeFile).toHaveBeenCalledWith(expect.stringContaining(".tmp"), expect.anything())
+      expect(mockFs.unlink).toHaveBeenCalledWith(expect.stringContaining(".tmp"))
     })
   })
 

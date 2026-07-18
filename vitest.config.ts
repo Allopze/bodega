@@ -28,6 +28,12 @@ export default defineConfig({
       include:  [
         "lib/**/*.ts",
         "app/**/actions.ts",
+        "app/**/actions-*.ts",
+        "app/**/actions-*/**/*.ts",
+        "app/api/admin/catalogos/export/route.ts",
+        "app/api/combustibles/import/route.ts",
+        "app/api/repuestos/quotaciones/[id]/route.ts",
+        "app/api/servicios/cotizaciones/[id]/route.ts",
       ],
       exclude: [
         "lib/auth/types.ts",

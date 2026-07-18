@@ -78,12 +78,14 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
       throw new Error("La cantidad de un movimiento de desecho debe ser mayor que cero")
     }
 
-    const existing = await tx.query.worksiteStock.findFirst({
-      where: and(
+    const [existing] = await tx
+      .select()
+      .from(worksiteStock)
+      .where(and(
         eq(worksiteStock.worksiteId, input.worksiteId),
         eq(worksiteStock.productId, input.productId),
-      ),
-    })
+      ))
+      .for("update")
     const currentQty = existing?.quantity ?? 0
     const deductQty = currentQty > 0 ? Math.min(input.quantity, currentQty) : 0
     const newQty = currentQty - deductQty

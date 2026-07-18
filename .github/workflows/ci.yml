@@ -89,9 +89,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Bundle size budget
+        run: npm run check:bundle-budget
+
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
       - name: E2E accessibility audit
         run: npx playwright test e2e/accessibility.spec.ts
 
+      - name: E2E critical route smoke
+        run: npx playwright test e2e/ci-smoke.spec.ts

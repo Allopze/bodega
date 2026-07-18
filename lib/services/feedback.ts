@@ -6,7 +6,7 @@
 
 import { z } from "zod"
 import { eq, and, desc } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import { feedbackReports, type FeedbackReport } from "@/db/schema/feedback"
 import { attachments } from "@/db/schema/audit"
 import { users } from "@/db/schema/users"
@@ -33,16 +33,18 @@ export async function createReport(
   input: z.input<typeof feedbackCreateSchema>,
   userId: string,
   proofAttachment?: FeedbackAttachmentInput | null,
+  client: DB | Tx = db,
 ): Promise<FeedbackReport> {
   const data = feedbackCreateSchema.parse(input)
 
   const id  = nanoid()
   const now = new Date().toISOString()
 
-  const [report] = await db.insert(feedbackReports).values({
-    id,
-    tipo:        data.tipo,
-    titulo:      data.titulo,
+  const work = async (tx: Tx): Promise<FeedbackReport> => {
+    const [report] = await tx.insert(feedbackReports).values({
+      id,
+      tipo:        data.tipo,
+      titulo:      data.titulo,
       descripcion: data.descripcion,
       pagina:      data.pagina || null,
       priority:    data.priority,
@@ -54,24 +56,27 @@ export async function createReport(
     resolvedAt:  null,
     createdAt:   now,
     updatedAt:   now,
-  }).returning()
+    }).returning()
 
-  if (!report) throw new Error("Error al crear el reporte")
+    if (!report) throw new Error("Error al crear el reporte")
 
-  if (proofAttachment) {
-    await db.insert(attachments).values({
-      id: nanoid(),
-      entityType: "feedback_report",
-      entityId: id,
-      fileName: proofAttachment.fileName,
-      filePath: proofAttachment.filePath,
-      fileSize: proofAttachment.fileSize,
-      mimeType: proofAttachment.mimeType,
-      uploadedBy: userId,
-    })
+    if (proofAttachment) {
+      await tx.insert(attachments).values({
+        id: nanoid(),
+        entityType: "feedback_report",
+        entityId: id,
+        fileName: proofAttachment.fileName,
+        filePath: proofAttachment.filePath,
+        fileSize: proofAttachment.fileSize,
+        mimeType: proofAttachment.mimeType,
+        uploadedBy: userId,
+      })
+    }
+
+    return report
   }
 
-  return report
+  return client === db ? db.transaction(work) : work(client as Tx)
 }
 
 // ── getReport ─────────────────────────────────────────────────────────────────

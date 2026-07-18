@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import Link from "next/link"
 import { ArrowDown, ArrowUp, Info } from "@phosphor-icons/react/dist/ssr"
 import { Card, CardContent } from "@/components/ui/card"
 
@@ -10,6 +11,7 @@ export function KpiCard({
   trend,
   tone = "neutral",
   glossary,
+  href,
 }: {
   icon: ReactNode
   label: string
@@ -18,8 +20,9 @@ export function KpiCard({
   trend?: number | null
   tone?: "neutral" | "signal"
   glossary?: string
+  href?: string
 }) {
-  return (
+  const card = (
     <Card className={tone === "signal" ? "ring-1 ring-[var(--color-signal-line)]" : undefined}>
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-3">
@@ -47,4 +50,5 @@ export function KpiCard({
       </CardContent>
     </Card>
   )
+  return href ? <Link href={href} className="block h-full">{card}</Link> : card
 }

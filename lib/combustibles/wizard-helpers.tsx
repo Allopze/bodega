@@ -1,10 +1,17 @@
-import * as ExcelJS from "exceljs"
 import type { ReactNode } from "react"
 
 export function downloadErrorsXlsx(
   errors: Array<{ rowIndex: number; field: string; message: string }>,
   filename: string,
-) {
+): void {
+  void createErrorsXlsx(errors, filename)
+}
+
+async function createErrorsXlsx(
+  errors: Array<{ rowIndex: number; field: string; message: string }>,
+  filename: string,
+): Promise<void> {
+  const ExcelJS = await import("exceljs")
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Errores")
   sheet.columns = [

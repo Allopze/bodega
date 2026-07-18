@@ -53,6 +53,10 @@ const buttonVariants = cva(
         lg:        "h-9 px-5 text-[13px]",
         icon:      "h-8 w-8 p-0",
         "icon-sm": "h-7 w-7 p-0",
+        // Meets the 44x44px minimum touch target on mobile (DESIGN.md) while
+        // keeping the compact visual size on desktop pointer input.
+        "icon-mobile":    "h-11 w-11 sm:h-8 sm:w-8 p-0",
+        "icon-mobile-sm": "h-11 w-11 sm:h-7 sm:w-7 p-0",
       },
     },
     defaultVariants: {

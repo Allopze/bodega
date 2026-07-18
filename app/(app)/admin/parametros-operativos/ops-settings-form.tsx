@@ -87,7 +87,7 @@ export function OpsSettingsForm({ current, defaults }: OpsSettingsFormProps) {
         <Field
           label="Adjunto máximo (MB)"
           htmlFor="feedbackAttachmentMaxMb"
-          helper={`Predeterminado: ${defaults.feedbackAttachmentMaxMb}. Rango permitido: 1 a 100 MB.`}
+          helper={`Predeterminado: ${defaults.feedbackAttachmentMaxMb}. Rango permitido: 1 a 20 MB.`}
           error={state.fieldErrors?.feedbackAttachmentMaxMb?.[0]}
         >
           <Input
@@ -95,7 +95,7 @@ export function OpsSettingsForm({ current, defaults }: OpsSettingsFormProps) {
             name="feedbackAttachmentMaxMb"
             type="number"
             min={1}
-            max={100}
+            max={20}
             step={1}
             defaultValue={String(current.feedbackAttachmentMaxMb)}
             error={!!state.fieldErrors?.feedbackAttachmentMaxMb}

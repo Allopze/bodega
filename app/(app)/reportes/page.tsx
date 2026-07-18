@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import {
@@ -42,7 +43,6 @@ export default async function Page() {
 
   const [
     requestSummary,
-    itemSummary,
     orderSummary,
     receiptSummary,
     requestStatusRows,
@@ -57,15 +57,6 @@ export default async function Page() {
         inReview: sql<number>`count(*) filter (where ${purchaseRequests.status} in ('submitted', 'in_review'))`,
       })
       .from(purchaseRequests)
-      .where(requestWsFilter),
-
-    db
-      .select({
-        total: count(),
-        pendingApproval: sql<number>`count(*) filter (where ${purchaseRequestItems.status} = 'requested')`,
-      })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eqRequestItemRequest())
       .where(requestWsFilter),
 
     db
@@ -118,7 +109,6 @@ export default async function Page() {
   ])
 
   const requestTotals = requestSummary[0]
-  const itemTotals = itemSummary[0]
   const orderTotals = orderSummary[0]
   const receiptTotals = receiptSummary[0]
   const pendingReceiptCount = Number(orderTotals?.pendingReceipt ?? 0)
@@ -127,26 +117,25 @@ export default async function Page() {
       label: "Solicitudes",
       value: Number(requestTotals?.total ?? 0),
       detail: `${Number(requestTotals?.inReview ?? 0)} en revisión`,
-    },
-    {
-      label: "Ítems solicitados",
-      value: Number(itemTotals?.total ?? 0),
-      detail: `${Number(itemTotals?.pendingApproval ?? 0)} pendientes de aprobación`,
+      href: "/solicitudes",
     },
     {
       label: "Órdenes de compra",
       value: Number(orderTotals?.total ?? 0),
       detail: `${formatCLP(Number(orderTotals?.totalAmount ?? 0))} acumulado`,
+      href: "/compras",
     },
     {
       label: "Recepciones",
       value: Number(receiptTotals?.total ?? 0),
       detail: `${pendingReceiptCount} OC pendientes de recepción`,
+      href: "/recepcion",
     },
     {
       label: "OC pendientes",
       value: pendingReceiptCount,
       detail: "Órdenes enviadas pendientes de oficina o bodega/faena",
+      href: "/recepcion",
     },
   ]
 
@@ -216,7 +205,7 @@ export default async function Page() {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {metrics.map((metric) => (
-          <section key={metric.label} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
+          <Link key={metric.label} href={metric.href} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <ChartBar size={16} className="text-[var(--color-text-subtle)]" />
@@ -225,7 +214,7 @@ export default async function Page() {
               <Badge variant="outline">{metric.value}</Badge>
             </div>
             <p className="mt-3 text-sm text-[var(--color-text-muted)]">{metric.detail}</p>
-          </section>
+          </Link>
         ))}
       </div>
 

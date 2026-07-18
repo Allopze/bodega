@@ -69,7 +69,7 @@ export async function addItemToPurchaseOrderTx(
     await recordStatusChange({
       entityType: "request_item",
       entityId:   itemId,
-      fromStatus: updated.status,
+      fromStatus: locked.status,
       toStatus:   "in_purchase_order",
       changedBy:  userId,
     }, tx)

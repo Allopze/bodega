@@ -58,7 +58,9 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
         fuiAlLugar,
         decision: decision as PpaDecision,
         accionCorrectiva,
-        responsibleRole: responsibleRole as "prevencionista_faena" | "admin_contrato" | "jefe_faena" | "prevencionista" | undefined,
+        responsibleRole: responsibleRole
+          ? responsibleRole as "prevencionista_faena" | "admin_contrato" | "jefe_faena" | "prevencionista"
+          : undefined,
         responsible,
         dueDate,
         priority: priority as "alta" | "media" | "baja",

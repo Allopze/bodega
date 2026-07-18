@@ -21,9 +21,8 @@ export async function closeOrder(
   if (!reason?.trim()) throw new Error("Se requiere un motivo para cerrar la orden")
 
   await db.transaction(async (tx) => {
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, orderId),
-    })
+    const [order] = await tx.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.id, orderId)).for("update")
     if (!order) throw new Error(`Order ${orderId} not found`)
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")

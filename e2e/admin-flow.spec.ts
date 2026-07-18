@@ -106,7 +106,7 @@ test("admin: crear faena, verificarla en el listado y en la navegación", async 
 
 test("admin: crear producto con categoría, verificarlo en catálogo", async ({ page }) => {
   await login(page)
-  const sku = uniqueId("SKU")
+  const name = `Producto ${uniqueId("E2E")}`
 
   await page.goto("/admin/productos")
   await expect(page.getByRole("heading", { name: "Catálogo" })).toBeVisible()
@@ -114,15 +114,14 @@ test("admin: crear producto con categoría, verificarlo en catálogo", async ({ 
   await page.getByRole("button", { name: /nuevo producto/i }).click()
   const dialog = page.getByRole("dialog", { name: "Nuevo producto" })
 
-  await dialog.getByRole("textbox", { name: "SKU" }).fill(sku)
-  await dialog.getByRole("textbox", { name: "Nombre" }).fill(`Producto ${sku}`)
+  await dialog.getByRole("textbox", { name: "Nombre" }).fill(name)
   await selectRadixById(page, "p-cat", /Categoría E2E/)
 
   await submitFormAndWaitForClose(page, dialog)
 
   // The product creation dialog may close via redirect/refresh.
   // Wait for the table to show the new product instead of asserting dialog closed.
-  await expect(page.getByRole("row", { name: new RegExp(`${sku}.*Producto ${sku}`) })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible({ timeout: 15_000 })
 })
 
 test("admin: crear usuario con rol prevencionista faena, verificar login", async ({ page }) => {
@@ -146,7 +145,7 @@ test("admin: crear usuario con rol prevencionista faena, verificar login", async
   // it transforms into a pending-invite panel with "Invitación pendiente".
   await dialog.locator("form").evaluate((el) => (el as HTMLFormElement).requestSubmit())
 
-  await expect(page.getByRole("heading", { name: "Invitación pendiente" })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole("heading", { name: "Invitaciones enviadas" })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText(email)).toBeVisible()
 })
 

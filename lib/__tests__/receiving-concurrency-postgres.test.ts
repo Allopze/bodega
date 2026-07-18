@@ -110,6 +110,53 @@ describeIf("receiving concurrency on real Postgres", () => {
       .where(eq(schema.receipts.purchaseOrderId, "po-rc-test"))
     expect(receiptRows).toHaveLength(1)
   })
+
+  it("serializes receipt and cancellation on the purchase order lock", async () => {
+    const db = getTestDb()
+    await seedReceivingCancellationFixture(db)
+    const [{ registerReceipt }, { cancelOrder }] = await Promise.all([
+      import("@/lib/services/receiving"),
+      import("@/lib/services/purchasing-module/purchase-orders-status"),
+    ])
+
+    const receiptInput = {
+      purchaseOrderId: "po-rc-cancel-race",
+      receivedBy: "user-rc-test",
+      userEmail: "receiving-concurrency@test.local",
+      stage: "office" as const,
+      worksiteId: "ws-rc-test",
+      items: [{ purchaseOrderItemId: "poi-rc-cancel-race", quantityReceived: 8 }],
+    }
+
+    const results = await Promise.allSettled([
+      registerReceipt(receiptInput),
+      cancelOrder("po-rc-cancel-race", "user-rc-test", "Carrera de cancelación"),
+    ])
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1)
+
+    const order = await db.query.purchaseOrders.findFirst({
+      where: eq(schema.purchaseOrders.id, "po-rc-cancel-race"),
+    })
+    const [item] = await db
+      .select({ quantityOfficeReceived: schema.purchaseOrderItems.quantityOfficeReceived })
+      .from(schema.purchaseOrderItems)
+      .where(eq(schema.purchaseOrderItems.id, "poi-rc-cancel-race"))
+    const receipts = await db
+      .select()
+      .from(schema.receipts)
+      .where(eq(schema.receipts.purchaseOrderId, "po-rc-cancel-race"))
+
+    expect(order?.status === "cancelled" || item?.quantityOfficeReceived === 8).toBe(true)
+    if (order?.status === "cancelled") {
+      expect(item?.quantityOfficeReceived).toBe(0)
+      expect(receipts).toHaveLength(0)
+    } else {
+      expect(item?.quantityOfficeReceived).toBe(8)
+      expect(receipts).toHaveLength(1)
+    }
+  })
 })
 
 function getTestDb() {
@@ -188,6 +235,49 @@ async function seedReceivingFixture(db: ReturnType<typeof drizzle<typeof schema>
     id: "poi-rc-test",
     purchaseOrderId: "po-rc-test",
     requestItemId: "pri-rc-test",
+    productId: "prod-rc-test",
+    quantity: 10,
+    quantityOfficeReceived: 0,
+    quantityReceived: 0,
+    status: "issued",
+    unitOfMeasure: "unidad",
+  })
+}
+
+async function seedReceivingCancellationFixture(db: ReturnType<typeof drizzle<typeof schema>>) {
+  const now = new Date().toISOString()
+  await db.insert(schema.purchaseRequests).values({
+    id: "pr-rc-cancel-race",
+    code: "SOL-RC-CANCEL-RACE",
+    worksiteId: "ws-rc-test",
+    requesterId: "user-rc-test",
+    status: "approved",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values({
+    id: "pri-rc-cancel-race",
+    requestId: "pr-rc-cancel-race",
+    productId: "prod-rc-test",
+    quantity: 10,
+    status: "in_purchase_order",
+    unitOfMeasure: "unidad",
+  })
+  await db.insert(schema.purchaseOrders).values({
+    id: "po-rc-cancel-race",
+    code: "OC-RC-CANCEL-RACE",
+    worksiteId: "ws-rc-test",
+    supplierId: "sup-rc-test",
+    createdBy: "user-rc-test",
+    status: "sent",
+    sentAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "poi-rc-cancel-race",
+    purchaseOrderId: "po-rc-cancel-race",
+    requestItemId: "pri-rc-cancel-race",
     productId: "prod-rc-test",
     quantity: 10,
     quantityOfficeReceived: 0,

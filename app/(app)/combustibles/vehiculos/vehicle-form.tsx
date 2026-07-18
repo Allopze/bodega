@@ -105,7 +105,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
               </TabsList>
 
               {/* ── General tab ── */}
-              <TabsContent value="general">
+              <TabsContent value="general" forceMount>
                 <FieldGroup className="gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Patente" htmlFor="v-plate" required error={state.fieldErrors?.plate?.[0]}>
@@ -154,7 +154,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                 </FieldGroup>
               </TabsContent>
 
-              <TabsContent value="combustible">
+              <TabsContent value="combustible" forceMount>
                 <FieldGroup className="gap-4">
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Field label="Tipo de medidor" htmlFor="v-meter" required error={state.fieldErrors?.meterType?.[0]}>
@@ -215,7 +215,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
               </TabsContent>
 
               {/* ── Estado y vigencias tab ── */}
-              <TabsContent value="estado">
+              <TabsContent value="estado" forceMount>
                 <FieldGroup className="gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Estado operacional" htmlFor="v-status">
@@ -278,7 +278,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
 
               {/* ── Documentos tab ── */}
               {isEdit && (
-                <TabsContent value="documentos">
+                <TabsContent value="documentos" forceMount>
                   <p className="text-sm text-text-muted mb-4">
                     Los documentos del vehículo (SOAP, revisión técnica, seguro, etc.) se suben y revisan desde su
                     ficha operacional en Flota, para no duplicar ese flujo aquí.

@@ -28,9 +28,8 @@ export async function deleteOrder(
     .where(eq(purchaseOrderInvoices.purchaseOrderId, orderId))
 
   await db.transaction(async (tx) => {
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, orderId),
-    })
+    const [order] = await tx.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.id, orderId)).for("update")
     if (!order) throw new Error(`Orden ${orderId} no encontrada`)
     if (worksiteIds !== "all" && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a la faena de esta orden")
@@ -43,8 +42,9 @@ export async function deleteOrder(
 
     // 1. Revertir request items vinculados a pending_purchase
     const ocItems = await tx
-      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId })
+      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId, currentStatus: purchaseRequestItems.status })
       .from(purchaseOrderItems)
+      .leftJoin(purchaseRequestItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
 
     const requestItemIds = ocItems
@@ -62,12 +62,13 @@ export async function deleteOrder(
           ),
         )
 
-      for (const reqItemId of requestItemIds) {
+      for (const item of ocItems) {
+        if (!item.requestItemId || !item.currentStatus || !["in_purchase_order", "purchased"].includes(item.currentStatus)) continue
         await recordStatusChange(
           {
             entityType: "request_item",
-            entityId:   reqItemId,
-            fromStatus: "in_purchase_order",
+            entityId:   item.requestItemId,
+            fromStatus: item.currentStatus,
             toStatus:   "pending_purchase",
             changedBy:  userId,
           },

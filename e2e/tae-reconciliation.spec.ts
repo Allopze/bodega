@@ -10,10 +10,10 @@ test.describe("TAE — conciliación con Copec TCT", () => {
     try {
       await sql`
         insert into fuel_vehicles (
-          id, plate, code, type, worksite_id, responsible_user_id,
+          id, plate, code, type, equipment_type_id, meter_type, performance_unit, worksite_id, responsible_user_id,
           operational_status, is_active
         ) values (
-          'fuel-veh-recon-e2e', 'RECON-E2E-1', 'E2E-90', 'camioneta',
+          'fuel-veh-recon-e2e', 'RECON-E2E-1', 'E2E-90', 'camioneta', 'fet-camioneta', 'odometer', 'km_per_liter',
           'ws-e2e', 'user-admin-e2e', 'operativo', true
         ) on conflict (id) do nothing
       `
@@ -40,12 +40,12 @@ test.describe("TAE — conciliación con Copec TCT", () => {
       await sql`
         insert into fuel_tae_submissions (
           id, client_submission_id, source, public_result_token, worksite_id,
-          vehicle_id, equipment_code_snapshot, plate_snapshot, loaded_at,
+          vehicle_id, product_id, equipment_code_snapshot, plate_snapshot, loaded_at,
           submitted_at, driver_name_snapshot, supervisor_name_snapshot,
           meter_type, meter_reading, meter_reading_source, liters, status
         ) values (
           'tae-recon-e2e', 'tae-recon-client-e2e', 'public_pwa', 'tae-recon-result-e2e',
-          'ws-e2e', 'fuel-veh-recon-e2e', 'E2E-90', 'RECON-E2E-1',
+          'ws-e2e', 'fuel-veh-recon-e2e', 'fuel-diesel', 'E2E-90', 'RECON-E2E-1',
           '2026-07-15T15:00:00.000Z', '2026-07-15T15:05:00.000Z',
           'Conductor E2E', 'Supervisor E2E', 'odometer', 1234, 'manual', 120, 'validated'
         ) on conflict (id) do nothing

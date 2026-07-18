@@ -40,6 +40,9 @@ test.describe("Catálogos administrativos migrados", () => {
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
     await expect(dialog.getByRole("tab", { name: "General" })).toBeVisible()
+    await dialog.getByRole("tab", { name: "Combustible" }).click()
+    await dialog.locator('input[name="compatibleProductIds"][value="fuel-diesel"]').check()
+    await dialog.getByRole("tab", { name: "General" }).click()
     await dialog.getByLabel("Modelo").fill("Hilux E2E Validado")
     await dialog.getByRole("button", { name: "Guardar cambios" }).click()
     await expect(dialog).toBeHidden()
@@ -47,6 +50,7 @@ test.describe("Catálogos administrativos migrados", () => {
     await page.getByRole("button", { name: "Desactivar vehículo E2E-FUEL-1" }).click()
     await expect(page.getByRole("dialog")).toContainText("¿Desactivar vehículo?")
     await page.getByRole("dialog").getByRole("button", { name: "Desactivar" }).click()
+    await page.getByRole("tab", { name: /Inactivos/ }).click()
     await expect(page.getByRole("button", { name: "Activar vehículo E2E-FUEL-1" })).toBeVisible()
 
     await page.getByRole("button", { name: "Activar vehículo E2E-FUEL-1" }).click()

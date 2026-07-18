@@ -16,7 +16,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
     serverActions: {
-      bodySizeLimit: "6mb",
+      // The largest Server Action upload is 20 MB. Leave multipart overhead
+      // headroom while keeping the framework cap below the configured storage
+      // maximum, so domain validation is always reached for accepted files.
+      bodySizeLimit: "21mb",
     },
   },
   // Tesseract calcula por defecto el worker Node desde su propio __dirname.

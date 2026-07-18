@@ -200,14 +200,16 @@ export function QuotationPanel({
 
                 {/* Delete — only while editable */}
                 {isEditable && canUpload && q.status === "pending" && (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-mobile"
                     onClick={() => setDeleteId(q.id)}
-                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)] transition-colors"
+                    className="text-[var(--color-text-subtle)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
                     aria-label="Eliminar cotización"
                   >
                     <Trash size={14} />
-                  </button>
+                  </Button>
                 )}
               </div>
             </li>

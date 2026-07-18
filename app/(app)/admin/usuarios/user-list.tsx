@@ -9,6 +9,7 @@ import { DataTable } from "@/components/admin/data-table"
 import { UserForm } from "./user-form"
 import { UserInvitationsPanel, type InvitationRow } from "./user-invitations-panel"
 import { Avatar } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -155,6 +156,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                     onClick={() => openEdit(u)}
                     className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                     title="Editar"
+                    aria-label={`Editar usuario ${u.name}`}
                   >
                     <PencilSimple size={16} />
                   </button>
@@ -165,6 +167,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                       type="submit"
                       className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                       title={u.isActive ? "Desactivar" : "Activar"}
+                      aria-label={`${u.isActive ? "Desactivar" : "Activar"} usuario ${u.name}`}
                     >
                       {u.isActive
                         ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
@@ -226,37 +229,43 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
               </dl>
 
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-mobile"
                   onClick={() => openEdit(u)}
-                  className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
                   title="Editar"
+                  aria-label={`Editar usuario ${u.name}`}
                 >
                   <PencilSimple size={16} />
-                </button>
+                </Button>
                 <form action={toggleAction}>
                   <input type="hidden" name="id" value={u.id} />
                   <input type="hidden" name="activate" value={String(!u.isActive)} />
-                  <button
+                  <Button
                     type="submit"
-                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)] "
+                    variant="ghost"
+                    size="icon-mobile"
                     title={u.isActive ? "Desactivar" : "Activar"}
+                    aria-label={`${u.isActive ? "Desactivar" : "Activar"} usuario ${u.name}`}
                   >
                     {u.isActive
                       ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
                       : <ToggleLeft size={20} />
                     }
-                  </button>
+                  </Button>
                 </form>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-mobile"
                   onClick={() => setDeleteUserConfirm(u)}
-                  className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] transition-colors duration-[var(--duration-fast)] "
                   title="Eliminar"
                   aria-label={`Eliminar usuario ${u.name}`}
+                  className="text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)]"
                 >
                   <Trash size={16} />
-                </button>
+                </Button>
               </div>
             </article>
           )

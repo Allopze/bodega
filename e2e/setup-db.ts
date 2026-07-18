@@ -106,6 +106,7 @@ async function main() {
     { id: "p-fuel-delete", name: "combustibles:delete", module: "combustibles", description: "Eliminar registros de combustible" },
     { id: "p-fuel-import", name: "combustibles:import", module: "combustibles", description: "Importar datos de combustible" },
     { id: "p-fuel-export", name: "combustibles:export", module: "combustibles", description: "Exportar datos de combustible" },
+    { id: "p-fuel-view-costs", name: "combustibles:view_costs", module: "combustibles", description: "Ver costos de combustible" },
     { id: "p-fuel-veh", name: "combustibles:manage_vehicles", module: "combustibles", description: "Gestionar vehículos de combustible" },
     { id: "p-fuel-sup", name: "combustibles:manage_suppliers", module: "combustibles", description: "Gestionar proveedores de combustible" },
     { id: "p-fuel-tae-view", name: "combustibles:tae_view", module: "combustibles", description: "Ver control TAE" },
@@ -142,6 +143,7 @@ async function main() {
     { id: "p-adm-epp-up", name: "admin:epp_import_upload", module: "admin", description: "Cargar archivos de importación EPP" },
     { id: "p-adm-epp-rv", name: "admin:epp_import_review", module: "admin", description: "Revisar y resolver importaciones EPP" },
     { id: "p-adm-epp-cf", name: "admin:epp_import_confirm", module: "admin", description: "Confirmar importaciones EPP" },
+    { id: "p-adm-modules", name: "admin:module_management", module: "admin", description: "Activar/desactivar módulos del sistema" },
   ]
 
   await db.insert(schema.permissions).values(permissions)
@@ -202,6 +204,10 @@ async function main() {
     isActive: true,
     createdAt: now,
     updatedAt: now,
+  })
+  await db.insert(schema.fuelVehicleProducts).values({
+    vehicleId: "fuel-veh-e2e",
+    productId: "fuel-diesel",
   })
   // Second worksite for scope testing
   await db.insert(schema.worksites).values({
@@ -638,6 +644,9 @@ async function main() {
     unitOfMeasure: "unidad",
     notes: null,
   })
+  // The fixture occupies ENT-2026-0001; advance the native document sequence
+  // so the first UI-created delivery gets the next unique code.
+  await db.execute(sql`SELECT next_document_code('ENT', 2026)`)
 
   // Maintenance fixture — for mantenciones E2E spec
   await db.insert(schema.maintenanceRecords).values({

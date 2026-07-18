@@ -26,7 +26,6 @@ export function Switch({ checked, onCheckedChange, disabled, id, label }: Switch
           : "bg-[var(--color-border-strong)]",
         disabled && "cursor-not-allowed opacity-50",
       )}
-      aria-label={label}
     >
       <input
         type="checkbox"

@@ -338,6 +338,51 @@ describe("Purchasing service — edge cases", () => {
       expect(itemAfter?.status).toBe("pending_purchase")
     })
 
+    it("records the real previous status for each heterogeneous request item", async () => {
+      const requestId = "req-cancel-heterogeneous"
+      const firstItemId = "item-cancel-heterogeneous-a"
+      const secondItemId = "item-cancel-heterogeneous-b"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-CANCEL-HETEROGENEOUS", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values([
+        {
+          id: firstItemId, requestId, productId: "prod-purch", quantity: 2,
+          unitOfMeasure: "unidad", status: "pending_purchase", createdAt: now, updatedAt: now,
+        },
+        {
+          id: secondItemId, requestId, productId: "prod-purch", quantity: 3,
+          unitOfMeasure: "unidad", status: "pending_purchase", createdAt: now, updatedAt: now,
+        },
+      ])
+
+      const orderId = await createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [
+          { requestItemId: firstItemId, productId: "prod-purch", productNameFree: null, quantity: 2, unitOfMeasure: "unidad", unitPrice: 1000 },
+          { requestItemId: secondItemId, productId: "prod-purch", productNameFree: null, quantity: 3, unitOfMeasure: "unidad", unitPrice: 1000 },
+        ],
+      })
+
+      await inMemoryDb
+        .update(schema.purchaseRequestItems)
+        .set({ status: "purchased" })
+        .where(eq(schema.purchaseRequestItems.id, secondItemId))
+
+      await cancelOrder(orderId, userId, "Cancelar OC heterogénea")
+
+      const history = await inMemoryDb
+        .select({ entityId: schema.statusHistory.entityId, fromStatus: schema.statusHistory.fromStatus, toStatus: schema.statusHistory.toStatus })
+        .from(schema.statusHistory)
+        .where(eq(schema.statusHistory.entityType, "request_item"))
+      expect(history).toEqual(expect.arrayContaining([
+        { entityId: firstItemId, fromStatus: "in_purchase_order", toStatus: "pending_purchase" },
+        { entityId: secondItemId, fromStatus: "purchased", toStatus: "pending_purchase" },
+      ]))
+    })
+
     it("throws if order is already received (cannot cancel)", async () => {
       // Create a fresh order, issue it, send it, then set to 'received' status
       const reqId = "req-no-cancel"

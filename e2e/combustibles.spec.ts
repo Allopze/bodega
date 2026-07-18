@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test"
 import ExcelJS from "exceljs"
-import { login } from "./helpers"
+import { login, pickCurrentMonthDate } from "./helpers"
 
 async function selectCombobox(page: Page, index: number, option: string | RegExp) {
   await page.getByRole("combobox").nth(index).click()
@@ -18,10 +18,10 @@ test.describe("Combustibles module", () => {
     // KPI cards should be visible
     await expect(page.getByText("Total consumido")).toBeVisible()
     await expect(page.getByText("Monto total", { exact: true })).toBeVisible()
-    await expect(page.getByText("Patentes únicas")).toBeVisible()
+    await expect(page.getByText("Transacciones", { exact: true })).toBeVisible()
     await expect(page.getByText("Sin asociación")).toBeVisible()
     // Detail table (subordinate to the dashboard, not the main view)
-    await expect(page.getByText(/registros encontrados/)).toBeVisible()
+    await expect(page.getByRole("link", { name: /Ver .*registros del período/ })).toBeVisible()
   })
 
   test("facturas dashboard (relocated invoice control) loads with KPIs and charts", async ({ page }) => {
@@ -35,7 +35,7 @@ test.describe("Combustibles module", () => {
   test("import consumos page loads with the wizard and history", async ({ page }) => {
     await page.goto("/combustibles/importar")
     await expect(page.locator("h1").first()).toContainText("Importar consumos")
-    await expect(page.getByText("Nueva importación de consumos")).toBeVisible()
+    await expect(page.getByText("Carga manual de reportes")).toBeVisible()
     await expect(page.getByText("Historial de importaciones")).toBeVisible()
   })
 
@@ -44,7 +44,7 @@ test.describe("Combustibles module", () => {
     await expect(page.locator("h1").first()).toContainText("Nueva carga")
 
     // Fill form
-    await page.fill('input[name="loadDate"]', "2026-06-15")
+    await pickCurrentMonthDate(page, "Seleccionar fecha")
     await selectCombobox(page, 0, "TCT")
     await selectCombobox(page, 1, /E2E-FUEL-1/)
     await selectCombobox(page, 2, "Proveedor Combustible E2E")

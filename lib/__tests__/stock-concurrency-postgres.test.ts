@@ -88,6 +88,47 @@ describeIf("stock movement concurrency on real Postgres", () => {
     expect(movementRows[0]!.stockBefore).toBe(5)
     expect(movementRows[0]!.stockAfter).toBe(1)
   })
+
+  it("serializes concurrent waste movements through the same stock row", async () => {
+    const db = getTestDb()
+    await db.delete(schema.inventoryMovements).where(eq(schema.inventoryMovements.worksiteId, "ws-stock-concurrency"))
+    await db
+      .update(schema.worksiteStock)
+      .set({ quantity: 5, updatedAt: new Date().toISOString() })
+      .where(eq(schema.worksiteStock.id, "stock-concurrency-row"))
+
+    const { applyMovement } = await import("@/lib/services/stock")
+    const movement = {
+      worksiteId: "ws-stock-concurrency",
+      productId: "prod-stock-concurrency",
+      type: "egreso_desecho" as const,
+      quantity: 4,
+      performedBy: "user-stock-concurrency",
+      userEmail: "stock-concurrency@test.local",
+      reason: "Prueba de carrera de desecho",
+    }
+
+    const results = await Promise.allSettled([
+      applyMovement(movement),
+      applyMovement(movement),
+    ])
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2)
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(0)
+
+    const stock = await db.query.worksiteStock.findFirst({
+      where: eq(schema.worksiteStock.id, "stock-concurrency-row"),
+    })
+    expect(stock?.quantity).toBe(0)
+
+    const movementRows = await db
+      .select()
+      .from(schema.inventoryMovements)
+      .where(eq(schema.inventoryMovements.worksiteId, "ws-stock-concurrency"))
+    expect(movementRows).toHaveLength(2)
+    expect(movementRows.every((row) => row.type === "egreso_desecho")).toBe(true)
+    expect(movementRows.map((row) => row.quantity).sort((a, b) => a - b)).toEqual([-4, -1])
+  })
 })
 
 function getTestDb() {

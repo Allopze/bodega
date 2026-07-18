@@ -17,9 +17,8 @@ export async function issueOrder(
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, orderId),
-    })
+    const [order] = await tx.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.id, orderId)).for("update")
     if (!order) throw new Error(`Order ${orderId} not found`)
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
@@ -63,9 +62,8 @@ export async function markOrderSent(
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, orderId),
-    })
+    const [order] = await tx.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.id, orderId)).for("update")
     if (!order) throw new Error(`Order ${orderId} not found`)
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
@@ -149,9 +147,8 @@ export async function cancelOrder(
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, orderId),
-    })
+    const [order] = await tx.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.id, orderId)).for("update")
     if (!order) throw new Error(`Order ${orderId} not found`)
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
@@ -168,8 +165,9 @@ export async function cancelOrder(
 
     // Move associated request items back to "pending_purchase" status
     const ocItems = await tx
-      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId })
+      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId, currentStatus: purchaseRequestItems.status })
       .from(purchaseOrderItems)
+      .leftJoin(purchaseRequestItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
 
     const requestItemIds = ocItems
@@ -188,10 +186,12 @@ export async function cancelOrder(
         )
 
       await recordStatusChanges(
-        requestItemIds.map((reqItemId) => ({
+        ocItems
+          .filter((item): item is typeof item & { requestItemId: string; currentStatus: string } => Boolean(item.requestItemId && item.currentStatus && ["in_purchase_order", "purchased"].includes(item.currentStatus)))
+          .map((item) => ({
           entityType: "request_item" as const,
-          entityId:   reqItemId,
-          fromStatus: "purchased",
+          entityId:   item.requestItemId,
+          fromStatus: item.currentStatus,
           toStatus:   "pending_purchase",
           changedBy:  userId,
         })),
@@ -236,9 +236,8 @@ export async function confirmOrder(
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, orderId),
-    })
+    const [order] = await tx.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.id, orderId)).for("update")
     if (!order) throw new Error(`Order ${orderId} not found`)
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")

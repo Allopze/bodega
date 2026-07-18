@@ -13,6 +13,6 @@ test.describe("Flota module", () => {
 
   test("vehicle detail page loads", async ({ page }) => {
     await page.goto("/flota/fuel-veh-e2e")
-    await expect(page.getByRole("heading", { name: /Patente/ }).or(page.getByText("Datos operacionales"))).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole("heading", { name: "E2E-FUEL-1" })).toBeVisible({ timeout: 10_000 })
   })
 })

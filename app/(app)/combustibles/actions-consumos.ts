@@ -337,6 +337,9 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
 
   const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, vehicleId) })
   if (!vehicle) return { ok: false, message: "Vehículo no encontrado" }
+  if (vehicle.worksiteId !== batch.worksiteId) {
+    return { ok: false, message: "El vehículo no pertenece a la faena del lote" }
+  }
 
   const updated = await db.update(fuelConsumptionRecords)
     .set({ vehicleId, updatedAt: new Date().toISOString() })

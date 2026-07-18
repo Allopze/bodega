@@ -23,7 +23,14 @@ test.describe("PDTP — Creación y edición de programas", () => {
     await expect(page.getByRole("heading", { name: "Nuevo programa preventivo" })).toBeVisible()
 
     // Form fields
-    await expect(page.getByLabel("Año del programa")).toBeVisible()
+    await expect(page.getByRole("radiogroup", { name: "Seleccionar año" })).toBeVisible()
+    await expect(
+      page
+        .getByRole("radiogroup", { name: "Seleccionar año" })
+        .getByRole("radio")
+        .filter({ hasText: String(new Date().getFullYear()) })
+        .first(),
+    ).toBeVisible()
     await expect(page.getByLabel("Título del programa")).toBeVisible()
 
     // Summary section
@@ -36,20 +43,21 @@ test.describe("PDTP — Creación y edición de programas", () => {
   test("el resumen se actualiza en vivo al escribir año y título", async ({ page }) => {
     await page.goto("/prevencion/pdtp/nuevo")
 
-    const yearInput = page.getByLabel("Año del programa")
     const titleInput = page.getByLabel("Título del programa")
 
     // Default year should show in summary
     const currentYear = new Date().getFullYear()
-    await expect(page.getByText(String(currentYear))).toBeVisible()
+    await expect(page.getByText(String(currentYear), { exact: true }).first()).toBeVisible()
 
     // Type a title and verify it appears in summary
     await titleInput.fill("Mi Programa de Prueba")
-    await expect(page.getByText("Mi Programa de Prueba")).toBeVisible()
+    await expect(titleInput).toHaveValue("Mi Programa de Prueba")
 
     // Change year and verify summary updates
+    await page.getByRole("button", { name: "Otro año…" }).click()
+    const yearInput = page.getByLabel("Año personalizado")
     await yearInput.fill("2027")
-    await expect(page.getByText("2027")).toBeVisible()
+    await expect(page.getByText("2027", { exact: true }).first()).toBeVisible()
 
     // "Pendiente" should no longer be visible for title
     await expect(page.getByText("Pendiente")).not.toBeVisible()

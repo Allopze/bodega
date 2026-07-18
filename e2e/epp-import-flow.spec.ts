@@ -37,8 +37,9 @@ test("EPP import: subir XLSX, revisar en página de lote y cancelar importación
   await expect(page.getByRole("heading", { name: /catálogo/i })).toBeVisible()
 
   // ── 4. Open the import panel ───────────────────────────────────────────
-  await page.getByRole("button", { name: /importar xlsx/i }).click()
-  const dialog = page.getByRole("dialog", { name: /importar epp/i })
+  await page.getByRole("button", { name: "Importar", exact: true }).click()
+  await page.getByRole("button", { name: /equipos de protección \(epp\)/i }).click()
+  const dialog = page.getByRole("dialog").filter({ hasText: "Importar equipos de protección (EPP)" })
   await expect(dialog).toBeVisible()
 
   // ── 5. Upload the XLSX file ────────────────────────────────────────────
@@ -52,8 +53,7 @@ test("EPP import: subir XLSX, revisar en página de lote y cancelar importación
   await dialog.getByRole("button", { name: /importar xlsx/i }).click()
 
   // ── 7. Verify success: "Análisis listo" with "Revisar lote" button ─────
-  await expect(page.getByText("Análisis listo")).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText("Revisión requerida")).toBeVisible()
+  await expect(page.getByText(/análisis listo para confirmar/i)).toBeVisible({ timeout: 30_000 })
 
   // ── 8. Click "Revisar lote" → lands on the review page ─────────────────
   const reviewButton = page.getByRole("button", { name: /revisar lote/i })

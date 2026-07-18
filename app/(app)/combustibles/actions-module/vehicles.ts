@@ -7,7 +7,7 @@ import { fuelEquipmentTypes, fuelProducts, fuelVehicleOperationalIntervals, fuel
 import { and, eq, inArray, isNull } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
-import { canAccessWorksite } from "@/lib/auth/scope"
+import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
 import { parseFleetXlsx } from "@/lib/combustibles/fleet-xlsx-import"
@@ -230,25 +230,35 @@ export async function toggleFuelVehicleActiveAction(id: string, activate: boolea
 }
 
 export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  try { await requirePermission("combustibles:manage_vehicles") }
+  let session
+  try { session = await requirePermission("combustibles:manage_vehicles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const idsRaw = formData.get("ids") as string
   const activate = formData.get("activate") === "true"
   if (!idsRaw) return { ok: false, message: "IDs requeridos" }
 
-  const ids = idsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+  const ids = [...new Set(idsRaw.split(",").map((s) => s.trim()).filter(Boolean))]
   if (ids.length === 0) return { ok: false, message: "Selecciona al menos un vehículo" }
   if (ids.length > 100) return { ok: false, message: "Máximo 100 vehículos por operación" }
 
   try {
     const now = new Date().toISOString()
-    await db.update(fuelVehicles)
-      .set({ isActive: activate, updatedAt: now })
-      .where(inArray(fuelVehicles.id, ids))
+    const scope = worksiteScopeSql(session, fuelVehicles.worksiteId)
+    const where = scope ? and(inArray(fuelVehicles.id, ids), scope) : inArray(fuelVehicles.id, ids)
+    const updated = await db.transaction(async (tx) => {
+      const visible = await tx.select({ id: fuelVehicles.id }).from(fuelVehicles).where(where)
+      if (visible.length !== ids.length) {
+        throw new Error("Uno o más vehículos no existen o están fuera de tu alcance")
+      }
+      return tx.update(fuelVehicles)
+        .set({ isActive: activate, updatedAt: now })
+        .where(where)
+        .returning({ id: fuelVehicles.id })
+    })
 
     revalidatePath(FLEET_CATALOG_PATH)
-    return { ok: true, message: `${ids.length} vehículo${ids.length === 1 ? "" : "s"} ${activate ? "activado" : "desactivado"}${ids.length === 1 ? "" : "s"}` }
+    return { ok: true, message: `${updated.length} vehículo${updated.length === 1 ? "" : "s"} ${activate ? "activado" : "desactivado"}${updated.length === 1 ? "" : "s"}` }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, activate ? "Error al activar" : "Error al desactivar") }
   }

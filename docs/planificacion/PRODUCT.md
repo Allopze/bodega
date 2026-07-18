@@ -23,7 +23,7 @@ todo el pipeline: solicitud → aprobación → orden de compra → recepción �
 
 | Rol | Alcance | Qué hace |
 |---|---|---|
-| **Administrador** | Todas las faenas | Control total del sistema, 23 permisos |
+| **Administrador** | Todas las faenas | Control total del sistema, con permisos derivados de los manifiestos vivos |
 | **Jefatura** | Todas las faenas | Aprueba, ve compras, ve reportes |
 | **Secretaría** | Todas las faenas | Aprueba, crea OCs, recibe, administra maestros |
 | **Prevencionista oficina** | Todas las faenas | Aprueba (especialmente EPP), recibe en oficina, administra maestros |
@@ -74,7 +74,7 @@ pendientes) y tarjetas KPI del estado del pipeline.
 ### Bodega
 - Stock por faena por producto
 - Alertas de stock mínimo
-- Kardex: historial completo de movimientos (recepción, entrega, ajuste, transferencia, devolución, rechazo, pérdida)
+- Kardex: historial completo de movimientos (recepción, entrega, devolución, desecho y ajuste)
 - Ajustes de stock con motivo
 - Panel de devoluciones
 
@@ -94,7 +94,7 @@ pendientes) y tarjetas KPI del estado del pipeline.
 - Múltiples tipos de reportes con filtros
 - Exportación a XLSX vía ExcelJS (nunca CSV)
 
-### Administración (7 secciones)
+### Administración
 - **Usuarios**: CRUD, invitación por email con token, asignación de roles y faenas
 - **Faenas**: CRUD (nombre, código, dirección, región, activo)
 - **Trabajadores**: CRUD (RUT, nombre, cargo, faena)
@@ -158,7 +158,7 @@ Estados de OC: `draft → issued → sent → supplier_confirmed → partially_r
    Esto es lo que resuelve el problema de "ítems perdidos".
 3. **PostgreSQL operativo**: persistencia centralizada con migraciones Drizzle,
    constraints de integridad y mejor soporte para concurrencia real.
-4. **RBAC con caché de 60s**: snapshot cacheado, invalidado al cambiar perfil. El
+4. **RBAC con caché breve**: snapshot cacheado durante 5 segundos, invalidado al cambiar perfil. El
    scoping de faena se aplica a nivel SQL.
 5. **Sin estado global**: React Query para caché del servidor, SessionProvider para
    auth. Sin Redux/Zustand.
@@ -196,5 +196,5 @@ Estados de OC: `draft → issued → sent → supplier_confirmed → partially_r
 - Stock por faena (`worksite_stock` único en worksiteId + productId)
 - Todos los movimientos registrados en `inventory_movements` con cantidades antes/después
 - Alertas de stock mínimo
-- Ajustes, transferencias, devoluciones y rechazos soportados
+- Ajustes, devoluciones y desechos soportados
 - Vista Kardex en `/bodega`

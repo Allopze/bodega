@@ -9,6 +9,7 @@ import { feedbackCreateSchema, feedbackUpdateStatusSchema } from "@/lib/validati
 import type { ActionState } from "@/lib/validation/feedback"
 import { notifyAfterCommit, getUserIdsWithPermission, notifyManyUser } from "@/lib/services/notifications"
 import { resolveStorageDir } from "@/lib/storage/config"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 import { nanoid } from "@/lib/id"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 
@@ -49,9 +50,12 @@ export async function createReportAction(
   }
 
   let proofAttachment: FeedbackAttachmentInput | null = null
+  let pendingAttachmentPath: string | null = null
+  let finalAttachmentPath: string | null = null
+  let attachmentFinalized = false
   if (input.attachment instanceof File && input.attachment.size > 0) {
     const file = input.attachment
-    const MAX_MB = 20
+    const { feedbackAttachmentMaxMb: MAX_MB } = await getOperationalSettings()
     if (file.size > MAX_MB * 1024 * 1024) {
       return { ok: false, message: `El archivo supera el límite de ${MAX_MB} MB` }
     }
@@ -67,9 +71,12 @@ export async function createReportAction(
     const feedbackDir = path.join(resolveStorageDir(), "feedback")
     const relativePath = `${FEEDBACK_PREFIX}${storageName}`
     const absolutePath = path.join(feedbackDir, storageName)
+    const temporaryPath = `${absolutePath}.tmp`
 
     await fs.mkdir(feedbackDir, { recursive: true })
-    await fs.writeFile(absolutePath, Buffer.from(fileBuf))
+    await fs.writeFile(temporaryPath, Buffer.from(fileBuf))
+    pendingAttachmentPath = temporaryPath
+    finalAttachmentPath = absolutePath
 
     proofAttachment = {
       fileName: safeName,
@@ -81,6 +88,10 @@ export async function createReportAction(
 
   try {
     const report = await createReport(parsed.data, session.user.id, proofAttachment)
+    if (pendingAttachmentPath && finalAttachmentPath) {
+      await fs.rename(pendingAttachmentPath, finalAttachmentPath)
+      attachmentFinalized = true
+    }
 
     notifyAfterCommit(() =>
       getUserIdsWithPermission("feedback:manage").then((ids) =>
@@ -98,6 +109,9 @@ export async function createReportAction(
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Reporte enviado", data: { id: report.id } }
   } catch (e) {
+    if (!attachmentFinalized && pendingAttachmentPath) {
+      await fs.unlink(pendingAttachmentPath).catch(() => undefined)
+    }
     return { ok: false, message: e instanceof Error ? e.message : "Error al enviar el reporte" }
   }
 }

@@ -3,7 +3,8 @@ import { z } from "zod"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { inArray } from "drizzle-orm"
-import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
+import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { isGlobalRole } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
@@ -97,22 +98,33 @@ export async function POST(req: NextRequest) {
       const vehicleWorksiteMap = new Map(allVehicles.map((v: { id: string; worksiteId: string }) => [v.id, v.worksiteId]))
       const supplierMap = new Map(allSuppliers.map((s: { name: string; id: string }) => [s.name.toUpperCase(), s.id]))
       const worksiteMap = new Map(allWorksites.map((w: { name: string; id: string }) => [w.name.toUpperCase(), w.id]))
+      const worksiteById = new Map(allWorksites.map((worksite: { id: string }) => [worksite.id, worksite]))
 
       // Resolver el mapeo de faenas una vez: crea las faenas marcadas para crear
       // y produce fileFaena → worksiteId, o null cuando el usuario eligió omitir.
       const takenCodes = new Set(allWorksites.map((w: { code: string }) => w.code))
       const resolvedFaena = new Map<string, string | null>()
+      const createdWorksiteIds = new Set<string>()
       const created: Array<{ type: string; name: string }> = []
       for (const [fileFaena, target] of Object.entries(faenaMapping)) {
         if (target === SKIP_FAENA) { resolvedFaena.set(fileFaena, null); continue }
         if (target === CREATE_FAENA) {
+          if (!isGlobalRole(session) && !can(session, "admin:worksites")) {
+            throw new Error(`No tienes permisos para crear la faena "${fileFaena}" durante la importación`)
+          }
+          if (!loads.some((load) => load.worksite === fileFaena)) continue
           const id = nanoid()
           const name = toTitleCase(fileFaena)
           await tx.insert(worksites).values({ id, name, code: makeWorksiteCode(fileFaena, takenCodes), isActive: true })
           resolvedFaena.set(fileFaena, id)
+          createdWorksiteIds.add(id)
           worksiteMap.set(fileFaena.toUpperCase(), id)
           created.push({ type: "faena", name })
         } else {
+          const targetWorksite = worksiteById.get(target)
+          if (!targetWorksite || !canAccessWorksite(session, targetWorksite.id)) {
+            throw new Error(`La faena destino seleccionada para "${fileFaena}" no existe o está fuera de tu alcance`)
+          }
           resolvedFaena.set(fileFaena, target) // worksiteId existente
         }
       }
@@ -167,7 +179,7 @@ export async function POST(req: NextRequest) {
           continue
         }
         // Verificación de alcance (H7): la sesión debe tener acceso a esta faena
-        if (!canAccessWorksite(session, worksiteId)) {
+        if (!createdWorksiteIds.has(worksiteId) && !canAccessWorksite(session, worksiteId)) {
           importErrors.push({ rowIndex: load.rowIndex, field: "FAENA", message: `Sin acceso a la faena "${load.worksite}"` })
           continue
         }
@@ -178,6 +190,7 @@ export async function POST(req: NextRequest) {
           await tx.insert(fuelVehicles).values({ id, plate: load.vehicle, type: "camion", equipmentTypeId: fuelEquipmentTypeIdForLegacy("camion"), ...fuelMetricDefaultsForLegacy("camion"), worksiteId, isActive: true })
           vehicleId = id
           vehicleMap.set(load.vehicle.toUpperCase(), id)
+          vehicleWorksiteMap.set(id, worksiteId)
           created.push({ type: "vehículo", name: load.vehicle })
         }
         if (!supplierId && createMissing) {

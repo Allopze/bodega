@@ -13,7 +13,7 @@
  * admin con permisos ppa:*).
  */
 import { expect, test, type Page } from "@playwright/test"
-import { login, selectRadixById } from "./helpers"
+import { login, pickCurrentMonthDate, selectRadixById } from "./helpers"
 
 const FAENA = "Faena E2E"
 const RUT = "11111111-1"
@@ -95,7 +95,10 @@ test.describe("PPA Digital — revisión del responsable", () => {
     await submitStoppedPpa(page)
     await goToStoppedPpaDetail(page)
 
-    await page.getByLabel("Acción correctiva implementada").fill("Se aisló el cable y se delimitó la zona")
+    await page.getByLabel("Acción correctiva").fill("Se aisló el cable y se delimitó la zona")
+    await page.locator("#responsible").fill("Supervisor E2E")
+    await selectRadixById(page, "responsible-role", "Supervisor de faena")
+    await pickCurrentMonthDate(page, "Seleccionar fecha")
     await page.getByText("Autorizar inicio").click()
     await page.getByRole("button", { name: "Registrar revisión" }).click()
     await page.getByRole("button", { name: "Sí, autorizar" }).click()
@@ -108,7 +111,7 @@ test.describe("PPA Digital — revisión del responsable", () => {
     await submitStoppedPpa(page)
     await goToStoppedPpaDetail(page)
 
-    await page.getByText("Rechazar inicio").click()
+    await page.getByRole("button", { name: "Rechazar inicio" }).click()
     await page.getByRole("button", { name: "Registrar revisión" }).click()
 
     await expect(page.getByText("Rechazó el inicio", { exact: true })).toBeVisible()
@@ -118,7 +121,7 @@ test.describe("PPA Digital — revisión del responsable", () => {
     await submitStoppedPpa(page)
     await goToStoppedPpaDetail(page)
 
-    await page.getByText("Solicitar corrección").click()
+    await page.getByRole("button", { name: "Solicitar corrección" }).click()
     await page.getByRole("button", { name: "Registrar revisión" }).click()
 
     await expect(page.getByText("Solicitó corrección", { exact: true })).toBeVisible()
@@ -129,7 +132,10 @@ test.describe("PPA Digital — revisión del responsable", () => {
     await goToStoppedPpaDetail(page)
 
     // Autorizar
-    await page.getByLabel("Acción correctiva implementada").fill("Se aisló el cable y se delimitó la zona")
+    await page.getByLabel("Acción correctiva").fill("Se aisló el cable y se delimitó la zona")
+    await page.locator("#responsible").fill("Supervisor E2E")
+    await selectRadixById(page, "responsible-role", "Supervisor de faena")
+    await pickCurrentMonthDate(page, "Seleccionar fecha")
     await page.getByText("Autorizar inicio").click()
     await page.getByRole("button", { name: "Registrar revisión" }).click()
     await page.getByRole("button", { name: "Sí, autorizar" }).click()

@@ -5,6 +5,14 @@ import { login } from "./helpers"
 
 const workbookPath = path.resolve(process.cwd(), "CONTROL_MANUAL_COMBUSTIBLES_UNIFICADO.xlsx")
 
+async function resolvePendingMappings(page: import("@playwright/test").Page) {
+  const mappings = page.getByRole("combobox", { name: /Destino de/ })
+  const count = await mappings.count()
+  for (let index = 0; index < count; index += 1) {
+    await mappings.nth(index).selectOption("__none__")
+  }
+}
+
 test.describe("TAE — importación histórica real", () => {
   test.beforeAll(async () => {
     const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL
@@ -32,7 +40,8 @@ test.describe("TAE — importación histórica real", () => {
     const fileInput = page.locator('input[type="file"]')
     await fileInput.setInputFiles(workbookPath)
     await page.getByRole("button", { name: "Generar reporte" }).click()
-    await expect(page.getByText("Revisé el reporte de mapeo")).toBeVisible({ timeout: 90_000 })
+    await expect(page.getByText(/Revisé el reporte y las decisiones anteriores/)).toBeVisible({ timeout: 90_000 })
+    await resolvePendingMappings(page)
     await page.getByRole("checkbox").check()
     await page.getByRole("button", { name: "Importar histórico definitivamente" }).click()
     await expect(page.getByText("Importación completada")).toBeVisible({ timeout: 120_000 })
@@ -57,7 +66,8 @@ test.describe("TAE — importación histórica real", () => {
       await fileInput.setInputFiles([])
       await fileInput.setInputFiles(workbookPath)
       await page.getByRole("button", { name: "Generar reporte" }).click()
-      await expect(page.getByText("Revisé el reporte de mapeo")).toBeVisible({ timeout: 90_000 })
+      await expect(page.getByText(/Revisé el reporte y las decisiones anteriores/)).toBeVisible({ timeout: 90_000 })
+      await resolvePendingMappings(page)
       await page.getByRole("checkbox").check()
       await page.getByRole("button", { name: "Importar histórico definitivamente" }).click()
       await expect(page.getByText(/Este archivo ya fue importado/)).toBeVisible({ timeout: 90_000 })

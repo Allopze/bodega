@@ -8,6 +8,6 @@ test.describe("Flota — gestión documental", () => {
 
   test("vehicle detail shows documents panel", async ({ page }) => {
     await page.goto("/flota/fuel-veh-e2e")
-    await expect(page.getByText("Documentos del vehículo")).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole("heading", { name: "Documentos del vehículo" })).toBeVisible({ timeout: 10_000 })
   })
 })

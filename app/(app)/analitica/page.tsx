@@ -8,7 +8,6 @@ import {
   Package,
   ShieldWarning,
   ShoppingCart,
-  Truck,
   Warning,
 } from "@phosphor-icons/react/dist/ssr"
 import { requirePermission } from "@/lib/auth/can"
@@ -93,6 +92,7 @@ export default async function AnaliticaPage({
             value={formatCLP(data.kpis.totalSpend)}
             detail={`Período ${data.filters.fromDate} a ${data.filters.toDate}`}
             trend={data.kpis.spendVariationPct}
+            href="/compras"
             glossary="Suma de los montos totales de todas las órdenes de compra emitidas más las cargas de combustible del período seleccionado. La variación porcentual compara contra el período anterior de igual duración."
           />
           <KpiCard
@@ -100,6 +100,7 @@ export default async function AnaliticaPage({
             label="Órdenes de compra"
             value={formatQty(data.kpis.purchaseOrderCount)}
             detail={`Promedio ${formatCLP(data.kpis.averageOrderAmount)}`}
+            href="/compras"
             glossary="Cantidad de órdenes de compra emitidas en el período. El promedio se calcula dividiendo el gasto total de compras entre el número de OC."
           />
           <KpiCard
@@ -107,6 +108,7 @@ export default async function AnaliticaPage({
             label="Combustible"
             value={formatCLP(data.vehicleCosts.reduce((sum, row) => sum + row.totalFuelAmount, 0))}
             detail={`${formatQty(data.kpis.fuelLiters, "L")} · ${data.kpis.fuelLoadCount} cargas`}
+            href="/combustibles"
             glossary="Gasto total en combustible durante el período. Incluye todas las cargas registradas de todos los vehículos visibles para tu alcance."
           />
           <KpiCard
@@ -115,14 +117,8 @@ export default async function AnaliticaPage({
             value={formatQty(data.alerts.length)}
             detail={`${data.kpis.criticalStockCount} productos bajo mínimo`}
             tone={data.alerts.some((alert) => alert.severity === "critical") ? "signal" : "neutral"}
+            href="/dashboard"
             glossary="Alertas accionables detectadas por el sistema: documentos vencidos (flota), mantenciones vencidas, productos bajo stock mínimo, y órdenes pendientes sin avance."
-          />
-          <KpiCard
-            icon={<Truck size={18} />}
-            label="Vehículos"
-            value={formatQty(data.vehicleCosts.length)}
-            detail="Combustible, mantenciones e imputaciones"
-            glossary="Cantidad de vehículos activos en la flota. Cada vehículo acumula costos de combustible, mantenciones y otros cargos imputados durante el período."
           />
         </section>
 
@@ -172,8 +168,8 @@ export default async function AnaliticaPage({
             <CardContent>
               {data.alerts.length > 0 ? (
                 <div className="grid gap-3">
-                  {data.alerts.slice(0, 8).map((alert, index) => (
-                    <div key={`${alert.type}-${alert.entityLabel}-${index}`} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+                  {data.alerts.slice(0, 8).map((alert) => (
+                    <div key={`${alert.type}-${alert.entityLabel}-${alert.reason}`} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -286,5 +282,3 @@ export default async function AnaliticaPage({
     </PageContainer>
   )
 }
-
-

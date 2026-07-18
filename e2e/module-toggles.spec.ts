@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import postgres from "postgres"
 import { login } from "./helpers"
 
 /**
@@ -17,7 +18,26 @@ import { login } from "./helpers"
  */
 
 test.describe("Module toggles", () => {
+  function flotaModuleSection(page: import("@playwright/test").Page) {
+    return page.locator("section").filter({ hasText: "Control operacional" }).filter({ hasText: "flota" }).first()
+  }
+
+  async function resetFlotaToggles() {
+    const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL
+    if (!databaseUrl) throw new Error("E2E_DATABASE_URL es requerido")
+    const sql = postgres(databaseUrl, { max: 1 })
+    try {
+      await sql`
+        delete from system_settings
+        where key in ('module.enabled:flota', 'submodule.enabled:flota:/flota')
+      `
+    } finally {
+      await sql.end()
+    }
+  }
+
   test.beforeEach(async ({ page }) => {
+    await resetFlotaToggles()
     await login(page)
   })
 
@@ -32,21 +52,22 @@ test.describe("Module toggles", () => {
   test("toggle a module off and verify nav items disappear", async ({ page }) => {
     // First, verify the "Control operacional" nav is visible before toggle
     await page.goto("/dashboard")
+    await page.getByRole("button", { name: "Control operacional" }).click()
     await expect(page.getByRole("link", { name: "Flota" }).first()).toBeVisible()
 
     // Go to admin/modulos and toggle "Control operacional" off
     await page.goto("/admin/modulos")
 
     // Find the "Control operacional" module card
-    const moduleSection = page.locator("section").filter({ hasText: "Control operacional" }).first()
+    const moduleSection = flotaModuleSection(page)
     await expect(moduleSection).toBeVisible()
 
     // Click the toggle switch for the module (the first switch in the card)
-    const toggle = moduleSection.locator('input[type="checkbox"]').first()
-    await toggle.click()
-
-    // Wait for the toast confirmation
-    await expect(page.getByText(/Módulo desactivado/).first()).toBeVisible({ timeout: 10_000 })
+    const disableResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
+    await moduleSection.getByLabel("Desactivar módulo Control operacional").click({ force: true })
+    await disableResponse
+    await page.reload()
+    await expect(flotaModuleSection(page).getByLabel("Activar módulo Control operacional")).toBeVisible()
 
     // Verify nav items disappeared — navigate back to dashboard
     await page.goto("/dashboard")
@@ -65,23 +86,27 @@ test.describe("Module toggles", () => {
   })
 
   test("toggle a module back on and verify nav items reappear", async ({ page }) => {
-    // First, disable the module
     await page.goto("/admin/modulos")
 
     // Find and toggle "Control operacional" off
-    const moduleSection = page.locator("section").filter({ hasText: "Control operacional" }).first()
-    const toggle = moduleSection.locator('input[type="checkbox"]').first()
-    await toggle.click()
-    await expect(page.getByText(/Módulo desactivado/).first()).toBeVisible({ timeout: 10_000 })
+    const moduleSection = flotaModuleSection(page)
+    const disableResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
+    await moduleSection.getByLabel("Desactivar módulo Control operacional").locator("xpath=..").click({ force: true })
+    await disableResponse
     await page.waitForTimeout(300)
 
     // Now toggle it back on
-    const toggleAgain = moduleSection.locator('input[type="checkbox"]').first()
-    await toggleAgain.click()
-    await expect(page.getByText(/Módulo activado/).first()).toBeVisible({ timeout: 10_000 })
+    await page.reload()
+    const refreshedModuleSection = flotaModuleSection(page)
+    const enableResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
+    await refreshedModuleSection.getByLabel("Activar módulo Control operacional").locator("xpath=..").click({ force: true })
+    await enableResponse
+    await page.reload()
+    await expect(flotaModuleSection(page).getByLabel("Desactivar módulo Control operacional")).toBeVisible()
 
     // Navigate to dashboard and verify nav items reappeared
     await page.goto("/dashboard")
+    await page.getByRole("button", { name: "Control operacional" }).click()
     await page.waitForTimeout(500)
 
     const sidebarFlota = page.locator('nav[aria-label="Navegación"], nav[aria-label="Áreas"]').getByRole("link", { name: "Flota" })
@@ -92,20 +117,23 @@ test.describe("Module toggles", () => {
     await page.goto("/admin/modulos")
 
     // Find the "Control operacional" card
-    const card = page.locator("section").filter({ hasText: "Control operacional" }).first()
+    const card = flotaModuleSection(page)
 
     // Toggle the first submodule's switch (should be Flota)
     const submoduleSwitches = card.locator('input[type="checkbox"]')
     // The first switch is the module itself; the second is the first submodule
     if (await submoduleSwitches.count() > 1) {
       const subToggle = submoduleSwitches.nth(1)
-      await subToggle.click()
-      await expect(page.getByText(/Submódulo (activado|desactivado)/).first()).toBeVisible({ timeout: 10_000 })
+      const submoduleResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
+      await subToggle.locator("xpath=..").click({ force: true })
+      await submoduleResponse
     }
   })
 
-  test("permission check: non-admin cannot access /admin/modulos", async ({ page }) => {
+  test("permission check: non-admin cannot access /admin/modulos", async ({ browser }) => {
     // Login as scoped user
+    const context = await browser.newContext()
+    const page = await context.newPage()
     await page.goto("/login")
     await page.getByLabel("Correo electrónico").fill("scoped@e2e.chome.cl")
     await page.getByLabel("Contraseña").fill("scoped2026")
@@ -116,5 +144,6 @@ test.describe("Module toggles", () => {
     await page.goto("/admin/modulos")
     // Should be redirected to /forbidden or get a 403
     await expect(page).toHaveURL(/\/forbidden|\/login/)
+    await context.close()
   })
 })

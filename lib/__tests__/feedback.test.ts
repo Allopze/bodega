@@ -28,6 +28,7 @@ import {
 
 describe("feedback service", () => {
   beforeEach(async () => {
+    await inMemoryDb.delete(schema.attachments)
     await inMemoryDb.delete(schema.feedbackReports)
     await inMemoryDb.delete(schema.users)
     // Setup test users
@@ -70,6 +71,50 @@ describe("feedback service", () => {
 
     expect(report.priority).toBe("alta")
     expect(report.dueAt).not.toBeNull()
+  })
+
+  it("rolls back the report when attachment persistence fails", async () => {
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION test_fail_feedback_attachment() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'injected attachment write failure';
+      END;
+      $$;
+      CREATE TRIGGER test_fail_feedback_attachment_trigger
+      BEFORE INSERT ON attachments
+      FOR EACH ROW
+      WHEN (NEW.file_name = 'fail-attachment')
+      EXECUTE FUNCTION test_fail_feedback_attachment();
+    `)
+
+    let failure: unknown
+    try {
+      await createReport({
+        tipo: "bug",
+        titulo: "Fallo de adjunto",
+        descripcion: "La escritura del adjunto falla",
+      }, "user-1", {
+        fileName: "fail-attachment",
+        filePath: "storage/feedback/fail-attachment",
+        fileSize: 128,
+        mimeType: "image/png",
+      })
+    } catch (error) {
+      failure = error
+    } finally {
+      await pg.exec(`
+        DROP TRIGGER test_fail_feedback_attachment_trigger ON attachments;
+        DROP FUNCTION test_fail_feedback_attachment();
+      `)
+    }
+    expect(failure).toBeInstanceOf(Error)
+
+    const reports = await inMemoryDb.select().from(schema.feedbackReports)
+    const attachments = await inMemoryDb.select().from(schema.attachments)
+    expect(reports).toHaveLength(0)
+    expect(attachments).toHaveLength(0)
+
   })
 
   it("throws validation error for invalid report input", async () => {

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { permissions, rolePermissions, roles } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -156,8 +156,8 @@ export async function assertPermissionsExist(permissionIds: string[], client: Tx
   const rows = await (client as typeof db)
     .select({ id: permissions.id })
     .from(permissions)
-    .where(and(...permissionIds.map((pid) => eq(permissions.id, pid))))
-  if (rows.length !== permissionIds.length) {
+    .where(inArray(permissions.id, [...new Set(permissionIds)]))
+  if (rows.length !== new Set(permissionIds).size) {
     throw new Error("Uno o más permisos seleccionados no existen")
   }
 }

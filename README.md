@@ -84,7 +84,7 @@ La documentación completa está en [`docs/`](docs/) — comienza por el [índic
 | Área | Documento | Contenido |
 |---|---|---|
 | **Índice** | [docs/README.md](docs/README.md) | Mapa completo de la documentación |
-| **Diseño** | [docs/diseno/DESIGN.md](docs/diseno/DESIGN.md) | Sistema de tokens, diseño visual, accesibilidad |
+| **Diseño** | [docs/diseño/DESIGN.md](docs/diseño/DESIGN.md) | Sistema de tokens, diseño visual, accesibilidad |
 | **Planificación** | [docs/planificacion/PLAN.md](docs/planificacion/PLAN.md) | Plan MVP y fases de implementación |
 | | [docs/planificacion/PRODUCT.md](docs/planificacion/PRODUCT.md) | Requisitos y especificaciones del producto |
 | | [docs/planificacion/chome_feature_list.md](docs/planificacion/chome_feature_list.md) | Catálogo detallado de funcionalidades |

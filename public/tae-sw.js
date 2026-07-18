@@ -2,13 +2,25 @@ const CACHE_NAME = "tae-v2"
 const SHELL_URLS = [
   "/tae",
   "/tae-manifest.json",
+  "/tae-logo.png",
   "/tae-icon-192.png",
   "/tae-icon-512.png",
   "/tae-icon-maskable-512.png",
 ]
+const MAX_CACHE_ENTRIES = 60 // FIFO eviction cap to prevent unbounded growth
 const DB_NAME = "tae-offline"
 const DB_VERSION = 2
 const SUBMISSIONS = "submissions"
+
+/* FIFO eviction: remove oldest cache entries when exceeding MAX_CACHE_ENTRIES */
+async function evictIfNecessary() {
+  const cache = await caches.open(CACHE_NAME)
+  const keys = await cache.keys()
+  if (keys.length > MAX_CACHE_ENTRIES) {
+    const toDelete = keys.slice(0, keys.length - MAX_CACHE_ENTRIES)
+    await Promise.all(toDelete.map((key) => cache.delete(key)))
+  }
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS).catch(() => {})))
@@ -28,7 +40,7 @@ self.addEventListener("fetch", (event) => {
   const isStaticAsset = url.pathname.startsWith("/_next/static/") || /\.(?:js|css|woff2?|png|svg|ico)$/.test(url.pathname)
   if (isStaticAsset) {
     event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok) void caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()))
+      if (response.ok) void caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()).then(() => evictIfNecessary()))
       return response
     })))
     return
@@ -37,7 +49,7 @@ self.addEventListener("fetch", (event) => {
   const isTaeNavigation = request.mode === "navigate" && url.pathname.startsWith("/tae")
   if (!isTaeNavigation) return
   event.respondWith(fetch(request).then((response) => {
-    if (response.ok && url.pathname === "/tae") void caches.open(CACHE_NAME).then((cache) => cache.put("/tae", response.clone()))
+    if (response.ok && url.pathname === "/tae") void caches.open(CACHE_NAME).then((cache) => cache.put("/tae", response.clone()).then(() => evictIfNecessary()))
     return response
   }).catch(() => caches.match(request).then((cached) => cached || caches.match("/tae").then((shell) => shell || new Response("Sin conexión", { status: 503 })))))
 })
