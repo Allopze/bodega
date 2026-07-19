@@ -108,6 +108,7 @@ jobs:
           PREVENTION_TRAINING_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_CONTRACTORS_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_PERMITS_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          PREVENTION_INSPECTIONS_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_CAPA_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_INCIDENTS_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_INDICATORS_ALLOW_DESTRUCTIVE_RESET: "true"
@@ -116,6 +117,7 @@ jobs:
           PREVENTION_TRAINING_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_CONTRACTORS_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_PERMITS_ALLOW_DESTRUCTIVE_RESET: "true"
+          PREVENTION_INSPECTIONS_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --reporter=verbose lib/__tests__/prevention-*-postgres.test.ts 2>&1
 
       - name: Performance queries (SLO 1000ms)

@@ -42,7 +42,7 @@ Derivado de la columna de prioridad de la matriz legal (auditoría §4.1) y de l
 | 1 | Capacitación, ODI y competencias | DS 44 arts. 15 y 16 | **P0 legal** | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 2 | Contratistas y coordinación de faena | DS 76/2006, Ley 20.123 | P0/P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 3 | Permisos de trabajo, AST/JSA y control de energías | DS 44 art. 18; estándar de tarea crítica | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
-| 4 | Inspecciones, observaciones y auditorías | DS 44 art. 22; ISO 45001 9.2 | P1 | Pendiente |
+| 4 | Inspecciones, observaciones y auditorías | DS 44 art. 22; ISO 45001 9.2 | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 5 | CPHS y gobernanza del SG-SST | DS 44 arts. 17, 23 y ss. | P1 | Pendiente |
 | 6 | Salud ocupacional e higiene industrial | DS 594; protocolos MINSAL/SUSESO | P1 | Pendiente |
 | 7 | EPP preventivo integrado con Bodega | DS 594 arts. 53-54; DS 18 | P1 | Pendiente |
@@ -233,6 +233,43 @@ El importador XLSX de MIPER **no se tocó**: es genérico, no un conector a SFTI
 
 ---
 
+## 5quinquies. Capacidad 4 — Inspecciones, observaciones y auditorías
+
+### Alcance implementado
+
+Seis tablas aditivas: plantillas versionadas con snapshot y hash, programación por faena y frecuencia, ejecuciones, respuestas, hallazgos e historial.
+
+**Reuso en vez de duplicación.** El motor consume las definiciones SST ya existentes (`CHECKLIST_DEFINITIONS`) en vez de inventar otro formato de preguntas, tal como pide la auditoría §7.8. Las nueve definiciones de inspección que estaban latentes —taller, extintores, contenedores, carros, equipos móviles, EPP, observación planeada, ampliroll y maquinaria— quedan incorporables. Las evaluaciones de personas se rechazan explícitamente: la auditoría pide no mezclar inspección de activos con evaluación de trabajadores.
+
+**Reglas verificables:**
+
+- La plantilla congela un snapshot al importarse; una edición posterior del catálogo en código no altera la evidencia de una inspección ya ejecutada.
+- Quien incorpora una plantilla no puede aprobarla; aprobar reemplaza la versión vigente anterior del mismo código.
+- Sólo se programa y se ejecuta una plantilla aprobada.
+- La creación de ejecución es idempotente por `clientSubmissionId`, para que un reenvío offline no duplique la inspección.
+- Una respuesta que no corresponde a ningún ítem de la plantilla se rechaza.
+- El cumplimiento excluye los «no aplica» del denominador y devuelve **null**, no cero, cuando no hay ítems evaluables.
+- Cada incumplimiento materializa un hallazgo cuya **criticidad deriva del `danoPotencial` de la plantilla**, no del criterio de quien ejecuta.
+- Revisar y cerrar exige independencia de quien ejecutó, y que todo hallazgo alto o crítico tenga CAPA enlazada.
+- Completar una ejecución reagenda el programa desde la fecha real, no desde la teórica.
+
+### Hallazgo sobre el catálogo heredado
+
+Ninguna de las definiciones SST declara `required` ni `danoPotencial`; ambos campos son opcionales en el tipo y nunca se usaron. Eso dejaba dos gates inertes: una inspección podría declararse ejecutada **sin una sola respuesta**, y ningún hallazgo alcanzaría criticidad alta.
+
+Se agregó un **piso de seguridad**: cuando la plantilla no declara obligatorios, se exigen todos los ítems que cuentan para cumplimiento. En cuanto Prevención marque obligatorios reales, manda la marca por ítem. La criticidad sigue cayendo a media mientras el catálogo no declare daño potencial, lo que es correcto pero deja el bloqueo por hallazgo grave sin efecto práctico hasta enriquecerlo.
+
+- [ ] **Operación** — Enriquecer el catálogo con `required` y `danoPotencial` por ítem. Sin eso, la criticidad de todo hallazgo es media y ningún hallazgo bloquea el cierre.
+- [ ] **Producción** — Aplicar la migración `0082` e incorporar y aprobar las plantillas que la faena vaya a usar.
+- [ ] **Producto (diferido)** — Formulario de ejecución en terreno y captura móvil/offline: las Server Actions existen y están probadas, la bandeja de lectura tiene UI.
+- [ ] **Producto (diferido)** — Tendencias por pregunta, control, activo y contratista; auditorías con alcance, muestra y equipo auditor.
+
+### Evidencia
+
+Migración `0082_fearless_mastermind.sql` desde schema, sin drift, aplicada. 22 pruebas puras y 16 escenarios en PostgreSQL real. Typecheck, ESLint, build y regresión completa verdes.
+
+---
+
 ## 6. Bitácora de ejecución
 
 ### 19 de julio de 2026 — Capacidad 1: capacitación, ODI y competencias
@@ -295,6 +332,17 @@ El importador XLSX de MIPER **no se tocó**: es genérico, no un conector a SFTI
 - [x] Preservada la cobertura de idempotencia del job de recordatorios mediante una prueba equivalente sin SFTI.
 - [x] La bandeja de incidentes simplifica su menú de datos a un botón de exportación directo, al quedar con una sola opción.
 - [x] Typecheck, ESLint, build y regresión completa (54 archivos, 357 pruebas + 8 suites PostgreSQL con 75 pruebas) verdes.
+
+### 19 de julio de 2026 — Capacidad 4: inspecciones, observaciones y auditorías
+
+- [x] Motor transversal implementado reusando `CHECKLIST_DEFINITIONS`; las nueve definiciones de inspección latentes quedan incorporables y las evaluaciones de personas se rechazan.
+- [x] La plantilla congela snapshot y hash al importarse: la evidencia histórica no cambia si el catálogo en código se edita.
+- [x] Detectado que el catálogo SST no declara `required` ni `danoPotencial` en ningún ítem, lo que dejaba inertes el gate de ejecución y la derivación de criticidad. Se agregó un piso de seguridad que exige responder todo lo que cuenta para cumplimiento cuando no hay obligatorios declarados.
+- [x] Migración `0082` desde schema, sin drift y aplicada; CAPA extendida con `sourceType = 'inspection'`.
+- [x] Seis permisos con grants deliberados: ejecutar y revisar separados, con aserción negativa de que el jefe de terreno no cierra.
+- [x] 22 pruebas puras y 16 escenarios en PostgreSQL real; suite incorporada al gate de CI (ya son nueve).
+- [x] Regresión completa: 55 archivos, 380 pruebas y 9 suites PostgreSQL con 91 pruebas.
+- [ ] Pendiente productivo de la capacidad 4: ver sección 5quinquies.
 
 ---
 

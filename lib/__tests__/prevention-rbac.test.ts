@@ -79,6 +79,12 @@ describe("prevention module RBAC", () => {
       "prevention:permits:suspend",
       "prevention:permits:close",
       "prevention:permits:export",
+      "prevention:inspections:view",
+      "prevention:inspections:manage",
+      "prevention:inspections:approve",
+      "prevention:inspections:execute",
+      "prevention:inspections:review",
+      "prevention:inspections:export",
     ]
     for (const permission of expected) {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
@@ -93,7 +99,6 @@ describe("prevention module RBAC", () => {
     // capacitación: la coordinación DS 76 volvió como módulo implementado.
     const deleted = [
       "prevention:iper:view",
-      "prevention:inspections:view",
       "prevention:alcohol_tests:view",
       "prevention:equipment_reports:view",
       "prevention:health:view",
@@ -232,5 +237,21 @@ describe("prevention module RBAC", () => {
     // Suspender ante riesgo es deliberadamente amplio: incluye al CPHS.
     expect(rolesFor("prevention:permits:suspend")).toContain("cphs")
     expect(rolesFor("prevention:permits:suspend")).toContain("jefe_terreno")
+  })
+
+  it("separates inspection execution from independent review", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    // Quien ejecuta en terreno no cierra: el servicio además valida por actor
+    // que el revisor no sea el ejecutante.
+    expect(rolesFor("prevention:inspections:execute")).toContain("jefe_terreno")
+    expect(rolesFor("prevention:inspections:review")).not.toContain("jefe_terreno")
+    expect(rolesFor("prevention:inspections:review")).not.toContain("admin_contrato")
+    expect(rolesFor("prevention:inspections:approve")).toEqual([
+      "administrador", "jefa_chome", "prevencionista",
+    ])
   })
 })

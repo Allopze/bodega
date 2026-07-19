@@ -54,7 +54,7 @@ Cerrar los P0 no convierte todavía a Prevención en una suite EHSQ completa. Si
 - ~~contratistas, coordinación de empresa principal y acreditación~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.6. Falta carga productiva y aceptación;
 - CPHS, actas, acuerdos y gobernanza preventiva;
 - ~~permisos de trabajo, AST/JSA, LOTO y tareas críticas~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.8. Falta carga productiva y aceptación;
-- inspecciones especializadas, gestión del cambio, emergencias y simulacros;
+- ~~inspecciones especializadas~~ — **motor transversal implementado el 19 de julio de 2026**; ver sección 0.10. Gestión del cambio, emergencias y simulacros siguen pendientes;
 - ciclo preventivo de EPP conectado a riesgo, certificación y recambio;
 - integración operacional de sustancias, residuos, vehículos, rutas y exigencias ambientales;
 - integraciones versionadas con mutualidad, portales autorizados y sistemas corporativos.
@@ -140,6 +140,20 @@ Por decisión de producto se eliminó la capacidad de importar incidentes desde 
 La cobertura que aportaba el escenario de staging y que sí valía conservar —que el job de recordatorios no reinicia el atraso de un carril legal ya escalado— se mantiene en una prueba equivalente que no depende de SFTI.
 
 **Nota sobre el importador MIPER:** no se tocó. `prevention_risk_import_batches` es un importador XLSX genérico de matrices, no un conector a SFTI; sólo se corrigió el título de un caso de prueba que lo etiquetaba así.
+
+---
+
+## 0.10 Avance P1 — Motor de inspecciones, observaciones y auditorías (19 de julio de 2026)
+
+Cuarta capacidad P1. Convierte los checklists latentes en un motor transversal, como pide §7.8.
+
+**Reuso:** consume las definiciones SST existentes en vez de crear otro formato de preguntas. Las nueve definiciones de inspección que sólo eran alcanzables desde PDTP —taller, extintores, contenedores, carros, equipos móviles, EPP, observación planeada, ampliroll y maquinaria— quedan incorporables como plantillas. Las evaluaciones de personas se rechazan explícitamente, para no mezclar inspección de activos con evaluación de trabajadores.
+
+**Qué existe ahora:** plantillas versionadas con snapshot inmutable y hash, aprobación segregada del importador, programación por faena y frecuencia con reagenda desde la fecha real de ejecución, ejecución idempotente por envío offline, cálculo de cumplimiento que excluye los «no aplica» y devuelve *no calculable* en vez de cero, hallazgos con criticidad derivada de la plantilla, derivación a CAPA con prioridad y plazo según criticidad, y revisión/cierre independientes de quien ejecutó.
+
+**Hallazgo sobre el catálogo heredado:** ninguna definición SST declara `required` ni `danoPotencial`. Eso dejaba dos gates inertes —una inspección podía declararse ejecutada sin ninguna respuesta y ningún hallazgo alcanzaba criticidad alta—. Se agregó un piso de seguridad que exige responder todo lo que cuenta para cumplimiento cuando la plantilla no declara obligatorios. La criticidad seguirá cayendo a media hasta que Prevención enriquezca el catálogo, de modo que el bloqueo por hallazgo grave existe pero no tiene efecto práctico todavía.
+
+**Evidencia:** migración `0082_fearless_mastermind.sql` sin drift, 22 pruebas puras y 16 escenarios en PostgreSQL real.
 
 ---
 

@@ -575,6 +575,13 @@
       "when": 1784482247249,
       "tag": "0081_condemned_logan",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1784483389717,
+      "tag": "0082_fearless_mastermind",
+      "breakpoints": true
     }
   ]
 }
