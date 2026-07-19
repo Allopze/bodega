@@ -18,11 +18,13 @@ import type { ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/requisitos-legales"
 
-async function run(permission: Permission, operation: (access: RiskLegalAccess) => Promise<unknown>): Promise<ActionState> {
-  const guard = await guardPermission(permission)
-  if (guard.error) return guard.error
+function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>["session"]): RiskLegalAccess {
+  if (!session) throw new Error("Sesión no disponible.")
+  return { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
+}
+
+async function run(access: RiskLegalAccess, operation: (access: RiskLegalAccess) => Promise<unknown>): Promise<ActionState> {
   try {
-    const access = { userId: guard.session.user.id, scope: resolveWorksiteScope(guard.session), permissions: guard.session.user.permissions }
     await operation(access)
     revalidatePath(REVALIDATE)
     revalidatePath("/prevencion/pdtp/cobertura")
@@ -34,23 +36,33 @@ async function run(permission: Permission, operation: (access: RiskLegalAccess) 
 }
 
 export async function createLegalRequirementDraftAction(input: unknown): Promise<ActionState> {
-  return run("prevention:legal:assess", (access) => createLegalRequirementDraft(input, access))
+  const guard = await guardPermission("prevention:legal:assess")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => createLegalRequirementDraft(input, access))
 }
 
 export async function transitionLegalRequirementAction(input: unknown): Promise<ActionState> {
   const toStatus = typeof input === "object" && input && "toStatus" in input ? String(input.toStatus) : ""
-  const permission = ["approved", "published"].includes(toStatus) ? "prevention:legal:approve_applicability" : "prevention:legal:assess"
-  return run(permission, (access) => transitionLegalRequirement(input, access))
+  const permission: Permission = ["approved", "published"].includes(toStatus) ? "prevention:legal:approve_applicability" : "prevention:legal:assess"
+  const guard = await guardPermission(permission)
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => transitionLegalRequirement(input, access))
 }
 
 export async function proposeLegalApplicabilityAction(input: unknown): Promise<ActionState> {
-  return run("prevention:legal:assess", (access) => proposeLegalApplicability(input, access))
+  const guard = await guardPermission("prevention:legal:assess")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => proposeLegalApplicability(input, access))
 }
 
 export async function approveLegalApplicabilityAction(input: unknown): Promise<ActionState> {
-  return run("prevention:legal:approve_applicability", (access) => approveLegalApplicability(input, access))
+  const guard = await guardPermission("prevention:legal:approve_applicability")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => approveLegalApplicability(input, access))
 }
 
 export async function assessLegalComplianceAction(input: unknown): Promise<ActionState> {
-  return run("prevention:legal:assess", (access) => assessLegalCompliance(input, access))
+  const guard = await guardPermission("prevention:legal:assess")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => assessLegalCompliance(input, access))
 }

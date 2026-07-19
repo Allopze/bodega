@@ -12,11 +12,14 @@ import {
 } from "@/lib/services/prevention-risk-legal"
 import type { ActionState } from "@/lib/validation/prevention"
 
-async function run(operation: (access: RiskLegalAccess) => Promise<unknown>): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:program:manage")
-  if (guard.error) return guard.error
+function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>["session"]): RiskLegalAccess {
+  if (!session) throw new Error("Sesión no disponible.")
+  return { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
+}
+
+async function run(access: RiskLegalAccess, operation: (access: RiskLegalAccess) => Promise<unknown>): Promise<ActionState> {
   try {
-    await operation({ userId: guard.session.user.id, scope: resolveWorksiteScope(guard.session), permissions: guard.session.user.permissions })
+    await operation(access)
     revalidatePath("/prevencion/pdtp/cobertura")
     return { ok: true }
   } catch (error) {
@@ -26,10 +29,13 @@ async function run(operation: (access: RiskLegalAccess) => Promise<unknown>): Pr
 }
 
 export async function linkPdtpActivitySourceAction(input: unknown): Promise<ActionState> {
-  return run((access) => linkPdtpActivitySource(input, access))
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => linkPdtpActivitySource(input, access))
 }
 
 export async function resolvePdtpUpdateObligationAction(input: unknown): Promise<ActionState> {
-  return run((access) => resolvePdtpUpdateObligation(input, access))
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => resolvePdtpUpdateObligation(input, access))
 }
-

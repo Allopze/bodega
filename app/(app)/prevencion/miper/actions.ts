@@ -31,11 +31,9 @@ function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>[
   return { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
 }
 
-async function run(permission: Permission, operation: (access: RiskLegalAccess) => Promise<unknown>): Promise<ActionState> {
-  const guard = await guardPermission(permission)
-  if (guard.error) return guard.error
+async function run(access: RiskLegalAccess, operation: (access: RiskLegalAccess) => Promise<unknown>): Promise<ActionState> {
   try {
-    await operation(accessFromSession(guard.session))
+    await operation(access)
     revalidatePath(REVALIDATE)
     revalidatePath("/prevencion/pdtp/cobertura")
     return { ok: true }
@@ -46,33 +44,47 @@ async function run(permission: Permission, operation: (access: RiskLegalAccess) 
 }
 
 export async function ensureIspRiskMethodologyAction(): Promise<ActionState> {
-  return run("prevention:risk:edit", ensureIspRiskMethodology)
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), ensureIspRiskMethodology)
 }
 
 export async function createRiskMethodologyAction(input: unknown): Promise<ActionState> {
-  return run("prevention:risk:edit", (access) => createRiskMethodology(input, access))
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => createRiskMethodology(input, access))
 }
 
 export async function createRiskMatrixDraftAction(input: unknown): Promise<ActionState> {
-  return run("prevention:risk:edit", (access) => createRiskMatrixDraft(input, access))
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => createRiskMatrixDraft(input, access))
 }
 
 export async function addRiskEntryAction(input: unknown): Promise<ActionState> {
-  return run("prevention:risk:edit", (access) => addRiskEntry(input, access))
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => addRiskEntry(input, access))
 }
 
 export async function transitionRiskMatrixAction(input: unknown): Promise<ActionState> {
   const toStatus = typeof input === "object" && input && "toStatus" in input ? String(input.toStatus) : ""
-  const permission = toStatus === "reviewed" ? "prevention:risk:review" : toStatus === "approved" ? "prevention:risk:approve" : toStatus === "published" ? "prevention:risk:publish" : "prevention:risk:edit"
-  return run(permission, (access) => transitionRiskMatrix(input, access))
+  const permission: Permission = toStatus === "reviewed" ? "prevention:risk:review" : toStatus === "approved" ? "prevention:risk:approve" : toStatus === "published" ? "prevention:risk:publish" : "prevention:risk:edit"
+  const guard = await guardPermission(permission)
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => transitionRiskMatrix(input, access))
 }
 
 export async function createRiskReviewTriggerAction(input: unknown): Promise<ActionState> {
-  return run("prevention:risk:edit", (access) => createRiskReviewTrigger(input, access))
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => createRiskReviewTrigger(input, access))
 }
 
 export async function resolveRiskReviewTriggerAction(input: unknown): Promise<ActionState> {
-  return run("prevention:risk:review", (access) => resolveRiskReviewTrigger(input, access))
+  const guard = await guardPermission("prevention:risk:review")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => resolveRiskReviewTrigger(input, access))
 }
 
 export async function stageRiskImportAction(formData: FormData): Promise<ActionState> {
@@ -91,13 +103,19 @@ export async function stageRiskImportAction(formData: FormData): Promise<ActionS
 }
 
 export async function resolveRiskImportRowAction(input: unknown): Promise<ActionState> {
-  return run("prevention:risk:edit", (access) => resolveRiskImportRow(input, access))
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => resolveRiskImportRow(input, access))
 }
 
 export async function approveRiskImportBatchAction(batchId: string): Promise<ActionState> {
-  return run("prevention:risk:approve", (access) => approveRiskImportBatch(batchId, access))
+  const guard = await guardPermission("prevention:risk:approve")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => approveRiskImportBatch(batchId, access))
 }
 
 export async function activateRiskImportBatchAction(input: unknown): Promise<ActionState> {
-  return run("prevention:risk:edit", (access) => activateRiskImportBatch(input, access))
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => activateRiskImportBatch(input, access))
 }
