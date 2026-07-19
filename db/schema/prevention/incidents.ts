@@ -17,7 +17,6 @@ export const preventionIncidents = pgTable("prevention_incidents", {
   id: text("id").primaryKey(),
   code: text("code").notNull().unique(),
   clientSubmissionId: text("client_submission_id").notNull().unique(),
-  sftiExternalId: text("sfti_external_id"),
   worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   companyName: text("company_name").notNull(),
   companyTaxId: text("company_tax_id"),
@@ -42,7 +41,6 @@ export const preventionIncidents = pgTable("prevention_incidents", {
   evacuated: boolean("evacuated").notNull().default(false),
   isFatalOrSerious: boolean("is_fatal_or_serious").notNull().default(false),
   source: text("source").notNull().default("platform"),
-  importRowId: text("import_row_id"),
   version: integer("version").notNull().default(1),
   triagedAt: timestamp("triaged_at", { withTimezone: true, mode: "string" }),
   triagedByUserId: text("triaged_by_user_id").references(() => users.id, { onDelete: "restrict" }),
@@ -52,10 +50,6 @@ export const preventionIncidents = pgTable("prevention_incidents", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
-  uniqueIndex("prevention_incidents_sfti_external_unique").on(table.sftiExternalId)
-    .where(sql`${table.sftiExternalId} IS NOT NULL`),
-  uniqueIndex("prevention_incidents_import_row_unique").on(table.importRowId)
-    .where(sql`${table.importRowId} IS NOT NULL`),
   index("prevention_incidents_worksite_status_idx").on(table.worksiteId, table.status),
   index("prevention_incidents_occurred_idx").on(table.occurredAt),
   index("prevention_incidents_known_idx").on(table.knownAt),
@@ -63,7 +57,7 @@ export const preventionIncidents = pgTable("prevention_incidents", {
   check("prevention_incident_status_valid", sql`${table.status} IN ('reported', 'triage', 'immediate_measures', 'under_investigation', 'pending_capa', 'pending_verification', 'closed')`),
   check("prevention_incident_actual_severity_valid", sql`${table.actualSeverity} IN ('none', 'minor', 'medical_treatment', 'lost_time', 'serious', 'fatal')`),
   check("prevention_incident_potential_severity_valid", sql`${table.potentialSeverity} IN ('low', 'medium', 'high', 'critical', 'fatal')`),
-  check("prevention_incident_source_valid", sql`${table.source} IN ('platform', 'offline_sync', 'sfti_import')`),
+  check("prevention_incident_source_valid", sql`${table.source} IN ('platform', 'offline_sync')`),
   check("prevention_incident_version_positive", sql`${table.version} >= 1`),
   check("prevention_incident_times_consistent", sql`${table.knownAt} >= ${table.occurredAt}`),
 ])
@@ -204,64 +198,7 @@ export const preventionIncidentHistory = pgTable("prevention_incident_history", 
   check("prevention_incident_history_type_valid", sql`${table.changeType} IN ('reported', 'status', 'triage', 'immediate_measures', 'person', 'notification', 'investigation', 'evidence', 'capa', 'restart', 'closure', 'import', 'correction')`),
 ])
 
-export const preventionIncidentImportBatches = pgTable("prevention_incident_import_batches", {
-  id: text("id").primaryKey(),
-  sourceSystem: text("source_system").notNull().default("SFTI"),
-  sourceFileName: text("source_file_name").notNull(),
-  sourceChecksumSha256: text("source_checksum_sha256").notNull().unique(),
-  sourceEncryptedPath: text("source_encrypted_path").notNull(),
-  sourceCiphertextChecksumSha256: text("source_ciphertext_checksum_sha256").notNull(),
-  sourceIv: text("source_iv").notNull(),
-  sourceAuthTag: text("source_auth_tag").notNull(),
-  sourceKeyVersion: text("source_key_version").notNull(),
-  status: text("status").notNull().default("staging"),
-  totalRows: integer("total_rows").notNull().default(0),
-  readyRows: integer("ready_rows").notNull().default(0),
-  duplicateRows: integer("duplicate_rows").notNull().default(0),
-  reviewRows: integer("review_rows").notNull().default(0),
-  errorRows: integer("error_rows").notNull().default(0),
-  activatedRows: integer("activated_rows").notNull().default(0),
-  reconciliation: jsonb("reconciliation").$type<Record<string, unknown>>(),
-  importedByUserId: text("imported_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  approvedByUserId: text("approved_by_user_id").references(() => users.id, { onDelete: "restrict" }),
-  approvedAt: timestamp("approved_at", { withTimezone: true, mode: "string" }),
-  activatedByUserId: text("activated_by_user_id").references(() => users.id, { onDelete: "restrict" }),
-  activatedAt: timestamp("activated_at", { withTimezone: true, mode: "string" }),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
-}, (table) => [
-  index("prevention_incident_import_status_idx").on(table.status, table.createdAt),
-  check("prevention_incident_import_status_valid", sql`${table.status} IN ('staging', 'review', 'approved', 'activated', 'rejected')`),
-  check("prevention_incident_import_counts_nonnegative", sql`${table.totalRows} >= 0 AND ${table.readyRows} >= 0 AND ${table.duplicateRows} >= 0 AND ${table.reviewRows} >= 0 AND ${table.errorRows} >= 0 AND ${table.activatedRows} >= 0`),
-])
 
-export const preventionIncidentImportRows = pgTable("prevention_incident_import_rows", {
-  id: text("id").primaryKey(),
-  batchId: text("batch_id").notNull().references(() => preventionIncidentImportBatches.id, { onDelete: "cascade" }),
-  rowNumber: integer("row_number").notNull(),
-  rowFingerprint: text("row_fingerprint").notNull(),
-  sourceExternalId: text("source_external_id"),
-  originalEncrypted: text("original_encrypted").notNull(),
-  originalIv: text("original_iv").notNull(),
-  originalAuthTag: text("original_auth_tag").notNull(),
-  originalKeyVersion: text("original_key_version").notNull(),
-  normalized: jsonb("normalized").$type<Record<string, unknown>>().notNull(),
-  resolutionStatus: text("resolution_status").notNull(),
-  worksiteId: text("worksite_id").references(() => worksites.id, { onDelete: "restrict" }),
-  workerId: text("worker_id").references(() => workers.id, { onDelete: "restrict" }),
-  issues: jsonb("issues").$type<string[]>().notNull().default([]),
-  incidentId: text("incident_id").references(() => preventionIncidents.id, { onDelete: "restrict" }),
-  reviewedByUserId: text("reviewed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
-  reviewedAt: timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
-}, (table) => [
-  uniqueIndex("prevention_incident_import_row_number_unique").on(table.batchId, table.rowNumber),
-  index("prevention_incident_import_row_status_idx").on(table.batchId, table.resolutionStatus),
-  index("prevention_incident_import_row_external_idx").on(table.sourceExternalId),
-  check("prevention_incident_import_row_number_positive", sql`${table.rowNumber} >= 1`),
-  check("prevention_incident_import_row_resolution_valid", sql`${table.resolutionStatus} IN ('ready', 'duplicate', 'needs_review', 'approved', 'activated', 'error')`),
-])
 
 export const preventionIncidentsRelations = relations(preventionIncidents, ({ one, many }) => ({
   worksite: one(worksites, { fields: [preventionIncidents.worksiteId], references: [worksites.id] }),
@@ -299,20 +236,9 @@ export const preventionIncidentHistoryRelations = relations(preventionIncidentHi
   actor: one(users, { fields: [preventionIncidentHistory.actorUserId], references: [users.id] }),
 }))
 
-export const preventionIncidentImportBatchesRelations = relations(preventionIncidentImportBatches, ({ many }) => ({
-  rows: many(preventionIncidentImportRows),
-}))
 
-export const preventionIncidentImportRowsRelations = relations(preventionIncidentImportRows, ({ one }) => ({
-  batch: one(preventionIncidentImportBatches, { fields: [preventionIncidentImportRows.batchId], references: [preventionIncidentImportBatches.id] }),
-  incident: one(preventionIncidents, { fields: [preventionIncidentImportRows.incidentId], references: [preventionIncidents.id] }),
-  worksite: one(worksites, { fields: [preventionIncidentImportRows.worksiteId], references: [worksites.id] }),
-  worker: one(workers, { fields: [preventionIncidentImportRows.workerId], references: [workers.id] }),
-}))
 
 export type PreventionIncident = typeof preventionIncidents.$inferSelect
 export type PreventionIncidentPerson = typeof preventionIncidentPeople.$inferSelect
 export type PreventionIncidentNotification = typeof preventionIncidentNotifications.$inferSelect
 export type PreventionIncidentInvestigation = typeof preventionIncidentInvestigations.$inferSelect
-export type PreventionIncidentImportBatch = typeof preventionIncidentImportBatches.$inferSelect
-export type PreventionIncidentImportRow = typeof preventionIncidentImportRows.$inferSelect

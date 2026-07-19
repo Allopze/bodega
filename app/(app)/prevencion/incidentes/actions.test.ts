@@ -17,12 +17,6 @@ vi.mock("@/lib/services/prevention-incidents", () => ({
   transitionPreventionIncident: vi.fn(),
   triagePreventionIncident: triageMock,
 }))
-vi.mock("@/lib/services/prevention-incident-import", () => ({
-  activateSftiIncidentImportBatch: vi.fn(),
-  approveSftiIncidentImportBatch: vi.fn(),
-  resolveSftiIncidentImportRow: vi.fn(),
-  stageSftiIncidentImport: vi.fn(),
-}))
 
 describe("incident server actions are authorization boundaries", () => {
   beforeEach(() => vi.clearAllMocks())

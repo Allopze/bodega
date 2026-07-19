@@ -16,12 +16,6 @@ import {
   triagePreventionIncident,
   type IncidentStatus,
 } from "@/lib/services/prevention-incidents"
-import {
-  activateSftiIncidentImportBatch,
-  approveSftiIncidentImportBatch,
-  resolveSftiIncidentImportRow,
-  stageSftiIncidentImport,
-} from "@/lib/services/prevention-incident-import"
 
 const ROOT = "/prevencion/incidentes"
 
@@ -168,62 +162,6 @@ export async function classifyIncidentPersonForIndicatorsAction(input: unknown):
   }
 }
 
-export async function stageSftiIncidentImportAction(formData: FormData): Promise<ActionState & { batchId?: string; idempotentReplay?: boolean }> {
-  const guard = await guardPermission("prevention:incidents:triage")
-  if (guard.error) return guard.error
-  const file = formData.get("file")
-  if (!(file instanceof File)) return { ok: false, message: "Selecciona un archivo XLSX." }
-  try {
-    const result = await stageSftiIncidentImport({
-      fileName: file.name,
-      buffer: new Uint8Array(await file.arrayBuffer()),
-      access: access(guard.session),
-    })
-    revalidatePath(`${ROOT}/importar`)
-    return {
-      ok: true,
-      message: result.idempotentReplay ? "El archivo ya estaba en staging" : "Archivo cifrado y cargado a staging",
-      batchId: result.batch.id,
-      idempotentReplay: result.idempotentReplay,
-    }
-  } catch (error) {
-    return fail(error, "No se pudo cargar el XLSX SFTI")
-  }
-}
 
-export async function resolveSftiIncidentImportRowAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:incidents:triage")
-  if (guard.error) return guard.error
-  try {
-    await resolveSftiIncidentImportRow({ input, access: access(guard.session) })
-    revalidatePath(`${ROOT}/importar`)
-    return { ok: true, message: "Fila conciliada" }
-  } catch (error) {
-    return fail(error, "No se pudo conciliar la fila")
-  }
-}
 
-export async function approveSftiIncidentImportBatchAction(batchId: string): Promise<ActionState> {
-  const guard = await guardPermission("prevention:incidents:close")
-  if (guard.error) return guard.error
-  try {
-    await approveSftiIncidentImportBatch(batchId, access(guard.session))
-    revalidatePath(`${ROOT}/importar`)
-    return { ok: true, message: "Lote aprobado para activación" }
-  } catch (error) {
-    return fail(error, "No se pudo aprobar el lote")
-  }
-}
 
-export async function activateSftiIncidentImportBatchAction(batchId: string): Promise<ActionState> {
-  const guard = await guardPermission("prevention:incidents:close")
-  if (guard.error) return guard.error
-  try {
-    const result = await activateSftiIncidentImportBatch(batchId, access(guard.session))
-    revalidatePath(`${ROOT}/importar`)
-    refresh()
-    return { ok: true, message: `${result.activatedIds.length} incidentes activados` }
-  } catch (error) {
-    return fail(error, "No se pudo activar el lote")
-  }
-}

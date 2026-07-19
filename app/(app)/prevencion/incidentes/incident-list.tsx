@@ -114,7 +114,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
         <EmptyState
           icon={<Siren size={22} />}
           title={incidents.length === 0 ? "Aún no hay incidentes canónicos" : "No hay incidentes con estos filtros"}
-          description={incidents.length === 0 ? "Registra los eventos nuevos aquí; la historia de SFTI debe pasar por staging y conciliación." : "Ajusta filtros o el buscador superior."}
+          description={incidents.length === 0 ? "Registra aquí los eventos ocurridos en tus faenas: reporte, triage, investigación y CAPA quedan trazados desde el primer registro." : "Ajusta filtros o el buscador superior."}
           action={incidents.length === 0 && canReport ? <Button asChild><Link href="/prevencion/incidentes/reportar">Reportar incidente</Link></Button> : <Button type="button" variant="secondary" onClick={clearFilters}>Ver todos</Button>}
         />
       ) : (

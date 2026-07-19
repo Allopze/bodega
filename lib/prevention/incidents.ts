@@ -35,25 +35,6 @@ export const INCIDENT_SEVERITY_LABELS: Record<string, string> = {
 }
 
 /** Client-safe metadata only. Parsing, encryption and persistence stay server-side. */
-export const SFTI_INCIDENT_DICTIONARY = [
-  { key: "externalId", label: "ID SFTI", required: true, aliases: ["id sfti", "id", "folio", "identificador"] },
-  { key: "worksite", label: "Faena", required: true, aliases: ["faena", "codigo faena", "obra", "centro"] },
-  { key: "eventType", label: "Tipo de evento", required: true, aliases: ["tipo de evento", "tipo evento", "clasificacion", "tipo"] },
-  { key: "occurredAt", label: "Fecha/hora ocurrencia", required: true, aliases: ["fecha/hora ocurrencia", "fecha ocurrencia", "ocurrencia"] },
-  { key: "knownAt", label: "Fecha/hora conocimiento", required: true, aliases: ["fecha/hora conocimiento", "fecha conocimiento", "conocimiento"] },
-  { key: "companyName", label: "Empresa", required: true, aliases: ["empresa", "empleador", "razon social"] },
-  { key: "location", label: "Lugar", required: true, aliases: ["lugar", "ubicacion", "sector"] },
-  { key: "narrative", label: "Relato inicial", required: true, aliases: ["relato inicial", "relato", "descripcion"] },
-  { key: "actualSeverity", label: "Gravedad real", required: false, aliases: ["gravedad real", "gravedad"] },
-  { key: "potentialSeverity", label: "Gravedad potencial", required: false, aliases: ["gravedad potencial", "potencial"] },
-  { key: "fatalOrSerious", label: "Fatal/grave", required: false, aliases: ["fatal/grave", "fatal grave", "grave"] },
-  { key: "immediateMeasures", label: "Medidas inmediatas", required: false, aliases: ["medidas inmediatas", "medidas"] },
-  { key: "operationsSuspended", label: "Operación suspendida", required: false, aliases: ["operacion suspendida", "suspension"] },
-  { key: "personName", label: "Nombre persona", required: false, aliases: ["nombre persona", "trabajador", "nombre trabajador"] },
-  { key: "personIdentifier", label: "RUT/ID persona", required: false, aliases: ["rut/id persona", "rut", "identificacion"] },
-  { key: "injury", label: "Lesión", required: false, aliases: ["lesion", "diagnostico"] },
-  { key: "bodyPart", label: "Parte afectada", required: false, aliases: ["parte afectada", "parte cuerpo"] },
-] as const
 
 export function incidentStatusBadgeVariant(status: string): "default" | "info" | "warning" | "success" | "danger" {
   if (status === "closed") return "success"

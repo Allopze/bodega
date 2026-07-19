@@ -1,11 +1,10 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { DownloadSimple, FileXls, Plus, UploadSimple } from "@phosphor-icons/react/dist/ssr"
+import { DownloadSimple, Plus } from "@phosphor-icons/react/dist/ssr"
 import { requirePermission, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getIncidentDashboardCounts, listIncidentWorksites, listPreventionIncidents } from "@/lib/services/prevention-incidents"
@@ -38,7 +37,6 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
     getIncidentDashboardCounts(access),
   ])
   const canReport = can(session, "prevention:incidents:report")
-  const canImport = can(session, "prevention:incidents:triage")
   const canExport = can(session, "prevention:incidents:export")
 
   return (
@@ -49,13 +47,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes" }]} />}
         actions={<div className="flex gap-2">
           {canReport && <Button asChild><Link href="/prevencion/incidentes/reportar"><Plus className="size-4" />Reportar</Link></Button>}
-          {(canImport || canExport) && <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button variant="secondary"><FileXls className="size-4" />Datos</Button></DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {canImport && <DropdownMenuItem asChild><Link href="/prevencion/incidentes/importar"><UploadSimple className="size-4" />Importar SFTI</Link></DropdownMenuItem>}
-              {canExport && <DropdownMenuItem asChild><Link href="/api/prevencion/incidentes/export"><DownloadSimple className="size-4" />Exportar registro XLSX</Link></DropdownMenuItem>}
-            </DropdownMenuContent>
-          </DropdownMenu>}
+          {canExport && <Button asChild variant="secondary"><Link href="/api/prevencion/incidentes/export"><DownloadSimple className="size-4" />Exportar XLSX</Link></Button>}
         </div>}
       />
       <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicator ? `Fuente del indicador ${indicator} · ${query.monthFrom ?? "1"}-${query.monthTo ?? "12"}/${query.year ?? ""}` : undefined} />

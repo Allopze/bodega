@@ -1,5 +1,5 @@
 /**
- * Real PostgreSQL proof for the canonical incident workflow and SFTI staging.
+ * Real PostgreSQL proof for the canonical incident workflow.
  * Runs only against an explicitly disposable database.
  */
 import path from "node:path"
@@ -331,41 +331,43 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     expect(history.map((item) => item.changeType)).toEqual(expect.arrayContaining(["reported", "triage", "investigation", "capa", "notification", "restart", "closure"]))
   })
 
-  it("stages, reconciles and activates the same SFTI workbook idempotently", async () => {
-    const importer = await import("@/lib/services/prevention-incident-import")
-    const workbook = new ExcelJS.Workbook()
-    const sheet = workbook.addWorksheet("Incidentes")
-    sheet.addRow(["ID SFTI", "Faena", "Tipo de evento", "Fecha/hora ocurrencia", "Fecha/hora conocimiento", "Empresa", "Lugar", "Relato inicial", "Gravedad real", "Gravedad potencial"])
-    sheet.addRow(["SFTI-TEST-001", "INC-TEST", "Accidente del trabajo", new Date("2026-07-17T10:00:00Z"), new Date("2026-07-17T10:30:00Z"), "Chome", "Patio", "Accidente histórico importado desde el staging de prueba.", "Leve", "Media"])
-    const buffer = new Uint8Array(await workbook.xlsx.writeBuffer())
-    const importAccess = access("incident-verifier", ["prevention:incidents:triage", "prevention:incidents:view_sensitive", "prevention:incidents:close"])
-    const first = await importer.stageSftiIncidentImport({ fileName: "sfti-test.xlsx", buffer, access: importAccess })
-    const second = await importer.stageSftiIncidentImport({ fileName: "sfti-test.xlsx", buffer, access: importAccess })
-    expect(first.idempotentReplay).toBe(false)
-    expect(second).toMatchObject({ idempotentReplay: true, batch: { id: first.batch.id } })
-    expect(first.batch).toMatchObject({ totalRows: 1, readyRows: 1, duplicateRows: 0 })
-    await importer.approveSftiIncidentImportBatch(first.batch.id, importAccess)
-    const activated = await importer.activateSftiIncidentImportBatch(first.batch.id, importAccess)
-    const replay = await importer.activateSftiIncidentImportBatch(first.batch.id, importAccess)
-    expect(activated.activatedIds).toHaveLength(1)
-    expect(replay).toMatchObject({ idempotentReplay: true, activatedIds: activated.activatedIds })
-    expect(await getDb().select().from(schema.preventionIncidents)
-      .where(eq(schema.preventionIncidents.sftiExternalId, "SFTI-TEST-001"))).toHaveLength(1)
-    const [row] = await getDb().select().from(schema.preventionIncidentImportRows)
-      .where(eq(schema.preventionIncidentImportRows.batchId, first.batch.id))
-    expect(row).toMatchObject({ resolutionStatus: "activated", incidentId: activated.activatedIds[0] })
+  // Reemplaza al antiguo escenario de staging SFTI: lo que interesa conservar
+  // es que el job de recordatorios no reinicie el atraso de un carril legal.
+  it("keeps the first escalation timestamp when the reminder job runs twice on an overdue lane", async () => {
+    const incidents = await import("@/lib/services/prevention-incidents")
+    const reporter = access("incident-reporter", ["prevention:incidents:report", "prevention:incidents:view"])
+    const reported = await incidents.reportPreventionIncident({
+      access: reporter,
+      input: {
+        clientSubmissionId: "overdue-lane-proof-001",
+        worksiteId: "ws-incidents",
+        companyName: "Chome",
+        eventType: "work_accident",
+        occurredAt: "2026-07-17T10:00:00.000Z",
+        knownAt: "2026-07-17T10:30:00.000Z",
+        location: "Patio",
+        initialNarrative: "Evento con conocimiento antiguo para dejar la DIAT vencida.",
+        people: [],
+      },
+    })
 
     const [lateLane] = await getDb().select().from(schema.preventionIncidentNotifications)
-      .where(eq(schema.preventionIncidentNotifications.incidentId, activated.activatedIds[0]!))
-    expect(lateLane).toMatchObject({ status: "overdue" })
-    expect(lateLane?.escalatedAt).toBeTruthy()
+      .where(eq(schema.preventionIncidentNotifications.incidentId, reported.incident.id))
+    expect(lateLane).toBeTruthy()
+
     const { runPreventionIncidentReminders } = await import("@/lib/services/prevention-incident-reminders")
     const reminderResult = await runPreventionIncidentReminders(new Date("2026-07-19T11:00:00.000Z"))
     expect(reminderResult.overdueLanes).toBeGreaterThanOrEqual(1)
-    await runPreventionIncidentReminders(new Date("2026-07-19T15:00:00.000Z"))
-    const [sameLane] = await getDb().select().from(schema.preventionIncidentNotifications)
+
+    const [afterFirst] = await getDb().select().from(schema.preventionIncidentNotifications)
       .where(eq(schema.preventionIncidentNotifications.id, lateLane!.id))
-    expect(sameLane?.escalatedAt).toBe(lateLane?.escalatedAt)
+    expect(afterFirst).toMatchObject({ status: "overdue" })
+    expect(afterFirst?.escalatedAt).toBeTruthy()
+
+    await runPreventionIncidentReminders(new Date("2026-07-19T15:00:00.000Z"))
+    const [afterSecond] = await getDb().select().from(schema.preventionIncidentNotifications)
+      .where(eq(schema.preventionIncidentNotifications.id, lateLane!.id))
+    expect(afterSecond?.escalatedAt).toBe(afterFirst?.escalatedAt)
   })
 
   it("rejects foreign-worksite report, mutation and read without revealing the incident", async () => {

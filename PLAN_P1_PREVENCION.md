@@ -216,6 +216,23 @@ Durante la primera ejecución en Postgres el servicio rechazó, correctamente, e
 
 ---
 
+## 5quater. Retiro de la importación desde SFTI
+
+Decisión de producto ejecutada el 19 de julio de 2026: la importación de incidentes desde SFTI/Safeti deja de ser una capacidad de la plataforma.
+
+Se eliminaron el servicio, la ruta y el workbench, las Server Actions, la navegación, el diccionario de columnas, las dos tablas de staging y la procedencia (`sfti_external_id`, `import_row_id`, origen `sfti_import`). El menú desplegable de la bandeja de incidentes quedaba con una sola opción tras el retiro, así que se simplificó a un botón directo de exportación.
+
+La migración `0081_condemned_logan.sql` es destructiva y lleva una **guarda previa** que aborta con mensaje y sugerencia si encuentra procedencia SFTI o lotes de staging, en vez de borrarlos en silencio. La guarda se probó insertando un lote y verificando que la migración falla; luego se aplicó sobre la base local, que tenía cero filas.
+
+La cobertura del job de recordatorios que vivía dentro del escenario SFTI —conservar el primer `escalatedAt` de un carril atrasado entre corridas— se reescribió sobre un incidente reportado normalmente, para no perderla junto con la importación.
+
+El importador XLSX de MIPER **no se tocó**: es genérico, no un conector a SFTI.
+
+- [ ] **Operación** — Decidir qué se hace con la historia de incidentes que vivía en SFTI: la plataforma ya no ofrece un camino de importación versionado para ese origen.
+- [ ] **Producción** — Aplicar la migración `0081`. Si la guarda aborta, hay datos productivos con procedencia SFTI que deben conciliarse antes.
+
+---
+
 ## 6. Bitácora de ejecución
 
 ### 19 de julio de 2026 — Capacidad 1: capacitación, ODI y competencias
@@ -269,6 +286,15 @@ Durante la primera ejecución en Postgres el servicio rechazó, correctamente, e
 - [x] La suite de permisos se incorporó al gate de CI junto a las otras siete.
 - [x] React Doctor sin errores ni hallazgos nuevos; typecheck, ESLint, build y regresión (54 archivos, 357 pruebas + 8 suites PostgreSQL con 75 pruebas) verdes.
 - [ ] Pendiente productivo y de aceptación de la capacidad 3: ver sección 5ter.4.
+
+### 19 de julio de 2026 — Retiro de la importación desde SFTI
+
+- [x] Eliminados servicio, ruta, workbench, Server Actions, navegación y diccionario de la importación SFTI de incidentes.
+- [x] Eliminadas las tablas de staging y las columnas de procedencia; el origen `sfti_import` deja de ser alcanzable.
+- [x] Migración `0081_condemned_logan.sql` con guarda previa que aborta si existen datos con procedencia SFTI. Probada con datos presentes antes de aplicarla limpia.
+- [x] Preservada la cobertura de idempotencia del job de recordatorios mediante una prueba equivalente sin SFTI.
+- [x] La bandeja de incidentes simplifica su menú de datos a un botón de exportación directo, al quedar con una sola opción.
+- [x] Typecheck, ESLint, build y regresión completa (54 archivos, 357 pruebas + 8 suites PostgreSQL con 75 pruebas) verdes.
 
 ---
 

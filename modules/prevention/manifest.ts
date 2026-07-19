@@ -229,11 +229,6 @@ export const preventionModule = {
               href: "/prevencion/incidentes/reportar",
               permissions: ["prevention:incidents:report"],
             },
-            {
-              label: "Importar desde SFTI",
-              href: "/prevencion/incidentes/importar",
-              permissions: ["prevention:incidents:triage"],
-            },
           ],
         },
         {

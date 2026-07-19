@@ -270,7 +270,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     expect(row).toMatchObject({ status: "ready", original: expect.objectContaining({ processName: "Recepción" }), normalized: expect.objectContaining({ hazard: "Caída de carga" }) })
     await expect(importer.approveRiskImportBatch(staged.batch.id, access("risk-author", ["prevention:risk:approve"]))).rejects.toThrow(/no puede aprobar/i)
     await importer.approveRiskImportBatch(staged.batch.id, approver)
-    const activated = await importer.activateRiskImportBatch({ batchId: staged.batch.id, title: "MIPER importada desde SFTI", methodologyId, revisionReason: "Migración controlada de la matriz histórica operacional.", participationSummary: "Normalización revisada con responsables de proceso y prevención.", consultationEvidenceReference: "acta-importacion-miper-001" }, author)
+    const activated = await importer.activateRiskImportBatch({ batchId: staged.batch.id, title: "MIPER importada desde planilla histórica", methodologyId, revisionReason: "Migración controlada de la matriz histórica operacional.", participationSummary: "Normalización revisada con responsables de proceso y prevención.", consultationEvidenceReference: "acta-importacion-miper-001" }, author)
     expect(activated).toMatchObject({ completed: true, remaining: 0 })
     const [activatedRow] = await getDb().select().from(schema.preventionRiskImportRows).where(eq(schema.preventionRiskImportRows.id, row!.id))
     const [entry] = await getDb().select().from(schema.preventionRiskEntries).where(eq(schema.preventionRiskEntries.id, activatedRow!.riskEntryId!))

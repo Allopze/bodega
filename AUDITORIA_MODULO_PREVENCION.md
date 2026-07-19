@@ -32,7 +32,7 @@ La plataforma **todavía no debe sustituir SFTI ni las fuentes formales externas
 | P0-01 Indicadores | Registro canónico de denominadores y eventos, fórmula versionada DS 44, snapshots inmutables, conciliación, cierres segregados, drill-down y XLSX común con la UI. | Falta cargar denominadores/evidencias reales, reconciliar históricos y obtener firma de las reglas y diferencias. |
 | P0-02 PPA | Cierre y reinicio bloqueados mientras exista corrección pendiente; rechazo exige cancelación fundada o retorno a corrección; CAPA, evidencia, verificación, eficacia, alertas e historial. | Falta auditar PPA productivos anteriores y aceptar la semántica operativa. |
 | P0-03 Documentos | Workflow borrador–revisión–aprobación–publicación, segregación, distribución nominativa, acuse firmado por versión, recordatorios, regularización, vínculos validados y expediente XLSX. | Falta resolver hallazgos y destinatarios de la biblioteca productiva y obtener firma del dueño documental. |
-| P0-04 Incidentes | Registro idempotente, reporte móvil/offline, triage, investigación, DIAT/DIEP y fatal-grave con plazos, CAPA, reinicio, expediente, staging SFTI y acceso sensible segregado. | Falta importar/conciliar el registro SFTI real, operar en paralelo y autorizar el corte. Chome no declara envío automático a autoridades. |
+| P0-04 Incidentes | Registro idempotente, reporte móvil/offline, triage, investigación, DIAT/DIEP y fatal-grave con plazos, CAPA, reinicio, expediente y acceso sensible segregado. | Falta operar en paralelo y autorizar el corte. Chome no declara envío automático a autoridades. La importación desde SFTI fue retirada el 19-07-2026 (sección 0.9). |
 | P0-05 MIPER/legal | MIPER versionada, metodología configurable, controles y revisión anual/disparadores, registro legal por requisito, aplicabilidad aprobada, CAPA por brecha, staging XLSX, fuentes PDTP y reloj de 30 días. | Falta cargar y aprobar matrices/requisitos reales, alcanzar cobertura por faena y obtener aceptación participativa y jurídica. |
 | P0-06 Privacidad | Datos clínicos cifrados, proyección mínima de aptitud, casos reservados nominativos, finalidad, auditoría especializada, retención, derechos del titular, reubicación y exportación minimizada. | Falta inventario/reubicación productiva, matriz de finalidades aprobada y aceptación jurídica/seguridad. |
 
@@ -124,6 +124,22 @@ Tercera capacidad P1. Es la que amarra las anteriores: el permiso es el punto do
 **Evidencia:** migración `0080_furry_bucky.sql` desde schema, sin drift, aplicada. 27 pruebas puras de la decisión de habilitación y 20 escenarios sobre PostgreSQL real.
 
 **Lo que esto todavía NO significa:** no hay tipos de permiso ni permisos productivos cargados. Quedan diferidos el formulario de detalle en terreno, el enganche efectivo del PPA y la captura móvil/offline.
+
+---
+
+## 0.9 Retiro de la importación desde SFTI (19 de julio de 2026)
+
+Por decisión de producto se eliminó la capacidad de importar incidentes desde SFTI/Safeti. Deja de existir el staging cifrado, el diccionario de columnas, la conciliación fila a fila, la aprobación y activación de lotes, y su pantalla dedicada.
+
+**Qué se retiró:** el servicio `prevention-incident-import`, la ruta `/prevencion/incidentes/importar` con su workbench, las cuatro Server Actions asociadas, el ítem de navegación «Importar desde SFTI», el diccionario `SFTI_INCIDENT_DICTIONARY`, las tablas `prevention_incident_import_batches` y `prevention_incident_import_rows`, las columnas de procedencia `sfti_external_id` e `import_row_id`, y el valor `sfti_import` del origen de un incidente.
+
+**Consecuencia sobre el corte:** la migración histórica de incidentes desde SFTI deja de ser una capacidad del producto. Si esa historia debe conservarse, se resuelve fuera de la plataforma o mediante una carga puntual acordada; Chome ya no ofrece un camino de importación versionado para ese origen. El resto del control compensatorio con SFTI no cambia: la plataforma sigue sin declarar envío automático a la autoridad.
+
+**Resguardo de datos:** la migración `0081_condemned_logan.sql` es destructiva y por eso lleva una guarda previa que aborta con mensaje explícito si encuentra incidentes con procedencia SFTI o lotes de staging. En la base local había cero filas en las tres estructuras; la guarda fue probada insertando un lote y confirmando que la migración falla en vez de borrarlo.
+
+La cobertura que aportaba el escenario de staging y que sí valía conservar —que el job de recordatorios no reinicia el atraso de un carril legal ya escalado— se mantiene en una prueba equivalente que no depende de SFTI.
+
+**Nota sobre el importador MIPER:** no se tocó. `prevention_risk_import_batches` es un importador XLSX genérico de matrices, no un conector a SFTI; sólo se corrigió el título de un caso de prueba que lo etiquetaba así.
 
 ---
 

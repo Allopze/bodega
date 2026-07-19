@@ -568,6 +568,13 @@
       "when": 1784474256115,
       "tag": "0080_furry_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1784482247249,
+      "tag": "0081_condemned_logan",
+      "breakpoints": true
     }
   ]
 }

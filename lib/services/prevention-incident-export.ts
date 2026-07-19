@@ -108,7 +108,6 @@ export async function buildIncidentCaseExport(args: {
       ["Gravedad potencial", safeCell(INCIDENT_SEVERITY_LABELS[incident.potentialSeverity] ?? incident.potentialSeverity), "operacional"],
       ["Fatal/grave", incident.isFatalOrSerious ? "Sí" : "No", "operacional"],
       ["Fuente", incident.source, "trazabilidad"],
-      ["ID SFTI", safeCell(incident.sftiExternalId), "trazabilidad"],
       ["Versión", incident.version, "trazabilidad"],
     ]),
     sheet("Personas minimizadas", ["Persona ID", "Referencia", "Trabajador ID", "Empleador", "Relación", "Sexo", "Ausencia jornada", "Días ausencia", "Días cargo", "Calificación", "Clasificación"], bundle.people.map((person) => [person.id, safeCell(person.displayLabel), safeCell(person.workerId), safeCell(person.employerName), person.relationshipType, safeCell(person.sex), person.absenceAtLeastNormalShift ? "Sí" : "No", person.absenceDays, person.chargeDays, safeCell(person.administratorQualification), "personal_minimizado"])),
