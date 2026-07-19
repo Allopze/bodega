@@ -547,6 +547,13 @@
       "when": 1784433016403,
       "tag": "0077_tired_solo",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1784440569505,
+      "tag": "0078_fearless_overlord",
+      "breakpoints": true
     }
   ]
 }

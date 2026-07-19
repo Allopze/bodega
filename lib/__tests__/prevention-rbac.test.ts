@@ -55,6 +55,14 @@ describe("prevention module RBAC", () => {
       "prevention:legal:assess",
       "prevention:legal:approve_applicability",
       "prevention:legal:export",
+      "prevention:training:view",
+      "prevention:training:manage",
+      "prevention:training:approve",
+      "prevention:training:deliver",
+      "prevention:training:ack",
+      "prevention:training:convalidate",
+      "prevention:training:revoke",
+      "prevention:training:export",
     ]
     for (const permission of expected) {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
@@ -62,9 +70,11 @@ describe("prevention module RBAC", () => {
   })
 
   it("does not register deleted feature permissions", () => {
+    // `prevention:training:*` salió de esta lista el 2026-07-19: capacitación,
+    // ODI y competencias volvieron como módulo implementado (DS 44 arts. 15 y
+    // 16), no como resto de la poda de 2026-07-02.
     const deleted = [
       "prevention:iper:view",
-      "prevention:training:view",
       "prevention:inspections:view",
       "prevention:alcohol_tests:view",
       "prevention:equipment_reports:view",
@@ -72,9 +82,7 @@ describe("prevention module RBAC", () => {
       "prevention:epp_matrix:view",
       "prevention:emergency:view",
       "prevention:kpis:view",
-      "prevention:contractors:view",
       "prevention:cphs:view",
-      "prevention:permits:view",
       "prevention:docs:export",
       "prevention:pdtp:manage",
     ]
@@ -146,4 +154,26 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:capa:override_segregation")).toEqual(["administrador"])
     expect(rolesFor("prevention:capa:reconcile")).toEqual(["administrador"])
   })
+
+  it("separates training delivery from content approval and competency override", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    // Dictar no aprueba contenido: la segregación autor/aprobador se sostiene
+    // además en el servicio, no sólo por RBAC.
+    expect(rolesFor("prevention:training:deliver")).toEqual([
+      "administrador", "prevencionista", "prevencionista_faena",
+    ])
+    expect(rolesFor("prevention:training:approve")).toEqual(["administrador", "jefa_chome"])
+    // Convalidar y revocar alteran la habilitación sin sesión ni evaluación:
+    // nunca se conceden a roles de terreno.
+    expect(rolesFor("prevention:training:convalidate")).toEqual(["administrador", "jefa_chome"])
+    expect(rolesFor("prevention:training:revoke")).toEqual(["administrador", "jefa_chome"])
+    expect(rolesFor("prevention:training:convalidate")).not.toContain("prevencionista_faena")
+    expect(rolesFor("prevention:training:revoke")).not.toContain("jefe_terreno")
+  })
+
+
 })
