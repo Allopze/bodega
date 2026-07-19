@@ -106,8 +106,9 @@ La capacidad 1 se eligió primero porque el art. 16 era el **único requisito ma
 - [ ] **Operación** — Cargar el historial formativo existente (SFTI y registros externos) mediante convalidación auditada, conservando emisor, número de certificado y evidencia.
 - [ ] **Producción** — Aplicar la migración `0078` y programar el cron `prevention-training-reminders`.
 - [ ] **Aceptación** — Jefatura de Prevención valida que las reglas codificadas del art. 16 corresponden a su interpretación.
-- [ ] **Producto (diferido, no bloqueante)** — UI de alta de cursos, versiones, sesiones y requisitos: hoy las Server Actions existen y están probadas, pero el alta se realiza por acción directa. La bandeja, la matriz, las brechas, el acuse y la revocación sí tienen UI.
-- [ ] **Producto (diferido)** — Requisitos de alcance `task`: el modelo los admite y el motor los ignora deliberadamente porque se resuelven al asignar la tarea, lo que depende de la capacidad 3 (permisos de trabajo/AST).
+- [x] ~~UI de alta de cursos, versiones y requisitos~~ — **entregada el 19-07-2026** en `/prevencion/capacitacion/catalogo`: alta de curso con el piso del art. 16 visible en el formulario, alta de contenido con temario y contador de minutos, transiciones de versión con motivo obligatorio, y alta de requisito de competencia.
+- [ ] **Producto (diferido)** — UI de alta de sesiones y de registro de asistencia/cierre: las Server Actions existen y están probadas; falta el formulario de terreno.
+- [x] ~~Requisitos de alcance `task`~~ — **cerrado en la capacidad 3** (19-07-2026): el tipo de permiso los consume mediante `competencyTaskKey`, sin tablas nuevas. Ver sección 5ter.2.
 
 ---
 
@@ -321,6 +322,27 @@ Evidencia: migración `0084_confused_switch.sql` sin drift, 19 pruebas puras y 1
 
 ---
 
+## 5octies. Formularios de alta — Capacitación (19 de julio de 2026)
+
+Primera entrega de la línea «hacer usable lo construido». Hasta ahora las seis capacidades tenían bandejas de lectura pero ningún formulario: el alta sólo era posible invocando la Server Action.
+
+**Entregado:** `/prevencion/capacitacion/catalogo`, con tres pestañas y cuatro formularios.
+
+- **Alta de curso.** El formulario refleja la regla legal en vez de esconderla: al elegir «curso legal obligatorio», la duración mínima toma 480 min, la vigencia se vuelve obligatoria con tope de 24 meses, y aparece el campo de fundamento normativo. Al elegir «ODI», aparece el peligro MIPER de origen. La validación real sigue viviendo en el servicio; el formulario sólo evita que el usuario descubra el rechazo después de escribirlo todo.
+- **Alta de contenido versionado**, con temario dinámico y contador de minutos declarados, que es la comparación que el servicio va a hacer contra la duración total.
+- **Transiciones de versión** con motivo obligatorio. Los botones se filtran por permiso: «Aprobar» y «Publicar» sólo aparecen con `training:approve`. La segregación autor/aprobador sigue validándose por actor en el servicio.
+- **Alta de requisito de competencia**, con el campo de alcance adaptándose: cargo, faena, tarea o global. El texto declara explícitamente que el sistema no puede inferir qué tarea es crítica.
+
+### Hallazgo: dos tipos distintos con el mismo nombre
+
+`lib/services/prevention-indicadores.ts` exporta su propio `WorksiteScope = string[] | "all"`, incompatible con el canónico de `lib/auth/scope` (`{ mode, ids }`). Al intentar reusar `listVisibleWorksites` desde el catálogo, el typecheck lo detectó.
+
+No se refactorizó: unificarlo toca todo el módulo de indicadores y sus pruebas, y no corresponde arrastrarlo dentro de una entrega de formularios. Se agregó `listTrainingWorksites` al servicio de capacitación, que sí usa el tipo canónico.
+
+- [ ] **Deuda técnica** — Unificar el `WorksiteScope` de `prevention-indicadores.ts` con el canónico de `lib/auth/scope`. Hoy conviven dos tipos homónimos con formas distintas, lo que hace que un servicio no pueda reusar helpers del otro.
+
+---
+
 ## 6. Bitácora de ejecución
 
 ### 19 de julio de 2026 — Capacidad 1: capacitación, ODI y competencias
@@ -416,6 +438,15 @@ Evidencia: migración `0084_confused_switch.sql` sin drift, 19 pruebas puras y 1
 - [x] Migración `0084` desde schema, sin drift y aplicada; suite incorporada al gate de CI (ya son once).
 - [x] Regresión completa: 57 archivos, 421 pruebas y 11 suites PostgreSQL con 119 pruebas.
 - [ ] Pendiente productivo de la capacidad 6: ver sección 5septies.
+
+### 19 de julio de 2026 — Formularios de alta: capacitación
+
+- [x] Página `/prevencion/capacitacion/catalogo` con alta de curso, alta de contenido versionado, transiciones de versión y alta de requisito de competencia.
+- [x] El formulario de curso refleja el piso del DS 44 art. 16 según el tipo elegido, en vez de dejar que el usuario descubra el rechazo al enviar.
+- [x] Los botones de transición se filtran por permiso; la segregación autor/aprobador se sigue validando por actor en el servicio.
+- [x] Detectada una deuda técnica preexistente: `prevention-indicadores.ts` define un `WorksiteScope` incompatible con el canónico. Se evitó el acoplamiento agregando un helper propio; la unificación queda anotada.
+- [x] Typecheck, ESLint, build y regresión (57 archivos, 421 pruebas) verdes. React Doctor sin errores ni hallazgos nuevos.
+- [ ] Falta el formulario de sesiones y el registro de asistencia/cierre en terreno.
 
 ---
 

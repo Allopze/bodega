@@ -262,6 +262,11 @@ export const preventionModule = {
           permissions: ["prevention:training:view"],
           children: [
             {
+              label: "Catálogo de cursos",
+              href: "/prevencion/capacitacion/catalogo",
+              permissions: ["prevention:training:view"],
+            },
+            {
               label: "Matriz de competencias",
               href: "/prevencion/capacitacion/competencias",
               permissions: ["prevention:training:view"],

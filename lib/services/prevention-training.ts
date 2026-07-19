@@ -821,6 +821,32 @@ export async function listCompetencyRequirements(access: TrainingAccess) {
     .orderBy(asc(preventionTrainingCourses.name))
 }
 
+/** Faenas visibles para el alcance, para poblar selectores del catálogo. */
+export async function listTrainingWorksites(access: TrainingAccess) {
+  requireAccess(access, "prevention:training:view")
+  if (access.scope.mode === "none") return []
+  return db.select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(
+      eq(worksites.isActive, true),
+      access.scope.mode === "some" ? inArray(worksites.id, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(worksites.name))
+}
+
+/** Todas las versiones de todos los cursos, para la vista de catálogo. */
+export async function listAllCourseVersions(access: TrainingAccess) {
+  requireAccess(access, "prevention:training:view")
+  return db.select({
+    version: preventionTrainingCourseVersions,
+    courseName: preventionTrainingCourses.name,
+    courseKind: preventionTrainingCourses.kind,
+  })
+    .from(preventionTrainingCourseVersions)
+    .innerJoin(preventionTrainingCourses, eq(preventionTrainingCourseVersions.courseId, preventionTrainingCourses.id))
+    .orderBy(asc(preventionTrainingCourses.name), desc(preventionTrainingCourseVersions.createdAt))
+}
+
 export async function listCourseVersions(courseId: string, access: TrainingAccess) {
   requireAccess(access, "prevention:training:view")
   return db.select().from(preventionTrainingCourseVersions)
