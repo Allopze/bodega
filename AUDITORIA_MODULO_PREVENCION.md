@@ -49,17 +49,89 @@ La plataforma **todavía no debe sustituir SFTI ni las fuentes formales externas
 
 Cerrar los P0 no convierte todavía a Prevención en una suite EHSQ completa. Siguen siendo brechas de producto, principalmente P1:
 
-- capacitación, ODI, competencias y vencimientos;
+- ~~capacitación, ODI, competencias y vencimientos~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.5. Falta carga productiva y aceptación;
 - vigilancia ocupacional e higiene industrial completa, más allá del resguardo de datos sensibles;
-- contratistas, coordinación de empresa principal y acreditación;
+- ~~contratistas, coordinación de empresa principal y acreditación~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.6. Falta carga productiva y aceptación;
 - CPHS, actas, acuerdos y gobernanza preventiva;
-- permisos de trabajo, AST/JSA, LOTO y tareas críticas;
+- ~~permisos de trabajo, AST/JSA, LOTO y tareas críticas~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.8. Falta carga productiva y aceptación;
 - inspecciones especializadas, gestión del cambio, emergencias y simulacros;
 - ciclo preventivo de EPP conectado a riesgo, certificación y recambio;
 - integración operacional de sustancias, residuos, vehículos, rutas y exigencias ambientales;
 - integraciones versionadas con mutualidad, portales autorizados y sistemas corporativos.
 
-El detalle ejecutable, los criterios de cierre y los pendientes que requieren producción o responsables externos están en `PLAN_FIX_MITIGACION_P0_PREVENCION.md`.
+El detalle ejecutable, los criterios de cierre y los pendientes que requieren producción o responsables externos están en `PLAN_FIX_MITIGACION_P0_PREVENCION.md`. El avance sobre las brechas P1 se registra en `PLAN_P1_PREVENCION.md`.
+
+---
+
+## 0.5 Avance P1 — Capacitación, ODI y competencias (19 de julio de 2026)
+
+Primera capacidad P1 implementada, elegida por prioridad legal: el DS 44 art. 16 es el único requisito marcado **P0** en la matriz de la sección 4.1 que no tenía ninguna implementación, y el art. 15 (ODI) depende del mismo dominio.
+
+**Qué existe ahora en el checkout:**
+
+- catálogo de cursos por tipo (inducción corporativa y de faena, ODI, curso legal obligatorio, charla, entrenamiento práctico, certificación, reentrenamiento);
+- contenidos versionados con temario, duración, modalidad, hash y máquina `borrador → en_revisión → observado → aprobado → vigente → reemplazado`, con **segregación autor ≠ aprobador** y publicación transaccional que reemplaza la versión anterior;
+- el piso del DS 44 art. 16 (8 horas, vigencia ≤ 24 meses) se verifica como **parámetro por curso con cita normativa**, no como constante silenciosa: un curso declarado legal obligatorio no puede registrarse ni dictarse bajo ese mínimo, y una sesión más corta que el curso no cierra;
+- sesiones con relator interno o externo, **evidencia obligatoria de competencia del relator**, convocatoria nominativa validada por faena, asistencia, evaluación con nota/intentos y acuse firmado SHA-256 que liga sesión, contenido, persona y momento;
+- competencia vigente por trabajador como fuente única de habilitación, con vencimiento derivado, reemplazo de la anterior, convalidación externa segregada y revocación motivada;
+- requisitos de competencia por alcance global/faena/cargo con exigibilidad **bloqueante o de advertencia**, y motor de brechas que cruza dotación activa × requisitos × competencias;
+- escalamiento de brecha bloqueante a **CAPA común** (`sourceType = 'training'`), idempotente por trabajador y curso;
+- job diario de vencimientos, avisos previos (60 días) y brechas bloqueantes, con dedupe estable;
+- exportación XLSX de seis hojas (matriz, brechas, sesiones, asistencia/evaluación, requisitos, contenidos) con neutralización de fórmulas.
+
+**Evidencia:** migración `0078_fearless_overlord.sql` generada desde schema, segunda generación sin drift y aplicada al PostgreSQL local (7 tablas verificadas). 23 pruebas puras del motor de brechas y del piso legal, 7 de paridad RBAC y **19 escenarios sobre PostgreSQL real** que cubren segregación, versión optimista, scope negativo entre faenas, idempotencia de cierre y de escalamiento CAPA, acuse por titular, vencimiento, convalidación, revocación y XLSX. Typecheck, ESLint y build de producción verdes; React Doctor sin errores nuevos.
+
+**Lo que esto todavía NO significa:** no hay cursos, dotación formativa ni requisitos productivos cargados. La cobertura del art. 16 no puede afirmarse desde una base local vacía, y la definición de qué cargo exige qué curso es una decisión de Prevención, no del software.
+
+---
+
+## 0.6 Avance P1 — Contratistas y coordinación de faena (19 de julio de 2026)
+
+Segunda capacidad P1, elegida por su prioridad P0/P1 en la matriz legal (DS 76/2006 y Ley 20.123) y por ser bloqueante de la Fase 1 de la hoja de ruta.
+
+**Qué existe ahora en el checkout:**
+
+- registro de faena con empresas contratistas, RUT, organismo administrador y subcontratación encadenada;
+- contratos por faena con relación, alcance, vigencia y dotación planificada;
+- personas del contratista identificadas por su propio RUT, no confundidas con la dotación interna;
+- requisitos de acreditación configurables por alcance (empresa, contrato o persona), faena y tipo de relación, con exigibilidad **bloqueante o de advertencia** y fundamento normativo obligatorio;
+- ciclo de evidencia `pendiente → presentada → observada/aprobada → vencida`, con revisión **segregada de quien presenta**, checksum, vigencia y observación fundada;
+- **control de ingreso**: un contrato nace bloqueado; liberarlo exige cero brechas bloqueantes y recalcula la decisión contra la evidencia real en ese momento. Una brecha de persona bloquea sólo a esa persona; la evidencia vencida re-bloquea el contrato; suspender o terminar corta el acceso en el mismo acto;
+- reuniones de coordinación DS 76 con convocatoria por contrato, intercambio de riesgos, acta y **acuerdos derivados a CAPA común**;
+- exportación XLSX de siete hojas como expediente para auditoría del mandante o de la autoridad.
+
+**Evidencia:** migración `0079_polite_morlun.sql` generada desde schema, sin drift, aplicada y verificada (8 tablas). 17 pruebas puras del motor de brechas y de la decisión de acceso, 17 escenarios sobre PostgreSQL real y matriz RBAC con aserciones negativas de segregación.
+
+**Lo que esto todavía NO significa:** no hay empresas, contratos ni requisitos productivos cargados. Quedan diferidos el portal de autocarga del contratista, la acreditación de vehículos y equipos, y la estadística de incidentes por contratista.
+
+## 0.8 Avance P1 — Permisos de trabajo, AST/JSA y control de energías (19 de julio de 2026)
+
+Tercera capacidad P1. Es la que amarra las anteriores: el permiso es el punto donde competencia, acreditación y control convergen antes de que alguien ejecute una tarea crítica.
+
+**Qué existe ahora en el checkout:**
+
+- catálogo configurable de tipos de permiso (altura, espacio confinado, trabajo en caliente, izaje, intervención eléctrica y los que Chome o cada mandante definan), cada uno declarando si exige aislamiento, mediciones y AST, su vigencia de medición y su duración máxima;
+- permiso con ventana, supervisor, cuadrilla mixta interna/contratista y máquina `borrador → pendiente → aprobado → vigente → cerrado`, con rechazo, suspensión y cancelación motivadas;
+- **AST/JSA por pasos** con peligros, controles y riesgo residual, editable sólo antes de la aprobación;
+- **aislamiento de energías (LOTO)** con fuente, equipo, método, bloqueo/tarjeta, verificación de energía cero y retiro trazado;
+- **mediciones** con límites, equipo, calibración y evaluación de rango persistida;
+- una **decisión de habilitación** que devuelve todos los bloqueadores a la vez y que se recalcula en el momento de activar: controles pendientes, aislamiento faltante o sin verificar, medición ausente, vencida o fuera de rango, AST ausente, cuadrilla vacía, **falta de competencia vigente** y **contratista con ingreso bloqueado**;
+- no se retira un aislamiento con el permiso vigente ni se cierra el permiso con energías bloqueadas; la ventana vencida suspende el permiso automáticamente;
+- exportación XLSX de seis hojas como expediente del permiso.
+
+**Integración que cierra deuda previa:** los requisitos de competencia con alcance `task`, diferidos en la capacidad 1, quedaron cerrados aquí sin tablas nuevas. El PPA recibió una columna `work_permit_id` para poder ser la verificación breve dentro del permiso, como pide §7.7.
+
+**Evidencia:** migración `0080_furry_bucky.sql` desde schema, sin drift, aplicada. 27 pruebas puras de la decisión de habilitación y 20 escenarios sobre PostgreSQL real.
+
+**Lo que esto todavía NO significa:** no hay tipos de permiso ni permisos productivos cargados. Quedan diferidos el formulario de detalle en terreno, el enganche efectivo del PPA y la captura móvil/offline.
+
+---
+
+### 0.7 Corrección de una afirmación de la auditoría anterior
+
+Al incorporar las suites PostgreSQL de Prevención al gate de CI —que hasta el 19 de julio de 2026 **no se ejecutaban en ningún gate**— apareció un fallo preexistente y real en la regresión de incidentes. La bitácora de P0-05 afirmaba que esa regresión pasaba y que demostraba la regla de actualización de MIPER; no era efectivo, porque la suite nunca corría automáticamente.
+
+El servicio estaba correcto: la regla que impide declarar la MIPER actualizada sin una versión publicada posterior al disparador funciona. Era el test el que codificaba un flujo prohibido. Quedó corregido probando la cadena completa. El detalle está en `PLAN_P1_PREVENCION.md`, sección 5.1.
 
 ---
 
@@ -92,11 +164,11 @@ La brecha no consiste solamente en agregar pantallas. Falta el **núcleo prevent
 | Indicadores | 1/5 | Agregados manuales y fórmulas que requieren corrección legal. |
 | MIPER, mapas de riesgo y controles | 0/5 | No existe como capacidad operativa vigente. |
 | Incidentes, accidentes y enfermedades | 0/5 | No existe registro canónico, investigación ni flujo DIAT/DIEP. |
-| Capacitación, ODI y competencias | 0/5 | No existe historial formativo verificable. |
+| Capacitación, ODI y competencias | 0/5 en la línea base; ver 0.5 | No existía historial formativo verificable. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |
 | Salud ocupacional e higiene industrial | 0/5 | No existe vigilancia de exposición ni seguimiento de protocolos. |
-| Contratistas y coordinación de faena | 0/5 | No existe acreditación ni control documental coordinado. |
+| Contratistas y coordinación de faena | 0/5 en la línea base; ver 0.6 | No existía acreditación ni control documental coordinado. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |
 | CPHS y gobernanza preventiva | 0/5 | Hay un rol y actividades PDTP, pero no existe gestión del comité. |
-| Permisos de trabajo y tareas críticas | 0/5 | No existe flujo formal de permiso, AST/JSA, bloqueo o aislamiento. |
+| Permisos de trabajo y tareas críticas | 0/5 en la línea base; ver 0.8 | No existía flujo formal de permiso, AST/JSA, bloqueo o aislamiento. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |
 | Emergencias y simulacros | 0/5 | No existe plan operativo, recursos, ejercicios ni lecciones aprendidas. |
 | EPP preventivo | 1/5 | Existe entrega logística en Bodega, no ciclo preventivo por riesgo y certificación. |
 | Seguridad de residuos, químicos y transporte | 0/5 | No está integrada con el trabajo preventivo. |
@@ -1099,7 +1171,7 @@ Criterio de salida:
 
 ### Fase 1 — Núcleo legal y paridad mínima con SFTI
 
-**Estado post-remediación:** núcleo P0 de MIPER/legal, incidentes, control documental y CAPA implementado. Capacitación/ODI, inspecciones, CPHS, contratistas, permisos/AST y la aceptación de paridad siguen pendientes.
+**Estado post-remediación:** núcleo P0 de MIPER/legal, incidentes, control documental y CAPA implementado. **Capacitación/ODI (0.5), contratistas/DS 76 (0.6) y permisos de trabajo/AST/LOTO (0.8) implementados el 19-07-2026.** Inspecciones, CPHS y la aceptación de paridad siguen pendientes.
 
 **Objetivo:** cubrir las funciones sin las cuales no es razonable retirar SFTI.
 

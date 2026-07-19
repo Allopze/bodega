@@ -1326,6 +1326,8 @@ Una calendarización responsable se fija después de completar Ola 0, inventario
 
 ### Pendiente accionable por el agente — corte actualizado
 
+> **19 de julio de 2026:** el trabajo P1 derivado de la auditoría se ejecuta en `PLAN_P1_PREVENCION.md`. La primera capacidad (capacitación, ODI y competencias) quedó técnicamente cerrada; allí también se registra un hallazgo transversal: las suites PostgreSQL de Prevención no corren en el gate de CI.
+
 No queda implementación P0 accionable de forma autónoma en este checkout. Los pendientes siguientes requieren datos reales, despliegue productivo, decisiones de proceso o aceptación de responsables; el agente puede ejecutarlos cuando se le entregue el acceso, los archivos fuente y la autorización correspondiente.
 
 - [ ] Operación/terceros — Completar M-01: inventario y revisión de períodos históricos/exportaciones potencialmente afectadas en producción; la contención técnica de tasas ya está implementada.

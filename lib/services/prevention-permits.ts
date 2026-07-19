@@ -1,0 +1,752 @@
+import { createHash } from "node:crypto"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import type { AnyPgColumn } from "drizzle-orm/pg-core"
+import { db, type DB, type Tx } from "@/db"
+import {
+  preventionCompetencyRequirements,
+  preventionContractorContracts,
+  preventionContractorWorkers,
+  preventionJsaSteps,
+  preventionPermitControls,
+  preventionPermitCrew,
+  preventionPermitHistory,
+  preventionPermitIsolations,
+  preventionPermitMeasurements,
+  preventionPermitTypes,
+  preventionWorkPermits,
+  preventionWorkerCompetencies,
+  users,
+  workers,
+  worksites,
+} from "@/db/schema"
+import type { WorksiteScope } from "@/lib/auth/scope"
+import { nanoid } from "@/lib/id"
+import {
+  assessPermitActivation,
+  isPermitExpired,
+  plannedDurationHours,
+  PERMIT_TRANSITIONS,
+  type PermitBlocker,
+  type PermitCrewRow,
+} from "@/lib/prevention/permits"
+import {
+  jsaStepSchema,
+  permitControlVerificationSchema,
+  permitCrewAckSchema,
+  permitExtensionSchema,
+  permitIsolationApplySchema,
+  permitIsolationRemoveSchema,
+  permitIsolationSchema,
+  permitMeasurementSchema,
+  permitTransitionSchema,
+  permitTypeSchema,
+  workPermitSchema,
+} from "@/lib/validation/prevention-module/permits"
+
+type Client = DB | Tx
+
+export interface PermitAccess {
+  userId: string
+  scope: WorksiteScope
+  permissions: readonly string[]
+}
+
+const NOT_FOUND = "Permiso de trabajo no encontrado o fuera de alcance."
+
+const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
+
+function todayInChile() {
+  return CHILE_DATE_FORMAT.format(new Date())
+}
+
+function nowIso() {
+  return new Date().toISOString()
+}
+
+function scopeAllows(scope: WorksiteScope, worksiteId: string) {
+  return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
+}
+
+function requireAccess(access: PermitAccess, permission: string, worksiteId?: string) {
+  if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
+    throw new Error(NOT_FOUND)
+  }
+}
+
+function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
+  if (scope.mode === "all") return undefined
+  if (scope.mode === "none" || scope.ids.length === 0) return sql`false`
+  return inArray(column, scope.ids)
+}
+
+function permitCode() {
+  return `PT-${new Date().getUTCFullYear()}-${nanoid(8).toUpperCase()}`
+}
+
+async function history(client: Client, args: {
+  permitId: string
+  changeType: string
+  fromStatus?: string | null
+  toStatus?: string | null
+  reason: string
+  beforeState?: unknown
+  afterState?: unknown
+  actorUserId?: string | null
+}) {
+  await client.insert(preventionPermitHistory).values({
+    id: `ptrh-${nanoid()}`,
+    permitId: args.permitId,
+    changeType: args.changeType,
+    fromStatus: args.fromStatus ?? null,
+    toStatus: args.toStatus ?? null,
+    reason: args.reason,
+    beforeState: args.beforeState ?? null,
+    afterState: args.afterState ?? null,
+    actorUserId: args.actorUserId ?? null,
+  })
+}
+
+/* ── Catálogo ─────────────────────────────────────────────────────────────── */
+
+export async function createPermitType(input: unknown, access: PermitAccess) {
+  requireAccess(access, "prevention:permits:manage")
+  const data = permitTypeSchema.parse(input)
+  const [created] = await db.insert(preventionPermitTypes).values({
+    id: `pmtype-${nanoid()}`,
+    code: data.code,
+    name: data.name,
+    description: data.description ?? null,
+    competencyTaskKey: data.competencyTaskKey ?? null,
+    requiresIsolation: data.requiresIsolation,
+    requiresMeasurement: data.requiresMeasurement,
+    requiresJsa: data.requiresJsa,
+    measurementValidityMinutes: data.measurementValidityMinutes ?? null,
+    maxDurationHours: data.maxDurationHours,
+    legalBasis: data.legalBasis,
+    createdByUserId: access.userId,
+  }).returning()
+  if (!created) throw new Error("No se pudo crear el tipo de permiso.")
+  return created
+}
+
+/* ── Permiso ──────────────────────────────────────────────────────────────── */
+
+export async function createWorkPermit(input: unknown, access: PermitAccess) {
+  const data = workPermitSchema.parse(input)
+  requireAccess(access, "prevention:permits:request", data.worksiteId)
+
+  return db.transaction(async (tx) => {
+    const [type] = await tx.select().from(preventionPermitTypes)
+      .where(eq(preventionPermitTypes.id, data.permitTypeId)).limit(1)
+    if (!type || !type.isActive) throw new Error("El tipo de permiso no existe o está inactivo.")
+
+    const duration = plannedDurationHours(data.plannedStartAt, data.plannedEndAt)
+    if (duration > type.maxDurationHours) {
+      throw new Error(`La ventana solicitada (${duration} h) supera el máximo de ${type.maxDurationHours} h de este tipo de permiso.`)
+    }
+
+    const id = `permit-${nanoid()}`
+    const [created] = await tx.insert(preventionWorkPermits).values({
+      id,
+      code: permitCode(),
+      permitTypeId: data.permitTypeId,
+      worksiteId: data.worksiteId,
+      taskDescription: data.taskDescription,
+      location: data.location,
+      riskEntryId: data.riskEntryId ?? null,
+      supervisorUserId: data.supervisorUserId,
+      plannedStartAt: data.plannedStartAt,
+      plannedEndAt: data.plannedEndAt,
+      status: "draft",
+      requestedByUserId: access.userId,
+    }).returning()
+    if (!created) throw new Error("No se pudo crear el permiso.")
+
+    await addCrewMembers(tx, id, data.worksiteId, data.crew)
+
+    if (data.controls.length > 0) {
+      await tx.insert(preventionPermitControls).values(data.controls.map((control) => ({
+        id: `pmctl-${nanoid()}`,
+        permitId: id,
+        description: control.description,
+        isMandatory: control.isMandatory,
+      })))
+    }
+
+    await history(tx, { permitId: id, changeType: "created", toStatus: "draft", reason: `Permiso ${type.name} solicitado`, afterState: created, actorUserId: access.userId })
+    return created
+  })
+}
+
+async function addCrewMembers(
+  tx: Tx,
+  permitId: string,
+  worksiteId: string,
+  crew: { workerId?: string | null; contractorWorkerId?: string | null; role: string }[],
+) {
+  if (crew.length === 0) return
+
+  const workerIds = crew.map((item) => item.workerId).filter((value): value is string => Boolean(value))
+  const contractorWorkerIds = crew.map((item) => item.contractorWorkerId).filter((value): value is string => Boolean(value))
+
+  if (workerIds.length > 0) {
+    const rows = await tx.select({ id: workers.id, worksiteId: workers.worksiteId, isActive: workers.isActive })
+      .from(workers).where(inArray(workers.id, workerIds))
+    const known = new Map(rows.map((row) => [row.id, row]))
+    for (const workerId of workerIds) {
+      const worker = known.get(workerId)
+      if (!worker || !worker.isActive) throw new Error("Un integrante interno de la cuadrilla no existe o está inactivo.")
+      if (worker.worksiteId !== worksiteId) throw new Error("No se puede asignar a la cuadrilla una persona de otra faena.")
+    }
+  }
+
+  if (contractorWorkerIds.length > 0) {
+    const rows = await tx.select({
+      id: preventionContractorWorkers.id,
+      status: preventionContractorWorkers.status,
+      contractWorksiteId: preventionContractorContracts.worksiteId,
+    })
+      .from(preventionContractorWorkers)
+      .innerJoin(preventionContractorContracts, eq(preventionContractorWorkers.contractId, preventionContractorContracts.id))
+      .where(inArray(preventionContractorWorkers.id, contractorWorkerIds))
+    const known = new Map(rows.map((row) => [row.id, row]))
+    for (const contractorWorkerId of contractorWorkerIds) {
+      const worker = known.get(contractorWorkerId)
+      if (!worker || worker.status === "withdrawn") throw new Error("Un integrante contratista de la cuadrilla no existe o está retirado.")
+      if (worker.contractWorksiteId !== worksiteId) throw new Error("No se puede asignar a la cuadrilla una persona de un contrato de otra faena.")
+    }
+  }
+
+  await tx.insert(preventionPermitCrew).values(crew.map((member) => ({
+    id: `pmcrew-${nanoid()}`,
+    permitId,
+    workerId: member.workerId ?? null,
+    contractorWorkerId: member.contractorWorkerId ?? null,
+    role: member.role,
+  })))
+}
+
+export async function saveJsaSteps(input: unknown, access: PermitAccess) {
+  const data = jsaStepSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const permit = await loadPermitForMutation(tx, data.permitId, access, "prevention:permits:request")
+    if (!["draft", "pending_approval"].includes(permit.status)) {
+      throw new Error("El AST sólo puede editarse mientras el permiso no esté aprobado.")
+    }
+    await tx.delete(preventionJsaSteps).where(eq(preventionJsaSteps.permitId, permit.id))
+    await tx.insert(preventionJsaSteps).values(data.steps.map((step) => ({
+      id: `jsa-${nanoid()}`,
+      permitId: permit.id,
+      stepOrder: step.stepOrder,
+      stepDescription: step.stepDescription,
+      hazards: step.hazards,
+      controls: step.controls,
+      residualRisk: step.residualRisk,
+      createdByUserId: access.userId,
+    })))
+    await history(tx, { permitId: permit.id, changeType: "jsa", reason: `AST actualizado con ${data.steps.length} paso(s)`, actorUserId: access.userId })
+    return { steps: data.steps.length }
+  })
+}
+
+async function loadPermitForMutation(tx: Tx, permitId: string, access: PermitAccess, permission: string) {
+  const [permit] = await tx.select().from(preventionWorkPermits)
+    .where(eq(preventionWorkPermits.id, permitId)).limit(1)
+  if (!permit) throw new Error(NOT_FOUND)
+  requireAccess(access, permission, permit.worksiteId)
+  return permit
+}
+
+export async function verifyPermitControl(input: unknown, access: PermitAccess) {
+  const data = permitControlVerificationSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({ control: preventionPermitControls, permit: preventionWorkPermits })
+      .from(preventionPermitControls)
+      .innerJoin(preventionWorkPermits, eq(preventionPermitControls.permitId, preventionWorkPermits.id))
+      .where(eq(preventionPermitControls.id, data.controlId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:permits:verify", row.permit.worksiteId)
+    if (["closed", "cancelled", "rejected"].includes(row.permit.status)) {
+      throw new Error("No se pueden verificar controles de un permiso terminado.")
+    }
+    const now = nowIso()
+    const [updated] = await tx.update(preventionPermitControls).set({
+      verified: data.verified,
+      verifiedByUserId: data.verified ? access.userId : null,
+      verifiedAt: data.verified ? now : null,
+      notApplicableReason: data.verified ? null : data.notApplicableReason ?? null,
+    }).where(eq(preventionPermitControls.id, data.controlId)).returning()
+    if (!updated) throw new Error("No se pudo registrar la verificación.")
+    return updated
+  })
+}
+
+export async function addPermitIsolation(input: unknown, access: PermitAccess) {
+  const data = permitIsolationSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const permit = await loadPermitForMutation(tx, data.permitId, access, "prevention:permits:verify")
+    if (["closed", "cancelled", "rejected"].includes(permit.status)) {
+      throw new Error("No se pueden registrar aislamientos en un permiso terminado.")
+    }
+    const [created] = await tx.insert(preventionPermitIsolations).values({
+      id: `pmiso-${nanoid()}`,
+      permitId: permit.id,
+      energySource: data.energySource,
+      equipmentTag: data.equipmentTag,
+      isolationMethod: data.isolationMethod,
+      lockTagId: data.lockTagId,
+    }).returning()
+    if (!created) throw new Error("No se pudo registrar el aislamiento.")
+    await history(tx, { permitId: permit.id, changeType: "isolation_added", reason: `Aislamiento ${data.lockTagId} en ${data.equipmentTag}`, actorUserId: access.userId })
+    return created
+  })
+}
+
+export async function applyPermitIsolation(input: unknown, access: PermitAccess) {
+  const data = permitIsolationApplySchema.parse(input)
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({ isolation: preventionPermitIsolations, permit: preventionWorkPermits })
+      .from(preventionPermitIsolations)
+      .innerJoin(preventionWorkPermits, eq(preventionPermitIsolations.permitId, preventionWorkPermits.id))
+      .where(eq(preventionPermitIsolations.id, data.isolationId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:permits:verify", row.permit.worksiteId)
+    if (row.isolation.removedAt) throw new Error("El aislamiento ya fue retirado.")
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionPermitIsolations).set({
+      appliedByUserId: access.userId,
+      appliedAt: row.isolation.appliedAt ?? now,
+      verifiedZeroEnergy: data.verifiedZeroEnergy,
+    }).where(eq(preventionPermitIsolations.id, data.isolationId)).returning()
+    if (!updated) throw new Error("No se pudo aplicar el aislamiento.")
+    await history(tx, { permitId: row.permit.id, changeType: "isolation_applied", reason: `Aislamiento ${row.isolation.lockTagId} aplicado${data.verifiedZeroEnergy ? " con energía cero verificada" : ""}`, actorUserId: access.userId })
+    return updated
+  })
+}
+
+/**
+ * Retirar un aislamiento con el permiso vigente equivale a devolver energía a
+ * un equipo intervenido: sólo se admite con el permiso cerrado o suspendido.
+ */
+export async function removePermitIsolation(input: unknown, access: PermitAccess) {
+  const data = permitIsolationRemoveSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({ isolation: preventionPermitIsolations, permit: preventionWorkPermits })
+      .from(preventionPermitIsolations)
+      .innerJoin(preventionWorkPermits, eq(preventionPermitIsolations.permitId, preventionWorkPermits.id))
+      .where(eq(preventionPermitIsolations.id, data.isolationId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:permits:verify", row.permit.worksiteId)
+    if (!row.isolation.appliedAt) throw new Error("No se puede retirar un aislamiento que nunca se aplicó.")
+    if (row.isolation.removedAt) throw new Error("El aislamiento ya fue retirado.")
+    if (row.permit.status === "active") {
+      throw new Error("No se puede retirar un aislamiento con el permiso vigente: suspende o cierra el permiso primero.")
+    }
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionPermitIsolations).set({
+      removedByUserId: access.userId,
+      removedAt: now,
+    }).where(eq(preventionPermitIsolations.id, data.isolationId)).returning()
+    if (!updated) throw new Error("No se pudo retirar el aislamiento.")
+    await history(tx, { permitId: row.permit.id, changeType: "isolation_removed", reason: data.reason, actorUserId: access.userId })
+    return updated
+  })
+}
+
+export async function addPermitMeasurement(input: unknown, access: PermitAccess) {
+  const data = permitMeasurementSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const permit = await loadPermitForMutation(tx, data.permitId, access, "prevention:permits:verify")
+    if (["closed", "cancelled", "rejected"].includes(permit.status)) {
+      throw new Error("No se pueden registrar mediciones en un permiso terminado.")
+    }
+    // El rango se evalúa aquí y se persiste: la decisión de habilitación no
+    // debe depender de recalcular límites que pudieron cambiar después.
+    const withinRange =
+      (data.acceptableMin == null || data.value >= data.acceptableMin)
+      && (data.acceptableMax == null || data.value <= data.acceptableMax)
+
+    const [created] = await tx.insert(preventionPermitMeasurements).values({
+      id: `pmmeas-${nanoid()}`,
+      permitId: permit.id,
+      parameter: data.parameter,
+      value: String(data.value),
+      unit: data.unit,
+      acceptableMin: data.acceptableMin == null ? null : String(data.acceptableMin),
+      acceptableMax: data.acceptableMax == null ? null : String(data.acceptableMax),
+      withinRange,
+      equipmentTag: data.equipmentTag,
+      calibrationDate: data.calibrationDate ?? null,
+      takenByUserId: access.userId,
+      takenAt: data.takenAt,
+    }).returning()
+    if (!created) throw new Error("No se pudo registrar la medición.")
+    await history(tx, { permitId: permit.id, changeType: "measurement", reason: `${data.parameter} = ${data.value} ${data.unit} (${withinRange ? "en rango" : "fuera de rango"})`, actorUserId: access.userId })
+    return created
+  })
+}
+
+/* ── Habilitación ─────────────────────────────────────────────────────────── */
+
+/**
+ * Resuelve, contra los módulos de competencias y contratistas, quién de la
+ * cuadrilla no está habilitado. Es la integración que convierte el permiso en
+ * un control real y no en un formulario.
+ */
+async function resolveCrewEligibility(client: Client, permitId: string, competencyTaskKey: string | null) {
+  const crewRows = await client.select({
+    id: preventionPermitCrew.id,
+    workerId: preventionPermitCrew.workerId,
+    contractorWorkerId: preventionPermitCrew.contractorWorkerId,
+    workerFirstName: workers.firstName,
+    workerLastName: workers.lastName,
+    contractorFirstName: preventionContractorWorkers.firstName,
+    contractorLastName: preventionContractorWorkers.lastName,
+    contractorStatus: preventionContractorWorkers.status,
+    contractorAccessBlocked: preventionContractorWorkers.accessBlocked,
+    contractAccessBlocked: preventionContractorContracts.accessBlocked,
+  })
+    .from(preventionPermitCrew)
+    .leftJoin(workers, eq(preventionPermitCrew.workerId, workers.id))
+    .leftJoin(preventionContractorWorkers, eq(preventionPermitCrew.contractorWorkerId, preventionContractorWorkers.id))
+    .leftJoin(preventionContractorContracts, eq(preventionContractorWorkers.contractId, preventionContractorContracts.id))
+    .where(eq(preventionPermitCrew.permitId, permitId))
+
+  const crew: PermitCrewRow[] = crewRows.map((row) => ({
+    id: row.id,
+    workerId: row.workerId,
+    contractorWorkerId: row.contractorWorkerId,
+    label: row.workerId
+      ? `${row.workerLastName ?? ""}, ${row.workerFirstName ?? ""}`.trim()
+      : `${row.contractorLastName ?? ""}, ${row.contractorFirstName ?? ""}`.trim(),
+  }))
+
+  const crewWithBlockedAccess = crew.filter((member) => {
+    const row = crewRows.find((item) => item.id === member.id)
+    if (!row?.contractorWorkerId) return false
+    return Boolean(row.contractorAccessBlocked || row.contractAccessBlocked) || row.contractorStatus !== "accredited"
+  })
+
+  let crewWithoutCompetency: PermitCrewRow[] = []
+  if (competencyTaskKey) {
+    // Los cursos exigidos se leen de los requisitos de competencia con alcance
+    // `task`, en vez de duplicar el catálogo en el tipo de permiso.
+    const requirements = await client.select({ courseId: preventionCompetencyRequirements.courseId })
+      .from(preventionCompetencyRequirements)
+      .where(and(
+        eq(preventionCompetencyRequirements.scopeType, "task"),
+        eq(preventionCompetencyRequirements.scopeValue, competencyTaskKey),
+        eq(preventionCompetencyRequirements.isActive, true),
+      ))
+    const requiredCourseIds = [...new Set(requirements.map((item) => item.courseId))]
+
+    if (requiredCourseIds.length > 0) {
+      const internalIds = crew.map((member) => member.workerId).filter((value): value is string => Boolean(value))
+      const today = todayInChile()
+      const held = internalIds.length === 0 ? [] : await client.select({
+        workerId: preventionWorkerCompetencies.workerId,
+        courseId: preventionWorkerCompetencies.courseId,
+      })
+        .from(preventionWorkerCompetencies)
+        .where(and(
+          inArray(preventionWorkerCompetencies.workerId, internalIds),
+          inArray(preventionWorkerCompetencies.courseId, requiredCourseIds),
+          eq(preventionWorkerCompetencies.status, "valid"),
+          sql`${preventionWorkerCompetencies.expiresAt} IS NULL OR ${preventionWorkerCompetencies.expiresAt} >= ${today}`,
+        ))
+      const heldByWorker = new Map<string, Set<string>>()
+      for (const row of held) {
+        const set = heldByWorker.get(row.workerId) ?? new Set<string>()
+        set.add(row.courseId)
+        heldByWorker.set(row.workerId, set)
+      }
+      crewWithoutCompetency = crew.filter((member) => {
+        // Una persona de contratista no tiene competencias internas: su
+        // habilitación se controla por acreditación, no por este camino.
+        if (!member.workerId) return false
+        const owned = heldByWorker.get(member.workerId) ?? new Set<string>()
+        return requiredCourseIds.some((courseId) => !owned.has(courseId))
+      })
+    }
+  }
+
+  return { crew, crewWithoutCompetency, crewWithBlockedAccess }
+}
+
+export async function evaluatePermitReadiness(permitId: string, access: PermitAccess): Promise<{ allowed: boolean; blockers: PermitBlocker[] }> {
+  requireAccess(access, "prevention:permits:view")
+  const [permit] = await db.select().from(preventionWorkPermits)
+    .where(eq(preventionWorkPermits.id, permitId)).limit(1)
+  if (!permit || !scopeAllows(access.scope, permit.worksiteId)) throw new Error(NOT_FOUND)
+  const [type] = await db.select().from(preventionPermitTypes)
+    .where(eq(preventionPermitTypes.id, permit.permitTypeId)).limit(1)
+  if (!type) throw new Error(NOT_FOUND)
+
+  const [controls, isolations, measurements, jsaCount, eligibility] = await Promise.all([
+    db.select().from(preventionPermitControls).where(eq(preventionPermitControls.permitId, permitId)),
+    db.select().from(preventionPermitIsolations).where(eq(preventionPermitIsolations.permitId, permitId)),
+    db.select().from(preventionPermitMeasurements).where(eq(preventionPermitMeasurements.permitId, permitId)),
+    db.select({ count: sql<number>`count(*)::int` }).from(preventionJsaSteps).where(eq(preventionJsaSteps.permitId, permitId)),
+    resolveCrewEligibility(db, permitId, type.competencyTaskKey),
+  ])
+
+  return assessPermitActivation({
+    type: {
+      requiresIsolation: type.requiresIsolation,
+      requiresMeasurement: type.requiresMeasurement,
+      requiresJsa: type.requiresJsa,
+      measurementValidityMinutes: type.measurementValidityMinutes,
+      maxDurationHours: type.maxDurationHours,
+    },
+    controls: controls.map((control) => ({
+      id: control.id,
+      description: control.description,
+      isMandatory: control.isMandatory,
+      verified: control.verified,
+      notApplicableReason: control.notApplicableReason,
+    })),
+    isolations: isolations.map((item) => ({
+      id: item.id,
+      equipmentTag: item.equipmentTag,
+      appliedAt: item.appliedAt,
+      verifiedZeroEnergy: item.verifiedZeroEnergy,
+      removedAt: item.removedAt,
+    })),
+    measurements: measurements.map((item) => ({
+      parameter: item.parameter,
+      withinRange: item.withinRange,
+      takenAt: item.takenAt,
+    })),
+    jsaStepCount: jsaCount[0]?.count ?? 0,
+    crew: eligibility.crew,
+    crewWithoutCompetency: eligibility.crewWithoutCompetency,
+    crewWithBlockedAccess: eligibility.crewWithBlockedAccess,
+    plannedEndAt: permit.extendedUntilAt ?? permit.plannedEndAt,
+    now: nowIso(),
+  })
+}
+
+const TRANSITION_PERMISSION: Record<string, string> = {
+  pending_approval: "prevention:permits:request",
+  approved: "prevention:permits:approve",
+  rejected: "prevention:permits:approve",
+  active: "prevention:permits:activate",
+  suspended: "prevention:permits:suspend",
+  closed: "prevention:permits:close",
+  cancelled: "prevention:permits:request",
+}
+
+/**
+ * Única puerta de cambio de estado. Activar recalcula la habilitación completa
+ * en el momento: no se hereda una evaluación previa que pudo quedar obsoleta.
+ */
+export async function transitionWorkPermit(input: unknown, access: PermitAccess) {
+  const data = permitTransitionSchema.parse(input)
+  const permission = TRANSITION_PERMISSION[data.toStatus]
+  if (!permission) throw new Error("Transición no soportada.")
+
+  // La habilitación se evalúa fuera de la transacción de escritura para no
+  // sostener locks durante las consultas de competencias y acreditación.
+  let readiness: { allowed: boolean; blockers: PermitBlocker[] } | null = null
+  if (data.toStatus === "active") {
+    readiness = await evaluatePermitReadiness(data.permitId, {
+      ...access,
+      permissions: [...access.permissions, "prevention:permits:view"],
+    })
+  }
+
+  return db.transaction(async (tx) => {
+    const [permit] = await tx.select().from(preventionWorkPermits)
+      .where(eq(preventionWorkPermits.id, data.permitId)).limit(1)
+    if (!permit) throw new Error(NOT_FOUND)
+    requireAccess(access, permission, permit.worksiteId)
+    if (permit.version !== data.expectedVersion) throw new Error("El permiso cambió mientras lo editabas. Recarga y reintenta.")
+    if (!PERMIT_TRANSITIONS[permit.status]?.includes(data.toStatus)) {
+      throw new Error(`Transición de permiso inválida: ${permit.status} → ${data.toStatus}.`)
+    }
+    if (data.toStatus === "approved" && permit.requestedByUserId === access.userId) {
+      throw new Error("Quien solicita el permiso no puede aprobarlo.")
+    }
+    if (data.toStatus === "active" && readiness && !readiness.allowed) {
+      throw new Error(`El permiso no puede habilitarse: ${readiness.blockers.map((item) => item.detail).join(" ")}`)
+    }
+    if (data.toStatus === "closed") {
+      const live = await tx.select({ id: preventionPermitIsolations.id })
+        .from(preventionPermitIsolations)
+        .where(and(
+          eq(preventionPermitIsolations.permitId, permit.id),
+          sql`${preventionPermitIsolations.appliedAt} IS NOT NULL AND ${preventionPermitIsolations.removedAt} IS NULL`,
+        ))
+      if (live.length > 0) {
+        throw new Error(`No se puede cerrar el permiso con ${live.length} aislamiento(s) aplicados sin retirar.`)
+      }
+    }
+
+    const now = nowIso()
+    const patch: Record<string, unknown> = {
+      status: data.toStatus,
+      version: permit.version + 1,
+      updatedAt: now,
+    }
+    if (data.toStatus === "pending_approval") patch.submittedAt = now
+    if (data.toStatus === "approved") { patch.approvedByUserId = access.userId; patch.approvedAt = now }
+    if (data.toStatus === "rejected") { patch.rejectionReason = data.reason }
+    if (data.toStatus === "active") { patch.activatedByUserId = access.userId; patch.activatedAt = now; patch.suspendedAt = null; patch.suspendedByUserId = null; patch.suspensionReason = null }
+    if (data.toStatus === "suspended") { patch.suspendedByUserId = access.userId; patch.suspendedAt = now; patch.suspensionReason = data.reason }
+    if (data.toStatus === "closed") { patch.closedByUserId = access.userId; patch.closedAt = now; patch.closureSummary = data.reason }
+    if (data.toStatus === "cancelled") { patch.cancelledByUserId = access.userId; patch.cancelledAt = now; patch.cancellationReason = data.reason }
+
+    const [updated] = await tx.update(preventionWorkPermits).set(patch)
+      .where(and(eq(preventionWorkPermits.id, permit.id), eq(preventionWorkPermits.version, data.expectedVersion)))
+      .returning()
+    if (!updated) throw new Error("El permiso cambió mientras lo editabas. Recarga y reintenta.")
+    await history(tx, { permitId: permit.id, changeType: "status", fromStatus: permit.status, toStatus: data.toStatus, reason: data.reason, beforeState: permit, afterState: updated, actorUserId: access.userId })
+    return updated
+  })
+}
+
+export async function extendWorkPermit(input: unknown, access: PermitAccess) {
+  const data = permitExtensionSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const permit = await loadPermitForMutation(tx, data.permitId, access, "prevention:permits:approve")
+    if (permit.version !== data.expectedVersion) throw new Error("El permiso cambió mientras lo editabas. Recarga y reintenta.")
+    if (!["approved", "active"].includes(permit.status)) {
+      throw new Error("Sólo un permiso aprobado o vigente puede extenderse.")
+    }
+    const currentEnd = permit.extendedUntilAt ?? permit.plannedEndAt
+    if (Date.parse(data.extendedUntilAt) <= Date.parse(currentEnd)) {
+      throw new Error("La extensión debe ser posterior al término vigente.")
+    }
+    const [type] = await tx.select().from(preventionPermitTypes)
+      .where(eq(preventionPermitTypes.id, permit.permitTypeId)).limit(1)
+    if (!type) throw new Error(NOT_FOUND)
+    const total = plannedDurationHours(permit.plannedStartAt, data.extendedUntilAt)
+    if (total > type.maxDurationHours) {
+      throw new Error(`La extensión llevaría el permiso a ${Math.round(total)} h y el máximo del tipo es ${type.maxDurationHours} h.`)
+    }
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionWorkPermits).set({
+      extendedUntilAt: data.extendedUntilAt,
+      extensionReason: data.reason,
+      version: permit.version + 1,
+      updatedAt: now,
+    }).where(and(eq(preventionWorkPermits.id, permit.id), eq(preventionWorkPermits.version, data.expectedVersion))).returning()
+    if (!updated) throw new Error("El permiso cambió mientras lo editabas. Recarga y reintenta.")
+    await history(tx, { permitId: permit.id, changeType: "extended", reason: data.reason, beforeState: permit, afterState: updated, actorUserId: access.userId })
+    return updated
+  })
+}
+
+/** Acuse del propio integrante de la cuadrilla sobre el AST y los controles. */
+export async function acknowledgePermitCrew(input: unknown, access: PermitAccess) {
+  requireAccess(access, "prevention:permits:view")
+  const data = permitCrewAckSchema.parse(input)
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({
+      crew: preventionPermitCrew,
+      permit: preventionWorkPermits,
+      crewUserId: users.id,
+    })
+      .from(preventionPermitCrew)
+      .innerJoin(preventionWorkPermits, eq(preventionPermitCrew.permitId, preventionWorkPermits.id))
+      .leftJoin(users, eq(users.workerId, preventionPermitCrew.workerId))
+      .where(eq(preventionPermitCrew.id, data.crewId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    if (row.crewUserId !== access.userId) throw new Error("Sólo el propio integrante puede acusar el AST del permiso.")
+    if (row.crew.acknowledgedAt) throw new Error("Este integrante ya acusó el permiso.")
+
+    const now = nowIso()
+    const signature = createHash("sha256").update(JSON.stringify({
+      crewId: row.crew.id, permitId: row.permit.id, userId: access.userId, acknowledgedAt: now,
+    })).digest("hex")
+    const [updated] = await tx.update(preventionPermitCrew).set({
+      acknowledgedAt: now,
+      acknowledgementSha256: signature,
+    }).where(and(eq(preventionPermitCrew.id, row.crew.id), sql`${preventionPermitCrew.acknowledgedAt} IS NULL`)).returning()
+    if (!updated) throw new Error("Este integrante ya acusó el permiso.")
+    return updated
+  })
+}
+
+/** Suspende automáticamente los permisos vigentes cuya ventana ya venció. */
+export async function suspendExpiredPermits() {
+  const now = nowIso()
+  const candidates = await db.select().from(preventionWorkPermits)
+    .where(inArray(preventionWorkPermits.status, ["active", "approved"]))
+  const expired = candidates.filter((permit) => isPermitExpired(permit, now))
+  if (expired.length === 0) return { suspended: 0 }
+
+  for (const permit of expired) {
+    await db.transaction(async (tx) => {
+      const [updated] = await tx.update(preventionWorkPermits).set({
+        status: "suspended",
+        suspendedAt: now,
+        suspendedByUserId: permit.supervisorUserId,
+        suspensionReason: "Suspensión automática: la ventana autorizada del permiso venció.",
+        version: permit.version + 1,
+        updatedAt: now,
+      }).where(and(eq(preventionWorkPermits.id, permit.id), eq(preventionWorkPermits.version, permit.version))).returning()
+      if (updated) {
+        await history(tx, { permitId: permit.id, changeType: "status", fromStatus: permit.status, toStatus: "suspended", reason: "Vigencia del permiso vencida", actorUserId: null })
+      }
+    })
+  }
+  return { suspended: expired.length }
+}
+
+/* ── Consultas ────────────────────────────────────────────────────────────── */
+
+export async function listWorkPermits(access: PermitAccess) {
+  requireAccess(access, "prevention:permits:view")
+  return db.select({
+    permit: preventionWorkPermits,
+    typeName: preventionPermitTypes.name,
+    typeCode: preventionPermitTypes.code,
+    worksiteName: worksites.name,
+    crewCount: sql<number>`(SELECT COUNT(*)::int FROM prevention_permit_crew c WHERE c.permit_id = ${preventionWorkPermits.id})`,
+    acknowledgedCount: sql<number>`(SELECT COUNT(*)::int FROM prevention_permit_crew c WHERE c.permit_id = ${preventionWorkPermits.id} AND c.acknowledged_at IS NOT NULL)`,
+    openIsolationCount: sql<number>`(SELECT COUNT(*)::int FROM prevention_permit_isolations i WHERE i.permit_id = ${preventionWorkPermits.id} AND i.applied_at IS NOT NULL AND i.removed_at IS NULL)`,
+  })
+    .from(preventionWorkPermits)
+    .innerJoin(preventionPermitTypes, eq(preventionWorkPermits.permitTypeId, preventionPermitTypes.id))
+    .innerJoin(worksites, eq(preventionWorkPermits.worksiteId, worksites.id))
+    .where(scopeCondition(access.scope, preventionWorkPermits.worksiteId))
+    .orderBy(desc(preventionWorkPermits.plannedStartAt))
+    .limit(500)
+}
+
+export async function getWorkPermitDetail(permitId: string, access: PermitAccess) {
+  requireAccess(access, "prevention:permits:view")
+  const [permit] = await db.select({
+    permit: preventionWorkPermits,
+    typeName: preventionPermitTypes.name,
+    typeCode: preventionPermitTypes.code,
+    requiresIsolation: preventionPermitTypes.requiresIsolation,
+    requiresMeasurement: preventionPermitTypes.requiresMeasurement,
+    requiresJsa: preventionPermitTypes.requiresJsa,
+    worksiteName: worksites.name,
+  })
+    .from(preventionWorkPermits)
+    .innerJoin(preventionPermitTypes, eq(preventionWorkPermits.permitTypeId, preventionPermitTypes.id))
+    .innerJoin(worksites, eq(preventionWorkPermits.worksiteId, worksites.id))
+    .where(eq(preventionWorkPermits.id, permitId)).limit(1)
+  if (!permit || !scopeAllows(access.scope, permit.permit.worksiteId)) return null
+
+  const [controls, isolations, measurements, jsaSteps, crew] = await Promise.all([
+    db.select().from(preventionPermitControls).where(eq(preventionPermitControls.permitId, permitId)),
+    db.select().from(preventionPermitIsolations).where(eq(preventionPermitIsolations.permitId, permitId)),
+    db.select().from(preventionPermitMeasurements).where(eq(preventionPermitMeasurements.permitId, permitId)).orderBy(desc(preventionPermitMeasurements.takenAt)),
+    db.select().from(preventionJsaSteps).where(eq(preventionJsaSteps.permitId, permitId)).orderBy(asc(preventionJsaSteps.stepOrder)),
+    resolveCrewEligibility(db, permitId, null),
+  ])
+  return { ...permit, controls, isolations, measurements, jsaSteps, crew: crew.crew }
+}
+
+export async function listPermitTypes(access: PermitAccess) {
+  requireAccess(access, "prevention:permits:view")
+  return db.select().from(preventionPermitTypes).orderBy(asc(preventionPermitTypes.code))
+}

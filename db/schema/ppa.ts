@@ -63,12 +63,19 @@ export const ppaSubmissions = pgTable("ppa_submissions", {
   closeComment:       text("close_comment"),
   version:            integer("version").notNull().default(1),
 
+  // Enlace opcional al permiso de trabajo bajo el cual se ejecuta la tarea.
+  // La auditoría pide que el PPA sea una verificación breve dentro del flujo
+  // de permisos, no un registro desconectado. Es nullable: el PPA sigue
+  // funcionando de forma autónoma donde no se exige permiso.
+  workPermitId:       text("work_permit_id"),
+
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   index("idx_ppa_worksite_estado").on(table.worksiteId, table.estado),
   index("idx_ppa_created").on(table.createdAt),
   index("idx_ppa_worker").on(table.workerId, table.worksiteId),
+  index("idx_ppa_work_permit").on(table.workPermitId),
   check("ppa_submissions_estado_check", sql`${table.estado} IN ('aprobado_auto', 'detenido', 'en_correccion', 'pendiente_verificacion', 'autorizado', 'rechazado', 'cancelado', 'cerrado')`),
   check("ppa_submissions_version_check", sql`${table.version} >= 1`),
   check("ppa_submissions_cancel_check", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL AND ${table.cancellationReason} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 5)`),

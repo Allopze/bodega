@@ -70,6 +70,15 @@ describe("prevention module RBAC", () => {
       "prevention:contractors:authorize_access",
       "prevention:contractors:coordinate",
       "prevention:contractors:export",
+      "prevention:permits:view",
+      "prevention:permits:manage",
+      "prevention:permits:request",
+      "prevention:permits:verify",
+      "prevention:permits:approve",
+      "prevention:permits:activate",
+      "prevention:permits:suspend",
+      "prevention:permits:close",
+      "prevention:permits:export",
     ]
     for (const permission of expected) {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
@@ -205,4 +214,23 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:contractors:accredit")).not.toContain("prevencionista_faena")
   })
 
+  it("splits the work-permit chain across distinct roles", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    // Habilitar el inicio del trabajo es el acto más sensible: el jefe de
+    // terreno puede solicitar y verificar, pero no aprobar ni habilitar.
+    expect(rolesFor("prevention:permits:request")).toContain("jefe_terreno")
+    expect(rolesFor("prevention:permits:approve")).not.toContain("jefe_terreno")
+    expect(rolesFor("prevention:permits:activate")).not.toContain("jefe_terreno")
+    expect(rolesFor("prevention:permits:activate")).not.toContain("admin_contrato")
+    expect(rolesFor("prevention:permits:activate")).toEqual([
+      "administrador", "prevencionista", "prevencionista_faena",
+    ])
+    // Suspender ante riesgo es deliberadamente amplio: incluye al CPHS.
+    expect(rolesFor("prevention:permits:suspend")).toContain("cphs")
+    expect(rolesFor("prevention:permits:suspend")).toContain("jefe_terreno")
+  })
 })
