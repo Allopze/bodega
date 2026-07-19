@@ -88,6 +88,9 @@ describe("prevention module RBAC", () => {
       "prevention:cphs:view",
       "prevention:cphs:manage",
       "prevention:governance:review",
+      "prevention:hygiene:view",
+      "prevention:hygiene:manage",
+      "prevention:hygiene:measure",
     ]
     for (const permission of expected) {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
@@ -269,5 +272,18 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:governance:review")).toEqual(["administrador", "jefa_chome"])
     expect(rolesFor("prevention:governance:review")).not.toContain("cphs")
     expect(rolesFor("prevention:governance:review")).not.toContain("jefe_terreno")
+  })
+
+  it("keeps hygiene aggregates broadly visible while clinical detail stays nominative", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    // La vista de higiene es agregada y anonimizada: puede concederse amplio.
+    expect(rolesFor("prevention:hygiene:view")).toContain("cphs")
+    expect(rolesFor("prevention:hygiene:view")).toContain("jefe_terreno")
+    // El resultado clínico individual sigue sin grants por defecto.
+    expect(rolesFor("prevention:health:view_clinical")).toEqual([])
   })
 })

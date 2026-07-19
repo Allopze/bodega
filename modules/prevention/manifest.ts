@@ -95,6 +95,9 @@ export const preventionModule = {
     "prevention:cphs:view",
     "prevention:cphs:manage",
     "prevention:governance:review",
+    "prevention:hygiene:view",
+    "prevention:hygiene:manage",
+    "prevention:hygiene:measure",
   ] as const,
 
   permissionMeta: {
@@ -189,6 +192,9 @@ export const preventionModule = {
     "prevention:cphs:view": { id: "p-prev-cphs-view", description: "Ver comités paritarios, integrantes, sesiones y acuerdos de la faena autorizada" },
     "prevention:cphs:manage": { id: "p-prev-cphs-manage", description: "Constituir comités, designar integrantes, convocar sesiones y cerrar actas" },
     "prevention:governance:review": { id: "p-prev-gov-review", description: "Registrar y cerrar la revisión por la dirección del SG-SST" },
+    "prevention:hygiene:view": { id: "p-prev-hyg-view", description: "Ver agentes, grupos de exposición, mediciones y cobertura de vigilancia" },
+    "prevention:hygiene:manage": { id: "p-prev-hyg-manage", description: "Administrar agentes, grupos de exposición y programas de vigilancia ocupacional" },
+    "prevention:hygiene:measure": { id: "p-prev-hyg-measure", description: "Registrar mediciones de exposición contra el límite permisible" },
   },
 
   nav: [
@@ -302,6 +308,12 @@ export const preventionModule = {
           href: "/prevencion/cphs",
           iconName: "UsersThree",
           permissions: ["prevention:cphs:view"],
+        },
+        {
+          label: "Higiene y vigilancia",
+          href: "/prevencion/higiene",
+          iconName: "Heartbeat",
+          permissions: ["prevention:hygiene:view"],
         },
         {
           label: "Documentación",
@@ -646,5 +658,20 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:cphs:view" },
     { roleSlug: "administrador",        permission: "prevention:cphs:manage" },
     { roleSlug: "administrador",        permission: "prevention:governance:review" },
+    // Higiene industrial. La vista es agregada y anonimizada, por eso puede
+    // concederse ampliamente; el resultado clínico individual sigue viviendo
+    // en el dominio sensible con sus propios permisos nominativos.
+    { roleSlug: "prevencionista",       permission: "prevention:hygiene:view" },
+    { roleSlug: "prevencionista",       permission: "prevention:hygiene:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:hygiene:measure" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:hygiene:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:hygiene:measure" },
+    { roleSlug: "cphs",                 permission: "prevention:hygiene:view" },
+    { roleSlug: "jefe_terreno",         permission: "prevention:hygiene:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:hygiene:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:hygiene:manage" },
+    { roleSlug: "administrador",        permission: "prevention:hygiene:view" },
+    { roleSlug: "administrador",        permission: "prevention:hygiene:manage" },
+    { roleSlug: "administrador",        permission: "prevention:hygiene:measure" },
   ],
 } as const satisfies ModuleManifest

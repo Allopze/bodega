@@ -50,7 +50,7 @@ La plataforma **todavía no debe sustituir SFTI ni las fuentes formales externas
 Cerrar los P0 no convierte todavía a Prevención en una suite EHSQ completa. Siguen siendo brechas de producto, principalmente P1:
 
 - ~~capacitación, ODI, competencias y vencimientos~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.5. Falta carga productiva y aceptación;
-- vigilancia ocupacional e higiene industrial completa, más allá del resguardo de datos sensibles;
+- ~~vigilancia ocupacional e higiene industrial completa~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.13. Falta carga productiva de agentes y GES;
 - ~~contratistas, coordinación de empresa principal y acreditación~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.6. Falta carga productiva y aceptación;
 - ~~CPHS, actas, acuerdos y gobernanza preventiva~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.11. Falta constitución y aceptación productivas;
 - ~~permisos de trabajo, AST/JSA, LOTO y tareas críticas~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.8. Falta carga productiva y aceptación;
@@ -181,6 +181,25 @@ No se asignaron severidades desde el equipo de desarrollo: es una decisión de P
 
 ---
 
+## 0.13 Avance P1 — Higiene industrial y vigilancia ocupacional (19 de julio de 2026)
+
+Sexta capacidad P1. Se construye **encima** del dominio clínico cifrado de P0-06, no en paralelo: el resultado del examen sigue en `prevention_health_records` con su payload cifrado y sus permisos nominativos; la matrícula de vigilancia sólo lo enlaza.
+
+**Qué existe ahora:** agentes químicos, físicos, biológicos, ergonómicos y psicosociales con límite permisible, nivel de acción y fuente normativa declarada; grupos de exposición similar por proceso y faena con su nómina; mediciones con método, laboratorio, equipo y calibración, comparadas contra el límite y **congelando la comparación en la fila**; programas de vigilancia por protocolo con periodicidad; y matrícula derivada del GES con control de asistencia.
+
+**Dos decisiones que evitan falsos conformes:**
+
+1. Un agente **sin límite declarado devuelve «no comparable», nunca «cumple»** —el mismo criterio que «no calculable» en los indicadores DS 44—. No poder comparar no es estar bajo el límite.
+2. El **panel agregado suprime los grupos con menos de cinco integrantes**. En un grupo de dos, publicar «50 % asistió» identifica a una persona y su vínculo con un programa de vigilancia, que es dato de salud.
+
+Superar el **nivel de acción** ya obliga a vigilancia, sin esperar a superar el límite permisible. La obligación se recalcula con todo el historial: una campaña posterior conforme libera, pero el fundamento deja constancia de las excedencias previas para que la salida sea explícita.
+
+**Evidencia:** migración `0084_confused_switch.sql` sin drift, 19 pruebas puras y 13 escenarios en PostgreSQL real.
+
+**Lo que todavía falta:** cargar el inventario real de agentes con sus límites, constituir los GES por proceso, y modelar los protocolos específicos (CEAL-SM, TMERT, PREXOR) con sus hitos propios —hoy se representan como programas con periodicidad—.
+
+---
+
 ### 0.7 Corrección de una afirmación de la auditoría anterior
 
 Al incorporar las suites PostgreSQL de Prevención al gate de CI —que hasta el 19 de julio de 2026 **no se ejecutaban en ningún gate**— apareció un fallo preexistente y real en la regresión de incidentes. La bitácora de P0-05 afirmaba que esa regresión pasaba y que demostraba la regla de actualización de MIPER; no era efectivo, porque la suite nunca corría automáticamente.
@@ -219,7 +238,7 @@ La brecha no consiste solamente en agregar pantallas. Falta el **núcleo prevent
 | MIPER, mapas de riesgo y controles | 0/5 | No existe como capacidad operativa vigente. |
 | Incidentes, accidentes y enfermedades | 0/5 | No existe registro canónico, investigación ni flujo DIAT/DIEP. |
 | Capacitación, ODI y competencias | 0/5 en la línea base; ver 0.5 | No existía historial formativo verificable. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |
-| Salud ocupacional e higiene industrial | 0/5 | No existe vigilancia de exposición ni seguimiento de protocolos. |
+| Salud ocupacional e higiene industrial | 0/5 en la línea base; ver 0.13 | No existía vigilancia de exposición ni seguimiento de protocolos. Capacidad técnica implementada el 19-07-2026; falta carga productiva. |
 | Contratistas y coordinación de faena | 0/5 en la línea base; ver 0.6 | No existía acreditación ni control documental coordinado. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |
 | CPHS y gobernanza preventiva | 0/5 en la línea base; ver 0.11 | Había un rol y actividades PDTP, sin gestión del comité. Capacidad técnica implementada el 19-07-2026; falta constitución y aceptación productivas. |
 | Permisos de trabajo y tareas críticas | 0/5 en la línea base; ver 0.8 | No existía flujo formal de permiso, AST/JSA, bloqueo o aislamiento. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |

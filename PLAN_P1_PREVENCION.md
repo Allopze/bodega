@@ -44,7 +44,7 @@ Derivado de la columna de prioridad de la matriz legal (auditoría §4.1) y de l
 | 3 | Permisos de trabajo, AST/JSA y control de energías | DS 44 art. 18; estándar de tarea crítica | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 4 | Inspecciones, observaciones y auditorías | DS 44 art. 22; ISO 45001 9.2 | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 5 | CPHS y gobernanza del SG-SST | DS 44 arts. 17, 23 y ss. | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
-| 6 | Salud ocupacional e higiene industrial | DS 594; protocolos MINSAL/SUSESO | P1 | Pendiente |
+| 6 | Salud ocupacional e higiene industrial | DS 594; protocolos MINSAL/SUSESO | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 7 | EPP preventivo integrado con Bodega | DS 594 arts. 53-54; DS 18 | P1 | Pendiente |
 | 8 | Emergencias, contingencias y simulacros | DS 44 arts. 18 y 19 | P1 | Pendiente |
 | 9 | Gestión del cambio | DS 44 art. 15 | P1 | Pendiente |
@@ -294,6 +294,33 @@ Evidencia: migración `0083_closed_maverick.sql` sin drift, 17 pruebas puras de 
 
 ---
 
+## 5septies. Capacidad 6 — Higiene industrial y vigilancia ocupacional
+
+Se construye **encima** del dominio clínico cifrado de P0-06, no en paralelo: el resultado del examen sigue viviendo en `prevention_health_records` con su payload cifrado, y la matrícula de vigilancia sólo lo enlaza.
+
+Siete tablas aditivas: agentes con límite permisible y nivel de acción, grupos de exposición similar (GES), integrantes, mediciones, programas de vigilancia, matrículas e historial.
+
+**Reglas verificables:**
+
+- El límite permisible y el nivel de acción son **parámetros por agente con su fuente normativa declarada**, no constantes de código.
+- Un agente **sin límite declarado devuelve «no comparable», nunca «cumple»**: no poder comparar no es estar bajo el límite. Es el mismo criterio que «no calculable» en los indicadores DS 44.
+- Superar el **nivel de acción** ya obliga a vigilancia; no se espera a superar el límite permisible.
+- El límite y el nivel de acción **se congelan en la fila de la medición**: si el agente cambia su límite después, la evidencia sigue diciendo contra qué se comparó.
+- La obligación de vigilancia se recalcula con **todo el historial**. Una campaña posterior bajo el nivel de acción libera, pero el fundamento deja constancia de las excedencias previas para que la salida sea una decisión explícita y no un olvido.
+- La nómina de vigilancia **se deriva de la pertenencia al GES**, no se arma a mano: eso es lo que impide que una persona expuesta quede fuera por omisión.
+- El **panel agregado suprime los grupos con menos de 5 integrantes**. En un grupo de dos, «50 % asistió» identifica a una persona y su vínculo con un programa de vigilancia, que es dato de salud. Mismo criterio que la desagregación por sexo del DS 44.
+
+### Pendientes de la capacidad 6
+
+- [ ] **Operación** — Cargar el inventario real de agentes con su límite y fuente, y constituir los GES por proceso.
+- [ ] **Producción** — Aplicar la migración `0084`.
+- [ ] **Producto (diferido)** — Formularios de alta de agentes, GES, mediciones y matrículas; citaciones automáticas y recordatorio de controles vencidos; medidas prescritas por el organismo administrador.
+- [ ] **Producto (diferido)** — Protocolos específicos (CEAL-SM, TMERT, PREXOR) como plantillas con sus hitos propios; hoy se modelan como programas con periodicidad.
+
+Evidencia: migración `0084_confused_switch.sql` sin drift, 19 pruebas puras y 13 escenarios en PostgreSQL real.
+
+---
+
 ## 6. Bitácora de ejecución
 
 ### 19 de julio de 2026 — Capacidad 1: capacitación, ODI y competencias
@@ -377,6 +404,18 @@ Evidencia: migración `0083_closed_maverick.sql` sin drift, 17 pruebas puras de 
 - [x] **Visibilidad de calibración agregada al motor de inspecciones**: se detectó que `danoPotencial` no se declara en ningún ítem del catálogo y que PDTP también deriva prioridad y plazo desde ese campo, por lo que toda acción correctiva de checklist en producción cae a "media / +7 días" sin importar la gravedad real. No se inventaron severidades —es juicio de Prevención— pero la bandeja y la exportación ahora declaran qué plantillas tienen la criticidad sin calibrar.
 - [x] Regresión completa: 56 archivos, 401 pruebas y 10 suites PostgreSQL con 106 pruebas.
 - [ ] Pendiente productivo de la capacidad 5: ver sección 5sexies.
+
+### 19 de julio de 2026 — Capacidad 6: higiene industrial y vigilancia
+
+- [x] Capa de higiene construida sobre el dominio clínico cifrado existente, sin duplicarlo: la matrícula enlaza al registro de salud, no guarda el resultado.
+- [x] Agentes con límite permisible y nivel de acción como parámetros con fuente normativa; un agente sin límite devuelve «no comparable», nunca «cumple».
+- [x] Límite y nivel de acción congelados en cada medición, para que la evidencia no dependa de recalcular límites que pudieron cambiar.
+- [x] Obligación de vigilancia recalculada con todo el historial; la salida tras excedencias previas queda documentada en el fundamento.
+- [x] Nómina de vigilancia derivada del GES y matrícula idempotente por período.
+- [x] Panel agregado con supresión de grupos pequeños, aplicando el mismo criterio de reidentificación que los indicadores DS 44.
+- [x] Migración `0084` desde schema, sin drift y aplicada; suite incorporada al gate de CI (ya son once).
+- [x] Regresión completa: 57 archivos, 421 pruebas y 11 suites PostgreSQL con 119 pruebas.
+- [ ] Pendiente productivo de la capacidad 6: ver sección 5septies.
 
 ---
 
