@@ -179,7 +179,13 @@ Consecuencia: toda acción correctiva derivada de un checklist cae al default «
 
 No se asignaron severidades desde el equipo de desarrollo: es una decisión de Prevención. Lo que sí se hizo fue dejar el vacío a la vista —la bandeja de plantillas y la exportación declaran cuáles tienen la criticidad sin calibrar— en vez de que el sistema siguiera degradándose en silencio.
 
-- [ ] **Prevención** — Declarar `danoPotencial` por ítem en el catálogo. Sin eso, la priorización automática de PDTP y del motor de inspecciones es nominal.
+- [x] ~~Declarar `danoPotencial` por ítem~~ — **completado por Prevención y cargado el 19-07-2026**. Los 182 ítems quedaron calibrados, cada uno con su justificación escrita. La priorización automática de PDTP y del motor de inspecciones deja de ser nominal.
+
+**Distribución resultante:** fatal 78 (43 %), grave 69 (38 %), moderado 28 (15 %), leve 7 (4 %).
+
+**Consecuencia operacional que debe conocerse antes de operar:** `fatal` genera acción correctiva con plazo el mismo día. Con esta calibración, un incumplimiento aislado produce una acción de plazo inmediato en el 64 % de los ítems de contenedores, ampliroll y maquinaria pesada; 48 % en carros; 44 % en taller; 33 % en equipos móviles. Es una decisión legítima de Prevención —en operación con equipos pesados muchos incumplimientos sí pueden matar— pero implica que la bandeja CAPA mostrará acciones vencidas el mismo día en que se crean.
+
+- [ ] **Prevención / Operaciones** — Decidir si el plazo de `fatal` sigue siendo «mismo día» con esta proporción de ítems, o si corresponde distinguir entre detener la tarea de inmediato (que es lo que ocurre en terreno) y el plazo administrativo de cierre de la acción. Hoy ambos comparten el mismo campo.
 
 ---
 

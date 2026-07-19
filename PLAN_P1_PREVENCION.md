@@ -260,7 +260,8 @@ Ninguna de las definiciones SST declara `required` ni `danoPotencial`; ambos cam
 
 Se agregó un **piso de seguridad**: cuando la plantilla no declara obligatorios, se exigen todos los ítems que cuentan para cumplimiento. En cuanto Prevención marque obligatorios reales, manda la marca por ítem. La criticidad sigue cayendo a media mientras el catálogo no declare daño potencial, lo que es correcto pero deja el bloqueo por hallazgo grave sin efecto práctico hasta enriquecerlo.
 
-- [ ] **Operación** — Enriquecer el catálogo con `required` y `danoPotencial` por ítem. Sin eso, la criticidad de todo hallazgo es media y ningún hallazgo bloquea el cierre.
+- [x] ~~Enriquecer el catálogo con `danoPotencial`~~ — **completado y cargado el 19-07-2026**: 182/182 ítems calibrados por Prevención. El bloqueo de cierre por hallazgo grave o crítico ya tiene efecto real.
+- [ ] **Operación** — Declarar `required` por ítem. Mientras no exista, el piso de seguridad exige responder todo lo que cuenta para cumplimiento, que es más estricto que lo que probablemente se busca.
 - [ ] **Producción** — Aplicar la migración `0082` e incorporar y aprobar las plantillas que la faena vaya a usar.
 - [ ] **Producto (diferido)** — Formulario de ejecución en terreno y captura móvil/offline: las Server Actions existen y están probadas, la bandeja de lectura tiene UI.
 - [ ] **Producto (diferido)** — Tendencias por pregunta, control, activo y contratista; auditorías con alcance, muestra y equipo auditor.
@@ -340,6 +341,28 @@ Primera entrega de la línea «hacer usable lo construido». Hasta ahora las sei
 No se refactorizó: unificarlo toca todo el módulo de indicadores y sus pruebas, y no corresponde arrastrarlo dentro de una entrega de formularios. Se agregó `listTrainingWorksites` al servicio de capacitación, que sí usa el tipo canónico.
 
 - [ ] **Deuda técnica** — Unificar el `WorksiteScope` de `prevention-indicadores.ts` con el canónico de `lib/auth/scope`. Hoy conviven dos tipos homónimos con formas distintas, lo que hace que un servicio no pueda reusar helpers del otro.
+
+---
+
+## 5nonies. Carga de la calibración de daño potencial (19 de julio de 2026)
+
+Prevención devolvió la planilla con **182 de 182 ítems calibrados**, sin valores inválidos y con justificación escrita en cada uno. Se cargó al catálogo con `scripts/import-checklist-dano-potencial.ts`, contraparte del script de exportación.
+
+**Tres trampas que el importador tuvo que resolver, y que justifican que no sea un buscar/reemplazar:**
+
+1. Los `id` de ítem **colisionan entre archivos** (hay varios `luces`), así que el destino se resuelve por el archivo de secciones que cada checklist realmente importa, leído de su `import`.
+2. `observacion-seguridad-sections` lo comparten dos checklists y **repite cada `id` una vez por checklist**. Parchear sólo la primera aparición dejaba 20 ítems sin calibrar; el importador aplica a todas las apariciones. La validación previa rechaza calibraciones divergentes, de modo que aplicar el mismo valor a todas es correcto.
+3. El archivo devuelto venía **re-guardado con prefijo de namespace** (`<x:row>`) y con las cabeceras locales del ZIP en tamaño cero. El lector usa el directorio central y tolera ambos formatos, sin sumar dependencias al repositorio.
+
+**Verificación:** el catálogo cargado reproduce exactamente la distribución de la planilla (fatal 78, grave 69, moderado 28, leve 7), cero ítems sin calibrar, typecheck y ESLint limpios, y 64 archivos con 592 pruebas en verde.
+
+### Consecuencia operacional que conviene revisar
+
+`fatal` genera acción correctiva con plazo el mismo día. Con esta calibración, un incumplimiento aislado produce plazo inmediato en el 64 % de los ítems de contenedores, ampliroll y maquinaria pesada.
+
+Es una decisión legítima —en operación con equipos pesados muchos incumplimientos sí pueden matar— pero significa que la bandeja CAPA mostrará acciones vencidas el mismo día en que nacen.
+
+- [ ] **Prevención / Operaciones** — Decidir si conviene separar dos cosas que hoy comparten un solo campo: la **detención inmediata de la tarea** en terreno y el **plazo administrativo de cierre** de la acción correctiva. Si se separan, el importador y la escala no cambian; cambia sólo el mapeo de plazo.
 
 ---
 
@@ -447,6 +470,15 @@ No se refactorizó: unificarlo toca todo el módulo de indicadores y sus pruebas
 - [x] Detectada una deuda técnica preexistente: `prevention-indicadores.ts` define un `WorksiteScope` incompatible con el canónico. Se evitó el acoplamiento agregando un helper propio; la unificación queda anotada.
 - [x] Typecheck, ESLint, build y regresión (57 archivos, 421 pruebas) verdes. React Doctor sin errores ni hallazgos nuevos.
 - [ ] Falta el formulario de sesiones y el registro de asistencia/cierre en terreno.
+
+### 19 de julio de 2026 — Carga de la calibración de daño potencial
+
+- [x] Recibida de Prevención con 182/182 ítems calibrados y justificación por ítem; validada sin valores inválidos ni calibraciones divergentes entre checklists que comparten archivo.
+- [x] Importador `scripts/import-checklist-dano-potencial.ts` agregado, sin dependencias nuevas: lee el ZIP por directorio central y tolera etiquetas con prefijo de namespace.
+- [x] Resuelto que los `id` colisionan entre archivos y que el archivo compartido repite cada `id`; el importador aplica a todas las apariciones tras rechazar divergencias.
+- [x] Catálogo cargado y verificado contra la planilla: distribución idéntica, cero sin calibrar.
+- [x] Typecheck, ESLint y regresión (64 archivos, 592 pruebas) verdes.
+- [ ] Queda por decidir si `fatal` debe seguir implicando plazo el mismo día con el 43 % del catálogo en esa categoría.
 
 ---
 
