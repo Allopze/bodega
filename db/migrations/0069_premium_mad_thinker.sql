@@ -1,0 +1,2 @@
+ALTER TABLE "pdtp_action_plan" DROP CONSTRAINT "pdtp_action_plan_estado_check";--> statement-breakpoint
+ALTER TABLE "pdtp_action_plan" ADD CONSTRAINT "pdtp_action_plan_estado_check" CHECK ("pdtp_action_plan"."estado" IN ('pendiente', 'en_proceso', 'completado', 'verificado', 'reabierto', 'cancelado'));

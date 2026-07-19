@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm"
 import { pgTable, text, timestamp, real, boolean, integer, jsonb, uniqueIndex, index, check } from "drizzle-orm/pg-core"
 import { worksites, workers } from "./worksites"
 import { users } from "./users"
+import { preventionCapaActions } from "./prevention/capa"
 
 /* ── SST Evaluation Visits ───────────────────────────────────────────────── */
 // A visit is the durable parent for the three possible evaluator-role
@@ -99,6 +100,7 @@ export const sstScheduledFollowups = pgTable("sst_scheduled_followups", {
 export const sstActionPlan = pgTable("sst_action_plan", {
   id:           text("id").primaryKey(),
   evaluationId: text("evaluation_id").notNull().references(() => sstEvaluations.id, { onDelete: "cascade" }),
+  capaActionId: text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "restrict" }),
   n:            integer("n").notNull(),
   hallazgo:     text("hallazgo").notNull(),
   accion:       text("accion").notNull(),
@@ -107,6 +109,7 @@ export const sstActionPlan = pgTable("sst_action_plan", {
   estado:       text("estado").notNull(),
 }, (table) => [
   uniqueIndex("sst_action_plan_evaluation_n_unique").on(table.evaluationId, table.n),
+  uniqueIndex("sst_action_plan_capa_unique").on(table.capaActionId),
 ])
 
 /* ── SST Weekly Evaluations ──────────────────────────────────────────────── */

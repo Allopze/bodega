@@ -9,7 +9,6 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Field } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { reviewPpaAction } from "../actions"
@@ -21,8 +20,7 @@ const DECISIONS: {
   desc: string
   tone: "success" | "warning" | "danger"
 }[] = [
-  { value: "autorizado", label: "Autorizar inicio",     desc: "El trabajo puede comenzar.",          tone: "success" },
-  { value: "correccion", label: "Solicitar corrección", desc: "Debe corregirse antes de iniciar.",   tone: "warning" },
+  { value: "correccion", label: "Definir corrección", desc: "Crea una acción CAPA; el trabajo sigue detenido.", tone: "warning" },
   { value: "rechazado",  label: "Rechazar inicio",      desc: "El trabajo no se realizará.",          tone: "danger" },
 ]
 
@@ -44,14 +42,12 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
   const [priority, setPriority] = React.useState("alta")
   const [reviewNota, setReviewNota] = React.useState("")
   const [errors, setErrors] = React.useState<Record<string, string[]>>({})
-  const [confirmOpen, setConfirmOpen] = React.useState(false)
 
-  // Autorizar un PPA detenido crea una acción estructurada, así que sus datos
-  // mínimos se completan en esta misma revisión.
+  // Toda corrección de un PPA detenido crea una CAPA estructurada, así que sus
+  // datos mínimos se completan en esta misma revisión.
   const actionIncomplete = accionCorrectiva.trim().length < 4 || !responsibleRole || responsible.trim().length < 2 || !dueDate || !priority
 
   function doReview() {
-    setConfirmOpen(false)
     startTransition(async () => {
       const res = await reviewPpaAction({
         ppaId,
@@ -79,13 +75,8 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
   function submit() {
     setErrors({})
     if (!decision) { toast.error("Selecciona una decisión."); return }
-    if (decision === "autorizado" && actionIncomplete) {
-      setErrors({ accionCorrectiva: ["Completa la acción, responsable, plazo y prioridad antes de autorizar."] })
-      return
-    }
-    // Confirmar la autorización de un trabajo que estaba detenido.
-    if (decision === "autorizado" && detenido) {
-      setConfirmOpen(true)
+    if (decision !== "rechazado" && actionIncomplete) {
+      setErrors({ accionCorrectiva: ["Completa la acción, responsable, plazo y prioridad antes de continuar."] })
       return
     }
     doReview()
@@ -103,7 +94,7 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
         />
 
         <Field label="Acción correctiva" htmlFor="accion" error={errors.accionCorrectiva?.[0]}
-          helper={detenido ? "Al autorizar se crea como acción pendiente con responsable y plazo." : undefined}>
+          helper={detenido ? "La corrección se crea como CAPA pendiente con responsable y plazo; no autoriza el trabajo." : undefined}>
           <Textarea id="accion" rows={3} value={accionCorrectiva} onChange={(e) => setAccionCorrectiva(e.target.value)} />
         </Field>
 
@@ -148,7 +139,7 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
           <div className="flex flex-col gap-2">
             {DECISIONS.map((d) => {
               const active = decision === d.value
-              const disabled = d.value === "autorizado" && actionIncomplete
+              const disabled = d.value !== "rechazado" && actionIncomplete
               return (
                 <button
                   key={d.value}
@@ -180,17 +171,6 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
           Registrar revisión
         </Button>
       </div>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="Autorizar inicio del trabajo"
-        description="Confirmas que la condición fue corregida y el trabajo puede iniciar de forma segura."
-        confirmLabel="Sí, autorizar"
-        cancelLabel="Cancelar"
-        onConfirm={doReview}
-        loading={pending}
-      />
     </section>
   )
 }

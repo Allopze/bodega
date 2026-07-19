@@ -19,7 +19,7 @@ export const PDTP_PLAZO_DIAS_POR_PRIORIDAD: Record<string, number> = {
 }
 
 /** Estados que cuentan como "cerrados" para el % de cierre. */
-export const PDTP_ESTADOS_CERRADOS = new Set(["completado", "verificado"])
+export const PDTP_ESTADOS_CERRADOS = new Set(["completado", "verificado", "cancelado"])
 
 /**
  * Daño potencial de un hallazgo (módulo 04 — Evidencia Objetiva No Planeada).

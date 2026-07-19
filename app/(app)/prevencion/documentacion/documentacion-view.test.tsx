@@ -217,8 +217,6 @@ describe("DocumentacionView", () => {
         folders={[FOLDER]}
         folderOptions={[{ id: "sdf-2", parentId: null, name: "Procedimientos" }]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
-        categories={[]}
-        types={[]}
         searchParams={{}}
         total={0}
         canManage
@@ -255,8 +253,6 @@ describe("DocumentacionView", () => {
           { id: "sdf-2", parentId: null, name: "Procedimientos" },
         ]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
-        categories={[]}
-        types={[]}
         searchParams={{}}
         total={0}
         canManage
@@ -290,8 +286,6 @@ describe("DocumentacionView", () => {
         documents={[{ ...DOCUMENT, expiresAt: null, daysUntilExpiry: null, currentVersionId: null }]}
         folders={[FOLDER]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
-        categories={[]}
-        types={[]}
         searchParams={{}}
         total={1}
         canManage
@@ -337,8 +331,6 @@ describe("DocumentacionView", () => {
         folders={[]}
         folderOptions={[{ id: "sdf-2", parentId: null, name: "Procedimientos" }]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
-        categories={[]}
-        types={[]}
         searchParams={{}}
         total={2}
         canManage
@@ -376,9 +368,7 @@ describe("DocumentacionView", () => {
         documents={[]}
         folders={[{ ...FOLDER, id: "sdf-archived", name: "Carpeta archivada", archivedAt: "2026-07-02T00:00:00.000Z" }]}
         breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
-        categories={[]}
-        types={[]}
-        searchParams={{ status: "archivado" }}
+        searchParams={{}}
         total={0}
         canManage
         canArchive

@@ -49,6 +49,15 @@ export const SST_DOCUMENT_CONFIDENTIALITIES = [
   "sensible",
 ] as const
 
+export const SST_DOCUMENT_DATA_CLASSES = [
+  "operational",
+  "personal",
+  "sensitive_preventive",
+  "clinical",
+  "reserved_investigation",
+  "client_secret",
+] as const
+
 export const sstDocumentCreateSchema = z.object({
   categorySlug:    z.enum(SST_DOCUMENT_CATEGORY_SLUGS),
   typeId:          z.string().optional().or(z.literal("")),
@@ -58,6 +67,7 @@ export const sstDocumentCreateSchema = z.object({
   description:     z.string().max(2000).optional().or(z.literal("")),
   worksiteId:      z.string().optional().or(z.literal("")),
   confidentiality: z.enum(SST_DOCUMENT_CONFIDENTIALITIES).default("publico_interno"),
+  dataClass:       z.enum(SST_DOCUMENT_DATA_CLASSES).default("operational"),
   effectiveFrom:   z.string().optional().or(z.literal("")),
   expiresAt:       z.string().optional().or(z.literal("")),
   responsibleUserId: z.string().optional().or(z.literal("")),
@@ -73,6 +83,7 @@ export const sstDocumentUpdateSchema = z.object({
   description:     z.string().max(2000).optional().or(z.literal("")),
   worksiteId:      z.string().optional().or(z.literal("")),
   confidentiality: z.enum(SST_DOCUMENT_CONFIDENTIALITIES).optional(),
+  dataClass:       z.enum(SST_DOCUMENT_DATA_CLASSES).optional(),
   effectiveFrom:   z.string().optional().or(z.literal("")),
   expiresAt:       z.string().optional().or(z.literal("")),
   responsibleUserId: z.string().optional().or(z.literal("")),

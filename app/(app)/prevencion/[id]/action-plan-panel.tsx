@@ -6,14 +6,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
-import {
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
-} from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import { saveActionPlanItemAction, deleteActionPlanItemAction } from "@/app/(app)/prevencion/actions"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
-import { ESTADO_OPTIONS, ESTADO_LABELS, estadoPlanBadgeVariant } from "@/lib/sst/badges"
+import { ESTADO_LABELS, estadoPlanBadgeVariant } from "@/lib/sst/badges"
 import type { SstActionPlan } from "@/db/schema/sst"
 import { Trash, Plus, ListBullets } from "@phosphor-icons/react"
 import {
@@ -81,6 +78,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
       const newItem: SstActionPlan = {
         id: result.data?.id ?? `temp-${Date.now()}`,
         evaluationId,
+        capaActionId: result.data?.capaActionId ?? null,
         n,
         hallazgo:    draft.hallazgo,
         accion:      draft.accion,
@@ -162,7 +160,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
                         onClick={() => setDeleteTarget(item.id)}
                         disabled={isPending}
                         className="text-text-subtle hover:text-[var(--color-danger)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-1 rounded-(--radius)"
-                        aria-label={`Eliminar ítem ${item.n}`}
+                        aria-label={`Cancelar acción ${item.n}`}
                       >
                         <Trash size={14} />
                       </button>
@@ -210,18 +208,6 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
                 onChange={(iso) => setDraft({ ...draft, plazo: iso })}
               />
             </Field>
-            <Field label="Estado" htmlFor="draft-estado">
-              <Select value={draft.estado} onValueChange={(v) => setDraft({ ...draft, estado: v })}>
-                <SelectTrigger id="draft-estado">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ESTADO_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleSaveDraft} disabled={isPending}>
@@ -237,9 +223,9 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
       <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
-        title="Eliminar ítem"
-        description="Este ítem del plan de acción será eliminado. Esta acción no se puede deshacer."
-        confirmLabel="Eliminar"
+        title="Cancelar acción"
+        description="La acción se conservará en la trazabilidad CAPA y quedará marcada como cancelada."
+        confirmLabel="Cancelar acción"
         variant="destructive"
         loading={isPending}
         onConfirm={handleConfirmDelete}

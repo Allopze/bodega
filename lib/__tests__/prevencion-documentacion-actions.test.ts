@@ -21,12 +21,24 @@ const mockArchiveDocumentFolder = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRestoreDocumentFolder = vi.hoisted(() => vi.fn(async () => undefined))
 const mockMoveDocumentToFolder = vi.hoisted(() => vi.fn(async () => undefined))
 const mockListDocumentCategories = vi.hoisted(() => vi.fn(async () => [{ slug: "gestion_preventiva", name: "Gestión preventiva" }]))
+const mockSubmitDocumentVersionForReview = vi.hoisted(() => vi.fn(async () => undefined))
+const mockReturnObservedDocumentVersionToDraft = vi.hoisted(() => vi.fn(async () => undefined))
+const mockMarkDocumentVersionReviewed = vi.hoisted(() => vi.fn(async () => undefined))
+const mockObserveDocumentVersion = vi.hoisted(() => vi.fn(async () => undefined))
+const mockApproveDocumentVersion = vi.hoisted(() => vi.fn(async () => undefined))
+const mockPublishDocumentVersion = vi.hoisted(() => vi.fn(async () => undefined))
+const mockAcknowledgeDocumentVersion = vi.hoisted(() => vi.fn(async () => undefined))
+const mockAssignDocumentVersionRecipients = vi.hoisted(() => vi.fn(async () => [{ id: "target-1" }]))
+const mockExemptDocumentDistributionTarget = vi.hoisted(() => vi.fn(async () => undefined))
+const mockListDocumentRecipientOptions = vi.hoisted(() => vi.fn(async () => []))
 const mockGetDocumentBundle = vi.hoisted(() => vi.fn(async (): Promise<{
   doc: { id: string; uploadedBy: string; worksiteId: string | null }
   versions: Array<{ uploadedBy: string }>
+  distribution: Array<{ userId: string | null; assignedByUserId: string; exemptedByUserId: string | null }>
 } | null> => ({
   doc: { id: "doc-1", uploadedBy: "user-1", worksiteId: null },
   versions: [],
+  distribution: [],
 })))
 
 vi.mock("@/lib/auth/can", () => ({
@@ -49,6 +61,16 @@ vi.mock("@/lib/services/prevention-documents-library", () => ({
   restoreDocumentFolder: mockRestoreDocumentFolder,
   moveDocumentToFolder: mockMoveDocumentToFolder,
   listDocumentCategories: mockListDocumentCategories,
+  submitDocumentVersionForReview: mockSubmitDocumentVersionForReview,
+  returnObservedDocumentVersionToDraft: mockReturnObservedDocumentVersionToDraft,
+  markDocumentVersionReviewed: mockMarkDocumentVersionReviewed,
+  observeDocumentVersion: mockObserveDocumentVersion,
+  approveDocumentVersion: mockApproveDocumentVersion,
+  publishDocumentVersion: mockPublishDocumentVersion,
+  acknowledgeDocumentVersion: mockAcknowledgeDocumentVersion,
+  assignDocumentVersionRecipients: mockAssignDocumentVersionRecipients,
+  exemptDocumentDistributionTarget: mockExemptDocumentDistributionTarget,
+  listDocumentRecipientOptions: mockListDocumentRecipientOptions,
   getDocumentBundle: mockGetDocumentBundle,
 }))
 vi.mock("@/db", () => ({
@@ -77,6 +99,10 @@ import {
   restoreSstDocumentFolderAction,
   moveSstDocumentAction,
   getDocumentDetailAction,
+  submitSstDocumentVersionForReviewAction,
+  observeSstDocumentVersionAction,
+  approveSstDocumentVersionAction,
+  publishSstDocumentVersionAction,
 } from "@/app/(app)/prevencion/documentacion/actions"
 
 function makeSession() {
@@ -119,6 +145,7 @@ describe("createAndUploadSstDocumentAction", () => {
     const fd = new FormData()
     fd.set("title", "Reglamento interno")
     fd.set("file", new File(["contenido"], "reglamento.pdf", { type: "application/pdf" }))
+    fd.set("dataClass", "operational")
     const res = await createAndUploadSstDocumentAction(fd)
     expect(mockListDocumentCategories).toHaveBeenCalled()
     expect(res.ok).toBe(true)
@@ -129,6 +156,7 @@ describe("createAndUploadSstDocumentAction", () => {
     fd.set("categorySlug", "gestion_preventiva")
     fd.set("title", "Reglamento interno")
     fd.set("file", new File(["contenido"], "reglamento.pdf", { type: "application/pdf" }))
+    fd.set("dataClass", "operational")
     const res = await createAndUploadSstDocumentAction(fd)
     expect(res.ok).toBe(true)
     expect(res.data).toEqual({ id: "doc-1" })
@@ -142,6 +170,7 @@ describe("createAndUploadSstDocumentAction", () => {
     fd.set("categorySlug", "gestion_preventiva")
     fd.set("title", "Reglamento interno")
     fd.set("file", new File(["contenido"], "reglamento.pdf", { type: "application/pdf" }))
+    fd.set("dataClass", "operational")
 
     const res = await createAndUploadSstDocumentAction(fd)
 
@@ -156,9 +185,23 @@ describe("createAndUploadSstDocumentAction", () => {
     fd.set("categorySlug", "gestion_preventiva")
     fd.set("title", "")
     fd.set("file", new File(["contenido"], "reglamento.pdf", { type: "application/pdf" }))
+    fd.set("dataClass", "operational")
     const res = await createAndUploadSstDocumentAction(fd)
     expect(res.ok).toBe(false)
     expect(res.fieldErrors).toBeDefined()
+  })
+
+  it("rechaza una carga sin clasificación explícita", async () => {
+    const fd = new FormData()
+    fd.set("categorySlug", "gestion_preventiva")
+    fd.set("title", "Reglamento interno")
+    fd.set("file", new File(["contenido"], "reglamento.pdf", { type: "application/pdf" }))
+
+    const res = await createAndUploadSstDocumentAction(fd)
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/clasificación/i)
+    expect(mockCreateDocument).not.toHaveBeenCalled()
   })
 })
 
@@ -177,6 +220,50 @@ describe("uploadSstDocumentVersionAction", () => {
     const res = await uploadSstDocumentVersionAction(fd)
     expect(res.ok).toBe(true)
     expect(res.data).toEqual({ id: "ver-1" })
+  })
+})
+
+describe("document workflow actions", () => {
+  const input = { documentId: "doc-1", versionId: "ver-1" }
+
+  it("uses the dedicated permission when submitting for review", async () => {
+    const result = await submitSstDocumentVersionForReviewAction(input)
+
+    expect(result.ok).toBe(true)
+    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:docs:submit_review")
+    expect(mockSubmitDocumentVersionForReview).toHaveBeenCalledWith(expect.objectContaining({
+      versionId: "ver-1",
+      permissions: expect.any(Array),
+    }))
+  })
+
+  it("requires a reviewer permission to observe and forwards the evidence comment", async () => {
+    const result = await observeSstDocumentVersionAction({ ...input, comment: "Falta control operacional" })
+
+    expect(result.ok).toBe(true)
+    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:docs:review")
+    expect(mockObserveDocumentVersion).toHaveBeenCalledWith(expect.objectContaining({
+      comment: "Falta control operacional",
+    }))
+  })
+
+  it("keeps approval and publication as separate permissions and operations", async () => {
+    await approveSstDocumentVersionAction(input)
+    await publishSstDocumentVersionAction(input)
+
+    expect(mockGuardPermission).toHaveBeenNthCalledWith(1, "prevention:docs:approve")
+    expect(mockGuardPermission).toHaveBeenNthCalledWith(2, "prevention:docs:publish")
+    expect(mockApproveDocumentVersion).toHaveBeenCalledOnce()
+    expect(mockPublishDocumentVersion).toHaveBeenCalledOnce()
+  })
+
+  it("does not call the workflow service when permission is denied", async () => {
+    mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
+
+    const result = await publishSstDocumentVersionAction(input)
+
+    expect(result.ok).toBe(false)
+    expect(mockPublishDocumentVersion).not.toHaveBeenCalled()
   })
 })
 

@@ -129,6 +129,14 @@ export function DocumentViewerModal({ documentId, open, onClose }: Props) {
               linkEnrichment={{} as DetailViewProps["linkEnrichment"]}
               canManage={ok.canManage}
               canArchive={ok.canArchive}
+              canSubmitReview={ok.canSubmitReview}
+              canReview={ok.canReview}
+              canApprove={ok.canApprove}
+              canPublish={ok.canPublish}
+              canDistribute={ok.canDistribute}
+              canAck={ok.canAck}
+              canLink={ok.canLink}
+              recipientOptions={ok.recipientOptions}
               currentUserId={ok.currentUserId}
               currentUserName={ok.currentUserName}
             />

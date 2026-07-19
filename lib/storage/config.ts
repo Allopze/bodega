@@ -9,6 +9,7 @@ const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
+const PREVENTION_SENSITIVE_FILE_PREFIX = "storage/prevention-sensitive/"
 
 /**
  * Resolves the base storage directory.
@@ -182,6 +183,23 @@ export function resolveSstDocumentFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolveSstDocumentsDir(), storageName)
+}
+
+/* Archivos sensibles de Prevención: siempre contienen ciphertext AES-GCM. */
+export function resolvePreventionSensitiveFilesDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "prevention-sensitive")
+}
+
+export function createPreventionSensitiveFilePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) throw new Error("Invalid prevention sensitive storage name")
+  return `${PREVENTION_SENSITIVE_FILE_PREFIX}${storageName}`
+}
+
+export function resolvePreventionSensitiveFile(filePath: string): string | null {
+  if (!filePath.startsWith(PREVENTION_SENSITIVE_FILE_PREFIX)) return null
+  const storageName = filePath.slice(PREVENTION_SENSITIVE_FILE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolvePreventionSensitiveFilesDir(), storageName)
 }
 
 /* ── Evidencia PDTP ────────────────────────────────────────────────────────

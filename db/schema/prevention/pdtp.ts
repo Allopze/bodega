@@ -3,6 +3,7 @@ import { boolean, check, index, integer, jsonb, numeric, real, text, timestamp, 
 import { pgTable } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
+import { preventionCapaActions } from "./capa"
 
 export const pdtpPrograms = pgTable("pdtp_programs", {
   id:                    text("id").primaryKey(),
@@ -238,6 +239,7 @@ export const pdtpExecutionChecklistResponses = pgTable("pdtp_execution_checklist
 export const pdtpActionPlan = pgTable("pdtp_action_plan", {
   id:                 text("id").primaryKey(),
   executionId:        text("execution_id").notNull().references(() => pdtpExecutions.id, { onDelete: "cascade" }),
+  capaActionId:       text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "restrict" }),
   n:                  integer("n").notNull(),
   origen:             text("origen").notNull().default("manual"),
   seccionId:          text("seccion_id"),
@@ -259,12 +261,13 @@ export const pdtpActionPlan = pgTable("pdtp_action_plan", {
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   uniqueIndex("pdtp_action_plan_execution_n_unique").on(table.executionId, table.n),
+  uniqueIndex("pdtp_action_plan_capa_unique").on(table.capaActionId),
   index("pdtp_action_plan_execution_idx").on(table.executionId),
   index("pdtp_action_plan_estado_idx").on(table.estado),
   index("pdtp_action_plan_plazo_idx").on(table.plazo),
   check("pdtp_action_plan_origen_check", sql`${table.origen} IN ('checklist_item', 'manual')`),
   check("pdtp_action_plan_prioridad_check", sql`${table.prioridad} IN ('alta', 'media', 'baja')`),
-  check("pdtp_action_plan_estado_check", sql`${table.estado} IN ('pendiente', 'en_proceso', 'completado', 'verificado', 'reabierto')`),
+  check("pdtp_action_plan_estado_check", sql`${table.estado} IN ('pendiente', 'en_proceso', 'completado', 'verificado', 'reabierto', 'cancelado')`),
 ])
 
 /* ── PDTP Action Plan Followups (bitácora de seguimiento) ────────────────── */

@@ -52,9 +52,23 @@ async function seedBaseFixtures() {
   })
 }
 
+async function completeActionForVerification(actionPlanItemId: string) {
+  const { addFollowup } = await import("@/lib/services/pdtp/followups")
+  await addFollowup({
+    actionPlanItemId,
+    estadoNuevo: "completado",
+    observacion: "Control implementado con evidencia",
+    evidenciaPhotos: ["storage/pdtp-evidence/capa_test_photo.jpg"],
+  }, "u1")
+}
+
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActionPlanFollowups)
   await inMemoryDb.delete(schema.pdtpActionPlan)
+  await inMemoryDb.delete(schema.preventionCapaEvidence)
+  await inMemoryDb.delete(schema.preventionCapaFollowups)
+  await inMemoryDb.delete(schema.preventionCapaTransitions)
+  await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpExecutionChecklistResponses)
   await inMemoryDb.delete(schema.pdtpExecutionChecklists)
   await inMemoryDb.delete(schema.pdtpActivityChecklists)
@@ -221,12 +235,13 @@ describe("pdtp action plan lifecycle", () => {
     const { listFollowups } = await import("@/lib/services/pdtp/followups")
     const item = await createManualAction()
 
-    const verified = await verifyActionPlanItem(item.id, "u1", "Todo conforme")
+    await completeActionForVerification(item.id)
+    const verified = await verifyActionPlanItem(item.id, "u1", "Todo conforme", "Inspección en terreno satisfactoria")
     expect(verified.estado).toBe("verificado")
     expect(verified.verifiedByUserId).toBe("u1")
 
     const followups = await listFollowups(item.id)
-    expect(followups).toHaveLength(1)
+    expect(followups).toHaveLength(2)
     expect(followups[0]!.estadoNuevo).toBe("verificado")
   })
 
@@ -237,7 +252,8 @@ describe("pdtp action plan lifecycle", () => {
     await expect(reopenActionPlanItem(item.id, "u1", "")).rejects.toThrow()
     await expect(reopenActionPlanItem(item.id, "u1", "motivo válido")).rejects.toThrow(/verificadas/)
 
-    await verifyActionPlanItem(item.id, "u1")
+    await completeActionForVerification(item.id)
+    await verifyActionPlanItem(item.id, "u1", undefined, "Control implementado y observado en terreno")
     const reopened = await reopenActionPlanItem(item.id, "u1", "La acción no fue efectiva")
     expect(reopened.estado).toBe("reabierto")
     expect(reopened.verifiedByUserId).toBeNull()
@@ -408,7 +424,8 @@ describe("pdtp cumplimiento integral", () => {
     await approvePdtpExecution("exec-1", "u1", ["w1"])
 
     const items = await listActionPlanItems("exec-1")
-    await verifyActionPlanItem(items[0]!.id, "u1")
+    await completeActionForVerification(items[0]!.id)
+    await verifyActionPlanItem(items[0]!.id, "u1", undefined, "Control implementado y observado en terreno")
 
     // getPdtpIntegralCompliance reutiliza loadProgramScheduleAndExecutions, que solo
     // agrega executionRows cuando se pasa worksiteId (mismo contrato que
@@ -459,7 +476,8 @@ describe("pdtp conteos por ejecución (badges de la hoja)", () => {
     const countsBeforeVerify = await countActionsByExecution(["exec-1"])
     expect(countsBeforeVerify.get("exec-1")).toEqual({ pending: 2, overdue: 0 })
 
-    await verifyActionPlanItem(items[0]!.id, "u1")
+    await completeActionForVerification(items[0]!.id)
+    await verifyActionPlanItem(items[0]!.id, "u1", undefined, "Control implementado y observado en terreno")
     const countsAfterVerify = await countActionsByExecution(["exec-1"])
     expect(countsAfterVerify.get("exec-1")).toEqual({ pending: 1, overdue: 0 })
 

@@ -21,6 +21,10 @@ const mockListPpa = vi.hoisted(() => vi.fn())
 const mockCountPpa = vi.hoisted(() => vi.fn())
 const mockGetPpa = vi.hoisted(() => vi.fn())
 const mockReviewPpa = vi.hoisted(() => vi.fn())
+const mockDeclarePpaCorrection = vi.hoisted(() => vi.fn())
+const mockVerifyPpaCorrection = vi.hoisted(() => vi.fn())
+const mockAuthorizePpaRestart = vi.hoisted(() => vi.fn())
+const mockCancelPpa = vi.hoisted(() => vi.fn())
 const mockClosePpa = vi.hoisted(() => vi.fn())
 const mockGetPpaStats = vi.hoisted(() => vi.fn())
 
@@ -42,7 +46,12 @@ vi.mock("@/lib/services/ppa", () => ({
   countPpa: mockCountPpa,
   getPpa: mockGetPpa,
   reviewPpa: mockReviewPpa,
+  declarePpaCorrection: mockDeclarePpaCorrection,
+  verifyPpaCorrection: mockVerifyPpaCorrection,
+  authorizePpaRestart: mockAuthorizePpaRestart,
+  cancelPpa: mockCancelPpa,
   closePpa: mockClosePpa,
+  getPpaCorrectiveAction: vi.fn(),
   getPpaStats: mockGetPpaStats,
 }))
 
@@ -158,7 +167,11 @@ describe("prevencion PPA admin actions", () => {
     mockCountPpa.mockResolvedValue(0)
     mockGetPpa.mockResolvedValue({ id: "ppa-1" })
     mockReviewPpa.mockResolvedValue({ id: "ppa-1" })
-    mockClosePpa.mockResolvedValue(undefined)
+    mockDeclarePpaCorrection.mockResolvedValue({ id: "ppa-1" })
+    mockVerifyPpaCorrection.mockResolvedValue({ id: "ppa-1" })
+    mockAuthorizePpaRestart.mockResolvedValue({ id: "ppa-1" })
+    mockCancelPpa.mockResolvedValue({ id: "ppa-1" })
+    mockClosePpa.mockResolvedValue({ id: "ppa-1" })
     mockGetPpaStats.mockResolvedValue({ total: 10, aprobados: 8, detenidos: 2 })
   })
 
@@ -209,17 +222,54 @@ describe("prevencion PPA admin actions", () => {
       mockAuthFn.mockResolvedValue(makeSession("ppa:review", [], true))
       mockReviewPpa.mockRejectedValue(new Error("PPA no encontrado"))
       const { reviewPpaAction } = await import("@/app/(app)/prevencion/ppa/actions")
-      const r = await reviewPpaAction({ ppaId: "ppa-1", fuiAlLugar: true, decision: "correccion", accionCorrectiva: "Se necesita corrección" })
+      const r = await reviewPpaAction({
+        ppaId: "ppa-1", fuiAlLugar: true, decision: "correccion",
+        accionCorrectiva: "Se necesita corrección", responsibleRole: "prevencionista_faena",
+        responsible: "Ana Pérez", dueDate: "2026-08-01", priority: "alta",
+      })
       expect(r.ok).toBe(false); expect(r.message).toContain("no encontrado")
     })
   })
 
   describe("closePpaAction", () => {
-    it("closes PPA", async () => {
+    it("denies direct closure with the old review permission", async () => {
       mockAuthFn.mockResolvedValue(makeSession("ppa:review", [], true))
       const { closePpaAction } = await import("@/app/(app)/prevencion/ppa/actions")
-      const r = await closePpaAction("ppa-1")
+      const r = await closePpaAction({ ppaId: "ppa-1", expectedPpaVersion: 2, comment: "Cierre verificado" })
+      expect(r.ok).toBe(false)
+      expect(mockClosePpa).not.toHaveBeenCalled()
+    })
+
+    it("closes PPA", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("ppa:close", [], true))
+      const { closePpaAction } = await import("@/app/(app)/prevencion/ppa/actions")
+      const r = await closePpaAction({ ppaId: "ppa-1", expectedPpaVersion: 2, comment: "Cierre verificado" })
       expect(r.ok).toBe(true); expect(r.message).toContain("cerrado")
+    })
+  })
+
+  describe("PPA segregated workflow actions", () => {
+    it("uses a dedicated permission to declare implementation", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("ppa:correct", ["ws-1"]))
+      const { declarePpaCorrectionAction } = await import("@/app/(app)/prevencion/ppa/actions")
+      const input = { ppaId: "ppa-1", expectedPpaVersion: 2, expectedCapaVersion: 3 }
+      const result = await declarePpaCorrectionAction(input)
+      expect(result.ok).toBe(true)
+      expect(mockDeclarePpaCorrection).toHaveBeenCalledWith(input, expect.objectContaining({
+        userId: "user-1", worksiteIds: ["ws-1"], permissions: ["ppa:correct"],
+      }))
+    })
+
+    it.each([
+      ["verifyPpaCorrectionAction", { ppaId: "ppa-1", expectedPpaVersion: 2, expectedCapaVersion: 3, accepted: false, comment: "Control insuficiente" }, mockVerifyPpaCorrection],
+      ["authorizePpaRestartAction", { ppaId: "ppa-1", expectedPpaVersion: 2 }, mockAuthorizePpaRestart],
+      ["cancelPpaAction", { ppaId: "ppa-1", expectedPpaVersion: 2, expectedCapaVersion: 3, reason: "Tarea descartada" }, mockCancelPpa],
+    ] as const)("rejects %s without its dedicated permission", async (name, input, service) => {
+      mockAuthFn.mockResolvedValue(makeSession("ppa:view", [], true))
+      const actions = await import("@/app/(app)/prevencion/ppa/actions")
+      const result = await (actions[name] as (value: typeof input) => Promise<{ ok: boolean }>)(input)
+      expect(result.ok).toBe(false)
+      expect(service).not.toHaveBeenCalled()
     })
   })
 

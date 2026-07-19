@@ -11,9 +11,25 @@ import { restoreSstDocumentAction } from "../actions"
 import type { DetailViewProps } from "./document-detail.helpers"
 import { ArchiveButton } from "./archive-button"
 import { VersionsTab } from "./versions-tab"
+import { DistributionTab } from "./distribution-tab"
+import { DocumentLinksCard } from "./document-links-card"
 
 export function DocumentDetailView(props: DetailViewProps) {
-  const { bundle, userMap, canManage, canArchive } = props
+  const {
+    bundle,
+    userMap,
+    canManage,
+    canArchive,
+    canSubmitReview,
+    canReview,
+    canApprove,
+    canPublish,
+    currentUserId,
+    canDistribute,
+    canAck,
+    canLink,
+    recipientOptions,
+  } = props
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -29,6 +45,9 @@ export function DocumentDetailView(props: DetailViewProps) {
       <TabsList>
         <TabsTrigger value="overview">Resumen</TabsTrigger>
         <TabsTrigger value="versions">Versiones ({bundle.versions.length})</TabsTrigger>
+        {doc.requiresAcknowledgment || bundle.distribution.length > 0 ? (
+          <TabsTrigger value="distribution">Distribución ({bundle.distribution.length})</TabsTrigger>
+        ) : null}
       </TabsList>
 
       <TabsContent value="overview">
@@ -45,6 +64,7 @@ export function DocumentDetailView(props: DetailViewProps) {
                       <iframe
                         title={`Previsualización de ${currentVersion.fileName}`}
                         src={`/api/prevencion/documentacion/${doc.id}`}
+                        sandbox=""
                         className="h-[28rem] w-full"
                       />
                     </div>
@@ -77,20 +97,8 @@ export function DocumentDetailView(props: DetailViewProps) {
           </div>
 
           <div className="space-y-4">
-            {bundle.links.length > 0 && (
-              <Card>
-                <CardHeader><CardTitle>Vínculos</CardTitle></CardHeader>
-                <CardContent>
-                  <ul className="space-y-2 text-sm">
-                    {bundle.links.map((link) => (
-                      <li key={link.id} className="border-b border-(--color-border) pb-2 last:border-0">
-                        <p className="font-medium">{link.entityType}</p>
-                        <p className="text-xs text-(--color-text-muted)">{link.entityId}{link.notes ? ` · ${link.notes}` : ""}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
+            {(canLink || bundle.links.length > 0) && (
+              <DocumentLinksCard documentId={doc.id} links={bundle.links} canLink={canLink} />
             )}
             {(canArchive || canManage) ? (
               <Card>
@@ -117,11 +125,36 @@ export function DocumentDetailView(props: DetailViewProps) {
           userMap={userMap}
           currentVersionId={doc.currentVersionId}
           documentId={doc.id}
-          canManage={canManage}
+          permissions={{
+            manage: canManage,
+            submitReview: canSubmitReview,
+            review: canReview,
+            approve: canApprove,
+            publish: canPublish,
+          }}
+          currentUserId={currentUserId}
           isArchived={isArchived}
           onUploaded={() => router.refresh()}
         />
       </TabsContent>
+
+      {doc.requiresAcknowledgment || bundle.distribution.length > 0 ? (
+        <TabsContent value="distribution">
+          <DistributionTab
+            documentId={doc.id}
+            currentVersionId={doc.currentVersionId}
+            distribution={bundle.distribution}
+            acks={bundle.acks}
+            userMap={userMap}
+            recipientOptions={recipientOptions}
+            currentUserId={currentUserId}
+            canDistribute={canDistribute}
+            canAck={canAck}
+            isArchived={isArchived}
+            onChanged={() => router.refresh()}
+          />
+        </TabsContent>
+      ) : null}
     </Tabs>
   )
 

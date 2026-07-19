@@ -15,6 +15,7 @@ vi.mock("@/lib/services/ppa-module/calculos", () => ({
 }))
 
 import { reviewPpa } from "@/lib/services/ppa-module/reportes"
+import { ppaCorrectiveActions, preventionCapaActions } from "@/db/schema"
 
 const currentPpa = {
   id: "ppa-1",
@@ -27,10 +28,16 @@ function mockTransactionResult(updated: Record<string, unknown>) {
   const where = vi.fn().mockReturnValue({ returning })
   const set = vi.fn().mockReturnValue({ where })
   mockUpdate.mockReturnValue({ set })
-  const values = vi.fn().mockResolvedValue(undefined)
+  const values = vi.fn().mockReturnValue({
+    returning: vi.fn().mockResolvedValue([{
+      id: "capa-1",
+      status: "pending",
+      version: 1,
+    }]),
+  })
   mockInsert.mockReturnValue({ values })
   mockTransaction.mockImplementation(async (callback) => callback({ update: mockUpdate, insert: mockInsert }))
-  return { values }
+  return { values, set }
 }
 
 beforeEach(() => {
@@ -40,7 +47,7 @@ beforeEach(() => {
 
 describe("reviewPpa", () => {
   it("crea una acción estructurada al autorizar un PPA detenido", async () => {
-    const { values } = mockTransactionResult({ ...currentPpa, estado: "autorizado" })
+    const { values, set } = mockTransactionResult({ ...currentPpa, estado: "en_correccion" })
 
     await reviewPpa({
       ppaId: "ppa-1", fuiAlLugar: true, decision: "autorizado",
@@ -59,6 +66,10 @@ describe("reviewPpa", () => {
       priority: "alta",
       status: "pendiente",
     }))
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "autorizado",
+      estado: "en_correccion",
+    }))
   })
 
   it("no crea una acción cuando el PPA se rechaza", async () => {
@@ -68,6 +79,8 @@ describe("reviewPpa", () => {
       ppaId: "ppa-1", fuiAlLugar: false, decision: "rechazado",
     }, "user-1", ["faena-1"])
 
-    expect(mockInsert).not.toHaveBeenCalled()
+    expect(mockInsert).not.toHaveBeenCalledWith(preventionCapaActions)
+    expect(mockInsert).not.toHaveBeenCalledWith(ppaCorrectiveActions)
+    expect(mockInsert).toHaveBeenCalledTimes(1)
   })
 })

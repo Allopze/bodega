@@ -22,7 +22,7 @@ function buildPpaConditions(filters: PpaListFilters) {
   const conditions = []
   if (filters.worksiteIds !== "all") conditions.push(inArray(ppaSubmissions.worksiteId, filters.worksiteIds))
   if (filters.estado === "pendientes") {
-    conditions.push(inArray(ppaSubmissions.estado, ["detenido", "en_correccion"]))
+    conditions.push(inArray(ppaSubmissions.estado, ["detenido", "en_correccion", "pendiente_verificacion"]))
   } else if (filters.estado === "autorizado") {
     conditions.push(inArray(ppaSubmissions.estado, ["autorizado", "aprobado_auto"]))
   } else if (filters.estado) {
@@ -57,8 +57,24 @@ const LIST_COLUMNS = {
   publicTokenRevokedAt: ppaSubmissions.publicTokenRevokedAt,
   reviewedBy: ppaSubmissions.reviewedBy,
   fuiAlLugar: ppaSubmissions.fuiAlLugar,
+  accionCorrectiva: ppaSubmissions.accionCorrectiva,
   decision: ppaSubmissions.decision,
+  reviewNota: ppaSubmissions.reviewNota,
   reviewedAt: ppaSubmissions.reviewedAt,
+  correctionDeclaredByUserId: ppaSubmissions.correctionDeclaredByUserId,
+  correctionDeclaredAt: ppaSubmissions.correctionDeclaredAt,
+  verifiedByUserId: ppaSubmissions.verifiedByUserId,
+  verifiedAt: ppaSubmissions.verifiedAt,
+  verificationComment: ppaSubmissions.verificationComment,
+  authorizedByUserId: ppaSubmissions.authorizedByUserId,
+  authorizedAt: ppaSubmissions.authorizedAt,
+  cancelledByUserId: ppaSubmissions.cancelledByUserId,
+  cancelledAt: ppaSubmissions.cancelledAt,
+  cancellationReason: ppaSubmissions.cancellationReason,
+  closedByUserId: ppaSubmissions.closedByUserId,
+  closedAt: ppaSubmissions.closedAt,
+  closeComment: ppaSubmissions.closeComment,
+  version: ppaSubmissions.version,
   createdAt: ppaSubmissions.createdAt,
   updatedAt: ppaSubmissions.updatedAt,
 } satisfies Record<string, PgColumn>
@@ -159,20 +175,19 @@ export async function getPpaStats(worksiteIds: string[] | "all"): Promise<PpaSta
     ? inArray(ppaSubmissions.worksiteId, worksiteIds)
     : undefined
 
-  const [totals] = await db
-    .select({
-      total:              sql<number>`count(*)::int`,
-      detenidos:          sql<number>`count(*) filter (where ${ppaSubmissions.resultado} = 'detenido')::int`,
-      aprobadosAuto:      sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'aprobado_auto')::int`,
-      autorizados:        sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'autorizado')::int`,
-      rechazados:         sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'rechazado')::int`,
-      pendientes:         sql<number>`count(*) filter (where ${ppaSubmissions.estado} in ('detenido', 'en_correccion'))::int`,
-      avgResponseMinutes: sql<number | null>`round(avg(extract(epoch from (${ppaSubmissions.reviewedAt} - ${ppaSubmissions.createdAt})) / 60) filter (where ${ppaSubmissions.reviewedAt} >= ${ppaSubmissions.createdAt}))`,
-    })
-    .from(ppaSubmissions)
-    .where(scopeCond)
+  const [totalsRows, topReasonsResult, topTareasRows, topFaenasRows] = await Promise.all([
+    db.select({
+        total:              sql<number>`count(*)::int`,
+        detenidos:          sql<number>`count(*) filter (where ${ppaSubmissions.resultado} = 'detenido')::int`,
+        aprobadosAuto:      sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'aprobado_auto')::int`,
+        autorizados:        sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'autorizado')::int`,
+        rechazados:         sql<number>`count(*) filter (where ${ppaSubmissions.estado} = 'rechazado')::int`,
+        pendientes:         sql<number>`count(*) filter (where ${ppaSubmissions.estado} in ('detenido', 'en_correccion', 'pendiente_verificacion'))::int`,
+        avgResponseMinutes: sql<number | null>`round(avg(extract(epoch from (${ppaSubmissions.reviewedAt} - ${ppaSubmissions.createdAt})) / 60) filter (where ${ppaSubmissions.reviewedAt} >= ${ppaSubmissions.createdAt}))`,
+      })
+      .from(ppaSubmissions)
+      .where(scopeCond),
 
-  const [topReasonsResult, topTareasRows, topFaenasRows] = await Promise.all([
     db.execute(sql`
       SELECT value AS reason, count(*)::int AS count
       FROM ppa_submissions,
@@ -202,6 +217,7 @@ export async function getPpaStats(worksiteIds: string[] | "all"): Promise<PpaSta
       .orderBy(sql`count(*) desc`)
       .limit(5),
   ])
+  const [totals] = totalsRows
 
   const total     = totals?.total ?? 0
   const detenidos = totals?.detenidos ?? 0

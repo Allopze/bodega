@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Session } from "next-auth"
-import { flattenNavTargets, getVisibleAreas, isHrefActive } from "@/components/layout/nav-items"
+import { AREA_TREE, flattenNavTargets, getVisibleAreas, isHrefActive } from "@/components/layout/nav-items"
 import { safeInternalPath } from "@/lib/navigation"
 
 describe("safeInternalPath", () => {
@@ -79,7 +79,7 @@ describe("sidebar navigation", () => {
     expect(commandTargets.map((target) => target.href)).toContain("/analitica")
   })
 
-  it("orders Prevención by its operational groups", () => {
+  it("renders Prevención as a flat list of module destinations", () => {
     const session = {
       ...adminSession,
       user: {
@@ -96,26 +96,27 @@ describe("sidebar navigation", () => {
     } satisfies Session
 
     const prevention = getVisibleAreas(session).find((area) => area.id === "prevencion")
-    expect(prevention?.items.map((item) => [item.label, item.group])).toEqual([
-      ["Inicio de Prevención", undefined],
-      ["Programa preventivo SG-SST", "Programa"],
-      ["Evaluaciones SST", "Control en terreno"],
-      ["Para, Piensa y Actúa", "Control en terreno"],
-      ["Documentación", "Evidencia y resultados"],
-      ["Indicadores de accidentabilidad", "Evidencia y resultados"],
+    expect(prevention?.items.map((item) => item.label)).toEqual([
+      "Evaluaciones SST",
+      "Para, Piensa y Actúa",
+      "Programa preventivo SG-SST",
+      "Documentación",
+      "Indicadores de accidentabilidad",
     ])
-    expect(prevention?.items[1]?.children?.map((item) => item.label)).toEqual([
+    expect(prevention?.items.map((item) => item.href)).not.toContain("/prevencion")
+    expect(prevention?.items.find((item) => item.href === "/prevencion/pdtp")?.children?.map((item) => item.label)).toEqual([
       "Aprobaciones",
       "Acciones correctivas",
+      "Cobertura MIPER y legal",
     ])
   })
 
-  it("hides Inicio de Prevención when no prevention module is visible", () => {
+  it("hides the Prevención area when no prevention module is visible", () => {
     const prevention = getVisibleAreas(adminSession).find((area) => area.id === "prevencion")
     expect(prevention).toBeUndefined()
   })
 
-  it("hides Inicio de Prevención together with a module disabled by feature toggle", () => {
+  it("hides the Prevención area when its visible module is disabled by feature toggle", () => {
     const session = {
       ...adminSession,
       user: { ...adminSession.user, permissions: ["sst:view"] },
@@ -152,5 +153,28 @@ describe("sidebar navigation", () => {
     expect(isHrefActive("/prevencion/pdtp", "/prevencion/pdtp/aprobaciones")).toBe(false)
     expect(isHrefActive("/prevencion/pdtp/aprobaciones", "/prevencion/pdtp/aprobaciones")).toBe(true)
     expect(isHrefActive("/prevencion/pdtp/acciones", "/prevencion/pdtp/acciones")).toBe(true)
+  })
+
+  it("never marks a registered parent destination active when a more-specific destination owns the route", () => {
+    const navHrefs = AREA_TREE.flatMap((area) => area.items.flatMap((item) => [
+      item.href,
+      ...(item.children?.map((child) => child.href) ?? []),
+    ]))
+    const parentChildPairs = navHrefs.flatMap((parentHref) =>
+      navHrefs
+        .filter((childHref) => childHref.startsWith(`${parentHref}/`))
+        .map((childHref) => [parentHref, childHref] as const),
+    )
+
+    // This is registry-driven: a future manifest that adds a nested sidebar
+    // destination is included automatically in this regression check.
+    expect(new Set(navHrefs).size).toBe(navHrefs.length)
+    expect(parentChildPairs).not.toHaveLength(0)
+    for (const [parentHref, childHref] of parentChildPairs) {
+      expect(isHrefActive(parentHref, childHref)).toBe(false)
+      expect(isHrefActive(childHref, childHref)).toBe(true)
+      expect(isHrefActive(parentHref, `${childHref}/detail`)).toBe(false)
+      expect(isHrefActive(childHref, `${childHref}/detail`)).toBe(true)
+    }
   })
 })

@@ -20,8 +20,13 @@ export {
 export {
   type PpaExportFilters,
   reviewPpa,
+  declarePpaCorrection,
+  verifyPpaCorrection,
+  authorizePpaRestart,
+  cancelPpa,
   closePpa,
   getPpaCorrectiveAction,
+  getPpaStatusHistory,
   buildPpaExport,
   listScopedWorksites,
 } from "./reportes"

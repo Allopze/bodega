@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { TaeGroupRow } from "@/lib/combustibles/tae-dashboard"
+import { buildTaeGroupDrilldownHref } from "./tae-group-chart-url"
 
 const BAR_COLOR = "var(--color-primary)"
 const GRID_COLOR = "var(--color-border)"
@@ -16,7 +17,7 @@ function truncate(label: string, max = 18) {
 /** Ranking de litros TAE por conductor, supervisor o punto de suministro. Cada
  *  barra abre la bitácora filtrada por ese nombre — no hay una ruta de detalle
  *  dedicada para "todas las cargas de un conductor". */
-export function TaeGroupChart({ data, drilldownHref }: { data: TaeGroupRow[]; drilldownHref: (group: string) => string }) {
+export function TaeGroupChart({ data, drilldownBaseHref }: { data: TaeGroupRow[]; drilldownBaseHref: string }) {
   const router = useRouter()
   if (data.length === 0) return <EmptyChart label="No hay cargas TAE en este filtro." />
 
@@ -50,7 +51,7 @@ export function TaeGroupChart({ data, drilldownHref }: { data: TaeGroupRow[]; dr
             barSize={17}
             fill={BAR_COLOR}
             style={{ cursor: "pointer" }}
-            onClick={(entry) => router.push(drilldownHref((entry as unknown as { payload: { fullName: string } }).payload.fullName))}
+            onClick={(entry) => router.push(buildTaeGroupDrilldownHref(drilldownBaseHref, (entry as unknown as { payload: { fullName: string } }).payload.fullName))}
             animationDuration={420}
             animationEasing="ease-out"
           />

@@ -53,11 +53,11 @@ export const ppaReviewSchema = z.object({
   dueDate: z.string().trim().max(10).optional().or(z.literal("")),
   priority: z.enum(["alta", "media", "baja"]).optional(),
   reviewNota:       z.string().trim().max(1000).optional().or(z.literal("")),
-})
+  })
   .superRefine((value, ctx) => {
-    if (value.decision !== "autorizado") return
+    if (value.decision === "rechazado") return
     if ((value.accionCorrectiva ?? "").trim().length < 4) {
-      ctx.addIssue({ code: "custom", path: ["accionCorrectiva"], message: "Describe la acción correctiva para autorizar el inicio." })
+      ctx.addIssue({ code: "custom", path: ["accionCorrectiva"], message: "Describe la acción correctiva requerida antes del reinicio." })
     }
     if (!value.responsibleRole) {
       ctx.addIssue({ code: "custom", path: ["responsibleRole"], message: "Selecciona el rol responsable de la acción." })
@@ -74,3 +74,52 @@ export const ppaReviewSchema = z.object({
   })
 
 export type PpaReviewInput = z.infer<typeof ppaReviewSchema>
+
+export const ppaCorrectionDeclareSchema = z.object({
+  ppaId: z.string().min(1),
+  expectedPpaVersion: z.number().int().positive(),
+  expectedCapaVersion: z.number().int().positive(),
+})
+export type PpaCorrectionDeclareInput = z.infer<typeof ppaCorrectionDeclareSchema>
+
+export const ppaVerificationSchema = z.object({
+  ppaId: z.string().min(1),
+  expectedPpaVersion: z.number().int().positive(),
+  expectedCapaVersion: z.number().int().positive(),
+  accepted: z.boolean(),
+  comment: z.string().trim().min(5).max(2000),
+  effectivenessStatus: z.enum(["effective", "not_required"]).optional(),
+  effectivenessAssessment: z.string().trim().max(3000).optional(),
+  segregationExceptionReason: z.string().trim().max(2000).optional(),
+}).superRefine((value, ctx) => {
+  if (!value.accepted) return
+  if (!value.effectivenessStatus) {
+    ctx.addIssue({ code: "custom", path: ["effectivenessStatus"], message: "Evalúa la eficacia del control." })
+  }
+  if ((value.effectivenessAssessment?.length ?? 0) < 5) {
+    ctx.addIssue({ code: "custom", path: ["effectivenessAssessment"], message: "Documenta la evaluación de eficacia." })
+  }
+})
+export type PpaVerificationInput = z.infer<typeof ppaVerificationSchema>
+
+export const ppaAuthorizeRestartSchema = z.object({
+  ppaId: z.string().min(1),
+  expectedPpaVersion: z.number().int().positive(),
+  comment: z.string().trim().max(1000).optional(),
+})
+export type PpaAuthorizeRestartInput = z.infer<typeof ppaAuthorizeRestartSchema>
+
+export const ppaCancelSchema = z.object({
+  ppaId: z.string().min(1),
+  expectedPpaVersion: z.number().int().positive(),
+  expectedCapaVersion: z.number().int().positive().optional(),
+  reason: z.string().trim().min(5).max(2000),
+})
+export type PpaCancelInput = z.infer<typeof ppaCancelSchema>
+
+export const ppaCloseSchema = z.object({
+  ppaId: z.string().min(1),
+  expectedPpaVersion: z.number().int().positive(),
+  comment: z.string().trim().min(5).max(2000),
+})
+export type PpaCloseInput = z.infer<typeof ppaCloseSchema>

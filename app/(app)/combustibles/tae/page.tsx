@@ -73,7 +73,7 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     from: filters.from || new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     to: filters.to || now.toISOString().slice(0, 10),
   }
-  const bitacoraGroupHref = (q: string) => `/combustibles/bitacora?${new URLSearchParams({ q, desde: chartRange.from, hasta: chartRange.to, fuente: "tae_pwa" }).toString()}`
+  const bitacoraGroupBaseHref = `/combustibles/bitacora?${new URLSearchParams({ desde: chartRange.from, hasta: chartRange.to, fuente: "tae_pwa" }).toString()}`
 
   const TAEGROUP_FALLBACK: Array<{ name: string; liters: number; group: string; count: number }> = []
 
@@ -149,21 +149,21 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
             <CardTitle className="text-base">Litros por supervisor</CardTitle>
             <CardDescription>¿Qué supervisor concentra el volumen repartido? {!filters.from && !filters.to && "Últimos 90 días."}</CardDescription>
           </CardHeader>
-          <CardContent><TaeGroupChart data={cargasPorSupervisor} drilldownHref={bitacoraGroupHref} /></CardContent>
+          <CardContent><TaeGroupChart data={cargasPorSupervisor} drilldownBaseHref={bitacoraGroupBaseHref} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Litros por conductor</CardTitle>
             <CardDescription>¿Qué conductor recibió más litros en el período?</CardDescription>
           </CardHeader>
-          <CardContent><TaeGroupChart data={cargasPorConductor} drilldownHref={bitacoraGroupHref} /></CardContent>
+          <CardContent><TaeGroupChart data={cargasPorConductor} drilldownBaseHref={bitacoraGroupBaseHref} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Litros por punto de suministro</CardTitle>
             <CardDescription>¿Qué punto reparte más? Útil para priorizar dónde reforzar control.</CardDescription>
           </CardHeader>
-          <CardContent><TaeGroupChart data={cargasPorPunto} drilldownHref={bitacoraGroupHref} /></CardContent>
+          <CardContent><TaeGroupChart data={cargasPorPunto} drilldownBaseHref={bitacoraGroupBaseHref} /></CardContent>
         </Card>
       </section>
 

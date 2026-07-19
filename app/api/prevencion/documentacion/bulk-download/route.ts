@@ -13,6 +13,7 @@ import { resolveSstDocumentFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordDocumentDownload } from "@/lib/services/prevention-documents-library"
+import { canReadDocumentConfidentiality } from "@/lib/services/prevention-documents/utils"
 
 const MAX_BULK_DOCUMENTS = 50
 
@@ -31,32 +32,49 @@ export async function GET(request: Request) {
       title: sstDocuments.title,
       worksiteId: sstDocuments.worksiteId,
       status: sstDocuments.status,
+      confidentiality: sstDocuments.confidentiality,
       versionId: sstDocumentVersions.id,
       fileName: sstDocumentVersions.fileName,
       filePath: sstDocumentVersions.filePath,
     })
     .from(sstDocuments)
     .innerJoin(sstDocumentVersions, eq(sstDocumentVersions.id, sstDocuments.currentVersionId))
-    .where(and(inArray(sstDocuments.id, ids), eq(sstDocuments.status, "vigente")))
+    .where(and(
+      inArray(sstDocuments.id, ids),
+      eq(sstDocuments.status, "vigente"),
+      eq(sstDocumentVersions.status, "vigente"),
+    ))
 
-  const files: Array<{ name: string; data: Buffer }> = []
-  for (const row of rows) {
-    if (row.worksiteId && !canAccessWorksite(session, row.worksiteId)) continue
+  const readableRows = rows.flatMap((row) => {
+    if (row.worksiteId && !canAccessWorksite(session, row.worksiteId)) return []
+    if (!canReadDocumentConfidentiality(row.confidentiality, session.user.permissions)) return []
     const absolutePath = resolveSstDocumentFile(row.filePath)
-    if (!absolutePath) continue
+    return absolutePath ? [{ row, absolutePath }] : []
+  })
+  const loadedRows = await Promise.all(readableRows.map(async ({ row, absolutePath }) => {
     try {
-      const data = await fs.readFile(absolutePath)
-      files.push({ name: uniqueZipName(files.map((file) => file.name), row.title, row.fileName), data })
-      await recordDocumentDownload({
-        documentId: row.documentId,
-        versionId: row.versionId,
-        userId: session.user.id,
-        source: "bulk-download",
-      })
+      return { row, data: await fs.readFile(absolutePath) }
     } catch (err) {
       logger.warn("[documentacion/bulk-download] no se pudo incluir archivo", { documentId: row.documentId, err })
+      return null
     }
+  }))
+  const files: Array<{ name: string; data: Buffer }> = []
+  const usedNames = new Set<string>()
+  const loaded = loadedRows.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+  for (const { row, data } of loaded) {
+    const name = uniqueZipName(usedNames, row.title, row.fileName)
+    usedNames.add(name)
+    files.push({ name, data })
   }
+  await Promise.all(loaded.map(({ row }) => recordDocumentDownload({
+    documentId: row.documentId,
+    versionId: row.versionId,
+    userId: session.user.id,
+    source: "bulk-download",
+  }).catch((err) => {
+    logger.warn("[documentacion/bulk-download] no se pudo auditar descarga", { documentId: row.documentId, err })
+  })))
 
   if (files.length === 0) return NextResponse.json({ error: "No hay archivos vigentes descargables" }, { status: 404 })
 
@@ -69,12 +87,12 @@ export async function GET(request: Request) {
   })
 }
 
-function uniqueZipName(existing: string[], title: string, fileName: string) {
+function uniqueZipName(existing: ReadonlySet<string>, title: string, fileName: string) {
   const extension = extname(fileName)
   const base = sanitizeZipSegment(title || basename(fileName, extension)) || "documento"
   let candidate = `${base}${extension}`
   let index = 2
-  while (existing.includes(candidate)) {
+  while (existing.has(candidate)) {
     candidate = `${base}-${index}${extension}`
     index += 1
   }

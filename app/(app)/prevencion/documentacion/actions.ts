@@ -20,6 +20,25 @@ import {
   restoreDocumentFolder,
   moveDocumentToFolder,
   listDocumentCategories,
+  submitDocumentVersionForReview,
+  returnObservedDocumentVersionToDraft,
+  markDocumentVersionReviewed,
+  observeDocumentVersion,
+  approveDocumentVersion,
+  publishDocumentVersion,
+  acknowledgeDocumentVersion,
+  assignDocumentVersionRecipients,
+  exemptDocumentDistributionTarget,
+  listDocumentRecipientOptions,
+  createDocumentLink,
+  removeDocumentLink,
+  DOCUMENT_LINK_ENTITY_TYPES,
+  regularizeDocumentIntegrityFinding,
+} from "@/lib/services/prevention-documents-library"
+import type {
+  DocumentIntegrityFindingCode,
+  DocumentIntegrityResolutionAction,
+  DocumentLinkEntityType,
 } from "@/lib/services/prevention-documents-library"
 import { db } from "@/db"
 import { users, worksites } from "@/db/schema"
@@ -56,9 +75,13 @@ export async function createAndUploadSstDocumentAction(formData: FormData): Prom
   const session = guard.session
   const file = formData.get("file")
   if (!(file instanceof File)) return { ok: false, message: "Selecciona un archivo." }
+  const dataClass = formData.get("dataClass")
+  if (typeof dataClass !== "string" || dataClass.length === 0) {
+    return { ok: false, message: "Selecciona la clasificación del documento antes de cargarlo." }
+  }
 
-  // Subida tipo Drive: el modal no pide categoría. Si no viene, cae en la
-  // primera categoría activa (por sortOrder) como default; se re-clasifica luego.
+  // Subida tipo Drive: el modal exige clasificación, pero no categoría. Si la
+  // categoría no viene, cae en la primera activa por sortOrder.
   let categorySlug = String(formData.get("categorySlug") ?? "")
   if (!categorySlug) {
     const categories = await listDocumentCategories(true)
@@ -75,6 +98,7 @@ export async function createAndUploadSstDocumentAction(formData: FormData): Prom
     internalCode: String(formData.get("internalCode") ?? ""),
     worksiteId: String(formData.get("worksiteId") ?? ""),
     confidentiality: String(formData.get("confidentiality") ?? "publico_interno"),
+    dataClass,
     effectiveFrom: String(formData.get("effectiveFrom") ?? ""),
     expiresAt: String(formData.get("expiresAt") ?? ""),
     responsibleUserId: String(formData.get("responsibleUserId") ?? ""),
@@ -109,7 +133,11 @@ export async function createAndUploadSstDocumentAction(formData: FormData): Prom
     })
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${row.id}`)
-    return { ok: true, message: "Documento creado y archivo subido.", data: { id: row.id } }
+    return {
+      ok: true,
+      message: "Documento creado. La primera versión quedó como borrador pendiente de revisión.",
+      data: { id: row.id },
+    }
   } catch (e) {
     // La creación y la escritura del archivo no pueden compartir una única
     // transacción. Si falla la primera versión, compensamos archivando el
@@ -151,7 +179,11 @@ export async function uploadSstDocumentVersionAction(formData: FormData): Promis
     })
     revalidatePath(`${REVALIDATE}/${documentId}`)
     revalidatePath(REVALIDATE)
-    return { ok: true, message: `Versión ${version.version} subida.`, data: { id: version.id } }
+    return {
+      ok: true,
+      message: `Versión ${version.version} subida como borrador pendiente de revisión.`,
+      data: { id: version.id },
+    }
   } catch (e) {
     return fail<{ id: string }>(e)
   }
@@ -193,6 +225,252 @@ export async function restoreSstDocumentAction(input: { documentId: string; comm
     return { ok: true, message: "Documento restaurado como borrador." }
   } catch (e) {
     return fail(e)
+  }
+}
+
+type DocumentWorkflowActionInput = {
+  documentId: string
+  versionId: string
+  comment?: string
+}
+
+type DocumentWorkflowOperation = (args: {
+  versionId: string
+  comment?: string
+  ctx: Awaited<ReturnType<typeof clientCtx>>
+  scope: ReturnType<typeof resolveWorksiteScope>
+  permissions: readonly string[]
+}) => Promise<unknown>
+
+async function runDocumentWorkflowAction(
+  input: DocumentWorkflowActionInput,
+  guard: Awaited<ReturnType<typeof guardPermission>>,
+  operation: DocumentWorkflowOperation,
+  successMessage: string,
+): Promise<ActionState> {
+  if (guard.error) return guard.error
+  if (!input.documentId || !input.versionId) return { ok: false, message: "Documento y versión requeridos." }
+
+  try {
+    await operation({
+      versionId: input.versionId,
+      comment: input.comment,
+      ctx: await clientCtx(guard.session),
+      scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    return { ok: true, message: successMessage }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function submitSstDocumentVersionForReviewAction(input: DocumentWorkflowActionInput) {
+  const guard = await guardPermission("prevention:docs:submit_review")
+  return runDocumentWorkflowAction(
+    input,
+    guard,
+    submitDocumentVersionForReview,
+    "Versión enviada a revisión.",
+  )
+}
+
+export async function returnObservedSstDocumentVersionToDraftAction(input: DocumentWorkflowActionInput) {
+  const guard = await guardPermission("prevention:docs:submit_review")
+  return runDocumentWorkflowAction(
+    input,
+    guard,
+    returnObservedDocumentVersionToDraft,
+    "Versión devuelta a borrador.",
+  )
+}
+
+export async function markSstDocumentVersionReviewedAction(input: DocumentWorkflowActionInput) {
+  const guard = await guardPermission("prevention:docs:review")
+  return runDocumentWorkflowAction(
+    input,
+    guard,
+    markDocumentVersionReviewed,
+    "Revisión registrada.",
+  )
+}
+
+export async function observeSstDocumentVersionAction(input: DocumentWorkflowActionInput) {
+  const guard = await guardPermission("prevention:docs:review")
+  return runDocumentWorkflowAction(
+    input,
+    guard,
+    observeDocumentVersion,
+    "Versión observada y devuelta para corrección.",
+  )
+}
+
+export async function approveSstDocumentVersionAction(input: DocumentWorkflowActionInput) {
+  const guard = await guardPermission("prevention:docs:approve")
+  return runDocumentWorkflowAction(
+    input,
+    guard,
+    approveDocumentVersion,
+    "Versión aprobada; aún no está publicada.",
+  )
+}
+
+export async function publishSstDocumentVersionAction(input: DocumentWorkflowActionInput) {
+  const guard = await guardPermission("prevention:docs:publish")
+  return runDocumentWorkflowAction(
+    input,
+    guard,
+    publishDocumentVersion,
+    "Versión publicada y versión anterior reemplazada.",
+  )
+}
+
+export async function assignSstDocumentRecipientsAction(input: {
+  documentId: string
+  versionId: string
+  userIds: string[]
+  assignmentReason: string
+  dueAt?: string | null
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:distribute")
+  if (guard.error) return guard.error
+  try {
+    const inserted = await assignDocumentVersionRecipients({
+      versionId: input.versionId,
+      userIds: input.userIds,
+      assignmentReason: input.assignmentReason,
+      dueAt: input.dueAt,
+      ctx: await clientCtx(guard.session),
+      scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    return { ok: true, message: `${inserted.length} destinatario(s) asignado(s).` }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function acknowledgeSstDocumentVersionAction(input: {
+  documentId: string
+  versionId: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:ack")
+  if (guard.error) return guard.error
+  try {
+    await acknowledgeDocumentVersion({
+      versionId: input.versionId,
+      method: "digital",
+      ctx: await clientCtx(guard.session),
+      scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    return { ok: true, message: "Acuse registrado para esta versión y checksum." }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function exemptSstDocumentRecipientAction(input: {
+  documentId: string
+  targetId: string
+  reason: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:distribute")
+  if (guard.error) return guard.error
+  try {
+    await exemptDocumentDistributionTarget({
+      targetId: input.targetId,
+      reason: input.reason,
+      ctx: await clientCtx(guard.session),
+      scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    return { ok: true, message: "Exención registrada con motivo y actor." }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function createSstDocumentLinkAction(input: {
+  documentId: string
+  entityType: string
+  entityId: string
+  notes?: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:link")
+  if (guard.error) return guard.error
+  if (!DOCUMENT_LINK_ENTITY_TYPES.includes(input.entityType as DocumentLinkEntityType)) {
+    return { ok: false, message: "Tipo de vínculo no soportado." }
+  }
+  try {
+    await createDocumentLink({
+      documentId: input.documentId,
+      entityType: input.entityType as DocumentLinkEntityType,
+      entityId: input.entityId,
+      notes: input.notes,
+      userId: guard.session.user.id,
+      scope: resolveWorksiteScope(guard.session),
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    return { ok: true, message: "Vínculo validado y registrado." }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function removeSstDocumentLinkAction(input: {
+  documentId: string
+  linkId: string
+  reason: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:link")
+  if (guard.error) return guard.error
+  try {
+    await removeDocumentLink({
+      linkId: input.linkId,
+      reason: input.reason,
+      userId: guard.session.user.id,
+      scope: resolveWorksiteScope(guard.session),
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    return { ok: true, message: "Vínculo retirado con trazabilidad." }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function regularizeSstDocumentIntegrityAction(input: {
+  documentId: string
+  findingCode: DocumentIntegrityFindingCode
+  action: DocumentIntegrityResolutionAction
+  versionId?: string | null
+  selectedVersionId?: string | null
+  reason: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:docs:publish")
+  if (guard.error) return guard.error
+  try {
+    await regularizeDocumentIntegrityFinding({
+      ...input,
+      userId: guard.session.user.id,
+      scope: resolveWorksiteScope(guard.session),
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    revalidatePath(`${REVALIDATE}/regularizacion`)
+    return { ok: true, message: "Regularización aplicada y auditada." }
+  } catch (error) {
+    return fail(error)
   }
 }
 
@@ -302,25 +580,30 @@ export async function getDocumentDetailAction(documentId: string) {
   if (!can(session, "prevention:docs:view")) return { error: "Sin permisos" }
 
   const scope = resolveWorksiteScope(session)
-  const bundle = await getDocumentBundle(documentId, scope)
+  const bundle = await getDocumentBundle(documentId, scope, session.user.permissions)
   if (!bundle) return { error: "Documento no encontrado" }
 
   const userIds = Array.from(new Set([
     bundle.doc.uploadedBy,
+    session.user.id,
     ...bundle.versions.map((v) => v.uploadedBy),
+    ...bundle.versions.flatMap((v) => [v.reviewedBy, v.approvedBy]),
+    ...bundle.distribution.flatMap((target) => [target.userId, target.assignedByUserId, target.exemptedByUserId]),
   ].filter(Boolean) as string[]))
 
   const worksiteIds = Array.from(new Set([
     bundle.doc.worksiteId ?? "",
   ].filter(Boolean) as string[]))
 
-  const [userRows, worksiteRows] = await Promise.all([
+  const canDistribute = can(session, "prevention:docs:distribute")
+  const [userRows, worksiteRows, recipientOptions] = await Promise.all([
     userIds.length
       ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds))
       : Promise.resolve([] as Array<{ id: string; name: string; email: string }>),
     worksiteIds.length
       ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, worksiteIds))
       : Promise.resolve([] as Array<{ id: string; name: string }>),
+    canDistribute ? listDocumentRecipientOptions(scope) : Promise.resolve([]),
   ])
 
   const userMap = Object.fromEntries(userRows.map((u) => [u.id, u]))
@@ -332,6 +615,14 @@ export async function getDocumentDetailAction(documentId: string) {
     worksiteMap,
     canManage: can(session, "prevention:docs:manage"),
     canArchive: can(session, "prevention:docs:archive"),
+    canSubmitReview: can(session, "prevention:docs:submit_review"),
+    canReview: can(session, "prevention:docs:review"),
+    canApprove: can(session, "prevention:docs:approve"),
+    canPublish: can(session, "prevention:docs:publish"),
+    canDistribute,
+    canAck: can(session, "prevention:docs:ack"),
+    canLink: can(session, "prevention:docs:link"),
+    recipientOptions,
     currentUserId: session.user.id,
     currentUserName: userMap[session.user.id]?.name ?? session.user.email ?? "Yo",
     error: undefined as string | undefined,

@@ -14,6 +14,7 @@ const dynamicSamples: Record<string, string> = {
   "/prevencion/trabajador/[workerId]": "/prevencion/trabajador/worker-audit-1",
   "/prevencion/ppa/[id]": "/prevencion/ppa/ppa-audit-1",
   "/prevencion/documentacion/[id]": "/prevencion/documentacion/doc-audit-1",
+  "/prevencion/capa/[id]": "/prevencion/capa/capa-audit-1",
   "/prevencion/incidentes/[id]": "/prevencion/incidentes/inc-audit-1",
   "/prevencion/incidentes/[id]/procedimiento": "/prevencion/incidentes/inc-audit-1/procedimiento",
   "/prevencion/inspecciones/[id]": "/prevencion/inspecciones/insp-audit-1",
@@ -40,6 +41,9 @@ const dynamicSamples: Record<string, string> = {
   "/prevencion/pdtp/[programId]/editar": "/prevencion/pdtp/prog-audit-1/editar",
   "/prevencion/pdtp/[programId]/ejecucion/[executionId]": "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1",
   "/prevencion/pdtp/nuevo": "/prevencion/pdtp/nuevo",
+  "/prevencion/miper/controles/[id]": "/prevencion/miper/controles/risk-control-audit-1",
+  "/prevencion/privacidad/solicitudes/[id]": "/prevencion/privacidad/solicitudes/privacy-request-audit-1",
+  "/prevencion/requisitos-legales/[id]": "/prevencion/requisitos-legales/legal-requirement-audit-1",
   "/combustibles/bitacora/historial/[entityType]/[entityId]": "/combustibles/bitacora/historial/sst/entity-audit-1",
 }
 

@@ -27,6 +27,7 @@ export function IndicadoresEditModal({
   year,
   month,
   initial,
+  showOfficialRates = false,
   onClose,
   onNavigate,
 }: {
@@ -34,6 +35,7 @@ export function IndicadoresEditModal({
   year: number
   month: number
   initial: IndicatorCounters
+  showOfficialRates?: boolean
   onClose: () => void
   /** Cargar otro mes sin cerrar el modal (los cambios sin guardar se descartan). */
   onNavigate?: (month: number) => void
@@ -95,15 +97,15 @@ export function IndicadoresEditModal({
           ))}
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-3 border-t border-[var(--color-border)] pt-4 text-center">
-          <div>
+        <div className={`mt-4 grid gap-3 border-t border-[var(--color-border)] pt-4 text-center ${showOfficialRates ? "grid-cols-3" : "grid-cols-1"}`}>
+          {showOfficialRates && <div>
             <p className="text-[10px] font-medium uppercase text-[var(--color-text-subtle)]">Tasa Frecuencia</p>
-            <p className="text-lg font-semibold text-[var(--color-text)]">{rates.tasaFrecuencia.toFixed(2)}</p>
-          </div>
-          <div>
+            <p className="text-lg font-semibold text-[var(--color-text)]">{rates.tasaFrecuencia === null ? "No calculable" : rates.tasaFrecuencia.toFixed(2)}</p>
+          </div>}
+          {showOfficialRates && <div>
             <p className="text-[10px] font-medium uppercase text-[var(--color-text-subtle)]">Tasa Gravedad</p>
-            <p className="text-lg font-semibold text-[var(--color-text)]">{rates.tasaGravedad.toFixed(2)}</p>
-          </div>
+            <p className="text-lg font-semibold text-[var(--color-text)]">{rates.tasaGravedad === null ? "No calculable" : rates.tasaGravedad.toFixed(2)}</p>
+          </div>}
           <div>
             <p className="text-[10px] font-medium uppercase text-[var(--color-text-subtle)]">Total Accidentes</p>
             <p className="text-lg font-semibold text-[var(--color-text)]">{rates.totalAccidentes}</p>

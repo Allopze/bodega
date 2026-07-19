@@ -1,0 +1,1289 @@
+import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm"
+import { z } from "zod"
+import { db, type DB, type Tx } from "@/db"
+import {
+  preventionCapaActions,
+  preventionIncidentEvidence,
+  preventionIncidentHistory,
+  preventionIncidentInvestigations,
+  preventionIncidentNotifications,
+  preventionIncidentPeople,
+  preventionIncidentPersonSensitivePayloads,
+  preventionIncidents,
+  preventionRiskReviewTriggers,
+  preventionSensitiveAccessAudit,
+  safetyIndicatorHistory,
+  users,
+  workers,
+  worksites,
+} from "@/db/schema"
+import type { WorksiteScope } from "@/lib/auth/scope"
+import { nanoid } from "@/lib/id"
+import {
+  decryptPreventionPayload,
+  encryptPreventionPayload,
+} from "@/lib/security/prevention-field-encryption"
+import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import type { RequestContext } from "@/lib/services/prevention-documents/utils"
+import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
+import { invalidateClosedIndicatorPeriodWithClient } from "@/lib/services/prevention-indicadores"
+import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
+
+export const INCIDENT_EVENT_TYPES = [
+  "dangerous_incident",
+  "work_accident",
+  "commute_accident",
+  "suspected_occupational_disease",
+  "material_damage",
+  "environmental_spill",
+  "vehicle_event",
+  "contractor_or_third_party",
+] as const
+
+export const INCIDENT_STATUSES = [
+  "reported",
+  "triage",
+  "immediate_measures",
+  "under_investigation",
+  "pending_capa",
+  "pending_verification",
+  "closed",
+] as const
+
+export const INCIDENT_NOTIFICATION_TYPES = [
+  "diat",
+  "diep",
+  "fatal_dt",
+  "fatal_seremi",
+  "restart_authorization",
+] as const
+
+export type IncidentEventType = typeof INCIDENT_EVENT_TYPES[number]
+export type IncidentStatus = typeof INCIDENT_STATUSES[number]
+export type IncidentNotificationType = typeof INCIDENT_NOTIFICATION_TYPES[number]
+type IncidentClient = DB | Tx
+
+export interface IncidentAccess {
+  ctx: RequestContext
+  scope: WorksiteScope
+  permissions: readonly string[]
+}
+
+const sensitivePersonSchema = z.object({
+  fullName: z.string().trim().min(2).max(300).optional(),
+  nationalIdentifier: z.string().trim().min(3).max(80).optional(),
+  injuryDescription: z.string().trim().min(2).max(3000).optional(),
+  affectedBodyPart: z.string().trim().min(2).max(300).optional(),
+  clinicalNotes: z.string().trim().min(2).max(3000).optional(),
+}).refine((value) => Object.values(value).some(Boolean), "El payload sensible está vacío.")
+
+const incidentPersonSchema = z.object({
+  workerId: z.string().min(1).nullable().optional(),
+  displayLabel: z.string().trim().min(2).max(120),
+  employerName: z.string().trim().min(2).max(300),
+  sex: z.enum(["female", "male", "intersex", "unspecified"]).nullable().optional(),
+  relationshipType: z.enum(["employee", "contractor", "subcontractor", "visitor", "third_party"]),
+  absenceAtLeastNormalShift: z.boolean().default(false),
+  absenceDays: z.number().int().min(0).max(10000).default(0),
+  chargeDays: z.number().int().min(0).max(10000).default(0),
+  administratorQualification: z.string().trim().max(500).nullable().optional(),
+  sensitive: sensitivePersonSchema.nullable().optional(),
+})
+
+const reportIncidentSchema = z.object({
+  clientSubmissionId: z.string().trim().min(8).max(200),
+  worksiteId: z.string().min(1),
+  companyName: z.string().trim().min(2).max(300),
+  companyTaxId: z.string().trim().max(40).nullable().optional(),
+  eventType: z.enum(INCIDENT_EVENT_TYPES),
+  occurredAt: z.string().datetime({ offset: true }),
+  knownAt: z.string().datetime({ offset: true }),
+  location: z.string().trim().min(2).max(1000),
+  initialNarrative: z.string().trim().min(10).max(10000),
+  processName: z.string().trim().max(300).nullable().optional(),
+  taskName: z.string().trim().max(500).nullable().optional(),
+  shiftName: z.string().trim().max(120).nullable().optional(),
+  vehicleReference: z.string().trim().max(300).nullable().optional(),
+  equipmentReference: z.string().trim().max(300).nullable().optional(),
+  wasteReference: z.string().trim().max(300).nullable().optional(),
+  substanceReference: z.string().trim().max(300).nullable().optional(),
+  actualSeverity: z.enum(["none", "minor", "medical_treatment", "lost_time", "serious", "fatal"]).default("none"),
+  potentialSeverity: z.enum(["low", "medium", "high", "critical", "fatal"]).default("low"),
+  immediateMeasures: z.string().trim().max(5000).nullable().optional(),
+  operationsSuspended: z.boolean().default(false),
+  evacuated: z.boolean().default(false),
+  isFatalOrSerious: z.boolean().default(false),
+  offlineSync: z.boolean().default(false),
+  people: z.array(incidentPersonSchema).max(100).default([]),
+}).superRefine((value, ctx) => {
+  if (new Date(value.knownAt).getTime() < new Date(value.occurredAt).getTime()) {
+    ctx.addIssue({ code: "custom", path: ["knownAt"], message: "La hora de conocimiento no puede ser anterior a la ocurrencia." })
+  }
+  const fatalOrSerious = value.isFatalOrSerious || value.actualSeverity === "serious" || value.actualSeverity === "fatal"
+  if (fatalOrSerious && !value.operationsSuspended) {
+    ctx.addIssue({ code: "custom", path: ["operationsSuspended"], message: "Un evento fatal/grave exige suspensión de la operación." })
+  }
+  if (fatalOrSerious && (value.immediateMeasures?.trim().length ?? 0) < 10) {
+    ctx.addIssue({ code: "custom", path: ["immediateMeasures"], message: "Un evento fatal/grave exige medidas inmediatas documentadas." })
+  }
+})
+
+const triageSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  actualSeverity: z.enum(["none", "minor", "medical_treatment", "lost_time", "serious", "fatal"]),
+  potentialSeverity: z.enum(["low", "medium", "high", "critical", "fatal"]),
+  isFatalOrSerious: z.boolean(),
+  operationsSuspended: z.boolean(),
+  evacuated: z.boolean(),
+  immediateMeasures: z.string().trim().min(3).max(5000),
+  notificationResponsibleUserId: z.string().min(1).nullable().optional(),
+  administratorName: z.string().trim().max(300).nullable().optional(),
+  reason: z.string().trim().min(5).max(2000),
+})
+
+const investigationSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedIncidentVersion: z.number().int().positive(),
+  methodology: z.string().trim().min(3).max(300),
+  team: z.array(z.object({ userId: z.string().min(1), role: z.string().trim().min(2).max(120) })).min(1).max(30),
+  evidenceSummary: z.string().trim().max(5000).nullable().optional(),
+  immediateCauses: z.array(z.string().trim().min(2).max(1000)).max(100).default([]),
+  basicCauses: z.array(z.string().trim().min(2).max(1000)).max(100).default([]),
+  organizationalCauses: z.array(z.string().trim().min(2).max(1000)).max(100).default([]),
+  failedControls: z.array(z.string().trim().min(2).max(1000)).max(100).default([]),
+  conclusions: z.string().trim().max(10000).nullable().optional(),
+  interviews: z.array(z.record(z.string(), z.unknown())).max(200).nullable().optional(),
+  miperUpdateRequired: z.boolean().default(false),
+  miperUpdated: z.boolean().default(false),
+  procedureUpdateRequired: z.boolean().default(false),
+  procedureUpdated: z.boolean().default(false),
+  trainingRequired: z.boolean().default(false),
+  trainingCompleted: z.boolean().default(false),
+  complete: z.boolean().default(false),
+  reason: z.string().trim().min(5).max(2000),
+})
+
+const notificationSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  notificationType: z.enum(["diat", "diep", "fatal_dt", "fatal_seremi"]),
+  sentAt: z.string().datetime({ offset: true }),
+  evidenceReference: z.string().trim().min(3).max(4000),
+  evidenceChecksumSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
+  administratorName: z.string().trim().max(300).nullable().optional(),
+  observations: z.string().trim().max(3000).nullable().optional(),
+})
+
+const indicatorClassificationSchema = z.object({
+  incidentId: z.string().min(1),
+  personId: z.string().min(1),
+  expectedIncidentVersion: z.number().int().positive(),
+  expectedPersonVersion: z.number().int().positive(),
+  absenceAtLeastNormalShift: z.boolean(),
+  absenceDays: z.number().int().min(0).max(10000),
+  chargeDays: z.number().int().min(0).max(10000),
+  administratorQualification: z.string().trim().min(2).max(500).nullable().optional(),
+  inclusionStatus: z.enum(["pending", "included", "excluded"]),
+  reason: z.string().trim().min(10).max(3000),
+}).superRefine((value, ctx) => {
+  if (value.inclusionStatus === "included" && !value.absenceAtLeastNormalShift) {
+    ctx.addIssue({ code: "custom", path: ["absenceAtLeastNormalShift"], message: "Una persona incluida debe tener ausencia igual o superior a una jornada normal." })
+  }
+  if (value.absenceAtLeastNormalShift && value.absenceDays < 1) {
+    ctx.addIssue({ code: "custom", path: ["absenceDays"], message: "Registra al menos un día de ausencia." })
+  }
+})
+
+const evidenceSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  investigationId: z.string().min(1).nullable().optional(),
+  kind: z.enum(["document", "photo", "video", "interview", "diagram", "external_reference", "note"]),
+  reference: z.string().trim().min(3).max(4000),
+  description: z.string().trim().max(2000).nullable().optional(),
+  checksumSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
+  isSensitive: z.boolean().default(false),
+  capturedAt: z.string().datetime({ offset: true }).nullable().optional(),
+})
+
+const capaSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  finding: z.string().trim().min(3).max(3000),
+  immediateMeasure: z.string().trim().max(3000).nullable().optional(),
+  rootCause: z.string().trim().max(3000).nullable().optional(),
+  actionDescription: z.string().trim().min(3).max(3000),
+  responsibleUserId: z.string().min(1).nullable().optional(),
+  responsibleSnapshot: z.string().trim().max(300).nullable().optional(),
+  responsibleRole: z.string().trim().max(120).nullable().optional(),
+  priority: z.enum(["low", "medium", "high", "critical"]),
+  targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  evidenceRequired: z.boolean().default(true),
+})
+
+const transitionSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  toStatus: z.enum(INCIDENT_STATUSES),
+  reason: z.string().trim().min(5).max(2000),
+})
+
+const restartSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  reason: z.string().trim().min(10).max(3000),
+})
+
+const TRANSITIONS: Record<IncidentStatus, readonly IncidentStatus[]> = {
+  reported: ["triage"],
+  triage: ["immediate_measures"],
+  immediate_measures: ["under_investigation"],
+  under_investigation: ["pending_capa"],
+  pending_capa: ["pending_verification"],
+  pending_verification: ["closed"],
+  closed: [],
+}
+
+const TRANSITION_PERMISSION: Record<IncidentStatus, string> = {
+  reported: "prevention:incidents:report",
+  triage: "prevention:incidents:triage",
+  immediate_measures: "prevention:incidents:triage",
+  under_investigation: "prevention:incidents:investigate",
+  pending_capa: "prevention:incidents:investigate",
+  pending_verification: "prevention:incidents:investigate",
+  closed: "prevention:incidents:close",
+}
+
+function hasPermission(permissions: readonly string[], permission: string) {
+  return permissions.includes(permission)
+}
+
+function scopeAllows(scope: WorksiteScope, worksiteId: string) {
+  return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
+}
+
+function requireAccess(access: IncidentAccess, permission: string, worksiteId?: string) {
+  if (!hasPermission(access.permissions, permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
+    throw new Error("Incidente no encontrado o fuera de alcance.")
+  }
+}
+
+function scopeCondition(scope: WorksiteScope) {
+  if (scope.mode === "all") return undefined
+  if (scope.mode === "some" && scope.ids.length > 0) return inArray(preventionIncidents.worksiteId, scope.ids)
+  return sql`false`
+}
+
+export function incidentNotificationDeadline(knownAt: string) {
+  const known = new Date(knownAt)
+  if (Number.isNaN(known.getTime())) throw new Error("Hora de conocimiento inválida.")
+  return new Date(known.getTime() + 24 * 60 * 60 * 1000).toISOString()
+}
+
+export function requiredIncidentNotificationTypes(args: {
+  eventType: IncidentEventType
+  isFatalOrSerious: boolean
+}): IncidentNotificationType[] {
+  const result: IncidentNotificationType[] = []
+  if (["work_accident", "commute_accident"].includes(args.eventType)) result.push("diat")
+  if (args.eventType === "suspected_occupational_disease") result.push("diep")
+  if (args.isFatalOrSerious) result.push("fatal_dt", "fatal_seremi", "restart_authorization")
+  return result
+}
+
+export function incidentRequiresInvestigation(incident: {
+  eventType: string
+  actualSeverity: string
+  potentialSeverity: string
+  isFatalOrSerious: boolean
+}) {
+  return incident.isFatalOrSerious
+    || incident.actualSeverity !== "none"
+    || ["high", "critical", "fatal"].includes(incident.potentialSeverity)
+    || ["dangerous_incident", "work_accident", "commute_accident", "suspected_occupational_disease", "environmental_spill", "vehicle_event", "contractor_or_third_party"].includes(incident.eventType)
+}
+
+export function incidentRequiresCapa(incident: {
+  actualSeverity: string
+  potentialSeverity: string
+  isFatalOrSerious: boolean
+}) {
+  return incident.isFatalOrSerious
+    || ["medical_treatment", "lost_time", "serious", "fatal"].includes(incident.actualSeverity)
+    || ["high", "critical", "fatal"].includes(incident.potentialSeverity)
+}
+
+function createIncidentCode() {
+  return `INC-${new Date().getUTCFullYear()}-${nanoid(10).toUpperCase()}`
+}
+
+function nowIso() {
+  return new Date().toISOString()
+}
+
+async function appendHistory(client: IncidentClient, args: {
+  incidentId: string
+  changeType: typeof preventionIncidentHistory.$inferInsert["changeType"]
+  actorUserId: string
+  fromStatus?: string | null
+  toStatus?: string | null
+  reason?: string | null
+  changeSet?: Record<string, unknown> | null
+  createdAt?: string
+}) {
+  await client.insert(preventionIncidentHistory).values({
+    id: `inch-${nanoid()}`,
+    incidentId: args.incidentId,
+    changeType: args.changeType,
+    fromStatus: args.fromStatus ?? null,
+    toStatus: args.toStatus ?? null,
+    reason: args.reason ?? null,
+    changeSet: args.changeSet ?? null,
+    actorUserId: args.actorUserId,
+    createdAt: args.createdAt ?? nowIso(),
+  })
+}
+
+async function findIncidentForMutation(client: IncidentClient, incidentId: string) {
+  const [incident] = await client.select().from(preventionIncidents)
+    .where(eq(preventionIncidents.id, incidentId)).limit(1)
+  if (!incident) throw new Error("Incidente no encontrado o fuera de alcance.")
+  return incident
+}
+
+async function assertWorkerScope(client: IncidentClient, workerId: string, worksiteId: string) {
+  const [worker] = await client.select({ id: workers.id }).from(workers)
+    .where(and(eq(workers.id, workerId), eq(workers.worksiteId, worksiteId), eq(workers.isActive, true))).limit(1)
+  if (!worker) throw new Error("La persona vinculada no pertenece a la faena o está inactiva.")
+}
+
+async function createNotificationLanes(client: IncidentClient, args: {
+  incidentId: string
+  eventType: IncidentEventType
+  isFatalOrSerious: boolean
+  knownAt: string
+  responsibleUserId?: string | null
+  administratorName?: string | null
+  now: string
+}) {
+  const types = requiredIncidentNotificationTypes(args)
+  if (types.length === 0) return
+  const legalDeadline = incidentNotificationDeadline(args.knownAt)
+  await client.insert(preventionIncidentNotifications).values(types.map((type) => ({
+    id: `incn-${nanoid()}`,
+    incidentId: args.incidentId,
+    notificationType: type,
+    deadlineAt: type === "diat" || type === "diep" ? legalDeadline : (type === "restart_authorization" ? null : args.knownAt),
+    status: "pending",
+    administratorName: args.administratorName ?? null,
+    responsibleUserId: args.responsibleUserId ?? null,
+    createdAt: args.now,
+    updatedAt: args.now,
+  }))).onConflictDoNothing()
+}
+
+async function updateNotificationAssignment(client: IncidentClient, args: {
+  incidentId: string
+  responsibleUserId?: string | null
+  administratorName?: string | null
+  now: string
+}) {
+  await client.update(preventionIncidentNotifications).set({
+    responsibleUserId: args.responsibleUserId ?? null,
+    administratorName: args.administratorName ?? null,
+    updatedAt: args.now,
+  }).where(eq(preventionIncidentNotifications.incidentId, args.incidentId))
+}
+
+export async function reportPreventionIncident(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  requireAccess(args.access, "prevention:incidents:report")
+  const input = reportIncidentSchema.parse(args.input)
+  requireAccess(args.access, "prevention:incidents:report", input.worksiteId)
+  const fatalOrSerious = input.isFatalOrSerious || input.actualSeverity === "serious" || input.actualSeverity === "fatal"
+
+  return db.transaction(async (tx) => {
+    for (const person of input.people) {
+      if (person.workerId) await assertWorkerScope(tx, person.workerId, input.worksiteId)
+    }
+
+    const now = nowIso()
+    const incidentId = `inc-${nanoid()}`
+    const [created] = await tx.insert(preventionIncidents).values({
+      id: incidentId,
+      code: createIncidentCode(),
+      clientSubmissionId: input.clientSubmissionId,
+      worksiteId: input.worksiteId,
+      companyName: input.companyName,
+      companyTaxId: input.companyTaxId ?? null,
+      eventType: input.eventType,
+      status: "reported",
+      occurredAt: input.occurredAt,
+      knownAt: input.knownAt,
+      location: input.location,
+      initialNarrative: input.initialNarrative,
+      reportedByUserId: args.access.ctx.userId,
+      processName: input.processName ?? null,
+      taskName: input.taskName ?? null,
+      shiftName: input.shiftName ?? null,
+      vehicleReference: input.vehicleReference ?? null,
+      equipmentReference: input.equipmentReference ?? null,
+      wasteReference: input.wasteReference ?? null,
+      substanceReference: input.substanceReference ?? null,
+      actualSeverity: input.actualSeverity,
+      potentialSeverity: input.potentialSeverity,
+      immediateMeasures: input.immediateMeasures ?? null,
+      operationsSuspended: input.operationsSuspended,
+      evacuated: input.evacuated,
+      isFatalOrSerious: fatalOrSerious,
+      source: input.offlineSync ? "offline_sync" : "platform",
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing({ target: preventionIncidents.clientSubmissionId }).returning()
+
+    if (!created) {
+      const [existing] = await tx.select().from(preventionIncidents)
+        .where(eq(preventionIncidents.clientSubmissionId, input.clientSubmissionId)).limit(1)
+      if (!existing || existing.reportedByUserId !== args.access.ctx.userId || existing.worksiteId !== input.worksiteId) {
+        throw new Error("La clave de sincronización ya fue utilizada por otro reporte.")
+      }
+      return { incident: existing, idempotentReplay: true }
+    }
+
+    for (const personInput of input.people) {
+      const personId = `incp-${nanoid()}`
+      await tx.insert(preventionIncidentPeople).values({
+        id: personId,
+        incidentId,
+        workerId: personInput.workerId ?? null,
+        displayLabel: personInput.displayLabel,
+        employerName: personInput.employerName,
+        sex: personInput.sex ?? null,
+        relationshipType: personInput.relationshipType,
+        absenceAtLeastNormalShift: personInput.absenceAtLeastNormalShift,
+        absenceDays: personInput.absenceDays,
+        chargeDays: personInput.chargeDays,
+        administratorQualification: personInput.administratorQualification ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      if (personInput.sensitive) {
+        const encrypted = encryptPreventionPayload(personInput.sensitive, `incident-person:${personId}`)
+        await tx.insert(preventionIncidentPersonSensitivePayloads).values({
+          id: `incps-${nanoid()}`,
+          personId,
+          ...encrypted,
+          createdByUserId: args.access.ctx.userId,
+          updatedByUserId: args.access.ctx.userId,
+          createdAt: now,
+          updatedAt: now,
+        })
+      }
+    }
+
+    await createNotificationLanes(tx, {
+      incidentId,
+      eventType: input.eventType,
+      isFatalOrSerious: fatalOrSerious,
+      knownAt: input.knownAt,
+      now,
+    })
+    await appendHistory(tx, {
+      incidentId,
+      changeType: "reported",
+      actorUserId: args.access.ctx.userId,
+      toStatus: "reported",
+      reason: input.offlineSync ? "Sincronización de reporte offline" : "Reporte inicial",
+      changeSet: {
+        eventType: input.eventType,
+        worksiteId: input.worksiteId,
+        source: input.offlineSync ? "offline_sync" : "platform",
+        peopleCount: input.people.length,
+        fatalOrSerious,
+      },
+      createdAt: now,
+    })
+    return { incident: created, idempotentReplay: false }
+  })
+}
+
+/**
+ * Clasificación explícita para el motor DS 44. Nunca infiere inclusión oficial
+ * desde el texto libre de la resolución del organismo administrador.
+ */
+export async function classifyIncidentPersonForIndicators(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  requireAccess(args.access, "prevention:incidents:investigate")
+  const input = indicatorClassificationSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select({
+      person: preventionIncidentPeople,
+      incident: preventionIncidents,
+    }).from(preventionIncidentPeople)
+      .innerJoin(preventionIncidents, eq(preventionIncidents.id, preventionIncidentPeople.incidentId))
+      .where(and(
+        eq(preventionIncidentPeople.id, input.personId),
+        eq(preventionIncidents.id, input.incidentId),
+      )).limit(1)
+    if (!current) throw new Error("Persona del incidente no encontrada o fuera de alcance.")
+    requireAccess(args.access, "prevention:incidents:investigate", current.incident.worksiteId)
+    if (current.incident.version !== input.expectedIncidentVersion || current.person.version !== input.expectedPersonVersion) {
+      throw new Error("El incidente o la clasificación cambiaron; recarga antes de guardar.")
+    }
+    if (input.inclusionStatus === "included" && current.incident.eventType !== "work_accident") {
+      throw new Error("Sólo un accidente del trabajo puede incluirse en estas tasas; registra una exclusión fundamentada para trayecto, enfermedad u otro evento.")
+    }
+    await invalidateClosedIndicatorPeriodWithClient(tx, {
+      worksiteId: current.incident.worksiteId,
+      occurredAt: current.incident.occurredAt,
+      actorUserId: args.access.ctx.userId,
+      reason: input.reason,
+      permissions: args.access.permissions,
+    })
+    const now = nowIso()
+    const [person] = await tx.update(preventionIncidentPeople).set({
+      absenceAtLeastNormalShift: input.absenceAtLeastNormalShift,
+      absenceDays: input.absenceDays,
+      chargeDays: input.chargeDays,
+      administratorQualification: input.administratorQualification ?? null,
+      indicatorInclusionStatus: input.inclusionStatus,
+      indicatorInclusionReason: input.reason,
+      indicatorClassifiedByUserId: input.inclusionStatus === "pending" ? null : args.access.ctx.userId,
+      indicatorClassifiedAt: input.inclusionStatus === "pending" ? null : now,
+      version: sql`${preventionIncidentPeople.version} + 1`,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionIncidentPeople.id, input.personId),
+      eq(preventionIncidentPeople.version, input.expectedPersonVersion),
+    )).returning()
+    if (!person) throw new Error("La clasificación cambió; recarga antes de guardar.")
+    const [incident] = await tx.update(preventionIncidents).set({
+      version: sql`${preventionIncidents.version} + 1`,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionIncidents.id, input.incidentId),
+      eq(preventionIncidents.version, input.expectedIncidentVersion),
+    )).returning()
+    if (!incident) throw new Error("El incidente cambió; recarga antes de guardar.")
+    const beforeState = {
+      absenceAtLeastNormalShift: current.person.absenceAtLeastNormalShift,
+      absenceDays: current.person.absenceDays,
+      chargeDays: current.person.chargeDays,
+      administratorQualification: current.person.administratorQualification,
+      inclusionStatus: current.person.indicatorInclusionStatus,
+      version: current.person.version,
+    }
+    const afterState = {
+      absenceAtLeastNormalShift: person.absenceAtLeastNormalShift,
+      absenceDays: person.absenceDays,
+      chargeDays: person.chargeDays,
+      administratorQualification: person.administratorQualification,
+      inclusionStatus: person.indicatorInclusionStatus,
+      version: person.version,
+    }
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "correction",
+      actorUserId: args.access.ctx.userId,
+      reason: input.reason,
+      changeSet: { personId: person.id, before: beforeState, after: afterState, formulaImpact: "ds44_indicators" },
+      createdAt: now,
+    })
+    await tx.insert(safetyIndicatorHistory).values({
+      id: `sih-${nanoid()}`,
+      worksiteId: incident.worksiteId,
+      year: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" }).format(new Date(incident.occurredAt))),
+      month: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" }).format(new Date(incident.occurredAt))),
+      changeType: "corrected",
+      entityType: "incident_person",
+      entityId: person.id,
+      reason: input.reason,
+      beforeState,
+      afterState,
+      actorUserId: args.access.ctx.userId,
+      createdAt: now,
+    })
+    return { incident, person }
+  })
+}
+
+export async function listPreventionIncidents(args: {
+  access: IncidentAccess
+  status?: IncidentStatus
+  worksiteId?: string
+  year?: number
+  monthFrom?: number
+  monthTo?: number
+  indicator?: "accidentability" | "frequency" | "severity" | "pending"
+  limit?: number
+}) {
+  requireAccess(args.access, "prevention:incidents:view")
+  if (args.worksiteId) requireAccess(args.access, "prevention:incidents:view", args.worksiteId)
+  const conditions = [scopeCondition(args.access.scope)]
+  if (args.status) conditions.push(eq(preventionIncidents.status, args.status))
+  if (args.worksiteId) conditions.push(eq(preventionIncidents.worksiteId, args.worksiteId))
+  if (args.year) conditions.push(sql`extract(year from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int = ${args.year}`)
+  if (args.monthFrom) conditions.push(sql`extract(month from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int >= ${args.monthFrom}`)
+  if (args.monthTo) conditions.push(sql`extract(month from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int <= ${args.monthTo}`)
+  if (args.indicator === "pending") {
+    conditions.push(sql`exists (
+      select 1 from ${preventionIncidentPeople} indicator_person
+      where indicator_person.incident_id = ${preventionIncidents.id}
+        and indicator_person.indicator_inclusion_status = 'pending'
+    )`)
+  } else if (args.indicator) {
+    conditions.push(eq(preventionIncidents.eventType, "work_accident"))
+    conditions.push(sql`exists (
+      select 1 from ${preventionIncidentPeople} indicator_person
+      where indicator_person.incident_id = ${preventionIncidents.id}
+        and indicator_person.absence_at_least_normal_shift = true
+        and indicator_person.indicator_inclusion_status in ('pending', 'included')
+    )`)
+  }
+  return db.select({
+    id: preventionIncidents.id,
+    code: preventionIncidents.code,
+    worksiteId: preventionIncidents.worksiteId,
+    worksiteName: worksites.name,
+    companyName: preventionIncidents.companyName,
+    eventType: preventionIncidents.eventType,
+    status: preventionIncidents.status,
+    occurredAt: preventionIncidents.occurredAt,
+    knownAt: preventionIncidents.knownAt,
+    location: preventionIncidents.location,
+    actualSeverity: preventionIncidents.actualSeverity,
+    potentialSeverity: preventionIncidents.potentialSeverity,
+    isFatalOrSerious: preventionIncidents.isFatalOrSerious,
+    hasOverdueNotifications: sql<boolean>`exists (select 1 from ${preventionIncidentNotifications} notification_lane where notification_lane.incident_id = ${preventionIncidents.id} and notification_lane.status = 'overdue')`,
+    source: preventionIncidents.source,
+    version: preventionIncidents.version,
+  }).from(preventionIncidents)
+    .innerJoin(worksites, eq(worksites.id, preventionIncidents.worksiteId))
+    .where(and(...conditions.filter(Boolean)))
+    .orderBy(desc(preventionIncidents.occurredAt))
+    .limit(Math.min(Math.max(args.limit ?? 500, 1), 2000))
+}
+
+async function auditIncidentSensitiveAccess(args: {
+  access: IncidentAccess
+  incidentId: string
+  worksiteId: string
+  workerId?: string | null
+  purpose: string
+  outcome: "granted" | "denied"
+  reasonCode?: string
+}) {
+  await db.insert(preventionSensitiveAccessAudit).values({
+    id: `psa-${nanoid()}`,
+    domain: "incident",
+    entityId: args.incidentId,
+    subjectWorkerId: args.workerId ?? null,
+    worksiteId: args.worksiteId,
+    actorUserId: args.access.ctx.userId,
+    action: "read_incident_sensitive",
+    purpose: args.purpose,
+    outcome: args.outcome,
+    reasonCode: args.reasonCode ?? null,
+    ip: args.access.ctx.ip ?? null,
+    userAgent: args.access.ctx.userAgent ?? null,
+    createdAt: nowIso(),
+  })
+}
+
+export async function getPreventionIncidentDetail(args: {
+  incidentId: string
+  access: IncidentAccess
+  includeSensitive?: boolean
+  purpose?: string
+}) {
+  requireAccess(args.access, "prevention:incidents:view")
+  const [incident] = await db.select({
+    incident: preventionIncidents,
+    worksiteName: worksites.name,
+    reporterName: users.name,
+  }).from(preventionIncidents)
+    .innerJoin(worksites, eq(worksites.id, preventionIncidents.worksiteId))
+    .innerJoin(users, eq(users.id, preventionIncidents.reportedByUserId))
+    .where(and(eq(preventionIncidents.id, args.incidentId), scopeCondition(args.access.scope)))
+    .limit(1)
+  if (!incident) return null
+
+  const [people, notifications, investigation, evidence, history, capa] = await Promise.all([
+    db.select().from(preventionIncidentPeople).where(eq(preventionIncidentPeople.incidentId, args.incidentId)).orderBy(asc(preventionIncidentPeople.createdAt)),
+    db.select().from(preventionIncidentNotifications).where(eq(preventionIncidentNotifications.incidentId, args.incidentId)).orderBy(asc(preventionIncidentNotifications.notificationType)),
+    db.select().from(preventionIncidentInvestigations).where(eq(preventionIncidentInvestigations.incidentId, args.incidentId)).limit(1),
+    db.select().from(preventionIncidentEvidence).where(eq(preventionIncidentEvidence.incidentId, args.incidentId)).orderBy(asc(preventionIncidentEvidence.createdAt)),
+    db.select().from(preventionIncidentHistory).where(eq(preventionIncidentHistory.incidentId, args.incidentId)).orderBy(asc(preventionIncidentHistory.createdAt)),
+    db.select().from(preventionCapaActions).where(and(eq(preventionCapaActions.sourceType, "incident"), eq(preventionCapaActions.sourceId, args.incidentId))).orderBy(asc(preventionCapaActions.createdAt)),
+  ])
+
+  let sensitivePeople: Array<{ personId: string; payload: Record<string, unknown> }> = []
+  if (args.includeSensitive) {
+    const purpose = args.purpose?.trim() ?? ""
+    const granted = purpose.length >= 3
+      && purpose.length <= 300
+      && hasPermission(args.access.permissions, "prevention:incidents:view_sensitive")
+      && scopeAllows(args.access.scope, incident.incident.worksiteId)
+    if (!granted) {
+      await auditIncidentSensitiveAccess({
+        access: args.access,
+        incidentId: args.incidentId,
+        worksiteId: incident.incident.worksiteId,
+        purpose: purpose || "sin propósito",
+        outcome: "denied",
+        reasonCode: "permission_scope_or_purpose",
+      })
+      throw new Error("Incidente no encontrado o fuera de alcance.")
+    }
+    const payloads = await db.select().from(preventionIncidentPersonSensitivePayloads)
+      .innerJoin(preventionIncidentPeople, eq(preventionIncidentPeople.id, preventionIncidentPersonSensitivePayloads.personId))
+      .where(eq(preventionIncidentPeople.incidentId, args.incidentId))
+    sensitivePeople = payloads.map((entry) => ({
+      personId: entry.prevention_incident_person_sensitive_payloads.personId,
+      payload: decryptPreventionPayload<Record<string, unknown>>({
+        encryptedPayload: entry.prevention_incident_person_sensitive_payloads.encryptedPayload,
+        iv: entry.prevention_incident_person_sensitive_payloads.iv,
+        authTag: entry.prevention_incident_person_sensitive_payloads.authTag,
+        keyVersion: entry.prevention_incident_person_sensitive_payloads.keyVersion,
+      }, `incident-person:${entry.prevention_incident_person_sensitive_payloads.personId}`),
+    }))
+    await auditIncidentSensitiveAccess({
+      access: args.access,
+      incidentId: args.incidentId,
+      worksiteId: incident.incident.worksiteId,
+      purpose,
+      outcome: "granted",
+    })
+  }
+
+  return {
+    ...incident,
+    people,
+    sensitivePeople,
+    notifications,
+    investigation: investigation[0] ?? null,
+    evidence: evidence.filter((item) => !item.isSensitive || args.includeSensitive),
+    history,
+    capa,
+  }
+}
+
+export async function triagePreventionIncident(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  requireAccess(args.access, "prevention:incidents:triage")
+  const input = triageSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const incident = await findIncidentForMutation(tx, input.incidentId)
+    requireAccess(args.access, "prevention:incidents:triage", incident.worksiteId)
+    if (incident.status !== "reported") throw new Error("El incidente ya fue sometido a triage.")
+    if (input.isFatalOrSerious && !input.operationsSuspended) throw new Error("Un evento fatal/grave exige suspensión de la operación.")
+    if (input.notificationResponsibleUserId) {
+      const [responsible] = await tx.select({ id: users.id }).from(users)
+        .where(and(eq(users.id, input.notificationResponsibleUserId), eq(users.isActive, true))).limit(1)
+      if (!responsible) throw new Error("El responsable de notificación no existe o está inactivo.")
+    }
+    const now = nowIso()
+    const [updated] = await tx.update(preventionIncidents).set({
+      status: "triage",
+      actualSeverity: input.actualSeverity,
+      potentialSeverity: input.potentialSeverity,
+      isFatalOrSerious: input.isFatalOrSerious,
+      operationsSuspended: input.operationsSuspended,
+      evacuated: input.evacuated,
+      immediateMeasures: input.immediateMeasures,
+      triagedAt: now,
+      triagedByUserId: args.access.ctx.userId,
+      version: sql`${preventionIncidents.version} + 1`,
+      updatedAt: now,
+    }).where(and(eq(preventionIncidents.id, input.incidentId), eq(preventionIncidents.version, input.expectedVersion))).returning()
+    if (!updated) throw new Error("El incidente cambió mientras realizabas el triage; recarga e intenta nuevamente.")
+
+    await createNotificationLanes(tx, {
+      incidentId: incident.id,
+      eventType: incident.eventType as IncidentEventType,
+      isFatalOrSerious: input.isFatalOrSerious,
+      knownAt: incident.knownAt,
+      responsibleUserId: input.notificationResponsibleUserId,
+      administratorName: input.administratorName,
+      now,
+    })
+    await updateNotificationAssignment(tx, {
+      incidentId: incident.id,
+      responsibleUserId: input.notificationResponsibleUserId,
+      administratorName: input.administratorName,
+      now,
+    })
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "triage",
+      actorUserId: args.access.ctx.userId,
+      fromStatus: incident.status,
+      toStatus: "triage",
+      reason: input.reason,
+      changeSet: {
+        actualSeverity: input.actualSeverity,
+        potentialSeverity: input.potentialSeverity,
+        isFatalOrSerious: input.isFatalOrSerious,
+        operationsSuspended: input.operationsSuspended,
+        evacuated: input.evacuated,
+        notificationResponsibleUserId: input.notificationResponsibleUserId ?? null,
+      },
+      createdAt: now,
+    })
+    return updated
+  })
+}
+
+async function getClosureFacts(client: IncidentClient, incidentId: string) {
+  const [investigations, notifications, capa] = await Promise.all([
+    client.select().from(preventionIncidentInvestigations).where(eq(preventionIncidentInvestigations.incidentId, incidentId)),
+    client.select().from(preventionIncidentNotifications).where(eq(preventionIncidentNotifications.incidentId, incidentId)),
+    client.select().from(preventionCapaActions).where(and(eq(preventionCapaActions.sourceType, "incident"), eq(preventionCapaActions.sourceId, incidentId))),
+  ])
+  return { investigation: investigations[0] ?? null, notifications, capa }
+}
+
+export function assertIncidentTransition(args: {
+  incident: Pick<typeof preventionIncidents.$inferSelect, "status" | "eventType" | "actualSeverity" | "potentialSeverity" | "isFatalOrSerious" | "immediateMeasures">
+  toStatus: IncidentStatus
+  permissions: readonly string[]
+  investigationCompleted: boolean
+  capaStatuses: readonly string[]
+  notificationLanes: ReadonlyArray<{ notificationType: string; status: string; evidenceReference: string | null }>
+}) {
+  const from = args.incident.status as IncidentStatus
+  if (!TRANSITIONS[from]?.includes(args.toStatus)) throw new Error(`Transición de incidente inválida: ${from} → ${args.toStatus}.`)
+  if (!hasPermission(args.permissions, TRANSITION_PERMISSION[args.toStatus])) throw new Error("Incidente no encontrado o fuera de alcance.")
+  if (args.toStatus === "immediate_measures" && (args.incident.immediateMeasures?.trim().length ?? 0) < 3) {
+    throw new Error("Debes documentar las medidas inmediatas antes de avanzar.")
+  }
+  if (args.toStatus === "pending_capa" && incidentRequiresInvestigation(args.incident) && !args.investigationCompleted) {
+    throw new Error("La clasificación exige completar la investigación antes de pasar a CAPA.")
+  }
+  if (args.toStatus === "pending_verification" && incidentRequiresCapa(args.incident)) {
+    if (args.capaStatuses.length === 0) throw new Error("La clasificación exige al menos una acción CAPA.")
+    if (args.capaStatuses.some((status) => !["verified", "closed"].includes(status))) {
+      throw new Error("Todas las acciones CAPA deben estar verificadas antes de la verificación del incidente.")
+    }
+  }
+  if (args.toStatus === "closed") {
+    if (incidentRequiresInvestigation(args.incident) && !args.investigationCompleted) throw new Error("No se puede cerrar sin investigación completada.")
+    if (args.capaStatuses.some((status) => status !== "closed")) throw new Error("Todas las acciones CAPA deben estar cerradas.")
+    const blocked = args.notificationLanes.filter((lane) => !["sent", "acknowledged", "not_required", "authorized"].includes(lane.status))
+    if (blocked.length > 0) throw new Error("No se puede cerrar con denuncias, notificaciones o reinicio pendientes/atrasados.")
+    const missingEvidence = args.notificationLanes.filter((lane) => lane.notificationType !== "restart_authorization" && lane.status !== "not_required" && !lane.evidenceReference)
+    if (missingEvidence.length > 0) throw new Error("Las denuncias/notificaciones requieren evidencia antes del cierre.")
+  }
+}
+
+export async function transitionPreventionIncident(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  const input = transitionSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const incident = await findIncidentForMutation(tx, input.incidentId)
+    requireAccess(args.access, TRANSITION_PERMISSION[input.toStatus], incident.worksiteId)
+    const facts = await getClosureFacts(tx, incident.id)
+    assertIncidentTransition({
+      incident,
+      toStatus: input.toStatus,
+      permissions: args.access.permissions,
+      investigationCompleted: facts.investigation?.status === "completed",
+      capaStatuses: facts.capa.map((item) => item.status),
+      notificationLanes: facts.notifications,
+    })
+    const now = nowIso()
+    const [updated] = await tx.update(preventionIncidents).set({
+      status: input.toStatus,
+      version: sql`${preventionIncidents.version} + 1`,
+      updatedAt: now,
+      ...(input.toStatus === "closed" ? {
+        closedAt: now,
+        closedByUserId: args.access.ctx.userId,
+        closureReason: input.reason,
+      } : {}),
+    }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning()
+    if (!updated) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: input.toStatus === "closed" ? "closure" : "status",
+      actorUserId: args.access.ctx.userId,
+      fromStatus: incident.status,
+      toStatus: input.toStatus,
+      reason: input.reason,
+      createdAt: now,
+    })
+    return updated
+  })
+}
+
+export async function savePreventionIncidentInvestigation(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  requireAccess(args.access, "prevention:incidents:investigate")
+  const input = investigationSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const incident = await findIncidentForMutation(tx, input.incidentId)
+    requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+    if (!["immediate_measures", "under_investigation", "pending_capa"].includes(incident.status)) {
+      throw new Error("El incidente no está en una etapa que permita investigar.")
+    }
+    const existing = await tx.select().from(preventionIncidentInvestigations)
+      .where(eq(preventionIncidentInvestigations.incidentId, incident.id)).limit(1)
+    const now = nowIso()
+    const encryptedInterviews = input.interviews
+      ? encryptPreventionPayload(input.interviews, `incident-investigation:${existing[0]?.id ?? incident.id}`)
+      : null
+    const investigationId = existing[0]?.id ?? `inci-${nanoid()}`
+    let miperTrigger: typeof preventionRiskReviewTriggers.$inferSelect | null = null
+    if (input.miperUpdateRequired) {
+      const due = new Date()
+      due.setUTCDate(due.getUTCDate() + 10)
+      const triggerType = incident.eventType === "suspected_occupational_disease"
+        ? "occupational_disease"
+        : incident.eventType === "work_accident"
+          ? "work_accident"
+          : incident.isFatalOrSerious
+            ? "grave_imminent"
+            : "work_change"
+      miperTrigger = await createRiskReviewTriggerWithClient(tx, {
+        worksiteId: incident.worksiteId,
+        triggerType,
+        sourceType: "incident",
+        sourceId: incident.id,
+        description: `Revisar y publicar la MIPER por el incidente ${incident.code}. Plazo operacional interno: 10 días.`,
+        assignedToUserId: args.access.ctx.userId,
+        dueAt: due.toISOString().slice(0, 10),
+        idempotencyKey: `incident:miper:${incident.id}`,
+      }, args.access.ctx.userId)
+    }
+    const miperUpdateVerified = !input.miperUpdateRequired || miperTrigger?.status === "completed"
+    if (input.miperUpdated && !miperUpdateVerified) throw new Error("No puedes declarar la MIPER actualizada: el disparador exige una nueva versión publicada y vinculada.")
+    const values = {
+      status: input.complete ? "completed" : (existing[0] ? "in_progress" : "draft"),
+      methodology: input.methodology,
+      team: input.team,
+      evidenceSummary: input.evidenceSummary ?? null,
+      immediateCauses: input.immediateCauses,
+      basicCauses: input.basicCauses,
+      organizationalCauses: input.organizationalCauses,
+      failedControls: input.failedControls,
+      conclusions: input.conclusions ?? null,
+      ...(encryptedInterviews ? {
+        interviewsEncrypted: encryptedInterviews.encryptedPayload,
+        interviewsIv: encryptedInterviews.iv,
+        interviewsAuthTag: encryptedInterviews.authTag,
+        interviewsKeyVersion: encryptedInterviews.keyVersion,
+      } : {}),
+      miperUpdateRequired: input.miperUpdateRequired,
+      miperUpdatedAt: input.miperUpdated && miperUpdateVerified ? now : null,
+      procedureUpdateRequired: input.procedureUpdateRequired,
+      procedureUpdatedAt: input.procedureUpdated ? now : null,
+      trainingRequired: input.trainingRequired,
+      trainingCompletedAt: input.trainingCompleted ? now : null,
+      completedByUserId: input.complete ? args.access.ctx.userId : null,
+      completedAt: input.complete ? now : null,
+      updatedAt: now,
+    }
+    if (input.complete) {
+      if ((input.conclusions?.length ?? 0) < 10) throw new Error("La investigación requiere conclusiones suficientes.")
+      if (input.immediateCauses.length + input.basicCauses.length + input.organizationalCauses.length === 0) {
+        throw new Error("La investigación requiere al menos una causa identificada.")
+      }
+      if (input.miperUpdateRequired && !miperUpdateVerified) throw new Error("Debes completar el disparador MIPER con una nueva versión publicada antes de cerrar la investigación.")
+      if (input.procedureUpdateRequired && !input.procedureUpdated) throw new Error("Debes registrar la actualización de procedimiento requerida.")
+      if (input.trainingRequired && !input.trainingCompleted) throw new Error("Debes registrar la capacitación requerida.")
+    }
+
+    if (existing[0]) {
+      await tx.update(preventionIncidentInvestigations).set({
+        ...values,
+        version: sql`${preventionIncidentInvestigations.version} + 1`,
+      }).where(eq(preventionIncidentInvestigations.id, investigationId))
+    } else {
+      await tx.insert(preventionIncidentInvestigations).values({
+        id: investigationId,
+        incidentId: incident.id,
+        ...values,
+        startedByUserId: args.access.ctx.userId,
+        startedAt: now,
+        version: 1,
+      })
+    }
+    const [updatedIncident] = await tx.update(preventionIncidents).set({
+      status: incident.status === "immediate_measures" ? "under_investigation" : incident.status,
+      version: sql`${preventionIncidents.version} + 1`,
+      updatedAt: now,
+    }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedIncidentVersion))).returning()
+    if (!updatedIncident) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "investigation",
+      actorUserId: args.access.ctx.userId,
+      fromStatus: incident.status,
+      toStatus: updatedIncident.status,
+      reason: input.reason,
+      changeSet: {
+        investigationId,
+        status: values.status,
+        methodology: input.methodology,
+        causes: input.immediateCauses.length + input.basicCauses.length + input.organizationalCauses.length,
+        controlsFailed: input.failedControls.length,
+      },
+      createdAt: now,
+    })
+    return { incident: updatedIncident, investigationId }
+  })
+}
+
+export async function addPreventionIncidentEvidence(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  requireAccess(args.access, "prevention:incidents:investigate")
+  const input = evidenceSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const incident = await findIncidentForMutation(tx, input.incidentId)
+    requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+    if (input.isSensitive && !hasPermission(args.access.permissions, "prevention:incidents:view_sensitive")) {
+      throw new Error("No tienes autorización para clasificar evidencia sensible.")
+    }
+    if (input.investigationId) {
+      const [investigation] = await tx.select({ id: preventionIncidentInvestigations.id }).from(preventionIncidentInvestigations)
+        .where(and(eq(preventionIncidentInvestigations.id, input.investigationId), eq(preventionIncidentInvestigations.incidentId, incident.id))).limit(1)
+      if (!investigation) throw new Error("La investigación no pertenece al incidente.")
+    }
+    const now = nowIso()
+    const [created] = await tx.insert(preventionIncidentEvidence).values({
+      id: `ince-${nanoid()}`,
+      incidentId: incident.id,
+      investigationId: input.investigationId ?? null,
+      kind: input.kind,
+      reference: input.reference,
+      description: input.description ?? null,
+      checksumSha256: input.checksumSha256 ?? null,
+      isSensitive: input.isSensitive,
+      capturedAt: input.capturedAt ?? null,
+      createdByUserId: args.access.ctx.userId,
+      createdAt: now,
+    }).returning()
+    if (!created) throw new Error("No se pudo registrar la evidencia del incidente.")
+    const [updated] = await tx.update(preventionIncidents).set({
+      version: sql`${preventionIncidents.version} + 1`, updatedAt: now,
+    }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning()
+    if (!updated) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "evidence",
+      actorUserId: args.access.ctx.userId,
+      reason: "Evidencia agregada",
+      changeSet: { evidenceId: created.id, kind: created.kind, isSensitive: created.isSensitive },
+      createdAt: now,
+    })
+    return { incident: updated, evidence: created }
+  })
+}
+
+export async function recordPreventionIncidentNotification(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  requireAccess(args.access, "prevention:incidents:notify")
+  const input = notificationSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const incident = await findIncidentForMutation(tx, input.incidentId)
+    requireAccess(args.access, "prevention:incidents:notify", incident.worksiteId)
+    const [lane] = await tx.select().from(preventionIncidentNotifications).where(and(
+      eq(preventionIncidentNotifications.incidentId, incident.id),
+      eq(preventionIncidentNotifications.notificationType, input.notificationType),
+    )).limit(1)
+    if (!lane) throw new Error("La denuncia/notificación no aplica a este incidente.")
+    const now = nowIso()
+    const wasLate = Boolean(lane.deadlineAt && new Date(input.sentAt).getTime() > new Date(lane.deadlineAt).getTime())
+    await tx.update(preventionIncidentNotifications).set({
+      status: "sent",
+      sentAt: input.sentAt,
+      evidenceReference: input.evidenceReference,
+      evidenceChecksumSha256: input.evidenceChecksumSha256 ?? null,
+      administratorName: input.administratorName ?? lane.administratorName,
+      observations: input.observations ?? null,
+      escalatedAt: wasLate ? (lane.escalatedAt ?? lane.deadlineAt) : lane.escalatedAt,
+      updatedAt: now,
+    }).where(eq(preventionIncidentNotifications.id, lane.id))
+    const [updated] = await tx.update(preventionIncidents).set({
+      version: sql`${preventionIncidents.version} + 1`, updatedAt: now,
+    }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning()
+    if (!updated) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "notification",
+      actorUserId: args.access.ctx.userId,
+      reason: wasLate ? "Notificación registrada fuera de plazo" : "Notificación registrada",
+      changeSet: { type: lane.notificationType, sentAt: input.sentAt, deadlineAt: lane.deadlineAt, wasLate },
+      createdAt: now,
+    })
+    return updated
+  })
+}
+
+export async function authorizePreventionIncidentRestart(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  requireAccess(args.access, "prevention:incidents:authorize_restart")
+  const input = restartSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const incident = await findIncidentForMutation(tx, input.incidentId)
+    requireAccess(args.access, "prevention:incidents:authorize_restart", incident.worksiteId)
+    if (!incident.isFatalOrSerious || !incident.operationsSuspended) throw new Error("El incidente no requiere autorización formal de reinicio.")
+    const facts = await getClosureFacts(tx, incident.id)
+    if (facts.investigation?.status !== "completed") throw new Error("El reinicio exige investigación completada.")
+    if (facts.capa.length === 0 || facts.capa.some((action) => !["verified", "closed"].includes(action.status))) {
+      throw new Error("El reinicio exige CAPA verificada.")
+    }
+    const requiredAuthorities = facts.notifications.filter((lane) => ["fatal_dt", "fatal_seremi"].includes(lane.notificationType))
+    if (requiredAuthorities.some((lane) => !["sent", "acknowledged"].includes(lane.status) || !lane.evidenceReference)) {
+      throw new Error("El reinicio exige evidencia de notificación a DT y SEREMI.")
+    }
+    const restart = facts.notifications.find((lane) => lane.notificationType === "restart_authorization")
+    if (!restart) throw new Error("No existe carril de autorización de reinicio.")
+    const now = nowIso()
+    await tx.update(preventionIncidentNotifications).set({
+      status: "authorized",
+      restartAuthorizedAt: now,
+      restartAuthorizedByUserId: args.access.ctx.userId,
+      restartAuthorizationReason: input.reason,
+      updatedAt: now,
+    }).where(eq(preventionIncidentNotifications.id, restart.id))
+    const [updated] = await tx.update(preventionIncidents).set({
+      operationsSuspended: false,
+      version: sql`${preventionIncidents.version} + 1`,
+      updatedAt: now,
+    }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning()
+    if (!updated) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "restart",
+      actorUserId: args.access.ctx.userId,
+      reason: input.reason,
+      changeSet: { restartAuthorizedAt: now },
+      createdAt: now,
+    })
+    return updated
+  })
+}
+
+export async function createPreventionIncidentCapa(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  requireAccess(args.access, "prevention:incidents:investigate")
+  requireAccess(args.access, "prevention:capa:manage")
+  const input = capaSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const incident = await findIncidentForMutation(tx, input.incidentId)
+    requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+    const now = nowIso()
+    const capa = await createCapaActionWithClient(tx, {
+      sourceType: "incident",
+      sourceId: incident.id,
+      worksiteId: incident.worksiteId,
+      finding: input.finding,
+      immediateMeasure: input.immediateMeasure ?? null,
+      rootCause: input.rootCause ?? null,
+      actionDescription: input.actionDescription,
+      responsibleUserId: input.responsibleUserId ?? null,
+      responsibleSnapshot: input.responsibleSnapshot ?? null,
+      responsibleRole: input.responsibleRole ?? null,
+      priority: input.priority,
+      targetDate: input.targetDate,
+      evidenceRequired: input.evidenceRequired,
+    }, args.access.ctx.userId)
+    const [updated] = await tx.update(preventionIncidents).set({
+      version: sql`${preventionIncidents.version} + 1`, updatedAt: now,
+    }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning()
+    if (!updated) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "capa",
+      actorUserId: args.access.ctx.userId,
+      reason: "Acción CAPA creada desde la investigación",
+      changeSet: { capaActionId: capa.id, code: capa.code, priority: capa.priority },
+      createdAt: now,
+    })
+    return { incident: updated, capa }
+  })
+}
+
+export async function markOverdueIncidentNotifications(args: {
+  now?: Date
+  client?: IncidentClient
+}) {
+  const client = args.client ?? db
+  const now = (args.now ?? new Date()).toISOString()
+  const due = await client.select().from(preventionIncidentNotifications).where(and(
+    inArray(preventionIncidentNotifications.status, ["pending", "overdue"]),
+    lte(preventionIncidentNotifications.deadlineAt, now),
+  ))
+  const newlyOverdue = due.filter((lane) => lane.status === "pending")
+  for (const lane of newlyOverdue) {
+    await client.update(preventionIncidentNotifications).set({
+      status: "overdue",
+      escalatedAt: lane.escalatedAt ?? now,
+      updatedAt: now,
+    }).where(eq(preventionIncidentNotifications.id, lane.id))
+  }
+  return { due, newlyOverdue }
+}
+
+export async function listIncidentWorksites(
+  access: IncidentAccess,
+  permission: "prevention:incidents:view" | "prevention:incidents:report" | "prevention:incidents:triage" = "prevention:incidents:view",
+) {
+  requireAccess(access, permission)
+  const condition = access.scope.mode === "all"
+    ? eq(worksites.isActive, true)
+    : access.scope.mode === "some" && access.scope.ids.length > 0
+      ? and(eq(worksites.isActive, true), inArray(worksites.id, access.scope.ids))
+      : sql`false`
+  return db.select({ id: worksites.id, name: worksites.name, code: worksites.code })
+    .from(worksites).where(condition).orderBy(asc(worksites.name))
+}
+
+export async function getIncidentDashboardCounts(access: IncidentAccess) {
+  requireAccess(access, "prevention:incidents:view")
+  const condition = scopeCondition(access.scope)
+  const [row] = await db.select({
+    totalOpen: sql<number>`count(*) filter (where ${preventionIncidents.status} <> 'closed')::int`,
+    overdueNotifications: sql<number>`count(distinct ${preventionIncidents.id}) filter (where exists (select 1 from ${preventionIncidentNotifications} n where n.incident_id = ${preventionIncidents.id} and n.status = 'overdue'))::int`,
+    fatalOrSerious: sql<number>`count(*) filter (where ${preventionIncidents.isFatalOrSerious} = true and ${preventionIncidents.status} <> 'closed')::int`,
+    pendingInvestigation: sql<number>`count(*) filter (where ${preventionIncidents.status} in ('immediate_measures', 'under_investigation'))::int`,
+  }).from(preventionIncidents).where(condition)
+  return row ?? { totalOpen: 0, overdueNotifications: 0, fatalOrSerious: 0, pendingInvestigation: 0 }
+}
+
+export async function listIncidentNotificationResponsibles(access: IncidentAccess, worksiteId: string) {
+  requireAccess(access, "prevention:incidents:triage", worksiteId)
+  const ids = await getUserIdsWithPermissionForWorksite("prevention:incidents:notify", worksiteId)
+  if (ids.length === 0) return []
+  return db.select({ id: users.id, name: users.name, email: users.email }).from(users)
+    .where(and(inArray(users.id, ids), eq(users.isActive, true))).orderBy(asc(users.name))
+}
+
+export const __incidentSchemas = {
+  reportIncidentSchema,
+  triageSchema,
+  investigationSchema,
+  notificationSchema,
+  transitionSchema,
+}

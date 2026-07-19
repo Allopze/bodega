@@ -1,6 +1,6 @@
 import { eq, and, or } from "drizzle-orm"
 import { db } from "@/db"
-import { ppaSubmissions, type PpaSubmission } from "@/db/schema/ppa"
+import { ppaStatusHistory, ppaSubmissions, type PpaSubmission } from "@/db/schema/ppa"
 import { workers, worksites } from "@/db/schema/worksites"
 import { nanoid } from "@/lib/id"
 import { ppaSubmitSchema, type PpaSubmitInput } from "@/lib/validation/ppa"
@@ -102,7 +102,22 @@ export async function createPpaSubmission(
     updatedAt:            now,
   }
 
-  await db.insert(ppaSubmissions).values(row)
+  await db.transaction(async (tx) => {
+    await tx.insert(ppaSubmissions).values(row)
+    await tx.insert(ppaStatusHistory).values({
+      id: `ppah-${nanoid()}`,
+      ppaId: id,
+      capaActionId: null,
+      fromStatus: null,
+      toStatus: estado,
+      reason: evaluation.stop
+        ? "Evaluación automática: trabajo detenido por controles insuficientes"
+        : "Evaluación automática: controles declarados suficientes",
+      actorType: "system",
+      actorUserId: null,
+      createdAt: now,
+    })
+  })
 
   if (evaluation.stop) {
     notifyAfterCommit(async () => {

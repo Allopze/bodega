@@ -58,9 +58,7 @@ export interface Props {
   folderOptions?: FolderOption[]
   breadcrumbs?: BreadcrumbItem[]
   currentFolderId?: string | null
-  categories?: unknown[]
-  types?: unknown[]
-  searchParams: { q?: string; category?: string; status?: string; worksiteId?: string; folder?: string; page?: string }
+  searchParams: { q?: string; folder?: string; page?: string }
   total: number
   canManage: boolean
   canArchive: boolean

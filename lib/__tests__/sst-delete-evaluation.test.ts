@@ -211,7 +211,7 @@ describe("saveActionPlanItem", () => {
       responsable: "Prevencionista",
       plazo: "2026-07-05",
       estado: "pendiente",
-    }, ["ws-1"])
+    }, ["ws-1"], "user-1")
 
     expect(item.id).toBeTruthy()
     const rows = await inMemoryDb.select().from(schema.sstActionPlan)

@@ -12,7 +12,7 @@ import { REVALIDATE } from "./revalidate"
 
 export async function saveActionPlanItemAction(
   input: z.infer<typeof sstActionPlanItemSchema>,
-): Promise<ActionState & { data?: { id: string } }> {
+): Promise<ActionState & { data?: { id: string; capaActionId: string | null } }> {
   const { session, error } = await guardPermission("sst:manage")
   if (error) return error
 
@@ -20,9 +20,9 @@ export async function saveActionPlanItemAction(
   const worksiteIds = scopeToIds(scope)
 
   try {
-    const saved = await saveActionPlanItem(input, worksiteIds)
+    const saved = await saveActionPlanItem(input, worksiteIds, session.user.id)
     revalidatePath(`${REVALIDATE}/${input.evaluationId}`)
-    return { ok: true, message: "Ítem del plan guardado", data: { id: saved.id } }
+    return { ok: true, message: "Ítem del plan guardado", data: { id: saved.id, capaActionId: saved.capaActionId } }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al guardar el ítem del plan" }
   }
@@ -36,7 +36,7 @@ export async function deleteActionPlanItemAction(id: string): Promise<ActionStat
   const worksiteIds = scopeToIds(scope)
 
   try {
-    await deleteActionPlanItem(id, worksiteIds)
+    await deleteActionPlanItem(id, worksiteIds, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Ítem eliminado" }
   } catch (e) {

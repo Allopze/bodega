@@ -5,6 +5,8 @@ import {
   sstDocumentLinks,
   sstDocumentVersions,
   sstDocumentAudit,
+  sstDocumentAcknowledgments,
+  sstDocumentDistributionTargets,
 } from "@/db/schema"
 import { sstDocumentSearchSchema } from "@/lib/validation/prevention"
 import type { SstDocumentSearchInput } from "@/lib/validation/prevention"
@@ -12,35 +14,58 @@ import { type WorksiteScope } from "@/lib/auth/scope"
 import {
   type SstDocumentStatus,
   type DashboardCounters,
-  assertScopeAccess,
   effectiveStatus,
   daysUntil,
   recordAuditEntry,
+  allowedDocumentConfidentialities,
+  canReadDocumentConfidentiality,
 } from "./utils"
 
 /* ── Lectura: documento completo (bundle) ───────────────────────────────── */
 
-export async function getDocumentBundle(id: string, scope: WorksiteScope) {
+export async function getDocumentBundle(id: string, scope: WorksiteScope, permissions: readonly string[] = []) {
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, id))
   if (!doc) return null
-  assertScopeAccess(doc.worksiteId, scope)
+  if (scope.mode === "none") return null
+  if (scope.mode === "some" && (!doc.worksiteId || !scope.ids.includes(doc.worksiteId))) return null
+  if (!canReadDocumentConfidentiality(doc.confidentiality, permissions)) return null
 
-  const [versions, links, audit] = await Promise.all([
+  const [versions, links, acks, distribution, audit] = await Promise.all([
     db.select().from(sstDocumentVersions).where(eq(sstDocumentVersions.documentId, id)).orderBy(desc(sstDocumentVersions.version)),
     db.select().from(sstDocumentLinks).where(and(eq(sstDocumentLinks.documentId, id), isNull(sstDocumentLinks.removedAt))),
+    db.select({
+      id: sstDocumentAcknowledgments.id,
+      versionId: sstDocumentAcknowledgments.versionId,
+      userId: sstDocumentAcknowledgments.userId,
+      signature: sstDocumentAcknowledgments.signature,
+      acknowledgedAt: sstDocumentAcknowledgments.acknowledgedAt,
+    }).from(sstDocumentAcknowledgments)
+      .innerJoin(sstDocumentVersions, eq(sstDocumentAcknowledgments.versionId, sstDocumentVersions.id))
+      .where(eq(sstDocumentVersions.documentId, id)),
+    db.select().from(sstDocumentDistributionTargets)
+      .innerJoin(sstDocumentVersions, eq(sstDocumentDistributionTargets.versionId, sstDocumentVersions.id))
+      .where(eq(sstDocumentVersions.documentId, id)),
     db.select().from(sstDocumentAudit).where(eq(sstDocumentAudit.documentId, id)).orderBy(desc(sstDocumentAudit.createdAt)).limit(200),
   ])
 
   const effective = { ...doc, status: effectiveStatus(doc.status as SstDocumentStatus, doc.expiresAt) }
-  return { doc: effective, versions, links, acks: [], audit }
+  return {
+    doc: effective,
+    versions,
+    links,
+    acks,
+    distribution: distribution.map((row) => row.sst_document_distribution_targets),
+    audit,
+  }
 }
 
 /* ── Búsqueda ───────────────────────────────────────────────────────────── */
 
-export async function searchDocuments(input: SstDocumentSearchInput, scope: WorksiteScope) {
+export async function searchDocuments(input: SstDocumentSearchInput, scope: WorksiteScope, permissions: readonly string[] = []) {
   const data = sstDocumentSearchSchema.parse(input)
   if (scope.mode === "none") return { rows: [], total: 0 }
   const conditions: (SQL | undefined)[] = []
+  conditions.push(inArray(sstDocuments.confidentiality, allowedDocumentConfidentialities(permissions)))
 
   if (data.q) {
     const q = `%${data.q.replace(/[%_]/g, (m) => `\\${m}`)}%`
@@ -76,7 +101,7 @@ export async function searchDocuments(input: SstDocumentSearchInput, scope: Work
 
 /* ── Dashboard ──────────────────────────────────────────────────────────── */
 
-export async function getDashboardCounters(scope: WorksiteScope): Promise<DashboardCounters> {
+export async function getDashboardCounters(scope: WorksiteScope, permissions: readonly string[] = []): Promise<DashboardCounters> {
   if (scope.mode === "none") {
     return {
       total: 0,
@@ -87,25 +112,39 @@ export async function getDashboardCounters(scope: WorksiteScope): Promise<Dashbo
       ackPending: 0,
     }
   }
+  const confidentialityWhere = inArray(
+    sstDocuments.confidentiality,
+    allowedDocumentConfidentialities(permissions),
+  )
   const baseWhere = scope.mode === "some"
-    ? or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId))
-    : undefined
+    ? and(or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId)), confidentialityWhere)
+    : confidentialityWhere
 
-  const statusCountRows = await db
-    .select({ status: sstDocuments.status, count: count() })
-    .from(sstDocuments)
-    .where(and(baseWhere, isNotNull(sstDocuments.status)))
-    .groupBy(sstDocuments.status)
-
-  const vigentesRows = await db
-    .select({
+  const [statusCountRows, vigentesRows, ackPendingRows] = await Promise.all([
+    db.select({ status: sstDocuments.status, count: count() })
+      .from(sstDocuments)
+      .where(and(baseWhere, isNotNull(sstDocuments.status)))
+      .groupBy(sstDocuments.status),
+    db.select({
       expiresAt: sstDocuments.expiresAt,
       requiresAcknowledgment: sstDocuments.requiresAcknowledgment,
       currentVersionId: sstDocuments.currentVersionId,
     })
-    .from(sstDocuments)
-    .where(and(baseWhere, inArray(sstDocuments.status, ["vigente", "aprobado"])))
-    .limit(5000)
+      .from(sstDocuments)
+      .where(and(baseWhere, inArray(sstDocuments.status, ["vigente", "aprobado"])))
+      .limit(5000),
+    db.select({ count: sql<number>`count(*)::int` })
+      .from(sstDocumentDistributionTargets)
+      .innerJoin(sstDocumentVersions, eq(sstDocumentVersions.id, sstDocumentDistributionTargets.versionId))
+      .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
+      .where(and(
+        baseWhere,
+        eq(sstDocumentDistributionTargets.status, "pendiente"),
+        eq(sstDocumentVersions.status, "vigente"),
+        eq(sstDocuments.currentVersionId, sstDocumentVersions.id),
+      )),
+  ])
+  const [ackPendingRow] = ackPendingRows
 
   const byStatus: Record<SstDocumentStatus, number> = { borrador: 0, en_revision: 0, observado: 0, aprobado: 0, vigente: 0, vencido: 0, reemplazado: 0, archivado: 0 }
 
@@ -115,7 +154,8 @@ export async function getDashboardCounters(scope: WorksiteScope): Promise<Dashbo
   }
 
   const total = statusCountRows.reduce((acc, r) => acc + r.count, 0)
-  let expiring7 = 0, expiring15 = 0, expiring30 = 0, ackPending = 0
+  let expiring7 = 0, expiring15 = 0, expiring30 = 0
+  const ackPending = Number(ackPendingRow?.count ?? 0)
 
   for (const d of vigentesRows) {
     const eff = effectiveStatus("vigente" as SstDocumentStatus, d.expiresAt)
@@ -129,7 +169,6 @@ export async function getDashboardCounters(scope: WorksiteScope): Promise<Dashbo
       else if (days <= 15) expiring15 += 1
       else if (days <= 30) expiring30 += 1
     }
-    if (d.requiresAcknowledgment && d.currentVersionId && (eff === "vigente" || eff === "vencido")) ackPending += 1
   }
 
   return {

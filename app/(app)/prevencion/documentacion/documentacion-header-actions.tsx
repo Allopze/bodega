@@ -15,58 +15,12 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { createAndUploadSstDocumentAction, createSstDocumentFolderAction } from "./actions"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { createSstDocumentFolderAction } from "./actions"
+import { uploadFilesAsDocuments } from "./documentacion-upload"
 
 interface Props {
   currentFolderId: string | null
-}
-
-/**
- * Sube archivos (o una carpeta completa) creando un documento por archivo con
- * metadata por defecto — la categoría la resuelve el server action. En subida
- * de carpeta se recrea la estructura usando `webkitRelativePath`.
- */
-export async function uploadFilesAsDocuments(
-  files: File[],
-  currentFolderId: string | null,
-  onProgress: (done: number, failed: number) => void,
-): Promise<void> {
-  const folderCache = new Map<string, string | null>()
-  folderCache.set("", currentFolderId ?? null)
-
-  const ensureFolder = async (dirPath: string): Promise<string | null> => {
-    if (folderCache.has(dirPath)) return folderCache.get(dirPath) ?? null
-    const parts = dirPath.split("/")
-    const name = parts[parts.length - 1] ?? ""
-    const parentId = await ensureFolder(parts.slice(0, -1).join("/"))
-    const res = await createSstDocumentFolderAction({ name, parentId })
-    if (!res.ok || !res.data?.id) {
-      throw new Error(res.message ?? `No se pudo crear la carpeta ${name}.`)
-    }
-    const id = res.data.id
-    folderCache.set(dirPath, id)
-    return id
-  }
-
-  let done = 0
-  let failed = 0
-  for (const file of files) {
-    const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath ?? ""
-    const dirPath = rel.includes("/") ? rel.split("/").slice(0, -1).join("/") : ""
-    try {
-      const folderId = await ensureFolder(dirPath)
-      const fd = new FormData()
-      fd.set("file", file)
-      fd.set("title", file.name.replace(/\.[^.]+$/, ""))
-      if (folderId) fd.set("folderId", folderId)
-      const result = await createAndUploadSstDocumentAction(fd)
-      if (!result.ok) failed++
-    } catch {
-      failed++
-    }
-    done++
-    onProgress(done, failed)
-  }
 }
 
 export function DocumentacionHeaderActions({ currentFolderId }: Props) {
@@ -77,6 +31,7 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
 
   const [uploadOpen, setUploadOpen] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
+  const [dataClass, setDataClass] = React.useState<"" | "operational" | "personal" | "sensitive_preventive" | "client_secret">("")
   const [progress, setProgress] = React.useState<{ done: number; total: number; failed: number } | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const folderInputRef = React.useRef<HTMLInputElement>(null)
@@ -105,17 +60,17 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
   }
 
   const handleUpload = React.useCallback((files: File[]) => {
-    if (files.length === 0 || busy) return
+    if (files.length === 0 || busy || !dataClass) return
     setBusy(true)
     setProgress({ done: 0, total: files.length, failed: 0 })
     void (async () => {
-      await uploadFilesAsDocuments(files, currentFolderId, (done, failed) =>
+      await uploadFilesAsDocuments(files, currentFolderId, dataClass, (done, failed) =>
         setProgress({ done, total: files.length, failed }),
       )
       router.refresh()
       setBusy(false)
     })()
-  }, [busy, currentFolderId, router])
+  }, [busy, currentFolderId, dataClass, router])
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -158,7 +113,10 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
         onOpenChange={(open) => {
           if (busy) return
           setUploadOpen(open)
-          if (!open) setProgress(null)
+          if (!open) {
+            setProgress(null)
+            setDataClass("")
+          }
         }}
       >
         <DialogTrigger asChild>
@@ -175,6 +133,30 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
             </DialogDescription>
           </DialogHeader>
 
+          <div className="space-y-2">
+            <label htmlFor="document-data-class" className="text-sm font-medium text-(--color-text)">
+              Clasificación obligatoria
+            </label>
+            <Select
+              value={dataClass}
+              onValueChange={(value) => setDataClass(value as Exclude<typeof dataClass, "">)}
+              disabled={busy}
+            >
+              <SelectTrigger id="document-data-class" aria-label="Clasificación del documento">
+                <SelectValue placeholder="Selecciona antes de cargar" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="operational">Operacional</SelectItem>
+                <SelectItem value="personal">Personal</SelectItem>
+                <SelectItem value="sensitive_preventive">Sensible preventivo</SelectItem>
+                <SelectItem value="client_secret">Secreto de cliente</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-(--color-text-subtle)">
+              Fichas clínicas, diagnósticos y denuncias reservadas no se cargan en esta biblioteca.
+            </p>
+          </div>
+
           <div
             aria-label="Zona para subir documentos"
             className="rounded-lg border border-dashed border-(--color-border) bg-(--color-surface) px-4 py-8 text-center"
@@ -186,10 +168,10 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
           >
             <p className="text-sm text-(--color-text-subtle)">Arrastra archivos aquí o usa los botones.</p>
             <div className="mt-3 flex flex-wrap justify-center gap-2">
-              <Button type="button" size="sm" disabled={busy} onClick={() => fileInputRef.current?.click()}>
+              <Button type="button" size="sm" disabled={busy || !dataClass} onClick={() => fileInputRef.current?.click()}>
                 Subir archivos
               </Button>
-              <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => folderInputRef.current?.click()}>
+              <Button type="button" size="sm" variant="secondary" disabled={busy || !dataClass} onClick={() => folderInputRef.current?.click()}>
                 Subir carpeta
               </Button>
             </div>

@@ -1,3 +1,7 @@
 export * from "./pdtp"
 export * from "./library"
 export * from "./safety-indicators"
+export * from "./privacy"
+export * from "./capa"
+export * from "./incidents"
+export * from "./risk-legal"

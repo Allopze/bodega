@@ -1,0 +1,3 @@
+ALTER TABLE "ppa_status_history" ALTER COLUMN "actor_user_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "ppa_status_history" ADD COLUMN "actor_type" text DEFAULT 'user' NOT NULL;--> statement-breakpoint
+ALTER TABLE "ppa_status_history" ADD CONSTRAINT "ppa_status_history_actor_check" CHECK (("ppa_status_history"."actor_type" = 'system' AND "ppa_status_history"."actor_user_id" IS NULL) OR ("ppa_status_history"."actor_type" = 'user' AND "ppa_status_history"."actor_user_id" IS NOT NULL));
