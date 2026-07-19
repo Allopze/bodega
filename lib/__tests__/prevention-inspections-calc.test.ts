@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  assessEnrichmentCoverage,
   assessRunCompletion,
   assessRunReview,
   capaPriorityForCriticality,
@@ -187,5 +188,24 @@ describe("revisión independiente", () => {
       findings: [finding(), finding({ id: "f2", criticality: "critical", description: "Salida bloqueada" })],
     })
     expect(result.blockers).toHaveLength(2)
+  })
+})
+
+describe("calibración de la plantilla", () => {
+  it("marca como inerte una plantilla sin daño potencial declarado", () => {
+    const coverage = assessEnrichmentCoverage([
+      item({ danoPotencial: null }),
+      item({ itemId: "i2", danoPotencial: null }),
+    ])
+    expect(coverage).toMatchObject({ totalItems: 2, withDanoPotencial: 0, criticalityInert: true })
+  })
+
+  it("no la marca inerte si al menos un ítem declara daño potencial", () => {
+    const coverage = assessEnrichmentCoverage([item(), item({ itemId: "i2", danoPotencial: null })])
+    expect(coverage).toMatchObject({ withDanoPotencial: 1, criticalityInert: false })
+  })
+
+  it("una plantilla vacía no se reporta como inerte", () => {
+    expect(assessEnrichmentCoverage([]).criticalityInert).toBe(false)
   })
 })

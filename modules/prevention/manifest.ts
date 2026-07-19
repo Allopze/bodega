@@ -92,6 +92,9 @@ export const preventionModule = {
     "prevention:inspections:execute",
     "prevention:inspections:review",
     "prevention:inspections:export",
+    "prevention:cphs:view",
+    "prevention:cphs:manage",
+    "prevention:governance:review",
   ] as const,
 
   permissionMeta: {
@@ -183,6 +186,9 @@ export const preventionModule = {
     "prevention:inspections:execute": { id: "p-prev-insp-execute", description: "Ejecutar inspecciones en terreno, responder ítems y derivar hallazgos a CAPA" },
     "prevention:inspections:review": { id: "p-prev-insp-review", description: "Revisar y cerrar una inspección de forma independiente de quien la ejecutó" },
     "prevention:inspections:export": { id: "p-prev-insp-export", description: "Exportar inspecciones, respuestas, hallazgos y tendencias en XLSX" },
+    "prevention:cphs:view": { id: "p-prev-cphs-view", description: "Ver comités paritarios, integrantes, sesiones y acuerdos de la faena autorizada" },
+    "prevention:cphs:manage": { id: "p-prev-cphs-manage", description: "Constituir comités, designar integrantes, convocar sesiones y cerrar actas" },
+    "prevention:governance:review": { id: "p-prev-gov-review", description: "Registrar y cerrar la revisión por la dirección del SG-SST" },
   },
 
   nav: [
@@ -290,6 +296,12 @@ export const preventionModule = {
           href: "/prevencion/inspecciones",
           iconName: "MagnifyingGlass",
           permissions: ["prevention:inspections:view"],
+        },
+        {
+          label: "CPHS y gobernanza",
+          href: "/prevencion/cphs",
+          iconName: "UsersThree",
+          permissions: ["prevention:cphs:view"],
         },
         {
           label: "Documentación",
@@ -618,5 +630,21 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:inspections:execute" },
     { roleSlug: "administrador",        permission: "prevention:inspections:review" },
     { roleSlug: "administrador",        permission: "prevention:inspections:export" },
+    // CPHS. El comité es un órgano propio: sus integrantes lo ven y lo
+    // gestionan. La revisión por la dirección es de jefatura, no de terreno.
+    { roleSlug: "cphs",                 permission: "prevention:cphs:view" },
+    { roleSlug: "cphs",                 permission: "prevention:cphs:manage" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:cphs:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:cphs:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:cphs:view" },
+    { roleSlug: "prevencionista",       permission: "prevention:cphs:manage" },
+    { roleSlug: "jefe_terreno",         permission: "prevention:cphs:view" },
+    { roleSlug: "admin_contrato",       permission: "prevention:cphs:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:cphs:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:cphs:manage" },
+    { roleSlug: "jefa_chome",           permission: "prevention:governance:review" },
+    { roleSlug: "administrador",        permission: "prevention:cphs:view" },
+    { roleSlug: "administrador",        permission: "prevention:cphs:manage" },
+    { roleSlug: "administrador",        permission: "prevention:governance:review" },
   ],
 } as const satisfies ModuleManifest

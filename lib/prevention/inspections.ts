@@ -240,6 +240,36 @@ export function assessRunReview(args: {
   return { allowed: blockers.length === 0, blockers }
 }
 
+export interface EnrichmentCoverage {
+  totalItems: number
+  withDanoPotencial: number
+  withRequired: number
+  /** `true` cuando ningún ítem declara daño potencial. */
+  criticalityInert: boolean
+}
+
+/**
+ * Mide cuánto de la plantilla está realmente calibrado.
+ *
+ * El catálogo SST heredado no declara `danoPotencial` en ningún ítem, y ese
+ * campo es el que gobierna la criticidad del hallazgo aquí y la prioridad y el
+ * plazo de la acción correctiva en PDTP. Sin él todo cae al default medio,
+ * incluidos incumplimientos de consecuencia fatal.
+ *
+ * Esta función no inventa severidades —eso lo decide Prevención— pero deja el
+ * vacío a la vista en la bandeja y en la exportación, en vez de degradarse en
+ * silencio.
+ */
+export function assessEnrichmentCoverage(items: InspectionItemSpec[]): EnrichmentCoverage {
+  const withDanoPotencial = items.filter((item) => Boolean(item.danoPotencial)).length
+  return {
+    totalItems: items.length,
+    withDanoPotencial,
+    withRequired: items.filter((item) => item.required).length,
+    criticalityInert: items.length > 0 && withDanoPotencial === 0,
+  }
+}
+
 export function addDays(date: string, days: number): string {
   const value = new Date(`${date}T12:00:00.000Z`)
   value.setUTCDate(value.getUTCDate() + days)

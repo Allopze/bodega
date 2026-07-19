@@ -52,7 +52,7 @@ Cerrar los P0 no convierte todavía a Prevención en una suite EHSQ completa. Si
 - ~~capacitación, ODI, competencias y vencimientos~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.5. Falta carga productiva y aceptación;
 - vigilancia ocupacional e higiene industrial completa, más allá del resguardo de datos sensibles;
 - ~~contratistas, coordinación de empresa principal y acreditación~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.6. Falta carga productiva y aceptación;
-- CPHS, actas, acuerdos y gobernanza preventiva;
+- ~~CPHS, actas, acuerdos y gobernanza preventiva~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.11. Falta constitución y aceptación productivas;
 - ~~permisos de trabajo, AST/JSA, LOTO y tareas críticas~~ — **capacidad técnica implementada el 19 de julio de 2026**; ver sección 0.8. Falta carga productiva y aceptación;
 - ~~inspecciones especializadas~~ — **motor transversal implementado el 19 de julio de 2026**; ver sección 0.10. Gestión del cambio, emergencias y simulacros siguen pendientes;
 - ciclo preventivo de EPP conectado a riesgo, certificación y recambio;
@@ -157,6 +157,30 @@ Cuarta capacidad P1. Convierte los checklists latentes en un motor transversal, 
 
 ---
 
+## 0.11 Avance P1 — CPHS y gobernanza del SG-SST (19 de julio de 2026)
+
+Quinta capacidad P1. El rol `cphs` deja de ser una etiqueta y pasa a tener el órgano que representa.
+
+**Qué existe ahora:** comité por centro de trabajo con mandato vigente, integrantes con representación, asiento titular o suplente, cargo y fuero; sesiones ordinarias y extraordinarias con asistencia nominativa; actas que sólo cierran **con quórum real**, donde un suplente presente cubre a un titular ausente de su misma representación; acuerdos derivados a CAPA común; y revisión por la dirección (art. 22) que no cierra sin conclusiones y cuyos compromisos también van a CAPA.
+
+**Lo que el software sostiene y lo que no:** sostiene la paridad entre representaciones, la unicidad de presidencia y secretaría, la vigencia del mandato y la cadencia mensual. **No** decide cuántos integrantes corresponden por dotación: eso lo define Prevención según el centro de trabajo.
+
+**Evidencia:** migración `0083_closed_maverick.sql` sin drift, 17 pruebas puras de paridad, quórum y cadencia, y 15 escenarios en PostgreSQL real.
+
+---
+
+## 0.12 Hallazgo: la severidad automática de checklists está sin calibrar
+
+Al construir el motor de inspecciones se detectó que **ningún ítem del catálogo SST declara `danoPotencial`**, pese a que ese campo gobierna dos decisiones automáticas: la criticidad del hallazgo en el motor nuevo y, sobre todo, **la prioridad y el plazo de la acción correctiva en PDTP, que ya opera en producción**.
+
+Consecuencia: toda acción correctiva derivada de un checklist cae al default «media / +7 días», incluidos incumplimientos cuya consecuencia potencial sería fatal, para los que el propio código de PDTP prevé plazo inmediato.
+
+No se asignaron severidades desde el equipo de desarrollo: es una decisión de Prevención. Lo que sí se hizo fue dejar el vacío a la vista —la bandeja de plantillas y la exportación declaran cuáles tienen la criticidad sin calibrar— en vez de que el sistema siguiera degradándose en silencio.
+
+- [ ] **Prevención** — Declarar `danoPotencial` por ítem en el catálogo. Sin eso, la priorización automática de PDTP y del motor de inspecciones es nominal.
+
+---
+
 ### 0.7 Corrección de una afirmación de la auditoría anterior
 
 Al incorporar las suites PostgreSQL de Prevención al gate de CI —que hasta el 19 de julio de 2026 **no se ejecutaban en ningún gate**— apareció un fallo preexistente y real en la regresión de incidentes. La bitácora de P0-05 afirmaba que esa regresión pasaba y que demostraba la regla de actualización de MIPER; no era efectivo, porque la suite nunca corría automáticamente.
@@ -197,7 +221,7 @@ La brecha no consiste solamente en agregar pantallas. Falta el **núcleo prevent
 | Capacitación, ODI y competencias | 0/5 en la línea base; ver 0.5 | No existía historial formativo verificable. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |
 | Salud ocupacional e higiene industrial | 0/5 | No existe vigilancia de exposición ni seguimiento de protocolos. |
 | Contratistas y coordinación de faena | 0/5 en la línea base; ver 0.6 | No existía acreditación ni control documental coordinado. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |
-| CPHS y gobernanza preventiva | 0/5 | Hay un rol y actividades PDTP, pero no existe gestión del comité. |
+| CPHS y gobernanza preventiva | 0/5 en la línea base; ver 0.11 | Había un rol y actividades PDTP, sin gestión del comité. Capacidad técnica implementada el 19-07-2026; falta constitución y aceptación productivas. |
 | Permisos de trabajo y tareas críticas | 0/5 en la línea base; ver 0.8 | No existía flujo formal de permiso, AST/JSA, bloqueo o aislamiento. Capacidad técnica implementada el 19-07-2026; falta carga y aceptación productivas. |
 | Emergencias y simulacros | 0/5 | No existe plan operativo, recursos, ejercicios ni lecciones aprendidas. |
 | EPP preventivo | 1/5 | Existe entrega logística en Bodega, no ciclo preventivo por riesgo y certificación. |

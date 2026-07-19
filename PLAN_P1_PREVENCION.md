@@ -43,7 +43,7 @@ Derivado de la columna de prioridad de la matriz legal (auditoría §4.1) y de l
 | 2 | Contratistas y coordinación de faena | DS 76/2006, Ley 20.123 | P0/P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 3 | Permisos de trabajo, AST/JSA y control de energías | DS 44 art. 18; estándar de tarea crítica | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 4 | Inspecciones, observaciones y auditorías | DS 44 art. 22; ISO 45001 9.2 | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
-| 5 | CPHS y gobernanza del SG-SST | DS 44 arts. 17, 23 y ss. | P1 | Pendiente |
+| 5 | CPHS y gobernanza del SG-SST | DS 44 arts. 17, 23 y ss. | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 6 | Salud ocupacional e higiene industrial | DS 594; protocolos MINSAL/SUSESO | P1 | Pendiente |
 | 7 | EPP preventivo integrado con Bodega | DS 594 arts. 53-54; DS 18 | P1 | Pendiente |
 | 8 | Emergencias, contingencias y simulacros | DS 44 arts. 18 y 19 | P1 | Pendiente |
@@ -270,6 +270,30 @@ Migración `0082_fearless_mastermind.sql` desde schema, sin drift, aplicada. 22 
 
 ---
 
+## 5sexies. Capacidad 5 — CPHS y gobernanza del SG-SST
+
+Siete tablas aditivas: comité por centro de trabajo, integrantes, sesiones, asistencia nominativa, acuerdos, revisión por la dirección e historial.
+
+**Reglas verificables:**
+
+- Un solo comité activo por centro de trabajo, con mandato cuya fecha de término debe ser posterior a la de constitución.
+- **Paridad exigida:** igual número de titulares de la empresa y de las personas trabajadoras, más presidencia y secretaría únicas. El número total de integrantes depende de la dotación y lo define Prevención; el software sostiene la paridad y los cargos.
+- Un integrante debe pertenecer al mismo centro de trabajo del comité.
+- **Quórum real para cerrar el acta:** mayoría de titulares activos, donde un suplente presente cubre a un titular ausente **de su misma representación**. Sin quórum el cierre se rechaza, en vez de registrar una sesión que el DS 44 no reconocería.
+- Cada acuerdo se deriva a **CAPA común** (`sourceType = 'cphs'`) con responsable y plazo.
+- Un mandato vencido invalida al comité y bloquea convocar nuevas sesiones.
+- La **revisión por la dirección** (art. 22) no cierra sin conclusiones, y sus compromisos con plazo también van a CAPA.
+
+### Pendientes de la capacidad 5
+
+- [ ] **Operación** — Constituir los comités reales, registrar elecciones e integrantes con fuero, y definir cuántos titulares corresponden por dotación.
+- [ ] **Producción** — Aplicar la migración `0083` y programar `expireLapsedCommittees`.
+- [ ] **Producto (diferido)** — Formularios de constitución, designación, convocatoria y cierre de acta; documentos electorales; indicadores de funcionamiento del comité.
+
+Evidencia: migración `0083_closed_maverick.sql` sin drift, 17 pruebas puras de paridad, quórum y cadencia, y 15 escenarios en PostgreSQL real.
+
+---
+
 ## 6. Bitácora de ejecución
 
 ### 19 de julio de 2026 — Capacidad 1: capacitación, ODI y competencias
@@ -343,6 +367,16 @@ Migración `0082_fearless_mastermind.sql` desde schema, sin drift, aplicada. 22 
 - [x] 22 pruebas puras y 16 escenarios en PostgreSQL real; suite incorporada al gate de CI (ya son nueve).
 - [x] Regresión completa: 55 archivos, 380 pruebas y 9 suites PostgreSQL con 91 pruebas.
 - [ ] Pendiente productivo de la capacidad 4: ver sección 5quinquies.
+
+### 19 de julio de 2026 — Capacidad 5: CPHS y gobernanza
+
+- [x] Comité paritario con validación de paridad, cargos, mandato y cadencia mensual.
+- [x] Quórum implementado con suplencia por representación; sin quórum el acta no cierra.
+- [x] Acuerdos del comité y compromisos de la revisión por la dirección derivados a CAPA común (`sourceType = 'cphs'`).
+- [x] Migración `0083` desde schema, sin drift y aplicada; 17 pruebas puras y 15 escenarios PostgreSQL; suite incorporada al gate de CI (ya son diez).
+- [x] **Visibilidad de calibración agregada al motor de inspecciones**: se detectó que `danoPotencial` no se declara en ningún ítem del catálogo y que PDTP también deriva prioridad y plazo desde ese campo, por lo que toda acción correctiva de checklist en producción cae a "media / +7 días" sin importar la gravedad real. No se inventaron severidades —es juicio de Prevención— pero la bandeja y la exportación ahora declaran qué plantillas tienen la criticidad sin calibrar.
+- [x] Regresión completa: 56 archivos, 401 pruebas y 10 suites PostgreSQL con 106 pruebas.
+- [ ] Pendiente productivo de la capacidad 5: ver sección 5sexies.
 
 ---
 

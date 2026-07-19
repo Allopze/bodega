@@ -81,10 +81,12 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
     ),
     sheet(
       "Plantillas",
-      ["Código", "Versión", "Nombre", "Tipo", "Estado", "Origen", "Hash", "Marco legal", "Aprobada"],
+      ["Código", "Versión", "Nombre", "Tipo", "Estado", "Origen", "Hash", "Marco legal", "Aprobada", "Ítems", "Con daño potencial", "Criticidad calibrada"],
       templates.map((row) => [
         safeCell(row.code), safeCell(row.versionLabel), safeCell(row.name), label(INSPECTION_KIND_LABELS, row.kind),
         row.status, safeCell(row.sourceDefinitionCode), safeCell(row.contentHash), safeCell(row.legalFramework), row.approvedAt,
+        row.coverage.totalItems, row.coverage.withDanoPotencial,
+        row.coverage.criticalityInert ? "No: todo hallazgo cae a media" : "Sí",
       ]),
     ),
     sheet(

@@ -85,6 +85,9 @@ describe("prevention module RBAC", () => {
       "prevention:inspections:execute",
       "prevention:inspections:review",
       "prevention:inspections:export",
+      "prevention:cphs:view",
+      "prevention:cphs:manage",
+      "prevention:governance:review",
     ]
     for (const permission of expected) {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
@@ -105,7 +108,6 @@ describe("prevention module RBAC", () => {
       "prevention:epp_matrix:view",
       "prevention:emergency:view",
       "prevention:kpis:view",
-      "prevention:cphs:view",
       "prevention:docs:export",
       "prevention:pdtp:manage",
     ]
@@ -253,5 +255,19 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:inspections:approve")).toEqual([
       "administrador", "jefa_chome", "prevencionista",
     ])
+  })
+
+  it("keeps the committee as its own body and management review out of terreno", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    // El comité gestiona su propio órgano.
+    expect(rolesFor("prevention:cphs:manage")).toContain("cphs")
+    // La revisión por la dirección es de jefatura, no de terreno ni del comité.
+    expect(rolesFor("prevention:governance:review")).toEqual(["administrador", "jefa_chome"])
+    expect(rolesFor("prevention:governance:review")).not.toContain("cphs")
+    expect(rolesFor("prevention:governance:review")).not.toContain("jefe_terreno")
   })
 })

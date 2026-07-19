@@ -17,6 +17,7 @@ import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import {
   addDays,
+  assessEnrichmentCoverage,
   assessRunCompletion,
   assessRunReview,
   capaPriorityForCriticality,
@@ -582,8 +583,14 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
 
 export async function listInspectionTemplates(access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:view")
-  return db.select().from(preventionInspectionTemplates)
+  const templates = await db.select().from(preventionInspectionTemplates)
     .orderBy(asc(preventionInspectionTemplates.code), desc(preventionInspectionTemplates.createdAt))
+  // Se expone la calibración real de cada plantilla: una sin daño potencial
+  // declarado produce hallazgos siempre medios y no bloquea ningún cierre.
+  return templates.map((template) => ({
+    ...template,
+    coverage: assessEnrichmentCoverage(itemsFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)),
+  }))
 }
 
 export async function listInspectionPrograms(access: InspectionAccess) {
@@ -612,5 +619,6 @@ export function listImportableDefinitions() {
       version: definition.version,
       sections: definition.sections.length,
       items: definition.sections.reduce((total, section) => total + section.items.length, 0),
+      coverage: assessEnrichmentCoverage(itemsFromDefinition(definition)),
     }))
 }
