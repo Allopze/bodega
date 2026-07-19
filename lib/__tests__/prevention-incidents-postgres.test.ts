@@ -202,18 +202,85 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
       input: { incidentId, expectedVersion: 1, actualSeverity: "serious", potentialSeverity: "critical", isFatalOrSerious: true, operationsSuspended: true, evacuated: true, immediateMeasures: "Operación detenida, área aislada y atención de emergencia activada.", notificationResponsibleUserId: "incident-reporter", administratorName: "Mutual de prueba", reason: "Clasificación grave confirmada por triage" },
     })
     incident = await incidents.transitionPreventionIncident({ access: manager, input: { incidentId, expectedVersion: incident.version, toStatus: "immediate_measures", reason: "Medidas inmediatas verificadas en terreno" } })
+    // El aprendizaje del incidente no se cierra con un checkbox: declarar la
+    // MIPER actualizada exige un disparador resuelto por una versión publicada
+    // después del propio disparador. Aquí se prueba la cadena completa.
+    const investigationBase = {
+      incidentId, methodology: "Árbol de causas",
+      team: [{ userId: "incident-reporter", role: "Investigador" }], evidenceSummary: "Fotografías y entrevistas controladas",
+      immediateCauses: ["Contacto con zona de riesgo"], basicCauses: ["Control físico insuficiente"],
+      organizationalCauses: ["Verificación preventiva incompleta"], failedControls: ["Barrera de ingeniería"],
+      conclusions: "La barrera no evitó la exposición y requiere corrección verificable.", interviews: [{ witness: "cifrado" }],
+      miperUpdateRequired: true, procedureUpdateRequired: true, procedureUpdated: true,
+      trainingRequired: true, trainingCompleted: true,
+    }
+    const opened = await incidents.savePreventionIncidentInvestigation({
+      access: manager,
+      input: { ...investigationBase, expectedIncidentVersion: incident.version, miperUpdated: false, complete: false, reason: "Investigación abierta; se crea el disparador MIPER" },
+    })
+    const [miperTrigger] = await getDb().select().from(schema.preventionRiskReviewTriggers)
+      .where(eq(schema.preventionRiskReviewTriggers.idempotencyKey, `incident:miper:${incidentId}`))
+    expect(miperTrigger).toMatchObject({ triggerType: "work_accident", status: "pending", worksiteId: "ws-incidents" })
+
+    await expect(incidents.savePreventionIncidentInvestigation({
+      access: manager,
+      input: { ...investigationBase, expectedIncidentVersion: opened.incident.version, miperUpdated: true, complete: false, reason: "Intento de declarar la MIPER actualizada sin versión publicada" },
+    })).rejects.toThrow(/disparador exige una nueva versión publicada/)
+
+    await expect(incidents.savePreventionIncidentInvestigation({
+      access: manager,
+      input: { ...investigationBase, expectedIncidentVersion: opened.incident.version, miperUpdated: false, complete: true, reason: "Intento de completar la investigación con el disparador MIPER abierto" },
+    })).rejects.toThrow(/antes de cerrar la investigación/)
+
+    // Publicación real de la MIPER que resuelve el disparador, con segregación
+    // autor / revisor / aprobador.
+    const risk = await import("@/lib/services/prevention-risk-legal")
+    const riskAccess = (userId: string, permissions: string[]) => ({ userId, scope: { mode: "some" as const, ids: ["ws-incidents"] }, permissions })
+    const riskAuthor = riskAccess("incident-reporter", ["prevention:risk:view", "prevention:risk:edit"])
+    const riskReviewer = riskAccess("incident-verifier", ["prevention:risk:review"])
+    const riskApprover = riskAccess("incident-risk-approver", ["prevention:risk:approve", "prevention:risk:publish"])
+    const methodology = await risk.ensureIspRiskMethodology(riskAuthor)
+    const matrix = await risk.createRiskMatrixDraft({
+      worksiteId: "ws-incidents", title: "MIPER revisada por incidente grave", methodologyId: methodology.id,
+      revisionReason: "Revisión obligatoria por accidente grave con barrera de ingeniería fallida.",
+      participationSummary: "Revisión con línea de mando, CPHS y operadores involucrados.",
+      consultationEvidenceReference: "acta-participacion-incidente-001",
+    }, riskAuthor)
+    await risk.addRiskEntry({
+      matrixId: matrix.id,
+      process: { code: "PROC-INC", name: "Clasificación de residuos" },
+      task: { code: "TASK-INC", name: "Operar línea de clasificación", isRoutine: true },
+      position: { code: "POS-INC", name: "Operador de línea" },
+      hazardCode: "INC-01", hazard: "Contacto con zona de riesgo por barrera insuficiente",
+      riskFactor: "Operación industrial con equipos en movimiento",
+      expectedEventOrDamage: "Lesión grave con tiempo perdido",
+      exposedPeopleDescription: "Operadores de la línea de clasificación",
+      exposedPeopleCount: 4,
+      genderConsiderations: "Evaluar diferencias de exposición y ajuste de EPP.",
+      sensitiveWorkerConsiderations: "Validar restricciones sin exponer diagnósticos.",
+      inherentDimensions: { probability: 4, consequence: 5 }, inherentScore: 20, inherentLevel: "Alto",
+      residualDimensions: { probability: 2, consequence: 5 }, residualScore: 10, residualLevel: "Medio",
+      isCritical: true, responsibleSnapshot: "Jefatura de operaciones",
+      controls: [{ description: "Barrera de ingeniería certificada con verificación periódica", hierarchy: "engineering", isExisting: false, isCritical: true, performanceStandard: "Resistencia certificada y anclaje verificado", verificationFrequency: "Mensual", responsibleSnapshot: "Jefatura de operaciones", status: "implemented" }],
+    }, riskAuthor)
+    const submitted = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Revisión post incidente enviada al circuito formal." }, riskAuthor)
+    const reviewed = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Causas y controles del incidente contrastados en terreno." }, riskReviewer)
+    const approvedMatrix = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación segregada de la revisión post incidente." }, riskApprover)
+    await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: approvedMatrix.version, toStatus: "published", reason: "Publicación de la MIPER revisada por el incidente.", effectiveFrom: "2026-07-18" }, riskApprover)
+    const resolvedTrigger = await risk.resolveRiskReviewTrigger({
+      triggerId: miperTrigger!.id, matrixId: matrix.id,
+      resolution: "MIPER republicada incorporando la barrera certificada como control crítico.",
+    }, riskReviewer)
+    expect(resolvedTrigger.status).toBe("completed")
+
     const investigation = await incidents.savePreventionIncidentInvestigation({
       access: manager,
-      input: {
-        incidentId, expectedIncidentVersion: incident.version, methodology: "Árbol de causas",
-        team: [{ userId: "incident-reporter", role: "Investigador" }], evidenceSummary: "Fotografías y entrevistas controladas",
-        immediateCauses: ["Contacto con zona de riesgo"], basicCauses: ["Control físico insuficiente"],
-        organizationalCauses: ["Verificación preventiva incompleta"], failedControls: ["Barrera de ingeniería"],
-        conclusions: "La barrera no evitó la exposición y requiere corrección verificable.", interviews: [{ witness: "cifrado" }],
-        miperUpdateRequired: true, miperUpdated: true, procedureUpdateRequired: true, procedureUpdated: true,
-        trainingRequired: true, trainingCompleted: true, complete: true, reason: "Investigación concluida con controles actualizados",
-      },
+      input: { ...investigationBase, expectedIncidentVersion: opened.incident.version, miperUpdated: true, complete: true, reason: "Investigación concluida con controles actualizados" },
     })
+    const [savedInvestigation] = await getDb().select().from(schema.preventionIncidentInvestigations)
+      .where(eq(schema.preventionIncidentInvestigations.id, investigation.investigationId))
+    expect(savedInvestigation).toMatchObject({ status: "completed", miperUpdateRequired: true })
+    expect(savedInvestigation!.miperUpdatedAt).toBeTruthy()
     incident = await incidents.transitionPreventionIncident({ access: manager, input: { incidentId, expectedVersion: investigation.incident.version, toStatus: "pending_capa", reason: "Investigación completa; se abre control CAPA" } })
     const createdCapa = await incidents.createPreventionIncidentCapa({
       access: manager,
@@ -342,6 +409,7 @@ async function seedFixture(db: ReturnType<typeof drizzle<typeof schema>>) {
     { id: "incident-reporter", name: "Incident Reporter", email: "incident-reporter@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "incident-verifier", name: "Incident Verifier", email: "incident-verifier@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "incident-outsider", name: "Incident Outsider", email: "incident-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "incident-risk-approver", name: "Incident Risk Approver", email: "incident-risk-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
   ])
 }
 
