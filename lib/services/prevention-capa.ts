@@ -43,6 +43,7 @@ const capaCreateSchema = z.object({
   priority: z.enum(["low", "medium", "high", "critical"]).default("medium"),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha objetivo inválida"),
   evidenceRequired: z.boolean().optional(),
+  requiresImmediateStop: z.boolean().optional(),
   reconciliationStatus: z.enum(["reconciled", "needs_assignment", "needs_evidence", "needs_review"]).optional(),
   legacySnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
 })
@@ -218,6 +219,7 @@ export async function createCapaActionWithClient(
     targetDate: data.targetDate,
     status: "pending",
     evidenceRequired: data.evidenceRequired ?? true,
+    requiresImmediateStop: data.requiresImmediateStop ?? false,
     createdByUserId: actorUserId,
     reconciliationStatus,
     legacySnapshot: data.legacySnapshot ?? null,

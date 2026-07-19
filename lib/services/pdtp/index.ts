@@ -23,6 +23,7 @@ export {
   pdtpActivityChecklistId, pdtpExecutionChecklistId, pdtpChecklistResponseId,
   pdtpActionPlanItemId, pdtpActionPlanFollowupId,
   plazoFromPrioridad, plazoFromDañoPotencial, isActionVencida,
+  requiereDetencionInmediata, PDTP_DANO_POTENCIAL_DETENCION,
 } from "./checklist-domain"
 export type { PdtpDanoPotencial } from "./checklist-domain"
 

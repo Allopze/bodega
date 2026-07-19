@@ -485,3 +485,31 @@ describe("pdtp conteos por ejecución (badges de la hoja)", () => {
     expect((await countNoCumpleByExecution(["exec-inexistente"])).get("exec-inexistente")).toBeUndefined()
   })
 })
+
+describe("detención inmediata frente al plazo administrativo", () => {
+  it("un daño fatal exige detener la tarea", async () => {
+    const { requiereDetencionInmediata } = await import("@/lib/services/pdtp/checklist-domain")
+    expect(requiereDetencionInmediata("fatal")).toBe(true)
+    for (const dano of ["grave", "moderado", "leve"] as const) {
+      expect(requiereDetencionInmediata(dano)).toBe(false)
+    }
+    expect(requiereDetencionInmediata(null)).toBe(false)
+  })
+
+  it("un daño fatal ya no produce un plazo de hoy", async () => {
+    const { plazoFromDañoPotencial } = await import("@/lib/services/pdtp/checklist-domain")
+    const from = new Date("2026-07-19T12:00:00.000Z")
+    const hoy = from.toISOString().slice(0, 10)
+    // Antes fatal devolvía hoy, lo que creaba la acción ya vencida.
+    expect(plazoFromDañoPotencial("fatal", from)).not.toBe(hoy)
+    // Comparte el plazo más corto con grave; la urgencia va por la bandera.
+    expect(plazoFromDañoPotencial("fatal", from)).toBe(plazoFromDañoPotencial("grave", from))
+  })
+
+  it("el plazo se alarga a medida que baja el daño potencial", async () => {
+    const { plazoFromDañoPotencial } = await import("@/lib/services/pdtp/checklist-domain")
+    const from = new Date("2026-07-19T12:00:00.000Z")
+    const plazos = (["fatal", "grave", "moderado", "leve"] as const).map((d) => plazoFromDañoPotencial(d, from))
+    expect(plazos).toEqual([...plazos].sort())
+  })
+})

@@ -362,7 +362,7 @@ Prevención devolvió la planilla con **182 de 182 ítems calibrados**, sin valo
 
 Es una decisión legítima —en operación con equipos pesados muchos incumplimientos sí pueden matar— pero significa que la bandeja CAPA mostrará acciones vencidas el mismo día en que nacen.
 
-- [ ] **Prevención / Operaciones** — Decidir si conviene separar dos cosas que hoy comparten un solo campo: la **detención inmediata de la tarea** en terreno y el **plazo administrativo de cierre** de la acción correctiva. Si se separan, el importador y la escala no cambian; cambia sólo el mapeo de plazo.
+- [x] ~~Separar detención inmediata y plazo administrativo~~ — **aprobado y ejecutado el 19-07-2026**. `prevention_capa_actions.requires_immediate_stop` (migración `0085`) transporta la respuesta de terreno; `fatal` pasa a compartir el plazo de 48 h con `grave`. La calibración, la escala y el importador no cambiaron. La bandeja CAPA lo muestra como métrica accionable y distintivo por acción.
 
 ---
 
@@ -478,7 +478,16 @@ Es una decisión legítima —en operación con equipos pesados muchos incumplim
 - [x] Resuelto que los `id` colisionan entre archivos y que el archivo compartido repite cada `id`; el importador aplica a todas las apariciones tras rechazar divergencias.
 - [x] Catálogo cargado y verificado contra la planilla: distribución idéntica, cero sin calibrar.
 - [x] Typecheck, ESLint y regresión (64 archivos, 592 pruebas) verdes.
-- [ ] Queda por decidir si `fatal` debe seguir implicando plazo el mismo día con el 43 % del catálogo en esa categoría.
+- [x] Resuelto: `fatal` ya no implica plazo el mismo día. Ver la entrada siguiente.
+
+### 19 de julio de 2026 — Detención inmediata separada del plazo administrativo
+
+- [x] Campo `requires_immediate_stop` agregado a CAPA (migración `0085`, aditivo con default `false`). Vive en el motor común porque aplica igual a hallazgos de PDTP y del motor de inspecciones.
+- [x] `plazoFromDañoPotencial` deja de devolver hoy para `fatal`: comparte el plazo más corto con `grave`. Se agregó `requiereDetencionInmediata` como concepto explícito, reexportado desde el índice del módulo PDTP.
+- [x] `capaPriorityForCriticality` devuelve la bandera para criticidad crítica; el generador de plan de acción de PDTP la propaga al crear la CAPA.
+- [x] La bandeja CAPA muestra «Exigen detener la tarea» como métrica accionable y un distintivo junto al hallazgo: una bandera invisible en terreno no cambia conducta.
+- [x] Pruebas nuevas en ambos motores: que sólo `fatal`/crítico exigen detención, que el plazo de `fatal` ya no es hoy y que los plazos crecen al bajar la severidad. Se corrigió una aserción previa que fijaba la forma del objeto de prioridad.
+- [x] Regresión completa: 72 archivos, 651 pruebas y 11 suites PostgreSQL con 119 pruebas. Typecheck, ESLint y build verdes.
 
 ---
 

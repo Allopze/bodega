@@ -185,7 +185,7 @@ No se asignaron severidades desde el equipo de desarrollo: es una decisión de P
 
 **Consecuencia operacional que debe conocerse antes de operar:** `fatal` genera acción correctiva con plazo el mismo día. Con esta calibración, un incumplimiento aislado produce una acción de plazo inmediato en el 64 % de los ítems de contenedores, ampliroll y maquinaria pesada; 48 % en carros; 44 % en taller; 33 % en equipos móviles. Es una decisión legítima de Prevención —en operación con equipos pesados muchos incumplimientos sí pueden matar— pero implica que la bandeja CAPA mostrará acciones vencidas el mismo día en que se crean.
 
-- [ ] **Prevención / Operaciones** — Decidir si el plazo de `fatal` sigue siendo «mismo día» con esta proporción de ítems, o si corresponde distinguir entre detener la tarea de inmediato (que es lo que ocurre en terreno) y el plazo administrativo de cierre de la acción. Hoy ambos comparten el mismo campo.
+- [x] ~~Decidir si el plazo de `fatal` sigue siendo «mismo día»~~ — **resuelto el 19-07-2026 separando los dos conceptos**. Ver sección 0.14.
 
 ---
 
@@ -205,6 +205,23 @@ Superar el **nivel de acción** ya obliga a vigilancia, sin esperar a superar el
 **Evidencia:** migración `0084_confused_switch.sql` sin drift, 19 pruebas puras y 13 escenarios en PostgreSQL real.
 
 **Lo que todavía falta:** cargar el inventario real de agentes con sus límites, constituir los GES por proceso, y modelar los protocolos específicos (CEAL-SM, TMERT, PREXOR) con sus hitos propios —hoy se representan como programas con periodicidad—.
+
+---
+
+## 0.14 Detención inmediata separada del plazo administrativo (19 de julio de 2026)
+
+Al cargar la calibración quedó a la vista que un solo campo cargaba dos cosas distintas: **detener la tarea en terreno** y **cerrar la acción correctiva con evidencia**. Expresar la primera como un plazo de «hoy» hacía que, con el 43 % del catálogo en `fatal`, la bandeja CAPA mostrara acciones vencidas el mismo día en que nacían.
+
+**Qué cambió:**
+
+- `prevention_capa_actions` recibe `requires_immediate_stop`, aditivo y con default `false`. Vive en CAPA porque es el motor común: aplica igual a un hallazgo de checklist PDTP y a uno del motor de inspecciones.
+- En PDTP, `plazoFromDañoPotencial` deja de devolver la fecha de hoy para `fatal`. Ahora comparte el plazo más corto con `grave` (48 h) y la urgencia viaja por la bandera. Se agregó `requiereDetencionInmediata`, que es el concepto explícito.
+- En el motor de inspecciones, `capaPriorityForCriticality` devuelve además `requiresImmediateStop` para criticidad crítica.
+- La bandeja CAPA gana una métrica accionable —«Exigen detener la tarea»— y un distintivo junto al hallazgo. Una bandera que no se ve en terreno no cambia ninguna conducta.
+
+**Qué NO cambió:** la calibración de Prevención, la escala de cuatro valores, la planilla y el importador. El único cambio es cómo se traduce `fatal` a plazo.
+
+**Por qué importa:** el sistema ahora dice lo que realmente corresponde hacer. Antes decía «cierra esta acción hoy», que era incumplible y por lo tanto ruido. Ahora dice «detén la tarea ahora y cierra la acción en 48 horas», que es exigible y verificable.
 
 ---
 

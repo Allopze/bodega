@@ -27,6 +27,7 @@ import {
   isActionVencida,
   pdtpActionPlanItemId,
   plazoFromDañoPotencial,
+  requiereDetencionInmediata,
   plazoFromPrioridad,
 } from "./checklist-domain"
 import type { ChecklistDefinition } from "@/lib/sst/types"
@@ -192,6 +193,8 @@ export async function generateActionPlanFromChecklist(
     const danoPotencial = defItem?.danoPotencial
     const prioridad = danoPotencial ? PDTP_DANO_POTENCIAL_A_PRIORIDAD[danoPotencial] : "media"
     const plazo = danoPotencial ? plazoFromDañoPotencial(danoPotencial, refDate) : plazoFromPrioridad("media", refDate)
+    // La urgencia de terreno viaja como bandera, no como plazo imposible.
+    const detencionInmediata = requiereDetencionInmediata(danoPotencial)
 
     const id = pdtpActionPlanItemId(executionId, nextN)
     await db.transaction(async (tx) => {
@@ -205,6 +208,7 @@ export async function generateActionPlanFromChecklist(
         responsibleSnapshot: responsableRole,
         responsibleRole: responsableRole,
         priority: toCapaPriority(prioridad),
+        requiresImmediateStop: detencionInmediata,
         targetDate: plazo,
         evidenceRequired: true,
         reconciliationStatus: "needs_assignment",

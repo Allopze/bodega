@@ -42,8 +42,8 @@ describe("criticidad derivada del daño potencial", () => {
   })
 
   it("la prioridad y el plazo de la CAPA siguen a la criticidad", () => {
-    expect(capaPriorityForCriticality("critical")).toEqual({ priority: "critical", dueInDays: 3 })
-    expect(capaPriorityForCriticality("low")).toEqual({ priority: "low", dueInDays: 30 })
+    expect(capaPriorityForCriticality("critical")).toEqual({ priority: "critical", dueInDays: 3, requiresImmediateStop: true })
+    expect(capaPriorityForCriticality("low")).toEqual({ priority: "low", dueInDays: 30, requiresImmediateStop: false })
   })
 })
 
@@ -207,5 +207,25 @@ describe("calibración de la plantilla", () => {
 
   it("una plantilla vacía no se reporta como inerte", () => {
     expect(assessEnrichmentCoverage([]).criticalityInert).toBe(false)
+  })
+})
+
+describe("detención inmediata separada del plazo administrativo", () => {
+  it("un hallazgo crítico exige detener la tarea, con plazo de cierre alcanzable", () => {
+    const result = capaPriorityForCriticality("critical")
+    expect(result).toMatchObject({ priority: "critical", requiresImmediateStop: true })
+    // La urgencia viaja como bandera; el plazo sigue siendo cumplible.
+    expect(result.dueInDays).toBeGreaterThan(0)
+  })
+
+  it("ninguna otra criticidad exige detención", () => {
+    for (const criticality of ["high", "medium", "low"]) {
+      expect(capaPriorityForCriticality(criticality).requiresImmediateStop).toBe(false)
+    }
+  })
+
+  it("el plazo crece a medida que baja la criticidad", () => {
+    const days = ["critical", "high", "medium", "low"].map((c) => capaPriorityForCriticality(c).dueInDays)
+    expect(days).toEqual([...days].sort((a, b) => a - b))
   })
 })

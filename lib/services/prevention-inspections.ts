@@ -465,7 +465,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     requireAccess(access, "prevention:inspections:execute", row.run.worksiteId)
     if (row.finding.capaActionId) throw new Error("El hallazgo ya tiene una acción CAPA enlazada.")
 
-    const { priority, dueInDays } = capaPriorityForCriticality(row.finding.criticality)
+    const { priority, dueInDays, requiresImmediateStop } = capaPriorityForCriticality(row.finding.criticality)
     const capa = await createCapaActionWithClient(tx, {
       sourceType: "inspection",
       sourceId: row.run.id,
@@ -477,6 +477,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
       priority,
       targetDate: addDays(todayInChile(), dueInDays),
       evidenceRequired: true,
+      requiresImmediateStop,
     }, access.userId)
 
     const now = nowIso()

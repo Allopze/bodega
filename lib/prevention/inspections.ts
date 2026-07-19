@@ -86,13 +86,24 @@ export function criticalityFromDanoPotencial(dano: string | null | undefined): "
   }
 }
 
-/** Prioridad y plazo de la CAPA derivada, alineados con la criticidad. */
-export function capaPriorityForCriticality(criticality: string): { priority: "low" | "medium" | "high" | "critical"; dueInDays: number } {
+/**
+ * Prioridad, plazo y respuesta de terreno de la CAPA derivada.
+ *
+ * `requiresImmediateStop` separa dos cosas que no son la misma: detener la
+ * tarea en el acto —respuesta inmediata por definición— y el plazo
+ * administrativo para cerrar la acción con evidencia. Expresar la urgencia
+ * como un plazo de cero días sólo produce acciones vencidas al nacer.
+ */
+export function capaPriorityForCriticality(criticality: string): {
+  priority: "low" | "medium" | "high" | "critical"
+  dueInDays: number
+  requiresImmediateStop: boolean
+} {
   switch (criticality) {
-    case "critical": return { priority: "critical", dueInDays: 3 }
-    case "high": return { priority: "high", dueInDays: 7 }
-    case "low": return { priority: "low", dueInDays: 30 }
-    default: return { priority: "medium", dueInDays: 15 }
+    case "critical": return { priority: "critical", dueInDays: 3, requiresImmediateStop: true }
+    case "high": return { priority: "high", dueInDays: 7, requiresImmediateStop: false }
+    case "low": return { priority: "low", dueInDays: 30, requiresImmediateStop: false }
+    default: return { priority: "medium", dueInDays: 15, requiresImmediateStop: false }
   }
 }
 

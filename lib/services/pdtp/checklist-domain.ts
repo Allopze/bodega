@@ -27,7 +27,8 @@ export const PDTP_ESTADOS_CERRADOS = new Set(["completado", "verificado", "cance
  *   leve     → baja   (15 días)  — sin lesión o lesión menor sin tiempo perdido
  *   moderado → media  (7 días)   — posible lesión con tiempo perdido temporal
  *   grave    → alta   (48 h)     — lesión grave con incapacidad parcial o total
- *   fatal    → alta   (inmediato)— riesgo de muerte o incapacidad permanente
+ *   fatal    → alta   (48 h)     — riesgo de muerte o incapacidad permanente,
+ *                                  y además exige detención inmediata de la tarea
  *
  * PLAN_INTEGRACION §5.4: al crear un hallazgo manual, el daño potencial deriva
  * la prioridad (y el plazo vía `plazoFromDañoPotencial`), evitando que el
@@ -44,9 +45,27 @@ export const PDTP_DANO_POTENCIAL_A_PRIORIDAD: Record<PdtpDanoPotencial, "alta" |
   fatal: "alta",
 }
 
-/** Plazo (ISO YYYY-MM-DD) desde daño potencial. Fatal = hoy (inmediato). */
+/**
+ * Daños potenciales que exigen detener la tarea en el acto.
+ *
+ * La detención es una respuesta de terreno e inmediata por definición; el
+ * plazo de la acción correctiva es administrativo y mide cuándo queda cerrada
+ * con evidencia. Antes ambas cosas se expresaban con un plazo "hoy", lo que
+ * con un catálogo donde el 43 % de los ítems es fatal sólo producía acciones
+ * vencidas el mismo día en que nacían.
+ */
+export const PDTP_DANO_POTENCIAL_DETENCION: ReadonlySet<PdtpDanoPotencial> = new Set(["fatal"])
+
+export function requiereDetencionInmediata(daño: PdtpDanoPotencial | null | undefined): boolean {
+  return daño ? PDTP_DANO_POTENCIAL_DETENCION.has(daño) : false
+}
+
+/**
+ * Plazo administrativo (ISO YYYY-MM-DD) para cerrar la acción con evidencia.
+ * `fatal` comparte el plazo más corto con `grave`; su urgencia se expresa por
+ * la detención inmediata, no por un plazo imposible de cumplir.
+ */
 export function plazoFromDañoPotencial(daño: PdtpDanoPotencial, fromDate = new Date()): string {
-  if (daño === "fatal") return fromDate.toISOString().slice(0, 10)
   return plazoFromPrioridad(PDTP_DANO_POTENCIAL_A_PRIORIDAD[daño], fromDate)
 }
 

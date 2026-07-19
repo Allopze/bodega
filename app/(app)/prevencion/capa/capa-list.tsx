@@ -26,6 +26,7 @@ interface CapaListItem {
   targetDate: string
   status: string
   reconciliationStatus: string
+  requiresImmediateStop: boolean
   createdAt: string
 }
 
@@ -35,7 +36,7 @@ interface Props {
   counts: { open: number; overdue: number; pendingVerification: number; unreconciled: number }
 }
 
-type QuickFilter = "all" | "open" | "overdue" | "pending_verification" | "unreconciled"
+type QuickFilter = "all" | "open" | "overdue" | "pending_verification" | "unreconciled" | "immediate_stop"
 
 const PRIORITY_LABEL: Record<string, string> = {
   low: "Baja", medium: "Media", high: "Alta", critical: "Crítica",
@@ -58,6 +59,7 @@ export function CapaList({ actions, worksites, counts }: Props) {
     if (quickFilter === "open" && ["closed", "cancelled"].includes(item.status)) return false
     if (quickFilter === "overdue" && (["verified", "closed", "cancelled"].includes(item.status) || item.targetDate >= today)) return false
     if (quickFilter === "pending_verification" && item.status !== "pending_verification") return false
+    if (quickFilter === "immediate_stop" && !item.requiresImmediateStop) return false
     if (quickFilter === "unreconciled" && item.reconciliationStatus === "reconciled") return false
     if (!query) return true
     return [item.code, item.finding, item.actionDescription, item.responsibleSnapshot, worksiteName.get(item.worksiteId)]
@@ -65,6 +67,7 @@ export function CapaList({ actions, worksites, counts }: Props) {
   })
 
   const metrics: Array<{ key: QuickFilter; label: string; value: number; detail: string }> = [
+    { key: "immediate_stop", label: "Exigen detener la tarea", value: actions.filter((item) => item.requiresImmediateStop && !["closed", "cancelled"].includes(item.status)).length, detail: "Respuesta inmediata en terreno" },
     { key: "open", label: "Abiertas", value: counts.open, detail: "Requieren gestión" },
     { key: "overdue", label: "Vencidas", value: counts.overdue, detail: "Plazo incumplido" },
     { key: "pending_verification", label: "Por verificar", value: counts.pendingVerification, detail: "Esperan inspección" },
@@ -157,6 +160,9 @@ export function CapaList({ actions, worksites, counts }: Props) {
                       <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{CAPA_SOURCE_LABELS[item.sourceType] ?? item.sourceType}</p>
                     </TableCell>
                     <TableCell className="max-w-md">
+                      {item.requiresImmediateStop && (
+                        <Badge variant="danger" className="mb-1">Detener la tarea</Badge>
+                      )}
                       <p className="line-clamp-1 text-sm font-medium">{item.finding}</p>
                       <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-subtle)]">{item.actionDescription}</p>
                     </TableCell>

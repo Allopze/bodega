@@ -22,6 +22,11 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
   targetDate:            text("target_date").notNull(),
   status:                text("status").notNull().default("pending"),
   evidenceRequired:      boolean("evidence_required").notNull().default(true),
+  // Separa la respuesta de terreno del plazo administrativo. Un hallazgo de
+  // consecuencia potencialmente fatal exige detener la tarea de inmediato,
+  // pero cerrar la acción con evidencia toma otro tiempo. Antes ambas cosas
+  // se expresaban con un plazo "hoy", que sólo producía acciones vencidas.
+  requiresImmediateStop: boolean("requires_immediate_stop").notNull().default(false),
   createdByUserId:       text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   startedByUserId:       text("started_by_user_id").references(() => users.id, { onDelete: "restrict" }),
   startedAt:             timestamp("started_at", { withTimezone: true, mode: "string" }),
