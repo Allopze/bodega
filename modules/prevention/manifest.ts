@@ -99,6 +99,8 @@ export const preventionModule = {
     "prevention:change:manage",
     "prevention:change:evaluate",
     "prevention:change:approve",
+    "prevention:epp:view",
+    "prevention:epp:manage",
   ] as const,
 
   permissionMeta: {
@@ -197,6 +199,8 @@ export const preventionModule = {
     "prevention:change:manage": { id: "p-prev-chg-manage", description: "Crear solicitudes de gestión del cambio" },
     "prevention:change:evaluate": { id: "p-prev-chg-eval", description: "Evaluar el impacto del cambio por dimensión (riesgo, permiso, capacitación, documento, MIPER, emergencia)" },
     "prevention:change:approve": { id: "p-prev-chg-approve", description: "Aprobar o rechazar el cambio de forma segregada de quien lo solicitó" },
+    "prevention:epp:view": { id: "p-prev-epp-view", description: "Ver requisitos de EPP obligatorio y brechas de cobertura" },
+    "prevention:epp:manage": { id: "p-prev-epp-manage", description: "Crear requisitos de EPP obligatorio y escalar brechas bloqueantes a CAPA" },
   },
 
   nav: [
@@ -322,6 +326,12 @@ export const preventionModule = {
           href: "/prevencion/gestion-cambio",
           iconName: "GearSix",
           permissions: ["prevention:change:view"],
+        },
+        {
+          label: "EPP preventivo",
+          href: "/prevencion/epp-preventivo",
+          iconName: "HardHat",
+          permissions: ["prevention:epp:view"],
         },
         {
           label: "Documentación",
@@ -693,5 +703,18 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:change:manage" },
     { roleSlug: "administrador",        permission: "prevention:change:evaluate" },
     { roleSlug: "administrador",        permission: "prevention:change:approve" },
+    // EPP preventivo. Dashboard de cobertura: view es de lectura amplia,
+    // manage crea requisitos y escala brechas bloqueantes a CAPA.
+    { roleSlug: "jefe_terreno",         permission: "prevention:epp:view" },
+    { roleSlug: "admin_contrato",       permission: "prevention:epp:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:epp:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:epp:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:epp:view" },
+    { roleSlug: "prevencionista",       permission: "prevention:epp:manage" },
+    { roleSlug: "cphs",                 permission: "prevention:epp:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:epp:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:epp:manage" },
+    { roleSlug: "administrador",        permission: "prevention:epp:view" },
+    { roleSlug: "administrador",        permission: "prevention:epp:manage" },
   ],
 } as const satisfies ModuleManifest

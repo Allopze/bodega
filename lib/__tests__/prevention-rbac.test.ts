@@ -92,6 +92,8 @@ describe("prevention module RBAC", () => {
       "prevention:change:manage",
       "prevention:change:evaluate",
       "prevention:change:approve",
+      "prevention:epp:view",
+      "prevention:epp:manage",
     ]
     for (const permission of expected) {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)

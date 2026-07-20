@@ -281,6 +281,28 @@ Con esto se cierran técnicamente las cinco capacidades P1 previstas en la Fase 
 
 ---
 
+## 0.17 Avance P1 — EPP preventivo integrado con Bodega (20 de julio de 2026)
+
+Décima capacidad P1 y última viable de esta ronda. Antes de construirla se investigó la capacidad 10 (sustancias/residuos peligrosos y transporte, §7.12): **no existe en ningún lugar del código** perfil de residuo, HDS, clasificación de peligrosidad, número ONU, manifiesto ni orden de retiro. `trazabilidad`/`recepción`/`entregas` modelan procurement y bodega **interna** de Chome (compras, stock, flota propia) —confirmado por el propio `README.md`—, no manifiestos de residuos de clientes. Construirla ahora habría significado que Prevención inventara las entidades operacionales núcleo del dominio, exactamente lo que esta auditoría pide no hacer (§9.4, principio de fuente única). Se pivotó a **EPP preventivo** (DS 594 arts. 53-54; DS 18; §7.10), que sí tiene sustrato operacional real para apoyarse.
+
+**El diseño es deliberadamente un mirror de Capacitación, no una capacidad nueva desde cero.** Es el mismo problema que `prevention_competency_requirements`/`computeCompetencyGaps`/`escalateBlockingGapsToCapa` ya resuelven: persona × requisito por cargo/faena/tarea → brecha → CAPA. Sólo dos tablas aditivas (requisitos e historial); todo lo demás se reutiliza sin duplicar:
+
+- **Catálogo técnico** (certificación, vida útil, pictograma) — ya existe en `epp_product_families`, del feature de catálogo EPP concurrente.
+- **Entrega real con acuse** — ya existe en `deliveries`/`delivery_items`: destino nominal a trabajador, firma, y **devolución con motivo** (`desgastado`/`dañado`/`vencido`/`otro`) ya modelada. Nada de esto se construyó de nuevo.
+
+**Dos decisiones que evitan brechas falsas:**
+
+1. Una entrega de una familia **sin vida útil declarada** se trata como vigente indefinidamente, no como brecha perpetua — a diferencia del criterio "no comparable ≠ cumple" de higiene, porque la ausencia de vida útil es el estado normal de mucho EPP (cascos, arneses sin fecha fija) y forzar brecha perpetua sería ruido, no protección.
+2. Un requisito por tarea nunca genera brecha por dotación estática — se resuelve al asignar la tarea, mismo diferimiento ya aceptado en Capacitación.
+
+**Evidencia:** migración `0095_faithful_colleen_wing.sql` sin drift, 12 pruebas puras y 6 escenarios en PostgreSQL real. Formulario de alta de requisitos y dashboard de cobertura/brechas en `/prevencion/epp-preventivo`, mirror de `/prevencion/capacitacion/brechas`.
+
+**Lo que todavía falta:** declarar los requisitos reales de EPP por cargo/faena (hoy no hay ninguno cargado) y aplicar la migración en producción. Instrucción práctica e inspecciones periódicas del EPP **ya están cubiertas** por Capacitación y por el motor de inspecciones respectivamente, sin código nuevo. Detalle completo en `PLAN_P1_PREVENCION.md`, sección 5terdecies.
+
+Con esto quedan cerradas técnicamente **7 de las 11 capacidades** de la matriz de priorización (§3 del plan P1): las 5 de la Fase 1 más 2 de la Fase 2. Restan de esta ronda: sustancias/residuos peligrosos (Fase 3, bloqueada — requiere que el dominio operacional modele perfil de residuo/HDS/manifiesto antes de que Prevención pueda colgar controles ahí) e integraciones/API/SSO (P2, contractual, depende de decisiones externas).
+
+---
+
 ### 0.7 Corrección de una afirmación de la auditoría anterior
 
 Al incorporar las suites PostgreSQL de Prevención al gate de CI —que hasta el 19 de julio de 2026 **no se ejecutaban en ningún gate**— apareció un fallo preexistente y real en la regresión de incidentes. La bitácora de P0-05 afirmaba que esa regresión pasaba y que demostraba la regla de actualización de MIPER; no era efectivo, porque la suite nunca corría automáticamente.

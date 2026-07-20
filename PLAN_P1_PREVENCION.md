@@ -45,7 +45,7 @@ Derivado de la columna de prioridad de la matriz legal (auditoría §4.1) y de l
 | 4 | Inspecciones, observaciones y auditorías | DS 44 art. 22; ISO 45001 9.2 | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 5 | CPHS y gobernanza del SG-SST | DS 44 arts. 17, 23 y ss. | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 6 | Salud ocupacional e higiene industrial | DS 594; protocolos MINSAL/SUSESO | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
-| 7 | EPP preventivo integrado con Bodega | DS 594 arts. 53-54; DS 18 | P1 | Pendiente (diferida: se construye sobre el catálogo EPP en desarrollo paralelo, ver §5undecies) |
+| 7 | EPP preventivo integrado con Bodega | DS 594 arts. 53-54; DS 18 | P1 | ✅ Capacidad técnica cerrada (20-07-2026) |
 | 8 | Emergencias, contingencias y simulacros | DS 44 arts. 18 y 19 | P1 | ✅ Capacidad técnica cerrada (20-07-2026) |
 | 9 | Gestión del cambio | DS 44 art. 15 | P1 | ✅ Capacidad técnica cerrada (20-07-2026) |
 | 10 | Sustancias, residuos peligrosos y transporte | DS 148, DS 43, DS 57, DS 298 | P1/P2 | Pendiente |
@@ -479,6 +479,45 @@ Evidencia: migración `0094_melted_sheva_callister.sql` sin drift (segunda pasad
 
 ---
 
+## 5terdecies. Capacidad 7 — EPP preventivo integrado con Bodega (20 de julio de 2026)
+
+**Investigación previa:** la capacidad 10 (sustancias/residuos peligrosos) fue descartada para esta pasada: no existe en ningún lugar del código perfil de residuo, HDS, clasificación de peligrosidad, número ONU ni manifiesto — `trazabilidad`/`recepción`/`entregas` modelan procurement y bodega **interna** de Chome, no manifiestos de residuos de clientes (confirmado por `README.md` y por §0.13 de la auditoría). Construirla ahora habría violado el principio de la propia auditoría ("Prevención consume entidades operacionales, no las inventa"). Se pivotó a EPP preventivo, que sí tiene sustrato real.
+
+**Diseño deliberado: mirror de Capacitación, no una capacidad desde cero.** Es el mismo problema (persona × requisito por cargo/faena/tarea → brecha → CAPA) que `prevention_competency_requirements`/`computeCompetencyGaps`/`escalateBlockingGapsToCapa` ya resuelven para competencias. Dos tablas aditivas (`prevention_epp_requirements`, `prevention_epp_history`); todo lo demás se reutiliza sin duplicar:
+
+- **Catálogo técnico** (`epp_product_families`: certificación, vida útil, pictograma) y **talla del trabajador** (`workers.size_*`) — ya existen, del feature de catálogo EPP concurrente (commit `1463d99`).
+- **Entrega real con acuse** — `deliveries`/`delivery_items` ya modela `destinationType='worker'`, firma (`signaturePath`) y **devolución con motivo** (`returnReason IN (desgastado|dañado|vencido|otro)`); nada de esto se construyó de nuevo.
+
+**Reglas verificables:**
+
+- La cobertura se calcula comparando cada requisito activo aplicable a un trabajador contra su **entrega más reciente** de ese tipo de EPP: sin entrega → brecha "nunca entregado"; con entrega pero `fecha + vida_útil < hoy` → brecha "vencido".
+- **Decisión de diseño explícita**: una familia de producto sin `lifespanMonths` declarado se trata como vigente indefinidamente, no como brecha perpetua — a diferencia del criterio "no comparable ≠ cumple" de higiene, porque la ausencia de vida útil es el estado normal de mucho EPP (cascos, arneses sin fecha fija) y forzar brecha perpetua sería ruido, no protección.
+- Un requisito por tarea (`scopeType='task'`) nunca genera brecha por dotación estática — se resuelve al asignar la tarea, mismo diferimiento ya aceptado en Capacitación.
+- Escalar brechas bloqueantes a CAPA es idempotente por `trabajador:tipo de EPP` (`sourceType = 'epp'`), mismo mecanismo que Capacitación.
+
+**Entregado en UI:** `/prevencion/epp-preventivo` con dos pestañas (Cobertura/Brechas | Requisitos), mirror directo de `/prevencion/capacitacion/brechas` (banner de bloqueantes con botón de escalamiento, filtros por exigibilidad y tipo de brecha) más una pestaña simple de alta de requisitos.
+
+### No construido a propósito
+
+- **Selección/aprobación técnica formal** — el requisito ya declara `preferredFamilyId`; sin flujo de aprobación separado, mismo criterio que los requisitos de competencia.
+- **Prueba de ajuste (fit test)** — específico de respiradores DS 594; no modelado.
+- **Instrucción y demostración práctica** — YA cubierta por Capacitación (declarar un curso de instrucción de EPP como competencia obligatoria); no requiere código nuevo aquí.
+- **Inspecciones periódicas del EPP en uso** — YA cubierta por el motor de inspecciones: existe una definición latente "EPP" en `CHECKLIST_DEFINITIONS`, sólo falta que Prevención la incorpore y programe.
+- **Mantención y limpieza del EPP** — no modelada; no existe esa entidad operacional en ningún lugar del código.
+- **Conciliación automática con stock y generación de solicitud de compra** — el dashboard muestra qué falta, pero no genera automáticamente una `purchase_request`; integración cruzada mayor, fuera de este alcance.
+- **Devolución/baja/disposición** — YA existe vía `delivery_items.returnQuantity`/`returnReason`; no requiere trabajo nuevo.
+
+### Pendientes de la capacidad 7
+
+- [ ] **Operación** — Declarar los requisitos de EPP reales por cargo/faena (hoy no hay ninguno cargado).
+- [ ] **Producción** — Aplicar la migración `0095`.
+
+Evidencia: migración `0095_faithful_colleen_wing.sql` sin drift (segunda pasada de `db:generate` confirmó "No schema changes"), 12 pruebas puras de alcance y cobertura, 6 escenarios en PostgreSQL real (incluida la exclusión de entregas fuera de alcance y el escalamiento idempotente a CAPA).
+
+**Verificación:** typecheck y ESLint (0 avisos) limpios; build compilando la ruta nueva; React Doctor sin ningún hallazgo en los archivos de esta capacidad; regresión completa de 308 archivos y 2.668 pruebas en verde. No se probó con sesión autenticada real; se verificó que la ruta compila.
+
+---
+
 ## 5octies. Formularios de alta — Capacitación (19 de julio de 2026)
 
 Primera entrega de la línea «hacer usable lo construido». Hasta ahora las seis capacidades tenían bandejas de lectura pero ningún formulario: el alta sólo era posible invocando la Server Action.
@@ -792,6 +831,16 @@ Al correr por primera vez la **regresión completa del repositorio** (359 archiv
 - [x] Una dimensión que requiere acción deriva de inmediato a CAPA común (`sourceType = 'change'`) con responsable, prioridad y plazo, en la misma transacción de la evaluación.
 - [x] Rutas `/prevencion/gestion-cambio` y `/prevencion/gestion-cambio/[changeId]` con alta, evaluación por dimensión con enlace a la CAPA derivada, y aprobar/rechazar.
 - [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin ningún hallazgo en los archivos de esta capacidad; 6 pruebas puras y 11 escenarios en PostgreSQL real; regresión completa de 307 archivos y 2.656 pruebas en verde.
+
+### 20 de julio de 2026 — Capacidad 7: EPP preventivo integrado con Bodega
+
+- [x] Descartada la capacidad 10 (sustancias/residuos) para esta pasada: sin sustrato operacional en el código; pivote a EPP preventivo, que sí lo tiene.
+- [x] Dos tablas aditivas (requisitos, historial). Migración `0095` sin drift. Mirror deliberado de `prevention_competency_requirements`/`computeCompetencyGaps` de Capacitación.
+- [x] Reutiliza sin duplicar: catálogo técnico (`epp_product_families`) y entrega real con acuse/devolución (`deliveries`/`delivery_items`), ambos ya existentes.
+- [x] Dominio puro `lib/prevention/epp.ts` (`computeEppCoverageGaps`): entrega sin vida útil declarada nunca vence; requisito por tarea nunca genera brecha estática.
+- [x] Escalamiento idempotente a CAPA (`sourceType = 'epp'`, `sourceId = trabajador:tipoEpp`), mismo mecanismo que Capacitación.
+- [x] Ruta `/prevencion/epp-preventivo` con pestañas Cobertura/Brechas (mirror de `/prevencion/capacitacion/brechas`) y Requisitos.
+- [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin ningún hallazgo en los archivos de esta capacidad; 12 pruebas puras y 6 escenarios en PostgreSQL real; regresión completa de 308 archivos y 2.668 pruebas en verde.
 
 ---
 

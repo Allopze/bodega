@@ -174,6 +174,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-emergencias-plan-detalle", path: "/prevencion/emergencias/plan-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un plan de detalle." },
   { slug: "prevencion-gestion-cambio", path: "/prevencion/gestion-cambio", auth: true },
   { slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un cambio de detalle." },
+  { slug: "prevencion-epp-preventivo", path: "/prevencion/epp-preventivo", auth: true },
   // ── Prevención: submódulos P3 sin page.tsx (omitidos intencionalmente) ──
   //   /prevencion/equipos/reportes y /checklists
   //   /prevencion/epp/matriz y /stock
