@@ -47,7 +47,7 @@ Derivado de la columna de prioridad de la matriz legal (auditoría §4.1) y de l
 | 6 | Salud ocupacional e higiene industrial | DS 594; protocolos MINSAL/SUSESO | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 7 | EPP preventivo integrado con Bodega | DS 594 arts. 53-54; DS 18 | P1 | Pendiente (diferida: se construye sobre el catálogo EPP en desarrollo paralelo, ver §5undecies) |
 | 8 | Emergencias, contingencias y simulacros | DS 44 arts. 18 y 19 | P1 | ✅ Capacidad técnica cerrada (20-07-2026) |
-| 9 | Gestión del cambio | DS 44 art. 15 | P1 | Pendiente |
+| 9 | Gestión del cambio | DS 44 art. 15 | P1 | ✅ Capacidad técnica cerrada (20-07-2026) |
 | 10 | Sustancias, residuos peligrosos y transporte | DS 148, DS 43, DS 57, DS 298 | P1/P2 | Pendiente |
 | 11 | Integraciones, API, SSO y portales | Contractual | P2 | Pendiente |
 
@@ -451,6 +451,34 @@ Evidencia: migración `0093_whole_mastermind.sql` sin drift (segunda pasada de `
 
 ---
 
+## 5duodecies. Capacidad 9 — Gestión del cambio (20 de julio de 2026)
+
+Tres tablas aditivas: solicitud de cambio, evaluación por dimensión de impacto (una fila por dimensión) e historial.
+
+**Reglas verificables:**
+
+- Un cambio nace en preparación (`draft`) con las **seis dimensiones de impacto pre-creadas y sin evaluar** (riesgo, permisos, capacitación, documentos, MIPER, emergencia) — no se arman a mano, evitando que una dimensión quede fuera por omisión.
+- Evaluar la primera dimensión mueve el cambio a `under_evaluation` automáticamente; no hay una transición manual separada para eso.
+- Aprobar exige las **seis dimensiones evaluadas y una fecha de revisión posterior** declarada (`assessChangeReadiness`) — sin eso el cambio queda sin trazabilidad de qué se evaluó y cuándo se revisa si la evaluación siguió siendo válida.
+- **Segregación:** quien solicita el cambio no puede aprobarlo, mismo criterio que emergencias, permisos de trabajo y plantillas de inspección; se valida en el servicio, no restringiendo el permiso a un rol distinto.
+- Una dimensión marcada como que **requiere acción** deriva de inmediato a CAPA común (`sourceType = 'change'`, `sourceId` = el propio cambio) con responsable, prioridad y plazo, dentro de la misma transacción de la evaluación — la acción correctiva es un prerrequisito para implementar el cambio, no una consecuencia posterior a su aprobación.
+- Un cambio ya decidido (`approved`/`rejected`/`implemented`/`closed`) no admite nuevas evaluaciones.
+
+**Entregado en UI:** bandeja en `/prevencion/gestion-cambio` con alta de solicitud; detalle en `/prevencion/gestion-cambio/[changeId]` con las seis dimensiones en tabla, diálogo de evaluación por dimensión (deriva a CAPA cuando corresponde, con enlace directo a la acción creada), y aprobar/rechazar con el botón "Aprobar" deshabilitado mientras la disponibilidad no se cumple.
+
+**No construido a propósito:** los estados `implemented` y `closed` existen en el schema (columnas `implementedAt`/`closedAt` incluidas) pero ninguna Server Action los produce — es una decisión de producto (¿quién marca implementado, con qué evidencia de que la revisión posterior ocurrió?), no wiring de UI sobre algo ya construido. Mismo criterio que la cancelación de plan/simulacro en emergencias.
+
+### Pendientes de la capacidad 9
+
+- [ ] **Operación** — Definir el flujo real de quién solicita, evalúa y aprueba cambios por faena, y si `implemented`/`closed` deben cerrarse manualmente o requieren evidencia de la revisión posterior.
+- [ ] **Producción** — Aplicar la migración `0094`.
+
+Evidencia: migración `0094_melted_sheva_callister.sql` sin drift (segunda pasada de `db:generate` confirmó "No schema changes"), 6 pruebas puras de disponibilidad y 11 escenarios en PostgreSQL real (incluida la segregación de aprobación, la transición automática a `under_evaluation` y la derivación a CAPA).
+
+**Verificación:** typecheck y ESLint (0 avisos) limpios; build compilando las 2 rutas nuevas; React Doctor sin ningún hallazgo en los archivos de esta capacidad; regresión completa de 307 archivos y 2.656 pruebas en verde. No se probó con sesión autenticada real; se verificó que ambas rutas compilan.
+
+---
+
 ## 5octies. Formularios de alta — Capacitación (19 de julio de 2026)
 
 Primera entrega de la línea «hacer usable lo construido». Hasta ahora las seis capacidades tenían bandejas de lectura pero ningún formulario: el alta sólo era posible invocando la Server Action.
@@ -754,6 +782,16 @@ Al correr por primera vez la **regresión completa del repositorio** (359 archiv
 - [x] Corregido de paso: un commit ajeno concurrente había borrado por accidente el fixture `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`; restaurado desde el commit anterior donde aún existía.
 - [x] Agregada la entrada de `/prevencion/emergencias/[planId]` a `dynamicSamples` en `capture-all-routes.test.ts`, sin la cual el gate de inventario de capturas quedaba en rojo.
 - [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin ningún hallazgo en los archivos de esta capacidad; 8 pruebas puras y 11 escenarios en PostgreSQL real; regresión completa de 306 archivos y 2.650 pruebas en verde.
+
+### 20 de julio de 2026 — Capacidad 9: gestión del cambio
+
+- [x] Tres tablas aditivas (solicitud, evaluación por dimensión, historial). Migración `0094` sin drift.
+- [x] Un cambio nace con las seis dimensiones de impacto pre-creadas y sin evaluar; evaluar la primera lo mueve a `under_evaluation` automáticamente.
+- [x] Dominio puro `lib/prevention/change.ts` (`assessChangeReadiness`) reusado en el botón "Aprobar" del cliente.
+- [x] Segregación: quien solicita el cambio no puede aprobarlo, validado en el servicio.
+- [x] Una dimensión que requiere acción deriva de inmediato a CAPA común (`sourceType = 'change'`) con responsable, prioridad y plazo, en la misma transacción de la evaluación.
+- [x] Rutas `/prevencion/gestion-cambio` y `/prevencion/gestion-cambio/[changeId]` con alta, evaluación por dimensión con enlace a la CAPA derivada, y aprobar/rechazar.
+- [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin ningún hallazgo en los archivos de esta capacidad; 6 pruebas puras y 11 escenarios en PostgreSQL real; regresión completa de 307 archivos y 2.656 pruebas en verde.
 
 ---
 

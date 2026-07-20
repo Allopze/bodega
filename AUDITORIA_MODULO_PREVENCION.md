@@ -261,6 +261,26 @@ Un simulacro con resultado "requiere mejora" **deriva su hallazgo a CAPA común*
 
 ---
 
+## 0.16 Avance P1 — Gestión del cambio (20 de julio de 2026)
+
+Novena capacidad P1. Un cambio de proceso, instalación, equipo, sustancia, proveedor, requisito legal, dotación, software o procedimiento evalúa su impacto en seis dimensiones (riesgo, permisos, capacitación, documentos, MIPER, emergencia) antes de aprobarse.
+
+**Qué evita que el cambio se apruebe sin evaluarse de verdad:**
+
+1. El cambio **nace con las seis dimensiones pre-creadas y sin evaluar**, no se arman a mano — evita que una dimensión quede fuera de la evaluación por simple omisión.
+2. Aprobar exige **las seis evaluadas y una fecha de revisión posterior declarada** (`assessChangeReadiness`). Sin fecha de revisión, el cambio queda sin quién ni cuándo verifica si la evaluación siguió siendo válida.
+3. Una dimensión que **requiere acción deriva de inmediato a CAPA común**, dentro de la misma transacción de la evaluación: la acción correctiva es un prerrequisito para implementar el cambio, no algo que se recuerde después de aprobado.
+
+La segregación (quien solicita no aprueba) usa el mismo criterio ya validado en permisos de trabajo, plantillas de inspección y planes de emergencia: se comprueba en el servicio, no restringiendo el permiso de aprobar a un rol distinto de quien administra.
+
+**Evidencia:** migración `0094_melted_sheva_callister.sql` sin drift, 6 pruebas puras y 11 escenarios en PostgreSQL real. Formularios de alta y detalle completos en `/prevencion/gestion-cambio` y `/prevencion/gestion-cambio/[changeId]`.
+
+**Lo que todavía falta:** cargar los cambios reales que ocurran en operación, y decidir el flujo de `implemented`/`closed` (¿quién los marca, con qué evidencia de que la revisión posterior ocurrió?) — existen en el schema pero deliberadamente sin Server Action, mismo criterio que la cancelación de plan/simulacro en emergencias. Detalle completo en `PLAN_P1_PREVENCION.md`, sección 5duodecies.
+
+Con esto se cierran técnicamente las cinco capacidades P1 previstas en la Fase 1 de la hoja de ruta (§12) más las dos primeras de la Fase 2 (emergencias y gestión del cambio). Quedan pendientes de esa fase: EPP preventivo (diferido, se construye sobre el catálogo EPP en desarrollo paralelo), y salud/higiene ya cerrada en la pasada anterior.
+
+---
+
 ### 0.7 Corrección de una afirmación de la auditoría anterior
 
 Al incorporar las suites PostgreSQL de Prevención al gate de CI —que hasta el 19 de julio de 2026 **no se ejecutaban en ningún gate**— apareció un fallo preexistente y real en la regresión de incidentes. La bitácora de P0-05 afirmaba que esa regresión pasaba y que demostraba la regla de actualización de MIPER; no era efectivo, porque la suite nunca corría automáticamente.

@@ -95,6 +95,10 @@ export const preventionModule = {
     "prevention:emergency:manage",
     "prevention:emergency:approve",
     "prevention:emergency:drill_execute",
+    "prevention:change:view",
+    "prevention:change:manage",
+    "prevention:change:evaluate",
+    "prevention:change:approve",
   ] as const,
 
   permissionMeta: {
@@ -189,6 +193,10 @@ export const preventionModule = {
     "prevention:emergency:manage": { id: "p-prev-emg-manage", description: "Crear planes de emergencia y administrar escenarios, organigrama, recursos y contactos" },
     "prevention:emergency:approve": { id: "p-prev-emg-approve", description: "Aprobar el plan de emergencia de forma segregada de quien lo creó" },
     "prevention:emergency:drill_execute": { id: "p-prev-emg-drill", description: "Programar y completar simulacros del plan de emergencia" },
+    "prevention:change:view": { id: "p-prev-chg-view", description: "Ver solicitudes de gestión del cambio y sus dimensiones de impacto" },
+    "prevention:change:manage": { id: "p-prev-chg-manage", description: "Crear solicitudes de gestión del cambio" },
+    "prevention:change:evaluate": { id: "p-prev-chg-eval", description: "Evaluar el impacto del cambio por dimensión (riesgo, permiso, capacitación, documento, MIPER, emergencia)" },
+    "prevention:change:approve": { id: "p-prev-chg-approve", description: "Aprobar o rechazar el cambio de forma segregada de quien lo solicitó" },
   },
 
   nav: [
@@ -308,6 +316,12 @@ export const preventionModule = {
           href: "/prevencion/emergencias",
           iconName: "Siren",
           permissions: ["prevention:emergency:view"],
+        },
+        {
+          label: "Gestión del cambio",
+          href: "/prevencion/gestion-cambio",
+          iconName: "GearSix",
+          permissions: ["prevention:change:view"],
         },
         {
           label: "Documentación",
@@ -660,5 +674,24 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:emergency:manage" },
     { roleSlug: "administrador",        permission: "prevention:emergency:approve" },
     { roleSlug: "administrador",        permission: "prevention:emergency:drill_execute" },
+    // Gestión del cambio. Igual criterio que emergencias: aprobar queda
+    // reservado a jefatura y la segregación real (quien solicita no aprueba)
+    // se valida en el servicio.
+    { roleSlug: "jefe_terreno",         permission: "prevention:change:view" },
+    { roleSlug: "admin_contrato",       permission: "prevention:change:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:change:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:change:manage" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:change:evaluate" },
+    { roleSlug: "prevencionista",       permission: "prevention:change:view" },
+    { roleSlug: "prevencionista",       permission: "prevention:change:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:change:evaluate" },
+    { roleSlug: "prevencionista",       permission: "prevention:change:approve" },
+    { roleSlug: "cphs",                 permission: "prevention:change:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:change:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:change:approve" },
+    { roleSlug: "administrador",        permission: "prevention:change:view" },
+    { roleSlug: "administrador",        permission: "prevention:change:manage" },
+    { roleSlug: "administrador",        permission: "prevention:change:evaluate" },
+    { roleSlug: "administrador",        permission: "prevention:change:approve" },
   ],
 } as const satisfies ModuleManifest
