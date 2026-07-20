@@ -40,7 +40,7 @@ Derivado de la columna de prioridad de la matriz legal (auditoría §4.1) y de l
 | # | Capacidad | Fundamento normativo | Prioridad | Estado |
 |---:|---|---|---|---|
 | 1 | Capacitación, ODI y competencias | DS 44 arts. 15 y 16 | **P0 legal** | ✅ Capacidad técnica cerrada (19-07-2026) |
-| 2 | Contratistas y coordinación de faena | DS 76/2006, Ley 20.123 | P0/P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
+| 2 | ~~Contratistas y coordinación de faena~~ | DS 76/2006, Ley 20.123 | — | ❌ **Eliminada el 19-07-2026**: no aplica a Chome, que es contratista y no empresa principal (ver 5bis) |
 | 3 | Permisos de trabajo, AST/JSA y control de energías | DS 44 art. 18; estándar de tarea crítica | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 4 | Inspecciones, observaciones y auditorías | DS 44 art. 22; ISO 45001 9.2 | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 5 | CPHS y gobernanza del SG-SST | DS 44 arts. 17, 23 y ss. | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
@@ -134,52 +134,51 @@ Al ejecutar las suites por primera vez en conjunto apareció un fallo **preexist
 
 ---
 
-## 5bis. Capacidad 2 — Contratistas y coordinación de faena (DS 76)
+## 5bis. Capacidad 2 — Contratistas y coordinación de faena (DS 76) — **ELIMINADA el 19-07-2026**
 
-### 5bis.1 Alcance implementado
+La capacidad se construyó completa (8 tablas, 34 pruebas, 3 superficies, 7 permisos) y se **eliminó del producto el 19 de julio de 2026**, con su migración de retiro `0086_cold_revanche.sql`.
 
-**Contrato de datos** (`db/schema/prevention/contractors.ts`, 8 tablas aditivas): empresas con RUT y organismo administrador y subcontratación mediante `parentCompanyId`; contratos por faena con relación, alcance, vigencia y dotación; personas del contratista identificadas por su propio RUT; requisitos de acreditación por alcance empresa/contrato/persona; evidencia presentada con ciclo y vencimiento; reuniones de coordinación con participantes; historial inmutable.
+### Por qué: el módulo estaba construido del lado equivocado
 
-**Reglas de negocio verificables:**
+El DS 76/2006 y el art. 66 bis de la Ley 16.744 obligan a la **empresa principal** —la que es dueña de la obra o faena— a acreditar, vigilar y coordinar a sus contratistas y subcontratistas.
 
-- **Un contrato nace con el acceso bloqueado.** La liberación es un acto explícito y recalcula las brechas contra la evidencia real en ese momento; no existe "autorizar igual".
-- Una brecha bloqueante de empresa o contrato impide liberar el contrato completo; una brecha de una persona bloquea sólo a esa persona. Liberar el contrato acredita en el mismo acto a quienes no tienen brecha propia.
-- Quien presenta la evidencia no puede aprobarla ni observarla.
-- Observar exige indicar qué corregir; reenviar evidencia limpia la revisión anterior para que nadie herede una aprobación caducada.
-- Un requisito que exige vencimiento no admite evidencia sin fecha; un requisito por persona no admite presentación sin persona, y viceversa.
-- **La evidencia vencida re-bloquea el contrato**: la habilitación no sobrevive a su propia evidencia.
-- Suspender o terminar un contrato corta el acceso en el mismo acto, para no dejar un contrato cerrado con ingreso liberado.
-- Cerrar una reunión de coordinación exige acta y deriva cada acuerdo a **CAPA común** (`sourceType = 'contractor'`); un acuerdo sin acción trazable no es coordinación efectiva.
-- No se convoca a un contrato de otra faena.
+**Chome no es la empresa principal.** Chome opera como **empresa contratista** en faenas de terceros (CMPC, Biodiversa) gestionando sus residuos, y lo hace **con dotación propia**. Las faenas no son suyas. Por lo tanto:
 
-**Superficies:** `/prevencion/contratistas`, `/prevencion/contratistas/brechas`, `/prevencion/contratistas/coordinacion`, `/api/prevencion/contratistas/export`.
+- las obligaciones del DS 76 que este módulo cubría recaen en el mandante, no en Chome;
+- Chome no acredita empresas externas ni libera su ingreso a una faena que no controla;
+- no hay subcontratación encadenada que registrar.
 
-**Permisos (7):** `view`, `manage`, `submit`, `accredit`, `authorize_access`, `coordinate`, `export`. `accredit` y `authorize_access` se separan de `submit` y no se conceden a roles de terreno.
+Se consultó explícitamente antes de borrar, porque un requisito legal no se elimina por conveniencia. La respuesta —Chome es contratista, con personal propio— cierra la pregunta: **no aplica**.
 
-### 5bis.2 Evidencia
+### Lo que sí aplica y este módulo no cubría
 
-Migración `0079_polite_morlun.sql` generada desde schema, segunda generación sin drift, aplicada y verificada (8 tablas). 17 pruebas puras del motor de brechas y de la decisión de acceso; 17 escenarios sobre PostgreSQL real; RBAC ampliado con la matriz de segregación. Typecheck, ESLint, build y React Doctor (0 errores) verdes.
+Como contratista, Chome tiene obligaciones **hacia el mandante**: entregar antecedentes de su dotación, cumplir el reglamento especial de cada faena, participar en las reuniones de coordinación que convoca el mandante y reportarle sus accidentes.
 
-Durante la prueba en Postgres real, el constraint `prevention_accreditation_item_expiry_after_issue` rechazó un intento de fijar un vencimiento anterior a la emisión: la restricción funcionó como corresponde y se corrigió el escenario, no la restricción.
+Eso es el lado receptor —Chome entregando, no acreditando a terceros— y es una capacidad distinta que **nunca se construyó**. No se pierde nada al borrar este módulo, pero conviene no confundir una cosa con la otra.
 
-### 5bis.3 Pendientes de la capacidad 2
+- [ ] **Producto (sin priorizar)** — Lado contratista: expediente de antecedentes por mandante, con lo que cada faena exige y su vencimiento. Hoy no existe. Sólo vale la pena si hoy se administra a mano y duele.
 
-- [ ] **Operación** — Definir el catálogo real de requisitos de acreditación por faena y relación, y cuáles son bloqueantes.
-- [ ] **Operación** — Cargar empresas, contratos y dotación contratista reales; migrar la acreditación que hoy vive en SFTI u otras planillas.
-- [ ] **Producción** — Aplicar la migración `0079` y programar el vencimiento de acreditaciones (`expireLapsedAccreditations`) como job diario.
-- [ ] **Producto (diferido)** — Portal de autocarga para la empresa contratista: hoy la evidencia la presenta un usuario interno con permiso `submit`.
-- [ ] **Producto (diferido)** — Acreditación de vehículos y equipos del contratista, y estadística de incidentes por contratista. El modelo de requisitos admite extenderse a esos sujetos sin migración destructiva.
-- [ ] **Producto (diferido)** — UI de alta de empresas, contratos, requisitos y reuniones: las Server Actions existen y están probadas; las bandejas, brechas y coordinación sí tienen UI de lectura.
+### Alcance del retiro
+
+Se eliminaron 8 tablas, 3 páginas, la ruta de exportación, el servicio, el motor de brechas, la validación, las 34 pruebas y los 7 permisos con sus concesiones por rol y su entrada de navegación.
+
+**Acoplamientos desmontados en módulos que sí se conservan:**
+
+- **Permisos de trabajo.** La cuadrilla admitía identidad interna *o* de contratista; ahora `worker_id` es obligatorio y desapareció el bloqueador `crew_access_blocked`. Es una simplificación real: toda cuadrilla es personal propio.
+- **CAPA.** El `sourceType` `'contractor'` salió del check de la base y del esquema de validación.
+- **Incidentes.** Se conservó el tipo de evento `contractor_or_third_party`: Chome trabaja en faenas ajenas, así que un incidente que involucre a un tercero es más probable ahora, no menos. No dependía de las tablas eliminadas.
+
+**Riesgo de la migración de retiro:** `DROP TABLE ... CASCADE` elimina la llave foránea pero **no** las filas de cuadrilla cuya única identidad era un trabajador de contratista, que quedarían con `worker_id` nulo y harían fallar el `SET NOT NULL`. La migración incluye un `DELETE` previo acotado a esas filas. En producción es inocuo: la migración de permisos (`0080`) todavía no está aplicada.
 
 ---
 
 ## 5ter. Capacidad 3 — Permisos de trabajo, AST/JSA y control de energías
 
-Es la capacidad que amarra las anteriores: un permiso no se habilita si alguien de la cuadrilla no tiene su competencia vigente (capacidad 1) o pertenece a un contratista con el ingreso bloqueado (capacidad 2).
+Es la capacidad que amarra las anteriores: un permiso no se habilita si alguien de la cuadrilla no tiene su competencia vigente (capacidad 1).
 
 ### 5ter.1 Alcance implementado
 
-**Contrato de datos** (`db/schema/prevention/permits.ts`, 7 tablas aditivas): tipos de permiso configurables; permiso con ventana, supervisor y máquina de estados; cuadrilla mixta interna/contratista; controles verificables; aislamientos LOTO; mediciones; pasos de AST/JSA; historial inmutable. Además, `ppa_submissions` recibió una columna `work_permit_id` nullable para que el PPA sea la verificación breve dentro del permiso, como pide la auditoría §7.7, sin romper su uso autónomo.
+**Contrato de datos** (`db/schema/prevention/permits.ts`, 7 tablas aditivas): tipos de permiso configurables; permiso con ventana, supervisor y máquina de estados; cuadrilla de personal propio; controles verificables; aislamientos LOTO; mediciones; pasos de AST/JSA; historial inmutable. Además, `ppa_submissions` recibió una columna `work_permit_id` nullable para que el PPA sea la verificación breve dentro del permiso, como pide la auditoría §7.7, sin romper su uso autónomo.
 
 **Reglas de negocio verificables:**
 
@@ -268,7 +267,7 @@ Se agregó un **piso de seguridad**: cuando la plantilla no declara obligatorios
   Si esa fricción se vuelve un problema, **la solución no es marcar `required`** sino declarar aplicabilidad condicional por sujeto, de modo que el formulario no muestre el ítem cuando no corresponde. Quita la fricción sin perder trazabilidad, y es trabajo de producto, no una decisión de Prevención.
 - [ ] **Producción** — Aplicar la migración `0082` e incorporar y aprobar las plantillas que la faena vaya a usar.
 - [ ] **Producto (diferido)** — Formulario de ejecución en terreno y captura móvil/offline: las Server Actions existen y están probadas, la bandeja de lectura tiene UI.
-- [ ] **Producto (diferido)** — Tendencias por pregunta, control, activo y contratista; auditorías con alcance, muestra y equipo auditor.
+- [ ] **Producto (diferido)** — Tendencias por pregunta, control y activo; auditorías con alcance, muestra y equipo auditor.
 
 ### Evidencia
 
@@ -445,7 +444,7 @@ Segunda entrega de «hacer usable lo construido», y la que **cierra la capacida
 - [x] CAPA común extendida a `sourceType = 'work_permit'`.
 - [x] Decisión de habilitación implementada como función pura que devuelve todos los bloqueadores, probada con 27 casos antes de tocar la base.
 - [x] Cerrado el diferido de la capacidad 1: los requisitos de competencia con alcance `task` ahora se consumen desde el tipo de permiso mediante `competencyTaskKey`, sin tablas nuevas ni un segundo catálogo.
-- [x] Integración real con contratistas: un integrante de contratista con ingreso bloqueado o sin acreditar impide habilitar el permiso.
+- [x] ~~Integración real con contratistas~~ — revertida el 19-07-2026 al eliminarse la capacidad 2; la cuadrilla es siempre personal propio.
 - [x] Migración `0080_furry_bucky.sql` generada desde schema, sin drift y aplicada.
 - [x] Nueve permisos con grants deliberados y aserciones negativas: el jefe de terreno solicita y verifica pero no aprueba ni habilita; suspender incluye al CPHS.
 - [x] 20 escenarios en PostgreSQL real cubren ventana excedida, cuadrilla de otra faena, scope negativo, lista completa de bloqueadores, AST inmutable tras aprobación, autoaprobación rechazada, transición inválida draft → active, habilitación sólo con todos los gates, retiro de LOTO bloqueado con permiso vigente, cierre bloqueado con energías aplicadas, cierre limpio tras normalizar, versión optimista y suspensión automática por vencimiento.
@@ -534,6 +533,29 @@ Segunda entrega de «hacer usable lo construido», y la que **cierra la capacida
 - [x] `useOperation`, `Field` y `selectClass` extraídos a `form-kit.tsx` al aparecer el segundo consumidor.
 - [x] Typecheck, ESLint y build verdes; 19 pruebas PostgreSQL de capacitación en verde; React Doctor sin hallazgos en los archivos tocados.
 - [x] Reclasificado el pendiente de `required` por ítem: no es un defecto, y si la fricción molesta la solución es aplicabilidad condicional, no marcar obligatorios.
+
+### 19 de julio de 2026 — Eliminación de la capacidad 2 (contratistas DS 76)
+
+- [x] Establecido con el negocio que **Chome es empresa contratista**, no empresa principal: trabaja en faenas de CMPC y Biodiversa con dotación propia. Las obligaciones del DS 76 que el módulo cubría recaen en el mandante.
+- [x] Se consultó antes de borrar, por tratarse de una norma legal. La eliminación procedió sólo con la confirmación del rol.
+- [x] Eliminadas 8 tablas, 3 páginas, la ruta de exportación, el servicio, el motor de brechas, la validación, 34 pruebas y 7 permisos con sus concesiones y su navegación.
+- [x] Desmontado el acoplamiento en permisos de trabajo: `worker_id` pasa a obligatorio, desaparecen la columna de contratista, su índice único, el check de identidad excluyente y el bloqueador `crew_access_blocked`.
+- [x] `sourceType = 'contractor'` retirado del check de CAPA y del esquema de validación.
+- [x] Conservado el tipo de evento `contractor_or_third_party` en incidentes: trabajando en faenas ajenas, un incidente con terceros es **más** probable, no menos, y no dependía de las tablas eliminadas.
+- [x] Migración `0086_cold_revanche.sql` generada desde schema; segunda generación sin drift; journal estrictamente creciente con 87 entradas; aplicada de cero sobre PostgreSQL real y verificada (0 tablas de contratistas, `worker_id` NOT NULL, columna de contratista ausente).
+- [x] **Dos defectos corregidos en la migración generada**, ambos detectados al aplicarla contra PostgreSQL real y no en la revisión del SQL:
+  1. `DROP TABLE ... CASCADE` elimina la llave foránea pero **no** las filas de cuadrilla cuya única identidad era un contratista; quedaban con `worker_id` nulo y hacían fallar el `SET NOT NULL`. Se agregó un `DELETE` acotado a esas filas.
+  2. Drizzle generó además un `DROP CONSTRAINT` explícito de esa misma llave, que el CASCADE ya había eliminado: abortaba la migración con «constraint does not exist». Se le agregó `IF EXISTS`.
+- [x] Retiradas las variables de la suite de contratistas del gate de CI.
+
+### 19 de julio de 2026 — Defecto preexistente: inventario de capturas desactualizado
+
+Al correr por primera vez la **regresión completa del repositorio** (359 archivos) apareció un fallo que las pasadas anteriores no vieron porque sólo se ejecutaban pruebas dirigidas: `scripts/capture-all-routes.test.ts` exige que toda página concreta del App Router tenga destino de captura, y **ninguna de las pantallas creadas en esta sesión estaba declarada**.
+
+- [x] Agregadas al inventario las 9 rutas faltantes: las 4 de capacitación más el detalle de sesión, permisos, inspecciones con su detalle, CPHS e higiene.
+- [x] Agregada también `/admin/backups`, de la feature de respaldos en desarrollo concurrente: sin ella el gate seguía rojo. Es una línea de inventario y no toca su lógica.
+- [x] Retirada `/prevencion/contratistas` del inventario junto con el módulo.
+- [x] **Lección de método:** correr sólo el subconjunto dirigido dejó pasar un gate rojo durante cinco capacidades. La regresión completa pasa a ser parte del cierre de cada pasada, no del cierre del plan.
 
 ---
 

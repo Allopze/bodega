@@ -154,13 +154,24 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-privacidad-auditoria", path: "/prevencion/privacidad/auditoria", auth: true },
   { slug: "prevencion-privacidad-solicitudes", path: "/prevencion/privacidad/solicitudes", auth: true },
   { slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una solicitud de privacidad de detalle." },
+  // ── Prevención: capacidades P1 implementadas el 19-07-2026 ──
+  { slug: "prevencion-capacitacion", path: "/prevencion/capacitacion", auth: true },
+  { slug: "prevencion-capacitacion-catalogo", path: "/prevencion/capacitacion/catalogo", auth: true },
+  { slug: "prevencion-capacitacion-competencias", path: "/prevencion/capacitacion/competencias", auth: true },
+  { slug: "prevencion-capacitacion-brechas", path: "/prevencion/capacitacion/brechas", auth: true },
+  { slug: "prevencion-capacitacion-sesion", path: "/prevencion/capacitacion/trsess-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una sesión de capacitación." },
+  { slug: "prevencion-permisos", path: "/prevencion/permisos", auth: true },
+  { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
+  { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una inspección de detalle." },
+  { slug: "prevencion-cphs", path: "/prevencion/cphs", auth: true },
+  { slug: "prevencion-higiene", path: "/prevencion/higiene", auth: true },
   // ── Prevención: submódulos P3 sin page.tsx (omitidos intencionalmente) ──
-  //   /prevencion/capacitaciones/matriz
-  //   /prevencion/inspecciones/[id]
   //   /prevencion/equipos/reportes y /checklists
   //   /prevencion/epp/matriz y /stock
   //   /prevencion/salud/protocolos
   // Re-agregar cuando los módulos P3 estén implementados.
+  // `/prevencion/contratistas` salió el 19-07-2026 con el módulo DS 76: Chome
+  // es empresa contratista, no empresa principal.
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
   { slug: "prevencion-documentacion-nuevo", path: "/prevencion/documentacion/nuevo", auth: true },
@@ -205,6 +216,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-taxonomia-sst", path: "/admin/taxonomia-sst", auth: true },
   { slug: "admin-trabajadores", path: "/admin/trabajadores", auth: true },
   { slug: "admin-usuarios", path: "/admin/usuarios", auth: true },
+  // Agregada al inventario el 19-07-2026 para dejar el gate verde; la feature
+  // de respaldos se desarrolla en paralelo y esta línea no toca su lógica.
+  { slug: "admin-backups", path: "/admin/backups", auth: true },
   { slug: "forbidden", path: "/forbidden", auth: true },
   { slug: "soporte", path: "/soporte", auth: true },
   { slug: "soporte-nuevo", path: "/soporte/nuevo", auth: true },

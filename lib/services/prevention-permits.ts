@@ -4,8 +4,6 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
   preventionCompetencyRequirements,
-  preventionContractorContracts,
-  preventionContractorWorkers,
   preventionJsaSteps,
   preventionPermitControls,
   preventionPermitCrew,
@@ -182,46 +180,24 @@ async function addCrewMembers(
   tx: Tx,
   permitId: string,
   worksiteId: string,
-  crew: { workerId?: string | null; contractorWorkerId?: string | null; role: string }[],
+  crew: { workerId: string; role: string }[],
 ) {
   if (crew.length === 0) return
 
-  const workerIds = crew.map((item) => item.workerId).filter((value): value is string => Boolean(value))
-  const contractorWorkerIds = crew.map((item) => item.contractorWorkerId).filter((value): value is string => Boolean(value))
-
-  if (workerIds.length > 0) {
-    const rows = await tx.select({ id: workers.id, worksiteId: workers.worksiteId, isActive: workers.isActive })
-      .from(workers).where(inArray(workers.id, workerIds))
-    const known = new Map(rows.map((row) => [row.id, row]))
-    for (const workerId of workerIds) {
-      const worker = known.get(workerId)
-      if (!worker || !worker.isActive) throw new Error("Un integrante interno de la cuadrilla no existe o está inactivo.")
-      if (worker.worksiteId !== worksiteId) throw new Error("No se puede asignar a la cuadrilla una persona de otra faena.")
-    }
-  }
-
-  if (contractorWorkerIds.length > 0) {
-    const rows = await tx.select({
-      id: preventionContractorWorkers.id,
-      status: preventionContractorWorkers.status,
-      contractWorksiteId: preventionContractorContracts.worksiteId,
-    })
-      .from(preventionContractorWorkers)
-      .innerJoin(preventionContractorContracts, eq(preventionContractorWorkers.contractId, preventionContractorContracts.id))
-      .where(inArray(preventionContractorWorkers.id, contractorWorkerIds))
-    const known = new Map(rows.map((row) => [row.id, row]))
-    for (const contractorWorkerId of contractorWorkerIds) {
-      const worker = known.get(contractorWorkerId)
-      if (!worker || worker.status === "withdrawn") throw new Error("Un integrante contratista de la cuadrilla no existe o está retirado.")
-      if (worker.contractWorksiteId !== worksiteId) throw new Error("No se puede asignar a la cuadrilla una persona de un contrato de otra faena.")
-    }
+  const workerIds = crew.map((item) => item.workerId)
+  const rows = await tx.select({ id: workers.id, worksiteId: workers.worksiteId, isActive: workers.isActive })
+    .from(workers).where(inArray(workers.id, workerIds))
+  const known = new Map(rows.map((row) => [row.id, row]))
+  for (const workerId of workerIds) {
+    const worker = known.get(workerId)
+    if (!worker || !worker.isActive) throw new Error("Un integrante de la cuadrilla no existe o está inactivo.")
+    if (worker.worksiteId !== worksiteId) throw new Error("No se puede asignar a la cuadrilla una persona de otra faena.")
   }
 
   await tx.insert(preventionPermitCrew).values(crew.map((member) => ({
     id: `pmcrew-${nanoid()}`,
     permitId,
-    workerId: member.workerId ?? null,
-    contractorWorkerId: member.contractorWorkerId ?? null,
+    workerId: member.workerId,
     role: member.role,
   })))
 }
@@ -391,43 +367,26 @@ export async function addPermitMeasurement(input: unknown, access: PermitAccess)
 /* ── Habilitación ─────────────────────────────────────────────────────────── */
 
 /**
- * Resuelve, contra los módulos de competencias y contratistas, quién de la
- * cuadrilla no está habilitado. Es la integración que convierte el permiso en
- * un control real y no en un formulario.
+ * Resuelve, contra el módulo de competencias, quién de la cuadrilla no está
+ * habilitado. Es la integración que convierte el permiso en un control real y
+ * no en un formulario.
  */
 async function resolveCrewEligibility(client: Client, permitId: string, competencyTaskKey: string | null) {
   const crewRows = await client.select({
     id: preventionPermitCrew.id,
     workerId: preventionPermitCrew.workerId,
-    contractorWorkerId: preventionPermitCrew.contractorWorkerId,
     workerFirstName: workers.firstName,
     workerLastName: workers.lastName,
-    contractorFirstName: preventionContractorWorkers.firstName,
-    contractorLastName: preventionContractorWorkers.lastName,
-    contractorStatus: preventionContractorWorkers.status,
-    contractorAccessBlocked: preventionContractorWorkers.accessBlocked,
-    contractAccessBlocked: preventionContractorContracts.accessBlocked,
   })
     .from(preventionPermitCrew)
-    .leftJoin(workers, eq(preventionPermitCrew.workerId, workers.id))
-    .leftJoin(preventionContractorWorkers, eq(preventionPermitCrew.contractorWorkerId, preventionContractorWorkers.id))
-    .leftJoin(preventionContractorContracts, eq(preventionContractorWorkers.contractId, preventionContractorContracts.id))
+    .innerJoin(workers, eq(preventionPermitCrew.workerId, workers.id))
     .where(eq(preventionPermitCrew.permitId, permitId))
 
   const crew: PermitCrewRow[] = crewRows.map((row) => ({
     id: row.id,
     workerId: row.workerId,
-    contractorWorkerId: row.contractorWorkerId,
-    label: row.workerId
-      ? `${row.workerLastName ?? ""}, ${row.workerFirstName ?? ""}`.trim()
-      : `${row.contractorLastName ?? ""}, ${row.contractorFirstName ?? ""}`.trim(),
+    label: `${row.workerLastName}, ${row.workerFirstName}`,
   }))
-
-  const crewWithBlockedAccess = crew.filter((member) => {
-    const row = crewRows.find((item) => item.id === member.id)
-    if (!row?.contractorWorkerId) return false
-    return Boolean(row.contractorAccessBlocked || row.contractAccessBlocked) || row.contractorStatus !== "accredited"
-  })
 
   let crewWithoutCompetency: PermitCrewRow[] = []
   if (competencyTaskKey) {
@@ -443,15 +402,15 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
     const requiredCourseIds = [...new Set(requirements.map((item) => item.courseId))]
 
     if (requiredCourseIds.length > 0) {
-      const internalIds = crew.map((member) => member.workerId).filter((value): value is string => Boolean(value))
+      const crewWorkerIds = crew.map((member) => member.workerId)
       const today = todayInChile()
-      const held = internalIds.length === 0 ? [] : await client.select({
+      const held = crewWorkerIds.length === 0 ? [] : await client.select({
         workerId: preventionWorkerCompetencies.workerId,
         courseId: preventionWorkerCompetencies.courseId,
       })
         .from(preventionWorkerCompetencies)
         .where(and(
-          inArray(preventionWorkerCompetencies.workerId, internalIds),
+          inArray(preventionWorkerCompetencies.workerId, crewWorkerIds),
           inArray(preventionWorkerCompetencies.courseId, requiredCourseIds),
           eq(preventionWorkerCompetencies.status, "valid"),
           sql`${preventionWorkerCompetencies.expiresAt} IS NULL OR ${preventionWorkerCompetencies.expiresAt} >= ${today}`,
@@ -463,16 +422,13 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
         heldByWorker.set(row.workerId, set)
       }
       crewWithoutCompetency = crew.filter((member) => {
-        // Una persona de contratista no tiene competencias internas: su
-        // habilitación se controla por acreditación, no por este camino.
-        if (!member.workerId) return false
         const owned = heldByWorker.get(member.workerId) ?? new Set<string>()
         return requiredCourseIds.some((courseId) => !owned.has(courseId))
       })
     }
   }
 
-  return { crew, crewWithoutCompetency, crewWithBlockedAccess }
+  return { crew, crewWithoutCompetency }
 }
 
 export async function evaluatePermitReadiness(permitId: string, access: PermitAccess): Promise<{ allowed: boolean; blockers: PermitBlocker[] }> {
@@ -522,7 +478,6 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
     jsaStepCount: jsaCount[0]?.count ?? 0,
     crew: eligibility.crew,
     crewWithoutCompetency: eligibility.crewWithoutCompetency,
-    crewWithBlockedAccess: eligibility.crewWithBlockedAccess,
     plannedEndAt: permit.extendedUntilAt ?? permit.plannedEndAt,
     now: nowIso(),
   })

@@ -87,24 +87,29 @@ Primera capacidad P1 implementada, elegida por prioridad legal: el DS 44 art. 16
 
 ---
 
-## 0.6 Avance P1 — Contratistas y coordinación de faena (19 de julio de 2026)
+## 0.6 Contratistas y coordinación de faena — **CAPACIDAD ELIMINADA (19 de julio de 2026)**
 
-Segunda capacidad P1, elegida por su prioridad P0/P1 en la matriz legal (DS 76/2006 y Ley 20.123) y por ser bloqueante de la Fase 1 de la hoja de ruta.
+Esta capacidad se construyó completa y se **retiró del producto el mismo día**, con la migración `0086_cold_revanche.sql`. La razón corrige un supuesto equivocado que arrastraba **esta auditoría**, no sólo el código.
 
-**Qué existe ahora en el checkout:**
+### El supuesto equivocado
 
-- registro de faena con empresas contratistas, RUT, organismo administrador y subcontratación encadenada;
-- contratos por faena con relación, alcance, vigencia y dotación planificada;
-- personas del contratista identificadas por su propio RUT, no confundidas con la dotación interna;
-- requisitos de acreditación configurables por alcance (empresa, contrato o persona), faena y tipo de relación, con exigibilidad **bloqueante o de advertencia** y fundamento normativo obligatorio;
-- ciclo de evidencia `pendiente → presentada → observada/aprobada → vencida`, con revisión **segregada de quien presenta**, checksum, vigencia y observación fundada;
-- **control de ingreso**: un contrato nace bloqueado; liberarlo exige cero brechas bloqueantes y recalcula la decisión contra la evidencia real en ese momento. Una brecha de persona bloquea sólo a esa persona; la evidencia vencida re-bloquea el contrato; suspender o terminar corta el acceso en el mismo acto;
-- reuniones de coordinación DS 76 con convocatoria por contrato, intercambio de riesgos, acta y **acuerdos derivados a CAPA común**;
-- exportación XLSX de siete hojas como expediente para auditoría del mandante o de la autoridad.
+La matriz legal (§4.1) clasificó el DS 76/2006 y la Ley 20.123 como P0/P1 para Chome. Esa clasificación asumía que Chome actúa como **empresa principal**: la dueña de la obra o faena, que debe acreditar, vigilar y coordinar a sus contratistas y subcontratistas.
 
-**Evidencia:** migración `0079_polite_morlun.sql` generada desde schema, sin drift, aplicada y verificada (8 tablas). 17 pruebas puras del motor de brechas y de la decisión de acceso, 17 escenarios sobre PostgreSQL real y matriz RBAC con aserciones negativas de segregación.
+**Chome no es la empresa principal.** Opera como **empresa contratista** en faenas de terceros (CMPC, Biodiversa) gestionando sus residuos, con **dotación propia**. Las faenas no le pertenecen. Las obligaciones del art. 66 bis de la Ley 16.744 y del DS 76 que este módulo cubría —registro de antecedentes, acreditación documental, liberación de ingreso, coordinación convocada— recaen en el mandante.
 
-**Lo que esto todavía NO significa:** no hay empresas, contratos ni requisitos productivos cargados. Quedan diferidos el portal de autocarga del contratista, la acreditación de vehículos y equipos, y la estadística de incidentes por contratista.
+Se consultó explícitamente antes de eliminar, porque un requisito legal no se borra por conveniencia.
+
+### Lo que sí aplica y no está cubierto
+
+Como contratista, Chome tiene obligaciones **hacia cada mandante**: entregar los antecedentes de su dotación, cumplir el reglamento especial de cada faena, participar en las reuniones de coordinación que el mandante convoca y reportarle sus accidentes.
+
+Es el lado receptor de la misma norma, y es una capacidad **que nunca se construyó**. No se pierde nada al eliminar el módulo anterior —cubría lo contrario— pero conviene no confundirlos: la matriz legal §4.1 debe leerse en adelante desde el rol de contratista.
+
+### Alcance del retiro
+
+8 tablas, 3 páginas, la ruta de exportación, el servicio, el motor de brechas, la validación, 34 pruebas y 7 permisos con sus concesiones por rol.
+
+Acoplamientos desmontados en módulos conservados: la cuadrilla de un permiso de trabajo ya no admite identidad de contratista (`worker_id` pasa a obligatorio y desaparece el bloqueador `crew_access_blocked`), y CAPA pierde el `sourceType` `'contractor'`. Se **conservó** el tipo de evento `contractor_or_third_party` en incidentes: trabajando en faenas ajenas, un incidente con terceros es más probable, no menos.
 
 ## 0.8 Avance P1 — Permisos de trabajo, AST/JSA y control de energías (19 de julio de 2026)
 
@@ -113,11 +118,11 @@ Tercera capacidad P1. Es la que amarra las anteriores: el permiso es el punto do
 **Qué existe ahora en el checkout:**
 
 - catálogo configurable de tipos de permiso (altura, espacio confinado, trabajo en caliente, izaje, intervención eléctrica y los que Chome o cada mandante definan), cada uno declarando si exige aislamiento, mediciones y AST, su vigencia de medición y su duración máxima;
-- permiso con ventana, supervisor, cuadrilla mixta interna/contratista y máquina `borrador → pendiente → aprobado → vigente → cerrado`, con rechazo, suspensión y cancelación motivadas;
+- permiso con ventana, supervisor, cuadrilla de personal propio y máquina `borrador → pendiente → aprobado → vigente → cerrado`, con rechazo, suspensión y cancelación motivadas;
 - **AST/JSA por pasos** con peligros, controles y riesgo residual, editable sólo antes de la aprobación;
 - **aislamiento de energías (LOTO)** con fuente, equipo, método, bloqueo/tarjeta, verificación de energía cero y retiro trazado;
 - **mediciones** con límites, equipo, calibración y evaluación de rango persistida;
-- una **decisión de habilitación** que devuelve todos los bloqueadores a la vez y que se recalcula en el momento de activar: controles pendientes, aislamiento faltante o sin verificar, medición ausente, vencida o fuera de rango, AST ausente, cuadrilla vacía, **falta de competencia vigente** y **contratista con ingreso bloqueado**;
+- una **decisión de habilitación** que devuelve todos los bloqueadores a la vez y que se recalcula en el momento de activar: controles pendientes, aislamiento faltante o sin verificar, medición ausente, vencida o fuera de rango, AST ausente, cuadrilla vacía y **falta de competencia vigente**;
 - no se retira un aislamiento con el permiso vigente ni se cierra el permiso con energías bloqueadas; la ventana vencida suspende el permiso automáticamente;
 - exportación XLSX de seis hojas como expediente del permiso.
 
@@ -518,7 +523,7 @@ El DS 44 entró en vigencia el 1 de febrero de 2025 y reemplazó los antiguos DS
 | DS 44/2024, arts. 18 y 19 | Riesgo grave e inminente; planes de emergencia, catástrofe y evacuación | PPA detiene tareas | Falta gestión de escenarios, plan, roles, recursos, comunicación, simulacros, evaluación y lecciones | P1 |
 | DS 44/2024, arts. 22 y 52 | SG-SST y funciones del Departamento de Prevención cuando corresponda | PDTP y dashboard parcial | Falta revisión por la dirección, objetivos integrados, recursos, registro legal, evaluación del sistema e informes mensuales/anuales completos | P1 |
 | DS 44/2024, arts. 72, 73 y 75 | Registros documentales; tasas; registro mínimo de accidentes, trayecto y enfermedades | Biblioteca e indicadores manuales | Fórmulas incompletas/incorrectas y ausencia de registro fuente | P0 |
-| DS 76/2006 y Ley 20.123 | Coordinación preventiva en subcontratación, registro de faena, SG-SST, reglamento especial, antecedentes de contratistas | Faenas y trabajadores, sin coordinación especializada | Falta empresa contratista, contrato, dotación, acreditación, obligaciones, intercambio de riesgos, inspecciones y estadísticas | P0/P1 |
+| DS 76/2006 y Ley 20.123 | Obligaciones de la **empresa principal** sobre sus contratistas | **No aplica**: Chome es contratista en faenas de terceros con dotación propia, no empresa principal (ver 0.6) | Aplica el lado inverso —entregar antecedentes al mandante— que no está construido | Reclasificado 19-07-2026 |
 | DS 594/1999, versión vigente | Condiciones sanitarias y ambientales, agentes físicos/químicos, límites de exposición, ventilación, calor y controles | Ausente | Falta inventario de agentes, medición, grupos de exposición, vigilancia, controles y tendencias | P1 |
 | DS 594, arts. 53 y 54; DS 18 | EPP gratuito, adecuado, capacitación, mantención y certificación | Entrega logística de EPP | Falta decisión por riesgo, certificación, ajuste, capacitación, inspección, vida útil y eficacia | P1 |
 | Protocolos MINSAL/SUSESO | Vigilancia según exposición: CEAL-SM, TMERT, PREXOR, sílice, agentes químicos y otros aplicables | Ausente | Falta evaluación de aplicabilidad, nóminas, hitos, resultados, medidas y resguardo clínico | P1 |
@@ -565,7 +570,7 @@ SFTI es el competidor inmediato porque ya forma parte de la operación de Chome.
 | Entrega de EPP | Entrega logística desde Bodega | Parcial | Requisito por riesgo, certificación, ajuste, capacitación, mantención y recambio |
 | DIAT/DIEP | Ausente | No | Evento, denuncia, plazo, archivo, seguimiento y resolución |
 | Declaraciones y salud ocupacional | Ausente | No | Expediente sensible, vigilancia, aptitud y restricciones con acceso segregado |
-| Acreditación de contratistas | Ausente | No | Empresa, contrato, trabajadores, vehículos, documentos, vencimientos y bloqueo |
+| Acreditación de contratistas | Ausente | **No aplica** | Obligación de la empresa principal; Chome es contratista (ver 0.6) |
 | IPER/MIPER | Ausente | No | Procesos, tareas, peligros, evaluación, controles, responsable, revisión y mapa |
 | Inspecciones, observaciones y AST | Plantillas latentes y PPA | Parcial bajo | Motor transversal de inspección y AST conectado a controles críticos |
 | Accidentes, incidentes y cuasi accidentes | Solo contadores manuales | No | Reporte, investigación, causalidad, lesión, pérdida, notificaciones y CAPA |
@@ -742,23 +747,11 @@ El rol `cphs` no reemplaza un módulo. Debe incorporarse:
 
 También se requiere revisión por la dirección con entradas, decisiones, recursos y compromisos trazables.
 
-### 7.6 Empresas contratistas y coordinación de faena
+### 7.6 Empresas contratistas y coordinación de faena — **REQUISITO RETIRADO (19-07-2026)**
 
-Para cumplir el DS 76 y operar con mandantes y empresas colaboradoras se necesita:
+Esta sección describía las obligaciones de la **empresa principal** bajo el DS 76. **No aplican a Chome**, que opera como empresa contratista en faenas de terceros con dotación propia (ver 0.6). El módulo que las implementaba se eliminó.
 
-- empresa, RUT, contactos y organismo administrador;
-- contrato, alcance, fechas, dotación y subcontratos;
-- trabajadores, cargos, turnos y faena;
-- vehículos, equipos y operadores;
-- requisitos documentales por contrato/faena;
-- carga, revisión, observación, aprobación y vencimiento;
-- intercambio de MIPER, emergencias, reglamento especial y procedimientos;
-- inducción y competencias;
-- estadísticas e incidentes por contratista;
-- inspecciones y reuniones de coordinación;
-- bloqueo de acceso o trabajo ante incumplimientos críticos;
-- portal acotado para autocarga y respuesta;
-- expediente exportable para auditoría del mandante.
+Lo que sí aplica es el rol inverso —Chome entregando antecedentes a cada mandante, cumpliendo su reglamento especial y participando en las reuniones que el mandante convoca—, que no está construido y no está priorizado.
 
 ### 7.7 Permisos de trabajo, AST/JSA y control de energías
 
@@ -1269,7 +1262,7 @@ Criterio de salida:
 
 ### Fase 1 — Núcleo legal y paridad mínima con SFTI
 
-**Estado post-remediación:** núcleo P0 de MIPER/legal, incidentes, control documental y CAPA implementado. **Capacitación/ODI (0.5), contratistas/DS 76 (0.6) y permisos de trabajo/AST/LOTO (0.8) implementados el 19-07-2026.** Inspecciones, CPHS y la aceptación de paridad siguen pendientes.
+**Estado post-remediación:** núcleo P0 de MIPER/legal, incidentes, control documental y CAPA implementado. **Capacitación/ODI (0.5) y permisos de trabajo/AST/LOTO (0.8) implementados el 19-07-2026.** Contratistas/DS 76 se construyó y se **eliminó** el mismo día al establecerse que Chome es contratista y no empresa principal (0.6). Inspecciones, CPHS y la aceptación de paridad siguen pendientes.
 
 **Objetivo:** cubrir las funciones sin las cuales no es razonable retirar SFTI.
 
@@ -1282,7 +1275,6 @@ Entregables:
 - inspecciones/observaciones móviles;
 - CAPA transversal;
 - CPHS;
-- contratistas y coordinación DS 76;
 - permisos de trabajo y AST/JSA;
 - dashboard legal derivado.
 
@@ -1384,7 +1376,7 @@ Prevención puede considerarse completo para Chome cuando se cumplan conjuntamen
 
 ### Empresas y activos
 
-- [ ] Contratistas y subcontratistas se acreditan y coordinan por faena.
+- [x] ~~Contratistas y subcontratistas se acreditan y coordinan por faena~~ — no aplica: Chome es contratista, no empresa principal (ver 0.6).
 - [ ] Vehículos, equipos y contenedores se vinculan con controles e inspecciones.
 - [ ] Residuos, sustancias y HDS determinan controles operacionales.
 - [ ] Orden, ruta y manifiesto conservan trazabilidad EHSQ.

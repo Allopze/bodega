@@ -2,7 +2,6 @@ import { relations, sql } from "drizzle-orm"
 import { boolean, check, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { workers, worksites } from "../worksites"
-import { preventionContractorWorkers } from "./contractors"
 import { preventionRiskEntries } from "./risk-legal"
 
 /* ── Tipos de permiso configurables ───────────────────────────────────────
@@ -87,25 +86,23 @@ export const preventionWorkPermits = pgTable("prevention_work_permits", {
 ])
 
 /* ── Cuadrilla ────────────────────────────────────────────────────────────
- * Una persona es interna (`workerId`) o de contratista
- * (`contractorWorkerId`), nunca ambas ni ninguna: de eso depende qué control
- * de habilitación se le aplica.
+ * Toda la cuadrilla es personal propio de Chome. La identidad de contratista
+ * se retiró el 19-07-2026 junto con el módulo DS 76: Chome opera como empresa
+ * contratista en faenas de terceros, no como empresa principal, así que nunca
+ * acredita personal externo.
  */
 export const preventionPermitCrew = pgTable("prevention_permit_crew", {
   id:                  text("id").primaryKey(),
   permitId:            text("permit_id").notNull().references(() => preventionWorkPermits.id, { onDelete: "cascade" }),
-  workerId:            text("worker_id").references(() => workers.id, { onDelete: "restrict" }),
-  contractorWorkerId:  text("contractor_worker_id").references(() => preventionContractorWorkers.id, { onDelete: "restrict" }),
+  workerId:            text("worker_id").notNull().references(() => workers.id, { onDelete: "restrict" }),
   role:                text("role").notNull(),
   acknowledgedAt:      timestamp("acknowledged_at", { withTimezone: true, mode: "string" }),
   acknowledgementSha256: text("acknowledgement_sha256"),
   createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("prevention_permit_crew_worker_unique").on(table.permitId, table.workerId),
-  uniqueIndex("prevention_permit_crew_contractor_unique").on(table.permitId, table.contractorWorkerId),
   index("prevention_permit_crew_permit_idx").on(table.permitId),
   check("prevention_permit_crew_role_valid", sql`${table.role} IN ('executor', 'supervisor', 'standby', 'observer')`),
-  check("prevention_permit_crew_one_identity", sql`(${table.workerId} IS NOT NULL) <> (${table.contractorWorkerId} IS NOT NULL)`),
   check("prevention_permit_crew_ack_consistent", sql`(${table.acknowledgedAt} IS NULL AND ${table.acknowledgementSha256} IS NULL) OR (${table.acknowledgedAt} IS NOT NULL AND length(${table.acknowledgementSha256}) = 64)`),
 ])
 
@@ -216,7 +213,6 @@ export const preventionWorkPermitsRelations = relations(preventionWorkPermits, (
 export const preventionPermitCrewRelations = relations(preventionPermitCrew, ({ one }) => ({
   permit: one(preventionWorkPermits, { fields: [preventionPermitCrew.permitId], references: [preventionWorkPermits.id] }),
   worker: one(workers, { fields: [preventionPermitCrew.workerId], references: [workers.id] }),
-  contractorWorker: one(preventionContractorWorkers, { fields: [preventionPermitCrew.contractorWorkerId], references: [preventionContractorWorkers.id] }),
 }))
 
 export const preventionPermitControlsRelations = relations(preventionPermitControls, ({ one }) => ({

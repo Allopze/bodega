@@ -126,7 +126,6 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       crew: [
         { workerId: "wk-a1", role: "executor" },
         { workerId: "wk-a2", role: "standby" },
-        { contractorWorkerId: "cw-a1", role: "executor" },
       ],
       controls: [
         { description: "Ventilación forzada activa", isMandatory: true },
@@ -144,11 +143,11 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     const readiness = await service.evaluatePermitReadiness(permitId, REQUESTER)
     expect(readiness.allowed).toBe(false)
     const kinds = new Set(readiness.blockers.map((item) => item.kind))
-    // Controles sin verificar, sin aislamiento, sin medición, sin AST,
-    // competencia faltante y contratista bloqueado, todos a la vez.
+    // Controles sin verificar, sin aislamiento, sin medición, sin AST y
+    // competencia faltante, todos a la vez.
     expect(kinds).toEqual(new Set([
       "control_pending", "isolation_missing", "measurement_missing",
-      "jsa_missing", "crew_competency", "crew_access_blocked",
+      "jsa_missing", "crew_competency",
     ]))
   })
 
@@ -211,7 +210,7 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     }, APPROVER)).rejects.toThrow(/no puede habilitarse/)
   })
 
-  it("clears the field blockers: controls, isolation, measurement, competency and contractor access", async () => {
+  it("clears the field blockers: controls, isolation, measurement and competency", async () => {
     const service = await import("@/lib/services/prevention-permits")
 
     const controls = await getDb().select().from(schema.preventionPermitControls)
@@ -231,17 +230,11 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       equipmentTag: "GAS-07", calibrationDate: "2026-07-01", takenAt: new Date().toISOString(),
     }, REQUESTER)
 
-    // Habilitación de personas: se otorga la competencia interna faltante y se
-    // acredita al contratista.
+    // Habilitación de personas: se otorga la competencia faltante.
     await getDb().insert(schema.preventionWorkerCompetencies).values([
       { id: "comp-a1", workerId: "wk-a1", courseId: "course-conf", sourceType: "external_certificate", grantedAt: "2026-07-01", expiresAt: "2028-07-01", status: "valid", evidenceReference: "cert-1", externalIssuer: "OTEC", createdByUserId: "pm-approver" },
       { id: "comp-a2", workerId: "wk-a2", courseId: "course-conf", sourceType: "external_certificate", grantedAt: "2026-07-01", expiresAt: "2028-07-01", status: "valid", evidenceReference: "cert-2", externalIssuer: "OTEC", createdByUserId: "pm-approver" },
     ])
-    await getDb().update(schema.preventionContractorWorkers)
-      .set({ status: "accredited", accessBlocked: false })
-      .where(eq(schema.preventionContractorWorkers.id, "cw-a1"))
-    await getDb().update(schema.preventionContractorContracts)
-      .set({ accessBlocked: false }).where(eq(schema.preventionContractorContracts.id, "ct-pm-a"))
 
     const readiness = await service.evaluatePermitReadiness(permitId, REQUESTER)
     expect(readiness).toEqual({ allowed: true, blockers: [] })
@@ -363,21 +356,6 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
   await database.insert(schema.preventionCompetencyRequirements).values({
     id: "req-conf", courseId: "course-conf", scopeType: "task", scopeValue: "espacio-confinado",
     enforcement: "blocking", reason: "Tarea crítica: exige certificación vigente de espacio confinado.",
-    createdByUserId: "pm-approver", createdAt: now, updatedAt: now,
-  })
-  await database.insert(schema.preventionContractorCompanies).values({
-    id: "co-pm", rut: "76111222-3", legalName: "Servicios Confinados SpA",
-    createdByUserId: "pm-approver", createdAt: now, updatedAt: now,
-  })
-  await database.insert(schema.preventionContractorContracts).values({
-    id: "ct-pm-a", code: "CT-PM-001", companyId: "co-pm", worksiteId: "ws-pm-a",
-    relationship: "contractor", scope: "Servicios de limpieza de estanques industriales.",
-    startsOn: "2026-08-01", status: "active", accessBlocked: true,
-    createdByUserId: "pm-approver", createdAt: now, updatedAt: now,
-  })
-  await database.insert(schema.preventionContractorWorkers).values({
-    id: "cw-a1", contractId: "ct-pm-a", rut: "44444444-4", firstName: "Diego", lastName: "Rojas",
-    position: "Operador confinado", status: "pending", accessBlocked: true,
     createdByUserId: "pm-approver", createdAt: now, updatedAt: now,
   })
 }

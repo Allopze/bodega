@@ -36,8 +36,7 @@ export const workPermitSchema = z.object({
   plannedStartAt: instant,
   plannedEndAt: instant,
   crew: z.array(z.object({
-    workerId: z.string().min(1).nullable().optional(),
-    contractorWorkerId: z.string().min(1).nullable().optional(),
+    workerId: z.string().min(1),
     role: z.enum(["executor", "supervisor", "standby", "observer"]),
   })).default([]),
   controls: z.array(z.object({
@@ -48,13 +47,6 @@ export const workPermitSchema = z.object({
   if (Date.parse(value.plannedEndAt) <= Date.parse(value.plannedStartAt)) {
     ctx.addIssue({ code: "custom", path: ["plannedEndAt"], message: "El término debe ser posterior al inicio." })
   }
-  value.crew.forEach((member, index) => {
-    const hasWorker = Boolean(member.workerId)
-    const hasContractor = Boolean(member.contractorWorkerId)
-    if (hasWorker === hasContractor) {
-      ctx.addIssue({ code: "custom", path: ["crew", index], message: "Cada integrante es trabajador interno o de contratista, no ambos ni ninguno." })
-    }
-  })
 })
 
 export const jsaStepSchema = z.object({

@@ -63,13 +63,6 @@ describe("prevention module RBAC", () => {
       "prevention:training:convalidate",
       "prevention:training:revoke",
       "prevention:training:export",
-      "prevention:contractors:view",
-      "prevention:contractors:manage",
-      "prevention:contractors:submit",
-      "prevention:contractors:accredit",
-      "prevention:contractors:authorize_access",
-      "prevention:contractors:coordinate",
-      "prevention:contractors:export",
       "prevention:permits:view",
       "prevention:permits:manage",
       "prevention:permits:request",
@@ -101,9 +94,18 @@ describe("prevention module RBAC", () => {
     // `prevention:training:*` salió de esta lista el 2026-07-19: capacitación,
     // ODI y competencias volvieron como módulo implementado (DS 44 arts. 15 y
     // 16), no como resto de la poda de 2026-07-02.
-    // `prevention:contractors:*` salió de esta lista el 2026-07-19 junto con
-    // capacitación: la coordinación DS 76 volvió como módulo implementado.
+    // `prevention:contractors:*` volvió a esta lista el 2026-07-19: Chome opera
+    // como empresa contratista en faenas de terceros (CMPC, Biodiversa) con
+    // dotación propia, no como empresa principal, así que las obligaciones del
+    // DS 76 que el módulo cubría recaen en el mandante y no en Chome.
     const deleted = [
+      "prevention:contractors:view",
+      "prevention:contractors:manage",
+      "prevention:contractors:submit",
+      "prevention:contractors:accredit",
+      "prevention:contractors:authorize_access",
+      "prevention:contractors:coordinate",
+      "prevention:contractors:export",
       "prevention:iper:view",
       "prevention:alcohol_tests:view",
       "prevention:equipment_reports:view",
@@ -201,27 +203,6 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:training:revoke")).toEqual(["administrador", "jefa_chome"])
     expect(rolesFor("prevention:training:convalidate")).not.toContain("prevencionista_faena")
     expect(rolesFor("prevention:training:revoke")).not.toContain("jefe_terreno")
-  })
-
-  it("separates contractor submission from accreditation and site access authorization", () => {
-    const rolesFor = (permission: string) => preventionModule.defaultGrants
-      .filter((grant) => grant.permission === permission)
-      .map((grant) => grant.roleSlug)
-      .sort()
-
-    // Quien presenta la evidencia no la aprueba; el servicio además valida por
-    // actor que el revisor no sea quien presentó.
-    expect(rolesFor("prevention:contractors:submit")).toEqual([
-      "admin_contrato", "administrador", "prevencionista", "prevencionista_faena",
-    ])
-    expect(rolesFor("prevention:contractors:accredit")).toEqual([
-      "administrador", "jefa_chome", "prevencionista",
-    ])
-    // Liberar el ingreso a la faena es la decisión más sensible del DS 76.
-    expect(rolesFor("prevention:contractors:authorize_access")).toEqual(["administrador", "jefa_chome"])
-    expect(rolesFor("prevention:contractors:authorize_access")).not.toContain("prevencionista_faena")
-    expect(rolesFor("prevention:contractors:authorize_access")).not.toContain("admin_contrato")
-    expect(rolesFor("prevention:contractors:accredit")).not.toContain("prevencionista_faena")
   })
 
   it("splits the work-permit chain across distinct roles", () => {

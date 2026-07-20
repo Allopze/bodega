@@ -136,12 +136,11 @@ export async function buildPermitExport(access: PermitAccess): Promise<ReportDat
     ),
     sheet(
       "Cuadrilla",
-      ["Permiso", "Rol", "Trabajador interno", "Trabajador contratista", "Acuse", "Firma SHA-256"],
+      ["Permiso", "Rol", "Trabajador", "Acuse", "Firma SHA-256"],
       crew.map((member) => [
         safeCell(code.get(member.permitId)),
         label(PERMIT_CREW_ROLE_LABELS, member.role),
         safeCell(member.workerId),
-        safeCell(member.contractorWorkerId),
         member.acknowledgedAt ?? "Pendiente",
         safeCell(member.acknowledgementSha256),
       ]),

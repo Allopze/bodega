@@ -65,7 +65,6 @@ export interface PermitBlocker {
     | "jsa_missing"
     | "crew_empty"
     | "crew_competency"
-    | "crew_access_blocked"
     | "window_expired"
   detail: string
 }
@@ -102,8 +101,7 @@ export interface PermitMeasurementRow {
 
 export interface PermitCrewRow {
   id: string
-  workerId: string | null
-  contractorWorkerId: string | null
+  workerId: string
   label: string
 }
 
@@ -112,9 +110,9 @@ export interface PermitCrewRow {
  * y no sólo el primero: en terreno interesa saber la lista completa de lo que
  * falta, no descubrirla de a uno.
  *
- * Las habilitaciones de personas se reciben ya resueltas (`crewWithoutCompetency`,
- * `crewWithBlockedAccess`) porque provienen de los módulos de competencias y de
- * contratistas; esta función sólo compone la decisión.
+ * Las habilitaciones de personas se reciben ya resueltas
+ * (`crewWithoutCompetency`) porque provienen del módulo de competencias; esta
+ * función sólo compone la decisión.
  */
 export function assessPermitActivation(args: {
   type: PermitTypeSpec
@@ -124,7 +122,6 @@ export function assessPermitActivation(args: {
   jsaStepCount: number
   crew: PermitCrewRow[]
   crewWithoutCompetency: PermitCrewRow[]
-  crewWithBlockedAccess: PermitCrewRow[]
   plannedEndAt: string
   now: string
 }): { allowed: boolean; blockers: PermitBlocker[] } {
@@ -187,9 +184,6 @@ export function assessPermitActivation(args: {
   }
   for (const member of args.crewWithoutCompetency) {
     blockers.push({ kind: "crew_competency", detail: `${member.label} no tiene vigente una competencia exigida por este permiso.` })
-  }
-  for (const member of args.crewWithBlockedAccess) {
-    blockers.push({ kind: "crew_access_blocked", detail: `${member.label} pertenece a un contratista con el ingreso bloqueado.` })
   }
 
   if (Date.parse(args.plannedEndAt) <= Date.parse(args.now)) {

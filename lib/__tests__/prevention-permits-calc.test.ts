@@ -34,7 +34,6 @@ const control = (over: Partial<PermitControlRow> = {}): PermitControlRow => ({
 const crew = (over: Partial<PermitCrewRow> = {}): PermitCrewRow => ({
   id: "cr-1",
   workerId: "w-1",
-  contractorWorkerId: null,
   label: "Pérez, Ana",
   ...over,
 })
@@ -64,7 +63,6 @@ function assess(over: Partial<Parameters<typeof assessPermitActivation>[0]> = {}
     jsaStepCount: 3,
     crew: [crew()],
     crewWithoutCompetency: [],
-    crewWithBlockedAccess: [],
     plannedEndAt: "2026-07-19T18:00:00.000Z",
     now: NOW,
     ...over,
@@ -187,12 +185,6 @@ describe("habilitación de la cuadrilla", () => {
     const result = assess({ crew: [crew(), member], crewWithoutCompetency: [member] })
     expect(result.allowed).toBe(false)
     expect(result.blockers[0]?.detail).toContain("Soto, Bruno")
-  })
-
-  it("bloquea si un contratista tiene el ingreso bloqueado", () => {
-    const member = crew({ id: "cr-2", workerId: null, contractorWorkerId: "cw-1", label: "Díaz, Carla" })
-    const result = assess({ crew: [member], crewWithBlockedAccess: [member] })
-    expect(result.blockers.some((b) => b.kind === "crew_access_blocked")).toBe(true)
   })
 })
 
