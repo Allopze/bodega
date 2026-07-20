@@ -834,6 +834,32 @@ export async function listTrainingWorksites(access: TrainingAccess) {
     .orderBy(asc(worksites.name))
 }
 
+/**
+ * Dotación activa dentro del alcance, para convocar a una sesión.
+ *
+ * Devuelve `worksiteId` porque el servicio rechaza convocar a alguien de otra
+ * faena: el formulario filtra por la faena elegida y así el error no aparece
+ * recién al enviar.
+ */
+export async function listTrainingWorkers(access: TrainingAccess) {
+  requireAccess(access, "prevention:training:view")
+  if (access.scope.mode === "none") return []
+  return db.select({
+    id: workers.id,
+    firstName: workers.firstName,
+    lastName: workers.lastName,
+    position: workers.position,
+    worksiteId: workers.worksiteId,
+  })
+    .from(workers)
+    .where(and(
+      eq(workers.isActive, true),
+      access.scope.mode === "some" ? inArray(workers.worksiteId, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(workers.lastName), asc(workers.firstName))
+    .limit(2000)
+}
+
 /** Todas las versiones de todos los cursos, para la vista de catálogo. */
 export async function listAllCourseVersions(access: TrainingAccess) {
   requireAccess(access, "prevention:training:view")

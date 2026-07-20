@@ -25,6 +25,7 @@ import {
   createTrainingCourseVersionAction,
   transitionTrainingCourseVersionAction,
 } from "../actions"
+import { Field, selectClass, useOperation } from "../form-kit"
 
 interface CourseItem {
   id: string
@@ -59,34 +60,6 @@ interface RequirementItem {
   enforcement: string
   isActive: boolean
 }
-
-type Result = { ok: boolean; message?: string }
-
-function useOperation() {
-  const [pending, startTransition] = React.useTransition()
-  const [message, setMessage] = React.useState("")
-  function run(operation: () => Promise<Result>, onSuccess?: () => void) {
-    setMessage("")
-    startTransition(async () => {
-      const result = await operation()
-      setMessage(result.ok ? "Guardado correctamente." : result.message ?? "No se pudo completar la acción.")
-      if (result.ok) onSuccess?.()
-    })
-  }
-  return { pending, message, run }
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="grid gap-1 text-sm">
-      <span className="font-medium">{label}</span>
-      {children}
-      {hint && <span className="text-xs text-[var(--color-text-subtle)]">{hint}</span>}
-    </label>
-  )
-}
-
-const selectClass = "h-10 rounded-md border border-[var(--color-border)] bg-transparent px-3 text-sm"
 
 function versionStatusVariant(status: string): "default" | "info" | "warning" | "success" | "outline" {
   if (status === "published") return "success"

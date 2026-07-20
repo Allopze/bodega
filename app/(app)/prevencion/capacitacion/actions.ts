@@ -38,6 +38,10 @@ async function run(access: TrainingAccess, operation: (access: TrainingAccess) =
     revalidatePath(BASE)
     revalidatePath(`${BASE}/competencias`)
     revalidatePath(`${BASE}/brechas`)
+    revalidatePath(`${BASE}/catalogo`)
+    // Sin esto la asistencia recién guardada sigue mostrando el valor anterior
+    // al volver al detalle, porque la ruta dinámica no la cubre `BASE`.
+    revalidatePath(`${BASE}/[sessionId]`, "page")
     return { ok: true }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }

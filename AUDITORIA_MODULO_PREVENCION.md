@@ -81,7 +81,7 @@ Primera capacidad P1 implementada, elegida por prioridad legal: el DS 44 art. 16
 
 **Evidencia:** migración `0078_fearless_overlord.sql` generada desde schema, segunda generación sin drift y aplicada al PostgreSQL local (7 tablas verificadas). 23 pruebas puras del motor de brechas y del piso legal, 7 de paridad RBAC y **19 escenarios sobre PostgreSQL real** que cubren segregación, versión optimista, scope negativo entre faenas, idempotencia de cierre y de escalamiento CAPA, acuse por titular, vencimiento, convalidación, revocación y XLSX. Typecheck, ESLint y build de producción verdes; React Doctor sin errores nuevos.
 
-**Formularios (19-07-2026):** el catálogo ya tiene UI de alta en `/prevencion/capacitacion/catalogo` (curso, contenido versionado, transiciones y requisitos). Falta el formulario de sesiones y el registro de asistencia en terreno.
+**Formularios (19-07-2026):** capacidad **cerrada de punta a punta en UI**. El catálogo tiene alta en `/prevencion/capacitacion/catalogo` (curso, contenido versionado, transiciones y requisitos), y `/prevencion/capacitacion` permite programar sesión y convocar, con detalle por sesión en `/prevencion/capacitacion/[sessionId]` para registrar asistencia y evaluación, cerrar otorgando competencias y cancelar. El cierre muestra el piso del DS 44 art. 16 antes de enviar, reusando la misma función que valida el servicio. Queda pendiente sólo la captura móvil/offline en terreno.
 
 **Lo que esto todavía NO significa:** no hay cursos, dotación formativa ni requisitos productivos cargados. La cobertura del art. 16 no puede afirmarse desde una base local vacía, y la definición de qué cargo exige qué curso es una decisión de Prevención, no del software.
 

@@ -6,7 +6,10 @@ import { Certificate } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -15,7 +18,8 @@ import {
   TRAINING_SESSION_STATUS_LABELS,
 } from "@/lib/prevention/training"
 import { formatDateTime } from "@/lib/utils"
-import { acknowledgeTrainingAction } from "./actions"
+import { acknowledgeTrainingAction, createTrainingSessionAction } from "./actions"
+import { Field, selectClass, toLocalInputValue, useOperation } from "./form-kit"
 
 interface SessionItem {
   id: string
@@ -42,12 +46,30 @@ interface PendingAck {
   endedAt: string | null
 }
 
+interface PublishedVersion {
+  id: string
+  courseName: string
+  versionLabel: string
+  modality: string
+}
+
+interface WorkerOption {
+  id: string
+  name: string
+  position: string | null
+  worksiteId: string
+}
+
 interface Props {
   sessions: SessionItem[]
   courseCount: number
   blockingGapCount: number
   pendingAcks: PendingAck[]
   canAck: boolean
+  canManage: boolean
+  publishedVersions: PublishedVersion[]
+  worksites: { id: string; name: string }[]
+  workers: WorkerOption[]
 }
 
 type QuickFilter = "all" | "planned" | "pending_ack" | "blocking_gaps"
@@ -63,7 +85,10 @@ function showDateTime(value: string | null) {
   return value ? formatDateTime(value) : "—"
 }
 
-export function TrainingSessionList({ sessions, courseCount, blockingGapCount, pendingAcks, canAck }: Props) {
+export function TrainingSessionList({
+  sessions, courseCount, blockingGapCount, pendingAcks, canAck,
+  canManage, publishedVersions, worksites, workers,
+}: Props) {
   const { searchQuery } = useSafeShellHeader()
   const [status, setStatus] = React.useState("all")
   const [worksite, setWorksite] = React.useState("all")
@@ -72,7 +97,9 @@ export function TrainingSessionList({ sessions, courseCount, blockingGapCount, p
   const [ackPending, startAck] = React.useTransition()
   const [ackMessage, setAckMessage] = React.useState<string | null>(null)
 
-  const worksites = React.useMemo(() => {
+  // Faenas presentes en las sesiones listadas: el filtro sólo debe ofrecer
+  // valores que puedan devolver alguna fila, no todo el alcance.
+  const sessionWorksites = React.useMemo(() => {
     const map = new Map(sessions.map((item) => [item.worksiteId, item.worksiteName]))
     return [...map].map(([id, name]) => ({ id, name }))
   }, [sessions])
@@ -179,11 +206,16 @@ export function TrainingSessionList({ sessions, courseCount, blockingGapCount, p
           <SelectTrigger className="w-52" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las faenas</SelectItem>
-            {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+            {sessionWorksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
           </SelectContent>
         </Select>
         {(status !== "all" || worksite !== "all" || kind !== "all" || quickFilter !== "all") && (
           <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar filtros</Button>
+        )}
+        {canManage && publishedVersions.length > 0 && (
+          <div className="ml-auto">
+            <SessionDialog versions={publishedVersions} worksites={worksites} workers={workers} />
+          </div>
         )}
       </div>
 
@@ -215,8 +247,10 @@ export function TrainingSessionList({ sessions, courseCount, blockingGapCount, p
               {filtered.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
-                    <span className="font-mono text-xs">{item.code}</span>
-                    <span className="block text-sm">{item.courseName}</span>
+                    <Link href={`/prevencion/capacitacion/${item.id}`} className="hover:underline">
+                      <span className="font-mono text-xs">{item.code}</span>
+                      <span className="block text-sm font-medium">{item.courseName}</span>
+                    </Link>
                     <span className="text-xs text-[var(--color-text-subtle)]">Versión {item.versionLabel} · {TRAINING_MODALITY_LABELS[item.modality] ?? item.modality}</span>
                   </TableCell>
                   <TableCell className="text-sm">{TRAINING_KIND_LABELS[item.courseKind] ?? item.courseKind}</TableCell>
@@ -237,5 +271,153 @@ export function TrainingSessionList({ sessions, courseCount, blockingGapCount, p
         </div>
       )}
     </div>
+  )
+}
+
+/* ── Programación de sesión ───────────────────────────────────────────────── */
+
+function SessionDialog({ versions, worksites, workers }: {
+  versions: PublishedVersion[]
+  worksites: { id: string; name: string }[]
+  workers: WorkerOption[]
+}) {
+  const [open, setOpen] = React.useState(false)
+  // El "ahora" se resuelve al abrir y no al renderizar: leerlo desde JSX daría
+  // un valor distinto en el servidor y en el navegador, y eso es un desajuste
+  // de hidratación. Al abrir, el contenido del diálogo recién se monta.
+  const [defaultScheduledAt, setDefaultScheduledAt] = React.useState("")
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const [instructorKind, setInstructorKind] = React.useState<"internal" | "external">("external")
+  const [convened, setConvened] = React.useState<string[]>([])
+  const [workerQuery, setWorkerQuery] = React.useState("")
+  const operation = useOperation()
+
+  // Convocar a alguien de otra faena lo rechaza el servicio, así que la lista
+  // ya viene acotada a la faena elegida en vez de fallar al enviar.
+  const eligible = workers.filter((worker) => worker.worksiteId === worksiteId)
+  const query = workerQuery.trim().toLocaleLowerCase("es-CL")
+  const shown = query
+    ? eligible.filter((worker) => `${worker.name} ${worker.position ?? ""}`.toLocaleLowerCase("es-CL").includes(query))
+    : eligible
+
+  function changeWorksite(value: string) {
+    setWorksiteId(value)
+    setConvened([]) // la convocatoria anterior pertenece a la faena anterior
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const scheduledAt = String(form.get("scheduledAt") ?? "")
+    operation.run(() => createTrainingSessionAction({
+      courseVersionId: form.get("courseVersionId"),
+      worksiteId,
+      scheduledAt: new Date(scheduledAt).toISOString(),
+      modality: form.get("modality"),
+      location: String(form.get("location") ?? "") || null,
+      instructorUserId: instructorKind === "internal" ? String(form.get("instructorUserId") ?? "") || null : null,
+      instructorExternalName: instructorKind === "external" ? String(form.get("instructorExternalName") ?? "") || null : null,
+      instructorCompetencyEvidence: form.get("instructorCompetencyEvidence"),
+      convenedWorkerIds: convened,
+    }), () => { setOpen(false); setConvened([]); setWorkerQuery("") })
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (value) setDefaultScheduledAt(toLocalInputValue(new Date()))
+        setOpen(value)
+      }}
+    >
+      <DialogTrigger asChild><Button size="sm">Programar sesión</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="max-h-[70vh] space-y-4 overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Programar sesión</DialogTitle>
+            <DialogDescription>
+              Sólo puede dictarse una versión publicada del curso. La competencia del relator queda
+              registrada aquí porque es exigible en fiscalización.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Field label="Contenido a dictar" hint="Sólo aparecen las versiones publicadas.">
+            <select name="courseVersionId" className={selectClass} required>
+              {versions.map((item) => (
+                <option key={item.id} value={item.id}>{item.courseName} · {item.versionLabel}</option>
+              ))}
+            </select>
+          </Field>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Faena">
+              <select value={worksiteId} onChange={(event) => changeWorksite(event.target.value)} className={selectClass} required>
+                {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Fecha y hora programada">
+              <Input name="scheduledAt" type="datetime-local" required defaultValue={defaultScheduledAt} />
+            </Field>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Modalidad">
+              <select name="modality" className={selectClass} defaultValue="presencial">
+                {Object.entries(TRAINING_MODALITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </Field>
+            <Field label="Lugar" hint="Sala, faena o plataforma."><Input name="location" maxLength={300} /></Field>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Relator">
+              <select value={instructorKind} onChange={(event) => setInstructorKind(event.target.value as "internal" | "external")} className={selectClass}>
+                <option value="external">Externo</option>
+                <option value="internal">Interno (usuario de la plataforma)</option>
+              </select>
+            </Field>
+            {instructorKind === "external"
+              ? <Field label="Nombre del relator externo"><Input name="instructorExternalName" required minLength={3} maxLength={300} /></Field>
+              : <Field label="Usuario del relator" hint="ID del usuario que dicta."><Input name="instructorUserId" required /></Field>}
+          </div>
+
+          <Field label="Evidencia de competencia del relator" hint="Título, certificación o registro que lo habilita. Mínimo 5 caracteres.">
+            <Textarea name="instructorCompetencyEvidence" required minLength={5} maxLength={2000} />
+          </Field>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Convocados</span>
+              <span className="text-xs text-[var(--color-text-subtle)]">{convened.length} de {eligible.length}</span>
+            </div>
+            {eligible.length === 0 ? (
+              <p className="text-xs text-[var(--color-text-subtle)]">No hay dotación activa en esta faena.</p>
+            ) : (
+              <>
+                <Input value={workerQuery} onChange={(event) => setWorkerQuery(event.target.value)} placeholder="Buscar por nombre o cargo" />
+                <div className="max-h-56 overflow-y-auto rounded-md border border-[var(--color-border)]">
+                  {shown.map((worker) => (
+                    <label key={worker.id} className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0">
+                      <input
+                        type="checkbox"
+                        checked={convened.includes(worker.id)}
+                        onChange={(event) => setConvened((current) => event.target.checked
+                          ? [...current, worker.id]
+                          : current.filter((id) => id !== worker.id))}
+                      />
+                      <span>{worker.name}</span>
+                      {worker.position && <span className="text-xs text-[var(--color-text-subtle)]">{worker.position}</span>}
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Programar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

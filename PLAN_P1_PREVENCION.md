@@ -107,7 +107,7 @@ La capacidad 1 se eligió primero porque el art. 16 era el **único requisito ma
 - [ ] **Producción** — Aplicar la migración `0078` y programar el cron `prevention-training-reminders`.
 - [ ] **Aceptación** — Jefatura de Prevención valida que las reglas codificadas del art. 16 corresponden a su interpretación.
 - [x] ~~UI de alta de cursos, versiones y requisitos~~ — **entregada el 19-07-2026** en `/prevencion/capacitacion/catalogo`: alta de curso con el piso del art. 16 visible en el formulario, alta de contenido con temario y contador de minutos, transiciones de versión con motivo obligatorio, y alta de requisito de competencia.
-- [ ] **Producto (diferido)** — UI de alta de sesiones y de registro de asistencia/cierre: las Server Actions existen y están probadas; falta el formulario de terreno.
+- [x] ~~UI de alta de sesiones y de registro de asistencia/cierre~~ — **completado el 19-07-2026** (ver 5decies). El flujo de capacitación queda cerrado de punta a punta: programar, convocar, registrar asistencia y evaluación, cerrar otorgando competencias, cancelar y acusar recibo.
 - [x] ~~Requisitos de alcance `task`~~ — **cerrado en la capacidad 3** (19-07-2026): el tipo de permiso los consume mediante `competencyTaskKey`, sin tablas nuevas. Ver sección 5ter.2.
 
 ---
@@ -261,7 +261,11 @@ Ninguna de las definiciones SST declara `required` ni `danoPotencial`; ambos cam
 Se agregó un **piso de seguridad**: cuando la plantilla no declara obligatorios, se exigen todos los ítems que cuentan para cumplimiento. En cuanto Prevención marque obligatorios reales, manda la marca por ítem. La criticidad sigue cayendo a media mientras el catálogo no declare daño potencial, lo que es correcto pero deja el bloqueo por hallazgo grave sin efecto práctico hasta enriquecerlo.
 
 - [x] ~~Enriquecer el catálogo con `danoPotencial`~~ — **completado y cargado el 19-07-2026**: 182/182 ítems calibrados por Prevención. El bloqueo de cierre por hallazgo grave o crítico ya tiene efecto real.
-- [ ] **Operación** — Declarar `required` por ítem. Mientras no exista, el piso de seguridad exige responder todo lo que cuenta para cumplimiento, que es más estricto que lo que probablemente se busca.
+- [ ] **Producto (baja prioridad, no es un defecto)** — Aplicabilidad condicional de ítems. Ningún ítem declara `required`, así que el piso de seguridad exige responder todo lo que cuenta para cumplimiento; se puede marcar «no aplica», pero con motivo escrito. Ese es el comportamiento conservador y correcto: un ítem opcional sin responder desaparecería sin dejar rastro, y en una inspección de equipos móviles eso es justo lo que no se quiere.
+
+  La fricción real está en 7 ítems que en su propio texto ya declaran que a veces no corresponden (seis «Solo camión carretera» en equipos móviles y el certificado CECMEC en extintores): obligan a justificar por escrito en cada inspección de un equipo que no es camión de carretera.
+
+  Si esa fricción se vuelve un problema, **la solución no es marcar `required`** sino declarar aplicabilidad condicional por sujeto, de modo que el formulario no muestre el ítem cuando no corresponde. Quita la fricción sin perder trazabilidad, y es trabajo de producto, no una decisión de Prevención.
 - [ ] **Producción** — Aplicar la migración `0082` e incorporar y aprobar las plantillas que la faena vaya a usar.
 - [ ] **Producto (diferido)** — Formulario de ejecución en terreno y captura móvil/offline: las Server Actions existen y están probadas, la bandeja de lectura tiene UI.
 - [ ] **Producto (diferido)** — Tendencias por pregunta, control, activo y contratista; auditorías con alcance, muestra y equipo auditor.
@@ -363,6 +367,35 @@ Prevención devolvió la planilla con **182 de 182 ítems calibrados**, sin valo
 Es una decisión legítima —en operación con equipos pesados muchos incumplimientos sí pueden matar— pero significa que la bandeja CAPA mostrará acciones vencidas el mismo día en que nacen.
 
 - [x] ~~Separar detención inmediata y plazo administrativo~~ — **aprobado y ejecutado el 19-07-2026**. `prevention_capa_actions.requires_immediate_stop` (migración `0085`) transporta la respuesta de terreno; `fatal` pasa a compartir el plazo de 48 h con `grave`. La calibración, la escala y el importador no cambiaron. La bandeja CAPA lo muestra como métrica accionable y distintivo por acción.
+
+---
+
+## 5decies. Sesiones, asistencia y cierre — Capacitación (19 de julio de 2026)
+
+Segunda entrega de «hacer usable lo construido», y la que **cierra la capacidad 1 de punta a punta**: hasta ahora existían el catálogo y las bandejas, pero programar una sesión, tomar asistencia o cerrarla seguía requiriendo invocar la Server Action.
+
+**Entregado**
+
+- **Programar sesión**, desde la propia bandeja. Sólo ofrece versiones **publicadas**, que es la única condición bajo la cual el servicio permite dictar. El relator se declara interno o externo, y su evidencia de competencia es obligatoria porque es exigible en fiscalización.
+- **Convocatoria acotada por faena.** El servicio rechaza convocar a alguien de otra faena; la lista de convocables se filtra por la faena elegida y se vacía al cambiarla, de modo que el rechazo no aparezca recién al enviar. Incluye buscador por nombre y cargo.
+- **Detalle de sesión** en `/prevencion/capacitacion/[sessionId]`: ficha con duración exigida contra duración dictada, vigencia que se otorgará, relator y su evidencia.
+- **Registro de asistencia** como grilla editable: estado por persona, minutos, nota cuando el curso evalúa —deshabilitada si la persona no asistió, porque una nota sin asistencia no significa nada— y campo de justificación que aparece sólo al marcar «ausencia justificada», que es cuando el servicio la exige.
+- **Cierre con el piso legal visible antes de enviar.** El diálogo calcula la duración dictada del par inicio/término y la contrasta con **la misma función** `assessLegalFloor` que usa el servicio, en vez de reimplementar la regla. Si el curso es legal obligatorio y la sesión no alcanza su duración, el botón queda deshabilitado con el motivo citado. Lo mismo con los convocados sin resultado de asistencia.
+- **Cancelación** con motivo obligatorio, separada del cierre.
+
+### Errores encontrados y corregidos por el camino
+
+1. **Revalidación incompleta.** `revalidatePath` cubría la bandeja y sus tres subrutas estáticas, pero no la ruta dinámica del detalle ni el catálogo. La asistencia recién guardada habría seguido mostrando el valor anterior. Se agregó `revalidatePath(BASE/[sessionId], "page")` y el catálogo.
+2. **Desajuste de hidratación** detectado por React Doctor: `new Date()` leído desde JSX para el valor por defecto de la fecha programada da un valor distinto en el servidor y en el navegador. Se resuelve al abrir el diálogo, no al renderizar.
+3. **Sombra de variable**: el `worksites` derivado de las sesiones (para el filtro) chocaba con el nuevo prop de faenas del alcance. Se renombró a `sessionWorksites`, y de paso queda explícito que el filtro sólo debe ofrecer valores capaces de devolver alguna fila.
+
+### Decisiones de diseño
+
+- `useOperation`, `Field` y `selectClass` estaban duplicándose en el segundo consumidor, así que se extrajeron a `app/(app)/prevencion/capacitacion/form-kit.tsx`. Dos consumidores justifican el archivo; uno no lo habría justificado.
+- La convocatoria (dotación completa y versiones) **sólo se consulta si el usuario puede programar**. Para el resto son dos consultas sobre toda la dotación que nadie va a mirar.
+- Se agregó `listTrainingWorkers` al servicio, con el tipo `WorksiteScope` canónico, devolviendo `worksiteId` para que el formulario pueda filtrar sin ida y vuelta.
+
+**Verificación:** typecheck y ESLint limpios (los 8 avisos restantes son del módulo de respaldos, en desarrollo concurrente y ajeno a esta entrega), React Doctor sin hallazgos en los archivos tocados, 19 pruebas de integración PostgreSQL de capacitación en verde, y `next build` compilando la ruta dinámica sin colisionar con `catalogo`, `competencias` ni `brechas`.
 
 ---
 
@@ -469,7 +502,7 @@ Es una decisión legítima —en operación con equipos pesados muchos incumplim
 - [x] Los botones de transición se filtran por permiso; la segregación autor/aprobador se sigue validando por actor en el servicio.
 - [x] Detectada una deuda técnica preexistente: `prevention-indicadores.ts` define un `WorksiteScope` incompatible con el canónico. Se evitó el acoplamiento agregando un helper propio; la unificación queda anotada.
 - [x] Typecheck, ESLint, build y regresión (57 archivos, 421 pruebas) verdes. React Doctor sin errores ni hallazgos nuevos.
-- [ ] Falta el formulario de sesiones y el registro de asistencia/cierre en terreno.
+- [x] Resuelto en la entrada «Sesiones, asistencia y cierre» de esta misma fecha: el formulario de sesiones y el registro de asistencia/cierre ya existen.
 
 ### 19 de julio de 2026 — Carga de la calibración de daño potencial
 
@@ -488,6 +521,19 @@ Es una decisión legítima —en operación con equipos pesados muchos incumplim
 - [x] La bandeja CAPA muestra «Exigen detener la tarea» como métrica accionable y un distintivo junto al hallazgo: una bandera invisible en terreno no cambia conducta.
 - [x] Pruebas nuevas en ambos motores: que sólo `fatal`/crítico exigen detención, que el plazo de `fatal` ya no es hoy y que los plazos crecen al bajar la severidad. Se corrigió una aserción previa que fijaba la forma del objeto de prioridad.
 - [x] Regresión completa: 72 archivos, 651 pruebas y 11 suites PostgreSQL con 119 pruebas. Typecheck, ESLint y build verdes.
+
+### 19 de julio de 2026 — Sesiones, asistencia y cierre de capacitación
+
+- [x] `SessionDialog` en la bandeja: programa sesión sobre versiones publicadas, con relator interno o externo y evidencia de competencia obligatoria.
+- [x] Convocatoria filtrada por la faena elegida, con buscador, y vaciada al cambiar de faena: el rechazo del servicio por faena cruzada ya no aparece recién al enviar.
+- [x] Ruta `/prevencion/capacitacion/[sessionId]` con ficha de sesión, grilla de asistencia editable, cierre y cancelación.
+- [x] El cierre muestra el piso legal antes de enviar reusando `assessLegalFloor`, la misma función del servicio, en vez de reimplementar la regla en el cliente.
+- [x] La nota se deshabilita si la persona no asistió y la justificación aparece sólo al marcar ausencia justificada, que es exactamente cuando el servicio la exige.
+- [x] Corregido: `revalidatePath` no cubría la ruta dinámica del detalle ni el catálogo, así que la asistencia guardada habría seguido mostrando el valor anterior.
+- [x] Corregido un desajuste de hidratación detectado por React Doctor (`new Date()` leído desde JSX) y una sombra de variable entre las faenas del filtro y las del alcance.
+- [x] `useOperation`, `Field` y `selectClass` extraídos a `form-kit.tsx` al aparecer el segundo consumidor.
+- [x] Typecheck, ESLint y build verdes; 19 pruebas PostgreSQL de capacitación en verde; React Doctor sin hallazgos en los archivos tocados.
+- [x] Reclasificado el pendiente de `required` por ítem: no es un defecto, y si la fricción molesta la solución es aplicabilidad condicional, no marcar obligatorios.
 
 ---
 

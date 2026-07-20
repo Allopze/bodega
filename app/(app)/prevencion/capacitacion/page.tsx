@@ -7,10 +7,13 @@ import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
+  listAllCourseVersions,
   listCompetencyGaps,
   listMyPendingAcknowledgements,
   listTrainingCourses,
   listTrainingSessions,
+  listTrainingWorkers,
+  listTrainingWorksites,
 } from "@/lib/services/prevention-training"
 import { TrainingSessionList } from "./training-session-list"
 
@@ -26,11 +29,17 @@ export default async function CapacitacionPage() {
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
   }
-  const [sessions, courses, gaps, pendingAcks] = await Promise.all([
+  const canManage = session.user.permissions.includes("prevention:training:manage")
+  const [sessions, courses, gaps, pendingAcks, versions, worksites, workers] = await Promise.all([
     listTrainingSessions(access),
     listTrainingCourses(access),
     listCompetencyGaps(access),
     listMyPendingAcknowledgements(access),
+    // La convocatoria sólo la necesita quien puede programar: para el resto son
+    // dos consultas sobre toda la dotación que nadie va a mirar.
+    canManage ? listAllCourseVersions(access) : Promise.resolve([]),
+    canManage ? listTrainingWorksites(access) : Promise.resolve([]),
+    canManage ? listTrainingWorkers(access) : Promise.resolve([]),
   ])
 
   return (
@@ -78,6 +87,22 @@ export default async function CapacitacionPage() {
           endedAt: item.endedAt,
         }))}
         canAck={session.user.permissions.includes("prevention:training:ack")}
+        canManage={canManage}
+        publishedVersions={versions
+          .filter((row) => row.version.status === "published")
+          .map((row) => ({
+            id: row.version.id,
+            courseName: row.courseName,
+            versionLabel: row.version.versionLabel,
+            modality: row.version.modality,
+          }))}
+        worksites={worksites}
+        workers={workers.map((worker) => ({
+          id: worker.id,
+          name: `${worker.lastName}, ${worker.firstName}`,
+          position: worker.position,
+          worksiteId: worker.worksiteId,
+        }))}
       />
     </PageContainer>
   )
