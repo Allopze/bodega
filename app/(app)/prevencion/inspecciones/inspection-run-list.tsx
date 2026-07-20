@@ -1,11 +1,14 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { MagnifyingGlass } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -14,6 +17,14 @@ import {
   runStatusBadgeVariant,
 } from "@/lib/prevention/inspections"
 import { formatDateTime } from "@/lib/utils"
+import { createInspectionRunAction } from "./actions"
+import { Field, selectClass, useOperation } from "./inspection-form-kit"
+
+interface TemplateOption {
+  id: string
+  name: string
+  versionLabel: string
+}
 
 interface RunItem {
   id: string
@@ -33,13 +44,24 @@ interface RunItem {
 
 type QuickFilter = "all" | "pending_review" | "open_findings" | "critical"
 
-export function InspectionRunList({ runs, overdueProgramCount }: { runs: RunItem[]; overdueProgramCount: number }) {
+interface Props {
+  runs: RunItem[]
+  overdueProgramCount: number
+  canExecute: boolean
+  templates: TemplateOption[]
+  worksites: { id: string; name: string }[]
+  assignees: { id: string; name: string }[]
+}
+
+export function InspectionRunList({ runs, overdueProgramCount, canExecute, templates, worksites, assignees }: Props) {
   const { searchQuery } = useSafeShellHeader()
   const [status, setStatus] = React.useState("all")
   const [worksite, setWorksite] = React.useState("all")
   const [quickFilter, setQuickFilter] = React.useState<QuickFilter>("all")
 
-  const worksites = React.useMemo(() => {
+  // Faenas presentes en las inspecciones listadas: el filtro sólo debe
+  // ofrecer valores que puedan devolver alguna fila, no todo el alcance.
+  const runWorksites = React.useMemo(() => {
     const map = new Map(runs.map((item) => [item.worksiteId, item.worksiteName]))
     return [...map].map(([id, name]) => ({ id, name }))
   }, [runs])
@@ -96,11 +118,16 @@ export function InspectionRunList({ runs, overdueProgramCount }: { runs: RunItem
           <SelectTrigger className="w-52" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las faenas</SelectItem>
-            {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+            {runWorksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
           </SelectContent>
         </Select>
         {(status !== "all" || worksite !== "all" || quickFilter !== "all") && (
           <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar filtros</Button>
+        )}
+        {canExecute && templates.length > 0 && worksites.length > 0 && (
+          <div className="ml-auto">
+            <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} />
+          </div>
         )}
       </div>
 
@@ -113,7 +140,9 @@ export function InspectionRunList({ runs, overdueProgramCount }: { runs: RunItem
             : "Ajusta los filtros o el texto del buscador superior."}
           action={runs.length > 0
             ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button>
-            : undefined}
+            : canExecute && templates.length > 0 && worksites.length > 0
+              ? <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} />
+              : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -133,8 +162,10 @@ export function InspectionRunList({ runs, overdueProgramCount }: { runs: RunItem
               {filtered.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
-                    <span className="font-mono text-xs">{item.code}</span>
-                    <span className="block text-sm">{item.templateName}</span>
+                    <Link href={`/prevencion/inspecciones/${item.id}`} className="hover:underline">
+                      <span className="font-mono text-xs">{item.code}</span>
+                      <span className="block text-sm font-medium">{item.templateName}</span>
+                    </Link>
                   </TableCell>
                   <TableCell className="text-sm">{INSPECTION_KIND_LABELS[item.templateKind] ?? item.templateKind}</TableCell>
                   <TableCell className="text-sm">
@@ -160,5 +191,72 @@ export function InspectionRunList({ runs, overdueProgramCount }: { runs: RunItem
         </div>
       )}
     </div>
+  )
+}
+
+/* ── Alta de inspección ───────────────────────────────────────────────────── */
+
+function NewRunDialog({ templates, worksites, assignees }: {
+  templates: TemplateOption[]
+  worksites: { id: string; name: string }[]
+  assignees: { id: string; name: string }[]
+}) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const subjectType = String(form.get("subjectType") ?? "").trim()
+    const subjectLabel = String(form.get("subjectLabel") ?? "").trim()
+    const scheduledFor = String(form.get("scheduledFor") ?? "").trim()
+    const assignedToUserId = String(form.get("assignedToUserId") ?? "").trim()
+    operation.run(() => createInspectionRunAction({
+      templateId: form.get("templateId"),
+      worksiteId: form.get("worksiteId"),
+      subjectType: subjectType || null,
+      subjectLabel: subjectLabel || null,
+      scheduledFor: scheduledFor || null,
+      assignedToUserId: assignedToUserId || null,
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm">Nueva inspección</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Nueva inspección</DialogTitle>
+            <DialogDescription>Sólo puede ejecutarse una plantilla aprobada. Las respuestas se registran después, desde el detalle.</DialogDescription>
+          </DialogHeader>
+          <Field label="Plantilla">
+            <select name="templateId" className={selectClass} required>
+              {templates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.versionLabel}</option>)}
+            </select>
+          </Field>
+          <Field label="Faena">
+            <select name="worksiteId" className={selectClass} required>
+              {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </Field>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
+            <Field label="Identificación del sujeto" hint="Opcional. Ej: TAG o patente."><Input name="subjectLabel" maxLength={300} /></Field>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Programada para" hint="Opcional."><Input name="scheduledFor" type="date" /></Field>
+            <Field label="Asignada a" hint="Vacío = quien la crea.">
+              <select name="assignedToUserId" className={selectClass} defaultValue="">
+                <option value="">Quien la crea</option>
+                {assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Field>
+          </div>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Crear</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

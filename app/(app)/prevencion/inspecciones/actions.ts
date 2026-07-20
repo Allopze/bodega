@@ -28,6 +28,11 @@ async function run(access: InspectionAccess, operation: (access: InspectionAcces
   try {
     await operation(access)
     revalidatePath(BASE)
+    revalidatePath(`${BASE}/catalogo`)
+    // Sin esto una respuesta, un cierre o una revisión recién guardada sigue
+    // mostrando el valor anterior al volver al detalle, porque la ruta
+    // dinámica no la cubre `BASE`.
+    revalidatePath(`${BASE}/[runId]`, "page")
     return { ok: true }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }

@@ -6,7 +6,13 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { listInspectionPrograms, listInspectionRuns } from "@/lib/services/prevention-inspections"
+import {
+  listInspectionAssignees,
+  listInspectionPrograms,
+  listInspectionRuns,
+  listInspectionTemplates,
+  listInspectionWorksites,
+} from "@/lib/services/prevention-inspections"
 import { InspectionRunList } from "./inspection-run-list"
 
 export const metadata: Metadata = { title: "Inspecciones y auditorías" }
@@ -21,9 +27,14 @@ export default async function InspeccionesPage() {
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
   }
-  const [runs, programs] = await Promise.all([
+  const canExecute = session.user.permissions.includes("prevention:inspections:execute")
+
+  const [runs, programs, templates, worksites, assignees] = await Promise.all([
     listInspectionRuns(access),
     listInspectionPrograms(access),
+    canExecute ? listInspectionTemplates(access) : Promise.resolve([]),
+    canExecute ? listInspectionWorksites(access) : Promise.resolve([]),
+    canExecute ? listInspectionAssignees(access) : Promise.resolve([]),
   ])
 
   return (
@@ -61,6 +72,12 @@ export default async function InspeccionesPage() {
           criticalFindings: row.criticalFindings,
         }))}
         overdueProgramCount={programs.filter((row) => row.program.isActive && row.program.nextDueOn < new Date().toISOString().slice(0, 10)).length}
+        canExecute={canExecute}
+        templates={templates.flatMap((item) => item.status === "approved"
+          ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel }]
+          : [])}
+        worksites={worksites}
+        assignees={assignees}
       />
     </PageContainer>
   )

@@ -163,6 +163,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-permisos", path: "/prevencion/permisos", auth: true },
   { slug: "prevencion-permiso-detalle", path: "/prevencion/permisos/permit-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un permiso de detalle." },
   { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
+  { slug: "prevencion-inspecciones-catalogo", path: "/prevencion/inspecciones/catalogo", auth: true },
   { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una inspección de detalle." },
   { slug: "prevencion-cphs", path: "/prevencion/cphs", auth: true },
   { slug: "prevencion-higiene", path: "/prevencion/higiene", auth: true },

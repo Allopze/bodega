@@ -288,12 +288,33 @@ Se agregó un **piso de seguridad**: cuando la plantilla no declara obligatorios
 
   Si esa fricción se vuelve un problema, **la solución no es marcar `required`** sino declarar aplicabilidad condicional por sujeto, de modo que el formulario no muestre el ítem cuando no corresponde. Quita la fricción sin perder trazabilidad, y es trabajo de producto, no una decisión de Prevención.
 - [ ] **Producción** — Aplicar la migración `0082` e incorporar y aprobar las plantillas que la faena vaya a usar.
-- [ ] **Producto (diferido)** — Formulario de ejecución en terreno y captura móvil/offline: las Server Actions existen y están probadas, la bandeja de lectura tiene UI.
+- [x] ~~Formulario de ejecución en terreno~~ — **completado el 20-07-2026** (ver 5quinquies.5). Sigue diferida la captura móvil/offline propiamente tal (uso desconectado con sincronización posterior).
+- [ ] **Producto (diferido)** — Captura móvil/offline de inspecciones, respuestas y evidencia en terreno sin conectividad.
 - [ ] **Producto (diferido)** — Tendencias por pregunta, control y activo; auditorías con alcance, muestra y equipo auditor.
 
 ### Evidencia
 
 Migración `0082_fearless_mastermind.sql` desde schema, sin drift, aplicada. 22 pruebas puras y 16 escenarios en PostgreSQL real. Typecheck, ESLint, build y regresión completa verdes.
+
+### 5quinquies.5 Formularios de alta y ejecución (20 de julio de 2026)
+
+Cierra la capacidad 4 en UI para el flujo de escritorio. Hasta ahora la bandeja era de sólo lectura y ningún formulario llegaba a `importInspectionTemplateAction` ni al resto de las ocho Server Actions: sin una plantilla incorporada, aprobada, programada y ejecutable, la capacidad entera era inalcanzable desde la interfaz.
+
+**Entregado**
+
+- **`/prevencion/inspecciones/catalogo`**: incorporar plantilla (desde `listImportableDefinitions()`, que ya expone la calibración de cada definición), aprobarla de forma segregada del autor, y programarla por faena y frecuencia.
+- **Alta de inspección** desde la bandeja, sólo sobre plantillas aprobadas.
+- **Detalle en `/prevencion/inspecciones/[runId]`**: grilla de respuesta por sección con guardado en bloque, banner de obligatorios pendientes calculado en el cliente con la misma función pura `assessRunCompletion` que usa el servicio (no una reimplementación), "Declarar ejecutada", hallazgos con derivación a CAPA, y "Revisar y cerrar" con los mismos bloqueadores de `assessRunReview` mostrados antes de enviar.
+- Enlace directo a la acción CAPA derivada desde cada hallazgo (`/prevencion/capa/[id]`), gratis por reusar la ruta ya existente.
+
+### Dos defectos preexistentes corregidos por el camino
+
+1. **`getInspectionRunDetail` no traía nombres de asignado, ejecutor ni revisor** — sólo IDs, inútiles para una pantalla pensada para personas. Se agregaron los tres joins alias, mismo patrón que en `getWorkPermitDetail`.
+2. **Inventario de capturas con una clave dinámica muerta.** `scripts/capture-all-routes.test.ts` registraba `"/prevencion/inspecciones/[id]"` desde antes de que esta carpeta existiera; la carpeta real que se construyó es `[runId]`. La clave nunca hizo nada porque no había página que produjera ese patrón — quedó expuesta recién al crear la ruta real, y el gate se habría puesto en rojo sin la corrección.
+
+**No construido a propósito:** la cancelación de una inspección (`status = 'cancelled'`) existe en el schema y en las etiquetas, pero **no tiene ninguna Server Action que la dispare** — es un estado alcanzable sólo por escritura directa. No se inventó una mutación nueva para llenar ese hueco: eso es una decisión de producto (¿quién cancela, con qué motivo, se puede después de ejecutada?), no wiring de UI sobre algo ya construido.
+
+**Verificación:** typecheck y ESLint (0 avisos) limpios; build compilando las 3 rutas nuevas; React Doctor sin hallazgos propios tras corregir un `.filter().map()` combinable (el único hallazgo restante, `new Date()` en un Server Component, es el mismo falso positivo ya documentado); 55 pruebas de inspecciones y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde. No se probó con sesión autenticada por la misma razón que en permisos: se verificó en su lugar que las tres rutas responden sin error 500.
 
 ---
 
@@ -590,6 +611,19 @@ Al correr por primera vez la **regresión completa del repositorio** (359 archiv
 - [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos tras corregir el único propio (`.filter().map()` combinables); 57 pruebas de permisos y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
 - [x] Agregadas las dos rutas nuevas al inventario de capturas antes de cerrar la pasada, no después.
 - [ ] **Sin probar en navegador con sesión autenticada** — la única cuenta administradora de la base de desarrollo es personal y sin credencial disponible para el agente. Verificado en su lugar que ambas rutas compilan y responden contra el servidor de desarrollo activo, sin error 500.
+
+### 20 de julio de 2026 — Formularios de alta y ejecución: inspecciones
+
+- [x] `/prevencion/inspecciones/catalogo` con incorporar plantilla, aprobarla y programarla por faena y frecuencia; nav actualizado con el hijo "Catálogo y programación".
+- [x] Alta de inspección desde la bandeja, sólo sobre plantillas aprobadas.
+- [x] Ruta `/prevencion/inspecciones/[runId]`: grilla de respuesta por sección con guardado en bloque, "Declarar ejecutada" con los bloqueadores reales de `assessRunCompletion` mostrados antes de enviar, hallazgos con derivación a CAPA, "Revisar y cerrar" con los bloqueadores de `assessRunReview`.
+- [x] Corregido un defecto preexistente en `getInspectionRunDetail`: no traía nombres de asignado/ejecutor/revisor, sólo IDs.
+- [x] Corregido un defecto preexistente en el inventario de capturas: la clave dinámica `/prevencion/inspecciones/[id]` no correspondía a ninguna carpeta real (`[runId]`) y nunca había sido ejercida hasta ahora.
+- [x] Agregadas `listInspectionWorksites` y `listInspectionAssignees` al servicio.
+- [x] Detectado y dejado sin construir a propósito: `status = 'cancelled'` existe en el schema pero ninguna Server Action lo produce. No se inventó la mutación porque quién cancela y bajo qué condición es una decisión de producto, no wiring de UI.
+- [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos propios; 55 pruebas de inspecciones y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
+- [x] Agregadas las dos rutas nuevas al inventario de capturas antes de cerrar la pasada.
+- [ ] **Sin probar en navegador con sesión autenticada**, misma razón que en permisos. Verificado que las tres rutas responden sin error 500.
 
 ---
 

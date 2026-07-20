@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { z } from "zod"
-import type { AnyPgColumn } from "drizzle-orm/pg-core"
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
   preventionInspectionAnswers,
@@ -15,6 +15,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import {
   addDays,
   assessEnrichmentCoverage,
@@ -562,16 +563,25 @@ export async function listInspectionRuns(access: InspectionAccess) {
 
 export async function getInspectionRunDetail(runId: string, access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:view")
+  const assignee = alias(users, "inspection_assignee")
+  const executor = alias(users, "inspection_executor")
+  const reviewer = alias(users, "inspection_reviewer")
   const [run] = await db.select({
     run: preventionInspectionRuns,
     templateName: preventionInspectionTemplates.name,
     templateKind: preventionInspectionTemplates.kind,
     definitionSnapshot: preventionInspectionTemplates.definitionSnapshot,
     worksiteName: worksites.name,
+    assigneeName: assignee.name,
+    executorName: executor.name,
+    reviewerName: reviewer.name,
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
+    .leftJoin(assignee, eq(preventionInspectionRuns.assignedToUserId, assignee.id))
+    .leftJoin(executor, eq(preventionInspectionRuns.executedByUserId, executor.id))
+    .leftJoin(reviewer, eq(preventionInspectionRuns.reviewedByUserId, reviewer.id))
     .where(eq(preventionInspectionRuns.id, runId)).limit(1)
   if (!run || !scopeAllows(access.scope, run.run.worksiteId)) return null
 
@@ -608,6 +618,34 @@ export async function listInspectionPrograms(access: InspectionAccess) {
     .leftJoin(users, eq(preventionInspectionPrograms.assignedToUserId, users.id))
     .where(scopeCondition(access.scope, preventionInspectionPrograms.worksiteId))
     .orderBy(asc(preventionInspectionPrograms.nextDueOn))
+}
+
+/** Faenas visibles para el alcance, para poblar la programación y la alta de ejecución. */
+export async function listInspectionWorksites(access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:view")
+  if (access.scope.mode === "none") return []
+  return db.select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(
+      eq(worksites.isActive, true),
+      access.scope.mode === "some" ? inArray(worksites.id, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(worksites.name))
+}
+
+/**
+ * Quien puede ejecutar una inspección: población de `assignedToUserId` en
+ * programa/ejecución y de `responsibleUserId` al derivar un hallazgo a CAPA,
+ * porque quien ejecuta en terreno es quien razonablemente corrige.
+ */
+export async function listInspectionAssignees(access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:view")
+  const ids = await getUserIdsWithPermission("prevention:inspections:execute")
+  if (ids.length === 0) return []
+  return db.select({ id: users.id, name: users.name })
+    .from(users)
+    .where(and(inArray(users.id, ids), eq(users.isActive, true)))
+    .orderBy(asc(users.name))
 }
 
 /** Catálogo de definiciones SST disponibles para incorporar como plantilla. */

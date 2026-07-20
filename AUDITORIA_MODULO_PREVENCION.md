@@ -164,6 +164,10 @@ Cuarta capacidad P1. Convierte los checklists latentes en un motor transversal, 
 
 **Evidencia:** migración `0082_fearless_mastermind.sql` sin drift, 22 pruebas puras y 16 escenarios en PostgreSQL real.
 
+**Formularios (20-07-2026):** capacidad **cerrada en UI para el flujo de escritorio**. `/prevencion/inspecciones/catalogo` cubre incorporar plantilla, aprobarla y programarla; la bandeja permite dar de alta una inspección sobre una plantilla aprobada; `/prevencion/inspecciones/[runId]` cubre la respuesta por sección con guardado en bloque, declarar ejecutada, derivar hallazgos a CAPA, y revisar/cerrar — todo mostrando los bloqueadores reales antes de enviar, calculados con las mismas funciones puras que valida el servidor. Quedan diferidas la captura móvil/offline y las tendencias por pregunta/control/activo.
+
+Dos defectos preexistentes corregidos al construir la vista: `getInspectionRunDetail` no traía nombres de asignado/ejecutor/revisor (sólo IDs), y el inventario de capturas registraba una clave dinámica muerta (`[id]` en vez de `[runId]`) que nunca se había ejercido porque la carpeta real no existía hasta ahora.
+
 ---
 
 ## 0.11 Avance P1 — CPHS y gobernanza del SG-SST (19 de julio de 2026)

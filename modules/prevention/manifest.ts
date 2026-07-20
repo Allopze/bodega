@@ -275,6 +275,13 @@ export const preventionModule = {
           href: "/prevencion/inspecciones",
           iconName: "MagnifyingGlass",
           permissions: ["prevention:inspections:view"],
+          children: [
+            {
+              label: "Catálogo y programación",
+              href: "/prevencion/inspecciones/catalogo",
+              permissions: ["prevention:inspections:view"],
+            },
+          ],
         },
         {
           label: "CPHS y gobernanza",
