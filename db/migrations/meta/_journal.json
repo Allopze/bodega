@@ -603,6 +603,20 @@
       "when": 1784504533428,
       "tag": "0085_closed_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1784514210074,
+      "tag": "0086_cold_revanche",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1784515848175,
+      "tag": "0087_nasty_venom",
+      "breakpoints": true
     }
   ]
 }
