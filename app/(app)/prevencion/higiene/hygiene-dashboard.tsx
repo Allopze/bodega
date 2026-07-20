@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { Heartbeat } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +14,7 @@ import {
   measurementOutcomeBadgeVariant,
   type AnonymizedExposureSummary,
 } from "@/lib/prevention/hygiene"
+import { NewAgentDialog, NewGroupDialog, NewProgramDialog } from "./hygiene-dialogs"
 
 interface GroupItem {
   id: string
@@ -42,10 +44,20 @@ interface ProgramItem {
   overdue: number
 }
 
-export function HygieneDashboard({ groups, programs, summary }: {
+interface AgentOption {
+  id: string
+  code: string
+  name: string
+  unit: string
+}
+
+export function HygieneDashboard({ groups, programs, summary, agents, worksites, canManage }: {
   groups: GroupItem[]
   programs: ProgramItem[]
   summary: AnonymizedExposureSummary[]
+  agents: AgentOption[]
+  worksites: { id: string; name: string }[]
+  canManage: boolean
 }) {
   const { searchQuery } = useSafeShellHeader()
   const [tab, setTab] = React.useState<"groups" | "programs" | "summary">("groups")
@@ -75,13 +87,22 @@ export function HygieneDashboard({ groups, programs, summary }: {
         ))}
       </div>
 
-      <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
-        {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
-          <button key={value} type="button" onClick={() => setTab(value)} aria-pressed={tab === value}
-            className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
+          {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setTab(value)} aria-pressed={tab === value}
+              className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
+              {label}
+            </button>
+          ))}
+        </div>
+        {canManage && (
+          <div className="flex flex-wrap gap-2">
+            <NewAgentDialog />
+            {agents.length > 0 && worksites.length > 0 && tab === "groups" && <NewGroupDialog agents={agents} worksites={worksites} />}
+            {worksites.length > 0 && tab === "programs" && <NewProgramDialog agents={agents} worksites={worksites} />}
+          </div>
+        )}
       </div>
 
       {tab === "groups" && (filteredGroups.length === 0 ? (
@@ -91,6 +112,7 @@ export function HygieneDashboard({ groups, programs, summary }: {
           description={groups.length === 0
             ? "Un grupo de exposición similar reúne a quienes comparten agente, proceso y condiciones, de modo que una medición represente a todas las personas del grupo."
             : "Ajusta el texto del buscador superior."}
+          action={canManage && groups.length === 0 && agents.length > 0 && worksites.length > 0 ? <NewGroupDialog agents={agents} worksites={worksites} /> : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -109,8 +131,10 @@ export function HygieneDashboard({ groups, programs, summary }: {
               {filteredGroups.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
-                    <span className="font-mono text-xs">{item.code}</span>
-                    <span className="block text-sm">{item.name}</span>
+                    <Link href={`/prevencion/higiene/grupos/${item.id}`} className="hover:underline">
+                      <span className="font-mono text-xs">{item.code}</span>
+                      <span className="block text-sm font-medium">{item.name}</span>
+                    </Link>
                   </TableCell>
                   <TableCell className="text-sm">
                     {item.agentName}
@@ -147,6 +171,7 @@ export function HygieneDashboard({ groups, programs, summary }: {
           description={programs.length === 0
             ? "Un programa de vigilancia matricula al grupo completo: la nómina se deriva de la pertenencia al grupo de exposición, no se arma a mano."
             : "Ajusta el texto del buscador superior."}
+          action={canManage && programs.length === 0 && worksites.length > 0 ? <NewProgramDialog agents={agents} worksites={worksites} /> : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -166,8 +191,10 @@ export function HygieneDashboard({ groups, programs, summary }: {
               {filteredPrograms.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
-                    <span className="font-mono text-xs">{item.code}</span>
-                    <span className="block text-sm">{item.name}</span>
+                    <Link href={`/prevencion/higiene/programas/${item.id}`} className="hover:underline">
+                      <span className="font-mono text-xs">{item.code}</span>
+                      <span className="block text-sm font-medium">{item.name}</span>
+                    </Link>
                   </TableCell>
                   <TableCell className="text-sm">{item.protocol}</TableCell>
                   <TableCell className="text-sm">{item.worksiteName}</TableCell>

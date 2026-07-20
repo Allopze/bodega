@@ -217,7 +217,9 @@ Superar el **nivel de acción** ya obliga a vigilancia, sin esperar a superar el
 
 **Evidencia:** migración `0084_confused_switch.sql` sin drift, 19 pruebas puras y 13 escenarios en PostgreSQL real.
 
-**Lo que todavía falta:** cargar el inventario real de agentes con sus límites, constituir los GES por proceso, y modelar los protocolos específicos (CEAL-SM, TMERT, PREXOR) con sus hitos propios —hoy se representan como programas con periodicidad—.
+**Formularios (20-07-2026):** capacidad **cerrada en UI para el flujo de escritorio**. El dashboard permite dar de alta agente, GES y programa; `/prevencion/higiene/grupos/[groupId]` cubre integrantes y mediciones con vista previa de resultado en vivo; `/prevencion/higiene/programas/[programId]` cubre matrícula (derivada del GES) y registro de resultado por persona.
+
+**Lo que todavía falta:** cargar el inventario real de agentes con sus límites, constituir los GES por proceso, modelar los protocolos específicos (CEAL-SM, TMERT, PREXOR) con sus hitos propios —hoy se representan como programas con periodicidad—, y citaciones automáticas con recordatorio de controles vencidos.
 
 ---
 

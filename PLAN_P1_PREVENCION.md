@@ -378,10 +378,25 @@ Siete tablas aditivas: agentes con límite permisible y nivel de acción, grupos
 
 - [ ] **Operación** — Cargar el inventario real de agentes con su límite y fuente, y constituir los GES por proceso.
 - [ ] **Producción** — Aplicar la migración `0084`.
-- [ ] **Producto (diferido)** — Formularios de alta de agentes, GES, mediciones y matrículas; citaciones automáticas y recordatorio de controles vencidos; medidas prescritas por el organismo administrador.
+- [x] ~~Formularios de alta de agentes, GES, mediciones y matrículas~~ — **completado el 20-07-2026** (ver 5septies.1).
+- [ ] **Producto (diferido)** — Citaciones automáticas y recordatorio de controles vencidos; medidas prescritas por el organismo administrador. No existe cron ni campo para citación; es trabajo nuevo, no wiring de UI.
 - [ ] **Producto (diferido)** — Protocolos específicos (CEAL-SM, TMERT, PREXOR) como plantillas con sus hitos propios; hoy se modelan como programas con periodicidad.
 
 Evidencia: migración `0084_confused_switch.sql` sin drift, 19 pruebas puras y 13 escenarios en PostgreSQL real.
+
+### 5septies.1 Formularios de alta y detalle (20 de julio de 2026)
+
+Cierra la capacidad 6 en UI para el flujo de escritorio. Hasta ahora el dashboard era de sólo lectura y ningún formulario llegaba a `createExposureAgentAction` ni a las otras seis Server Actions.
+
+**Entregado**
+
+- Alta de agente, GES y programa de vigilancia desde el dashboard.
+- Detalle de GES en `/prevencion/higiene/grupos/[groupId]`: integrantes, y mediciones con **vista previa de resultado en vivo** usando la misma función `assessMeasurement` del servicio mientras se escribe el valor — antes de que el límite y el nivel de acción queden congelados en la fila al guardar.
+- Detalle de programa en `/prevencion/higiene/programas/[programId]`: matricular grupo (deriva la nómina completa desde el GES, no se arma a mano) y registrar resultado de control por persona, con el campo de ID de registro de salud aclarando que el dato clínico vive en el dominio cifrado, no aquí.
+
+Se extendió `listGroupMeasurements` con la nómina de integrantes y los datos del agente (antes sólo traía las mediciones), y se agregó `listProgramEnrollments`, que no existía.
+
+**Verificación:** typecheck y ESLint (0 avisos) limpios; build compilando las 3 rutas nuevas; React Doctor sin hallazgos propios (el único hallazgo en `prevention-hygiene.ts` es un loop secuencial preexistente dentro de una transacción, mismo patrón ya visto en CPHS); 43 pruebas de higiene y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde. No se probó con sesión autenticada real; se verificó que las tres rutas responden sin error 500.
 
 ---
 
@@ -651,6 +666,16 @@ Al correr por primera vez la **regresión completa del repositorio** (359 archiv
 - [x] Detectados y dejados sin construir a propósito: reemplazo/renuncia de integrante (schema lo admite, ninguna acción lo produce) y documentos electorales (tipo de entidad declarado en la base pero nunca implementado en el módulo de documentos).
 - [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos propios; 43 pruebas de CPHS y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
 - [x] Agregada la ruta nueva al inventario de capturas antes de cerrar la pasada.
+
+### 20 de julio de 2026 — Formularios de alta y detalle: Higiene
+
+- [x] Alta de agente, GES y programa de vigilancia desde el dashboard.
+- [x] Ruta `/prevencion/higiene/grupos/[groupId]`: integrantes, y mediciones con vista previa de resultado en vivo usando `assessMeasurement` del servicio.
+- [x] Ruta `/prevencion/higiene/programas/[programId]`: matricular grupo (deriva la nómina desde el GES) y registrar resultado por persona.
+- [x] `listGroupMeasurements` extendida con integrantes y datos del agente; agregada `listProgramEnrollments`, que no existía.
+- [x] Detectado y dejado sin construir a propósito: citaciones automáticas y recordatorio de controles vencidos requieren cron y campos nuevos — no es wiring de UI.
+- [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos propios; 43 pruebas de higiene y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
+- [x] Agregadas las dos rutas nuevas al inventario de capturas antes de cerrar la pasada.
 
 ---
 

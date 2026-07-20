@@ -6,7 +6,9 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
   getAnonymizedExposureSummary,
+  listExposureAgents,
   listExposureGroups,
+  listHygieneWorksites,
   listSurveillancePrograms,
 } from "@/lib/services/prevention-hygiene"
 import { HygieneDashboard } from "./hygiene-dashboard"
@@ -23,10 +25,14 @@ export default async function HigienePage() {
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
   }
-  const [groups, programs, summary] = await Promise.all([
+  const canManage = session.user.permissions.includes("prevention:hygiene:manage")
+
+  const [groups, programs, summary, agents, worksites] = await Promise.all([
     listExposureGroups(access),
     listSurveillancePrograms(access),
     getAnonymizedExposureSummary(access),
+    canManage ? listExposureAgents(access) : Promise.resolve([]),
+    canManage ? listHygieneWorksites(access) : Promise.resolve([]),
   ])
 
   return (
@@ -68,6 +74,9 @@ export default async function HigienePage() {
           overdue: row.overdue,
         }))}
         summary={summary}
+        agents={agents.map((item) => ({ id: item.id, code: item.code, name: item.name, unit: item.unit }))}
+        worksites={worksites}
+        canManage={canManage}
       />
     </PageContainer>
   )

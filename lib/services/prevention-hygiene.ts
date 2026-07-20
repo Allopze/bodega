@@ -456,11 +456,102 @@ export async function listExposureAgents(access: HygieneAccess) {
 
 export async function listGroupMeasurements(groupId: string, access: HygieneAccess) {
   requireAccess(access, "prevention:hygiene:view")
-  const [group] = await db.select().from(preventionExposureGroups)
+  const [row] = await db.select({ group: preventionExposureGroups, agent: preventionExposureAgents, worksiteName: worksites.name })
+    .from(preventionExposureGroups)
+    .innerJoin(preventionExposureAgents, eq(preventionExposureGroups.agentId, preventionExposureAgents.id))
+    .innerJoin(worksites, eq(preventionExposureGroups.worksiteId, worksites.id))
     .where(eq(preventionExposureGroups.id, groupId)).limit(1)
-  if (!group || !scopeAllows(access.scope, group.worksiteId)) return null
-  const measurements = await db.select().from(preventionExposureMeasurements)
-    .where(eq(preventionExposureMeasurements.groupId, groupId))
-    .orderBy(desc(preventionExposureMeasurements.measuredOn))
-  return { group, measurements }
+  if (!row || !scopeAllows(access.scope, row.group.worksiteId)) return null
+
+  const [measurements, memberRows] = await Promise.all([
+    db.select().from(preventionExposureMeasurements)
+      .where(eq(preventionExposureMeasurements.groupId, groupId))
+      .orderBy(desc(preventionExposureMeasurements.measuredOn)),
+    db.select({
+      member: preventionExposureGroupMembers,
+      workerFirstName: workers.firstName,
+      workerLastName: workers.lastName,
+      workerPosition: workers.position,
+    })
+      .from(preventionExposureGroupMembers)
+      .innerJoin(workers, eq(preventionExposureGroupMembers.workerId, workers.id))
+      .where(eq(preventionExposureGroupMembers.groupId, groupId))
+      .orderBy(asc(workers.lastName)),
+  ])
+
+  const members = memberRows.map((item) => ({
+    ...item.member,
+    workerName: `${item.workerLastName}, ${item.workerFirstName}`,
+    workerPosition: item.workerPosition,
+  }))
+
+  return { group: row.group, agent: row.agent, worksiteName: row.worksiteName, measurements, members }
+}
+
+/** Faenas visibles para el alcance, para poblar la creación de GES y programas. */
+export async function listHygieneWorksites(access: HygieneAccess) {
+  requireAccess(access, "prevention:hygiene:view")
+  if (access.scope.mode === "none") return []
+  return db.select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(
+      eq(worksites.isActive, true),
+      access.scope.mode === "some" ? inArray(worksites.id, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(worksites.name))
+}
+
+/**
+ * Dotación activa dentro del alcance, para incorporar integrantes a un GES.
+ *
+ * Devuelve `worksiteId` porque el servicio rechaza personas de otra faena: el
+ * formulario filtra por la faena del grupo y así el rechazo no aparece recién
+ * al enviar.
+ */
+export async function listHygieneWorkers(access: HygieneAccess) {
+  requireAccess(access, "prevention:hygiene:view")
+  if (access.scope.mode === "none") return []
+  return db.select({
+    id: workers.id,
+    firstName: workers.firstName,
+    lastName: workers.lastName,
+    position: workers.position,
+    worksiteId: workers.worksiteId,
+  })
+    .from(workers)
+    .where(and(
+      eq(workers.isActive, true),
+      access.scope.mode === "some" ? inArray(workers.worksiteId, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(workers.lastName), asc(workers.firstName))
+    .limit(2000)
+}
+
+/** Matrículas de un programa, con la persona y el GES de origen. */
+export async function listProgramEnrollments(programId: string, access: HygieneAccess) {
+  requireAccess(access, "prevention:hygiene:view")
+  const [program] = await db.select().from(preventionSurveillancePrograms)
+    .where(eq(preventionSurveillancePrograms.id, programId)).limit(1)
+  if (!program || !scopeAllows(access.scope, program.worksiteId)) return null
+
+  const enrollments = await db.select({
+    enrollment: preventionSurveillanceEnrollments,
+    workerFirstName: workers.firstName,
+    workerLastName: workers.lastName,
+    groupName: preventionExposureGroups.name,
+  })
+    .from(preventionSurveillanceEnrollments)
+    .innerJoin(workers, eq(preventionSurveillanceEnrollments.workerId, workers.id))
+    .leftJoin(preventionExposureGroups, eq(preventionSurveillanceEnrollments.groupId, preventionExposureGroups.id))
+    .where(eq(preventionSurveillanceEnrollments.programId, programId))
+    .orderBy(asc(preventionSurveillanceEnrollments.dueOn))
+
+  return {
+    program,
+    enrollments: enrollments.map((item) => ({
+      ...item.enrollment,
+      workerName: `${item.workerLastName}, ${item.workerFirstName}`,
+      groupName: item.groupName,
+    })),
+  }
 }
