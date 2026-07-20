@@ -12,6 +12,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import type { WorksiteScope } from "@/lib/auth/scope"
 import {
   calculateCanonicalIndicatorPeriod,
   type CanonicalIndicatorCase,
@@ -27,7 +28,7 @@ import {
   type SafetyIndicatorMonthInput,
 } from "@/lib/validation/prevention"
 
-export type WorksiteScope = string[] | "all"
+export type { WorksiteScope } from "@/lib/auth/scope"
 type IndicatorClient = DB | Tx
 const CHILE_YEAR_MONTH_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Santiago",
@@ -77,19 +78,22 @@ export {
   type IndicatorCounters,
 } from "@/lib/prevention/safety-indicators-calc"
 
+function scopeAllows(scope: WorksiteScope, worksiteId: string) {
+  return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
+}
+
 function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
-  if (scope === "all") return
-  if (!scope.includes(worksiteId)) throw new Error("Faena no encontrada o sin acceso.")
+  if (!scopeAllows(scope, worksiteId)) throw new Error("Faena no encontrada o sin acceso.")
 }
 
 function requireIndicatorAccess(access: IndicatorAccess, permission: string, worksiteId?: string) {
-  if (!access.permissions.includes(permission) || (worksiteId && access.scope !== "all" && !access.scope.includes(worksiteId))) {
+  if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
     throw new Error("Período de indicadores no encontrado o fuera de alcance.")
   }
 }
 
 function scopeFilter<T>(scope: WorksiteScope, column: T) {
-  return scope === "all" ? undefined : inArray(column as never, scope)
+  return scope.mode === "all" ? undefined : inArray(column as never, scope.ids)
 }
 
 function periodKey(worksiteId: string, year: number, month: number) {
@@ -127,9 +131,9 @@ function sourceHash(result: CanonicalIndicatorResult) {
 }
 
 function scopeCondition(scope: WorksiteScope, column: typeof preventionIncidents.worksiteId | typeof safetyIndicatorDenominators.worksiteId | typeof safetyIndicators.worksiteId) {
-  if (scope === "all") return undefined
-  if (scope.length === 0) return sql`false`
-  return inArray(column, scope)
+  if (scope.mode === "all") return undefined
+  if (scope.ids.length === 0) return sql`false`
+  return inArray(column, scope.ids)
 }
 
 function periodExpressions() {
@@ -140,7 +144,7 @@ function periodExpressions() {
 }
 
 async function loadCanonicalSourceRows(client: IndicatorClient, year: number, scope: WorksiteScope): Promise<CanonicalSourceRows> {
-  if (scope !== "all" && scope.length === 0) return { events: [], cases: [], denominators: [], legacyRows: [] }
+  if (scope.mode !== "all" && scope.ids.length === 0) return { events: [], cases: [], denominators: [], legacyRows: [] }
   const period = periodExpressions()
   const incidentScope = scopeCondition(scope, preventionIncidents.worksiteId)
   const [eventRows, caseRows, denominators, legacyRows] = await Promise.all([
@@ -249,35 +253,35 @@ function compareLegacy(
 }
 
 async function calculateWorksitePeriod(client: IndicatorClient, args: { worksiteId: string; year: number; startMonth: number; endMonth: number }) {
-  const source = await loadCanonicalSourceRows(client, args.year, [args.worksiteId])
+  const source = await loadCanonicalSourceRows(client, args.year, { mode: "some", ids: [args.worksiteId] })
   const result = calculateGroup({ ...args, worksiteIds: [args.worksiteId], source })
   const legacy = source.legacyRows.filter((item) => item.month >= args.startMonth && item.month <= args.endMonth)
   return { result, source, legacyComparison: compareLegacy(result, legacy) }
 }
 
 export async function listVisibleWorksites(scope: WorksiteScope) {
-  if (scope !== "all" && scope.length === 0) return []
+  if (scope.mode !== "all" && scope.ids.length === 0) return []
   return db.select({ id: worksites.id, name: worksites.name })
     .from(worksites)
-    .where(scope === "all" ? eq(worksites.isActive, true) : and(eq(worksites.isActive, true), inArray(worksites.id, scope)))
+    .where(scope.mode === "all" ? eq(worksites.isActive, true) : and(eq(worksites.isActive, true), inArray(worksites.id, scope.ids)))
     .orderBy(asc(worksites.name))
 }
 
 /** Snapshot manual legado; sólo se conserva para comparación histórica. */
 export async function getSafetyIndicators(year: number, scope: WorksiteScope) {
-  if (scope !== "all" && scope.length === 0) return []
+  if (scope.mode !== "all" && scope.ids.length === 0) return []
   return db.select().from(safetyIndicators).where(and(
     eq(safetyIndicators.year, year),
-    scope === "all" ? undefined : inArray(safetyIndicators.worksiteId, scope),
+    scope.mode === "all" ? undefined : inArray(safetyIndicators.worksiteId, scope.ids),
   ))
 }
 
 export async function getSafetyIndicatorPeriods(year: number, scope: WorksiteScope) {
-  if (scope !== "all" && scope.length === 0) return []
+  if (scope.mode !== "all" && scope.ids.length === 0) return []
   return db.select().from(safetyIndicatorPeriods).where(and(
     eq(safetyIndicatorPeriods.year, year),
     eq(safetyIndicatorPeriods.status, "closed"),
-    scope === "all" ? undefined : inArray(safetyIndicatorPeriods.worksiteId, scope),
+    scope.mode === "all" ? undefined : inArray(safetyIndicatorPeriods.worksiteId, scope.ids),
   ))
 }
 
@@ -285,7 +289,7 @@ export async function getCanonicalSafetyIndicatorYear(year: number, scope: Works
   if (!Number.isInteger(year) || year < 2024 || year > 2100) throw new Error("Año de indicadores inválido.")
   const worksitesVisible = await listVisibleWorksites(scope)
   const ids = worksitesVisible.map((item) => item.id)
-  const effectiveScope: WorksiteScope = ids
+  const effectiveScope: WorksiteScope = ids.length > 0 ? { mode: "some", ids } : { mode: "none", ids: [] }
   const source = await loadCanonicalSourceRows(db, year, effectiveScope)
   const groups: CanonicalIndicatorGroup[] = worksitesVisible.map((worksite) => {
     const monthly = Array.from({ length: 12 }, (_, index) => {

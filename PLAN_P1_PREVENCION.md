@@ -415,9 +415,15 @@ Primera entrega de la línea «hacer usable lo construido». Hasta ahora las sei
 
 `lib/services/prevention-indicadores.ts` exporta su propio `WorksiteScope = string[] | "all"`, incompatible con el canónico de `lib/auth/scope` (`{ mode, ids }`). Al intentar reusar `listVisibleWorksites` desde el catálogo, el typecheck lo detectó.
 
-No se refactorizó: unificarlo toca todo el módulo de indicadores y sus pruebas, y no corresponde arrastrarlo dentro de una entrega de formularios. Se agregó `listTrainingWorksites` al servicio de capacitación, que sí usa el tipo canónico.
+No se refactorizó en el momento: unificarlo tocaba todo el módulo de indicadores y sus pruebas, y no correspondía arrastrarlo dentro de una entrega de formularios. Se agregó `listTrainingWorksites` al servicio de capacitación, que sí usa el tipo canónico.
 
-- [ ] **Deuda técnica** — Unificar el `WorksiteScope` de `prevention-indicadores.ts` con el canónico de `lib/auth/scope`. Hoy conviven dos tipos homónimos con formas distintas, lo que hace que un servicio no pueda reusar helpers del otro.
+- [x] ~~Unificar el `WorksiteScope` de `prevention-indicadores.ts` con el canónico~~ — **completado el 20-07-2026**. `lib/services/prevention-indicadores.ts` ahora importa `WorksiteScope` de `@/lib/auth/scope` (`{mode, ids}`) en vez de declarar el suyo propio (`string[] | "all"`). Se reescribieron las siete funciones internas que discriminaban por `scope === "all"`/`scope.length` para usar `scope.mode`/`scope.ids`, y se retiró el helper `scopeToIds` que **tres archivos distintos duplicaban de forma idéntica** (`page.tsx`, `actions.ts`, `export/route.ts`) sólo para adaptar el tipo canónico de la sesión al tipo local del servicio — ahora pasan `resolveWorksiteScope(session)` directo. Cuatro archivos de prueba (`actions.test.ts`, `prevention-indicators-postgres.test.ts`, `prevention-indicators-close.test.ts`) actualizados a la forma canónica.
+
+  Se verificó que el mismo patrón de conversión (`scopeToIds`) existe también en PPA, PDTP y el módulo `prevencion/actions` — **no se tocaron**: son ámbitos separados y ese no era el ítem de deuda señalado por el plan, que nombraba específicamente `prevention-indicadores.ts`.
+
+  Defecto preexistente encontrado y corregido de paso, no relacionado con el refactor: `scripts/export-epps-xlsx.ts` (un script suelto sin trackear) tenía un cast `as Buffer` que ya no compilaba contra la versión actual de `@types/node`, y `writeFileSync` recién fallaba al quitarlo. Se resolvió con `Buffer.from(buffer)`, el patrón correcto para el tipo que devuelve `exceljs`.
+
+  **Verificación:** typecheck y ESLint (0 avisos) limpios; build verde; React Doctor sin hallazgos en los 4 archivos tocados del refactor; 5 pruebas de indicadores contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
 
 ---
 
@@ -676,6 +682,15 @@ Al correr por primera vez la **regresión completa del repositorio** (359 archiv
 - [x] Detectado y dejado sin construir a propósito: citaciones automáticas y recordatorio de controles vencidos requieren cron y campos nuevos — no es wiring de UI.
 - [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos propios; 43 pruebas de higiene y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
 - [x] Agregadas las dos rutas nuevas al inventario de capturas antes de cerrar la pasada.
+
+### 20 de julio de 2026 — Deuda técnica: unificación de WorksiteScope
+
+- [x] `prevention-indicadores.ts` importa el `WorksiteScope` canónico de `@/lib/auth/scope` en vez de declarar el suyo (`string[] | "all"`). Siete funciones internas reescritas para discriminar por `scope.mode`/`scope.ids`.
+- [x] Retirado el helper `scopeToIds`, duplicado idéntico en tres archivos (`page.tsx`, `actions.ts`, `export/route.ts`) sólo para adaptar tipos; ahora pasan `resolveWorksiteScope(session)` directo.
+- [x] Actualizados `actions.test.ts`, `prevention-indicators-postgres.test.ts` y `prevention-indicators-close.test.ts` a la forma canónica.
+- [x] Verificado que el mismo patrón (`scopeToIds`) existe en PPA, PDTP y `prevencion/actions` — no tocado, por ser un ámbito distinto al ítem de deuda señalado.
+- [x] Corregido de paso un defecto preexistente ajeno al refactor: `scripts/export-epps-xlsx.ts` (script suelto sin trackear) tenía un cast `as Buffer` que ya no compilaba; resuelto con `Buffer.from(buffer)`.
+- [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos en los archivos tocados; 5 pruebas de indicadores contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
 
 ---
 

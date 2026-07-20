@@ -50,7 +50,7 @@ describe("indicator server actions are authorization boundaries", () => {
     await expect(saveSafetyIndicatorDenominatorAction(forged)).resolves.toEqual({ ok: true })
     expect(saveDenominator).toHaveBeenCalledWith(forged, {
       userId: "trusted-user",
-      scope: ["ws-own"],
+      scope: { mode: "some", ids: ["ws-own"] },
       permissions: session.user.permissions,
     })
   })

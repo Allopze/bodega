@@ -17,7 +17,7 @@ describe("closeSafetyIndicatorPeriod definitive gates", () => {
     await expect(closeSafetyIndicatorPeriod(
       { worksiteId: "ws-1", year: 2026, month: 7, reason: "breve" },
       "user-1",
-      "all",
+      { mode: "all", ids: [] },
     )).rejects.toThrow()
     expect(transaction).not.toHaveBeenCalled()
   })
@@ -31,7 +31,7 @@ describe("closeSafetyIndicatorPeriod definitive gates", () => {
         reason: "Cierre conciliado con evidencia aprobada.",
       },
       "user-1",
-      ["ws-own"],
+      { mode: "some", ids: ["ws-own"] },
     )).rejects.toThrow(/no encontrada o sin acceso/i)
     expect(transaction).not.toHaveBeenCalled()
   })

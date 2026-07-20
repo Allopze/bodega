@@ -9,7 +9,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { addExportMetadataSheet } from "@/lib/reports/export"
-import { getCanonicalSafetyIndicatorYear, type WorksiteScope } from "@/lib/services/prevention-indicadores"
+import { getCanonicalSafetyIndicatorYear } from "@/lib/services/prevention-indicadores"
 import { encodeContentDisposition } from "@/lib/utils"
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -17,12 +17,6 @@ const FORMULAS = {
   accidentability: "Accidentes del trabajo incluidos / dotación promedio del período × 100",
   frequency: "Personas lesionadas incluidas / horas trabajadas × 1.000.000",
   severity: "(Días de ausencia + días de cargo) / horas trabajadas × 1.000.000",
-}
-
-function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): WorksiteScope {
-  if (scope.mode === "all") return "all"
-  if (scope.mode === "none") return []
-  return scope.ids
 }
 
 function safe(value: unknown) {
@@ -49,7 +43,7 @@ export async function GET(request: NextRequest) {
   const year = Number.isFinite(requestedYear) && requestedYear >= 2024 && requestedYear <= currentYear + 2 ? requestedYear : currentYear
 
   try {
-    const view = await getCanonicalSafetyIndicatorYear(year, scopeToIds(resolveWorksiteScope(session)))
+    const view = await getCanonicalSafetyIndicatorYear(year, resolveWorksiteScope(session))
     const ExcelJS = await import("exceljs")
     const workbook = new ExcelJS.Workbook()
     workbook.creator = "Plataforma Chome"

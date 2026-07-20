@@ -71,12 +71,12 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
     }, indicatorAccess("indicator-approver", ["prevention:indicadores:close"]))
     expect(approved.status).toBe("approved")
 
-    let view = await indicators.getCanonicalSafetyIndicatorYear(2026, ["ws-indicators"])
+    let view = await indicators.getCanonicalSafetyIndicatorYear(2026, { mode: "some", ids: ["ws-indicators"] })
     const provisional = view.groups.find((item) => item.worksiteId === "ws-indicators")!.monthly[0]!
     expect(provisional).toMatchObject({ status: "provisional", pendingCaseCount: 2 })
     expect(provisional.confirmed.frequencyRate).toBe(0)
     expect(provisional.provisional).toMatchObject({ frequencyRate: 10, severityRate: 55, accidentabilityRate: 2 })
-    await expect(indicators.closeSafetyIndicatorPeriod({ worksiteId: "ws-indicators", year: 2026, month: 1, reason: "Intento con casos aún pendientes" }, "indicator-approver", ["ws-indicators"]))
+    await expect(indicators.closeSafetyIndicatorPeriod({ worksiteId: "ws-indicators", year: 2026, month: 1, reason: "Intento con casos aún pendientes" }, "indicator-approver", { mode: "some", ids: ["ws-indicators"] }))
       .rejects.toThrow(/no puede cerrarse/i)
 
     const classificationAccess = incidentAccess("indicator-preparer", ["prevention:incidents:investigate", "prevention:indicadores:close"])
@@ -90,7 +90,7 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
       expectedPersonVersion: secondPerson!.version, absenceAtLeastNormalShift: true, absenceDays: 1, chargeDays: 6,
       administratorQualification: "Accidente del trabajo confirmado", inclusionStatus: "included", reason: "Resolución del organismo administrador revisada",
     } })
-    view = await indicators.getCanonicalSafetyIndicatorYear(2026, ["ws-indicators"])
+    view = await indicators.getCanonicalSafetyIndicatorYear(2026, { mode: "some", ids: ["ws-indicators"] })
     const canonical = view.groups.find((item) => item.worksiteId === "ws-indicators")!.monthly[0]!
     expect(canonical.status).toBe("reconciled")
     expect(canonical.confirmed).toMatchObject({ frequencyRate: 10, severityRate: 60, accidentabilityRate: 2 })
@@ -103,7 +103,7 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
     })
     const closed = await indicators.closeSafetyIndicatorPeriod({
       worksiteId: "ws-indicators", year: 2026, month: 1, reason: "Fuentes canónicas conciliadas y casos calificados",
-    }, "indicator-approver", ["ws-indicators"])
+    }, "indicator-approver", { mode: "some", ids: ["ws-indicators"] })
     expect(closed.snapshot).toMatchObject({ status: "approved", formulaVersion: "ds44-art73-2025-v1", reconciliationStatus: "matched" })
     expect(closed.snapshot.sourceHashSha256).toMatch(/^[a-f0-9]{64}$/)
     expect(closed.legacyComparison.status).toBe("difference")
@@ -135,7 +135,7 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
 
     const reclosed = await indicators.closeSafetyIndicatorPeriod({
       worksiteId: "ws-indicators", year: 2026, month: 1, reason: "Recálculo aprobado tras cambio de calificación",
-    }, "indicator-approver", ["ws-indicators"])
+    }, "indicator-approver", { mode: "some", ids: ["ws-indicators"] })
     expect(reclosed.result.confirmed).toMatchObject({ accidents: 1, injuredPeople: 1, frequencyRate: 5 })
     const snapshots = await getDb().select().from(schema.safetyIndicatorSnapshots).where(eq(schema.safetyIndicatorSnapshots.worksiteId, "ws-indicators"))
     expect(snapshots.filter((item) => item.status === "approved")).toHaveLength(1)
@@ -162,20 +162,20 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
       reconciliationStatus: "matched", submitForReview: true,
     }, indicatorAccess("indicator-preparer", ["prevention:indicadores:manage"]))
     await indicators.approveSafetyIndicatorDenominator({ denominatorId: draft.id, expectedVersion: draft.version, decision: "approved", reason: "Fuente revisada aunque reporta cero horas" }, indicatorAccess("indicator-approver", ["prevention:indicadores:close"]))
-    await expect(indicators.closeSafetyIndicatorPeriod({ worksiteId: "ws-indicators", year: 2026, month: 2, reason: "Intento de cierre con numerador y cero horas" }, "indicator-approver", ["ws-indicators"]))
+    await expect(indicators.closeSafetyIndicatorPeriod({ worksiteId: "ws-indicators", year: 2026, month: 2, reason: "Intento de cierre con numerador y cero horas" }, "indicator-approver", { mode: "some", ids: ["ws-indicators"] }))
       .rejects.toThrow(/sin horas/i)
 
     await expect(indicators.upsertSafetyIndicatorDenominator({
       worksiteId: "ws-indicators", year: 2026, month: 3, workerCount: 10, workedHours: 100,
       sourceType: "manual", sourceReference: "Intento ajeno", evidenceReference: "doc-ajeno", reconciliationStatus: "matched",
     }, indicatorAccess("indicator-outsider", ["prevention:indicadores:manage"], ["ws-foreign"]))).rejects.toThrow(/fuera de alcance/i)
-    const foreignView = await indicators.getCanonicalSafetyIndicatorYear(2026, ["ws-foreign"])
+    const foreignView = await indicators.getCanonicalSafetyIndicatorYear(2026, { mode: "some", ids: ["ws-foreign"] })
     expect(foreignView.groups.some((item) => item.worksiteId === "ws-indicators")).toBe(false)
   })
 })
 
-function indicatorAccess(userId: string, permissions: string[], scope: string[] = ["ws-indicators"]) {
-  return { userId, scope, permissions }
+function indicatorAccess(userId: string, permissions: string[], scopeIds: string[] = ["ws-indicators"]) {
+  return { userId, scope: { mode: "some" as const, ids: scopeIds }, permissions }
 }
 
 function incidentAccess(userId: string, permissions: string[]) {

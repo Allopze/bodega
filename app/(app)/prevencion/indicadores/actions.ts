@@ -10,24 +10,17 @@ import {
   upsertSafetyIndicatorMonth,
   upsertSafetyIndicatorDenominator,
   closeSafetyIndicatorPeriod,
-  type WorksiteScope,
 } from "@/lib/services/prevention-indicadores"
 import type { ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/indicadores"
-
-function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): WorksiteScope {
-  if (scope.mode === "all") return "all"
-  if (scope.mode === "none") return []
-  return scope.ids
-}
 
 export async function saveSafetyIndicatorMonthAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:indicadores:manage")
   if (guard.error) return guard.error
   const session = guard.session
   try {
-    await upsertSafetyIndicatorMonth(input, session.user.id, scopeToIds(resolveWorksiteScope(session)), session.user.permissions.includes("prevention:indicadores:close"))
+    await upsertSafetyIndicatorMonth(input, session.user.id, resolveWorksiteScope(session), session.user.permissions.includes("prevention:indicadores:close"))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
@@ -42,7 +35,7 @@ export async function closeSafetyIndicatorPeriodAction(input: { worksiteId: stri
   const guard = await guardPermission("prevention:indicadores:close")
   if (guard.error) return guard.error
   try {
-    await closeSafetyIndicatorPeriod(input, guard.session.user.id, scopeToIds(resolveWorksiteScope(guard.session)))
+    await closeSafetyIndicatorPeriod(input, guard.session.user.id, resolveWorksiteScope(guard.session))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
@@ -56,7 +49,7 @@ export async function saveSafetyIndicatorDenominatorAction(input: unknown): Prom
   try {
     await upsertSafetyIndicatorDenominator(input, {
       userId: guard.session.user.id,
-      scope: scopeToIds(resolveWorksiteScope(guard.session)),
+      scope: resolveWorksiteScope(guard.session),
       permissions: guard.session.user.permissions,
     })
     revalidatePath(REVALIDATE)
@@ -75,7 +68,7 @@ export async function approveSafetyIndicatorDenominatorAction(input: unknown): P
   try {
     await approveSafetyIndicatorDenominator(input, {
       userId: guard.session.user.id,
-      scope: scopeToIds(resolveWorksiteScope(guard.session)),
+      scope: resolveWorksiteScope(guard.session),
       permissions: guard.session.user.permissions,
     })
     revalidatePath(REVALIDATE)

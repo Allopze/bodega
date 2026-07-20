@@ -14,12 +14,6 @@ type IndicadoresPageProps = {
   searchParams: Promise<{ year?: string }>
 }
 
-function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
-  if (scope.mode === "all") return "all"
-  if (scope.mode === "none") return []
-  return scope.ids
-}
-
 export default async function IndicadoresPage({ searchParams }: IndicadoresPageProps) {
   let session
   try { session = await requireAuth() }
@@ -32,8 +26,7 @@ export default async function IndicadoresPage({ searchParams }: IndicadoresPageP
   const currentYear = new Date().getFullYear()
   const year = Number(query.year) || currentYear
 
-  const scope = scopeToIds(resolveWorksiteScope(session))
-  const canonicalView = await getCanonicalSafetyIndicatorYear(year, scope)
+  const canonicalView = await getCanonicalSafetyIndicatorYear(year, resolveWorksiteScope(session))
 
   return (
     <PageContainer>
