@@ -180,6 +180,8 @@ Quinta capacidad P1. El rol `cphs` deja de ser una etiqueta y pasa a tener el ó
 
 **Evidencia:** migración `0083_closed_maverick.sql` sin drift, 17 pruebas puras de paridad, quórum y cadencia, y 15 escenarios en PostgreSQL real.
 
+**Formularios (20-07-2026):** capacidad **cerrada en UI para el flujo de escritorio**. `/prevencion/cphs` permite constituir comité y gestionar la revisión por la dirección (alta y cierre con compromisos); `/prevencion/cphs/[committeeId]` cubre alta de integrante, convocatoria y cierre de acta con vista previa de quórum en vivo. Quedan sin construir el reemplazo/renuncia de integrante (schema lo admite, ninguna acción lo produce) y los documentos electorales (el módulo de documentos declara `'committee'` en la base pero nunca lo implementó en su unión de TypeScript).
+
 ---
 
 ## 0.12 Hallazgo: la severidad automática de checklists está sin calibrar

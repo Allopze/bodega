@@ -336,9 +336,25 @@ Siete tablas aditivas: comité por centro de trabajo, integrantes, sesiones, asi
 
 - [ ] **Operación** — Constituir los comités reales, registrar elecciones e integrantes con fuero, y definir cuántos titulares corresponden por dotación.
 - [ ] **Producción** — Aplicar la migración `0083` y programar `expireLapsedCommittees`.
-- [ ] **Producto (diferido)** — Formularios de constitución, designación, convocatoria y cierre de acta; documentos electorales; indicadores de funcionamiento del comité.
+- [x] ~~Formularios de constitución, designación, convocatoria y cierre de acta; indicadores de funcionamiento del comité~~ — **completado el 20-07-2026** (ver 5sexies.1). Indicadores de funcionamiento = `getCommitteeStatus` (paridad, mandato, cadencia), ya calculado desde la capacidad original y ahora expuesto en el detalle del comité.
+- [ ] **Producto (no priorizado)** — Documentos electorales. El vínculo genérico de documentos (`sst_document_links`) ya declara `'committee'` como tipo de entidad válido en el check constraint de la base, pero `DOCUMENT_LINK_ENTITY_TYPES` (la unión de TypeScript que consume el módulo) nunca lo implementó — ni `resolveDocumentLinkTarget` tiene el caso `'committee'`. Es una capacidad más amplia del módulo de documentos, no específica de CPHS, y no se inventó aquí.
+- [ ] **Producto (no priorizado)** — Reemplazo o renuncia de un integrante. El schema admite los estados `replaced`/`resigned`, pero ninguna Server Action los produce; sólo existe el alta.
 
 Evidencia: migración `0083_closed_maverick.sql` sin drift, 17 pruebas puras de paridad, quórum y cadencia, y 15 escenarios en PostgreSQL real.
+
+### 5sexies.1 Formularios de alta y detalle (20 de julio de 2026)
+
+Cierra la capacidad 5 en UI para el flujo de escritorio. Hasta ahora la bandeja era de sólo lectura y ningún formulario llegaba a `constituteCommitteeAction` ni a las otras cinco Server Actions: sin un comité constituido, la capacidad entera era inalcanzable desde la interfaz. La revisión por la dirección tampoco tenía superficie alguna, ni de lectura.
+
+**Entregado**
+
+- Alta de comité desde la bandeja.
+- Tercera pestaña «Revisión por la dirección» con alta, y cierre con compromisos dinámicos — cada uno deriva a CAPA con faena, responsable, prioridad y plazo propios.
+- Detalle en `/prevencion/cphs/[committeeId]`: indicadores de funcionamiento (paridad, mandato, cadencia), alta de integrante, convocatoria y cierre de acta con **vista previa de quórum en vivo** usando la misma función `assessQuorum` del servicio — el botón de cierre se deshabilita si no alcanza, antes de que el servidor lo rechace.
+
+`getCommitteeStatus` se enriqueció con la nómina de integrantes y el nombre de la faena, que la vista necesitaba y la función no traía.
+
+**Verificación:** typecheck y ESLint (0 avisos) limpios; build compilando las 2 rutas nuevas; React Doctor sin hallazgos propios (los 6 hallazgos en `prevention-cphs.ts` son código preexistente que no toqué: schemas `datetime()` y loops secuenciales dentro de una misma transacción); 43 pruebas de CPHS y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde. No se probó con sesión autenticada real; se verificó que ambas rutas responden sin error 500.
 
 ---
 
@@ -624,6 +640,17 @@ Al correr por primera vez la **regresión completa del repositorio** (359 archiv
 - [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos propios; 55 pruebas de inspecciones y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
 - [x] Agregadas las dos rutas nuevas al inventario de capturas antes de cerrar la pasada.
 - [ ] **Sin probar en navegador con sesión autenticada**, misma razón que en permisos. Verificado que las tres rutas responden sin error 500.
+
+### 20 de julio de 2026 — Formularios de alta y detalle: CPHS
+
+- [x] `NewCommitteeDialog` en la bandeja: constituye comité por faena.
+- [x] Tercera pestaña «Revisión por la dirección»: alta y cierre con compromisos dinámicos derivados a CAPA (faena, responsable, prioridad, plazo propios).
+- [x] Ruta `/prevencion/cphs/[committeeId]`: indicadores de funcionamiento (`getCommitteeStatus`, ya existente y ahora expuesto), alta de integrante, convocatoria y cierre de acta con vista previa de quórum en vivo usando `assessQuorum` del servicio.
+- [x] `getCommitteeStatus` enriquecido con nómina de integrantes y nombre de faena.
+- [x] Agregadas `listCommitteeWorksites`, `listCommitteeWorkers` y `listCommitteeAssignees` al servicio.
+- [x] Detectados y dejados sin construir a propósito: reemplazo/renuncia de integrante (schema lo admite, ninguna acción lo produce) y documentos electorales (tipo de entidad declarado en la base pero nunca implementado en el módulo de documentos).
+- [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos propios; 43 pruebas de CPHS y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
+- [x] Agregada la ruta nueva al inventario de capturas antes de cerrar la pasada.
 
 ---
 
