@@ -10,6 +10,7 @@ import {
   preventionCommittees,
   preventionGovernanceHistory,
   preventionManagementReviews,
+  users,
   workers,
   worksites,
 } from "@/db/schema"
@@ -22,6 +23,7 @@ import {
   isMandateExpired,
 } from "@/lib/prevention/cphs"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 
 type Client = DB | Tx
 
@@ -157,15 +159,25 @@ export async function addCommitteeMember(input: unknown, access: CphsAccess) {
   })
 }
 
-/** Estado de validez del comité: paridad, cargos, mandato y cadencia. */
+/** Estado de validez del comité: paridad, cargos, mandato, cadencia e integrantes. */
 export async function getCommitteeStatus(committeeId: string, access: CphsAccess) {
   requireAccess(access, "prevention:cphs:view")
-  const [committee] = await db.select().from(preventionCommittees)
+  const [row] = await db.select({ committee: preventionCommittees, worksiteName: worksites.name })
+    .from(preventionCommittees)
+    .innerJoin(worksites, eq(preventionCommittees.worksiteId, worksites.id))
     .where(eq(preventionCommittees.id, committeeId)).limit(1)
-  if (!committee || !scopeAllows(access.scope, committee.worksiteId)) return null
+  if (!row || !scopeAllows(access.scope, row.committee.worksiteId)) return null
 
-  const [members, lastClosed] = await Promise.all([
-    db.select().from(preventionCommitteeMembers).where(eq(preventionCommitteeMembers.committeeId, committeeId)),
+  const [memberRows, lastClosed] = await Promise.all([
+    db.select({
+      member: preventionCommitteeMembers,
+      workerFirstName: workers.firstName,
+      workerLastName: workers.lastName,
+    })
+      .from(preventionCommitteeMembers)
+      .innerJoin(workers, eq(preventionCommitteeMembers.workerId, workers.id))
+      .where(eq(preventionCommitteeMembers.committeeId, committeeId))
+      .orderBy(asc(workers.lastName)),
     db.select({ heldAt: preventionCommitteeMeetings.heldAt })
       .from(preventionCommitteeMeetings)
       .where(and(
@@ -175,8 +187,12 @@ export async function getCommitteeStatus(committeeId: string, access: CphsAccess
       .orderBy(desc(preventionCommitteeMeetings.heldAt)).limit(1),
   ])
 
+  const members = memberRows.map((item) => ({ ...item.member, workerName: `${item.workerLastName}, ${item.workerFirstName}` }))
+
   return {
-    committee,
+    committee: row.committee,
+    worksiteName: row.worksiteName,
+    members,
     parity: assessCommitteeParity(members.map((member) => ({
       id: member.id,
       representation: member.representation,
@@ -184,7 +200,7 @@ export async function getCommitteeStatus(committeeId: string, access: CphsAccess
       role: member.role,
       status: member.status,
     }))),
-    mandateExpired: isMandateExpired(committee.mandateEndsOn, todayInChile()),
+    mandateExpired: isMandateExpired(row.committee.mandateEndsOn, todayInChile()),
     cadence: assessMeetingCadence(lastClosed[0]?.heldAt ?? null, nowIso()),
     memberCount: members.filter((member) => member.status === "active").length,
   }
@@ -489,7 +505,59 @@ export async function listCommitteeMeetings(access: CphsAccess) {
 
 export async function listManagementReviews(access: CphsAccess) {
   requireAccess(access, "prevention:governance:review")
-  return db.select().from(preventionManagementReviews)
+  return db.select({ review: preventionManagementReviews, worksiteName: worksites.name })
+    .from(preventionManagementReviews)
+    .leftJoin(worksites, eq(preventionManagementReviews.worksiteId, worksites.id))
     .orderBy(desc(preventionManagementReviews.heldAt))
     .limit(200)
+}
+
+/** Faenas visibles para el alcance, para poblar la constitución de comités. */
+export async function listCommitteeWorksites(access: CphsAccess) {
+  requireAccess(access, "prevention:cphs:view")
+  if (access.scope.mode === "none") return []
+  return db.select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(
+      eq(worksites.isActive, true),
+      access.scope.mode === "some" ? inArray(worksites.id, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(worksites.name))
+}
+
+/**
+ * Dotación activa dentro del alcance, para incorporar integrantes.
+ *
+ * Devuelve `worksiteId` porque el servicio rechaza integrantes de otra faena:
+ * el formulario filtra por la faena del comité y así el rechazo no aparece
+ * recién al enviar.
+ */
+export async function listCommitteeWorkers(access: CphsAccess) {
+  requireAccess(access, "prevention:cphs:view")
+  if (access.scope.mode === "none") return []
+  return db.select({
+    id: workers.id,
+    firstName: workers.firstName,
+    lastName: workers.lastName,
+    position: workers.position,
+    worksiteId: workers.worksiteId,
+  })
+    .from(workers)
+    .where(and(
+      eq(workers.isActive, true),
+      access.scope.mode === "some" ? inArray(workers.worksiteId, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(workers.lastName), asc(workers.firstName))
+    .limit(2000)
+}
+
+/** Candidatos a responsable de un acuerdo o compromiso: quienes gestionan CPHS. */
+export async function listCommitteeAssignees(access: CphsAccess) {
+  requireAccess(access, "prevention:cphs:view")
+  const ids = await getUserIdsWithPermission("prevention:cphs:manage")
+  if (ids.length === 0) return []
+  return db.select({ id: users.id, name: users.name })
+    .from(users)
+    .where(and(inArray(users.id, ids), eq(users.isActive, true)))
+    .orderBy(asc(users.name))
 }

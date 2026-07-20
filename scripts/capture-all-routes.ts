@@ -166,6 +166,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-inspecciones-catalogo", path: "/prevencion/inspecciones/catalogo", auth: true },
   { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una inspección de detalle." },
   { slug: "prevencion-cphs", path: "/prevencion/cphs", auth: true },
+  { slug: "prevencion-cphs-comite-detalle", path: "/prevencion/cphs/comite-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un comité de detalle." },
   { slug: "prevencion-higiene", path: "/prevencion/higiene", auth: true },
   // ── Prevención: submódulos P3 sin page.tsx (omitidos intencionalmente) ──
   //   /prevencion/equipos/reportes y /checklists

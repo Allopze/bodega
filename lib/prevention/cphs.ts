@@ -14,6 +14,18 @@ export const SEAT_LABELS: Record<string, string> = {
   suplente: "Suplente",
 }
 
+export const MEMBER_ROLE_LABELS: Record<string, string> = {
+  presidente: "Presidente",
+  secretario: "Secretario",
+  integrante: "Integrante",
+}
+
+export const MEMBER_STATUS_LABELS: Record<string, string> = {
+  active: "Activo",
+  replaced: "Reemplazado",
+  resigned: "Renunció",
+}
+
 export const COMMITTEE_MEETING_STATUS_LABELS: Record<string, string> = {
   scheduled: "Convocada",
   held: "Realizada",

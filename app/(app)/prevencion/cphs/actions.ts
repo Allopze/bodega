@@ -26,6 +26,10 @@ async function run(access: CphsAccess, operation: (access: CphsAccess) => Promis
   try {
     await operation(access)
     revalidatePath(BASE)
+    // Sin esto un integrante o una sesión recién guardada sigue mostrando el
+    // valor anterior al volver al detalle, porque la ruta dinámica no la
+    // cubre `BASE`.
+    revalidatePath(`${BASE}/[committeeId]`, "page")
     return { ok: true }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }

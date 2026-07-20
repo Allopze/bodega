@@ -4,7 +4,13 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { listCommitteeMeetings, listCommittees } from "@/lib/services/prevention-cphs"
+import {
+  listCommitteeAssignees,
+  listCommitteeMeetings,
+  listCommittees,
+  listCommitteeWorksites,
+  listManagementReviews,
+} from "@/lib/services/prevention-cphs"
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { CommitteeList } from "./committee-list"
 
@@ -20,9 +26,15 @@ export default async function CphsPage() {
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
   }
-  const [committees, meetings] = await Promise.all([
+  const canManage = session.user.permissions.includes("prevention:cphs:manage")
+  const canReview = session.user.permissions.includes("prevention:governance:review")
+
+  const [committees, meetings, worksites, reviews, assignees] = await Promise.all([
     listCommittees(access),
     listCommitteeMeetings(access),
+    canManage || canReview ? listCommitteeWorksites(access) : Promise.resolve([]),
+    canReview ? listManagementReviews(access) : Promise.resolve([]),
+    canManage || canReview ? listCommitteeAssignees(access) : Promise.resolve([]),
   ])
   const today = new Date().toISOString().slice(0, 10)
   const now = new Date().toISOString()
@@ -64,6 +76,20 @@ export default async function CphsPage() {
           attended: row.attended,
           agreements: row.agreements,
         }))}
+        reviews={reviews.map((row) => ({
+          id: row.review.id,
+          code: row.review.code,
+          periodLabel: row.review.periodLabel,
+          worksiteName: row.worksiteName,
+          heldAt: row.review.heldAt,
+          status: row.review.status,
+          conclusions: row.review.conclusions,
+          version: row.review.version,
+        }))}
+        worksites={worksites}
+        assignees={assignees}
+        canManage={canManage}
+        canReview={canReview}
       />
     </PageContainer>
   )
