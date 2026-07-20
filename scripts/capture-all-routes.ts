@@ -270,6 +270,38 @@ export function getCaptureSeedCoverage() {
   return seedCoverage.map((area) => ({ ...area, fixtures: [...area.fixtures] }))
 }
 
+/**
+ * Captura rutas en paralelo usando un pool de workers que comparten una cola.
+ * Cada worker toma la siguiente ruta disponible (índice atómico en JS
+ * single-threaded), ejecuta captureRoute y almacena el resultado en la
+ * posición original para mantener el orden. El factor limitante es el
+ * servidor Next.js (monoproceso); 4-8 workers son óptimos localmente.
+ * La concurrencia se configura con CAPTURE_CONCURRENCY (default 4).
+ */
+async function captureRouteBatch(
+  context: BrowserContext,
+  viewport: string,
+  routes: RouteTarget[],
+  concurrency: number = Number(process.env.CAPTURE_CONCURRENCY) || 4,
+): Promise<CaptureResult[]> {
+  if (routes.length === 0) return []
+
+  const results: CaptureResult[] = []
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < routes.length) {
+      const idx = nextIndex++
+      const result = await captureRoute(context, viewport, routes[idx]!)
+      results[idx] = result
+    }
+  }
+
+  const poolSize = Math.min(concurrency, routes.length)
+  await Promise.all(Array.from({ length: poolSize }, () => worker()))
+  return results
+}
+
 async function main() {
   const captureDbUrl = requireCaptureDatabaseUrl()
   const routes = getCaptureRoutes()
@@ -288,15 +320,15 @@ async function main() {
         locale: "es-CL",
       })
 
-      for (const route of routes.filter((r) => !r.auth)) {
-        results.push(await captureRoute(context, viewport.name, route))
-      }
+      const nonAuthRoutes = routes.filter((r) => !r.auth)
+      const nonAuthResults = await captureRouteBatch(context, viewport.name, nonAuthRoutes)
+      results.push(...nonAuthResults)
 
       await login(context)
 
-      for (const route of routes.filter((r) => r.auth)) {
-        results.push(await captureRoute(context, viewport.name, route))
-      }
+      const authRoutes = routes.filter((r) => r.auth)
+      const authResults = await captureRouteBatch(context, viewport.name, authRoutes)
+      results.push(...authResults)
 
       await context.close()
     }

@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { pgliteTestFiles } from "./tests/pglite-files"
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 
@@ -14,12 +15,12 @@ export default defineConfig({
   test: {
     environment: "node",
     include:     ["**/*.test.ts", "**/*.test.tsx"],
-    exclude:     ["node_modules", ".next", ".tmp"],
+    exclude:     [...pgliteTestFiles, "node_modules", ".next", ".tmp"],
     setupFiles:  ["./components/__tests__/setup.ts"],
     env: {
       DATABASE_URL: "postgres:///bodega_test",
     },
-    fileParallelism: false,
+    fileParallelism: true,
     testTimeout: 20_000,
     hookTimeout: 30_000,
     server: { deps: { inline: ["next-auth"] } },
