@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers, productSuppliers } from "@/db/schema"
+import { worksites, products, productAttributes, suppliers, productSuppliers, workers } from "@/db/schema"
 import { eq, asc, desc } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
@@ -25,7 +25,7 @@ export default async function NuevaSolicitudPage() {
   const requestTypeOptions = visibleRequestTypeOptions(session.user.permissions, "create")
   if (requestTypeOptions.length === 0) redirect("/forbidden")
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, maxFileSizeMb] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -44,6 +44,13 @@ export default async function NuevaSolicitudPage() {
     db.select().from(suppliers)
       .where(eq(suppliers.isActive, true))
       .orderBy(asc(suppliers.name)),
+    db.select({
+      id: workers.id, firstName: workers.firstName, lastName: workers.lastName,
+      sizeTop: workers.sizeTop, sizeBottom: workers.sizeBottom, sizeShoe: workers.sizeShoe,
+      sizeGloves: workers.sizeGloves, sizeHelmet: workers.sizeHelmet, worksiteId: workers.worksiteId,
+    }).from(workers)
+      .where(eq(workers.isActive, true))
+      .orderBy(asc(workers.lastName), asc(workers.firstName)),
     getPdfMaxSizeMb(),
   ])
 
@@ -89,6 +96,20 @@ export default async function NuevaSolicitudPage() {
     id:   s.id,
     name: s.name,
   }))
+
+  const scopedWorksiteIds = new Set(scopedWorksites.map((w) => w.id))
+  const workerOptions = allWorkers
+    .filter((w) => scopedWorksiteIds.has(w.worksiteId))
+    .map((w) => ({
+      id:         w.id,
+      firstName:  w.firstName,
+      lastName:   w.lastName,
+      sizeTop:    w.sizeTop,
+      sizeBottom: w.sizeBottom,
+      sizeShoe:   w.sizeShoe,
+      sizeGloves: w.sizeGloves,
+      sizeHelmet: w.sizeHelmet,
+    }))
 
   if (worksiteOptions.length === 0) {
     return (
@@ -137,6 +158,7 @@ export default async function NuevaSolicitudPage() {
         worksites={worksiteOptions}
         products={productOptions}
         suppliers={supplierOptions}
+        workers={workerOptions}
         maxFileSizeMb={maxFileSizeMb}
         userRoles={session.user.roles}
         userPermissions={session.user.permissions}

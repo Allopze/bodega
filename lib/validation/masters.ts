@@ -116,6 +116,7 @@ export const productAttributeSchema = z.object({
   type:       z.enum(["text", "select", "number"]),
   isRequired: z.coerce.boolean().default(false),
   options:    z.string().optional().nullable(),   // JSON array string for "select"
+  sizeFamily: z.string().max(20).optional().or(z.literal("")).or(z.literal("undefined")),
   sortOrder:  z.coerce.number().int().default(0),
 })
 
@@ -161,6 +162,11 @@ export const workerSchema = z.object({
   position:    z.string().max(80).optional().or(z.literal("")),
   worksiteId:  z.string().min(1, "Selecciona una faena"),
   isActive:    z.coerce.boolean().default(true),
+  sizeTop:     z.string().max(10).optional().or(z.literal("")),
+  sizeBottom:  z.string().max(10).optional().or(z.literal("")),
+  sizeShoe:    z.string().max(10).optional().or(z.literal("")),
+  sizeGloves:  z.string().max(10).optional().or(z.literal("")),
+  sizeHelmet:  z.string().max(10).optional().or(z.literal("")),
 })
 
 // ── Role ─────────────────────────────────────────────────────────────────────

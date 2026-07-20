@@ -103,7 +103,7 @@ export async function updateRequestWithDiff(
       status:              "draft",
       urgency:             item.urgency,
       requiredDate:        data.requiredDate,
-      workerId:            null,
+      workerId:            item.workerId || null,
       suggestedSupplierId: item.suggestedSupplierId || null,
       supplierHint:        item.supplierHint || null,
       sortOrder:           item.sortOrder,

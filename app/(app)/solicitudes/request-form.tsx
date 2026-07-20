@@ -20,7 +20,7 @@ import { ItemEditor } from "./item-editor"
 import { URGENCY_OPTS } from "./request-form.constants"
 import { formatDate } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest } from "./request-form.types"
 import { useRequestForm } from "./use-request-form"
 
 function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
@@ -38,6 +38,7 @@ interface RequestFormProps {
   worksites: WorksiteOption[]
   products: ProductOption[]
   suppliers: SupplierOption[]
+  workers?: WorkerOption[]
   editRequest?: EditRequest
   maxFileSizeMb: number
   userRoles?: string[]
@@ -92,15 +93,16 @@ function RequestFormHeader({
 
 function ItemsSection({
   items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
-  products, suppliers, maxFileSizeMb,
-  onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr,
+  products, suppliers, workers, maxFileSizeMb,
+  onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
   resubmitAction, resubmitPending,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
-  itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; maxFileSizeMb: number
+  itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]; maxFileSizeMb: number
   onAdd: () => void; onRemove: (key: string) => void; onUpdate: (key: string, patch: Partial<ItemRow>) => void
   onSelectProduct: (key: string, pid: string) => void; onSelectFreeProduct: (key: string, name: string) => void
   onClearProduct: (key: string) => void; onUpdateAttr: (itemKey: string, attrIdx: number, value: string) => void
+  onUpdateWorker: (itemKey: string, workerId: string) => void
   resubmitAction: (payload: FormData) => void; resubmitPending: boolean
 }) {
   return (
@@ -122,13 +124,14 @@ function ItemsSection({
       <div className="space-y-2">
         {items.map((item, idx) => (
           <div key={item._key}>
-            <ItemEditor item={item} idx={idx} products={products} suppliers={suppliers}
+            <ItemEditor item={item} idx={idx} products={products} suppliers={suppliers} workers={workers}
               readOnly={readOnly} requestType={requestType} maxFileSizeMb={maxFileSizeMb}
               onUpdate={(patch) => onUpdate(item._key, patch)}
               onSelectProduct={(pid) => onSelectProduct(item._key, pid)}
               onSelectFreeProduct={(name) => onSelectFreeProduct(item._key, name)}
               onClearProduct={() => onClearProduct(item._key)}
               onUpdateAttr={(i, v) => onUpdateAttr(item._key, i, v)}
+              onUpdateWorker={(workerId) => onUpdateWorker(item._key, workerId)}
               onRemove={() => onRemove(item._key)} canRemove={items.length > 1}
             />
             {readOnly && item.status === "returned" && item.id && (
@@ -197,8 +200,8 @@ function SummarySidebar({
   )
 }
 
-export function RequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userPermissions = [] }: RequestFormProps) {
-  const form = useRequestForm({ worksites, products, suppliers, editRequest, maxFileSizeMb, userPermissions })
+export function RequestForm({ worksites, products, suppliers, workers, editRequest, maxFileSizeMb, userPermissions = [] }: RequestFormProps) {
+  const form = useRequestForm({ worksites, products, suppliers, workers, editRequest, maxFileSizeMb, userPermissions })
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
 
   return (
@@ -226,10 +229,11 @@ export function RequestForm({ worksites, products, suppliers, editRequest, maxFi
           <ItemsSection
             items={form.items} requestType={form.requestType} requestTypeLabel={form.requestTypeLabel}
             readOnly={form.readOnly} savedId={form.savedId} itemsError={form.itemsError}
-            products={products} suppliers={suppliers} maxFileSizeMb={maxFileSizeMb}
+            products={products} suppliers={suppliers} workers={workers} maxFileSizeMb={maxFileSizeMb}
             onAdd={form.addItem} onRemove={form.removeItem} onUpdate={form.updateItem}
             onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
             onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}
+            onUpdateWorker={form.updateItemWorker}
             resubmitAction={form.resubmitAction} resubmitPending={form.resubmitPending}
           />
           {form.isDraft && (

@@ -26,6 +26,17 @@ export interface SupplierOption {
   name: string
 }
 
+export interface WorkerOption {
+  id:         string
+  firstName:  string
+  lastName:   string
+  sizeTop:    string | null
+  sizeBottom: string | null
+  sizeShoe:   string | null
+  sizeGloves: string | null
+  sizeHelmet: string | null
+}
+
 export interface EditRequest {
   id:          string
   code:        string
@@ -67,6 +78,9 @@ export interface ItemRow {
   supplierHint:        string
   notes:               string
   attributes:          AttrRow[]
+  variantQuantities:   Record<string, number>
+  workerId:            string
+  workerName:          string
   isEpp:               boolean
   productName:         string
   showAttrs:           boolean

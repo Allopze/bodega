@@ -25,6 +25,7 @@ const EPP_ATTRIBUTE_PRESETS: AttributeRow[] = [
     isRequired: true,
     options: "XS, S, M, L, XL, 2XL, 3XL",
     sortOrder: 0,
+    sizeFamily: "ropa",
   },
   {
     name: "Talla calzado",
@@ -32,6 +33,15 @@ const EPP_ATTRIBUTE_PRESETS: AttributeRow[] = [
     isRequired: true,
     options: "36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46",
     sortOrder: 0,
+    sizeFamily: "calzado",
+  },
+  {
+    name: "Talla guantes",
+    type: "select",
+    isRequired: true,
+    options: "XS, S, M, L, XL, 2XL",
+    sortOrder: 0,
+    sizeFamily: "guantes",
   },
   {
     name: "Color",

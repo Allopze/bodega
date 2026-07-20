@@ -6,7 +6,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./request-form.constants"
 import type { ActionState } from "@/lib/validation/operations"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, EditRequest } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest } from "./request-form.types"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 import { saveDraft, submitRequest, cancelRequest, deleteRequestAction, resubmitReturnedItemAction } from "./actions"
 import {
@@ -15,6 +15,18 @@ import {
 } from "./request-form.helpers"
 
 const AUTOSAVE_INTERVAL_MS = 60_000
+
+const SIZE_FIELD_MAP: Record<string, keyof Pick<WorkerOption, "sizeTop" | "sizeBottom" | "sizeShoe" | "sizeGloves" | "sizeHelmet">> = {
+  Talla: "sizeTop",
+  "Talla calzado": "sizeShoe",
+}
+
+function suggestSize(attributeName: string, worker: WorkerOption | undefined): string | null {
+  if (!worker) return null
+  const field = SIZE_FIELD_MAP[attributeName]
+  if (!field) return null
+  return (worker[field] as string | null | undefined) ?? null
+}
 
 interface AutosaveSnapshot {
   savedId: string | undefined; itemsJson: string; worksiteId: string
@@ -110,9 +122,9 @@ function useDraftPersistence({
 }
 
 export function useRequestForm({
-  worksites, products, editRequest, userPermissions = [],
+  worksites, products, workers, editRequest, userPermissions = [],
 }: {
-  worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]
+  worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
   editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
 }) {
   const router = useRouter()
@@ -155,6 +167,7 @@ export function useRequestForm({
           urgency: item.urgency, suggestedSupplierId: item.suggestedSupplierId ?? "",
           supplierHint: item.supplierHint ?? "", notes: item.notes ?? "", status: item.status,
           isEpp: prod?.isEpp ?? false, productName: prod?.name ?? item.productNameFree ?? "",
+          variantQuantities: {}, workerId: "", workerName: "",
           showAttrs: !isQuotation && item.attributes.length > 0, cotizaciones: [],
           ...equipmentFromAttributes(editRequest.requestType, item.attributes),
           attributes: isQuotation ? [] : item.attributes.map((a) => {
@@ -197,7 +210,7 @@ export function useRequestForm({
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
       const attrs = buildAttrsFromProduct(prod)
-      return { ...i, productId: prod.id, productNameFree: "", productName: prod.name, unitOfMeasure: prod.unitOfMeasure, isEpp: prod.isEpp, suggestedSupplierId: prod.isEpp ? (prod.preferredSupplierId ?? "") : "", supplierHint: "", attributes: attrs, showAttrs: attrs.length > 0 }
+      return { ...i, productId: prod.id, productNameFree: "", productName: prod.name, unitOfMeasure: prod.unitOfMeasure, isEpp: prod.isEpp, suggestedSupplierId: prod.isEpp ? (prod.preferredSupplierId ?? "") : "", supplierHint: "", attributes: attrs, variantQuantities: {}, showAttrs: attrs.length > 0 }
     }))
   }, [products])
 
@@ -211,9 +224,23 @@ export function useRequestForm({
 
   const clearProduct = useCallback((key: string) => {
     setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "" }
     ))
   }, [])
+
+  const updateItemWorker = useCallback((key: string, workerId: string) => {
+    if (!workers) return
+    const worker = workers.find((w) => w.id === workerId)
+    if (!worker) return
+    setItems((prev) => prev.map((i) => {
+      if (i._key !== key) return i
+      const attrs = i.attributes.map((a) => {
+        const size = suggestSize(a.attributeName, worker)
+        return size ? { ...a, value: size } : a
+      })
+      return { ...i, workerId: worker.id, workerName: `${worker.firstName} ${worker.lastName}`, attributes: attrs }
+    }))
+  }, [workers])
 
   const updateAttr = useCallback((itemKey: string, attrIdx: number, value: string) => {
     setItems((prev) => prev.map((i) => {
@@ -224,16 +251,35 @@ export function useRequestForm({
   }, [])
 
   const itemsJson = useMemo(
-    () => JSON.stringify(items.map((item) => ({
-      id: item.id, productId: item.productId, productNameFree: item.productNameFree || null,
-      quantity: Number(item.quantity) || 1, unitOfMeasure: item.unitOfMeasure, urgency: item.urgency,
-      requiredDate: requiredDate || null, suggestedSupplierId: item.suggestedSupplierId || null,
-      supplierHint: item.supplierHint || null, notes: item.notes || null,
-      partNumber: item.partNumber || null, location: item.location || null,
-      equipmentName: item.equipmentName || null, patent: item.patent || null,
-      brand: item.brand || null, model: item.model || null,
-      attributes: item.attributes.map((a) => ({ attributeId: a.attributeId, attributeName: a.attributeName, value: a.value })),
-    }))),
+    () => JSON.stringify(items.flatMap((item) => {
+      const base = {
+        id: item.id, productId: item.productId, productNameFree: item.productNameFree || null,
+        unitOfMeasure: item.unitOfMeasure, urgency: item.urgency,
+        requiredDate: requiredDate || null, suggestedSupplierId: item.suggestedSupplierId || null,
+        supplierHint: item.supplierHint || null, notes: item.notes || null,
+        workerId: item.workerId || null,
+        partNumber: item.partNumber || null, location: item.location || null,
+        equipmentName: item.equipmentName || null, patent: item.patent || null,
+        brand: item.brand || null, model: item.model || null,
+        attributes: item.attributes.map((a) => ({ attributeId: a.attributeId, attributeName: a.attributeName, value: a.value })),
+      }
+      const variantEntries = Object.entries(item.variantQuantities ?? {}).filter(
+        ([, qty]) => qty > 0,
+      )
+      if (variantEntries.length > 0) {
+        return variantEntries.map(([variantProductId, qty]) => ({
+          ...base,
+          productId: variantProductId,
+          quantity: qty,
+          id: undefined,
+          attributes: item.attributes.map((a) => ({ attributeId: null, attributeName: a.attributeName, value: a.value })),
+        }))
+      }
+      return [{
+        ...base,
+        quantity: Number(item.quantity) || 1,
+      }]
+    })),
     [items, requiredDate],
   )
 
@@ -292,7 +338,7 @@ export function useRequestForm({
     itemsError, requiredDateError, submitMessage, submitOk,
     canDeleteRequest, canCancelRequest, deleteConfirmOpen, setDeleteConfirmOpen,
     isSaving, isSubmitting, isDeleting, draftPending, resubmitPending,
-    addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct, updateAttr,
+    addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct, updateItemWorker, updateAttr,
     buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction, resubmitAction,
     startSaveTransition, startSubmitTransition, startDeleteTransition, silentNavBack,
   }

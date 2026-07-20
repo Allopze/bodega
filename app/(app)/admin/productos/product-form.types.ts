@@ -20,6 +20,7 @@ export interface AttributeRow {
   isRequired: boolean
   options: string
   sortOrder: number
+  sizeFamily?: string
 }
 
 export interface SupplierRow {
