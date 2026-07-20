@@ -35,9 +35,9 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting storage backup..."
 echo "  Source: ${STORAGE_PATH}"
 echo "  Destination: ${RCLONE_DEST}"
 
-# rclone sync — copies only what changed (incremental), deletes extraneous files
-# at the destination to keep a mirror.
-rclone sync "$STORAGE_PATH" "$RCLONE_DEST" \
+# rclone copy — copies only what changed (incremental), does NOT delete extraneous
+# files at the destination. Use separate cleanup jobs for retention management.
+rclone copy "$STORAGE_PATH" "$RCLONE_DEST" \
   --verbose \
   --progress \
   --checksum \

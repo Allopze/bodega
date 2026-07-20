@@ -193,16 +193,24 @@ storage/
 
 ## Cron jobs
 
-| Job | Descripción | Frecuencia recomendada |
+| Job | Descripción | Cómo se ejecuta |
 |---|---|---|
-| `scripts/backup-pg.sh` | Backup `pg_dump -Fc` de PostgreSQL | Diaria |
-| `scripts/backup-storage.sh` | Sincroniza `storage/` a destino `rclone` externo | Diaria |
-| `cleanupOldNotifications(90)` | Limpia notificaciones leídas > 90 días | Diaria / semanal |
-| `cleanupRateLimits()` | Limpia locks expirados y contadores stale | Diaria |
+| `backup-scheduler` | Orquesta backup completo (PG + storage + config) + subida a Google Drive | Servicio Docker (`docker compose --profile backup up -d`) |
+| `/api/cron/backup-health` | Verifica edad del último backup (<36h) | Cron externo (UptimeRobot, healthchecks.io, o Vercel Cron) |
+| `cleanupOldNotifications(90)` | Limpia notificaciones leídas > 90 días | TBD — endpoint `/api/cron/*` o servicio Docker |
+| `cleanupRateLimits()` | Limpia locks expirados y contadores stale | TBD — endpoint `/api/cron/*` o servicio Docker |
 
-Ejecutar vía cron del sistema o herramienta de orquestación.
+El backup-scheduler corre diariamente a las `BACKUP_HOUR` UTC (default: 3 AM)
+y reporta al endpoint `/api/cron/backup-health` después de cada ejecución.
 
-Ver comandos concretos, prueba de restauración, SLO/RPO/RTO y flujo de incidentes en [RUNBOOK.md](RUNBOOK.md).
+### Probar backups en desarrollo
+
+```bash
+bash scripts/dev-backup-test.sh
+```
+
+Ciclo completo de backup → validación de estructura → restore a `bodega_e2e`
+con verificación de conteo de tablas. No requiere Docker ni Google Drive.
 
 ---
 

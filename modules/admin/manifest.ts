@@ -44,6 +44,8 @@ export const adminModule = {
     "admin:notifications",
     "admin:ops_settings",
     "admin:module_management",
+    // Backups
+    "admin:backups",
   ] as const,
 
   permissionMeta: {
@@ -71,6 +73,7 @@ export const adminModule = {
     "admin:notifications":     { id: "p-adm-notif", description: "Administrar notificaciones del sistema" },
     "admin:ops_settings":      { id: "p-adm-ops",    description: "Gestionar parámetros operativos avanzados" },
     "admin:module_management": { id: "p-adm-modules", description: "Activar/desactivar módulos del sistema" },
+    "admin:backups":            { id: "p-adm-bkp",   description: "Gestionar respaldos y restauración" },
   },
 
   // No aparece en el sidebar principal; el TopBar lo descubre dinámicamente
@@ -139,5 +142,7 @@ export const adminModule = {
     { roleSlug: "prevencionista_faena", permission: "admin:workers" },
     // Admin de módulos
     { roleSlug: "administrador", permission: "admin:module_management" },
+    { roleSlug: "administrador", permission: "admin:backups" },
+    { roleSlug: "jefa_chome", permission: "admin:backups" },
   ],
 } as const satisfies ModuleManifest
