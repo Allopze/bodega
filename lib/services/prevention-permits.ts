@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
-import type { AnyPgColumn } from "drizzle-orm/pg-core"
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
   preventionCompetencyRequirements,
@@ -19,6 +19,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import {
   assessPermitActivation,
   isPermitExpired,
@@ -676,6 +677,8 @@ export async function listWorkPermits(access: PermitAccess) {
 
 export async function getWorkPermitDetail(permitId: string, access: PermitAccess) {
   requireAccess(access, "prevention:permits:view")
+  const supervisor = alias(users, "permit_supervisor")
+  const requester = alias(users, "permit_requester")
   const [permit] = await db.select({
     permit: preventionWorkPermits,
     typeName: preventionPermitTypes.name,
@@ -683,25 +686,111 @@ export async function getWorkPermitDetail(permitId: string, access: PermitAccess
     requiresIsolation: preventionPermitTypes.requiresIsolation,
     requiresMeasurement: preventionPermitTypes.requiresMeasurement,
     requiresJsa: preventionPermitTypes.requiresJsa,
+    measurementValidityMinutes: preventionPermitTypes.measurementValidityMinutes,
+    maxDurationHours: preventionPermitTypes.maxDurationHours,
+    competencyTaskKey: preventionPermitTypes.competencyTaskKey,
     worksiteName: worksites.name,
+    supervisorName: supervisor.name,
+    requesterName: requester.name,
   })
     .from(preventionWorkPermits)
     .innerJoin(preventionPermitTypes, eq(preventionWorkPermits.permitTypeId, preventionPermitTypes.id))
     .innerJoin(worksites, eq(preventionWorkPermits.worksiteId, worksites.id))
+    .innerJoin(supervisor, eq(preventionWorkPermits.supervisorUserId, supervisor.id))
+    .innerJoin(requester, eq(preventionWorkPermits.requestedByUserId, requester.id))
     .where(eq(preventionWorkPermits.id, permitId)).limit(1)
   if (!permit || !scopeAllows(access.scope, permit.permit.worksiteId)) return null
 
-  const [controls, isolations, measurements, jsaSteps, crew] = await Promise.all([
+  const [controls, isolations, measurements, jsaSteps, crewRows, eligibility] = await Promise.all([
     db.select().from(preventionPermitControls).where(eq(preventionPermitControls.permitId, permitId)),
     db.select().from(preventionPermitIsolations).where(eq(preventionPermitIsolations.permitId, permitId)),
     db.select().from(preventionPermitMeasurements).where(eq(preventionPermitMeasurements.permitId, permitId)).orderBy(desc(preventionPermitMeasurements.takenAt)),
     db.select().from(preventionJsaSteps).where(eq(preventionJsaSteps.permitId, permitId)).orderBy(asc(preventionJsaSteps.stepOrder)),
-    resolveCrewEligibility(db, permitId, null),
+    // Consulta propia y no `resolveCrewEligibility`: la vista de detalle necesita
+    // rol, acuse y el usuario ligado a cada integrante (para el botón de acuse
+    // propio), que esa función no trae porque sólo la usa la evaluación de
+    // habilitación.
+    db.select({
+      id: preventionPermitCrew.id,
+      workerId: preventionPermitCrew.workerId,
+      role: preventionPermitCrew.role,
+      acknowledgedAt: preventionPermitCrew.acknowledgedAt,
+      workerFirstName: workers.firstName,
+      workerLastName: workers.lastName,
+      crewUserId: users.id,
+    })
+      .from(preventionPermitCrew)
+      .innerJoin(workers, eq(preventionPermitCrew.workerId, workers.id))
+      .leftJoin(users, eq(users.workerId, preventionPermitCrew.workerId))
+      .where(eq(preventionPermitCrew.permitId, permitId))
+      .orderBy(asc(workers.lastName)),
+    // `competencyTaskKey` real y no `null`: sin él, ningún integrante aparecía
+    // nunca como falto de competencia en esta vista, aunque la activación sí lo
+    // bloqueara correctamente. Detectado al construir esta página.
+    resolveCrewEligibility(db, permitId, permit.competencyTaskKey),
   ])
-  return { ...permit, controls, isolations, measurements, jsaSteps, crew: crew.crew }
+
+  const withoutCompetencyIds = new Set(eligibility.crewWithoutCompetency.map((item) => item.id))
+  const crew = crewRows.map((row) => ({ ...row, hasCompetencyGap: withoutCompetencyIds.has(row.id) }))
+
+  return { ...permit, controls, isolations, measurements, jsaSteps, crew }
 }
 
 export async function listPermitTypes(access: PermitAccess) {
   requireAccess(access, "prevention:permits:view")
   return db.select().from(preventionPermitTypes).orderBy(asc(preventionPermitTypes.code))
+}
+
+/** Faenas visibles para el alcance, para poblar el formulario de alta. */
+export async function listPermitWorksites(access: PermitAccess) {
+  requireAccess(access, "prevention:permits:view")
+  if (access.scope.mode === "none") return []
+  return db.select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(
+      eq(worksites.isActive, true),
+      access.scope.mode === "some" ? inArray(worksites.id, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(worksites.name))
+}
+
+/**
+ * Dotación activa dentro del alcance, para armar la cuadrilla.
+ *
+ * Devuelve `worksiteId` porque el servicio rechaza asignar a alguien de otra
+ * faena a la cuadrilla: el formulario filtra por la faena elegida y así el
+ * rechazo no aparece recién al enviar.
+ */
+export async function listPermitWorkers(access: PermitAccess) {
+  requireAccess(access, "prevention:permits:view")
+  if (access.scope.mode === "none") return []
+  return db.select({
+    id: workers.id,
+    firstName: workers.firstName,
+    lastName: workers.lastName,
+    position: workers.position,
+    worksiteId: workers.worksiteId,
+  })
+    .from(workers)
+    .where(and(
+      eq(workers.isActive, true),
+      access.scope.mode === "some" ? inArray(workers.worksiteId, access.scope.ids) : undefined,
+    ))
+    .orderBy(asc(workers.lastName), asc(workers.firstName))
+    .limit(2000)
+}
+
+/**
+ * Candidatos a supervisor del permiso: personas habilitadas para verificar
+ * controles en terreno. El servicio no restringe `supervisorUserId` a la faena
+ * del permiso, así que esta lista tampoco lo hace.
+ */
+export async function listPermitSupervisors(access: PermitAccess) {
+  requireAccess(access, "prevention:permits:view")
+  const ids = await getUserIdsWithPermission("prevention:permits:verify")
+  if (ids.length === 0) return []
+  return db.select({ id: users.id, name: users.name })
+    .from(users)
+    .where(and(inArray(users.id, ids), eq(users.isActive, true)))
+    .orderBy(asc(users.name))
 }

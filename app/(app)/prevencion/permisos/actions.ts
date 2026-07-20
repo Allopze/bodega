@@ -32,6 +32,10 @@ async function run(access: PermitAccess, operation: (access: PermitAccess) => Pr
   try {
     await operation(access)
     revalidatePath(BASE)
+    // Sin esto una verificación, aislamiento o medición recién guardada sigue
+    // mostrando el valor anterior al volver al detalle, porque la ruta
+    // dinámica no la cubre `BASE`.
+    revalidatePath(`${BASE}/[permitId]`, "page")
     return { ok: true }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }

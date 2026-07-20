@@ -130,7 +130,9 @@ Tercera capacidad P1. Es la que amarra las anteriores: el permiso es el punto do
 
 **Evidencia:** migración `0080_furry_bucky.sql` desde schema, sin drift, aplicada. 27 pruebas puras de la decisión de habilitación y 20 escenarios sobre PostgreSQL real.
 
-**Lo que esto todavía NO significa:** no hay tipos de permiso ni permisos productivos cargados. Quedan diferidos el formulario de detalle en terreno, el enganche efectivo del PPA y la captura móvil/offline.
+**Formularios (20-07-2026):** capacidad **cerrada de punta a punta en UI**. `/prevencion/permisos` permite dar de alta el tipo y el permiso (cuadrilla filtrada por faena, controles como lista dinámica); `/prevencion/permisos/[permitId]` cubre AST/JSA, verificación de controles, LOTO, mediciones, cuadrilla con acuse propio y las siete transiciones de estado más la extensión, todo con los bloqueadores reales mostrados antes de enviar. Un defecto preexistente en `getWorkPermitDetail` —pasaba `null` en vez del `competencyTaskKey` real— hacía que la vista de detalle nunca pudiera mostrar a un integrante como falto de competencia, aunque la activación sí lo bloqueaba correctamente; quedó corregido.
+
+**Lo que esto todavía NO significa:** no hay tipos de permiso ni permisos productivos cargados. Quedan diferidos el enganche efectivo del PPA y la captura móvil/offline.
 
 ---
 

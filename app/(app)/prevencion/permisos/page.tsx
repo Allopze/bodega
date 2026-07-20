@@ -6,7 +6,13 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { listWorkPermits } from "@/lib/services/prevention-permits"
+import {
+  listPermitSupervisors,
+  listPermitTypes,
+  listPermitWorkers,
+  listPermitWorksites,
+  listWorkPermits,
+} from "@/lib/services/prevention-permits"
 import { WorkPermitList } from "./work-permit-list"
 
 export const metadata: Metadata = { title: "Permisos de trabajo" }
@@ -16,11 +22,24 @@ export default async function PermisosPage() {
   try { session = await requirePermission("prevention:permits:view") }
   catch { redirect("/forbidden") }
 
-  const permits = await listWorkPermits({
+  const access = {
     userId: session.user.id,
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
-  })
+  }
+  const canManage = session.user.permissions.includes("prevention:permits:manage")
+  const canRequest = session.user.permissions.includes("prevention:permits:request")
+
+  const [permits, types, worksites, workers, supervisors] = await Promise.all([
+    listWorkPermits(access),
+    listPermitTypes(access),
+    // La alta de tipo/permiso sólo la necesita quien puede administrar o
+    // solicitar: para el resto son consultas sobre catálogo y dotación que
+    // nadie va a mirar.
+    canManage || canRequest ? listPermitWorksites(access) : Promise.resolve([]),
+    canRequest ? listPermitWorkers(access) : Promise.resolve([]),
+    canRequest ? listPermitSupervisors(access) : Promise.resolve([]),
+  ])
 
   return (
     <PageContainer>
@@ -58,6 +77,26 @@ export default async function PermisosPage() {
           acknowledgedCount: row.acknowledgedCount,
           openIsolationCount: row.openIsolationCount,
         }))}
+        canManage={canManage}
+        canRequest={canRequest}
+        types={types.flatMap((item) => item.isActive ? [{
+          id: item.id,
+          code: item.code,
+          name: item.name,
+          competencyTaskKey: item.competencyTaskKey,
+          requiresIsolation: item.requiresIsolation,
+          requiresMeasurement: item.requiresMeasurement,
+          requiresJsa: item.requiresJsa,
+          maxDurationHours: item.maxDurationHours,
+        }] : [])}
+        worksites={worksites}
+        workers={workers.map((worker) => ({
+          id: worker.id,
+          name: `${worker.lastName}, ${worker.firstName}`,
+          position: worker.position,
+          worksiteId: worker.worksiteId,
+        }))}
+        supervisors={supervisors}
       />
     </PageContainer>
   )

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { ShieldCheck } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
@@ -10,6 +11,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { PERMIT_STATUS_LABELS, permitStatusBadgeVariant } from "@/lib/prevention/permits"
 import { formatDateTime } from "@/lib/utils"
+import { NewPermitDialog, PermitTypeDialog } from "./permit-dialogs"
+
+interface PermitTypeItem {
+  id: string
+  code: string
+  name: string
+  competencyTaskKey: string | null
+  requiresIsolation: boolean
+  requiresMeasurement: boolean
+  requiresJsa: boolean
+  maxDurationHours: number
+}
+
+interface WorkerOption {
+  id: string
+  name: string
+  position: string | null
+  worksiteId: string
+}
 
 interface PermitItem {
   id: string
@@ -31,13 +51,25 @@ interface PermitItem {
 
 type QuickFilter = "all" | "active" | "pending" | "isolations"
 
-export function WorkPermitList({ permits }: { permits: PermitItem[] }) {
+interface Props {
+  permits: PermitItem[]
+  canManage: boolean
+  canRequest: boolean
+  types: PermitTypeItem[]
+  worksites: { id: string; name: string }[]
+  workers: WorkerOption[]
+  supervisors: { id: string; name: string }[]
+}
+
+export function WorkPermitList({ permits, canManage, canRequest, types, worksites, workers, supervisors }: Props) {
   const { searchQuery } = useSafeShellHeader()
   const [status, setStatus] = React.useState("all")
   const [worksite, setWorksite] = React.useState("all")
   const [quickFilter, setQuickFilter] = React.useState<QuickFilter>("all")
 
-  const worksites = React.useMemo(() => {
+  // Faenas presentes en los permisos listados: el filtro sólo debe ofrecer
+  // valores que puedan devolver alguna fila, no todo el alcance.
+  const permitWorksites = React.useMemo(() => {
     const map = new Map(permits.map((item) => [item.worksiteId, item.worksiteName]))
     return [...map].map(([id, name]) => ({ id, name }))
   }, [permits])
@@ -94,12 +126,18 @@ export function WorkPermitList({ permits }: { permits: PermitItem[] }) {
           <SelectTrigger className="w-52" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las faenas</SelectItem>
-            {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+            {permitWorksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
           </SelectContent>
         </Select>
         {(status !== "all" || worksite !== "all" || quickFilter !== "all") && (
           <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar filtros</Button>
         )}
+        <div className="ml-auto flex flex-wrap gap-2">
+          {canManage && <PermitTypeDialog />}
+          {canRequest && types.length > 0 && worksites.length > 0 && (
+            <NewPermitDialog types={types} worksites={worksites} workers={workers} supervisors={supervisors} />
+          )}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -111,7 +149,11 @@ export function WorkPermitList({ permits }: { permits: PermitItem[] }) {
             : "Ajusta los filtros o el texto del buscador superior."}
           action={permits.length > 0
             ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todos</Button>
-            : undefined}
+            : canRequest && types.length > 0 && worksites.length > 0
+              ? <NewPermitDialog types={types} worksites={worksites} workers={workers} supervisors={supervisors} />
+              : canManage
+                ? <PermitTypeDialog />
+                : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -131,8 +173,10 @@ export function WorkPermitList({ permits }: { permits: PermitItem[] }) {
               {filtered.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
-                    <span className="font-mono text-xs">{item.code}</span>
-                    <span className="block max-w-sm text-sm">{item.taskDescription}</span>
+                    <Link href={`/prevencion/permisos/${item.id}`} className="hover:underline">
+                      <span className="font-mono text-xs">{item.code}</span>
+                      <span className="block max-w-sm text-sm font-medium">{item.taskDescription}</span>
+                    </Link>
                   </TableCell>
                   <TableCell className="text-sm">{item.typeName}</TableCell>
                   <TableCell className="text-sm">

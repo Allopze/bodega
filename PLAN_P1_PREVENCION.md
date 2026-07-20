@@ -210,9 +210,31 @@ Durante la primera ejecución en Postgres el servicio rechazó, correctamente, e
 
 - [ ] **Operación** — Definir el catálogo real de tipos de permiso y qué competencia exige cada uno.
 - [ ] **Producción** — Aplicar la migración `0080` y programar `suspendExpiredPermits` como job periódico.
-- [ ] **Producto (diferido)** — UI de detalle del permiso: hoy existe la bandeja con estado, ventana, acuses y LOTO abierto; las acciones de terreno (verificar control, aplicar/retirar aislamiento, registrar medición, transiciones) tienen Server Actions probadas pero aún no formulario.
+- [x] ~~UI de detalle del permiso~~ — **completado el 20-07-2026** (ver 5ter.5). El flujo queda cerrado de punta a punta: tipo de permiso, alta con cuadrilla y controles, AST/JSA, LOTO, mediciones, transiciones, extensión y acuse.
 - [ ] **Producto (diferido)** — Enganche efectivo del PPA al permiso: la columna `work_permit_id` existe y está indexada, pero el formulario de PPA todavía no la puebla.
 - [ ] **Producto (diferido)** — Captura móvil/offline de permisos, mediciones y acuses en terreno.
+
+### 5ter.5 Formularios de alta y detalle — Permisos de trabajo (20 de julio de 2026)
+
+Cierra la capacidad 3 de punta a punta en UI. Hasta ahora la bandeja era de solo lectura y ningún formulario llegaba a `createWorkPermitAction` ni a las diez Server Actions de terreno: sin un permiso creado, la capacidad entera era inalcanzable desde la interfaz.
+
+**Entregado**
+
+- **Alta de tipo de permiso**, con los tres interruptores (aislamiento, medición, AST/JSA) reflejando lo que la habilitación va a exigir, y la clave de tarea para enlazar con los requisitos de competencia de Capacitación.
+- **Alta de permiso**, con cuadrilla filtrada por faena (igual que en Capacitación: el servicio rechaza asignar a alguien de otra faena, así que la lista se acota antes de enviar) y controles declarados como lista dinámica.
+- **Detalle en `/prevencion/permisos/[permitId]`**: ficha completa, banner de bloqueadores cuando el permiso no puede habilitarse, AST/JSA editable mientras no está aprobado, controles verificables uno a uno, LOTO (agregar/aplicar/retirar), mediciones, cuadrilla con estado de competencia y acuse propio, y el panel de transiciones completo (enviar a aprobación, aprobar, rechazar, habilitar, suspender, cerrar, cancelar, extender).
+- Cada transición a `active` muestra los bloqueadores reales de `evaluatePermitReadiness` **antes** de enviar, y el botón "Aprobar" no se ofrece cuando quien mira la pantalla es quien solicitó el permiso: el servicio lo rechaza, así que la UI no ofrece una acción condenada a fallar.
+- Cerrar con aislamientos aplicados sin retirar se bloquea igual, mostrando cuáles quedan abiertos.
+
+### Defecto preexistente corregido: `getWorkPermitDetail` nunca detectaba competencia faltante
+
+Al construir la vista de detalle, `getWorkPermitDetail` resultó estar pasando `null` como `competencyTaskKey` a `resolveCrewEligibility` en vez del valor real del tipo de permiso. La activación (`evaluatePermitReadiness`) sí bloqueaba correctamente por falta de competencia, pero la lectura de detalle nunca podía mostrarlo: cualquier vista construida sobre esa función habría mostrado a toda la cuadrilla como habilitada aunque el permiso estuviera bloqueado por esa misma razón.
+
+Se corrigió pasando `permit.competencyTaskKey` real y se enriqueció la función con rol, acuse y el usuario ligado a cada integrante (para el botón de acuse propio) y los nombres de supervisor y solicitante, que la vista necesitaba y la función no traía.
+
+**Verificación:** typecheck, ESLint (0 avisos) y build limpios; React Doctor sin hallazgos en los archivos tocados (el único —`.filter().map()` combinables— se corrigió); 57 pruebas de permisos y RBAC contra PostgreSQL real en verde; regresión completa de 341 archivos y 2.927 pruebas en verde. Las dos rutas nuevas se agregaron al inventario de capturas para no repetir el defecto de gate en rojo de la pasada anterior.
+
+No se probó en navegador con sesión autenticada: la única cuenta administradora de la base de desarrollo es la personal del usuario, sin credencial disponible para el agente. Se verificó en su lugar que ambas rutas compilan y responden (redirección a login con el `callbackUrl` exacto, sin error 500) contra el servidor de desarrollo ya corriendo.
 
 ---
 
@@ -556,6 +578,18 @@ Al correr por primera vez la **regresión completa del repositorio** (359 archiv
 - [x] Agregada también `/admin/backups`, de la feature de respaldos en desarrollo concurrente: sin ella el gate seguía rojo. Es una línea de inventario y no toca su lógica.
 - [x] Retirada `/prevencion/contratistas` del inventario junto con el módulo.
 - [x] **Lección de método:** correr sólo el subconjunto dirigido dejó pasar un gate rojo durante cinco capacidades. La regresión completa pasa a ser parte del cierre de cada pasada, no del cierre del plan.
+
+### 20 de julio de 2026 — Formularios de alta y detalle: permisos de trabajo
+
+- [x] `PermitTypeDialog` y `NewPermitDialog` en la bandeja: alta de tipo con sus tres interruptores de exigencia, y alta de permiso con cuadrilla filtrada por faena y controles como lista dinámica.
+- [x] Ruta `/prevencion/permisos/[permitId]` con ficha, banner de bloqueadores, AST/JSA editable, controles verificables, LOTO, mediciones, cuadrilla con acuse propio y panel de transiciones completo (7 estados) más extensión.
+- [x] "Aprobar" no se ofrece a quien solicitó el permiso, y "Cerrar" muestra los aislamientos abiertos que lo bloquean: la UI no ofrece acciones que el servicio va a rechazar.
+- [x] Corregido un defecto preexistente en `getWorkPermitDetail`: pasaba `null` como `competencyTaskKey` en vez del valor real del tipo, así que la vista de detalle nunca podía mostrar a un integrante como falto de competencia aunque la activación sí lo bloqueara correctamente.
+- [x] Agregadas `listPermitWorksites`, `listPermitWorkers` y `listPermitSupervisors` al servicio, con el tipo `WorksiteScope` canónico.
+- [x] `permisos/permit-form-kit.tsx` extraído desde el primer archivo que lo necesitó, mismo patrón que `capacitacion/form-kit.tsx`.
+- [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos tras corregir el único propio (`.filter().map()` combinables); 57 pruebas de permisos y RBAC contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
+- [x] Agregadas las dos rutas nuevas al inventario de capturas antes de cerrar la pasada, no después.
+- [ ] **Sin probar en navegador con sesión autenticada** — la única cuenta administradora de la base de desarrollo es personal y sin credencial disponible para el agente. Verificado en su lugar que ambas rutas compilan y responden contra el servidor de desarrollo activo, sin error 500.
 
 ---
 
