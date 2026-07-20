@@ -45,8 +45,8 @@ Derivado de la columna de prioridad de la matriz legal (auditoría §4.1) y de l
 | 4 | Inspecciones, observaciones y auditorías | DS 44 art. 22; ISO 45001 9.2 | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 5 | CPHS y gobernanza del SG-SST | DS 44 arts. 17, 23 y ss. | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
 | 6 | Salud ocupacional e higiene industrial | DS 594; protocolos MINSAL/SUSESO | P1 | ✅ Capacidad técnica cerrada (19-07-2026) |
-| 7 | EPP preventivo integrado con Bodega | DS 594 arts. 53-54; DS 18 | P1 | Pendiente |
-| 8 | Emergencias, contingencias y simulacros | DS 44 arts. 18 y 19 | P1 | Pendiente |
+| 7 | EPP preventivo integrado con Bodega | DS 594 arts. 53-54; DS 18 | P1 | Pendiente (diferida: se construye sobre el catálogo EPP en desarrollo paralelo, ver §5undecies) |
+| 8 | Emergencias, contingencias y simulacros | DS 44 arts. 18 y 19 | P1 | ✅ Capacidad técnica cerrada (20-07-2026) |
 | 9 | Gestión del cambio | DS 44 art. 15 | P1 | Pendiente |
 | 10 | Sustancias, residuos peligrosos y transporte | DS 148, DS 43, DS 57, DS 298 | P1/P2 | Pendiente |
 | 11 | Integraciones, API, SSO y portales | Contractual | P2 | Pendiente |
@@ -417,6 +417,40 @@ Se extendió `listGroupMeasurements` con la nómina de integrantes y los datos d
 
 ---
 
+## 5undecies. Capacidad 8 — Emergencias, contingencias y simulacros (20 de julio de 2026)
+
+Nueve tablas aditivas: plan de emergencia por faena, escenarios, organigrama de respuesta (titular + reemplazo), recursos, contactos, simulacros, participantes de simulacro e historial.
+
+**Reglas verificables:**
+
+- Un plan nace en preparación (`draft`). Aprobar exige al menos un escenario y un rol del organigrama de emergencia (`assessPlanReadiness`) — un plan sin eso no es un plan operable, es un documento en blanco.
+- **Segregación:** quien crea el plan no puede aprobarlo, mismo criterio que permisos de trabajo y plantillas de inspección. Se valida en el servicio comparando `createdByUserId`, no restringiendo el permiso `prevention:emergency:approve` a un rol distinto — así el software no depende de que el organigrama de roles coincida exactamente con quién hizo qué.
+- Sólo un plan aprobado puede programar simulacros.
+- Titular y reemplazo de cada rol, y cada participante de simulacro, deben pertenecer a la faena del plan.
+- Completar un simulacro exige participantes registrados y un resultado explícito (`assessDrillCompletion`): un simulacro "completado" sin nadie presente ni conclusión no deja aprendizaje verificable.
+- Un simulacro con resultado "requiere mejora" **deriva su hallazgo a CAPA común** (`sourceType = 'emergency'`) con responsable y plazo — el aprendizaje del simulacro no se queda en un campo de texto.
+
+**Entregado en UI:** bandeja en dos pestañas (Planes/Simulacros) en `/prevencion/emergencias`, con alta de plan; detalle en `/prevencion/emergencias/[planId]` con banner de bloqueadores antes de aprobar (misma función `assessPlanReadiness` del servicio), alta de escenarios/roles/recursos/contactos, programación de simulacro y su cierre con **vista previa en vivo** de `assessDrillCompletion` mientras se marca asistencia — el botón "Completar" se deshabilita antes de que el servidor lo rechace.
+
+### Defecto preexistente corregido por el camino
+
+`lib/prevention/capa.ts` (`CAPA_SOURCE_LABELS` y `capaSourceHref`) nunca se actualizó cuando se agregaron las capacidades de permisos de trabajo, inspecciones y CPHS: sus `sourceType` (`work_permit`, `inspection`, `cphs`) no tenían etiqueta ni enlace desde la pantalla de CAPA. Se completaron esos tres junto con `emergency` (sin enlace directo — el `sourceId` es el simulacro, no hay ruta propia por simulacro, mismo tratamiento que `cphs`) y `change` (enlace directo, ver §5duodecies).
+
+Además, un commit ajeno concurrente (`bab1afb`, feature de catálogo EPP) había borrado por accidente `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`, el fixture binario que usa `lib/__tests__/prevention-pdtp-catalog.test.ts`. Se restauró desde el commit anterior (`f5cc248`) donde el archivo aún existía completo; no se tocó ningún otro archivo de esa feature.
+
+### Pendientes de la capacidad 8
+
+- [ ] **Operación** — Cargar los planes de emergencia reales por faena y designar el organigrama con la dotación vigente.
+- [ ] **Producción** — Aplicar la migración `0093`.
+- [ ] **Producto (no priorizado)** — Cancelación de plan (`archived`) y de simulacro (`cancelled`): ambos estados existen en el schema pero ninguna Server Action los produce, sólo el alta y el flujo de aprobación/cierre. No se inventó una mutación nueva para llenarlo: es una decisión de producto (¿quién archiva, con qué motivo?), no wiring de UI sobre algo ya construido.
+- [ ] **Producto (diferido)** — Captura móvil/offline de simulacros y evidencia en terreno sin conectividad, igual que permisos e inspecciones.
+
+Evidencia: migración `0093_whole_mastermind.sql` sin drift (segunda pasada de `db:generate` confirmó "No schema changes"), 8 pruebas puras de disponibilidad del plan y cierre de simulacro, 11 escenarios en PostgreSQL real (incluida la segregación de aprobación y la derivación a CAPA).
+
+**Verificación:** typecheck y ESLint (0 avisos) limpios; build compilando las 2 rutas nuevas; React Doctor sin ningún hallazgo en los archivos de esta capacidad; regresión completa de 306 archivos y 2.650 pruebas en verde (incluyendo el fix del fixture PDTP y una entrada nueva en `dynamicSamples` de `capture-all-routes.test.ts` para la ruta dinámica `/prevencion/emergencias/[planId]`, sin la cual el gate de inventario de capturas quedaba en rojo). No se probó con sesión autenticada real; se verificó que ambas rutas compilan.
+
+---
+
 ## 5octies. Formularios de alta — Capacitación (19 de julio de 2026)
 
 Primera entrega de la línea «hacer usable lo construido». Hasta ahora las seis capacidades tenían bandejas de lectura pero ningún formulario: el alta sólo era posible invocando la Server Action.
@@ -708,6 +742,18 @@ Al correr por primera vez la **regresión completa del repositorio** (359 archiv
 - [x] Verificado que el mismo patrón (`scopeToIds`) existe en PPA, PDTP y `prevencion/actions` — no tocado, por ser un ámbito distinto al ítem de deuda señalado.
 - [x] Corregido de paso un defecto preexistente ajeno al refactor: `scripts/export-epps-xlsx.ts` (script suelto sin trackear) tenía un cast `as Buffer` que ya no compilaba; resuelto con `Buffer.from(buffer)`.
 - [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin hallazgos en los archivos tocados; 5 pruebas de indicadores contra PostgreSQL real; regresión completa de 341 archivos y 2.927 pruebas en verde.
+
+### 20 de julio de 2026 — Capacidad 8: emergencias, contingencias y simulacros
+
+- [x] Nueve tablas aditivas (plan, escenarios, organigrama, recursos, contactos, simulacros, participantes, historial). Migración `0093` sin drift.
+- [x] Dominio puro `lib/prevention/emergency.ts` (`assessPlanReadiness`, `assessDrillCompletion`) reusado en la vista previa en vivo del cliente.
+- [x] Segregación: quien crea el plan no puede aprobarlo, validado en el servicio, no restringiendo el permiso a un rol distinto.
+- [x] Simulacro con resultado "requiere mejora" deriva a CAPA común (`sourceType = 'emergency'`) con responsable y plazo.
+- [x] Rutas `/prevencion/emergencias` y `/prevencion/emergencias/[planId]` con alta de plan, escenarios, roles, recursos, contactos, programación y cierre de simulacro.
+- [x] Corregido de paso: `CAPA_SOURCE_LABELS`/`capaSourceHref` en `lib/prevention/capa.ts` nunca se habían completado para `work_permit`, `inspection` ni `cphs` desde que esas capacidades se agregaron.
+- [x] Corregido de paso: un commit ajeno concurrente había borrado por accidente el fixture `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`; restaurado desde el commit anterior donde aún existía.
+- [x] Agregada la entrada de `/prevencion/emergencias/[planId]` a `dynamicSamples` en `capture-all-routes.test.ts`, sin la cual el gate de inventario de capturas quedaba en rojo.
+- [x] Typecheck, ESLint (0 avisos) y build verdes; React Doctor sin ningún hallazgo en los archivos de esta capacidad; 8 pruebas puras y 11 escenarios en PostgreSQL real; regresión completa de 306 archivos y 2.650 pruebas en verde.
 
 ---
 

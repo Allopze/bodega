@@ -22,6 +22,7 @@ const dynamicSamples: Record<string, string> = {
   "/prevencion/cphs/[committeeId]": "/prevencion/cphs/comite-audit-1",
   "/prevencion/higiene/grupos/[groupId]": "/prevencion/higiene/grupos/grupo-audit-1",
   "/prevencion/higiene/programas/[programId]": "/prevencion/higiene/programas/programa-audit-1",
+  "/prevencion/emergencias/[planId]": "/prevencion/emergencias/plan-audit-1",
   "/prevencion/capacitacion/[sessionId]": "/prevencion/capacitacion/trsess-audit-1",
   "/recepcion/[id]": "/recepcion/rec-audit-1",
   "/recuperar/[token]": "/recuperar/capture-reset-token",

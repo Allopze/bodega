@@ -652,6 +652,13 @@
       "when": 1784566144154,
       "tag": "0092_tranquil_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1784580046547,
+      "tag": "0093_whole_mastermind",
+      "breakpoints": true
     }
   ]
 }

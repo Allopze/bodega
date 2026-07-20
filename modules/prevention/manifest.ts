@@ -91,6 +91,10 @@ export const preventionModule = {
     "prevention:hygiene:view",
     "prevention:hygiene:manage",
     "prevention:hygiene:measure",
+    "prevention:emergency:view",
+    "prevention:emergency:manage",
+    "prevention:emergency:approve",
+    "prevention:emergency:drill_execute",
   ] as const,
 
   permissionMeta: {
@@ -181,6 +185,10 @@ export const preventionModule = {
     "prevention:hygiene:view": { id: "p-prev-hyg-view", description: "Ver agentes, grupos de exposición, mediciones y cobertura de vigilancia" },
     "prevention:hygiene:manage": { id: "p-prev-hyg-manage", description: "Administrar agentes, grupos de exposición y programas de vigilancia ocupacional" },
     "prevention:hygiene:measure": { id: "p-prev-hyg-measure", description: "Registrar mediciones de exposición contra el límite permisible" },
+    "prevention:emergency:view": { id: "p-prev-emg-view", description: "Ver planes de emergencia, escenarios, organigrama, recursos y simulacros" },
+    "prevention:emergency:manage": { id: "p-prev-emg-manage", description: "Crear planes de emergencia y administrar escenarios, organigrama, recursos y contactos" },
+    "prevention:emergency:approve": { id: "p-prev-emg-approve", description: "Aprobar el plan de emergencia de forma segregada de quien lo creó" },
+    "prevention:emergency:drill_execute": { id: "p-prev-emg-drill", description: "Programar y completar simulacros del plan de emergencia" },
   },
 
   nav: [
@@ -294,6 +302,12 @@ export const preventionModule = {
           href: "/prevencion/higiene",
           iconName: "Heartbeat",
           permissions: ["prevention:hygiene:view"],
+        },
+        {
+          label: "Emergencias y simulacros",
+          href: "/prevencion/emergencias",
+          iconName: "Siren",
+          permissions: ["prevention:emergency:view"],
         },
         {
           label: "Documentación",
@@ -625,5 +639,26 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:hygiene:view" },
     { roleSlug: "administrador",        permission: "prevention:hygiene:manage" },
     { roleSlug: "administrador",        permission: "prevention:hygiene:measure" },
+    // Emergencias. Aprobar queda reservado a jefatura: la segregación real
+    // (quien crea el plan no puede aprobarlo) se valida en el servicio, no
+    // restringiendo el permiso a un rol distinto de quien lo administra.
+    { roleSlug: "jefe_terreno",         permission: "prevention:emergency:view" },
+    { roleSlug: "jefe_terreno",         permission: "prevention:emergency:drill_execute" },
+    { roleSlug: "admin_contrato",       permission: "prevention:emergency:view" },
+    { roleSlug: "admin_contrato",       permission: "prevention:emergency:drill_execute" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:emergency:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:emergency:manage" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:emergency:drill_execute" },
+    { roleSlug: "prevencionista",       permission: "prevention:emergency:view" },
+    { roleSlug: "prevencionista",       permission: "prevention:emergency:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:emergency:approve" },
+    { roleSlug: "prevencionista",       permission: "prevention:emergency:drill_execute" },
+    { roleSlug: "cphs",                 permission: "prevention:emergency:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:emergency:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:emergency:approve" },
+    { roleSlug: "administrador",        permission: "prevention:emergency:view" },
+    { roleSlug: "administrador",        permission: "prevention:emergency:manage" },
+    { roleSlug: "administrador",        permission: "prevention:emergency:approve" },
+    { roleSlug: "administrador",        permission: "prevention:emergency:drill_execute" },
   ],
 } as const satisfies ModuleManifest

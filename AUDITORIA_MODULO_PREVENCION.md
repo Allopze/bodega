@@ -242,6 +242,25 @@ Al cargar la calibración quedó a la vista que un solo campo cargaba dos cosas 
 
 ---
 
+## 0.15 Avance P1 — Emergencias, contingencias y simulacros (20 de julio de 2026)
+
+Octava capacidad P1. Plan de emergencia por faena con escenarios, organigrama de respuesta (titular + reemplazo), recursos, contactos y simulacros con resultado explícito.
+
+**Dos decisiones que evitan un plan de papel:**
+
+1. Aprobar el plan exige que ya declare **al menos un escenario y un rol del organigrama** (`assessPlanReadiness`). Un plan sin eso no es un plan operable, es un documento en blanco — mismo criterio de "piso de seguridad" que ya se aplicó a inspecciones.
+2. Completar un simulacro exige **participantes registrados y un resultado explícito** (`assessDrillCompletion`). Un simulacro "completado" sin nadie presente ni conclusión no deja aprendizaje verificable, que es justamente lo que el DS 44 pide.
+
+Un simulacro con resultado "requiere mejora" **deriva su hallazgo a CAPA común** (`sourceType = 'emergency'`) con responsable y plazo: el aprendizaje del simulacro no se queda en un campo de texto suelto. La segregación de aprobación (quien crea el plan no puede aprobarlo) se valida en el servicio comparando `createdByUserId`, el mismo criterio ya usado en permisos de trabajo y plantillas de inspección.
+
+**Evidencia:** migración `0093_whole_mastermind.sql` sin drift, 8 pruebas puras y 11 escenarios en PostgreSQL real. Formularios de alta y detalle completos en `/prevencion/emergencias` y `/prevencion/emergencias/[planId]`, con vista previa en vivo de ambas funciones de dominio puro.
+
+**Corregido de paso:** `lib/prevention/capa.ts` nunca se había actualizado con las etiquetas y enlaces de `CAPA_SOURCE_LABELS`/`capaSourceHref` de permisos de trabajo, inspecciones ni CPHS desde que esas capacidades se agregaron — se completaron junto con las de emergencias. Además, un commit ajeno concurrente había borrado por accidente el fixture binario `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`; se restauró desde un commit anterior donde aún existía completo.
+
+**Lo que todavía falta:** cargar los planes de emergencia reales por faena, designar el organigrama con la dotación vigente, y captura móvil/offline de simulacros en terreno sin conectividad (diferida, mismo criterio que permisos e inspecciones). Detalle completo en `PLAN_P1_PREVENCION.md`, sección 5undecies.
+
+---
+
 ### 0.7 Corrección de una afirmación de la auditoría anterior
 
 Al incorporar las suites PostgreSQL de Prevención al gate de CI —que hasta el 19 de julio de 2026 **no se ejecutaban en ningún gate**— apareció un fallo preexistente y real en la regresión de incidentes. La bitácora de P0-05 afirmaba que esa regresión pasaba y que demostraba la regla de actualización de MIPER; no era efectivo, porque la suite nunca corría automáticamente.

@@ -18,6 +18,11 @@ export const CAPA_SOURCE_LABELS: Record<string, string> = {
   risk: "Riesgo MIPER",
   legal_requirement: "Requisito legal",
   training: "Brecha de competencia",
+  work_permit: "Permiso de trabajo",
+  inspection: "Inspección",
+  cphs: "CPHS",
+  emergency: "Simulacro de emergencia",
+  change: "Gestión del cambio",
   manual: "Manual",
 }
 
@@ -41,5 +46,8 @@ export function capaSourceHref(sourceType: string, sourceId: string) {
   if (sourceType === "risk") return `/prevencion/miper/${sourceId}`
   if (sourceType === "legal_requirement") return `/prevencion/requisitos-legales/${sourceId}`
   if (sourceType === "training") return `/prevencion/capacitacion/competencias?workerId=${encodeURIComponent(sourceId)}`
+  if (sourceType === "work_permit") return `/prevencion/permisos/${sourceId}`
+  if (sourceType === "inspection") return `/prevencion/inspecciones/${sourceId}`
+  if (sourceType === "change") return `/prevencion/gestion-cambio/${sourceId}`
   return null
 }

@@ -29,7 +29,7 @@ export type CapaStatus = typeof CAPA_STATUSES[number]
 export type CapaClient = DB | Tx
 
 const capaCreateSchema = z.object({
-  sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "manual"]),
+  sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "manual"]),
   sourceId: z.string().min(1).max(200),
   sourceLegacyActionId: z.string().min(1).max(300).nullable().optional(),
   worksiteId: z.string().min(1),

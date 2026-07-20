@@ -84,6 +84,10 @@ describe("prevention module RBAC", () => {
       "prevention:hygiene:view",
       "prevention:hygiene:manage",
       "prevention:hygiene:measure",
+      "prevention:emergency:view",
+      "prevention:emergency:manage",
+      "prevention:emergency:approve",
+      "prevention:emergency:drill_execute",
     ]
     for (const permission of expected) {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
@@ -98,6 +102,9 @@ describe("prevention module RBAC", () => {
     // como empresa contratista en faenas de terceros (CMPC, Biodiversa) con
     // dotación propia, no como empresa principal, así que las obligaciones del
     // DS 76 que el módulo cubría recaen en el mandante y no en Chome.
+    // `prevention:emergency:view` salió de esta lista el 20-07-2026: era un
+    // slug huérfano de la poda de 2026-07-02, sin implementación. Ahora existe
+    // como capacidad real (DS 44 arts. 18-19, plan de emergencia y simulacros).
     const deleted = [
       "prevention:contractors:view",
       "prevention:contractors:manage",
@@ -111,7 +118,6 @@ describe("prevention module RBAC", () => {
       "prevention:equipment_reports:view",
       "prevention:health:view",
       "prevention:epp_matrix:view",
-      "prevention:emergency:view",
       "prevention:kpis:view",
       "prevention:docs:export",
       "prevention:pdtp:manage",
