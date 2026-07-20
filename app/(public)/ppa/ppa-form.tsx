@@ -33,6 +33,7 @@ export function PpaForm(props: PpaFormProps) {
 function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void }) {
   const {
     worksiteId, setWorksiteId,
+    workPermitId, setWorkPermitId,
     rutSearch, setRutSearch,
     searchingWorker,
     matchedWorker,
@@ -55,8 +56,9 @@ function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void
     handleVerifyRut, onSubmit, toggleManual, doSubmit, resetIdentity,
   } = usePpaForm(props)
 
-  const { worksites, hasFaenaParam, tipoTrabajoOptions, controlOptions, complementarias, onRequestNewSubmission } = props
+  const { worksites, workPermits, hasFaenaParam, tipoTrabajoOptions, controlOptions, complementarias, onRequestNewSubmission } = props
   const isVerifyButtonDisabled = !rutSearch || searchingWorker
+  const eligiblePermits = workPermits.filter((p) => p.worksiteId === worksiteId)
 
   // El submit offline muestra la confirmación inline en vez de navegar — ver
   // el comentario de showOfflineSaved() en ppa-form.hooks.ts para el porqué.
@@ -157,6 +159,24 @@ function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void
           {manual ? "Volver a verificación por RUT" : "No estoy en la lista (identificación manual)"}
         </button>
       </section>
+
+      {/* ── Permiso de trabajo (opcional) ────────────────────────────── */}
+      {eligiblePermits.length > 0 && (
+        <section className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+          <Field label="¿Esta tarea está bajo un permiso de trabajo vigente?" htmlFor="permit" helper="Opcional. Selecciónalo si tu tarea lo exige.">
+            <Select value={workPermitId} onValueChange={setWorkPermitId}>
+              <SelectTrigger id="permit" aria-label="Selecciona el permiso de trabajo">
+                <SelectValue placeholder="Sin permiso asociado" />
+              </SelectTrigger>
+              <SelectContent>
+                {eligiblePermits.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.code} · {p.taskDescription.slice(0, 60)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </section>
+      )}
 
       {/* ── Pregunta 1 ───────────────────────────────────────────────── */}
       <section className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">

@@ -132,7 +132,9 @@ Tercera capacidad P1. Es la que amarra las anteriores: el permiso es el punto do
 
 **Formularios (20-07-2026):** capacidad **cerrada de punta a punta en UI**. `/prevencion/permisos` permite dar de alta el tipo y el permiso (cuadrilla filtrada por faena, controles como lista dinámica); `/prevencion/permisos/[permitId]` cubre AST/JSA, verificación de controles, LOTO, mediciones, cuadrilla con acuse propio y las siete transiciones de estado más la extensión, todo con los bloqueadores reales mostrados antes de enviar. Un defecto preexistente en `getWorkPermitDetail` —pasaba `null` en vez del `competencyTaskKey` real— hacía que la vista de detalle nunca pudiera mostrar a un integrante como falto de competencia, aunque la activación sí lo bloqueaba correctamente; quedó corregido.
 
-**Lo que esto todavía NO significa:** no hay tipos de permiso ni permisos productivos cargados. Quedan diferidos el enganche efectivo del PPA y la captura móvil/offline.
+**Enganche del PPA (20-07-2026):** `work_permit_id` ya se puebla desde el formulario público. El selector de permiso vigente aparece al elegir la faena y sólo expone lo mínimo (código y tarea); el servidor revalida el permiso igual, sin confiar en el cliente.
+
+**Lo que esto todavía NO significa:** no hay tipos de permiso ni permisos productivos cargados. Queda diferida la captura móvil/offline.
 
 ---
 

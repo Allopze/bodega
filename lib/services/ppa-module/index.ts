@@ -5,6 +5,7 @@ export {
   getPpaByToken,
   revokePpaToken,
   listWorksitesForPublicForm,
+  listActiveWorkPermitsForPublicForm,
   findWorkerByRut,
 } from "./evaluaciones"
 

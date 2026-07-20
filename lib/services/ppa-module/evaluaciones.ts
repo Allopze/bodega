@@ -1,6 +1,7 @@
 import { eq, and, or } from "drizzle-orm"
 import { db } from "@/db"
 import { ppaStatusHistory, ppaSubmissions, type PpaSubmission } from "@/db/schema/ppa"
+import { preventionWorkPermits } from "@/db/schema/prevention/permits"
 import { workers, worksites } from "@/db/schema/worksites"
 import { nanoid } from "@/lib/id"
 import { ppaSubmitSchema, type PpaSubmitInput } from "@/lib/validation/ppa"
@@ -36,6 +37,23 @@ export async function createPpaSubmission(
     columns: { id: true, name: true },
   })
   if (!worksite) throw new Error("La faena indicada no existe.")
+
+  // El enganche es opcional y sólo a un permiso vigente de la misma faena: el
+  // PPA es la verificación breve DENTRO del permiso, no un vínculo a un
+  // trámite ya cerrado o de otro lugar. `workPermitId` llega del selector
+  // público, que sólo lista permisos activos — se revalida igual acá porque
+  // el cliente no es de confianza.
+  let workPermitId: string | null = null
+  if (data.workPermitId) {
+    const permit = await db.query.preventionWorkPermits.findFirst({
+      where: eq(preventionWorkPermits.id, data.workPermitId),
+      columns: { id: true, worksiteId: true, status: true },
+    })
+    if (!permit || permit.worksiteId !== data.worksiteId || permit.status !== "active") {
+      throw new Error("El permiso de trabajo indicado no está vigente en esta faena.")
+    }
+    workPermitId = permit.id
+  }
 
   let manualIdentificacion = true
   let workerId: string | null = null
@@ -98,6 +116,7 @@ export async function createPpaSubmission(
     decision:             null,
     reviewNota:           null,
     reviewedAt:           null,
+    workPermitId,
     createdAt:            now,
     updatedAt:            now,
   }
@@ -203,6 +222,28 @@ export async function listWorksitesForPublicForm(): Promise<{ id: string; name: 
     .from(worksites)
     .where(eq(worksites.isActive, true))
     .orderBy(worksites.name)
+}
+
+/**
+ * Permisos vigentes para el selector opcional del formulario público.
+ *
+ * Se cargan todos y el cliente filtra por faena, igual que `worksites` arriba
+ * — no hay una acción pública nueva por faena. Sólo expone lo mínimo (código
+ * y tarea): nada de supervisor, cuadrilla ni AST, que sí son sensibles.
+ */
+export async function listActiveWorkPermitsForPublicForm(): Promise<
+  { id: string; code: string; taskDescription: string; worksiteId: string }[]
+> {
+  return db
+    .select({
+      id: preventionWorkPermits.id,
+      code: preventionWorkPermits.code,
+      taskDescription: preventionWorkPermits.taskDescription,
+      worksiteId: preventionWorkPermits.worksiteId,
+    })
+    .from(preventionWorkPermits)
+    .where(eq(preventionWorkPermits.status, "active"))
+    .orderBy(preventionWorkPermits.code)
 }
 
 export async function findWorkerByRut(

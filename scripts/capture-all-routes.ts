@@ -211,6 +211,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-pdtp-catalogos", path: "/admin/pdtp-catalogos", auth: true },
   { slug: "admin-plantillas", path: "/admin/plantillas", auth: true },
   { slug: "admin-productos", path: "/admin/productos", auth: true },
+  // Agregada al inventario el 20-07-2026 para dejar el gate verde; la feature
+  // de catálogo EPP se desarrolla en paralelo y esta línea no toca su lógica.
+  { slug: "admin-epps", path: "/admin/epps", auth: true },
   { slug: "admin-productos-nuevo", path: "/admin/productos/nuevo", auth: true },
   { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true, notes: "Esta ruta redirige a /admin/productos." },
   { slug: "admin-productos-importar", path: "/admin/productos/importar/batch-audit-1", auth: true, notes: "Vista de revisión de lotes EPP importados." },

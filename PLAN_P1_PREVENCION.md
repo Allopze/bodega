@@ -211,7 +211,7 @@ Durante la primera ejecución en Postgres el servicio rechazó, correctamente, e
 - [ ] **Operación** — Definir el catálogo real de tipos de permiso y qué competencia exige cada uno.
 - [ ] **Producción** — Aplicar la migración `0080` y programar `suspendExpiredPermits` como job periódico.
 - [x] ~~UI de detalle del permiso~~ — **completado el 20-07-2026** (ver 5ter.5). El flujo queda cerrado de punta a punta: tipo de permiso, alta con cuadrilla y controles, AST/JSA, LOTO, mediciones, transiciones, extensión y acuse.
-- [ ] **Producto (diferido)** — Enganche efectivo del PPA al permiso: la columna `work_permit_id` existe y está indexada, pero el formulario de PPA todavía no la puebla.
+- [x] ~~Enganche efectivo del PPA al permiso~~ — **completado el 20-07-2026** (ver 5ter.6). La columna `work_permit_id` ahora se puebla desde el formulario público.
 - [ ] **Producto (diferido)** — Captura móvil/offline de permisos, mediciones y acuses en terreno.
 
 ### 5ter.5 Formularios de alta y detalle — Permisos de trabajo (20 de julio de 2026)
@@ -235,6 +235,23 @@ Se corrigió pasando `permit.competencyTaskKey` real y se enriqueció la funció
 **Verificación:** typecheck, ESLint (0 avisos) y build limpios; React Doctor sin hallazgos en los archivos tocados (el único —`.filter().map()` combinables— se corrigió); 57 pruebas de permisos y RBAC contra PostgreSQL real en verde; regresión completa de 341 archivos y 2.927 pruebas en verde. Las dos rutas nuevas se agregaron al inventario de capturas para no repetir el defecto de gate en rojo de la pasada anterior.
 
 No se probó en navegador con sesión autenticada: la única cuenta administradora de la base de desarrollo es la personal del usuario, sin credencial disponible para el agente. Se verificó en su lugar que ambas rutas compilan y responden (redirección a login con el `callbackUrl` exacto, sin error 500) contra el servidor de desarrollo ya corriendo.
+
+### 5ter.6 Enganche del PPA al permiso (20 de julio de 2026)
+
+La columna `work_permit_id` existía desde la capacidad 3 original, indexada, pero ningún camino de escritura la poblaba: ni el schema del formulario público la aceptaba, ni `createPpaSubmission` la persistía.
+
+**Decisión de diseño:** el enganche se resolvió en el **formulario público de envío**, no en la revisión posterior del responsable. La revisión (`reviewPpa`) sólo se ejecuta para PPA `detenido`; enganchar ahí habría dejado fuera el caso más común, el PPA `aprobado_auto`, que es exactamente el que corresponde a una tarea rutinaria bajo un permiso vigente.
+
+Esto significa exponer datos de permisos en una ruta pública sin login. Se acotó la exposición al mismo criterio que ya rige `findWorkerByRutAction` y `listWorksitesForPublicForm`: mínimo necesario, nada sensible.
+
+- **Nueva función pública** `listActiveWorkPermitsForPublicForm()`: expone sólo `id`, `código` y `descripción de la tarea` de permisos con `status = 'active'`. Nada de supervisor, cuadrilla, AST ni aislamientos.
+- **`ppaSubmitSchema`** admite `workPermitId` opcional.
+- **`createPpaSubmission`** revalida el permiso server-side aunque el selector público sólo ofrezca permisos activos: el cliente no es de confianza. Rechaza si el permiso no existe, no es de la misma faena declarada, o no está `active`.
+- El selector en `ppa-form.tsx` sólo aparece si hay permisos activos en la faena elegida (filtrado en cliente, igual que `worksites`); cambiar de faena limpia la selección.
+
+**Verificación:** typecheck y ESLint (0 avisos) limpios; build compilando `/ppa`; React Doctor sin hallazgos propios; 60 pruebas de PPA y RBAC en verde; regresión completa de 341 archivos y 2.927 pruebas en verde. El envío offline no requirió cambios: `enqueuePpa` acepta el payload completo sin tipar sus campos, así que `workPermitId` viaja igual que el resto.
+
+Defecto preexistente ajeno encontrado y corregido de paso: `scripts/capture-all-routes.test.ts` estaba en rojo por `/admin/epps`, una página nueva de la feature de catálogo EPP en desarrollo concurrente, sin registrar en el inventario. Se agregó la línea de inventario sin tocar esa feature.
 
 ---
 

@@ -10,6 +10,11 @@ const siNo = z.enum(["si", "no"], { error: "Respuesta requerida" })
 export const ppaSubmitSchema = z.object({
   worksiteId: z.string().min(1, "Faena requerida"),
 
+  // Enlace opcional al permiso de trabajo bajo el cual se ejecuta la tarea.
+  // El PPA es la verificación breve dentro del permiso, no un registro
+  // desconectado — ver el comentario en `ppa_submissions.work_permit_id`.
+  workPermitId: z.string().min(1).optional(),
+
   // Identificación del trabajador.
   workerId:   z.string().min(1).optional(),          // de la lista controlada
   workerName: z.string().trim().min(2, "Indica tu nombre").max(120),
