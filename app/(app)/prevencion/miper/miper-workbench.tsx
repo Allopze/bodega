@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useTransition, type FormEvent, type ReactNode } from "react"
+import { useCallback, useState, useTransition, type FormEvent, type ReactNode } from "react"
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -9,10 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DatePicker } from "@/components/ui/date-picker"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
+import { Pagination } from "@/components/ui/pagination"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import type { PaginationState } from "@/lib/pagination"
 import type { getRiskDashboard } from "@/lib/services/prevention-risk-legal"
-import type { listRiskImportBatches } from "@/lib/services/prevention-risk-import"
+import type { listRiskImportBatchesPage } from "@/lib/services/prevention-risk-import"
 import {
   activateRiskImportBatchAction,
   addRiskEntryAction,
@@ -26,7 +29,7 @@ import {
 } from "./actions"
 
 type Dashboard = Awaited<ReturnType<typeof getRiskDashboard>>
-type Imports = Awaited<ReturnType<typeof listRiskImportBatches>>
+type Imports = Awaited<ReturnType<typeof listRiskImportBatchesPage>>["rows"]
 type Result = { ok: boolean; message?: string }
 
 const STATUS_LABEL: Record<string, string> = { draft: "Borrador", in_review: "En revisión", reviewed: "Revisada", approved: "Aprobada", published: "Vigente", superseded: "Reemplazada", staged: "En revisión", activated: "Activado" }
@@ -105,9 +108,11 @@ function ImportDialog({ worksites }: { worksites: Dashboard["worksites"] }) {
   return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button variant="secondary" disabled={!worksites.length}>Importar XLSX</Button></DialogTrigger><DialogContent><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>Importar MIPER</DialogTitle><DialogDescription>El original y su hash se conservan. Las filas observadas no se activan hasta resolverlas.</DialogDescription></DialogHeader><Field label="Faena"><Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} /></Field><Field label="Archivo XLSX"><Input name="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></Field>{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>Cargar lote</Button></DialogFooter></form></DialogContent></Dialog>
 }
 
-export function MiperWorkbench({ dashboard, imports, currentUserId, canEdit, canReview, canApprove, canPublish }: {
+export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagination, currentUserId, canEdit, canReview, canApprove, canPublish }: {
   dashboard: Dashboard
   imports: Imports
+  importsTotal: number
+  importsPagination: PaginationState
   currentUserId: string
   canEdit: boolean
   canReview: boolean
@@ -115,6 +120,15 @@ export function MiperWorkbench({ dashboard, imports, currentUserId, canEdit, can
   canPublish: boolean
 }) {
   const published = dashboard.matrices.filter((item) => item.status === "published")
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const navigateImportsPage = useCallback((page: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (page > 1) params.set("page", String(page))
+    else params.delete("page")
+    const qs = params.toString()
+    router.push(qs ? `?${qs}` : "")
+  }, [router, searchParams])
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 overflow-hidden border-y lg:grid-cols-4">
@@ -124,7 +138,7 @@ export function MiperWorkbench({ dashboard, imports, currentUserId, canEdit, can
         <a href="#revisiones" className="px-4 py-3 hover:bg-[var(--color-surface-2)]"><span className="text-eyebrow">Revisiones pendientes</span><strong className="block text-xl">{dashboard.triggers.length}</strong></a>
       </div>
       {published.length === 0 && <div role="status" className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4 text-sm"><strong>No existe una MIPER vigente en las faenas visibles.</strong><p className="mt-1">Crea o importa una versión, incorpora peligros y completa el workflow segregado.</p></div>}
-      <Tabs defaultValue="versions"><TabsList><TabsTrigger value="versions">Versiones</TabsTrigger><TabsTrigger value="reviews">Revisiones ({dashboard.triggers.length})</TabsTrigger><TabsTrigger value="imports">Importaciones ({imports.length})</TabsTrigger></TabsList>
+      <Tabs defaultValue="versions"><TabsList><TabsTrigger value="versions">Versiones</TabsTrigger><TabsTrigger value="reviews">Revisiones ({dashboard.triggers.length})</TabsTrigger><TabsTrigger value="imports">Importaciones ({importsTotal})</TabsTrigger></TabsList>
         <TabsContent value="versions" id="versiones" className="space-y-3">
           {dashboard.matrices.length === 0 ? <EmptyState title="Sin versiones MIPER" description="Crea la primera versión usando una metodología validada." /> : dashboard.matrices.map((matrix) => {
             const entries = dashboard.entries.filter((item) => item.entry.matrixId === matrix.id)
@@ -134,7 +148,14 @@ export function MiperWorkbench({ dashboard, imports, currentUserId, canEdit, can
           })}
         </TabsContent>
         <TabsContent value="reviews" id="revisiones" className="space-y-3">{dashboard.triggers.length === 0 ? <EmptyState title="Sin revisiones pendientes" description="La revisión anual y los cambios/incidentes crearán tareas aquí." /> : dashboard.triggers.map((trigger) => <div key={trigger.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"><div><div className="flex gap-2"><strong>{trigger.description}</strong><Badge variant={trigger.dueAt < new Date().toISOString().slice(0, 10) ? "danger" : "warning"}>{trigger.dueAt}</Badge></div><p className="text-xs text-[var(--color-text-subtle)]">Origen {trigger.sourceType} · {trigger.sourceId}</p></div>{canReview && <ResolveTriggerDialog triggerId={trigger.id} matrices={published.filter((item) => item.worksiteId === trigger.worksiteId)} />}</div>)}</TabsContent>
-        <TabsContent value="imports" className="space-y-3">{imports.length === 0 ? <EmptyState title="Sin importaciones" description="Carga un XLSX para conservar el original y revisar su normalización." /> : imports.map((batch) => <ImportBatch key={batch.id} batch={batch} methodologies={dashboard.methodologies} canEdit={canEdit} canApprove={canApprove} currentUserId={currentUserId} />)}</TabsContent>
+        <TabsContent value="imports" className="space-y-3">
+          {imports.length === 0 ? <EmptyState title="Sin importaciones" description="Carga un XLSX para conservar el original y revisar su normalización." /> : imports.map((batch) => <ImportBatch key={batch.id} batch={batch} methodologies={dashboard.methodologies} canEdit={canEdit} canApprove={canApprove} currentUserId={currentUserId} />)}
+          {importsPagination.totalPages > 1 && (
+            <div className="flex justify-center pt-2">
+              <Pagination page={importsPagination.page} total={importsPagination.totalItems} perPage={importsPagination.limit} onPage={navigateImportsPage} />
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
       {dashboard.criticalBlockers.length > 0 && <section id="bloqueos" className="rounded-lg border border-[var(--color-danger-line)] p-4"><h2 className="font-semibold">Bloqueos críticos</h2><p className="text-sm text-[var(--color-text-subtle)]">Un riesgo crítico permanece aquí si no tiene control crítico implementado/verificado o cobertura PDTP.</p><ul className="mt-3 space-y-2">{dashboard.criticalBlockers.map(({ entry, process, task }) => <li key={entry.id} className="text-sm"><strong>{entry.hazard}</strong> · {process.name} / {task.name}</li>)}</ul></section>}
     </div>

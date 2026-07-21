@@ -2,12 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { DownloadSimple, ShieldWarning } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Pagination } from "@/components/ui/pagination"
+import type { PaginationState } from "@/lib/pagination"
 import {
   Dialog,
   DialogContent,
@@ -41,6 +43,7 @@ interface Props {
   rows: PrivacyRequestRow[]
   canExport: boolean
   canExportClinical: boolean
+  pagination: PaginationState
 }
 
 const STATUS: Record<string, { label: string; variant: "default" | "warning" | "success" | "danger" | "info" }> = {
@@ -70,8 +73,16 @@ type PendingAction = {
   reasonRequired?: boolean
 }
 
-export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical }: Props) {
+export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, pagination }: Props) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const navigatePage = React.useCallback((page: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (page > 1) params.set("page", String(page))
+    else params.delete("page")
+    const qs = params.toString()
+    router.push(qs ? `?${qs}` : "")
+  }, [router, searchParams])
   const { searchQuery } = useSafeShellHeader()
   const [pendingAction, setPendingAction] = React.useState<PendingAction | null>(null)
   const [reason, setReason] = React.useState("")
@@ -187,6 +198,11 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical }:
           })}</TableBody>
         </Table>
       </div>
+      {pagination.totalPages > 1 && (
+        <div className="flex justify-center pt-2">
+          <Pagination page={pagination.page} total={pagination.totalItems} perPage={pagination.limit} onPage={navigatePage} />
+        </div>
+      )}
 
       <Dialog open={Boolean(pendingAction)} onOpenChange={(open) => !open && !busy && setPendingAction(null)}>
         <DialogContent>

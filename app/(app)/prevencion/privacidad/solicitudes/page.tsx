@@ -7,13 +7,16 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listPreventionPrivacyRequests } from "@/lib/services/prevention-privacy"
+import { resolvePagination } from "@/lib/pagination"
+import { listPreventionPrivacyRequestsPage } from "@/lib/services/prevention-privacy"
 import { PrivacyRequestCreateButton } from "./privacy-request-create-button"
 import { PrivacyRequestsWorkbench } from "./privacy-requests-workbench"
 
 export const metadata: Metadata = { title: "Solicitudes de privacidad" }
 
-export default async function PreventionPrivacyRequestsPage() {
+type SearchParams = { page?: string }
+
+export default async function PreventionPrivacyRequestsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let session
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
@@ -21,8 +24,11 @@ export default async function PreventionPrivacyRequestsPage() {
 
   const scope = resolveWorksiteScope(session)
   const scopeWhere = scope.mode === "some" ? inArray(workers.worksiteId, scope.ids) : undefined
-  const [requests, workerRows] = await Promise.all([
-    listPreventionPrivacyRequests(scope),
+  const raw = await searchParams
+  const pageSize = 50
+  const pagination = resolvePagination({ pageParam: raw.page, totalItems: 0, pageSize })
+  const [{ rows: requests, total }, workerRows] = await Promise.all([
+    listPreventionPrivacyRequestsPage(scope, { limit: pageSize, offset: pagination.offset }),
     scope.mode === "none"
       ? []
       : db.select({
@@ -36,6 +42,7 @@ export default async function PreventionPrivacyRequestsPage() {
           .where(scopeWhere)
           .orderBy(workers.lastName, workers.firstName),
   ])
+  const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: total, pageSize })
 
   return (
     <PageContainer>
@@ -70,6 +77,7 @@ export default async function PreventionPrivacyRequestsPage() {
         }))}
         canExport={can(session, "prevention:privacy:export_subject")}
         canExportClinical={can(session, "prevention:health:view_clinical")}
+        pagination={resolvedPagination}
       />
     </PageContainer>
   )
