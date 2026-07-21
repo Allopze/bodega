@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import * as Collapsible from "@radix-ui/react-collapsible"
-import * as Popover from "@radix-ui/react-popover"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { CaretDown, SquaresFour } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { NAV_ICONS } from "./nav-icons"
@@ -106,8 +106,8 @@ export function RailFlyout({
   const [open, setOpen] = React.useState(false)
   const Icon = NAV_ICONS[area.iconName] ?? SquaresFour
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={area.label}
@@ -120,20 +120,18 @@ export function RailFlyout({
         >
           <Icon size={19} weight={inRoute ? "bold" : "regular"} className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="right"
-          align="start"
-          sideOffset={10}
-          className="z-50 w-56 rounded-(--radius-xl) border border-(--color-border) bg-surface p-2 shadow-(--shadow-lg) data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
-        >
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={10}
+        className="w-56 p-2"
+      >
           <p className="px-2 pb-1 text-eyebrow">
             {area.label}
           </p>
           <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={() => setOpen(false)} />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverContent>
+    </Popover>
   )
 }

@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { parseZ } from "@/lib/actions/parse-z"
@@ -33,6 +34,7 @@ async function run(access: EmergencyAccess, operation: (access: EmergencyAccess)
     revalidatePath(`${BASE}/[planId]`, "page")
     return { ok: true }
   } catch (error) {
+    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }
   }
 }

@@ -61,7 +61,7 @@ export const capaTransitionSchema = z.object({
   segregationExceptionReason: z.string().trim().max(2000).optional(),
 })
 
-const capaEvidenceSchema = z.object({
+export const capaEvidenceSchema = z.object({
   actionId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   kind: z.enum(["document", "photo", "url", "note"]),

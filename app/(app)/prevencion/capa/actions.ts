@@ -8,7 +8,11 @@ import type { ActionState } from "@/lib/validation/masters"
 import {
   addCapaEvidence,
   addCapaFollowup,
+  capaEvidenceSchema,
+  capaFollowupSchema,
+  capaReconcileSchema,
   capaTransitionSchema,
+  capaUpdateSchema,
   reconcileCapaAction,
   transitionCapaAction,
   updateCapaAction,
@@ -71,9 +75,11 @@ export async function addCapaEvidenceAction(input: {
 }): Promise<ActionState> {
   const guard = await guardPermission("prevention:capa:complete")
   if (guard.error) return guard.error
+  const parsed = parseZ(capaEvidenceSchema, input)
+  if (!parsed.ok) return parsed
   try {
     await addCapaEvidence({
-      input,
+      input: parsed.data,
       ctx: { userId: guard.session.user.id },
       scope: resolveWorksiteScope(guard.session),
       permissions: guard.session.user.permissions,
@@ -158,3 +164,4 @@ export async function reconcileCapaActionAction(input: {
     return fail(error, "No se pudo conciliar la CAPA")
   }
 }
+

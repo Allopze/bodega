@@ -32,6 +32,7 @@ async function run(access: CphsAccess, operation: (access: CphsAccess) => Promis
     revalidatePath(`${BASE}/[committeeId]`, "page")
     return { ok: true }
   } catch (error) {
+    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }
   }
 }

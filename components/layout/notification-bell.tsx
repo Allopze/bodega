@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import * as PopoverPrimitive from "@radix-ui/react-popover"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import Link from "next/link"
 import { Bell, CheckCircle } from "@phosphor-icons/react"
 import { cn, formatDate } from "@/lib/utils"
@@ -16,8 +16,8 @@ export function NotificationBell() {
   const hasUnread = (data?.unreadCount ?? 0) > 0
 
   return (
-    <PopoverPrimitive.Root>
-      <PopoverPrimitive.Trigger asChild>
+    <Popover>
+      <PopoverTrigger asChild>
         <button
           type="button"
           className={cn(
@@ -40,27 +40,13 @@ export function NotificationBell() {
             </>
           )}
         </button>
-      </PopoverPrimitive.Trigger>
+      </PopoverTrigger>
 
-      <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content
-          align="end"
-          sideOffset={8}
-          className={cn(
-            "z-50 w-80 rounded-[var(--radius-lg)]",
-            "border border-[var(--color-border)]",
-            "bg-[var(--color-surface)] shadow-[var(--shadow-md)]",
-            "overflow-hidden",
-            // Emil: origin-aware — scale from trigger
-            "origin-[var(--radix-popover-content-transform-origin)]",
-            // Animate in/out via Radix data-state
-            "data-[state=open]:animate-in data-[state=closed]:animate-out",
-            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-            "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-            "data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
-            "duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-          )}
-        >
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="w-80 overflow-hidden"
+      >
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--color-border)]">
             <span className="text-sm font-semibold text-[var(--color-text)]">Notificaciones</span>
@@ -96,9 +82,8 @@ export function NotificationBell() {
               ))
             )}
           </div>
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
-    </PopoverPrimitive.Root>
+      </PopoverContent>
+    </Popover>
   )
 }
 
