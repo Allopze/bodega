@@ -72,7 +72,10 @@ const OPEN_STATUSES = ["draft", "under_evaluation"]
 
 /* ── Solicitud de cambio ──────────────────────────────────────────────────── */
 
-const createSchema = z.object({
+// Exportado para que createChangeRequestAction (Server Action) pueda
+// validar en el boundary con `parseZ` antes de invocar este servicio —
+// misma forma, sin duplicar el schema.
+export const createSchema = z.object({
   worksiteId: z.string().min(1),
   title: z.string().trim().min(3).max(200),
   changeType: z.enum(["proceso", "instalacion", "equipo", "sustancia", "proveedor", "requisito_legal", "dotacion", "software", "procedimiento", "mandante"]),
@@ -111,7 +114,9 @@ export async function createChangeRequest(input: unknown, access: ChangeAccess) 
   })
 }
 
-const evaluateSchema = z.object({
+// Exportado para que evaluateChangeDimensionAction (Server Action) pueda
+// validar en el boundary con `parseZ`.
+export const evaluateSchema = z.object({
   changeRequestId: z.string().min(1),
   dimension: z.enum(CHANGE_DIMENSIONS),
   impacted: z.boolean(),
@@ -190,7 +195,9 @@ export async function evaluateChangeDimension(input: unknown, access: ChangeAcce
   })
 }
 
-const approveSchema = z.object({
+// Exportado para que approveChangeRequestAction (Server Action) pueda
+// validar en el boundary con `parseZ`.
+export const approveSchema = z.object({
   changeRequestId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   plannedReviewDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -235,7 +242,9 @@ export async function approveChangeRequest(input: unknown, access: ChangeAccess)
   })
 }
 
-const rejectSchema = z.object({
+// Exportado para que rejectChangeRequestAction (Server Action) pueda
+// validar en el boundary con `parseZ`.
+export const rejectSchema = z.object({
   changeRequestId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   rejectedReason: z.string().trim().min(5).max(3000),

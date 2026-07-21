@@ -3,11 +3,16 @@
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { parseZ } from "@/lib/actions/parse-z"
 import {
   approveChangeRequest,
+  approveSchema,
   createChangeRequest,
+  createSchema,
   evaluateChangeDimension,
+  evaluateSchema,
   rejectChangeRequest,
+  rejectSchema,
   type ChangeAccess,
 } from "@/lib/services/prevention-change"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -34,23 +39,31 @@ async function run(access: ChangeAccess, operation: (access: ChangeAccess) => Pr
 export async function createChangeRequestAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:change:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createChangeRequest(input, access))
+  const parsed = parseZ(createSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => createChangeRequest(parsed.data, access))
 }
 
 export async function evaluateChangeDimensionAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:change:evaluate")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => evaluateChangeDimension(input, access))
+  const parsed = parseZ(evaluateSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => evaluateChangeDimension(parsed.data, access))
 }
 
 export async function approveChangeRequestAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:change:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => approveChangeRequest(input, access))
+  const parsed = parseZ(approveSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => approveChangeRequest(parsed.data, access))
 }
 
 export async function rejectChangeRequestAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:change:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => rejectChangeRequest(input, access))
+  const parsed = parseZ(rejectSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => rejectChangeRequest(parsed.data, access))
 }

@@ -74,7 +74,10 @@ async function history(client: Client, args: {
 
 /* ── Requisitos ───────────────────────────────────────────────────────────── */
 
-const requirementSchema = z.object({
+// Exportado para que createEppRequirementAction (Server Action) pueda
+// validar en el boundary con `parseZ` antes de invocar este servicio —
+// misma forma, sin duplicar el schema.
+export const requirementSchema = z.object({
   eppTypeId: z.string().min(1),
   scopeType: z.enum(["global", "worksite", "position", "task"]),
   scopeValue: z.string().trim().max(300).nullable().optional(),
@@ -91,6 +94,14 @@ const requirementSchema = z.object({
   if (value.scopeType === "worksite" && !value.worksiteId) {
     ctx.addIssue({ code: "custom", path: ["worksiteId"], message: "Un requisito por faena exige indicar la faena." })
   }
+})
+
+// Exportado para que escalateBlockingEppGapsAction (Server Action) pueda
+// validar en el boundary con `parseZ`. Mismo formato de fecha
+// (YYYY-MM-DD) que capaCreateSchema.targetDate en prevention-capa.ts, ya
+// que este valor termina ahí (createCapaActionWithClient).
+export const escalateBlockingEppGapsSchema = z.object({
+  targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha objetivo inválida"),
 })
 
 export async function createEppRequirement(input: unknown, access: EppAccess) {

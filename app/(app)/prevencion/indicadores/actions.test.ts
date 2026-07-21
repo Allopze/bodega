@@ -23,10 +23,6 @@ import {
   saveSafetyIndicatorDenominatorAction,
   saveSafetyIndicatorMonthAction,
 } from "./actions"
-import {
-  safetyIndicatorDenominatorSchema,
-  safetyIndicatorMonthSchema,
-} from "@/lib/validation/prevention-module/safety-indicators"
 
 const denied = { session: null, error: { ok: false, message: "No tienes permisos" } }
 const session = {
@@ -34,6 +30,18 @@ const session = {
     id: "trusted-user",
     permissions: ["prevention:indicadores:manage", "prevention:indicadores:close"],
   },
+}
+
+const validDenominatorInput = {
+  worksiteId: "ws-own",
+  year: 2026,
+  month: 5,
+  workerCount: 10,
+  workedHours: 160,
+  sourceType: "manual" as const,
+  sourceReference: "planilla julio",
+  evidenceReference: "evidencia-julio.pdf",
+  reconciliationStatus: "matched" as const,
 }
 
 describe("indicator server actions are authorization boundaries", () => {
@@ -49,12 +57,21 @@ describe("indicator server actions are authorization boundaries", () => {
     expect(saveDenominator).not.toHaveBeenCalled()
   })
 
-  it("derives actor, scope and permissions from the authenticated session", async () => {
+  it("derives actor, scope and permissions from the authenticated session, dropping forged fields the schema does not declare", async () => {
     guardPermission.mockResolvedValue({ session, error: null })
     saveDenominator.mockResolvedValue({})
-    const forged = { worksiteId: "ws-own", actorUserId: "forged-user" }
+    // `actorUserId` no pertenece a safetyIndicatorDenominatorSchema — parseZ
+    // lo descarta al validar (zod strips unknown keys por defecto), así que
+    // nunca llega al servicio como parte del dato validado.
+    const forged = { ...validDenominatorInput, actorUserId: "forged-user" }
+
     await expect(saveSafetyIndicatorDenominatorAction(forged)).resolves.toEqual({ ok: true })
-    expect(saveDenominator).toHaveBeenCalledWith(forged, {
+
+    expect(saveDenominator).toHaveBeenCalledTimes(1)
+    const [calledInput, calledAccess] = saveDenominator.mock.calls[0]!
+    expect(calledInput).not.toHaveProperty("actorUserId")
+    expect(calledInput).toMatchObject(validDenominatorInput)
+    expect(calledAccess).toEqual({
       userId: "trusted-user",
       scope: { mode: "some", ids: ["ws-own"] },
       permissions: session.user.permissions,
@@ -76,18 +93,12 @@ describe("indicator server actions are authorization boundaries", () => {
     expect(closePeriod).not.toHaveBeenCalled()
   })
 
-  // Fase 0 (baseline): estas dos actions no validan con Zod dentro de sí
-  // mismas — reenvían `input: unknown` al servicio, que hace
-  // `schema.parse(input)` y lanza ZodError; la action atrapa ese error y lo
-  // convierte en `{ ok: false, message, fieldErrors }`. Este test fija ese
-  // mensaje y esos fieldErrors (derivados del schema real) como el contrato
-  // actual, antes de que Fase 1 (H-27) introduzca `parseZ` en este boundary.
-  describe("current fieldErrors contract when the service's Zod schema rejects input", () => {
+  // Fase 1 (H-27 paso 4a): las 4 actions validan con `parseZ` en el boundary,
+  // antes de invocar el servicio. Un input inválido se rechaza aquí mismo —
+  // el servicio nunca se llama — y devuelve `fieldErrors` estructurados.
+  describe("parseZ boundary rejects invalid input without invoking the service", () => {
     it("saveSafetyIndicatorMonthAction", async () => {
       guardPermission.mockResolvedValue({ session, error: null })
-      saveMonth.mockImplementation(async (input: unknown) => {
-        safetyIndicatorMonthSchema.parse(input)
-      })
 
       const result = await saveSafetyIndicatorMonthAction({ worksiteId: "", year: 2020, month: 13 })
 
@@ -98,13 +109,11 @@ describe("indicator server actions are authorization boundaries", () => {
         year: ["El año debe ser al menos 2024"],
         month: ["Too big: expected number to be <=12"],
       })
+      expect(saveMonth).not.toHaveBeenCalled()
     })
 
     it("saveSafetyIndicatorDenominatorAction", async () => {
       guardPermission.mockResolvedValue({ session, error: null })
-      saveDenominator.mockImplementation(async (input: unknown) => {
-        safetyIndicatorDenominatorSchema.parse(input)
-      })
 
       const result = await saveSafetyIndicatorDenominatorAction({
         worksiteId: "ws-1", year: 2026, month: 5, workerCount: 10, workedHours: 100,
@@ -117,6 +126,61 @@ describe("indicator server actions are authorization boundaries", () => {
       expect(result.fieldErrors).toEqual({
         evidenceReference: ["Too small: expected string to have >=3 characters"],
         reconciliationNotes: ["Documenta la diferencia o excepción."],
+      })
+      expect(saveDenominator).not.toHaveBeenCalled()
+    })
+
+    it("closeSafetyIndicatorPeriodAction — antes llegaba sin ningún chequeo runtime", async () => {
+      guardPermission.mockResolvedValue({ session, error: null })
+
+      const result = await closeSafetyIndicatorPeriodAction({
+        worksiteId: "ws-own", year: 2026, month: 7, reason: "corto",
+      })
+
+      expect(result.ok).toBe(false)
+      expect(result.fieldErrors).toEqual({ reason: ["Too small: expected string to have >=10 characters"] })
+      expect(closePeriod).not.toHaveBeenCalled()
+    })
+
+    it("approveSafetyIndicatorDenominatorAction — antes un input inválido caía como unexpectedActionError", async () => {
+      guardPermission.mockResolvedValue({ session, error: null })
+
+      const result = await approveSafetyIndicatorDenominatorAction({ denominatorId: "den-1" })
+
+      expect(result.ok).toBe(false)
+      expect(result.fieldErrors).toMatchObject({
+        expectedVersion: expect.any(Array),
+        decision: expect.any(Array),
+        reason: expect.any(Array),
+      })
+      expect(approveDenominator).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("success path is unchanged for the newly-validated actions", () => {
+    it("closeSafetyIndicatorPeriodAction forwards the validated data to the service", async () => {
+      guardPermission.mockResolvedValue({ session, error: null })
+      closePeriod.mockResolvedValue({})
+      const input = { worksiteId: "ws-own", year: 2026, month: 7, reason: "Conciliación mensual aprobada y documentada." }
+
+      const result = await closeSafetyIndicatorPeriodAction(input)
+
+      expect(result).toEqual({ ok: true })
+      expect(closePeriod).toHaveBeenCalledWith(input, "trusted-user", { mode: "some", ids: ["ws-own"] })
+    })
+
+    it("approveSafetyIndicatorDenominatorAction forwards the validated data to the service", async () => {
+      guardPermission.mockResolvedValue({ session, error: null })
+      approveDenominator.mockResolvedValue({})
+      const input = { denominatorId: "den-1", expectedVersion: 1, decision: "approved" as const, reason: "Evidencia y conciliación revisadas." }
+
+      const result = await approveSafetyIndicatorDenominatorAction(input)
+
+      expect(result).toEqual({ ok: true })
+      expect(approveDenominator).toHaveBeenCalledWith(input, {
+        userId: "trusted-user",
+        scope: { mode: "some", ids: ["ws-own"] },
+        permissions: session.user.permissions,
       })
     })
   })

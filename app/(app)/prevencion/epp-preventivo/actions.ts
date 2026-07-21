@@ -3,9 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { parseZ } from "@/lib/actions/parse-z"
 import {
   createEppRequirement,
+  escalateBlockingEppGapsSchema,
   escalateBlockingEppGapsToCapa,
+  requirementSchema,
   type EppAccess,
 } from "@/lib/services/prevention-epp"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -31,11 +34,15 @@ async function run(access: EppAccess, operation: (access: EppAccess) => Promise<
 export async function createEppRequirementAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:epp:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createEppRequirement(input, access))
+  const parsed = parseZ(requirementSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => createEppRequirement(parsed.data, access))
 }
 
-export async function escalateBlockingEppGapsAction(input: { targetDate: string }): Promise<ActionState> {
+export async function escalateBlockingEppGapsAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:epp:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => escalateBlockingEppGapsToCapa(access, input))
+  const parsed = parseZ(escalateBlockingEppGapsSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => escalateBlockingEppGapsToCapa(access, parsed.data))
 }
