@@ -2,7 +2,8 @@ import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { requirePermission, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getPpa, getPpaCorrectiveAction } from "@/lib/services/ppa"
+import { getPpa, getPpaCorrectiveAction, getPpaStatusHistory } from "@/lib/services/ppa"
+import { getCapaActionBundle } from "@/lib/services/prevention-capa"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
@@ -10,10 +11,10 @@ import { cn } from "@/lib/utils"
 import { estadoPpaLabel, estadoPpaBadgeVariant, decisionPpaLabel, isPendienteRevision } from "@/lib/ppa/badges"
 import {
   PPA_STOP_REASON_LABELS, PPA_COMPLEMENTARIAS, controlLabel, tipoTrabajoLabel,
-  type PpaStopReason, type PpaAnswers,
+  type EstadoPpa, type PpaStopReason, type PpaAnswers,
 } from "@/lib/ppa/types"
 import { ReviewPanel } from "./review-panel"
-import { CloseCaseButton } from "./close-case-button"
+import { PpaWorkflowPanel } from "./ppa-workflow-panel"
 import { RevokeTokenButton } from "./revoke-token-button"
 import { scopeToIds } from "@/lib/ppa/utils"
 import { readPpaReturnHref } from "../list-filters"
@@ -34,14 +35,6 @@ function fmtDateTime(iso: string): string {
   catch { return iso }
 }
 
-function fmtDuration(ms: number): string {
-  const min = Math.max(0, Math.round(ms / 60000))
-  if (min < 60) return `${min} min`
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  return m === 0 ? `${h} h` : `${h} h ${m} m`
-}
-
 type TimelineTone = "neutral" | "success" | "warning" | "danger"
 const DOT_TONE: Record<TimelineTone, string> = {
   neutral: "bg-[var(--color-border-strong)]",
@@ -56,7 +49,7 @@ function Timeline({ events }: { events: { title: string; time: string; sub?: str
       <h2 className="mb-3 text-sm font-semibold">Trazabilidad</h2>
       <ol className="flex flex-col">
         {events.map((e, i) => (
-          <li key={i} className="flex gap-3">
+          <li key={`${e.title}:${e.time}`} className="flex gap-3">
             <div className="flex flex-col items-center">
               <span className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", DOT_TONE[e.tone])} />
               {i < events.length - 1 && <span className="w-px flex-1 bg-[var(--color-border)]" />}
@@ -92,37 +85,44 @@ export default async function PpaDetailPage({
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))
   const ppa = await getPpa(id, worksiteIds)
   if (!ppa) notFound()
-  const correctiveAction = await getPpaCorrectiveAction(id, worksiteIds)
+  const scope = resolveWorksiteScope(session)
+  const [correctiveAction, persistedHistory] = await Promise.all([
+    getPpaCorrectiveAction(id, worksiteIds),
+    getPpaStatusHistory(id, worksiteIds),
+  ])
+  const capaBundle = correctiveAction?.capaActionId && can(session, "prevention:capa:view")
+    ? await getCapaActionBundle({
+      actionId: correctiveAction.capaActionId,
+      scope,
+      permissions: session.user.permissions,
+    })
+    : null
 
   const answers = ppa.answersJson as PpaAnswers
   const reasons = (ppa.triggeredReasons as PpaStopReason[] | null) ?? []
   const canReview = can(session, "ppa:review")
   const pendiente = isPendienteRevision(ppa.estado)
   const detenido = ppa.resultado === "detenido"
-  const resuelto = ppa.estado === "autorizado" || ppa.estado === "rechazado"
-
-  // Trazabilidad: línea de tiempo del caso.
-  const decisionTone: TimelineTone =
-    ppa.decision === "autorizado" ? "success" : ppa.decision === "rechazado" ? "danger" : "warning"
-  const timeline: { title: string; time: string; sub?: string; tone: TimelineTone }[] = [
-    { title: "PPA enviado", time: fmtDateTime(ppa.createdAt), tone: "neutral" },
-    {
-      title: detenido ? "Trabajo detenido (automático)" : "Aprobado automáticamente",
-      time: fmtDateTime(ppa.createdAt),
-      tone: detenido ? "danger" : "success",
-    },
-  ]
-  if (ppa.reviewedAt) {
-    timeline.push({
-      title: `Revisado — ${decisionPpaLabel(ppa.decision)}`,
-      time: fmtDateTime(ppa.reviewedAt),
-      sub: `respuesta en ${fmtDuration(new Date(ppa.reviewedAt).getTime() - new Date(ppa.createdAt).getTime())}`,
-      tone: decisionTone,
-    })
-  }
-  if (ppa.estado === "cerrado") {
-    timeline.push({ title: "Caso cerrado", time: fmtDateTime(ppa.updatedAt), tone: "neutral" })
-  }
+  const timeline: { title: string; time: string; sub?: string; tone: TimelineTone }[] = persistedHistory.length > 0
+    ? persistedHistory.map((event) => ({
+      title: estadoPpaLabel(event.toStatus),
+      time: fmtDateTime(event.createdAt),
+      sub: [event.actorType === "system" ? "Sistema" : event.actorName ?? "Usuario histórico", event.reason]
+        .filter(Boolean).join(" · "),
+      tone: event.toStatus === "autorizado" || event.toStatus === "cerrado" || event.toStatus === "aprobado_auto"
+        ? "success"
+        : event.toStatus === "detenido" || event.toStatus === "rechazado" || event.toStatus === "cancelado"
+          ? "danger"
+          : "warning",
+    }))
+    : [
+      { title: "PPA enviado", time: fmtDateTime(ppa.createdAt), tone: "neutral" },
+      {
+        title: detenido ? "Trabajo detenido (automático)" : "Aprobado automáticamente",
+        time: fmtDateTime(ppa.createdAt),
+        tone: detenido ? "danger" : "success",
+      },
+    ]
 
   return (
     <PageContainer>
@@ -221,18 +221,19 @@ export default async function PpaDetailPage({
               </dl>
               {correctiveAction && (
                 <div className="mt-3 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3">
-                  <p className="text-sm font-medium">Acción correctiva pendiente</p>
+                  <p className="text-sm font-medium">
+                    {correctiveAction.status === "verificada" || correctiveAction.status === "cerrada"
+                      ? "Acción correctiva verificada"
+                      : "Acción correctiva pendiente de verificación"}
+                  </p>
                   <dl className="mt-2">
                     <Row label="Responsable" value={`${correctiveAction.responsible} · ${correctiveAction.responsibleRole === "admin_contrato" ? "Supervisor de faena" : correctiveAction.responsibleRole === "prevencionista_faena" ? "Prevencionista de faena" : correctiveAction.responsibleRole === "prevencionista" ? "Jefa Dpto. Prevención" : "Jefe de faena"}`} />
                     <Row label="Plazo" value={correctiveAction.dueDate} />
                     <Row label="Prioridad" value={correctiveAction.priority} />
                     <Row label="Estado" value={correctiveAction.status} />
+                    {capaBundle && <Row label="CAPA común" value={`${capaBundle.action.code} · ${capaBundle.action.status}`} />}
+                    {capaBundle && <Row label="Evidencias verificables" value={capaBundle.evidence.filter((item) => item.kind !== "note").length} />}
                   </dl>
-                </div>
-              )}
-              {canReview && resuelto && (
-                <div className="mt-3">
-                  <CloseCaseButton ppaId={ppa.id} />
                 </div>
               )}
             </section>
@@ -243,6 +244,24 @@ export default async function PpaDetailPage({
               Este PPA está pendiente de revisión por un responsable autorizado.
             </section>
           ) : null}
+
+          <PpaWorkflowPanel
+            ppaId={ppa.id}
+            ppaVersion={ppa.version}
+            status={ppa.estado as EstadoPpa}
+            verified={Boolean(ppa.verifiedAt)}
+            capa={capaBundle ? {
+              id: capaBundle.action.id,
+              version: capaBundle.action.version,
+              status: capaBundle.action.status,
+              evidenceCount: capaBundle.evidence.filter((item) => item.kind !== "note").length,
+            } : null}
+            canCorrect={can(session, "ppa:correct")}
+            canVerify={can(session, "ppa:verify")}
+            canAuthorize={can(session, "ppa:authorize_restart")}
+            canCancel={can(session, "ppa:cancel")}
+            canClose={can(session, "ppa:close")}
+          />
 
           {/* Trazabilidad */}
           <Timeline events={timeline} />

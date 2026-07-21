@@ -140,20 +140,55 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-pdtp-acciones", path: "/prevencion/pdtp/acciones", auth: true },
   { slug: "prevencion-pdtp-nuevo", path: "/prevencion/pdtp/nuevo", auth: true },
   { slug: "prevencion-pdtp-aprobaciones", path: "/prevencion/pdtp/aprobaciones", auth: true },
+  { slug: "prevencion-pdtp-cobertura", path: "/prevencion/pdtp/cobertura", auth: true },
+  { slug: "prevencion-capa", path: "/prevencion/capa", auth: true },
+  { slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una CAPA de detalle." },
+  { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },
+  { slug: "prevencion-incidentes-reportar", path: "/prevencion/incidentes/reportar", auth: true },
+  { slug: "prevencion-incidentes-importar", path: "/prevencion/incidentes/importar", auth: true },
+  { slug: "prevencion-incidentes-detalle", path: "/prevencion/incidentes/inc-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un incidente de detalle." },
+  { slug: "prevencion-miper", path: "/prevencion/miper", auth: true },
+  { slug: "prevencion-miper-control", path: "/prevencion/miper/controles/risk-control-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un control MIPER de detalle." },
+  { slug: "prevencion-requisitos-legales", path: "/prevencion/requisitos-legales", auth: true },
+  { slug: "prevencion-requisito-legal", path: "/prevencion/requisitos-legales/legal-requirement-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un requisito de detalle." },
+  { slug: "prevencion-privacidad-auditoria", path: "/prevencion/privacidad/auditoria", auth: true },
+  { slug: "prevencion-privacidad-solicitudes", path: "/prevencion/privacidad/solicitudes", auth: true },
+  { slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una solicitud de privacidad de detalle." },
+  // ── Prevención: capacidades P1 implementadas el 19-07-2026 ──
+  { slug: "prevencion-capacitacion", path: "/prevencion/capacitacion", auth: true },
+  { slug: "prevencion-capacitacion-catalogo", path: "/prevencion/capacitacion/catalogo", auth: true },
+  { slug: "prevencion-capacitacion-competencias", path: "/prevencion/capacitacion/competencias", auth: true },
+  { slug: "prevencion-capacitacion-brechas", path: "/prevencion/capacitacion/brechas", auth: true },
+  { slug: "prevencion-capacitacion-sesion", path: "/prevencion/capacitacion/trsess-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una sesión de capacitación." },
+  { slug: "prevencion-permisos", path: "/prevencion/permisos", auth: true },
+  { slug: "prevencion-permiso-detalle", path: "/prevencion/permisos/permit-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un permiso de detalle." },
+  { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
+  { slug: "prevencion-inspecciones-catalogo", path: "/prevencion/inspecciones/catalogo", auth: true },
+  { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una inspección de detalle." },
+  { slug: "prevencion-cphs", path: "/prevencion/cphs", auth: true },
+  { slug: "prevencion-cphs-comite-detalle", path: "/prevencion/cphs/comite-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un comité de detalle." },
+  { slug: "prevencion-higiene", path: "/prevencion/higiene", auth: true },
+  { slug: "prevencion-higiene-grupo-detalle", path: "/prevencion/higiene/grupos/grupo-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un GES de detalle." },
+  { slug: "prevencion-higiene-programa-detalle", path: "/prevencion/higiene/programas/programa-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un programa de detalle." },
+  { slug: "prevencion-emergencias", path: "/prevencion/emergencias", auth: true },
+  { slug: "prevencion-emergencias-plan-detalle", path: "/prevencion/emergencias/plan-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un plan de detalle." },
+  { slug: "prevencion-gestion-cambio", path: "/prevencion/gestion-cambio", auth: true },
+  { slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un cambio de detalle." },
+  { slug: "prevencion-epp-preventivo", path: "/prevencion/epp-preventivo", auth: true },
   // ── Prevención: submódulos P3 sin page.tsx (omitidos intencionalmente) ──
-  //   /prevencion/incidentes/[id] y /[id]/procedimiento
-  //   /prevencion/capacitaciones/matriz
-  //   /prevencion/inspecciones/[id]
   //   /prevencion/equipos/reportes y /checklists
   //   /prevencion/epp/matriz y /stock
   //   /prevencion/salud/protocolos
   // Re-agregar cuando los módulos P3 estén implementados.
+  // `/prevencion/contratistas` salió el 19-07-2026 con el módulo DS 76: Chome
+  // es empresa contratista, no empresa principal.
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
   { slug: "prevencion-documentacion-nuevo", path: "/prevencion/documentacion/nuevo", auth: true },
   { slug: "prevencion-documentacion-papelera", path: "/prevencion/documentacion/papelera", auth: true },
   { slug: "prevencion-documentacion-revisiones", path: "/prevencion/documentacion/revisiones", auth: true },
   { slug: "prevencion-documentacion-vencimientos", path: "/prevencion/documentacion/vencimientos", auth: true },
+  { slug: "prevencion-documentacion-regularizacion", path: "/prevencion/documentacion/regularizacion", auth: true },
   { slug: "sst-print", path: "/sst/sst-audit-1/print", auth: true },
   { slug: "ppa-form", path: "/ppa", auth: false },
   { slug: "ppa-result", path: "/ppa/result/capture-ppa-token", auth: false },
@@ -181,6 +216,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-pdtp-catalogos", path: "/admin/pdtp-catalogos", auth: true },
   { slug: "admin-plantillas", path: "/admin/plantillas", auth: true },
   { slug: "admin-productos", path: "/admin/productos", auth: true },
+  // Agregada al inventario el 20-07-2026 para dejar el gate verde; la feature
+  // de catálogo EPP se desarrolla en paralelo y esta línea no toca su lógica.
+  { slug: "admin-epps", path: "/admin/epps", auth: true },
   { slug: "admin-productos-nuevo", path: "/admin/productos/nuevo", auth: true },
   { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true, notes: "Esta ruta redirige a /admin/productos." },
   { slug: "admin-productos-importar", path: "/admin/productos/importar/batch-audit-1", auth: true, notes: "Vista de revisión de lotes EPP importados." },
@@ -191,6 +229,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-taxonomia-sst", path: "/admin/taxonomia-sst", auth: true },
   { slug: "admin-trabajadores", path: "/admin/trabajadores", auth: true },
   { slug: "admin-usuarios", path: "/admin/usuarios", auth: true },
+  // Agregada al inventario el 19-07-2026 para dejar el gate verde; la feature
+  // de respaldos se desarrolla en paralelo y esta línea no toca su lógica.
+  { slug: "admin-backups", path: "/admin/backups", auth: true },
   { slug: "forbidden", path: "/forbidden", auth: true },
   { slug: "soporte", path: "/soporte", auth: true },
   { slug: "soporte-nuevo", path: "/soporte/nuevo", auth: true },
@@ -234,6 +275,38 @@ export function getCaptureSeedCoverage() {
   return seedCoverage.map((area) => ({ ...area, fixtures: [...area.fixtures] }))
 }
 
+/**
+ * Captura rutas en paralelo usando un pool de workers que comparten una cola.
+ * Cada worker toma la siguiente ruta disponible (índice atómico en JS
+ * single-threaded), ejecuta captureRoute y almacena el resultado en la
+ * posición original para mantener el orden. El factor limitante es el
+ * servidor Next.js (monoproceso); 4-8 workers son óptimos localmente.
+ * La concurrencia se configura con CAPTURE_CONCURRENCY (default 4).
+ */
+async function captureRouteBatch(
+  context: BrowserContext,
+  viewport: string,
+  routes: RouteTarget[],
+  concurrency: number = Number(process.env.CAPTURE_CONCURRENCY) || 4,
+): Promise<CaptureResult[]> {
+  if (routes.length === 0) return []
+
+  const results: CaptureResult[] = []
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < routes.length) {
+      const idx = nextIndex++
+      const result = await captureRoute(context, viewport, routes[idx]!)
+      results[idx] = result
+    }
+  }
+
+  const poolSize = Math.min(concurrency, routes.length)
+  await Promise.all(Array.from({ length: poolSize }, () => worker()))
+  return results
+}
+
 async function main() {
   const captureDbUrl = requireCaptureDatabaseUrl()
   const routes = getCaptureRoutes()
@@ -252,15 +325,15 @@ async function main() {
         locale: "es-CL",
       })
 
-      for (const route of routes.filter((r) => !r.auth)) {
-        results.push(await captureRoute(context, viewport.name, route))
-      }
+      const nonAuthRoutes = routes.filter((r) => !r.auth)
+      const nonAuthResults = await captureRouteBatch(context, viewport.name, nonAuthRoutes)
+      results.push(...nonAuthResults)
 
       await login(context)
 
-      for (const route of routes.filter((r) => r.auth)) {
-        results.push(await captureRoute(context, viewport.name, route))
-      }
+      const authRoutes = routes.filter((r) => r.auth)
+      const authResults = await captureRouteBatch(context, viewport.name, authRoutes)
+      results.push(...authResults)
 
       await context.close()
     }
@@ -411,6 +484,15 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "p-prev-docs-view", name: "prevention:docs:view", module: "prevention", description: "Ver documentación SST" },
     { id: "p-prev-docs-mng", name: "prevention:docs:manage", module: "prevention", description: "Gestionar documentación SST" },
     { id: "p-prev-docs-arch", name: "prevention:docs:archive", module: "prevention", description: "Archivar documentación SST" },
+    { id: "p-prev-docs-publish", name: "prevention:docs:publish", module: "prevention", description: "Publicar y regularizar documentación SST" },
+    { id: "p-prev-capa-view", name: "prevention:capa:view", module: "prevention", description: "Ver acciones CAPA" },
+    { id: "p-prev-inc-view", name: "prevention:incidents:view", module: "prevention", description: "Ver incidentes" },
+    { id: "p-prev-inc-report", name: "prevention:incidents:report", module: "prevention", description: "Reportar incidentes" },
+    { id: "p-prev-inc-triage", name: "prevention:incidents:triage", module: "prevention", description: "Conciliar e importar incidentes" },
+    { id: "p-prev-risk-view", name: "prevention:risk:view", module: "prevention", description: "Ver MIPER" },
+    { id: "p-prev-legal-view", name: "prevention:legal:view", module: "prevention", description: "Ver requisitos legales" },
+    { id: "p-prev-privacy-audit", name: "prevention:privacy:audit", module: "prevention", description: "Auditar privacidad" },
+    { id: "p-prev-privacy-manage", name: "prevention:privacy:manage_requests", module: "prevention", description: "Gestionar solicitudes de privacidad" },
     { id: "p-prev-ind-view", name: "prevention:indicadores:view", module: "prevention", description: "Ver indicadores de accidentabilidad" },
     { id: "p-prev-ind-manage", name: "prevention:indicadores:manage", module: "prevention", description: "Registrar indicadores de accidentabilidad" },
     { id: "p-prev-ind-close", name: "prevention:indicadores:close", module: "prevention", description: "Cerrar períodos de indicadores" },

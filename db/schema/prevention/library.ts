@@ -2,7 +2,7 @@ import { relations, sql } from "drizzle-orm"
 import { boolean, check, index, integer, jsonb, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { pgTable, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { users } from "../users"
-import { worksites } from "../worksites"
+import { workers, worksites } from "../worksites"
 
 export const sstDocumentCategories = pgTable("sst_document_categories", {
   slug:        text("slug").primaryKey(),
@@ -58,6 +58,7 @@ export const sstDocuments = pgTable("sst_documents", {
   worksiteId:       text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
   status:           text("status").notNull().default("borrador"),
   confidentiality:  text("confidentiality").notNull().default("publico_interno"),
+  dataClass:         text("data_class").notNull().default("operational"),
   currentVersionId: text("current_version_id"),
   effectiveFrom:    text("effective_from"),
   expiresAt:        text("expires_at"),
@@ -80,6 +81,7 @@ export const sstDocuments = pgTable("sst_documents", {
   index("sst_documents_responsible_idx").on(table.responsibleUserId),
   check("sst_documents_status_valid", sql`${table.status} IN ('borrador', 'en_revision', 'observado', 'aprobado', 'vigente', 'vencido', 'reemplazado', 'archivado')`),
   check("sst_documents_confidentiality_valid", sql`${table.confidentiality} IN ('publico_interno', 'restringido', 'sensible')`),
+  check("sst_documents_data_class_valid", sql`${table.dataClass} IN ('operational', 'personal', 'sensitive_preventive', 'client_secret')`),
 ])
 
 export const sstDocumentVersions = pgTable("sst_document_versions", {
@@ -123,7 +125,9 @@ export const sstDocumentLinks = pgTable("sst_document_links", {
   removalReason:   text("removal_reason"),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
-  uniqueIndex("sst_document_links_doc_entity_unique").on(table.documentId, table.entityType, table.entityId),
+  uniqueIndex("sst_document_links_doc_entity_unique")
+    .on(table.documentId, table.entityType, table.entityId)
+    .where(sql`${table.removedAt} IS NULL`),
   index("sst_document_links_entity_idx").on(table.entityType, table.entityId),
   check("sst_document_links_entity_type_valid", sql`${table.entityType} IN ('worker', 'worksite', 'vehicle', 'equipment', 'incident', 'training', 'committee', 'epp_delivery', 'corrective_action', 'emergency_plan', 'pdtp_activity', 'pdtp_execution', 'pdtp_checklist', 'sst_evaluation', 'ppa')`),
   check("sst_document_links_removal_valid", sql`(${table.removedAt} IS NULL AND ${table.removedByUserId} IS NULL AND ${table.removalReason} IS NULL) OR (${table.removedAt} IS NOT NULL AND ${table.removedByUserId} IS NOT NULL AND length(${table.removalReason}) >= 3)`),
@@ -143,6 +147,46 @@ export const sstDocumentAcknowledgments = pgTable("sst_document_acks", {
   index("sst_document_acks_user_idx").on(table.userId),
 ])
 
+export const sstDocumentDistributionTargets = pgTable("sst_document_distribution_targets", {
+  id:              text("id").primaryKey(),
+  versionId:       text("version_id").notNull().references(() => sstDocumentVersions.id, { onDelete: "cascade" }),
+  userId:          text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  workerId:        text("worker_id").references(() => workers.id, { onDelete: "cascade" }),
+  assignmentReason:text("assignment_reason").notNull(),
+  worksiteId:      text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
+  positionSnapshot:text("position_snapshot"),
+  companySnapshot: text("company_snapshot"),
+  assignedByUserId:text("assigned_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  assignedAt:      timestamp("assigned_at", { withTimezone: true, mode: "string" }).notNull(),
+  dueAt:           timestamp("due_at", { withTimezone: true, mode: "string" }),
+  status:          text("status").notNull().default("pendiente"),
+  exemptedByUserId:text("exempted_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  exemptedAt:      timestamp("exempted_at", { withTimezone: true, mode: "string" }),
+  exemptionReason: text("exemption_reason"),
+  lastReminderAt:  timestamp("last_reminder_at", { withTimezone: true, mode: "string" }),
+  reminderCount:   integer("reminder_count").notNull().default(0),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("sst_document_distribution_version_user_unique")
+    .on(table.versionId, table.userId)
+    .where(sql`${table.userId} IS NOT NULL`),
+  uniqueIndex("sst_document_distribution_version_worker_unique")
+    .on(table.versionId, table.workerId)
+    .where(sql`${table.workerId} IS NOT NULL`),
+  index("sst_document_distribution_version_status_idx").on(table.versionId, table.status),
+  index("sst_document_distribution_user_status_idx").on(table.userId, table.status),
+  index("sst_document_distribution_worker_status_idx").on(table.workerId, table.status),
+  check("sst_document_distribution_recipient_valid", sql`${table.userId} IS NOT NULL OR ${table.workerId} IS NOT NULL`),
+  check("sst_document_distribution_status_valid", sql`${table.status} IN ('pendiente', 'acusado', 'exento')`),
+  check("sst_document_distribution_exemption_valid", sql`
+    (${table.status} <> 'exento' AND ${table.exemptedByUserId} IS NULL AND ${table.exemptedAt} IS NULL AND ${table.exemptionReason} IS NULL)
+    OR
+    (${table.status} = 'exento' AND ${table.exemptedByUserId} IS NOT NULL AND ${table.exemptedAt} IS NOT NULL AND length(${table.exemptionReason}) >= 3)
+  `),
+  check("sst_document_distribution_reminder_count_valid", sql`${table.reminderCount} >= 0`),
+])
+
 export const sstDocumentAudit = pgTable("sst_document_audit", {
   id:          text("id").primaryKey(),
   documentId:  text("document_id").notNull().references(() => sstDocuments.id, { onDelete: "cascade" }),
@@ -158,7 +202,7 @@ export const sstDocumentAudit = pgTable("sst_document_audit", {
 }, (table) => [
   index("sst_document_audit_doc_created_idx").on(table.documentId, table.createdAt),
   index("sst_document_audit_user_idx").on(table.userId),
-  check("sst_document_audit_action_valid", sql`${table.action} IN ('create', 'upload', 'view', 'download', 'edit', 'status_change', 'approve', 'observe', 'replace', 'archive', 'ack', 'link', 'unlink', 'delete', 'permission_change')`),
+  check("sst_document_audit_action_valid", sql`${table.action} IN ('create', 'upload', 'view', 'download', 'edit', 'status_change', 'approve', 'observe', 'replace', 'archive', 'ack', 'distribute', 'exempt', 'link', 'unlink', 'delete', 'permission_change')`),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
@@ -191,6 +235,7 @@ export const sstDocumentVersionsRelations = relations(sstDocumentVersions, ({ on
   approver:     one(users, { fields: [sstDocumentVersions.approvedBy], references: [users.id], relationName: "sstDocVersionApprover" }),
   supersedes:   one(sstDocumentVersions, { fields: [sstDocumentVersions.supersedesId], references: [sstDocumentVersions.id], relationName: "sstDocVersionSupersedes" }),
   acks:         many(sstDocumentAcknowledgments),
+  distributionTargets: many(sstDocumentDistributionTargets),
 }))
 
 export const sstDocumentLinksRelations = relations(sstDocumentLinks, ({ one }) => ({
@@ -202,6 +247,15 @@ export const sstDocumentLinksRelations = relations(sstDocumentLinks, ({ one }) =
 export const sstDocumentAcknowledgmentsRelations = relations(sstDocumentAcknowledgments, ({ one }) => ({
   version: one(sstDocumentVersions, { fields: [sstDocumentAcknowledgments.versionId], references: [sstDocumentVersions.id] }),
   user:    one(users, { fields: [sstDocumentAcknowledgments.userId], references: [users.id] }),
+}))
+
+export const sstDocumentDistributionTargetsRelations = relations(sstDocumentDistributionTargets, ({ one }) => ({
+  version: one(sstDocumentVersions, { fields: [sstDocumentDistributionTargets.versionId], references: [sstDocumentVersions.id] }),
+  user: one(users, { fields: [sstDocumentDistributionTargets.userId], references: [users.id], relationName: "sstDocumentDistributionUser" }),
+  worker: one(workers, { fields: [sstDocumentDistributionTargets.workerId], references: [workers.id] }),
+  worksite: one(worksites, { fields: [sstDocumentDistributionTargets.worksiteId], references: [worksites.id] }),
+  assignedBy: one(users, { fields: [sstDocumentDistributionTargets.assignedByUserId], references: [users.id], relationName: "sstDocumentDistributionAssignedBy" }),
+  exemptedBy: one(users, { fields: [sstDocumentDistributionTargets.exemptedByUserId], references: [users.id], relationName: "sstDocumentDistributionExemptedBy" }),
 }))
 
 export const sstDocumentAuditRelations = relations(sstDocumentAudit, ({ one }) => ({
@@ -225,5 +279,7 @@ export type SstDocumentLink = typeof sstDocumentLinks.$inferSelect
 export type NewSstDocumentLink = typeof sstDocumentLinks.$inferInsert
 export type SstDocumentAcknowledgment = typeof sstDocumentAcknowledgments.$inferSelect
 export type NewSstDocumentAcknowledgment = typeof sstDocumentAcknowledgments.$inferInsert
+export type SstDocumentDistributionTarget = typeof sstDocumentDistributionTargets.$inferSelect
+export type NewSstDocumentDistributionTarget = typeof sstDocumentDistributionTargets.$inferInsert
 export type SstDocumentAudit = typeof sstDocumentAudit.$inferSelect
 export type NewSstDocumentAudit = typeof sstDocumentAudit.$inferInsert

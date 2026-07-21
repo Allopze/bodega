@@ -13,8 +13,10 @@ import { CARGO_KEYS, type CargoKey } from "@/lib/sst/cargos"
 export const PPA_TIPO_TRABAJO_EXCLUDED: CargoKey[] = []
 
 export const PPA_TIPO_TRABAJO_OPTIONS = (Object.entries(CARGO_KEYS) as [CargoKey, string][])
-  .filter(([key]) => !PPA_TIPO_TRABAJO_EXCLUDED.includes(key))
-  .map(([value, label]) => ({ value, label }))
+  .reduce<Array<{ value: CargoKey; label: string }>>((options, [value, label]) => {
+    if (!PPA_TIPO_TRABAJO_EXCLUDED.includes(value)) options.push({ value, label })
+    return options
+  }, [])
 
 export const PPA_TIPO_TRABAJO_KEYS = PPA_TIPO_TRABAJO_OPTIONS.map((o) => o.value)
 
@@ -91,8 +93,10 @@ export type EstadoPpa =
   | "aprobado_auto"      // aprobado automáticamente, puede iniciar
   | "detenido"           // trabajo detenido, pendiente de revisión del responsable
   | "en_correccion"      // el responsable solicitó corrección
+  | "pendiente_verificacion" // corrección declarada, pendiente de verificar
   | "autorizado"         // autorizado por el responsable tras revisión
   | "rechazado"          // rechazado por el responsable
+  | "cancelado"          // la tarea no se ejecutará; requiere motivo y actor
   | "cerrado"            // caso cerrado
 
 export type PpaDecision = "autorizado" | "rechazado" | "correccion"

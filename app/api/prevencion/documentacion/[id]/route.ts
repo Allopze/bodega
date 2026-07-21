@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordDocumentDownload, recordDocumentView } from "@/lib/services/prevention-documents-library"
+import { canReadDocumentConfidentiality } from "@/lib/services/prevention-documents/utils"
 import { promises as fs } from "node:fs"
 
 interface RouteCtx {
@@ -44,6 +45,9 @@ export async function GET(request: Request, ctx: RouteCtx) {
   if (doc.worksiteId && !canAccessWorksite(session, doc.worksiteId)) {
     return NextResponse.json({ error: "Documento no encontrado" }, { status: 404 })
   }
+  if (!canReadDocumentConfidentiality(doc.confidentiality, session.user.permissions)) {
+    return NextResponse.json({ error: "Documento no encontrado" }, { status: 404 })
+  }
 
   if (!doc.currentVersionId) {
     return NextResponse.json({ error: "El documento no tiene versión vigente" }, { status: 404 })
@@ -54,6 +58,9 @@ export async function GET(request: Request, ctx: RouteCtx) {
     .where(eq(sstDocumentVersions.id, doc.currentVersionId))
     .limit(1)
   if (!version) return NextResponse.json({ error: "Versión no encontrada" }, { status: 404 })
+  if (version.documentId !== doc.id || version.status !== "vigente") {
+    return NextResponse.json({ error: "La publicación vigente es inconsistente" }, { status: 409 })
+  }
 
   const absolutePath = resolveSstDocumentFile(version.filePath)
   if (!absolutePath) return NextResponse.json({ error: "Ruta inválida" }, { status: 400 })

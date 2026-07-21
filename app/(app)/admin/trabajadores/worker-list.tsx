@@ -22,6 +22,11 @@ interface WorkerRow {
   worksiteName: string
   isActive:    boolean
   createdAt:   string
+  sizeTop:     string | null
+  sizeBottom:  string | null
+  sizeShoe:    string | null
+  sizeGloves:  string | null
+  sizeHelmet:  string | null
 }
 
 export function WorkerList({

@@ -11,8 +11,10 @@ export const ESTADO_PPA_LABELS: Record<EstadoPpa, string> = {
   aprobado_auto: "Aprobado automáticamente",
   detenido:      "Trabajo detenido",
   en_correccion: "En corrección",
+  pendiente_verificacion: "Pendiente de verificación",
   autorizado:    "Autorizado",
   rechazado:     "Rechazado",
+  cancelado:     "Cancelado",
   cerrado:       "Cerrado",
 }
 
@@ -29,7 +31,10 @@ export function estadoPpaBadgeVariant(estado: string): BadgeVariant {
       return "danger"
     case "en_correccion":
       return "warning"
+    case "pendiente_verificacion":
+      return "info"
     case "rechazado":
+    case "cancelado":
       return "danger"
     case "cerrado":
       return "outline"
@@ -39,7 +44,7 @@ export function estadoPpaBadgeVariant(estado: string): BadgeVariant {
 }
 
 export const DECISION_PPA_LABELS: Record<PpaDecision, string> = {
-  autorizado: "Autorizó el inicio",
+  autorizado: "Solicitó implementar controles",
   rechazado:  "Rechazó el inicio",
   correccion: "Solicitó corrección",
 }
@@ -51,7 +56,7 @@ export function decisionPpaLabel(decision: string | null | undefined): string {
 
 /** ¿El estado representa un PPA pendiente de acción del responsable? */
 export function isPendienteRevision(estado: string): boolean {
-  return estado === "detenido" || estado === "en_correccion"
+  return estado === "detenido"
 }
 
 /* ── Vista de cara al trabajador (página pública de resultado) ────────────────
@@ -104,6 +109,14 @@ export function workerResultView(estado: string): WorkerResultView {
         canStart: false,
         showReasons: true,
       }
+    case "pendiente_verificacion":
+      return {
+        tone: "warning",
+        title: "Corrección pendiente de verificación",
+        message: "No inicie el trabajo hasta que un verificador confirme los controles y se autorice el reinicio.",
+        canStart: false,
+        showReasons: true,
+      }
     case "rechazado":
       return {
         tone: "danger",
@@ -111,6 +124,14 @@ export function workerResultView(estado: string): WorkerResultView {
         message: "No inicie el trabajo. Comuníquese con su supervisor para más información.",
         canStart: false,
         showReasons: true,
+      }
+    case "cancelado":
+      return {
+        tone: "neutral",
+        title: "Tarea cancelada",
+        message: "La tarea asociada a este PPA no se ejecutará.",
+        canStart: false,
+        showReasons: false,
       }
     case "cerrado":
       return {

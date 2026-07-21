@@ -14,35 +14,56 @@ Guia breve para operar Plataforma Chome en produccion.
 
 ## Backups
 
-### PostgreSQL
-
-Ejecutar en el VPS con `DATABASE_URL` apuntando a produccion:
-
-```bash
-DATABASE_URL="$DATABASE_URL" /srv/bodega/scripts/backup-pg.sh
-```
-
-Cron recomendado:
-
-```cron
-0 3 * * * DATABASE_URL=postgres://... /srv/bodega/scripts/backup-pg.sh >> /var/log/bodega-backup-pg.log 2>&1
-```
-
-### Storage
-
-Configurar primero `rclone config` con un destino externo, por ejemplo S3 o Backblaze.
+Los backups se ejecutan automáticamente dentro de Docker mediante el servicio
+`backup-scheduler`. Una vez activado con el perfil `backup`, el scheduler ejecuta
+el orquestador completo (`backup-orchestrator.sh`) una vez al día a las `BACKUP_HOUR`
+UTC (default: 3 AM).
 
 ```bash
-STORAGE_PATH=/srv/bodega/storage RCLONE_DEST=b2:bodega-prod/storage /srv/bodega/scripts/backup-storage.sh
+# Activar scheduler diario de backups
+docker compose --profile backup up -d backup-scheduler
 ```
 
-Cron recomendado:
+El servicio está programado para ejecutarse a las 3 AM UTC por defecto.
+Para cambiar la hora, configurar `BACKUP_HOUR` en `.env`:
 
-```cron
-30 3 * * * STORAGE_PATH=/srv/bodega/storage RCLONE_DEST=b2:bodega-prod/storage /srv/bodega/scripts/backup-storage.sh >> /var/log/bodega-backup-storage.log 2>&1
+```env
+# Hora UTC del backup diario (0-23)
+BACKUP_HOUR=3
 ```
+
+El scheduler espera a que la app esté healthy, ejecuta `backup-orchestrator.sh`
+y reporta el resultado al endpoint `/api/cron/backup-health`.
+
+### Monitoreo de edad del backup
+
+El endpoint `/api/cron/backup-health` (protegido por `CRON_SECRET`) verifica
+que el último backup exitoso tenga menos de 36 horas. Programar vía cron externo
+(UptimeRobot, healthchecks.io, Vercel Cron):
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<dominio>/api/cron/backup-health
+```
+
+Responde:
+- `{"status":"healthy"}` — último backup OK, <36h
+- `{"status":"critical"}` — sin backup o último >36h
+
+El scheduler interno ya llama a este endpoint después de cada backup.
 
 ## Restauracion
+
+### Probar ciclo completo en desarrollo
+
+El script `scripts/dev-backup-test.sh` ejecuta un backup → validate → restore
+a `bodega_e2e` con conteo de tablas. No requiere Google Drive ni Docker.
+
+```bash
+bash scripts/dev-backup-test.sh
+```
+
+Esto verifica que pg_dump, pg_restore y la validación de estructura del dump
+funcionan correctamente en el entorno local.
 
 ### Restaurar PostgreSQL en staging
 
@@ -138,8 +159,9 @@ confirmación de revisión. No ejecutar `--apply` como parte del deploy automát
 
 | Tarea | Frecuencia |
 |---|---|
-| Verificar que existan backups recientes | Diaria |
-| Probar restauracion en staging | Mensual |
+| Verificar que el backup-scheduler esté corriendo (`docker compose ps`) | Semanal |
+| Verificar endpoint `/api/backups/status` (panel admin) | Diaria |
+| Probar restauracion en staging (`bash scripts/dev-backup-test.sh`) | Mensual |
 | Revisar eventos Sentry abiertos | Semanal |
 | Revisar espacio en disco | Semanal |
 | Revisar uptime mensual | Mensual |

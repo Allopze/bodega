@@ -1,0 +1,1 @@
+ALTER TABLE "prevention_capa_actions" ADD COLUMN "requires_immediate_stop" boolean DEFAULT false NOT NULL;

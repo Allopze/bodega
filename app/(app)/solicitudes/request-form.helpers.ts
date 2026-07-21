@@ -23,7 +23,7 @@ export function blankItem(key = "new-0"): ItemRow {
   return {
     _key: key, productId: null, productNameFree: "", quantity: "1", unitOfMeasure: "unidad",
     urgency: "normal", suggestedSupplierId: "", supplierHint: "", notes: "", attributes: [],
-    isEpp: false, productName: "", showAttrs: false, cotizaciones: [],
+    variantQuantities: {}, workerId: "", workerName: "", isEpp: false, productName: "", showAttrs: false, cotizaciones: [],
     partNumber: "", location: "", equipmentName: "", patent: "", brand: "", model: "",
   }
 }

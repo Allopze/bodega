@@ -7,9 +7,22 @@
 
 import { and, desc, eq, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActionPlan, pdtpActionPlanFollowups, pdtpExecutions } from "@/db/schema"
+import { pdtpActionPlan, pdtpActionPlanFollowups, pdtpExecutions, preventionCapaActions } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { isActionVencida, PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
+import {
+  addCapaEvidenceWithClient,
+  addCapaFollowupWithClient,
+  transitionCapaActionWithClient,
+} from "@/lib/services/prevention-capa"
+
+function capaAccess(userId: string) {
+  return {
+    ctx: { userId },
+    scope: { mode: "all" as const, ids: [] as [] },
+    permissions: ["prevention:capa:manage", "prevention:capa:complete"],
+  }
+}
 
 export type PdtpFollowupInput = {
   actionPlanItemId: string
@@ -28,12 +41,68 @@ export async function addFollowup(input: PdtpFollowupInput, userId: string) {
     const [current] = await tx.select().from(pdtpActionPlan)
       .where(eq(pdtpActionPlan.id, input.actionPlanItemId)).limit(1)
     if (!current) throw new Error("Acción no encontrada.")
+    if (!current.capaActionId) throw new Error("La acción no tiene CAPA vinculada y requiere conciliación.")
+    const [initialCapa] = await tx.select().from(preventionCapaActions)
+      .where(eq(preventionCapaActions.id, current.capaActionId)).limit(1)
+    if (!initialCapa) throw new Error("La acción CAPA vinculada no existe.")
+    let capa = initialCapa
+    const access = capaAccess(userId)
+
+    if (input.evidenciaUrl) {
+      const result = await addCapaEvidenceWithClient(tx, {
+        actionId: capa.id,
+        expectedVersion: capa.version,
+        kind: "document",
+        reference: input.evidenciaUrl,
+        description: input.observacion || "Evidencia documental PDTP",
+      }, access)
+      capa = result.action!
+    }
+    for (const photo of input.evidenciaPhotos ?? []) {
+      const result = await addCapaEvidenceWithClient(tx, {
+        actionId: capa.id,
+        expectedVersion: capa.version,
+        kind: "photo",
+        reference: photo,
+        description: input.observacion || "Evidencia fotográfica PDTP",
+      }, access)
+      capa = result.action!
+    }
+    if (input.observacion?.trim()) {
+      const result = await addCapaFollowupWithClient(tx, {
+        actionId: capa.id,
+        expectedVersion: capa.version,
+        note: input.observacion,
+      }, access)
+      capa = result.action!
+    }
 
     const estadoAnterior = current.estado
     const estadoNuevo = input.estadoNuevo ?? current.estado
 
-    // Si cambió el estado, actualizar la acción
+    // Si cambió el estado, primero ejecuta la transición CAPA estricta.
     if (estadoNuevo !== estadoAnterior) {
+      if (estadoNuevo === "en_proceso") {
+        if (!["pending", "reopened"].includes(capa.status)) throw new Error("La CAPA no puede pasar a en proceso desde su estado actual.")
+        capa = await transitionCapaActionWithClient(tx, {
+          actionId: capa.id, expectedVersion: capa.version, toStatus: "in_progress",
+          reason: input.observacion || "Implementación PDTP iniciada.",
+        }, access)
+      } else if (estadoNuevo === "completado") {
+        if (capa.status === "pending" || capa.status === "reopened") {
+          capa = await transitionCapaActionWithClient(tx, {
+            actionId: capa.id, expectedVersion: capa.version, toStatus: "in_progress",
+            reason: "Implementación PDTP iniciada.",
+          }, access)
+        }
+        if (capa.status !== "in_progress") throw new Error("La CAPA no está en implementación.")
+        capa = await transitionCapaActionWithClient(tx, {
+          actionId: capa.id, expectedVersion: capa.version, toStatus: "pending_verification",
+          reason: input.observacion || "Implementación PDTP declarada.",
+        }, access)
+      } else {
+        throw new Error("Usa los controles dedicados para reabrir, verificar o cancelar una acción.")
+      }
       const set: Record<string, unknown> = {
         estado: estadoNuevo,
         updatedAt: now,
@@ -83,5 +152,8 @@ export async function listVencidas(programId?: string) {
         : sql`true`,
     ))
 
-  return rows.map((r) => r.item).filter((r) => isActionVencida(r.estado, r.plazo))
+  return rows.reduce<typeof pdtpActionPlan.$inferSelect[]>((overdue, row) => {
+    if (isActionVencida(row.item.estado, row.item.plazo)) overdue.push(row.item)
+    return overdue
+  }, [])
 }

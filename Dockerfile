@@ -64,7 +64,12 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    postgresql-client \
+    coreutils \
+    bash \
+    rclone \
+    jq
 
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -84,6 +89,17 @@ COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
 COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
+
+# Backup scripts (orquestador, verificación, storage, scheduler)
+COPY scripts/backup-orchestrator.sh  ./scripts/backup-orchestrator.sh
+COPY scripts/backup-verify.sh       ./scripts/backup-verify.sh
+COPY scripts/backup-storage.sh      ./scripts/backup-storage.sh
+COPY scripts/restore-all.sh         ./scripts/restore-all.sh
+COPY scripts/catastrophic-restore.sh ./scripts/catastrophic-restore.sh
+COPY scripts/backup-scheduler.sh    ./scripts/backup-scheduler.sh
+
+# Make scripts executable
+RUN chmod +x ./scripts/backup-*.sh ./scripts/restore-all.sh ./scripts/catastrophic-restore.sh
 
 # Ensure storage + the Next.js ISR/prerender cache dirs exist and are writable.
 # The standalone output copies .next/static but not a cache dir; at runtime the

@@ -118,15 +118,22 @@ describe("buildPpaExport", () => {
 
     const whereWorksitesMock = vi.fn().mockResolvedValue([{ id: "ws-1", name: "Faena 1" }])
     const fromWorksitesMock = vi.fn().mockReturnValue({ where: whereWorksitesMock })
+    const fromCorrectiveMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) })
+    const fromActorsMock = vi.fn().mockResolvedValue([])
 
     mockSelect
       .mockReturnValueOnce({ from: fromSubmissionsMock })
       .mockReturnValueOnce({ from: fromWorksitesMock })
+      .mockReturnValueOnce({ from: fromCorrectiveMock })
+      .mockReturnValueOnce({ from: fromActorsMock })
 
     const report = await buildPpaExport("all")
 
     expect(limitMock).toHaveBeenCalledWith(10_001)
     expect(report.rows).toHaveLength(10_000)
     expect(report.rowLimitApplied).toBe(true)
+    expect(report.headers).toEqual(expect.arrayContaining([
+      "Verificada por", "Reinicio autorizado", "Cerrado", "Código CAPA", "Evidencias CAPA", "Evaluación eficacia",
+    ]))
   })
 })

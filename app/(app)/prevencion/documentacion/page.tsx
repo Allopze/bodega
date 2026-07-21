@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
@@ -8,24 +9,22 @@ import {
   listDocumentFolders,
   listFolderOptions,
   getFolderBreadcrumbItems,
-  listDocumentCategories,
   getDashboardCounters,
 } from "@/lib/services/prevention-documents-library"
-import { SST_DOCUMENT_CATEGORY_SLUGS, SST_DOCUMENT_STATUSES } from "@/lib/validation/prevention"
 import { db } from "@/db"
 import { sstDocumentVersions, worksites } from "@/db/schema"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { Button } from "@/components/ui/button"
 import { DocumentacionHeaderActions } from "./documentacion-header-actions"
 import { DocumentacionView } from "./documentacion-view"
-import { DocumentacionFilters } from "./documentacion-filters"
 
 export const metadata: Metadata = { title: "Documentación" }
 
 export default async function DocumentacionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; category?: string; status?: string; worksiteId?: string; folder?: string; page?: string }>
+  searchParams: Promise<{ q?: string; folder?: string; page?: string }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -38,33 +37,22 @@ export default async function DocumentacionPage({
   const activeFolderId = params.folder || null
   const page = Math.max(1, Number(params.page) || 1)
   const pageSize = 50
-  const category = SST_DOCUMENT_CATEGORY_SLUGS.includes(params.category as typeof SST_DOCUMENT_CATEGORY_SLUGS[number]) ? params.category as typeof SST_DOCUMENT_CATEGORY_SLUGS[number] : ""
-  const status = SST_DOCUMENT_STATUSES.includes(params.status as typeof SST_DOCUMENT_STATUSES[number]) ? params.status as typeof SST_DOCUMENT_STATUSES[number] : ""
-  const hasGlobalDocumentFilters = Boolean(params.q || category || status || params.worksiteId)
-  const documentFolderId = activeFolderId ?? (hasGlobalDocumentFilters ? undefined : null)
+  const hasSearch = Boolean(params.q)
+  const documentFolderId = activeFolderId ?? (hasSearch ? undefined : null)
 
-  const [folders, folderOptions, breadcrumbs, categories, visibleWorksites, counters, searchResult] = await Promise.all([
-    hasGlobalDocumentFilters && !activeFolderId
+  const [folders, folderOptions, breadcrumbs, counters, searchResult] = await Promise.all([
+    hasSearch && !activeFolderId
       ? Promise.resolve([])
-      : listDocumentFolders({ parentId: activeFolderId, scope, includeArchived: params.status === "archivado" }),
+      : listDocumentFolders({ parentId: activeFolderId, scope }),
     listFolderOptions(scope),
     getFolderBreadcrumbItems(activeFolderId, scope),
-    listDocumentCategories(true),
-    scope.mode === "none"
-      ? Promise.resolve([] as Array<{ id: string; name: string }>)
-      : db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(
-        scope.mode === "some" ? inArray(worksites.id, scope.ids) : undefined,
-      ),
-    getDashboardCounters(scope),
+    getDashboardCounters(scope, session.user.permissions),
     searchDocuments({
       q: params.q ?? "",
       folderId: documentFolderId,
-      categorySlug: category,
-      status,
-      worksiteId: params.worksiteId ?? "",
       page,
       pageSize,
-    }, scope),
+    }, scope, session.user.permissions),
   ])
 
   // Hidratar obras de carpetas y metadatos básicos de la versión vigente.
@@ -100,6 +88,7 @@ export default async function DocumentacionPage({
 
   const canManage = can(session, "prevention:docs:manage")
   const canArchive = can(session, "prevention:docs:archive")
+  const canRegularize = can(session, "prevention:docs:publish")
 
   return (
     <PageContainer width="workbench">
@@ -107,15 +96,16 @@ export default async function DocumentacionPage({
         title="Documentación"
         description="Biblioteca de archivos y carpetas preventivas."
         breadcrumb={<Breadcrumbs items={breadcrumbs} />}
-        actions={canManage ? <DocumentacionHeaderActions currentFolderId={activeFolderId} /> : undefined}
-      />
-      <DocumentacionFilters
-        query={params}
-        categories={categories.map((category) => ({ slug: category.slug, name: category.name }))}
-        worksites={visibleWorksites}
-        total={searchResult.total}
-        page={page}
-        pageSize={pageSize}
+        actions={canManage || canRegularize ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage ? <DocumentacionHeaderActions currentFolderId={activeFolderId} /> : null}
+            {canRegularize ? (
+              <Button asChild size="sm" variant="secondary">
+                <Link href="/prevencion/documentacion/regularizacion">Regularización</Link>
+              </Button>
+            ) : null}
+          </div>
+        ) : undefined}
       />
       <DocumentacionView
         counters={counters}

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockSelect = vi.hoisted(() => vi.fn())
 const mockExecute = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
+const mockInsert = vi.hoisted(() => vi.fn())
 const mockFindFirst = vi.hoisted(() => vi.fn())
 
 vi.mock("@/db", () => ({
@@ -10,6 +11,12 @@ vi.mock("@/db", () => ({
     select: mockSelect,
     execute: mockExecute,
     update: mockUpdate,
+    insert: mockInsert,
+    transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback({
+      select: mockSelect,
+      update: mockUpdate,
+      insert: mockInsert,
+    })),
     query: { ppaSubmissions: { findFirst: mockFindFirst } },
   },
 }))
@@ -152,25 +159,61 @@ function getPpaRow(submission: Record<string, unknown>) {
   const whereMock = vi.fn().mockReturnValue({ limit: limitMock })
   const leftJoinMock = vi.fn().mockReturnValue({ where: whereMock })
   const fromMock = vi.fn().mockReturnValue({ leftJoin: leftJoinMock })
-  mockSelect.mockReturnValue({ from: fromMock })
+  mockSelect.mockReturnValueOnce({ from: fromMock })
 }
 
+function getCorrectiveActionRow(capaActionId: string | null) {
+  const limitMock = vi.fn().mockResolvedValue(capaActionId ? [{ id: "legacy-1", capaActionId }] : [])
+  const whereMock = vi.fn().mockReturnValue({ limit: limitMock })
+  const fromMock = vi.fn().mockReturnValue({ where: whereMock })
+  mockSelect.mockReturnValueOnce({ from: fromMock })
+}
+
+function getCapaRow(status: string | null) {
+  const limitMock = vi.fn().mockResolvedValue(status ? [{ id: "capa-1", status, version: 3 }] : [])
+  const whereMock = vi.fn().mockReturnValue({ limit: limitMock })
+  const fromMock = vi.fn().mockReturnValue({ where: whereMock })
+  mockSelect.mockReturnValueOnce({ from: fromMock })
+}
+
+const closeAccess = { userId: "u1", worksiteIds: "all" as const, permissions: ["ppa:close"] }
+const closeInput = { ppaId: "p1", expectedPpaVersion: 2, comment: "Cierre verificado en terreno" }
+
 describe("closePpa", () => {
-  it("cierra un caso autorizado", async () => {
-    getPpaRow({ id: "p1", worksiteId: "ws1", estado: "autorizado" })
+  it("cierra un caso autorizado con acción verificada", async () => {
+    getPpaRow({ id: "p1", worksiteId: "ws1", estado: "autorizado", version: 2 })
+    getCorrectiveActionRow("capa-1")
+    getCapaRow("verified")
     const closedRow = { id: "p1", worksiteId: "ws1", estado: "cerrado" }
     const returningMock = vi.fn().mockResolvedValue([closedRow])
     const updWhere = vi.fn().mockReturnValue({ returning: returningMock })
     mockUpdate.mockReturnValue({ set: vi.fn().mockReturnValue({ where: updWhere }) })
+    mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
 
-    const res = await closePpa("p1", "all")
+    const res = await closePpa(closeInput, closeAccess)
     expect(res.estado).toBe("cerrado")
     expect(mockUpdate).toHaveBeenCalled()
   })
 
   it("rechaza cerrar un caso aún detenido", async () => {
-    getPpaRow({ id: "p1", worksiteId: "ws1", estado: "detenido" })
-    await expect(closePpa("p1", "all")).rejects.toThrow(/autorizados o rechazados/i)
+    getPpaRow({ id: "p1", worksiteId: "ws1", estado: "detenido", version: 2 })
+    await expect(closePpa(closeInput, closeAccess)).rejects.toThrow(/autorizado.*verificar/i)
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it("rechaza cerrar un caso autorizado con acción pendiente", async () => {
+    getPpaRow({ id: "p1", worksiteId: "ws1", estado: "autorizado", version: 2 })
+    getCorrectiveActionRow("capa-1")
+    getCapaRow("pending")
+
+    await expect(closePpa(closeInput, closeAccess)).rejects.toThrow(/acción correctiva.*verificada/i)
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it("rechaza cerrar un caso rechazado porque el trabajo sigue sin autorización", async () => {
+    getPpaRow({ id: "p1", worksiteId: "ws1", estado: "rechazado", version: 2 })
+
+    await expect(closePpa(closeInput, closeAccess)).rejects.toThrow(/autorizado.*verificar/i)
     expect(mockUpdate).not.toHaveBeenCalled()
   })
 
@@ -180,6 +223,6 @@ describe("closePpa", () => {
     const leftJoinMock = vi.fn().mockReturnValue({ where: whereMock })
     mockSelect.mockReturnValue({ from: vi.fn().mockReturnValue({ leftJoin: leftJoinMock }) })
 
-    await expect(closePpa("nope", "all")).rejects.toThrow(/no encontrado/i)
+    await expect(closePpa({ ...closeInput, ppaId: "nope" }, closeAccess)).rejects.toThrow(/no encontrado/i)
   })
 })

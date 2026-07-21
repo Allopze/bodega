@@ -180,12 +180,12 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         {/* Compliance indicators */}
         {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} />}
 
-        <div className="flex flex-col gap-3 border-y border-[var(--color-border)] py-3">
+        <div className="flex flex-wrap items-center gap-3 border-y border-[var(--color-border)] py-3">
           <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            {worksites.length > 1 && (
-              <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} />
-            )}
+          {worksites.length > 1 && (
+            <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} />
+          )}
+          <div className="ml-auto">
             <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={programId} />
           </div>
         </div>

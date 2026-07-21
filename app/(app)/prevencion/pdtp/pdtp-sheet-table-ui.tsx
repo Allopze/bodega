@@ -1,8 +1,10 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { SegmentedControl } from "@/components/ui/segmented-control"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip } from "@/components/ui/tooltip"
 import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
 
@@ -373,20 +375,23 @@ export function PdtpWorksitePicker({
   programId?: string
   viewMode?: "semana" | "anual"
 }) {
+  const router = useRouter()
   return (
-    <SegmentedControl
-      eyebrow="Faena"
-      ariaLabel="Seleccionar faena"
-      variant="pills"
-      items={worksites.map((worksite) => ({
-        key: worksite.id,
-        label: worksite.name,
-        href: programId
-          ? `${PDT_BASE}/${programId}?hoja=${sheetCode}&faena=${worksite.id}&vista=${viewMode}`
-          : `${PDT_BASE}?hoja=${sheetCode}&faena=${worksite.id}&vista=${viewMode}`,
-        active: worksite.id === current,
-      }))}
-    />
+    <div className="flex items-center gap-1.5">
+      <span className="text-eyebrow shrink-0 text-[var(--color-text-faint)]">Faena</span>
+      <Select
+        value={current}
+        onValueChange={(worksiteId) => {
+          const params = new URLSearchParams({ hoja: sheetCode, faena: worksiteId, vista: viewMode })
+          router.push(programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`)
+        }}
+      >
+        <SelectTrigger className="w-48" aria-label="Seleccionar faena"><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
+        <SelectContent>
+          {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
   )
 }
 
@@ -435,20 +440,24 @@ export function PdtpSheetPicker({
   worksiteId?: string
   viewMode?: "semana" | "anual"
 }) {
+  const router = useRouter()
   return (
-    <SegmentedControl
-      eyebrow="Hoja"
-      ariaLabel="Seleccionar hoja"
-      variant="pills"
-      items={options.map((option) => ({
-        key: option.code,
-        label: option.label,
-        href: programId
-          ? `${PDT_BASE}/${programId}?hoja=${option.code}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${viewMode}`
-          : `${PDT_BASE}?hoja=${option.code}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${viewMode}`,
-        active: option.code === current,
-      }))}
-    />
+    <div className="flex items-center gap-1.5">
+      <span className="text-eyebrow shrink-0 text-[var(--color-text-faint)]">Hoja</span>
+      <Select
+        value={current}
+        onValueChange={(sheetCode) => {
+          const params = new URLSearchParams({ hoja: sheetCode, vista: viewMode })
+          if (worksiteId) params.set("faena", worksiteId)
+          router.push(programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`)
+        }}
+      >
+        <SelectTrigger className="w-64" aria-label="Seleccionar hoja"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {options.map((option) => <SelectItem key={option.code} value={option.code}>{option.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
   )
 }
 

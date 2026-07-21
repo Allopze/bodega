@@ -32,7 +32,8 @@ vi.mock("@/lib/audit", () => ({
 
 import { recordStatusChange } from "@/lib/audit"
 import { restoreDocument, updateDocumentMetadata } from "@/lib/services/prevention-documents-library"
-import { getDashboardCounters, searchDocuments } from "@/lib/services/prevention-documents/search"
+import { getDashboardCounters, getDocumentBundle, searchDocuments } from "@/lib/services/prevention-documents/search"
+import { allowedDocumentConfidentialities, assertGeneralLibraryContentAllowed } from "@/lib/services/prevention-documents/utils"
 
 const ctx = {
   userId: "user-1",
@@ -117,6 +118,25 @@ describe("prevention documents library service", () => {
 })
 
 describe("prevention documents library scope", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockSelectWhere.mockReset()
+  })
+
+  it("uses a public-only default and adds restricted/sensitive access explicitly", () => {
+    expect(allowedDocumentConfidentialities([])).toEqual(["publico_interno"])
+    expect(allowedDocumentConfidentialities(["prevention:docs:manage_restricted"]))
+      .toEqual(["publico_interno", "restringido"])
+    expect(allowedDocumentConfidentialities(["prevention:docs:manage_sensitive"]))
+      .toEqual(["publico_interno", "sensible"])
+  })
+
+  it("rejects clinical and reserved classifications in the general library", () => {
+    expect(() => assertGeneralLibraryContentAllowed({ dataClass: "clinical" })).toThrow(/dominio seguro/i)
+    expect(() => assertGeneralLibraryContentAllowed({ dataClass: "reserved_investigation" })).toThrow(/dominio seguro/i)
+    expect(() => assertGeneralLibraryContentAllowed({ dataClass: "sensitive_preventive" })).not.toThrow()
+  })
+
   it("returns no documents or counters without worksite scope", async () => {
     const noScope = { mode: "none" as const, ids: [] as [] }
 
@@ -129,5 +149,19 @@ describe("prevention documents library scope", () => {
       observed: 0,
       ackPending: 0,
     })
+  })
+
+  it("returns null to the UI for a document from a foreign worksite", async () => {
+    mockSelectWhere.mockResolvedValue([{
+      id: "sdoc-foreign",
+      worksiteId: "ws-2",
+      confidentiality: "publico_interno",
+    }])
+
+    await expect(getDocumentBundle(
+      "sdoc-foreign",
+      { mode: "some", ids: ["ws-1"] },
+      ["prevention:docs:view"],
+    )).resolves.toBeNull()
   })
 })

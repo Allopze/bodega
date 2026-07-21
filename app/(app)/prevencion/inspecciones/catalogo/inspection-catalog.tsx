@@ -1,0 +1,348 @@
+"use client"
+
+import * as React from "react"
+import { ClipboardText } from "@phosphor-icons/react"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { INSPECTION_FREQUENCY_LABELS, INSPECTION_KIND_LABELS } from "@/lib/prevention/inspections"
+import {
+  approveInspectionTemplateAction,
+  createInspectionProgramAction,
+  importInspectionTemplateAction,
+} from "../actions"
+import { Field, useOperation } from "../inspection-form-kit"
+
+interface Coverage {
+  totalItems: number
+  withDanoPotencial: number
+  withRequired: number
+  criticalityInert: boolean
+}
+
+interface TemplateItem {
+  id: string
+  code: string
+  versionLabel: string
+  name: string
+  kind: string
+  status: string
+  authorUserId: string
+  version: number
+  coverage: Coverage
+}
+
+interface ProgramItem {
+  id: string
+  templateName: string
+  worksiteName: string
+  frequency: string
+  nextDueOn: string
+  assigneeName: string | null
+  isActive: boolean
+}
+
+interface ImportableDefinition {
+  code: string
+  title: string
+  version: string
+  sections: number
+  items: number
+  coverage: Coverage
+}
+
+function templateStatusVariant(status: string): "default" | "success" | "outline" {
+  if (status === "approved") return "success"
+  if (status === "superseded") return "outline"
+  return "default"
+}
+
+function coverageLabel(coverage: Coverage) {
+  return `${coverage.withDanoPotencial}/${coverage.totalItems} calibrados`
+}
+
+export function InspectionCatalog({ templates, programs, importable, approvedTemplates, worksites, assignees, currentUserId, canManage, canApprove }: {
+  templates: TemplateItem[]
+  programs: ProgramItem[]
+  importable: ImportableDefinition[]
+  approvedTemplates: { id: string; name: string; versionLabel: string }[]
+  worksites: { id: string; name: string }[]
+  assignees: { id: string; name: string }[]
+  currentUserId: string
+  canManage: boolean
+  canApprove: boolean
+}) {
+  const [tab, setTab] = React.useState<"templates" | "programs">("templates")
+  const importedCodes = new Set(templates.map((item) => item.code))
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1">
+          {([["templates", `Plantillas (${templates.length})`], ["programs", `Programación (${programs.length})`]] as const).map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setTab(value)} aria-pressed={tab === value}
+              className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
+              {label}
+            </button>
+          ))}
+        </div>
+        {canManage && (
+          <div className="flex flex-wrap gap-2">
+            {tab === "templates" && importable.length > 0 && (
+              <ImportTemplateDialog importable={importable.filter((item) => !importedCodes.has(item.code))} />
+            )}
+            {tab === "programs" && approvedTemplates.length > 0 && worksites.length > 0 && (
+              <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} />
+            )}
+          </div>
+        )}
+      </div>
+
+      {tab === "templates" && (templates.length === 0 ? (
+        <EmptyState
+          icon={<ClipboardText size={20} />}
+          title="Aún no hay plantillas incorporadas"
+          description="Incorpora una definición del catálogo SST. Una plantilla sin daño potencial calibrado produce hallazgos siempre de criticidad media."
+          action={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} /> : undefined}
+        />
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Código / nombre</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Versión</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Calibración</TableHead>
+                <TableHead className="text-right">Acción</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {templates.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <span className="font-mono text-xs">{item.code}</span>
+                    <span className="block text-sm">{item.name}</span>
+                  </TableCell>
+                  <TableCell className="text-sm">{INSPECTION_KIND_LABELS[item.kind] ?? item.kind}</TableCell>
+                  <TableCell className="font-mono text-xs">{item.versionLabel}</TableCell>
+                  <TableCell><Badge variant={templateStatusVariant(item.status)}>{item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}</Badge></TableCell>
+                  <TableCell className="text-sm">
+                    {coverageLabel(item.coverage)}
+                    {item.coverage.criticalityInert && <span className="ml-1 text-xs text-[var(--color-warning-ink)]">(sin calibrar)</span>}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {item.status === "draft" && canApprove && item.authorUserId !== currentUserId && (
+                      <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ))}
+
+      {tab === "programs" && (programs.length === 0 ? (
+        <EmptyState
+          icon={<ClipboardText size={20} />}
+          title="Aún no hay programación"
+          description="Una programación declara qué plantilla se ejecuta, en qué faena y con qué frecuencia."
+          action={canManage && approvedTemplates.length > 0 && worksites.length > 0 ? <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} /> : undefined}
+        />
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Plantilla</TableHead>
+                <TableHead>Faena</TableHead>
+                <TableHead>Frecuencia</TableHead>
+                <TableHead>Próxima</TableHead>
+                <TableHead>Asignada a</TableHead>
+                <TableHead>Activa</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {programs.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="text-sm">{item.templateName}</TableCell>
+                  <TableCell className="text-sm">{item.worksiteName}</TableCell>
+                  <TableCell className="text-sm">{INSPECTION_FREQUENCY_LABELS[item.frequency] ?? item.frequency}</TableCell>
+                  <TableCell className="text-sm tabular-nums">{item.nextDueOn}</TableCell>
+                  <TableCell className="text-sm">{item.assigneeName ?? "Sin asignar"}</TableCell>
+                  <TableCell className="text-sm">{item.isActive ? "Sí" : "No"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ── Incorporar plantilla ─────────────────────────────────────────────────── */
+
+function ImportTemplateDialog({ importable }: { importable: ImportableDefinition[] }) {
+  const [open, setOpen] = React.useState(false)
+  const [code, setCode] = React.useState(importable[0]?.code ?? "")
+  const [kind, setKind] = React.useState("inspection")
+  const operation = useOperation()
+  const definition = importable.find((item) => item.code === code)
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const versionLabel = String(form.get("versionLabel") ?? "").trim()
+    operation.run(() => importInspectionTemplateAction({
+      definitionCode: code,
+      kind: form.get("kind"),
+      versionLabel: versionLabel || undefined,
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm">Incorporar plantilla</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Incorporar plantilla</DialogTitle>
+            <DialogDescription>
+              Nace en borrador. Quien la incorpora no puede aprobarla, y sólo puede programarse y ejecutarse una vez aprobada.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Definición del catálogo SST">
+            <Select value={code} onValueChange={setCode}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{importable.map((item) => <SelectItem key={item.code} value={item.code}>{item.title}</SelectItem>)}</SelectContent></Select>
+          </Field>
+          {definition && (
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              {definition.sections} secciones · {definition.items} ítems · {coverageLabel(definition.coverage)}
+              {definition.coverage.criticalityInert && " — ningún hallazgo alcanzará criticidad alta hasta calibrar."}
+            </p>
+          )}
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Tipo">
+              <Select value={kind} onValueChange={setKind}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="kind" value={kind} />
+            </Field>
+            <Field label="Etiqueta de versión" hint={`Vacío = ${definition?.version ?? "versión de la definición"}.`}>
+              <Input name="versionLabel" maxLength={80} />
+            </Field>
+          </div>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Incorporar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Aprobar plantilla ─────────────────────────────────────────────────────── */
+
+function ApproveDialog({ templateId, name, expectedVersion }: { templateId: string; name: string; expectedVersion: number }) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="secondary">Aprobar</Button></DialogTrigger>
+      <DialogContent>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            const form = new FormData(event.currentTarget)
+            operation.run(() => approveInspectionTemplateAction({ templateId, expectedVersion, reason: form.get("reason") }), () => setOpen(false))
+          }}
+          className="space-y-4"
+        >
+          <DialogHeader>
+            <DialogTitle>Aprobar {name}</DialogTitle>
+            <DialogDescription>Congela el contenido y reemplaza la versión aprobada anterior del mismo código.</DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo" hint="Mínimo 10 caracteres."><Textarea name="reason" required minLength={10} maxLength={2000} /></Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Aprobar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Alta de programación ─────────────────────────────────────────────────── */
+
+function ProgramDialog({ templates, worksites, assignees }: {
+  templates: { id: string; name: string; versionLabel: string }[]
+  worksites: { id: string; name: string }[]
+  assignees: { id: string; name: string }[]
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [defaultStart, setDefaultStart] = React.useState("")
+  const [templateId, setTemplateId] = React.useState(templates[0]?.id ?? "")
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const [frequency, setFrequency] = React.useState("monthly")
+  const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const assignee = String(form.get("assignedToUserId") ?? "").trim()
+    const subjectType = String(form.get("subjectType") ?? "").trim()
+    const riskEntryId = String(form.get("riskEntryId") ?? "").trim()
+    operation.run(() => createInspectionProgramAction({
+      templateId: form.get("templateId"),
+      worksiteId: form.get("worksiteId"),
+      frequency: form.get("frequency"),
+      startsOn: form.get("startsOn"),
+      assignedToUserId: assignee || null,
+      subjectType: subjectType || null,
+      riskEntryId: riskEntryId || null,
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultStart(new Date().toISOString().slice(0, 10)); setOpen(value) }}>
+      <DialogTrigger asChild><Button size="sm">Nuevo programa</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Nueva programación</DialogTitle>
+            <DialogDescription>Sólo puede programarse una plantilla aprobada.</DialogDescription>
+          </DialogHeader>
+          <Field label="Plantilla">
+            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
+          </Field>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Faena">
+              <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
+            </Field>
+            <Field label="Frecuencia">
+              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
+            </Field>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Primera fecha">
+              <Input name="startsOn" type="date" required defaultValue={defaultStart} />
+            </Field>
+            <Field label="Asignada a" hint="Opcional.">
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
+            </Field>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
+            <Field label="Peligro MIPER de origen" hint="Opcional."><Input name="riskEntryId" placeholder="ID del peligro en la MIPER" /></Field>
+          </div>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Programar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}

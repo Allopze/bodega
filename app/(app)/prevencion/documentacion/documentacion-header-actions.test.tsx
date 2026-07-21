@@ -2,10 +2,13 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { DocumentacionHeaderActions, uploadFilesAsDocuments } from "./documentacion-header-actions"
+import { DocumentacionHeaderActions } from "./documentacion-header-actions"
+import { uploadFilesAsDocuments } from "./documentacion-upload"
 import { createAndUploadSstDocumentAction, createSstDocumentFolderAction } from "./actions"
 
 const refresh = vi.fn()
+
+Element.prototype.scrollIntoView = vi.fn()
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh }),
@@ -47,6 +50,8 @@ describe("DocumentacionHeaderActions", () => {
 
     expect(screen.getByRole("button", { name: "Subir archivos" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Subir carpeta" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Subir archivos" })).toBeDisabled()
+    expect(screen.getByRole("combobox", { name: "Clasificación del documento" })).toBeInTheDocument()
   })
 
   it("ignores a second upload trigger while the first batch is still running", async () => {
@@ -60,6 +65,8 @@ describe("DocumentacionHeaderActions", () => {
     render(<DocumentacionHeaderActions currentFolderId="sdf-parent" />)
 
     fireEvent.click(screen.getByRole("button", { name: /Subir archivo/i }))
+    fireEvent.click(screen.getByRole("combobox", { name: "Clasificación del documento" }))
+    fireEvent.click(await screen.findByRole("option", { name: "Operacional" }))
     const input = document.querySelector('input[type="file"]:not([webkitdirectory])') as HTMLInputElement
     const file = new File(["contenido"], "procedimiento.pdf", { type: "application/pdf" })
 
@@ -83,13 +90,14 @@ describe("DocumentacionHeaderActions", () => {
       value: "Protocolos/Subcarpeta/procedimiento.pdf",
     })
 
-    await uploadFilesAsDocuments([file], "sdf-current", vi.fn())
+    await uploadFilesAsDocuments([file], "sdf-current", "sensitive_preventive", vi.fn())
 
     expect(createSstDocumentFolderAction).toHaveBeenNthCalledWith(1, { name: "Protocolos", parentId: "sdf-current" })
     expect(createSstDocumentFolderAction).toHaveBeenNthCalledWith(2, { name: "Subcarpeta", parentId: "sdf-root-folder" })
     const formData = vi.mocked(createAndUploadSstDocumentAction).mock.calls[0]?.[0] as FormData
     expect(formData.get("folderId")).toBe("sdf-child-folder")
     expect(formData.get("title")).toBe("procedimiento")
+    expect(formData.get("dataClass")).toBe("sensitive_preventive")
   })
 
   it("does not upload a file into the wrong folder when creating a nested folder fails", async () => {
@@ -102,7 +110,7 @@ describe("DocumentacionHeaderActions", () => {
       value: "Protocolos/procedimiento.pdf",
     })
 
-    await uploadFilesAsDocuments([file], "sdf-current", onProgress)
+    await uploadFilesAsDocuments([file], "sdf-current", "operational", onProgress)
 
     expect(createAndUploadSstDocumentAction).not.toHaveBeenCalled()
     expect(onProgress).toHaveBeenCalledWith(1, 1)

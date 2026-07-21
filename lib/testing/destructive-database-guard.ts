@@ -42,6 +42,10 @@ export function getRedactedDatabaseIdentifier(databaseUrl: string) {
 
 export function getMaintenanceDatabaseUrl(databaseUrl: string) {
   const parsed = parsePostgresUrl(databaseUrl)
+  // WHATWG URL serializes hostless Postgres URLs as `postgres:/database`,
+  // which postgres.js interprets as TCP instead of the local Unix socket.
+  // Preserve the triple slash used by `postgres:///database`.
+  if (!parsed.host) return `${parsed.protocol}///postgres${parsed.search}`
   parsed.pathname = "/postgres"
   return parsed.toString()
 }

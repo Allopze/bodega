@@ -196,7 +196,7 @@ export async function deletePdtpActionPlanItemAction(input: unknown): Promise<Ac
   try {
     const parsed = pdtpActionPlanDeleteSchema.parse(input)
     await assertPdtpActionPlanItemAccess(parsed.itemId, pdtpScopeForSession(guard.session))
-    await deleteActionPlanItem(parsed.itemId)
+    await deleteActionPlanItem(parsed.itemId, guard.session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
@@ -211,7 +211,7 @@ export async function verifyPdtpActionPlanItemAction(input: unknown): Promise<Ac
   try {
     const parsed = pdtpActionPlanVerifySchema.parse(input)
     await assertPdtpActionPlanItemAccess(parsed.itemId, pdtpScopeForSession(session))
-    await verifyActionPlanItem(parsed.itemId, session.user.id, parsed.observacion)
+    await verifyActionPlanItem(parsed.itemId, session.user.id, parsed.observacion, parsed.effectivenessAssessment)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {

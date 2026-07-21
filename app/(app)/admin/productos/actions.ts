@@ -183,6 +183,7 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
           id: nanoid(), productId: id, categoryId: null,
           name: a.name, type: a.type, isRequired: a.isRequired,
           options: a.type === "select" ? normalizeSelectOptions(a.options) : null,
+          sizeFamily: a.sizeFamily || null,
           sortOrder: a.sortOrder,
         }))
       )

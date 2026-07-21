@@ -7,7 +7,7 @@ import { getEvaluation } from "@/lib/services/sst"
 import { db } from "@/db"
 import { sstResponses, sstScheduledFollowups, sstActionPlan, sstWeeklyEvaluations } from "@/db/schema/sst"
 import { workers, worksites } from "@/db/schema/worksites"
-import { eq } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EvaluationDetail } from "./evaluation-detail"
@@ -42,7 +42,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
   const [responses, followups, actionPlan, workerRow, worksiteRow, weeklyEvals] = await Promise.all([
     db.select().from(sstResponses).where(eq(sstResponses.evaluationId, id)),
     db.select().from(sstScheduledFollowups).where(eq(sstScheduledFollowups.evaluationId, id)),
-    db.select().from(sstActionPlan).where(eq(sstActionPlan.evaluationId, id)),
+    db.select().from(sstActionPlan).where(and(eq(sstActionPlan.evaluationId, id), ne(sstActionPlan.estado, "cancelado"))),
     db.select({ firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut })
       .from(workers).where(eq(workers.id, evaluation.workerId)).limit(1),
     db.select({ name: worksites.name })

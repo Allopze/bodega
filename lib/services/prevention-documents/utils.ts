@@ -37,6 +37,14 @@ export interface UploadInput {
 export type DocumentWithCurrent = SstDocument
 export type DocumentVersionRow = SstDocumentVersion
 
+export type GeneralLibraryDataClass =
+  | "operational"
+  | "personal"
+  | "sensitive_preventive"
+  | "clinical"
+  | "reserved_investigation"
+  | "client_secret"
+
 export interface RequestContext {
   userId: string
   userEmail?: string
@@ -113,6 +121,52 @@ export function assertConfidentialityAllowed(
   }
   if (confidentiality === "restringido" && !userPermissions.includes("prevention:docs:manage_restricted")) {
     throw new Error("No tienes permisos para gestionar documentos restringidos.")
+  }
+}
+
+export function allowedDocumentConfidentialities(
+  userPermissions: readonly string[],
+): SstDocumentConfidentiality[] {
+  const allowed: SstDocumentConfidentiality[] = ["publico_interno"]
+  if (userPermissions.includes("prevention:docs:manage_restricted")) allowed.push("restringido")
+  if (userPermissions.includes("prevention:docs:manage_sensitive")) allowed.push("sensible")
+  return allowed
+}
+
+export function canReadDocumentConfidentiality(
+  confidentiality: string,
+  userPermissions: readonly string[],
+): boolean {
+  return allowedDocumentConfidentialities(userPermissions)
+    .includes(confidentiality as SstDocumentConfidentiality)
+}
+
+const PROHIBITED_GENERAL_LIBRARY_PATTERNS = [
+  /\bficha clinica\b/,
+  /\bdiagnostico medico\b/,
+  /\bresultado (de )?examen\b/,
+  /\bresultado (de )?test (de )?(alcohol|droga)/,
+  /\bcaso ley karin\b/,
+  /\bdeclaracion (de )?testigo\b/,
+] as const
+
+export function assertGeneralLibraryContentAllowed(args: {
+  dataClass?: string | null
+  title?: string | null
+  fileName?: string | null
+}) {
+  const dataClass = args.dataClass || "operational"
+  if (dataClass === "clinical" || dataClass === "reserved_investigation") {
+    throw new Error("Los antecedentes clínicos o de investigación reservada deben registrarse en su dominio seguro, no en la biblioteca general.")
+  }
+  const searchable = `${args.title ?? ""} ${args.fileName ?? ""}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+  if (PROHIBITED_GENERAL_LIBRARY_PATTERNS.some((pattern) => pattern.test(searchable))) {
+    throw new Error("El archivo parece contener antecedentes clínicos o de investigación reservada y no puede cargarse en la biblioteca general.")
   }
 }
 

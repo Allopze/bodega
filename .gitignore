@@ -70,3 +70,6 @@ next-env.d.ts
 # tesseract.js descarga el modelo de idioma en el cwd en runtime (~5MB) si no
 # se configura langPath/cachePath — artefacto regenerable, no es código fuente
 *.traineddata
+
+# Planillas y documentos de calibración/auditoría
+/docs/planillas/

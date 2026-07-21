@@ -7,6 +7,7 @@ export interface DocumentBundle {
     categorySlug: string
     status: string
     confidentiality: string
+    dataClass: string
     worksiteId: string | null
     effectiveFrom: string | null
     expiresAt: string | null
@@ -50,6 +51,23 @@ export interface DocumentBundle {
     signature: string
     acknowledgedAt: string
   }>
+  distribution: Array<{
+    id: string
+    versionId: string
+    userId: string | null
+    workerId: string | null
+    assignmentReason: string
+    worksiteId: string | null
+    positionSnapshot: string | null
+    companySnapshot: string | null
+    assignedByUserId: string
+    assignedAt: string
+    dueAt: string | null
+    status: string
+    exemptedByUserId: string | null
+    exemptedAt: string | null
+    exemptionReason: string | null
+  }>
   audit: Array<{
     id: string
     action: string
@@ -69,6 +87,14 @@ export interface DetailViewProps {
   linkEnrichment: Record<string, Record<string, string>>
   canManage: boolean
   canArchive: boolean
+  canSubmitReview: boolean
+  canReview: boolean
+  canApprove: boolean
+  canPublish: boolean
+  canDistribute: boolean
+  canAck: boolean
+  canLink: boolean
+  recipientOptions: Array<{ id: string; name: string; email: string; workerId: string | null }>
   currentUserId: string
   currentUserName: string
 }

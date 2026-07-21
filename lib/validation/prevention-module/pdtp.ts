@@ -247,6 +247,7 @@ export const pdtpActionPlanDeleteSchema = z.object({
 export const pdtpActionPlanVerifySchema = z.object({
   itemId: z.string().min(1, "Acción requerida"),
   observacion: z.string().max(1000).optional(),
+  effectivenessAssessment: z.string().trim().min(5, "Documenta cómo se comprobó la eficacia").max(3000),
 })
 
 export const pdtpActionPlanReopenSchema = z.object({

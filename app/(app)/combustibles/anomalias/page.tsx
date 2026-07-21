@@ -14,6 +14,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { AnomalyCaseCard } from "./anomaly-case-card"
 import { AnomalyDistributionChart } from "./anomaly-charts-lazy"
+import { FilterSelect } from "../filter-select"
 
 export const metadata: Metadata = { title: "Anomalías de combustible" }
 
@@ -85,9 +86,9 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
       />
 
       <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-4">
-        <select name="faena" defaultValue={sp.faena} className="control"><option value="">Todas las faenas</option>{worksitesList.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
-        <select name="estado" defaultValue={sp.estado} className="control"><option value="">Todos los estados</option>{Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-        <select name="severidad" defaultValue={sp.severidad} className="control"><option value="">Todas las severidades</option>{Object.entries(SEVERITY_BADGE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+        <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((w) => ({ value: w.id, label: w.name }))} placeholder="Todas las faenas" />
+        <FilterSelect name="estado" defaultValue={sp.estado} options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Todos los estados" />
+        <FilterSelect name="severidad" defaultValue={sp.severidad} options={Object.entries(SEVERITY_BADGE).map(([k, v]) => ({ value: k, label: v.label }))} placeholder="Todas las severidades" />
         <Button type="submit" variant="secondary">Aplicar</Button>
       </form>
 

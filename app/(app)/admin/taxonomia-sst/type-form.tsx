@@ -16,6 +16,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { toast } from "@/lib/toast"
@@ -52,6 +53,8 @@ const CONFIDENTIALITY_LABEL: Record<string, string> = {
 export function TypeForm({ open, onClose, editType, categorySlug }: TypeFormProps) {
   const isEdit = !!editType
   const initialCategory = editType?.categorySlug ?? categorySlug
+  const [catSlug, setCatSlug] = React.useState(initialCategory)
+  const [defaultConf, setDefaultConf] = React.useState(editType?.defaultConfidentiality ?? "publico_interno")
 
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -88,18 +91,17 @@ export function TypeForm({ open, onClose, editType, categorySlug }: TypeFormProp
             )}
             <FieldGroup className="gap-4">
               <Field label="Categoría" htmlFor="type-cat" required error={state.fieldErrors?.categorySlug?.[0]}>
-                <select
-                  id="type-cat"
-                  name="categorySlug"
-                  defaultValue={initialCategory}
-                  className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)]"
-                >
-                  {SST_DOCUMENT_CATEGORY_SLUGS.map((slug) => (
-                    <option key={slug} value={slug}>
-                      {CATEGORY_LABEL[slug] ?? slug}
-                    </option>
-                  ))}
-                </select>
+                <Select value={catSlug} onValueChange={setCatSlug}>
+                  <SelectTrigger id="type-cat" className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SST_DOCUMENT_CATEGORY_SLUGS.map((slug) => (
+                      <SelectItem key={slug} value={slug}>{CATEGORY_LABEL[slug] ?? slug}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <input type="hidden" name="categorySlug" value={catSlug} />
               </Field>
               <Field label="Código" htmlFor="type-code" required error={state.fieldErrors?.code?.[0]}>
                 <Input
@@ -127,16 +129,17 @@ export function TypeForm({ open, onClose, editType, categorySlug }: TypeFormProp
                 />
               </Field>
               <Field label="Confidencialidad" htmlFor="type-conf" error={state.fieldErrors?.defaultConfidentiality?.[0]}>
-                <select
-                  id="type-conf"
-                  name="defaultConfidentiality"
-                  defaultValue={editType?.defaultConfidentiality ?? "publico_interno"}
-                  className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)]"
-                >
-                  {SST_DOCUMENT_CONFIDENTIALITIES.map((conf) => (
-                    <option key={conf} value={conf}>{CONFIDENTIALITY_LABEL[conf] ?? conf}</option>
-                  ))}
-                </select>
+                <Select value={defaultConf} onValueChange={setDefaultConf}>
+                  <SelectTrigger id="type-conf" className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SST_DOCUMENT_CONFIDENTIALITIES.map((conf) => (
+                      <SelectItem key={conf} value={conf}>{CONFIDENTIALITY_LABEL[conf] ?? conf}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <input type="hidden" name="defaultConfidentiality" value={defaultConf} />
               </Field>
               <Field label="Vigencia por defecto (meses)" htmlFor="type-validity" error={state.fieldErrors?.defaultValidityMonths?.[0]} helper="Opcional — meses hasta vencimiento si aplica.">
                 <Input

@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { useSafeShellHeader } from "@/components/layout/header-context"
 import { usePersistedViewMode } from "@/components/prevention/view-mode-toggle"
 import { buildFolderOptionLabels } from "@/lib/services/prevention-documents/labels"
 import type { DocumentRow, FolderRow, MenuState } from "./documentacion-view.types"
@@ -44,12 +45,13 @@ export function useDocumentacionView(
   folders: FolderRow[],
   folderOptions: { id: string; name: string; parentId: string | null }[],
   currentFolderId: string | null,
-  searchParams: { q?: string; category?: string; status?: string; worksiteId?: string; folder?: string; page?: string },
+  searchParams: { q?: string; folder?: string; page?: string },
   canManage: boolean,
   canArchive: boolean,
   userId: string,
 ) {
   const router = useRouter()
+  const { searchQuery } = useSafeShellHeader()
 
   const [pending, startTransition] = React.useTransition()
   const [moveDocumentId, setMoveDocumentId] = React.useState<string | null>(null)
@@ -258,19 +260,32 @@ export function useDocumentacionView(
 
   const folderHref = React.useCallback((folderId: string | null) => {
     const params = new URLSearchParams()
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (value && key !== "folder" && key !== "page") params.set(key, value)
-    }
+    const activeSearch = searchQuery.trim() || searchParams.q || ""
+    if (activeSearch) params.set("q", activeSearch)
     if (folderId) params.set("folder", folderId)
     const query = params.toString()
     return `/prevencion/documentacion${query ? `?${query}` : ""}`
-  }, [searchParams])
+  }, [searchParams.q, searchQuery])
 
   // ── Filtering ────────────────────────────────────────────────────────────
 
-  const filteredFolders = folders
-  const filteredDocuments = documents
-  const isFiltering = Boolean(searchParams.q || searchParams.category || searchParams.status || searchParams.worksiteId)
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+  const filteredFolders = React.useMemo(() => {
+    if (!normalizedSearch) return folders
+    return folders.filter((folder) => [folder.name, folder.worksiteName].some((value) => value?.toLowerCase().includes(normalizedSearch)))
+  }, [folders, normalizedSearch])
+  const filteredDocuments = React.useMemo(() => {
+    if (!normalizedSearch) return documents
+    return documents.filter((document) => [
+      document.title,
+      document.internalCode,
+      document.fileName,
+      document.worksiteName,
+      document.responsibleName,
+      document.uploaderName,
+    ].some((value) => value?.toLowerCase().includes(normalizedSearch)))
+  }, [documents, normalizedSearch])
+  const isFiltering = Boolean(searchParams.q || normalizedSearch)
   const hasContent = filteredFolders.length > 0 || filteredDocuments.length > 0
 
   // ── Drag handlers ────────────────────────────────────────────────────────

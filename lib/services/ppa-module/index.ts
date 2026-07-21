@@ -5,6 +5,7 @@ export {
   getPpaByToken,
   revokePpaToken,
   listWorksitesForPublicForm,
+  listActiveWorkPermitsForPublicForm,
   findWorkerByRut,
 } from "./evaluaciones"
 
@@ -20,8 +21,13 @@ export {
 export {
   type PpaExportFilters,
   reviewPpa,
+  declarePpaCorrection,
+  verifyPpaCorrection,
+  authorizePpaRestart,
+  cancelPpa,
   closePpa,
   getPpaCorrectiveAction,
+  getPpaStatusHistory,
   buildPpaExport,
   listScopedWorksites,
 } from "./reportes"

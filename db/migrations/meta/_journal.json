@@ -442,6 +442,237 @@
       "when": 1784177144156,
       "tag": "0062_brainy_shooting_star",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1784417241850,
+      "tag": "0063_dapper_loki",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1784418784070,
+      "tag": "0064_stale_nextwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1784419668997,
+      "tag": "0065_colorful_vulcan",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1784420763518,
+      "tag": "0066_fantastic_archangel",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1784421595503,
+      "tag": "0067_unique_karnak",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1784422222238,
+      "tag": "0068_next_masked_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1784423994850,
+      "tag": "0069_premium_mad_thinker",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1784426245287,
+      "tag": "0070_high_exodus",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1784427366633,
+      "tag": "0071_abandoned_mandroid",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1784427437320,
+      "tag": "0072_far_the_watchers",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1784429854707,
+      "tag": "0073_abandoned_menace",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1784430938506,
+      "tag": "0074_real_blockbuster",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1784432031450,
+      "tag": "0075_shiny_havok",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1784432872983,
+      "tag": "0076_equal_menace",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1784433016403,
+      "tag": "0077_tired_solo",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1784440569505,
+      "tag": "0078_fearless_overlord",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1784472383961,
+      "tag": "0079_polite_morlun",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1784474256115,
+      "tag": "0080_furry_bucky",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1784482247249,
+      "tag": "0081_condemned_logan",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1784483389717,
+      "tag": "0082_fearless_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1784491894773,
+      "tag": "0083_closed_maverick",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1784493619274,
+      "tag": "0084_confused_switch",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1784504533428,
+      "tag": "0085_closed_black_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1784514210074,
+      "tag": "0086_cold_revanche",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1784515848175,
+      "tag": "0087_nasty_venom",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1784564980860,
+      "tag": "0088_warm_lilandra",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1784565167332,
+      "tag": "0089_acoustic_kinsey_walden",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1784565260402,
+      "tag": "0090_vengeful_gladiator",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1784565824660,
+      "tag": "0091_low_alice",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1784566144154,
+      "tag": "0092_tranquil_ender_wiggin",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1784580046547,
+      "tag": "0093_whole_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1784581608015,
+      "tag": "0094_melted_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1784583995194,
+      "tag": "0095_faithful_colleen_wing",
+      "breakpoints": true
     }
   ]
 }

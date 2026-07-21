@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useState } from "react"
+import { useActionState, useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { CheckCircle, WarningCircle, XCircle, CaretDown, CaretUp, Info } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
@@ -113,12 +113,14 @@ const FIELD_LABELS: Record<string, string> = {
   categoryName: "Categoria", attributes: "Atributos",
 }
 
+function effectiveDecision(row: ReviewRow, localDecisions: Record<string, string>): string {
+  return localDecisions[row.id] ?? row.decision
+}
+
 export function EppImportReview({ batch }: { batch: { id: string; status: string; fileName: string; rows: ReviewRow[] } }) {
   const router = useRouter()
-  const blocked = batch.rows.filter((row) => row.decision === "blocked").length
-  const pending = batch.rows.filter((row) => row.decision === "pending").length
   const [filter, setFilter] = useState<"all" | "blocking" | "review" | "ready">("all")
-  const visibleRows = batch.rows.filter((row) => filter === "all" || (filter === "blocking" && row.decision === "blocked") || (filter === "review" && (row.decision === "pending" || row.severity === "warning")) || (filter === "ready" && row.decision === "create"))
+  const [localDecisions, setLocalDecisions] = useState<Record<string, string>>({})
   const [confirmState, confirmAction] = useActionState(confirmEppImportBatchAction, INITIAL_STATE)
   const [cancelState, cancelAction] = useActionState(cancelEppImportBatchAction, INITIAL_STATE)
 
@@ -137,6 +139,25 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
     }
     if (Object.keys(next).length > 0) setEdits((prev) => ({ ...prev, ...next }))
   }, [batch.rows, edits])
+
+  // Compute counters using local decisions that override batch decisions
+  const blocked = useMemo(() => {
+    return batch.rows.filter((row) => effectiveDecision(row, localDecisions) === "blocked").length
+  }, [batch.rows, localDecisions])
+  const pending = useMemo(() => {
+    return batch.rows.filter((row) => effectiveDecision(row, localDecisions) === "pending").length
+  }, [batch.rows, localDecisions])
+
+  const visibleRows = useMemo(() => {
+    return batch.rows.filter((row) => {
+      const decision = effectiveDecision(row, localDecisions)
+      if (filter === "all") return true
+      if (filter === "blocking") return decision === "blocked"
+      if (filter === "review") return decision === "pending"
+      if (filter === "ready") return decision === "create"
+      return true
+    })
+  }, [batch.rows, filter, localDecisions])
 
   const fieldsToFix = useMemo(() => {
     let count = 0
@@ -160,6 +181,10 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
     if (cancelState.ok) { toast.success(cancelState.message); router.push("/admin/productos") }
     else toast.error(cancelState.message)
   }, [cancelState, router])
+
+  const handleDecisionSaved = useCallback((rowId: string, newDecision: string) => {
+    setLocalDecisions((prev) => ({ ...prev, [rowId]: newDecision }))
+  }, [])
 
   const toggleExpand = (rowId: string) => {
     setExpandedRows((prev) => {
@@ -245,6 +270,7 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
                   hasMatches={hasMatches}
                   isExpanded={isExpanded}
                   recommendedAction={recommendedAction}
+                  onDecisionSaved={handleDecisionSaved}
                   onToggleExpand={() => toggleExpand(row.id)}
                   onUpdate={(field, value) => updateEdit(row.id, field, value)}
                 />
@@ -266,7 +292,8 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
         </div>
         <form action={confirmAction}>
           <input type="hidden" name="batchId" value={batch.id} />
-          <Button type="submit" disabled={Boolean(blocked || pending) || batch.status !== "review"}>Confirmar importación</Button>
+          {/* La validación real del estado se hace en el servidor (confirmEppImportBatch), el cliente solo chequea filas pendientes */}
+          <Button type="submit" disabled={Boolean(blocked || pending)}>Confirmar importación</Button>
         </form>
       </div>
     </div>
@@ -274,7 +301,7 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
 }
 
 function DecisionRow({
-  batchId, row, edit, normalized, blockingFields, isBlocked, hasMatches, isExpanded, recommendedAction, onToggleExpand, onUpdate,
+  batchId, row, edit, normalized, blockingFields, isBlocked, hasMatches, isExpanded, recommendedAction, onDecisionSaved, onToggleExpand, onUpdate,
 }: {
   batchId: string
   row: ReviewRow
@@ -285,18 +312,19 @@ function DecisionRow({
   hasMatches: boolean
   isExpanded: boolean
   recommendedAction: "create" | "update" | null
+  onDecisionSaved: (rowId: string, newDecision: string) => void
   onToggleExpand: () => void
   onUpdate: (field: keyof EditableNormalized, value: string | null) => void
 }) {
-  const router = useRouter()
   const [state, action] = useActionState(reviewEppImportRowAction, INITIAL_STATE)
   const [localDecision, setLocalDecision] = useState<string>(row.decision === "blocked" || row.decision === "pending" ? (recommendedAction ?? "skip") : row.decision)
 
   useEffect(() => {
     if (!state.message) return
-    if (state.ok) { toast.success(state.message); router.refresh() }
+    if (state.ok) { toast.success(state.message); onDecisionSaved(row.id, localDecision) }
     else toast.error(state.message)
-  }, [router, state])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
 
   const original = useMemo(() => JSON.parse(row.originalJson) as Record<string, string>, [row.originalJson])
   const updatedJson = useMemo(() => toNormalizedJson(edit, normalized), [edit, normalized])

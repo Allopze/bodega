@@ -22,7 +22,7 @@ export default async function PapeleraPage() {
 
   const [archivedFolders, archivedDocs] = await Promise.all([
     listArchivedDocumentFolders(scope),
-    searchDocuments({ status: "archivado", page: 1, pageSize: 200 }, scope),
+    searchDocuments({ status: "archivado", page: 1, pageSize: 200 }, scope, session.user.permissions),
   ])
 
   const worksiteIds = Array.from(new Set([

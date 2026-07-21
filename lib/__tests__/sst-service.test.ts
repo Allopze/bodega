@@ -11,6 +11,7 @@ const mockDelete = vi.hoisted(() => vi.fn())
 const mockTransaction = vi.hoisted(() => vi.fn())
 const mockGetDefinition = vi.hoisted(() => vi.fn())
 const mockGetApplicableItems = vi.hoisted(() => vi.fn())
+const mockCreateCapa = vi.hoisted(() => vi.fn())
 
 vi.mock("@/db", () => ({
   db: {
@@ -26,6 +27,11 @@ vi.mock("@/lib/sst/definitions/index", () => ({
 }))
 vi.mock("@/lib/sst/checklist", () => ({
   getApplicableItems: mockGetApplicableItems,
+}))
+vi.mock("@/lib/services/prevention-capa", () => ({
+  createCapaActionWithClient: mockCreateCapa,
+  updateCapaActionWithClient: vi.fn(),
+  transitionCapaActionWithClient: vi.fn(),
 }))
 vi.mock("@/lib/id", () => ({ nanoid: vi.fn(() => "sst-nanoid-123") }))
 vi.mock("@/lib/sst/date", () => ({ addDays: vi.fn((_d: string, n: number) => `2026-02-${1 + n}`) }))
@@ -250,7 +256,15 @@ describe("getFollowups", () => {
 })
 
 describe("saveActionPlanItem", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockCreateCapa.mockResolvedValue({ id: "capa-test", version: 1, status: "pending" })
+    mockTransaction.mockImplementation(async (callback) => callback({
+      select: mockSelect,
+      insert: mockInsert,
+      update: mockUpdate,
+    }))
+  })
 
   it("allows adding an action-plan item if evaluation is closed", async () => {
     // getEvaluation finds a closed evaluation in scope
@@ -259,6 +273,11 @@ describe("saveActionPlanItem", () => {
         where: vi.fn().mockReturnValue({
           limit: vi.fn().mockResolvedValue([{ id: "eval-1", worksiteId: "ws-1", estado: "cerrado" }]),
         }),
+      }),
+    })
+    mockSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }),
       }),
     })
     const returning = vi.fn().mockResolvedValue([{ id: "plan-1", evaluationId: "eval-1", n: 1 }])
@@ -270,7 +289,7 @@ describe("saveActionPlanItem", () => {
     const result = await saveActionPlanItem({
       evaluationId: "eval-1", n: 1, hallazgo: "test", accion: "fix",
       responsable: "admin", plazo: "2026-01-01", estado: "pendiente",
-    }, "all")
+    }, "all", "user-1")
 
     expect(result.id).toBe("plan-1")
   })
@@ -287,6 +306,6 @@ describe("deleteActionPlanItem", () => {
         }),
       }),
     })
-    await expect(deleteActionPlanItem("nonexistent", "all")).rejects.toThrow("Ítem del plan de acción no encontrado")
+    await expect(deleteActionPlanItem("nonexistent", "all", "user-1")).rejects.toThrow("Ítem del plan de acción no encontrado")
   })
 })

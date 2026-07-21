@@ -26,6 +26,11 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
     position:   formData.get("position") || undefined,
     worksiteId: formData.get("worksiteId"),
     isActive:   formData.get("isActive") === "on",
+    sizeTop:    formData.get("sizeTop") || undefined,
+    sizeBottom: formData.get("sizeBottom") || undefined,
+    sizeShoe:   formData.get("sizeShoe") || undefined,
+    sizeGloves: formData.get("sizeGloves") || undefined,
+    sizeHelmet: formData.get("sizeHelmet") || undefined,
   })
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
@@ -48,6 +53,11 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
     position:   d.position  ?? null,
     worksiteId: d.worksiteId,
     isActive:   d.isActive,
+    sizeTop:    d.sizeTop || null,
+    sizeBottom: d.sizeBottom || null,
+    sizeShoe:   d.sizeShoe || null,
+    sizeGloves: d.sizeGloves || null,
+    sizeHelmet: d.sizeHelmet || null,
   })
 
   await recordAudit({
@@ -76,6 +86,11 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     position:   formData.get("position") || undefined,
     worksiteId: formData.get("worksiteId"),
     isActive:   formData.get("isActive") === "on",
+    sizeTop:    formData.get("sizeTop") || undefined,
+    sizeBottom: formData.get("sizeBottom") || undefined,
+    sizeShoe:   formData.get("sizeShoe") || undefined,
+    sizeGloves: formData.get("sizeGloves") || undefined,
+    sizeHelmet: formData.get("sizeHelmet") || undefined,
   })
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
@@ -99,6 +114,11 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     position:   d.position ?? null,
     worksiteId: d.worksiteId,
     isActive:   d.isActive,
+    sizeTop:    d.sizeTop || null,
+    sizeBottom: d.sizeBottom || null,
+    sizeShoe:   d.sizeShoe || null,
+    sizeGloves: d.sizeGloves || null,
+    sizeHelmet: d.sizeHelmet || null,
   }).where(eq(workers.id, d.id))
 
   await recordAudit({

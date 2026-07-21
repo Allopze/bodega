@@ -11,6 +11,7 @@ import { CategoryPanel, type CategoryForEdit } from "./category-panel"
 import { ProductForm } from "./product-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { formatCLP } from "@/lib/utils"
@@ -215,18 +216,17 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         <TableCell className="text-sm text-[var(--color-text-muted)]">
           <span className="block truncate" title={p.categoryName}>{p.categoryName}</span>
         </TableCell>
-        <TableCell className="text-sm text-[var(--color-text-muted)]">
-          {family.variants.length === 1 ? (p.attributes.length > 0 ? formatProductVariant(p.attributes, p.sku) : "—") : (
-            <select
-              aria-label={`Características de ${family.name}`}
-              value={p.id}
-              onChange={(event) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: event.target.value }))}
-              className="h-8 max-w-52 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-            >
-              {family.variants.map((variant) => (
-                <option key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</option>
-              ))}
-            </select>
+        <TableCell className="text-sm text-[var(--color-text-muted)]">            {family.variants.length === 1 ? (p.attributes.length > 0 ? formatProductVariant(p.attributes, p.sku) : "—") : (
+            <Select value={p.id} onValueChange={(v) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: v }))}>
+              <SelectTrigger aria-label={`Características de ${family.name}`} className="h-8 max-w-52">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {family.variants.map((variant) => (
+                  <SelectItem key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </TableCell>
         <TableCellNum>
@@ -306,16 +306,16 @@ export function ProductList({ products, categories, allSuppliers, units, templat
             <dt className="text-[var(--color-text-subtle)]">Características</dt>
             <dd className="text-[var(--color-text-muted)]">
               {family.variants.length === 1 ? (p.attributes.length > 0 ? formatProductVariant(p.attributes, p.sku) : "—") : (
-                <select
-                  aria-label={`Características de ${family.name}`}
-                  value={p.id}
-                  onChange={(event) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: event.target.value }))}
-                  className="mt-1 h-8 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
-                >
-                  {family.variants.map((variant) => (
-                    <option key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</option>
-                  ))}
-                </select>
+                <Select value={p.id} onValueChange={(v) => setSelectedVariantByFamily((current) => ({ ...current, [family.id]: v }))}>
+                  <SelectTrigger aria-label={`Características de ${family.name}`} className="mt-1 h-8 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {family.variants.map((variant) => (
+                      <SelectItem key={variant.id} value={variant.id}>{formatProductVariant(variant.attributes, variant.sku)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
             </dd>
           </div>

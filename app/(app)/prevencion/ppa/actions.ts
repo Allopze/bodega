@@ -8,16 +8,50 @@ import {
   countPpa,
   getPpa,
   reviewPpa,
+  declarePpaCorrection,
+  verifyPpaCorrection,
+  authorizePpaRestart,
+  cancelPpa,
   closePpa,
+  getPpaCorrectiveAction,
   revokePpaToken,
   getPpaStats,
   type PpaRow,
   type PpaStats,
 } from "@/lib/services/ppa"
-import { ppaReviewSchema, type ActionState, type PpaReviewInput } from "@/lib/validation/ppa"
+import {
+  ppaReviewSchema,
+  type ActionState,
+  type PpaAuthorizeRestartInput,
+  type PpaCancelInput,
+  type PpaCloseInput,
+  type PpaCorrectionDeclareInput,
+  type PpaReviewInput,
+  type PpaVerificationInput,
+} from "@/lib/validation/ppa"
 import { scopeToIds } from "@/lib/ppa/utils"
+import { addCapaEvidence } from "@/lib/services/prevention-capa"
 
 const REVALIDATE = "/prevencion/ppa"
+
+function operationAccess(session: {
+  user: { id: string; permissions: string[] }
+}) {
+  return {
+    userId: session.user.id,
+    worksiteIds: scopeToIds(resolveWorksiteScope(session as Parameters<typeof resolveWorksiteScope>[0])),
+    permissions: session.user.permissions,
+  }
+}
+
+function refreshPpa(id: string) {
+  revalidatePath(REVALIDATE)
+  revalidatePath(`${REVALIDATE}/${id}`)
+}
+
+function failure(error: unknown, fallback: string): ActionState {
+  return { ok: false, message: error instanceof Error ? error.message : fallback }
+}
 
 export interface PpaListClientFilters {
   estado?: string
@@ -90,19 +124,103 @@ export async function reviewPpaAction(
   }
 }
 
-export async function closePpaAction(id: string): Promise<ActionState> {
-  const { session, error } = await guardPermission("ppa:review")
+export async function declarePpaCorrectionAction(input: PpaCorrectionDeclareInput): Promise<ActionState> {
+  const { session, error } = await guardPermission("ppa:correct")
   if (error) return error
-  if (!id) return { ok: false, message: "Falta el identificador del PPA." }
-
-  const worksiteIds = scopeToIds(resolveWorksiteScope(session))
   try {
-    await closePpa(id, worksiteIds)
-    revalidatePath(REVALIDATE)
-    revalidatePath(`${REVALIDATE}/${id}`)
+    const updated = await declarePpaCorrection(input, operationAccess(session))
+    refreshPpa(updated.id)
+    return { ok: true, message: "Controles enviados a verificación" }
+  } catch (e) {
+    return failure(e, "Error al declarar la implementación")
+  }
+}
+
+export async function verifyPpaCorrectionAction(input: PpaVerificationInput): Promise<ActionState> {
+  const { session, error } = await guardPermission("ppa:verify")
+  if (error) return error
+  try {
+    const updated = await verifyPpaCorrection(input, operationAccess(session))
+    refreshPpa(updated.id)
+    return { ok: true, message: input.accepted ? "Corrección verificada" : "Corrección devuelta para ajuste" }
+  } catch (e) {
+    return failure(e, "Error al verificar la corrección")
+  }
+}
+
+export async function authorizePpaRestartAction(input: PpaAuthorizeRestartInput): Promise<ActionState> {
+  const { session, error } = await guardPermission("ppa:authorize_restart")
+  if (error) return error
+  try {
+    const updated = await authorizePpaRestart(input, operationAccess(session))
+    refreshPpa(updated.id)
+    return { ok: true, message: "Reinicio de la tarea autorizado" }
+  } catch (e) {
+    return failure(e, "Error al autorizar el reinicio")
+  }
+}
+
+export async function cancelPpaAction(input: PpaCancelInput): Promise<ActionState> {
+  const { session, error } = await guardPermission("ppa:cancel")
+  if (error) return error
+  try {
+    const updated = await cancelPpa(input, operationAccess(session))
+    refreshPpa(updated.id)
+    return { ok: true, message: "PPA cancelado con trazabilidad" }
+  } catch (e) {
+    return failure(e, "Error al cancelar el PPA")
+  }
+}
+
+export async function addPpaEvidenceAction(input: {
+  ppaId: string
+  actionId: string
+  expectedCapaVersion: number
+  kind: "document" | "photo" | "url"
+  reference: string
+  description?: string
+}): Promise<ActionState> {
+  const { session, error } = await guardPermission("ppa:correct")
+  if (error) return error
+  const scope = resolveWorksiteScope(session)
+  const worksiteIds = scopeToIds(scope)
+  try {
+    const [ppa, linkedAction] = await Promise.all([
+      getPpa(input.ppaId, worksiteIds),
+      getPpaCorrectiveAction(input.ppaId, worksiteIds),
+    ])
+    if (!ppa || !linkedAction?.capaActionId || linkedAction.capaActionId !== input.actionId) {
+      return { ok: false, message: "PPA no encontrado o fuera de tu alcance." }
+    }
+    await addCapaEvidence({
+      input: {
+        actionId: input.actionId,
+        expectedVersion: input.expectedCapaVersion,
+        kind: input.kind,
+        reference: input.reference,
+        description: input.description,
+      },
+      ctx: { userId: session.user.id },
+      scope,
+      permissions: session.user.permissions,
+    })
+    refreshPpa(input.ppaId)
+    return { ok: true, message: "Evidencia vinculada a la acción correctiva" }
+  } catch (e) {
+    return failure(e, "Error al agregar la evidencia")
+  }
+}
+
+export async function closePpaAction(input: PpaCloseInput): Promise<ActionState> {
+  const { session, error } = await guardPermission("ppa:close")
+  if (error) return error
+
+  try {
+    const updated = await closePpa(input, operationAccess(session))
+    refreshPpa(updated.id)
     return { ok: true, message: "Caso cerrado" }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al cerrar el caso" }
+    return failure(e, "Error al cerrar el caso")
   }
 }
 
@@ -124,7 +242,8 @@ export async function revokePpaTokenAction(
 ): Promise<ActionState> {
   const { session, error } = await guardPermission("ppa:manage")
   if (error) return error
-  const id = formData.get("id") as string
+  const rawId = formData.get("id")
+  const id = typeof rawId === "string" ? rawId : ""
   if (!id) return { ok: false, message: "Falta el identificador del PPA." }
 
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))

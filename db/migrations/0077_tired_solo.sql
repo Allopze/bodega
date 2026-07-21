@@ -1,0 +1,2 @@
+ALTER TABLE "prevention_legal_applicabilities" DROP CONSTRAINT "prevention_legal_applicabilities_status_valid";--> statement-breakpoint
+ALTER TABLE "prevention_legal_applicabilities" ADD CONSTRAINT "prevention_legal_applicabilities_status_valid" CHECK ("prevention_legal_applicabilities"."applicability_status" IN ('pending', 'proposed_applicable', 'proposed_not_applicable', 'applicable', 'not_applicable'));

@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -162,6 +162,14 @@ export default async function AdminPage() {
       href:        "/admin/modulos",
       icon:        ToggleLeft,
       permission:  "admin:module_management",
+      group:       "gobierno",
+    },
+    {
+      title:       "Respaldos",
+      description: "Monitorear, ejecutar y verificar respaldos automáticos del sistema.",
+      href:        "/admin/backups",
+      icon:        HardDrives,
+      permission:  "admin:backups",
       group:       "gobierno",
     },
     {

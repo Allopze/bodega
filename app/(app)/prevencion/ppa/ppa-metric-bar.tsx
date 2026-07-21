@@ -85,7 +85,14 @@ function StatCell({ cell }: { cell: Cell }) {
             {cell.value}
           </span>
           {typeof cell.progress === "number" && (
-            <div className="mb-1.5 h-1 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+            <div
+              role="progressbar"
+              aria-label={cell.label}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.min(100, Math.max(0, cell.progress))}
+              className="mb-1.5 h-1 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]"
+            >
               <div
                 className="h-full rounded-full bg-[var(--color-primary)] transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-out)]"
                 style={{ width: `${Math.min(100, Math.max(0, cell.progress))}%` }}

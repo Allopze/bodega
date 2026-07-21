@@ -1,5 +1,6 @@
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import { db } from "@/db"
+import { nanoid } from "@/lib/id"
 import {
   pdtpActivities,
   pdtpActivitySchedule,
@@ -7,6 +8,7 @@ import {
   pdtpResponsibleCatalog,
   pdtpSheetActivities,
   pdtpSheets,
+  preventionPdtpSourceLinks,
   users as schemaUsers,
 } from "@/db/schema"
 import { SHEET_META } from "./constants"
@@ -54,15 +56,15 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
           .where(and(
             or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, input.copySheetsFromProgramId)),
           ))
-        for (const sheet of sourceSheets) {
-          await tx.insert(pdtpSheets).values({
+        if (sourceSheets.length > 0) {
+          await tx.insert(pdtpSheets).values(sourceSheets.map((sheet) => ({
             id: `${programId}-${sheet.code}`,
             code: sheet.code,
             programId,
             label: sheet.label,
             area: sheet.area,
             defaultScopeRoles: sheet.defaultScopeRoles,
-          }).onConflictDoNothing()
+          }))).onConflictDoNothing()
         }
 
         // "Duplicar programa" es estructura completa, no solo hojas: copia
@@ -74,54 +76,74 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
           .orderBy(pdtpActivities.n)
         const activityIdMap = new Map<string, string>()
         const activityNMap = new Map<string, number>()
+        const copiedActivities: Array<typeof pdtpActivities.$inferInsert> = []
 
         for (const activity of sourceActivities) {
           const newActivityId = pdtpActivityId(programId, activity.n)
           activityIdMap.set(activity.id, newActivityId)
           activityNMap.set(activity.id, activity.n)
-          await tx.insert(pdtpActivities).values({
+          copiedActivities.push({
             id: newActivityId, programId, n: activity.n, objectiveOrder: activity.objectiveOrder,
             objective: activity.objective, activity: activity.activity, program: activity.program,
             responsibleSlugs: activity.responsibleSlugs, responsibleDisplay: activity.responsibleDisplay,
             sourceSheetRow: activity.sourceSheetRow, notes: activity.notes, createdAt: now, updatedAt: now,
           })
         }
+        if (copiedActivities.length > 0) await tx.insert(pdtpActivities).values(copiedActivities)
 
         if (activityIdMap.size > 0) {
           const sourceActivityIds = [...activityIdMap.keys()]
-          const [scheduleRows, membershipRows] = await Promise.all([
+          const [scheduleRows, membershipRows, sourceLinks] = await Promise.all([
             tx.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, sourceActivityIds)),
             tx.select().from(pdtpSheetActivities).where(inArray(pdtpSheetActivities.activityId, sourceActivityIds)),
+            tx.select().from(preventionPdtpSourceLinks).where(and(inArray(preventionPdtpSourceLinks.activityId, sourceActivityIds), eq(preventionPdtpSourceLinks.isActive, true))),
           ])
+          const copiedSchedule: Array<typeof pdtpActivitySchedule.$inferInsert> = []
           for (const cell of scheduleRows) {
             const newActivityId = activityIdMap.get(cell.activityId)!
-            await tx.insert(pdtpActivitySchedule).values({
+            copiedSchedule.push({
               id: pdtpScheduleId(newActivityId, input.year, cell.month, cell.week), activityId: newActivityId,
               year: input.year, month: cell.month, week: cell.week, plannedQuantity: cell.plannedQuantity, sourceColumn: cell.sourceColumn,
-            }).onConflictDoNothing()
+            })
           }
+          if (copiedSchedule.length > 0) await tx.insert(pdtpActivitySchedule).values(copiedSchedule).onConflictDoNothing()
+
+          const copiedMemberships: Array<typeof pdtpSheetActivities.$inferInsert> = []
           for (const membership of membershipRows) {
             const newActivityId = activityIdMap.get(membership.activityId)!
             const activityN = activityNMap.get(membership.activityId)!
             const newSheetId = `${programId}-${membership.sheetCode}`
-            await tx.insert(pdtpSheetActivities).values({
+            copiedMemberships.push({
               id: pdtpSheetActivityId(programId, membership.sheetCode, activityN),
               sheetId: newSheetId, sheetCode: membership.sheetCode, activityId: newActivityId,
               sheetRow: membership.sheetRow, displayOrder: membership.displayOrder,
-            }).onConflictDoNothing()
+            })
+          }
+          if (copiedMemberships.length > 0) await tx.insert(pdtpSheetActivities).values(copiedMemberships).onConflictDoNothing()
+
+          if (sourceLinks.length > 0) {
+            await tx.insert(preventionPdtpSourceLinks).values(sourceLinks.map((link) => ({
+              id: `pdtpsource-${nanoid()}`,
+              activityId: activityIdMap.get(link.activityId)!,
+              worksiteId: link.worksiteId,
+              sourceType: link.sourceType,
+              sourceId: link.sourceId,
+              sourceVersionSnapshot: link.sourceVersionSnapshot,
+              justification: `Copiado desde ${input.copySheetsFromProgramId}: ${link.justification}`,
+              createdByUserId: input.userId,
+              createdAt: now,
+            }))).onConflictDoNothing()
           }
         }
       } else {
-        for (const [code, meta] of Object.entries(SHEET_META) as Array<[PdtpSheetCode, typeof SHEET_META[PdtpSheetCode]]>) {
-          await tx.insert(pdtpSheets).values({
+        await tx.insert(pdtpSheets).values((Object.entries(SHEET_META) as Array<[PdtpSheetCode, typeof SHEET_META[PdtpSheetCode]]>).map(([code, meta]) => ({
             id: `${programId}-${code}`,
             code,
             programId,
             label: meta.label,
             area: meta.area,
             defaultScopeRoles: meta.defaultScopeRoles,
-          })
-        }
+          })))
       }
 
       await addPdtpChangeLogEntry(programId, version, input.userId, "lifecycle", null, { status: "draft" }, "Programa creado.", tx)
@@ -208,33 +230,51 @@ export async function importPdtpFromExcel(input: PdtpProgramImportInput) {
     // `pdtp_activities` limpia schedule + sheet_activities.
     await tx.delete(pdtpActivities).where(eq(pdtpActivities.programId, input.programId))
 
-    // Sync responsible catalog
-    for (const responsible of collectResponsibleCatalog(catalog)) {
-      await tx.insert(pdtpResponsibleCatalog).values(responsible).onConflictDoUpdate({
+    // Sync responsible catalog in one statement. `excluded` keeps every row's
+    // own values during a bulk upsert instead of reusing the first item.
+    const responsibleRows = collectResponsibleCatalog(catalog)
+    if (responsibleRows.length > 0) {
+      await tx.insert(pdtpResponsibleCatalog).values(responsibleRows).onConflictDoUpdate({
         target: pdtpResponsibleCatalog.slug,
-        set: { displayName: responsible.displayName, roleName: responsible.roleName, kind: responsible.kind, notes: responsible.notes },
+        set: {
+          displayName: sql`excluded.display_name`,
+          roleName: sql`excluded.role_name`,
+          kind: sql`excluded.kind`,
+          notes: sql`excluded.notes`,
+        },
       })
     }
 
     // Import sheet-scoped copies
+    const sheetRows: Array<typeof pdtpSheets.$inferInsert> = []
     for (const [code, meta] of Object.entries(SHEET_META) as Array<[PdtpSheetCode, typeof SHEET_META[PdtpSheetCode]]>) {
       if (catalog.sheetActivities[code]) {
-        await tx.insert(pdtpSheets).values({
+        sheetRows.push({
           id: `${input.programId}-${code}`,
           code,
           programId: input.programId,
           label: meta.label,
           area: meta.area,
           defaultScopeRoles: meta.defaultScopeRoles,
-        }).onConflictDoUpdate({
-          target: [pdtpSheets.id],
-          set: { code, label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles },
         })
-        sheetCount++
       }
+    }
+    sheetCount = sheetRows.length
+    if (sheetRows.length > 0) {
+      await tx.insert(pdtpSheets).values(sheetRows).onConflictDoUpdate({
+          target: [pdtpSheets.id],
+          set: {
+            code: sql`excluded.code`,
+            label: sql`excluded.label`,
+            area: sql`excluded.area`,
+            defaultScopeRoles: sql`excluded.default_scope_roles`,
+          },
+        })
     }
 
     const activityIdByNumber = new Map<number, string>()
+    const activityRows: Array<typeof pdtpActivities.$inferInsert> = []
+    const scheduleRows: Array<typeof pdtpActivitySchedule.$inferInsert> = []
 
     for (const activity of catalog.activities) {
       const newN = activityCount + 1
@@ -242,7 +282,7 @@ export async function importPdtpFromExcel(input: PdtpProgramImportInput) {
       activityIdByNumber.set(activity.n, activityId)
       activityCount++
 
-      await tx.insert(pdtpActivities).values({
+      activityRows.push({
         id: activityId, programId: input.programId, n: newN, objectiveOrder: activity.objectiveOrder,
         objective: activity.objective, activity: activity.activity, program: activity.program,
         responsibleSlugs: activity.responsibleSlugs,
@@ -251,13 +291,16 @@ export async function importPdtpFromExcel(input: PdtpProgramImportInput) {
       })
 
       for (const cell of activity.schedule) {
-        await tx.insert(pdtpActivitySchedule).values({
+        scheduleRows.push({
           id: pdtpScheduleId(activityId, program.year, cell.month, cell.week), activityId,
           year: program.year, month: cell.month, week: cell.week, plannedQuantity: cell.plannedQuantity, sourceColumn: cell.sourceColumn,
-        }).onConflictDoNothing()
+        })
       }
     }
+    if (activityRows.length > 0) await tx.insert(pdtpActivities).values(activityRows)
+    if (scheduleRows.length > 0) await tx.insert(pdtpActivitySchedule).values(scheduleRows).onConflictDoNothing()
 
+    const membershipRows: Array<typeof pdtpSheetActivities.$inferInsert> = []
     for (const [sheetCode, activityNumbers] of Object.entries(catalog.sheetActivities) as Array<[PdtpSheetCode, number[]]>) {
       const sheetId = `${input.programId}-${sheetCode}`
       let row = 0
@@ -265,14 +308,15 @@ export async function importPdtpFromExcel(input: PdtpProgramImportInput) {
         const activityId = activityIdByNumber.get(activityNumber)
         if (activityId) {
           row++
-          await tx.insert(pdtpSheetActivities).values({
+          membershipRows.push({
             id: pdtpSheetActivityId(input.programId, sheetCode, activityNumber),
             sheetId, sheetCode, activityId,
             sheetRow: row, displayOrder: row,
-          }).onConflictDoNothing()
+          })
         }
       }
     }
+    if (membershipRows.length > 0) await tx.insert(pdtpSheetActivities).values(membershipRows).onConflictDoNothing()
 
     await addPdtpChangeLogEntry(input.programId, program.version, input.userId, "import:excel", null, { sheetCount, activityCount }, `${activityCount} actividades importadas desde Excel en ${sheetCount} hojas.`, tx)
 

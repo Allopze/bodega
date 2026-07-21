@@ -1,7 +1,8 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, timestamp, boolean, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, boolean, integer, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core"
 import { worksites, workers } from "./worksites"
 import { users } from "./users"
+import { preventionCapaActions } from "./prevention/capa"
 
 /* ── PPA Digital (Para, Piensa y Actúa) ──────────────────────────────────────
  * Una fila por envío del formulario preventivo realizado por un trabajador
@@ -47,18 +48,44 @@ export const ppaSubmissions = pgTable("ppa_submissions", {
   reviewNota:         text("review_nota"),
   reviewedAt:         timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
 
+  correctionDeclaredByUserId: text("correction_declared_by_user_id").references(() => users.id),
+  correctionDeclaredAt: timestamp("correction_declared_at", { withTimezone: true, mode: "string" }),
+  verifiedByUserId:   text("verified_by_user_id").references(() => users.id),
+  verifiedAt:         timestamp("verified_at", { withTimezone: true, mode: "string" }),
+  verificationComment:text("verification_comment"),
+  authorizedByUserId: text("authorized_by_user_id").references(() => users.id),
+  authorizedAt:       timestamp("authorized_at", { withTimezone: true, mode: "string" }),
+  cancelledByUserId:  text("cancelled_by_user_id").references(() => users.id),
+  cancelledAt:        timestamp("cancelled_at", { withTimezone: true, mode: "string" }),
+  cancellationReason: text("cancellation_reason"),
+  closedByUserId:     text("closed_by_user_id").references(() => users.id),
+  closedAt:           timestamp("closed_at", { withTimezone: true, mode: "string" }),
+  closeComment:       text("close_comment"),
+  version:            integer("version").notNull().default(1),
+
+  // Enlace opcional al permiso de trabajo bajo el cual se ejecuta la tarea.
+  // La auditoría pide que el PPA sea una verificación breve dentro del flujo
+  // de permisos, no un registro desconectado. Es nullable: el PPA sigue
+  // funcionando de forma autónoma donde no se exige permiso.
+  workPermitId:       text("work_permit_id"),
+
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   index("idx_ppa_worksite_estado").on(table.worksiteId, table.estado),
   index("idx_ppa_created").on(table.createdAt),
   index("idx_ppa_worker").on(table.workerId, table.worksiteId),
+  index("idx_ppa_work_permit").on(table.workPermitId),
+  check("ppa_submissions_estado_check", sql`${table.estado} IN ('aprobado_auto', 'detenido', 'en_correccion', 'pendiente_verificacion', 'autorizado', 'rechazado', 'cancelado', 'cerrado')`),
+  check("ppa_submissions_version_check", sql`${table.version} >= 1`),
+  check("ppa_submissions_cancel_check", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL AND ${table.cancellationReason} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 5)`),
 ])
 
 /* Una acción nace solo cuando se autoriza un PPA detenido. */
 export const ppaCorrectiveActions = pgTable("ppa_corrective_actions", {
   id:              text("id").primaryKey(),
   ppaId:           text("ppa_id").notNull().references(() => ppaSubmissions.id, { onDelete: "cascade" }),
+  capaActionId:    text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "restrict" }),
   worksiteId:      text("worksite_id").notNull().references(() => worksites.id),
   description:     text("description").notNull(),
   responsibleRole: text("responsible_role").notNull(),
@@ -71,10 +98,28 @@ export const ppaCorrectiveActions = pgTable("ppa_corrective_actions", {
   updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   uniqueIndex("ppa_corrective_actions_ppa_unique").on(table.ppaId),
+  uniqueIndex("ppa_corrective_actions_capa_unique").on(table.capaActionId),
   index("ppa_corrective_actions_worksite_status_idx").on(table.worksiteId, table.status),
   index("ppa_corrective_actions_due_date_idx").on(table.dueDate),
   check("ppa_corrective_actions_priority_check", sql`${table.priority} IN ('alta', 'media', 'baja')`),
   check("ppa_corrective_actions_status_check", sql`${table.status} IN ('pendiente', 'en_proceso', 'completada', 'verificada', 'cerrada')`),
+])
+
+export const ppaStatusHistory = pgTable("ppa_status_history", {
+  id:          text("id").primaryKey(),
+  ppaId:       text("ppa_id").notNull().references(() => ppaSubmissions.id, { onDelete: "cascade" }),
+  capaActionId:text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "restrict" }),
+  fromStatus:  text("from_status"),
+  toStatus:    text("to_status").notNull(),
+  reason:      text("reason"),
+  actorType:   text("actor_type").notNull().default("user"),
+  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "restrict" }),
+  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("ppa_status_history_ppa_created_idx").on(table.ppaId, table.createdAt),
+  check("ppa_status_history_from_check", sql`${table.fromStatus} IS NULL OR ${table.fromStatus} IN ('aprobado_auto', 'detenido', 'en_correccion', 'pendiente_verificacion', 'autorizado', 'rechazado', 'cancelado', 'cerrado')`),
+  check("ppa_status_history_to_check", sql`${table.toStatus} IN ('aprobado_auto', 'detenido', 'en_correccion', 'pendiente_verificacion', 'autorizado', 'rechazado', 'cancelado', 'cerrado')`),
+  check("ppa_status_history_actor_check", sql`(${table.actorType} = 'system' AND ${table.actorUserId} IS NULL) OR (${table.actorType} = 'user' AND ${table.actorUserId} IS NOT NULL)`),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
@@ -89,6 +134,12 @@ export const ppaCorrectiveActionsRelations = relations(ppaCorrectiveActions, ({ 
   ppa: one(ppaSubmissions, { fields: [ppaCorrectiveActions.ppaId], references: [ppaSubmissions.id] }),
   worksite: one(worksites, { fields: [ppaCorrectiveActions.worksiteId], references: [worksites.id] }),
   createdByUser: one(users, { fields: [ppaCorrectiveActions.createdBy], references: [users.id] }),
+}))
+
+export const ppaStatusHistoryRelations = relations(ppaStatusHistory, ({ one }) => ({
+  ppa: one(ppaSubmissions, { fields: [ppaStatusHistory.ppaId], references: [ppaSubmissions.id] }),
+  capaAction: one(preventionCapaActions, { fields: [ppaStatusHistory.capaActionId], references: [preventionCapaActions.id] }),
+  actor: one(users, { fields: [ppaStatusHistory.actorUserId], references: [users.id] }),
 }))
 
 /* ── Inferred Types ──────────────────────────────────────────────────────── */

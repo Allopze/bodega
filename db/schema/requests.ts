@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, integer, real, timestamp, index, check } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, real, timestamp, index, uniqueIndex, check } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
@@ -92,7 +92,10 @@ export const requestItemAttributes = pgTable("request_item_attributes", {
   attributeId:     text("attribute_id").references(() => productAttributes.id),
   attributeName:   text("attribute_name").notNull(),  // denormalized for free-text items
   value:           text("value").notNull(),
-})
+}, (table) => [
+  uniqueIndex("uq_request_item_attributes_name").on(table.requestItemId, table.attributeName),
+  check("request_item_attributes_value_length", sql`char_length(${table.value}) > 0 AND char_length(${table.value}) <= 64`),
+])
 
 /* ── Approval Decisions ───────────────────────────────────────────────────── */
 export const approvalDecisions = pgTable("approval_decisions", {

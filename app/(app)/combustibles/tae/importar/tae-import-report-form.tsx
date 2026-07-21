@@ -3,6 +3,7 @@
 import { useReducer } from "react"
 import { FileXls, Upload } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import type { TaeImportMappingDecision, TaeImportPreview } from "@/lib/combustibles/tae-import-service"
 import { generateTaeImportReportAction, importTaeHistoryAction } from "./actions"
@@ -137,11 +138,16 @@ export function TaeImportReportForm() {
               </div>
               <div className="flex items-center gap-2">
                 <label className="sr-only" htmlFor={`mapping-${item.key}`}>Destino de {item.legacyValue}</label>
-                <select id={`mapping-${item.key}`} className="h-9 min-w-64 border border-(--color-border-strong) bg-(--color-surface) px-2 text-sm" value={currentValue} onChange={(event) => updateDecision(item.key, event.target.value)}>
-                  <option value="">Selecciona una decisión…</option>
-                  <option value="__none__">Sin equivalente</option>
-                  {item.options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                </select>
+                <Select value={currentValue} onValueChange={(v) => updateDecision(item.key, v)}>
+                  <SelectTrigger id={`mapping-${item.key}`} className="h-9 min-w-64">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Selecciona una decisión…</SelectItem>
+                    <SelectItem value="__none__">Sin equivalente</SelectItem>
+                    {item.options.map((option) => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </li>
           })}

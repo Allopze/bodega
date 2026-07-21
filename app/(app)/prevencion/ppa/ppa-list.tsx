@@ -106,6 +106,7 @@ export function PpaList({
 
   const filtersActive = !!(estado || worksiteId || search.trim() || dateFrom || dateTo)
   const firstRender = React.useRef(true)
+  const latestRequestIdRef = React.useRef(0)
 
   const filters = React.useMemo<PpaListClientFilters>(
     () => buildPpaListFilters(filterState),
@@ -116,26 +117,18 @@ export function PpaList({
   React.useEffect(() => {
     firstRender.current = true
     dispatch({ type: "sync", rows: initialRows, total: initialTotal, page: initialPage, filters: initialFilterState })
-  }, [
-    initialRows,
-    initialTotal,
-    initialPage,
-    initialFilterState,
-    initialFilterState.search,
-    initialFilterState.estado,
-    initialFilterState.worksiteId,
-    initialFilterState.dateFrom,
-    initialFilterState.dateTo,
-  ])
+  }, [initialRows, initialTotal, initialPage, initialFilterState])
 
   // Re-consulta server-side cuando cambian filtros (con debounce) o página.
   React.useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return }
+    const requestId = ++latestRequestIdRef.current
     const handle = setTimeout(() => {
       router.replace(buildPpaListHref(filterState, page))
       dispatch({ type: "loadError", message: null })
       startTransition(async () => {
         const res = await listPpaAction(filters, pageSize, (page - 1) * pageSize)
+        if (latestRequestIdRef.current !== requestId) return
         if (res.ok && res.data) {
           dispatch({ type: "loaded", rows: res.data.rows, total: res.data.total })
         } else {

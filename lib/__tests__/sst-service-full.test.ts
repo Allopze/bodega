@@ -13,6 +13,9 @@ const mockInsertFn = vi.fn()
 const mockUpdateFn = vi.fn()
 const mockDeleteFn = vi.fn()
 const mockTransactionFn = vi.fn()
+const mockCreateCapa = vi.fn()
+const mockUpdateCapa = vi.fn()
+const mockTransitionCapa = vi.fn()
 
 vi.mock("@/db", () => ({
   db: {
@@ -31,6 +34,11 @@ vi.mock("@/lib/sst/definitions/index", () => ({
 }))
 vi.mock("@/lib/sst/checklist", () => ({
   getApplicableItems: vi.fn(() => []),
+}))
+vi.mock("@/lib/services/prevention-capa", () => ({
+  createCapaActionWithClient: (...args: unknown[]) => mockCreateCapa(...args),
+  updateCapaActionWithClient: (...args: unknown[]) => mockUpdateCapa(...args),
+  transitionCapaActionWithClient: (...args: unknown[]) => mockTransitionCapa(...args),
 }))
 vi.mock("@/lib/sst/compliance", () => ({
   calculateCompliance: vi.fn(() => ({ percentage: 100 })),
@@ -93,6 +101,14 @@ function resetDbMocks() {
   mockUpdateFn.mockReset()
   mockDeleteFn.mockReset()
   mockTransactionFn.mockReset()
+  mockCreateCapa.mockReset().mockResolvedValue({ id: "capa-test", version: 1, status: "pending" })
+  mockUpdateCapa.mockReset().mockResolvedValue({ id: "capa-test", version: 2, status: "pending" })
+  mockTransitionCapa.mockReset().mockResolvedValue({ id: "capa-test", version: 2, status: "cancelled" })
+  mockTransactionFn.mockImplementation(async (callback) => callback({
+    select: (...args: unknown[]) => mockSelectFn(...args),
+    insert: (...args: unknown[]) => mockInsertFn(...args),
+    update: (...args: unknown[]) => mockUpdateFn(...args),
+  }))
 }
 
 describe("getEvaluation", () => {
@@ -245,13 +261,14 @@ describe("saveActionPlanItem", () => {
 
   it("allows adding an action-plan item when evaluation is cerrado", async () => {
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "cerrado" }))
+    mockSelectFn.mockReturnValueOnce(chainResultFirst(null))
     const upsert = upsertReturning({ id: "plan-1", evaluationId: "e1", n: 1 })
     mockInsertFn.mockReturnValue({ values: upsert.values })
 
     const result = await saveActionPlanItem({
       evaluationId: "e1", n: 1, hallazgo: "h", accion: "a",
       responsable: "admin", plazo: "2026-06-01", estado: "pendiente",
-    }, "all")
+    }, "all", "user-1")
 
     expect(result.id).toBe("plan-1")
   })
@@ -259,18 +276,20 @@ describe("saveActionPlanItem", () => {
   it("inserts new item when not existing", async () => {
     // getEvaluation → evaluation exists
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
+    mockSelectFn.mockReturnValueOnce(chainResultFirst(null))
     const upsert = upsertReturning({ id: "plan-1", evaluationId: "e1", n: 1 })
     mockInsertFn.mockReturnValue({ values: upsert.values })
 
     const result = await saveActionPlanItem({
       evaluationId: "e1", n: 1, hallazgo: "Hallazgo", accion: "Acción",
       responsable: "Admin", plazo: "2026-06-01", estado: "pendiente",
-    }, "all")
+    }, "all", "user-1")
     expect(result.id).toBe("plan-1")
   })
 
   it("uses database upsert for action-plan items", async () => {
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
+    mockSelectFn.mockReturnValueOnce(chainResultFirst(null))
 
     const returning = vi.fn().mockResolvedValue([{ id: "plan-1", evaluationId: "e1", n: 1 }])
     const onConflictDoUpdate = vi.fn().mockReturnValue({ returning })
@@ -280,7 +299,7 @@ describe("saveActionPlanItem", () => {
     const result = await saveActionPlanItem({
       evaluationId: "e1", n: 1, hallazgo: "Hallazgo", accion: "Acción",
       responsable: "Admin", plazo: "2026-06-01", estado: "pendiente",
-    }, "all")
+    }, "all", "user-1")
 
     expect(onConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({
       target: expect.any(Array),
@@ -293,13 +312,14 @@ describe("saveActionPlanItem", () => {
   it("updates existing item when it exists", async () => {
     // getEvaluation -> found
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
+    mockSelectFn.mockReturnValueOnce(chainResultFirst(null))
     const upsert = upsertReturning({ id: "plan-1", evaluationId: "e1", n: 1, hallazgo: "New hallazgo" })
     mockInsertFn.mockReturnValue({ values: upsert.values })
 
     const result = await saveActionPlanItem({
       evaluationId: "e1", n: 1, hallazgo: "New hallazgo", accion: "Acción",
       responsable: "Admin", plazo: "2026-06-01", estado: "pendiente",
-    }, "all")
+    }, "all", "user-1")
     expect(result.hallazgo).toBe("New hallazgo")
   })
 
@@ -308,7 +328,7 @@ describe("saveActionPlanItem", () => {
     await expect(saveActionPlanItem({
       evaluationId: "nonexistent", n: 1, hallazgo: "h", accion: "a",
       responsable: "admin", plazo: "2026-06-01", estado: "pendiente",
-    }, "all")).rejects.toThrow("no encontrada")
+    }, "all", "user-1")).rejects.toThrow("no encontrada")
   })
 })
 
@@ -317,19 +337,21 @@ describe("deleteActionPlanItem", () => {
 
   it("throws if item not found", async () => {
     mockSelectFn.mockReturnValue(chainResultFirst(null))
-    await expect(deleteActionPlanItem("missing", "all")).rejects.toThrow("no encontrado")
+    await expect(deleteActionPlanItem("missing", "all", "user-1")).rejects.toThrow("no encontrado")
   })
 
-  it("deletes when item found", async () => {
+  it("cancels without deleting when item is found", async () => {
     // select item → found
-    mockSelectFn.mockReturnValueOnce(chainResultFirst({ evaluationId: "e1" }))
+    mockSelectFn.mockReturnValueOnce(chainResultFirst({ evaluationId: "e1", capaActionId: "capa-test" }))
     // getEvaluation → found
     mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "e1", worksiteId: "ws-1", estado: "borrador" }))
-    // delete
-    mockDeleteFn.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) })
+    // CAPA linked row inside transaction
+    mockSelectFn.mockReturnValueOnce(chainResultFirst({ id: "capa-test", version: 1, status: "pending" }))
+    mockUpdateFn.mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
 
-    await deleteActionPlanItem("plan-1", "all")
-    expect(mockDeleteFn).toHaveBeenCalled()
+    await deleteActionPlanItem("plan-1", "all", "user-1")
+    expect(mockTransitionCapa).toHaveBeenCalled()
+    expect(mockDeleteFn).not.toHaveBeenCalled()
   })
 })
 

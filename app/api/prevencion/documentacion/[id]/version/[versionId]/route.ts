@@ -3,7 +3,7 @@ export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
-import { can, canAccessWorksite } from "@/lib/auth/can"
+import { can, canAccessWorksite, canAny } from "@/lib/auth/can"
 import { resolveSstDocumentFile } from "@/lib/storage/config"
 import { db } from "@/db"
 import { sstDocumentVersions, sstDocuments } from "@/db/schema"
@@ -12,6 +12,7 @@ import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordDocumentDownload } from "@/lib/services/prevention-documents-library"
 import { promises as fs } from "node:fs"
+import { canReadDocumentConfidentiality } from "@/lib/services/prevention-documents/utils"
 
 interface RouteCtx {
   params: Promise<{ id: string; versionId: string }>
@@ -39,6 +40,9 @@ export async function GET(_request: Request, ctx: RouteCtx) {
   if (doc.worksiteId && !canAccessWorksite(session, doc.worksiteId)) {
     return NextResponse.json({ error: "Documento no encontrado" }, { status: 404 })
   }
+  if (!canReadDocumentConfidentiality(doc.confidentiality, session.user.permissions)) {
+    return NextResponse.json({ error: "Documento no encontrado" }, { status: 404 })
+  }
 
   const [version] = await db
     .select()
@@ -48,6 +52,17 @@ export async function GET(_request: Request, ctx: RouteCtx) {
   if (!version) return NextResponse.json({ error: "Versión no encontrada" }, { status: 404 })
   if (version.documentId !== doc.id) {
     return NextResponse.json({ error: "Versión no corresponde al documento" }, { status: 400 })
+  }
+  const isPublishedCurrent = version.id === doc.currentVersionId && version.status === "vigente"
+  const canInspectWorkflow = canAny(
+    session,
+    "prevention:docs:manage",
+    "prevention:docs:review",
+    "prevention:docs:approve",
+    "prevention:docs:publish",
+  )
+  if (!isPublishedCurrent && !canInspectWorkflow) {
+    return NextResponse.json({ error: "Versión no encontrada" }, { status: 404 })
   }
 
   const absolutePath = resolveSstDocumentFile(version.filePath)

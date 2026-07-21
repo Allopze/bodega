@@ -1,5 +1,12 @@
 export type PageWindowItem = number | "…"
 
+export type PageResult<T> = {
+  rows: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export type PaginationState = {
   page: number
   totalItems: number

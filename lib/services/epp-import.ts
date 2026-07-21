@@ -120,6 +120,13 @@ export async function getEppImportBatch(batchId: string) {
 export async function reviewEppImportRow(input: { batchId: string; rowId: string; decision: Exclude<ImportDecision, "blocked" | "pending">; targetProductId?: string | null; normalizedJson?: string; reason?: string | null }) {
   const row = await db.query.eppImportRows.findFirst({ where: and(eq(eppImportRows.id, input.rowId), eq(eppImportRows.batchId, input.batchId)) })
   if (!row) throw new Error("Fila de importación no encontrada")
+
+  // Skip: no valida datos porque la fila se va a ignorar al confirmar
+  if (input.decision === "skip") {
+    await db.update(eppImportRows).set({ decision: "skip", reviewReason: input.reason ?? null, updatedAt: new Date().toISOString() }).where(eq(eppImportRows.id, row.id))
+    return
+  }
+
   const previous = JSON.parse(row.normalizedJson) as NormalizedEppRow
   const normalized = input.normalizedJson ? validateReviewedNormalized(input.normalizedJson, previous.sourceCode) : previous
   if (input.decision === "update" && !input.targetProductId) throw new Error("Selecciona el producto que se actualizará")

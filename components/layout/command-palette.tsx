@@ -3,7 +3,9 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import type { Session } from "next-auth"
-import * as Dialog from "@radix-ui/react-dialog"
+import {
+  Dialog, DialogContent, DialogTitle,
+} from "@/components/ui/dialog"
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { MagnifyingGlass, ArrowElbowDownLeft } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
@@ -105,16 +107,15 @@ export function CommandPalette({ session, enabledModuleIds }: { session: Session
   }, [active])
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[60] bg-overlay data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <Dialog.Content
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed left-1/2 top-[12vh] z-[61] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-lg)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
-        >
-          <VisuallyHidden>
-            <Dialog.Title>Buscar y navegar</Dialog.Title>
-          </VisuallyHidden>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="left-1/2 top-[12vh] z-[61] -translate-x-1/2 translate-y-0 w-[min(36rem,calc(100vw-2rem))] max-w-none p-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] shadow-[var(--shadow-lg)] [&>button:last-child]:hidden"
+        aria-describedby={undefined}
+      >
+        <VisuallyHidden>
+          <DialogTitle>Buscar y navegar</DialogTitle>
+        </VisuallyHidden>
 
           <div className="flex items-center gap-2.5 border-b border-[var(--color-border)] px-4">
             <MagnifyingGlass size={18} className="shrink-0 text-(--color-text-subtle)" />
@@ -159,8 +160,7 @@ export function CommandPalette({ session, enabledModuleIds }: { session: Session
               })}
             </ul>
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      </DialogContent>
+    </Dialog>
   )
 }

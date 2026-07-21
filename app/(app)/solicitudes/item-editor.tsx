@@ -8,13 +8,14 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { ProductPicker } from "./product-picker"
-import type { ItemRow, ProductOption, SupplierOption } from "./request-form.types"
+import type { ItemRow, ProductOption, SupplierOption, WorkerOption } from "./request-form.types"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import { ItemEditorEquipment } from "./item-editor-equipment"
 import { ItemEditorSupplier } from "./item-editor-supplier"
 import { ItemEditorCotizaciones } from "./item-editor-cotizaciones"
+import { VariantQuantityGrid } from "./variant-quantity-grid"
 import { ItemEditorAttributes } from "./item-editor-attributes"
-import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
+import { groupProductVariants } from "@/lib/products/variant-grouping"
 import { URGENCY_OPTS } from "./request-form.constants"
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ interface ItemEditorProps {
   idx:             number
   products:        ProductOption[]
   suppliers:       SupplierOption[]
+  workers?:        WorkerOption[]
   readOnly:        boolean
   requestType?:    string
   maxFileSizeMb:   number
@@ -32,6 +34,7 @@ interface ItemEditorProps {
   onSelectFreeProduct: (name: string) => void
   onClearProduct:  () => void
   onUpdateAttr:    (i: number, v: string) => void
+  onUpdateWorker:  (workerId: string) => void
   onRemove:        () => void
   canRemove:       boolean
 }
@@ -39,8 +42,8 @@ interface ItemEditorProps {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ItemEditor({
-  item, idx, products, suppliers, readOnly, requestType, maxFileSizeMb,
-  onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onRemove, canRemove,
+  item, idx, products, suppliers, workers, readOnly, requestType, maxFileSizeMb,
+  onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker, onRemove, canRemove,
 }: ItemEditorProps) {
   const isQuotationType    = QUOTATION_TYPES.has(requestType ?? "")
   const selectedProduct = item.productId ? products.find((product) => product.id === item.productId) : null
@@ -125,21 +128,49 @@ export function ItemEditor({
       </div>
 
       {selectedProduct && variants.length > 1 && (
+        <div className="ml-8 space-y-3">
+          <VariantQuantityGrid
+            variants={variants}
+            quantities={item.variantQuantities ?? {}}
+            readOnly={readOnly}
+            onChange={(variantId, qty) => {
+              onUpdate({ variantQuantities: { ...(item.variantQuantities ?? {}), [variantId]: qty } })
+              // Also update the aggregated quantity field to match the sum
+              const updated = { ...(item.variantQuantities ?? {}), [variantId]: qty }
+              const total = Object.values(updated).reduce((s, q) => s + (q || 0), 0)
+              if (total > 0) onUpdate({ quantity: String(total) })
+            }}
+          />
+        </div>
+      )}
+
+      {/* Worker picker — visible for EPP type requests */}
+      {requestType === "epp" && !isQuotationType && workers && workers.length > 0 && (
         <div className="ml-8 max-w-sm">
-          <Field label="Variante" htmlFor={`variant-${item._key}`}>
-            <Select value={selectedProduct.id} onValueChange={onSelectProduct} disabled={readOnly}>
-              <SelectTrigger id={`variant-${item._key}`} className="h-8 text-sm">
-                <SelectValue />
+          <Field label="Trabajador" htmlFor={`worker-${item._key}`} helper="Opcional. Si se asigna, las tallas se sugerirán automáticamente.">
+            <Select
+              value={item.workerId || "none"}
+              onValueChange={(v) => onUpdateWorker(v === "none" ? "" : v)}
+              disabled={readOnly}
+            >
+              <SelectTrigger id={`worker-${item._key}`} className="h-8 text-sm">
+                <SelectValue placeholder="Sin asignar..." />
               </SelectTrigger>
               <SelectContent>
-                {variants.map((variant) => (
-                  <SelectItem key={variant.id} value={variant.id}>
-                    {formatProductVariant(variant.attributes, variant.sku)}
+                <SelectItem value="none">Sin asignar</SelectItem>
+                {workers.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.firstName} {w.lastName}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
+          {item.workerId && item.workerName && (
+            <p className="mt-1 text-[11px] text-(--color-text-subtle)">
+              Usando tallas registradas para {item.workerName}
+            </p>
+          )}
         </div>
       )}
 

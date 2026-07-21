@@ -1,0 +1,1 @@
+ALTER TABLE "prevention_incidents" DROP CONSTRAINT "prevention_incident_fatal_serious_suspended";

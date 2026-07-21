@@ -20,7 +20,9 @@ export function createCspHeader(nonce: string, options: { isDev?: boolean } = {}
   const isDev = options.isDev ?? process.env.NODE_ENV === "development"
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' 'nonce-${nonce}'${
+      isDev ? " 'unsafe-inline' 'unsafe-eval'" : " 'strict-dynamic'"
+    }`,
     "style-src-elem 'self' 'unsafe-inline'",
     "style-src-attr 'unsafe-inline'",
     "img-src 'self' data: blob: https://api.dicebear.com",

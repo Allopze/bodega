@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Badge } from "@/components/ui/badge"
+import { FilterSelect } from "../filter-select"
 
 export const metadata: Metadata = { title: "Historial de sellos" }
 
@@ -57,7 +58,7 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
       <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-5">
         <DatePicker name="desde" defaultValue={sp.desde} placeholder="Desde" />
         <DatePicker name="hasta" defaultValue={sp.hasta} placeholder="Hasta" />
-        <select name="faena" defaultValue={sp.faena} className="control"><option value="">Todas las faenas autorizadas</option>{worksitesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todas las faenas autorizadas" />
         <Input name="sello" defaultValue={sp.sello} placeholder="Número de sello" className="control" />
         <Input name="patente" defaultValue={sp.patente} placeholder="Patente" className="control" />
         <div className="md:col-span-5"><Button type="submit" variant="secondary">Aplicar</Button></div>

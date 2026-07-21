@@ -67,7 +67,7 @@ export function DocumentacionView(props: Props) {
       {!f.hasContent ? (
         <EmptyState
           title={f.isFiltering ? "Sin resultados" : "Carpeta vacía"}
-          description={f.isFiltering ? "No hay carpetas ni documentos que coincidan con los filtros aplicados." : "Sube documentos o crea una carpeta para ordenar la documentación preventiva."}
+          description={f.isFiltering ? "No hay carpetas ni documentos que coincidan con la búsqueda." : "Sube documentos o crea una carpeta para ordenar la documentación preventiva."}
         />
       ) : (
         <div className="space-y-3">
@@ -138,7 +138,7 @@ export function DocumentacionView(props: Props) {
                       }}
                       onDrop={(event) => f.handleDropOnFolder(event, folder)}
                       onDragOver={(event) => {
-                        if (canManage && event.dataTransfer.types.includes(DRAG_MIME)) {
+                        if (canManage && new Set(event.dataTransfer.types).has(DRAG_MIME)) {
                           event.preventDefault()
                           f.setDragOverFolderId(folder.id)
                         }

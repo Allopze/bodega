@@ -26,6 +26,10 @@ function fmtNum(n: number) {
   return n ? n.toLocaleString("es-CL") : "0"
 }
 
+function fmtRate(rate: number | null) {
+  return rate === null ? "No calculable" : rate.toFixed(2)
+}
+
 export function IndicadoresDashboard({
   worksites,
   indicatorRows,
@@ -33,6 +37,7 @@ export function IndicadoresDashboard({
   currentYear,
   canManage,
   canClose = false,
+  officialRatesEnabled = false,
   closedPeriodKeys = NO_CLOSED_PERIODS,
 }: {
   worksites: Array<{ id: string; name: string }>
@@ -41,6 +46,7 @@ export function IndicadoresDashboard({
   currentYear: number
   canManage: boolean
   canClose?: boolean
+  officialRatesEnabled?: boolean
   closedPeriodKeys?: string[]
 }) {
   const router = useRouter()
@@ -75,6 +81,14 @@ export function IndicadoresDashboard({
 
   return (
     <div className="space-y-4">
+      {!officialRatesEnabled && (
+        <div role="status" className="rounded-lg border border-(--color-warning) bg-(--color-warning-tint) px-4 py-3 text-sm text-(--color-text)">
+          <p className="font-medium">Datos manuales en conciliación</p>
+          <p className="mt-1 text-(--color-text-muted)">
+            Las tasas legales están ocultas y el cierre de períodos está bloqueado hasta contar con el registro fuente de incidentes, lesionados y días de cargo.
+          </p>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <Select value={selectedWorksiteId} onValueChange={setSelectedWorksiteId}>
           <SelectTrigger className="w-[240px]">
@@ -106,13 +120,13 @@ export function IndicadoresDashboard({
         </TabsList>
 
         <TabsContent value="resumen" className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <KpiCard icon={<Gauge size={18} />} label="Tasa de Frecuencia" value={totalsRates.tasaFrecuencia.toFixed(2)} detail="Acc. c/TP × 1M / HH" />
-            <KpiCard icon={<Heartbeat size={18} />} label="Tasa de Gravedad" value={totalsRates.tasaGravedad.toFixed(2)} detail="Días perd. × 1.000 / HH" />
-            <KpiCard icon={<WarningDiamond size={18} />} label="Total Accidentes" value={String(totalsRates.totalAccidentes)} detail="Con y sin tiempo perdido" />
-            <KpiCard icon={<Siren size={18} />} label="Total Incidentes" value={String(totals.incidentes)} detail="Reportados en el año" />
-            <KpiCard icon={<Wrench size={18} />} label="Daño Material" value={String(totals.danoMaterial)} detail="Incidentes materiales" />
-            <KpiCard icon={<Drop size={18} />} label="Daño Ambiental" value={String(totals.danoAmbiental)} detail="Incidentes ambientales" />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {officialRatesEnabled && <KpiCard icon={<Gauge size={18} />} label="Tasa de Frecuencia" value={fmtRate(totalsRates.tasaFrecuencia)} detail="Lesionados × 1M / HH" />}
+            {officialRatesEnabled && <KpiCard icon={<Heartbeat size={18} />} label="Tasa de Gravedad" value={fmtRate(totalsRates.tasaGravedad)} detail="Días ausencia/cargo × 1M / HH" />}
+            <KpiCard icon={<WarningDiamond size={18} />} label="Total Accidentes" value={String(totalsRates.totalAccidentes)} detail="Dato manual no conciliado" />
+            <KpiCard icon={<Siren size={18} />} label="Total Incidentes" value={String(totals.incidentes)} detail="Dato manual no conciliado" />
+            {!officialRatesEnabled && <KpiCard icon={<Wrench size={18} />} label="Daño Material" value={String(totals.danoMaterial)} detail="Dato manual no conciliado" />}
+            {!officialRatesEnabled && <KpiCard icon={<Drop size={18} />} label="Daño Ambiental" value={String(totals.danoAmbiental)} detail="Dato manual no conciliado" />}
           </div>
 
           <div className="divide-y divide-(--color-border) border-y border-(--color-border) lg:hidden">
@@ -140,8 +154,8 @@ export function IndicadoresDashboard({
                     <div><dt className="text-text-subtle">Horas hombre</dt><dd className="font-medium tabular-nums">{fmtNum(counters.horasHombre)}</dd></div>
                     <div><dt className="text-text-subtle">Accidentes</dt><dd className="font-medium tabular-nums">{counters.accConTiempoPerdido} c/TP · {counters.accSinTiempoPerdido} s/TP</dd></div>
                     <div><dt className="text-text-subtle">Incidentes</dt><dd className="font-medium tabular-nums">{counters.incidentes}</dd></div>
-                    <div><dt className="text-text-subtle">Tasa de frecuencia</dt><dd className="font-medium tabular-nums">{rates.tasaFrecuencia.toFixed(2)}</dd></div>
-                    <div><dt className="text-text-subtle">Tasa de gravedad</dt><dd className="font-medium tabular-nums">{rates.tasaGravedad.toFixed(2)}</dd></div>
+                    {officialRatesEnabled && <div><dt className="text-text-subtle">Tasa de frecuencia</dt><dd className="font-medium tabular-nums">{fmtRate(rates.tasaFrecuencia)}</dd></div>}
+                    {officialRatesEnabled && <div><dt className="text-text-subtle">Tasa de gravedad</dt><dd className="font-medium tabular-nums">{fmtRate(rates.tasaGravedad)}</dd></div>}
                   </dl>
                 </section>
               )
@@ -176,8 +190,8 @@ export function IndicadoresDashboard({
                       <TableHead>Incidentes</TableHead>
                       <TableHead title="Incidentes con daño material">D. Material</TableHead>
                       <TableHead title="Incidentes con daño ambiental">D. Ambiental</TableHead>
-                      <TableHead title="Tasa de frecuencia: accidentes c/TP × 1.000.000 / horas hombre">Tasa Frec.</TableHead>
-                      <TableHead title="Tasa de gravedad: días perdidos × 1.000 / horas hombre">Tasa Grav.</TableHead>
+                      {officialRatesEnabled && <TableHead title="Tasa de frecuencia legal">Tasa Frec.</TableHead>}
+                      {officialRatesEnabled && <TableHead title="Tasa de gravedad legal">Tasa Grav.</TableHead>}
                       <TableHead title="Total de accidentes (con y sin tiempo perdido)">Total Acc.</TableHead>
                       {canManage && !isTotalView && <TableHead className="text-right">Acción</TableHead>}
                     </TableRow>
@@ -205,8 +219,8 @@ export function IndicadoresDashboard({
                           <TableCellNum>{counters.incidentes}</TableCellNum>
                           <TableCellNum>{counters.danoMaterial}</TableCellNum>
                           <TableCellNum>{counters.danoAmbiental}</TableCellNum>
-                          <TableCellNum className="font-semibold">{rates.tasaFrecuencia.toFixed(2)}</TableCellNum>
-                          <TableCellNum className="font-semibold">{rates.tasaGravedad.toFixed(2)}</TableCellNum>
+                          {officialRatesEnabled && <TableCellNum className="font-semibold">{fmtRate(rates.tasaFrecuencia)}</TableCellNum>}
+                          {officialRatesEnabled && <TableCellNum className="font-semibold">{fmtRate(rates.tasaGravedad)}</TableCellNum>}
                           <TableCellNum className="font-semibold">{rates.totalAccidentes}</TableCellNum>
                           {editable && (
                             <TableCell className="text-right">
@@ -233,8 +247,8 @@ export function IndicadoresDashboard({
                       <TableCellNum>{totals.incidentes}</TableCellNum>
                       <TableCellNum>{totals.danoMaterial}</TableCellNum>
                       <TableCellNum>{totals.danoAmbiental}</TableCellNum>
-                      <TableCellNum>{totalsRates.tasaFrecuencia.toFixed(2)}</TableCellNum>
-                      <TableCellNum>{totalsRates.tasaGravedad.toFixed(2)}</TableCellNum>
+                      {officialRatesEnabled && <TableCellNum>{fmtRate(totalsRates.tasaFrecuencia)}</TableCellNum>}
+                      {officialRatesEnabled && <TableCellNum>{fmtRate(totalsRates.tasaGravedad)}</TableCellNum>}
                       <TableCellNum>{totalsRates.totalAccidentes}</TableCellNum>
                       {canManage && !isTotalView && <TableCell />}
                     </TableRow>
@@ -247,7 +261,7 @@ export function IndicadoresDashboard({
         </TabsContent>
 
         <TabsContent value="graficos">
-          <IndicadoresCharts monthlyCounters={monthlyCounters} />
+          <IndicadoresCharts monthlyCounters={monthlyCounters} showOfficialRates={officialRatesEnabled} />
         </TabsContent>
       </Tabs>
 
@@ -258,6 +272,7 @@ export function IndicadoresDashboard({
           year={year}
           month={editingMonth}
           initial={monthlyCounters[editingMonth - 1] as IndicatorCounters}
+          showOfficialRates={officialRatesEnabled}
           onClose={() => setEditingMonth(null)}
           onNavigate={(month) => setEditingMonth(month)}
         />

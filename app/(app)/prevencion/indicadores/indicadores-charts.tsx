@@ -26,7 +26,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   )
 }
 
-export default function IndicadoresCharts({ monthlyCounters }: { monthlyCounters: IndicatorCounters[] }) {
+export default function IndicadoresCharts({ monthlyCounters, showOfficialRates = false }: { monthlyCounters: IndicatorCounters[]; showOfficialRates?: boolean }) {
   const data = monthlyCounters.map((c, i) => ({
     month: MONTH_LABELS[i],
     ...c,
@@ -35,7 +35,7 @@ export default function IndicadoresCharts({ monthlyCounters }: { monthlyCounters
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <ChartCard title="Tasa de Frecuencia Mensual">
+      {showOfficialRates && <ChartCard title="Tasa de Frecuencia Mensual">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} />
@@ -43,9 +43,9 @@ export default function IndicadoresCharts({ monthlyCounters }: { monthlyCounters
           <Tooltip contentStyle={tooltipStyle()} />
           <Line type="monotone" dataKey="tasaFrecuencia" name="Tasa Frecuencia" stroke="var(--color-primary)" strokeWidth={2} dot={{ r: 3 }} />
         </LineChart>
-      </ChartCard>
+      </ChartCard>}
 
-      <ChartCard title="Tasa de Gravedad Mensual">
+      {showOfficialRates && <ChartCard title="Tasa de Gravedad Mensual">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} />
@@ -53,7 +53,7 @@ export default function IndicadoresCharts({ monthlyCounters }: { monthlyCounters
           <Tooltip contentStyle={tooltipStyle()} />
           <Line type="monotone" dataKey="tasaGravedad" name="Tasa Gravedad" stroke="var(--color-accent)" strokeWidth={2} dot={{ r: 3 }} />
         </LineChart>
-      </ChartCard>
+      </ChartCard>}
 
       <ChartCard title="Accidentes por Mes">
         <BarChart data={data}>

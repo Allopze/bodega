@@ -14,6 +14,8 @@ import type { PpaFormProps } from "./ppa-form.types"
 interface UsePpaFormReturn {
   worksiteId: string
   setWorksiteId: (v: string) => void
+  workPermitId: string
+  setWorkPermitId: (v: string) => void
   rutSearch: string
   setRutSearch: (v: string) => void
   searchingWorker: boolean
@@ -64,7 +66,15 @@ export function usePpaForm({
   const [pending, startTransition] = React.useTransition()
   const { online, enqueue } = usePpaOfflineQueue()
 
-  const [worksiteId, setWorksiteId] = React.useState(initialWorksiteId)
+  const [worksiteId, setWorksiteIdRaw] = React.useState(initialWorksiteId)
+  const [workPermitId, setWorkPermitId] = React.useState("")
+
+  // Un permiso pertenece a una faena: cambiar de faena vuelve a dejar el
+  // permiso sin elegir, en vez de arrastrar el de la faena anterior.
+  function setWorksiteId(next: string) {
+    setWorksiteIdRaw(next)
+    setWorkPermitId("")
+  }
 
   const identity = usePpaIdentity({
     hasFaenaParam,
@@ -116,6 +126,7 @@ export function usePpaForm({
     const rut = identity.manual ? identity.workerRut.trim() : identity.rutSearch.trim()
     return {
       worksiteId,
+      workPermitId: workPermitId || undefined,
       workerId: identity.manual ? undefined : identity.workerId || undefined,
       workerName: name,
       workerRut: rut || undefined,
@@ -214,6 +225,7 @@ export function usePpaForm({
 
   return {
     worksiteId, setWorksiteId,
+    workPermitId, setWorkPermitId,
     rutSearch: identity.rutSearch, setRutSearch: identity.setRutSearch,
     searchingWorker: identity.searchingWorker,
     matchedWorker: identity.matchedWorker,

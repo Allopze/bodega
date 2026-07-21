@@ -1,4 +1,4 @@
-import { listWorksitesForPublicForm } from "@/lib/services/ppa"
+import { listActiveWorkPermitsForPublicForm, listWorksitesForPublicForm } from "@/lib/services/ppa"
 import { PPA_TIPO_TRABAJO_OPTIONS, PPA_CONTROL_OPTIONS, PPA_COMPLEMENTARIAS } from "@/lib/ppa/types"
 import { PpaForm } from "./ppa-form"
 import { OfflineSavedMessage } from "./offline-saved"
@@ -23,7 +23,10 @@ export default async function PpaPublicPage({
     return <OfflineSavedMessage />
   }
 
-  const worksites = await listWorksitesForPublicForm()
+  const [worksites, workPermits] = await Promise.all([
+    listWorksitesForPublicForm(),
+    listActiveWorkPermitsForPublicForm(),
+  ])
 
   const initialWorksiteId = faena && worksites.some((w) => w.id === faena) ? faena : ""
   const hasFaenaParam = !!faena
@@ -42,6 +45,7 @@ export default async function PpaPublicPage({
 
       <PpaForm
         worksites={worksites}
+        workPermits={workPermits}
         initialWorksiteId={initialWorksiteId}
         hasFaenaParam={hasFaenaParam}
         tipoTrabajoOptions={PPA_TIPO_TRABAJO_OPTIONS}

@@ -64,7 +64,7 @@ async function insertAllItems(
       status:              "draft",
       urgency:             item.urgency,
       requiredDate,
-      workerId:            null,
+      workerId:            item.workerId || null,
       suggestedSupplierId: item.suggestedSupplierId || null,
       supplierHint:        item.supplierHint || null,
       sortOrder:           item.sortOrder ?? i,

@@ -6,6 +6,7 @@ const sensitiveKeys = new Set([
   "AUTH_SECRET",
   "SMTP_PASS",
   "POSTGRES_PASSWORD",
+  "PREVENTION_DATA_ENCRYPTION_KEY",
 ])
 
 function getTrackedFiles() {

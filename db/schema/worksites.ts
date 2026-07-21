@@ -45,6 +45,11 @@ export const workers = pgTable("workers", {
   supervisor:     text("supervisor"),              // nombre del supervisor directo
   prevencionista: text("prevencionista"),          // nombre del prevencionista asignado
   worksiteId:  text("worksite_id").notNull().references(() => worksites.id),
+  sizeTop:     text("size_top"),
+  sizeBottom:  text("size_bottom"),
+  sizeShoe:    text("size_shoe"),
+  sizeGloves:  text("size_gloves"),
+  sizeHelmet:  text("size_helmet"),
   isActive:    boolean("is_active").notNull().default(true),
   createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })

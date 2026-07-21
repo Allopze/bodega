@@ -768,6 +768,60 @@ async function main() {
     updatedAt: now,
   })
 
+  // EPP family + variant products to test the variant-quantity-grid feature.
+  await db.insert(schema.eppProductFamilies).values({
+    id: "family-epp-e2e",
+    categoryId: "cat-epp-e2e",
+    canonicalName: "Casco E2E Variantes",
+    identityKey: "casco-e2e-variantes",
+    brand: "3M",
+    model: "H-700",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.products).values([
+    {
+      id: "prod-epp-var-s", sku: "E2E-CASCO-S", name: "Casco E2E S",
+      categoryId: "cat-epp-e2e", familyId: "family-epp-e2e",
+      unitOfMeasure: "unidad", isEpp: true, isActive: true,
+      createdAt: now, updatedAt: now,
+    },
+    {
+      id: "prod-epp-var-m", sku: "E2E-CASCO-M", name: "Casco E2E M",
+      categoryId: "cat-epp-e2e", familyId: "family-epp-e2e",
+      unitOfMeasure: "unidad", isEpp: true, isActive: true,
+      createdAt: now, updatedAt: now,
+    },
+    {
+      id: "prod-epp-var-l", sku: "E2E-CASCO-L", name: "Casco E2E L",
+      categoryId: "cat-epp-e2e", familyId: "family-epp-e2e",
+      unitOfMeasure: "unidad", isEpp: true, isActive: true,
+      createdAt: now, updatedAt: now,
+    },
+  ])
+  const variantPids = ["prod-epp-var-s", "prod-epp-var-m", "prod-epp-var-l"] as const
+  for (let i = 0; i < variantPids.length; i++) {
+    await db.insert(schema.productAttributes).values({
+      id: `pa-epp-var-${i}`,
+      productId: variantPids[i],
+      name: "Talla",
+      type: "select",
+      isRequired: true,
+      options: JSON.stringify(["S", "M", "L"]),
+      sortOrder: 0,
+    })
+  }
+  for (const variantId of variantPids) {
+    await db.insert(schema.productSuppliers).values({
+      id: `ps-${variantId}`,
+      productId: variantId,
+      supplierId: "sup-e2e",
+      unitPrice: 3200,
+      isPreferred: true,
+      lastUpdated: now,
+    })
+  }
+
   await client.end()
 }
 

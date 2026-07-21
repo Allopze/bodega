@@ -1,0 +1,4 @@
+ALTER TABLE "prevention_sensitive_access_audit" DROP CONSTRAINT "prevention_sensitive_audit_domain_valid";--> statement-breakpoint
+ALTER TABLE "prevention_sensitive_access_audit" DROP CONSTRAINT "prevention_sensitive_audit_action_valid";--> statement-breakpoint
+ALTER TABLE "prevention_sensitive_access_audit" ADD CONSTRAINT "prevention_sensitive_audit_domain_valid" CHECK ("prevention_sensitive_access_audit"."domain" IN ('health', 'reserved_case', 'privacy_request', 'incident'));--> statement-breakpoint
+ALTER TABLE "prevention_sensitive_access_audit" ADD CONSTRAINT "prevention_sensitive_audit_action_valid" CHECK ("prevention_sensitive_access_audit"."action" IN ('create', 'read_restrictions', 'read_clinical', 'read_reserved', 'read_incident_sensitive', 'update', 'export', 'archive', 'grant_access', 'revoke_access'));

@@ -1,6 +1,7 @@
 import { pgTable, text, integer, boolean, timestamp, numeric, uniqueIndex } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
 import { suppliers } from "./worksites"
+import { eppTypes } from "./epp-types"
 
 /* ── Product Categories ──────────────────────────────────────────────────── */
 export const productCategories = pgTable("product_categories", {
@@ -14,15 +15,19 @@ export const productCategories = pgTable("product_categories", {
 
 /* ── EPP product families ────────────────────────────────────────────────── */
 export const eppProductFamilies = pgTable("epp_product_families", {
-  id:            text("id").primaryKey(),
-  categoryId:    text("category_id").notNull().references(() => productCategories.id),
-  canonicalName: text("canonical_name").notNull(),
-  identityKey:   text("identity_key").notNull().unique(),
-  eppType:       text("epp_type"),
-  brand:         text("brand"),
-  model:         text("model"),
-  createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-  updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  id:             text("id").primaryKey(),
+  categoryId:     text("category_id").notNull().references(() => productCategories.id),
+  canonicalName:  text("canonical_name").notNull(),
+  identityKey:    text("identity_key").notNull().unique(),
+  eppType:        text("epp_type"),
+  eppTypeId:      text("epp_type_id").references(() => eppTypes.id),
+  brand:          text("brand"),
+  model:          text("model"),
+  certification:  text("certification"),
+  lifespanMonths: integer("lifespan_months"),
+  pictogramUrl:   text("pictogram_url"),
+  createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
 
 /* ── Products ────────────────────────────────────────────────────────────── */
@@ -52,6 +57,7 @@ export const productAttributes = pgTable("product_attributes", {
   type:          text("type").notNull(),           // "text" | "select" | "number"
   isRequired:    boolean("is_required").notNull().default(false),
   options:       text("options"),                  // JSON array for select type
+  sizeFamily:    text("size_family"),              // canonical family: 'ropa' | 'calzado' | 'guantes' | 'casco'
   sortOrder:     integer("sort_order").notNull().default(0),
 })
 
@@ -77,6 +83,7 @@ export const productCategoriesRelations = relations(productCategories, ({ many }
 
 export const eppProductFamiliesRelations = relations(eppProductFamilies, ({ one, many }) => ({
   category: one(productCategories, { fields: [eppProductFamilies.categoryId], references: [productCategories.id] }),
+  type:     one(eppTypes, { fields: [eppProductFamilies.eppTypeId], references: [eppTypes.id] }),
   products: many(products),
 }))
 
@@ -125,6 +132,7 @@ export const productAttributeTemplates = pgTable("product_attribute_templates", 
   name:        text("name").notNull(),
   type:        text("type").notNull(),                                                    // "text" | "select" | "number"
   options:     text("options"),                                                          // JSON array string for "select"
+  sizeFamily:  text("size_family"),                                                      // canonical family
   isRequired:  boolean("is_required").notNull().default(false),
   sortOrder:   integer("sort_order").notNull().default(0),
   isActive:    boolean("is_active").notNull().default(true),

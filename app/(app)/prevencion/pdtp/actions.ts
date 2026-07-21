@@ -6,6 +6,7 @@ import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
+import { parseZ } from "@/lib/actions/parse-z"
 import {
   markPdtpExecution,
   approvePdtpProgramJdpr,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
+  pdtpExecutionSchema,
   pdtpExecutionApprovalSchema,
   pdtpExecutionRejectionSchema,
   pdtpActivityUpdateSchema,
@@ -69,21 +71,27 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
   if (guard.error) return guard.error
   const session = guard.session
 
+  const evidenceUrl = formData.get("evidenceUrl")
+  // Boundary de validación con parseZ (Fase 1 H-27): mismo schema que ya
+  // aplicaba markPdtpExecution internamente, movido al boundary de la
+  // action. El servicio lo sigue re-validando (defensa en profundidad).
+  const parsed = parseZ(pdtpExecutionSchema, {
+    activityId: formData.get("activityId"),
+    worksiteId: formData.get("worksiteId"),
+    year: formData.get("year"),
+    month: formData.get("month"),
+    week: formData.get("week"),
+    executedQuantity: formData.get("executedQuantity"),
+    evidenceText: formData.get("evidenceText") ?? "",
+    evidenceUrl: evidenceUrl ?? "",
+    // evidenceUrl es la evidencia destacada; no se duplica en el arreglo
+    // de adjuntos, que se reserva para evidencias adicionales.
+    evidencePhotos: [],
+  })
+  if (!parsed.ok) return parsed
+
   try {
-    const evidenceUrl = formData.get("evidenceUrl")
-    await markPdtpExecution({
-      activityId: formData.get("activityId"),
-      worksiteId: formData.get("worksiteId"),
-      year: formData.get("year"),
-      month: formData.get("month"),
-      week: formData.get("week"),
-      executedQuantity: formData.get("executedQuantity"),
-      evidenceText: formData.get("evidenceText") ?? "",
-      evidenceUrl: evidenceUrl ?? "",
-      // evidenceUrl es la evidencia destacada; no se duplica en el arreglo
-      // de adjuntos, que se reserva para evidencias adicionales.
-      evidencePhotos: [],
-    }, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    await markPdtpExecution(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {

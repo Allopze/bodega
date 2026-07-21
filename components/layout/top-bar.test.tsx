@@ -75,7 +75,7 @@ describe("TopBar", () => {
     }
   })
 
-  it("hides the generic header search on Prevención routes until each screen owns a complete search contract", async () => {
+  it("keeps the generic header search on Documentación because its loaded list consumes the shared query", async () => {
     pathname = "/prevencion/documentacion"
 
     render(
@@ -85,6 +85,6 @@ describe("TopBar", () => {
     )
 
     await screen.findByRole("button", { name: "Abrir menú de usuario" })
-    expect(screen.queryByRole("searchbox", { name: "Filtrar en esta página" })).toBeNull()
+    expect(screen.getByRole("searchbox", { name: "Filtrar en esta página" })).toBeInTheDocument()
   })
 })

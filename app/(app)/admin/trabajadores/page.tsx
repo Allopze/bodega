@@ -66,6 +66,11 @@ export default async function TrabajadoresPage() {
           worksiteName: w.worksite?.name ?? "—",
           isActive:     w.isActive,
           createdAt:    w.createdAt,
+          sizeTop:      w.sizeTop,
+          sizeBottom:   w.sizeBottom,
+          sizeShoe:     w.sizeShoe,
+          sizeGloves:   w.sizeGloves,
+          sizeHelmet:   w.sizeHelmet,
         }))}
         worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))}
       />

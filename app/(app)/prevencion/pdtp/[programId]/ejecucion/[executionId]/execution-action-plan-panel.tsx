@@ -49,6 +49,13 @@ const ESTADO_LABELS: Record<string, string> = {
   reabierto: "Reabierto",
 }
 
+const FOLLOWUP_STATE_OPTIONS = [
+  { value: "pendiente", label: "Pendiente" },
+  { value: "en_proceso", label: "En proceso" },
+  { value: "completado", label: "Completado" },
+  { value: "reabierto", label: "Reabierto" },
+] as const
+
 function estadoVariant(estado: string, vencida: boolean): BadgeProps["variant"] {
   if (vencida) return "danger"
   switch (estado) {
@@ -115,6 +122,7 @@ export function ExecutionActionPlanPanel({ executionId, worksiteId, items, follo
             {expandedId === item.id && (
               <div className="border-t border-(--color-border) px-4 py-3">
                 <ActionFollowupTimeline
+                  key={`${item.id}:${item.estado}`}
                   itemId={item.id}
                   estado={item.estado}
                   worksiteId={worksiteId}
@@ -253,13 +261,15 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
 }) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [observacion, setObservacion] = React.useState("")
-  const [estadoNuevo, setEstadoNuevo] = React.useState(estado)
-  const [files, setFiles] = React.useState<File[]>([])
+  const [effectivenessAssessment, setEffectivenessAssessment] = React.useState("")
+  const [selectedStatus, setSelectedStatus] = React.useState<string | null>(null)
+  const filesRef = React.useRef<File[]>([])
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const estadoNuevo = selectedStatus ?? estado
 
   async function handleAddFollowup() {
-    if (!observacion.trim() && estadoNuevo === estado && files.length === 0) {
+    if (!observacion.trim() && estadoNuevo === estado && filesRef.current.length === 0) {
       setError("Ingresa una observación, cambia el estado o adjunta evidencia.")
       return
     }
@@ -270,7 +280,7 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
       // (pdtp-execution-form.tsx): POST a /api/prevencion/pdtp/evidence por
       // archivo, se acumulan los `path` devueltos en evidenciaPhotos.
       const evidenciaPhotos: string[] = []
-      for (const file of files) {
+      for (const file of filesRef.current) {
         const uploadData = new FormData()
         uploadData.set("file", file)
         uploadData.set("worksiteId", worksiteId)
@@ -292,7 +302,8 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
       if (!result.ok) setError(result.message ?? "Error al registrar seguimiento.")
       else {
         setObservacion("")
-        setFiles([])
+        setSelectedStatus(null)
+        filesRef.current = []
         if (fileInputRef.current) fileInputRef.current.value = ""
         onChange()
       }
@@ -302,12 +313,23 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
   }
 
   async function handleVerify() {
+    if (effectivenessAssessment.trim().length < 5) {
+      setError("Documenta cómo se comprobó la eficacia de la acción.")
+      return
+    }
     setPending(true)
     setError(null)
     try {
-      const result = await verifyPdtpActionPlanItemAction({ itemId })
+      const result = await verifyPdtpActionPlanItemAction({
+        itemId,
+        observacion: observacion || undefined,
+        effectivenessAssessment,
+      })
       if (!result.ok) setError(result.message ?? "Error al verificar.")
-      else onChange()
+      else {
+        setEffectivenessAssessment("")
+        onChange()
+      }
     } finally {
       setPending(false)
     }
@@ -362,11 +384,11 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
               placeholder="Observación de seguimiento..."
               maxLength={2000}
             />
-            <Select value={estadoNuevo} onValueChange={setEstadoNuevo}>
+            <Select value={estadoNuevo} onValueChange={setSelectedStatus}>
               <SelectTrigger className="sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {Object.entries(ESTADO_LABELS).filter(([v]) => v !== "verificado").map(([value, label]) => (
-                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                {FOLLOWUP_STATE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -375,15 +397,25 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
             ref={fileInputRef}
             accept="image/jpeg,image/png,application/pdf"
             multiple
-            onFilesChange={setFiles}
+            onFilesChange={(nextFiles) => { filesRef.current = nextFiles }}
           />
+          {canVerify && estado === "completado" && (
+            <Textarea
+              value={effectivenessAssessment}
+              onChange={(e) => setEffectivenessAssessment(e.target.value)}
+              rows={2}
+              placeholder="Cómo se comprobó la eficacia del control..."
+              maxLength={3000}
+              aria-label="Evaluación de eficacia"
+            />
+          )}
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" onClick={handleAddFollowup} disabled={pending}>
               {pending ? "Guardando..." : "Registrar seguimiento"}
             </Button>
-            {canVerify && estado !== "verificado" && (
-              <Button size="sm" onClick={handleVerify} disabled={pending}>Verificar y cerrar</Button>
+            {canVerify && estado === "completado" && (
+              <Button size="sm" onClick={handleVerify} disabled={pending}>Verificar eficacia</Button>
             )}
             {canVerify && estado === "verificado" && (
               <Button size="sm" variant="destructive" onClick={handleReopen} disabled={pending}>Reabrir</Button>

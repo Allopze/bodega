@@ -27,10 +27,34 @@ import {
   isActionVencida,
   pdtpActionPlanItemId,
   plazoFromDañoPotencial,
+  requiereDetencionInmediata,
   plazoFromPrioridad,
 } from "./checklist-domain"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import type { WorksiteScope } from "./helpers"
+import {
+  createCapaActionWithClient,
+  transitionCapaActionWithClient,
+  updateCapaActionWithClient,
+} from "@/lib/services/prevention-capa"
+import { preventionCapaActions } from "@/db/schema"
+
+function toCapaPriority(priority: string | undefined) {
+  return priority === "alta" ? "high" : priority === "baja" ? "low" : "medium"
+}
+
+function legacyCapaAccess(userId: string) {
+  return {
+    ctx: { userId },
+    scope: { mode: "all" as const, ids: [] as [] },
+    permissions: [
+      "prevention:capa:manage",
+      "prevention:capa:complete",
+      "prevention:capa:verify",
+      "prevention:capa:close",
+    ],
+  }
+}
 
 export type PdtpActionPlanItemInput = {
   executionId: string
@@ -68,8 +92,12 @@ export type PdtpActionPlanItemUpdate = {
  * manual del flujo single-sujeto).
  */
 export async function submitExecutionChecklist(instanceId: string, userId: string) {
-  const { porcentajeCumplimiento } = await completeExecutionChecklist(instanceId, userId)
-  const { generadas, existentes } = await generateActionPlanFromChecklist(instanceId, userId)
+  const [completion, actionPlan] = await Promise.all([
+    completeExecutionChecklist(instanceId, userId),
+    generateActionPlanFromChecklist(instanceId, userId),
+  ])
+  const { porcentajeCumplimiento } = completion
+  const { generadas, existentes } = actionPlan
   // Recálculo best-effort: no falla el submit si la ejecución desaparece.
   try {
     const [inst] = await db.select({ executionId: pdtpExecutionChecklists.executionId })
@@ -117,11 +145,19 @@ export async function generateActionPlanFromChecklist(
   // Ejecución para obtener fecha de referencia del plazo
   const [execution] = await db.select().from(pdtpExecutions)
     .where(eq(pdtpExecutions.id, executionId)).limit(1)
+  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
   const refDate = execution?.executedAt ? new Date(execution.executedAt) : new Date()
 
   let generadas = 0
   let existentes = 0
   let nextN = maxN + 1
+  const sectionsById = new Map(definition.sections.map((section) => [section.id, section]))
+  const itemsBySectionId = new Map(
+    definition.sections.map((section) => [
+      section.id,
+      new Map(section.items.map((item) => [item.id, item])),
+    ]),
+  )
 
   for (const item of nonCompliant) {
     // Buscar si ya existe una acción para este seccionId+itemId de la instancia.
@@ -142,11 +178,11 @@ export async function generateActionPlanFromChecklist(
     }
 
     // Derivar responsableRole desde la sección de la definición
-    const section = definition.sections.find((s) => s.id === item.seccionId)
+    const section = sectionsById.get(item.seccionId)
     const responsableRole = section?.appliesWhen?.[0] ?? "prevencionista_faena"
 
     // Hallazgo: prefijo de sujeto + observación del ítem, o label del ítem
-    const defItem = section?.items.find((i) => i.id === item.itemId)
+    const defItem = itemsBySectionId.get(item.seccionId)?.get(item.itemId)
     const hallazgo = prefix + (item.observacion || defItem?.label || "Ítem no conforme")
 
     const accion = item.accionCorrectiva || "Por definir"
@@ -157,26 +193,46 @@ export async function generateActionPlanFromChecklist(
     const danoPotencial = defItem?.danoPotencial
     const prioridad = danoPotencial ? PDTP_DANO_POTENCIAL_A_PRIORIDAD[danoPotencial] : "media"
     const plazo = danoPotencial ? plazoFromDañoPotencial(danoPotencial, refDate) : plazoFromPrioridad("media", refDate)
+    // La urgencia de terreno viaja como bandera, no como plazo imposible.
+    const detencionInmediata = requiereDetencionInmediata(danoPotencial)
 
     const id = pdtpActionPlanItemId(executionId, nextN)
-    await db.insert(pdtpActionPlan).values({
-      id,
-      executionId,
-      n: nextN,
-      origen: "checklist_item",
-      seccionId: item.seccionId,
-      itemId: item.itemId,
-      hallazgo,
-      accion,
-      responsableRole,
-      responsable: responsableRole,
-      responsableUserId: null,
-      plazo,
-      prioridad,
-      estado: "pendiente",
-      createdByUserId: userId,
-      createdAt: now,
-      updatedAt: now,
+    await db.transaction(async (tx) => {
+      const capa = await createCapaActionWithClient(tx, {
+        sourceType: "pdtp",
+        sourceId: executionId,
+        sourceLegacyActionId: id,
+        worksiteId: execution.worksiteId,
+        finding: hallazgo,
+        actionDescription: accion,
+        responsibleSnapshot: responsableRole,
+        responsibleRole: responsableRole,
+        priority: toCapaPriority(prioridad),
+        requiresImmediateStop: detencionInmediata,
+        targetDate: plazo,
+        evidenceRequired: true,
+        reconciliationStatus: "needs_assignment",
+      }, userId)
+      await tx.insert(pdtpActionPlan).values({
+        id,
+        executionId,
+        capaActionId: capa.id,
+        n: nextN,
+        origen: "checklist_item",
+        seccionId: item.seccionId,
+        itemId: item.itemId,
+        hallazgo,
+        accion,
+        responsableRole,
+        responsable: responsableRole,
+        responsableUserId: null,
+        plazo,
+        prioridad,
+        estado: "pendiente",
+        createdByUserId: userId,
+        createdAt: now,
+        updatedAt: now,
+      })
     })
     nextN++
     generadas++
@@ -200,59 +256,108 @@ export async function createActionPlanItem(input: PdtpActionPlanItemInput, userI
     .where(eq(pdtpActionPlan.executionId, input.executionId))
   const nextN = (maxRow?.n ?? 0) + 1
   const id = pdtpActionPlanItemId(input.executionId, nextN)
+  const [execution] = await db.select().from(pdtpExecutions)
+    .where(eq(pdtpExecutions.id, input.executionId)).limit(1)
+  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
 
-  const [row] = await db.insert(pdtpActionPlan).values({
-    id,
-    executionId: input.executionId,
-    n: nextN,
-    origen: input.origen ?? "manual",
-    seccionId: input.seccionId ?? null,
-    itemId: input.itemId ?? null,
-    hallazgo: input.hallazgo,
-    accion: input.accion,
-    responsableRole: input.responsableRole,
-    responsable: input.responsable,
-    responsableUserId: input.responsableUserId ?? null,
-    plazo: input.plazo,
-    prioridad: input.prioridad ?? "media",
-    estado: "pendiente",
-    createdByUserId: userId,
-    createdAt: now,
-    updatedAt: now,
-  }).returning()
-  return row!
+  return db.transaction(async (tx) => {
+    const capa = await createCapaActionWithClient(tx, {
+      sourceType: "pdtp",
+      sourceId: input.executionId,
+      sourceLegacyActionId: id,
+      worksiteId: execution.worksiteId,
+      finding: input.hallazgo,
+      actionDescription: input.accion,
+      responsibleUserId: input.responsableUserId ?? null,
+      responsibleSnapshot: input.responsable,
+      responsibleRole: input.responsableRole,
+      priority: toCapaPriority(input.prioridad),
+      targetDate: input.plazo,
+      evidenceRequired: true,
+    }, userId)
+    const [row] = await tx.insert(pdtpActionPlan).values({
+      id,
+      executionId: input.executionId,
+      capaActionId: capa.id,
+      n: nextN,
+      origen: input.origen ?? "manual",
+      seccionId: input.seccionId ?? null,
+      itemId: input.itemId ?? null,
+      hallazgo: input.hallazgo,
+      accion: input.accion,
+      responsableRole: input.responsableRole,
+      responsable: input.responsable,
+      responsableUserId: input.responsableUserId ?? null,
+      plazo: input.plazo,
+      prioridad: input.prioridad ?? "media",
+      estado: "pendiente",
+      createdByUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    }).returning()
+    return row!
+  })
 }
 
-/** Actualiza una acción (campos editables + estado). */
+/** Actualiza metadatos; los estados sólo cambian mediante el workflow CAPA. */
 export async function updateActionPlanItem(itemId: string, update: PdtpActionPlanItemUpdate, userId: string) {
   const now = new Date().toISOString()
-  const set: Record<string, unknown> = { updatedAt: now }
-  if (update.hallazgo !== undefined) set.hallazgo = update.hallazgo
-  if (update.accion !== undefined) set.accion = update.accion
-  if (update.responsableRole !== undefined) set.responsableRole = update.responsableRole
-  if (update.responsable !== undefined) set.responsable = update.responsable
-  if (update.responsableUserId !== undefined) set.responsableUserId = update.responsableUserId
-  if (update.plazo !== undefined) set.plazo = update.plazo
-  if (update.prioridad !== undefined) set.prioridad = update.prioridad
-  if (update.estado !== undefined) {
-    set.estado = update.estado
-    if (update.estado === "completado" || update.estado === "verificado") {
-      set.closedAt = now
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(pdtpActionPlan).where(eq(pdtpActionPlan.id, itemId)).limit(1)
+    if (!current) throw new Error("Acción no encontrada.")
+    if (update.estado !== undefined && update.estado !== current.estado) {
+      throw new Error("El estado se cambia desde el seguimiento CAPA, con evidencia y transición auditada.")
     }
-    if (update.estado === "verificado") {
-      set.verifiedByUserId = userId
-      set.verifiedAt = now
-    }
-  }
+    if (!current.capaActionId) throw new Error("La acción no tiene CAPA vinculada y requiere conciliación.")
+    const [capa] = await tx.select().from(preventionCapaActions)
+      .where(eq(preventionCapaActions.id, current.capaActionId)).limit(1)
+    if (!capa) throw new Error("La acción CAPA vinculada no existe.")
+    await updateCapaActionWithClient(tx, {
+      actionId: capa.id,
+      expectedVersion: capa.version,
+      finding: update.hallazgo,
+      actionDescription: update.accion,
+      responsibleUserId: update.responsableUserId,
+      responsibleSnapshot: update.responsable,
+      responsibleRole: update.responsableRole,
+      targetDate: update.plazo,
+      priority: update.prioridad === undefined ? undefined : toCapaPriority(update.prioridad),
+    }, legacyCapaAccess(userId))
 
-  const [row] = await db.update(pdtpActionPlan).set(set)
-    .where(eq(pdtpActionPlan.id, itemId)).returning()
-  return row!
+    const set: Record<string, unknown> = { updatedAt: now }
+    if (update.hallazgo !== undefined) set.hallazgo = update.hallazgo
+    if (update.accion !== undefined) set.accion = update.accion
+    if (update.responsableRole !== undefined) set.responsableRole = update.responsableRole
+    if (update.responsable !== undefined) set.responsable = update.responsable
+    if (update.responsableUserId !== undefined) set.responsableUserId = update.responsableUserId
+    if (update.plazo !== undefined) set.plazo = update.plazo
+    if (update.prioridad !== undefined) set.prioridad = update.prioridad
+    const [row] = await tx.update(pdtpActionPlan).set(set).where(eq(pdtpActionPlan.id, itemId)).returning()
+    return row!
+  })
 }
 
-/** Elimina una acción (solo si está pendiente). */
-export async function deleteActionPlanItem(itemId: string) {
-  await db.delete(pdtpActionPlan).where(eq(pdtpActionPlan.id, itemId))
+/** Conserva la acción y la cancela con historial en vez de borrarla. */
+export async function deleteActionPlanItem(itemId: string, userId: string) {
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(pdtpActionPlan).where(eq(pdtpActionPlan.id, itemId)).limit(1)
+    if (!current) throw new Error("Acción no encontrada.")
+    if (!current.capaActionId) throw new Error("La acción no tiene CAPA vinculada y requiere conciliación.")
+    const [capa] = await tx.select().from(preventionCapaActions)
+      .where(eq(preventionCapaActions.id, current.capaActionId)).limit(1)
+    if (!capa) throw new Error("La acción CAPA vinculada no existe.")
+    if (capa.status !== "cancelled") {
+      await transitionCapaActionWithClient(tx, {
+        actionId: capa.id,
+        expectedVersion: capa.version,
+        toStatus: "cancelled",
+        reason: "Acción PDTP cancelada desde el plan preventivo.",
+      }, legacyCapaAccess(userId))
+    }
+    const [updated] = await tx.update(pdtpActionPlan).set({ estado: "cancelado", updatedAt: new Date().toISOString() })
+      .where(eq(pdtpActionPlan.id, itemId)).returning()
+    return updated!
+  })
 }
 
 /**
@@ -347,7 +452,12 @@ export async function getActionPlanClosureRate(executionIds: string[]): Promise<
  * Verifica (cierra) una acción. Requiere permiso de verificación.
  * Crea un followup automático de cierre.
  */
-export async function verifyActionPlanItem(itemId: string, userId: string, observacion?: string) {
+export async function verifyActionPlanItem(
+  itemId: string,
+  userId: string,
+  observacion: string | undefined,
+  effectivenessAssessment: string,
+) {
   const now = new Date().toISOString()
   const today = now.slice(0, 10)
 
@@ -355,6 +465,18 @@ export async function verifyActionPlanItem(itemId: string, userId: string, obser
     const [current] = await tx.select().from(pdtpActionPlan)
       .where(eq(pdtpActionPlan.id, itemId)).limit(1)
     if (!current) throw new Error("Acción no encontrada.")
+    if (!current.capaActionId) throw new Error("La acción no tiene CAPA vinculada y requiere conciliación.")
+    const [capa] = await tx.select().from(preventionCapaActions)
+      .where(eq(preventionCapaActions.id, current.capaActionId)).limit(1)
+    if (!capa) throw new Error("La acción CAPA vinculada no existe.")
+    await transitionCapaActionWithClient(tx, {
+      actionId: capa.id,
+      expectedVersion: capa.version,
+      toStatus: "verified",
+      reason: observacion ?? "Verificación PDTP satisfactoria.",
+      effectivenessStatus: "effective",
+      effectivenessAssessment,
+    }, legacyCapaAccess(userId))
 
     const [updated] = await tx.update(pdtpActionPlan).set({
       estado: "verificado",
@@ -392,6 +514,20 @@ export async function reopenActionPlanItem(itemId: string, userId: string, motiv
     if (current.estado !== "verificado") {
       throw new Error("Solo se pueden reabrir acciones verificadas.")
     }
+    if (!current.capaActionId) throw new Error("La acción no tiene CAPA vinculada y requiere conciliación.")
+    const [capa] = await tx.select().from(preventionCapaActions)
+      .where(eq(preventionCapaActions.id, current.capaActionId)).limit(1)
+    if (!capa) throw new Error("La acción CAPA vinculada no existe.")
+    if (capa.status !== "verified" && capa.status !== "closed") {
+      throw new Error("La CAPA no está verificada o cerrada.")
+    }
+    await transitionCapaActionWithClient(tx, {
+      actionId: capa.id,
+      expectedVersion: capa.version,
+      toStatus: "reopened",
+      reason: motivo,
+      effectivenessStatus: "ineffective",
+    }, legacyCapaAccess(userId))
 
     const [updated] = await tx.update(pdtpActionPlan).set({
       estado: "reabierto",

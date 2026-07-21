@@ -43,25 +43,6 @@ export const DASHBOARD_ITEM = {
   iconName: "SquaresFour",
 } as const
 
-const PREVENTION_HOME_ITEM: NavItem = {
-  label: "Inicio de Prevención",
-  href: "/prevencion",
-  iconName: "House",
-}
-
-const PREVENTION_GROUP_ORDER = ["Programa", "Control en terreno", "Evidencia y resultados"]
-const PREVENTION_GROUP_ORDERS = new Map(PREVENTION_GROUP_ORDER.map((group, index) => [group, index]))
-
-function groupOrder(group: string | undefined): number {
-  return PREVENTION_GROUP_ORDERS.get(group ?? "") ?? Number.MAX_SAFE_INTEGER
-}
-
-function sortAreaItems(areaId: string, items: NavItem[]): NavItem[] {
-  if (areaId !== "prevencion") return items
-
-  return [...items].sort((left, right) => groupOrder(left.group) - groupOrder(right.group))
-}
-
 /** Árbol completo de áreas (sin filtrar), derivado del registry una sola vez. */
 function buildAreaTree(): AreaNode[] {
   const itemsByArea = new Map<string, NavItem[]>()
@@ -75,13 +56,43 @@ function buildAreaTree(): AreaNode[] {
   }
   const areas: AreaNode[] = []
   for (const area of [...AREAS].sort((left, right) => left.order - right.order)) {
-    const items = sortAreaItems(area.id, itemsByArea.get(area.id) ?? [])
+    const items = itemsByArea.get(area.id) ?? []
     if (items.length > 0) areas.push({ ...area, items })
   }
   return areas
 }
 
 export const AREA_TREE: AreaNode[] = buildAreaTree()
+
+/**
+ * Destinos que el sidebar puede seleccionar, incluidos los enlaces de ramas.
+ * Cuando dos destinos comparten prefijo, la ruta pertenece al más específico.
+ * Así `/combustibles/importar` no deja activo también `/combustibles`.
+ */
+const REGISTERED_NAV_HREFS = new Set(
+  AREA_TREE.flatMap((area) => area.items.flatMap((item) => [
+    item.href,
+    ...(item.children?.map((child) => child.href) ?? []),
+  ])),
+)
+
+function pathBelongsToHref(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+function withoutSearchOrHash(pathname: string): string {
+  return pathname.split(/[?#]/, 1)[0] || "/"
+}
+
+function findMostSpecificRegisteredNavHref(pathname: string): string | null {
+  let match: string | null = null
+  for (const href of REGISTERED_NAV_HREFS) {
+    if (pathBelongsToHref(pathname, href) && (match === null || href.length > match.length)) {
+      match = href
+    }
+  }
+  return match
+}
 
 // ── Module toggle support ──────────────────────────────────────────────────
 
@@ -131,41 +142,27 @@ export function getVisibleAreas(session: Session, enabledModuleIds?: Set<string>
     if (items.length === 0) continue
     areas.push({
       ...area,
-      items: area.id === "prevencion" ? [PREVENTION_HOME_ITEM, ...items] : items,
+      items,
     })
   }
   return areas
 }
 
 export function isHrefActive(href: string, pathname: string): boolean {
-  if (href === "/dashboard") return pathname === "/dashboard"
+  const currentPathname = withoutSearchOrHash(pathname)
+  if (href === "/dashboard") return currentPathname === "/dashboard"
+  const mostSpecificNavHref = findMostSpecificRegisteredNavHref(currentPathname)
+
   if (href === "/prevencion/evaluaciones") {
-    if (pathname === href) return true
-    if (pathname === "/prevencion/nueva" || pathname.startsWith("/prevencion/trabajador/")) return true
-    if (pathname.startsWith("/prevencion/")) {
-      const submodule = pathname.split("/")[2] ?? ""
-      return !["documentacion", "evaluaciones", "indicadores", "pdtp", "ppa"].includes(submodule)
+    if (currentPathname === href) return true
+    if (currentPathname === "/prevencion/nueva" || currentPathname.startsWith("/prevencion/trabajador/")) return true
+    if (currentPathname.startsWith("/prevencion/")) {
+      return mostSpecificNavHref === null || mostSpecificNavHref === href
     }
   }
-  if (href === "/prevencion") {
-    const preventionSubmodulePrefixes = [
-      "/prevencion/documentacion",
-      "/prevencion/indicadores",
-      "/prevencion/pdtp",
-      "/prevencion/ppa",
-    ]
-    if (preventionSubmodulePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
-      return false
-    }
-  }
-  // Acciones y aprobaciones son destinos internos del Programa, no el Programa mismo.
-  if (href === "/prevencion/pdtp" && (
-    pathname.startsWith("/prevencion/pdtp/acciones")
-    || pathname.startsWith("/prevencion/pdtp/aprobaciones")
-  )) {
-    return false
-  }
-  return pathname === href || pathname.startsWith(href + "/")
+
+  if (!pathBelongsToHref(currentPathname, href)) return false
+  return mostSpecificNavHref === null || mostSpecificNavHref === href
 }
 const matchesHref = isHrefActive
 

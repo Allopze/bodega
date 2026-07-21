@@ -87,11 +87,11 @@ export async function GET(
       },
     })
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return NextResponse.json({ error: "Evidencia no encontrada" }, { status: 404 })
     }
     if (err instanceof Error && /sin acceso a la faena/i.test(err.message)) {
-      return NextResponse.json({ error: err.message }, { status: 403 })
+      return NextResponse.json({ error: "Evidencia no encontrada" }, { status: 404 })
     }
     logger.error("[pdtp/evidence GET]", err)
     return NextResponse.json({ error: "Error al servir la evidencia" }, { status: 500 })

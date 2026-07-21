@@ -24,6 +24,7 @@ import {
   type UploadInput,
   assertScopeAccess,
   assertConfidentialityAllowed,
+  assertGeneralLibraryContentAllowed,
   readFileToBuffer,
   persistFileOnDisk,
   generateStorageName,
@@ -40,6 +41,7 @@ export async function createDocument({ data, ctx, scope, permissions }: CreateDo
   const parsed = sstDocumentCreateSchema.parse(data)
   assertScopeAccess(parsed.worksiteId || null, scope)
   assertConfidentialityAllowed(parsed.confidentiality, permissions)
+  assertGeneralLibraryContentAllowed({ dataClass: parsed.dataClass, title: parsed.title })
 
   const now = new Date().toISOString()
   const id = `sdoc-${nanoid()}`
@@ -50,6 +52,7 @@ export async function createDocument({ data, ctx, scope, permissions }: CreateDo
     internalCode: parsed.internalCode || null, title: parsed.title,
     description: parsed.description || null, worksiteId: parsed.worksiteId || null,
     status: "borrador", confidentiality: parsed.confidentiality,
+    dataClass: parsed.dataClass,
     currentVersionId: null, effectiveFrom: parsed.effectiveFrom || null,
     expiresAt: parsed.expiresAt || null, responsibleUserId: parsed.responsibleUserId || null,
     uploadedBy: ctx.userId, reviewedBy: null, approvedBy: null, approvedAt: null,
@@ -88,6 +91,9 @@ export async function updateDocumentMetadata(args: {
   if (doc.status === "archivado") throw new Error("No se puede modificar un documento archivado.")
   if (data.worksiteId !== undefined) assertScopeAccess(data.worksiteId || null, args.scope)
   if (data.confidentiality !== undefined) assertConfidentialityAllowed(data.confidentiality, args.permissions)
+  if (data.dataClass !== undefined) {
+    assertGeneralLibraryContentAllowed({ dataClass: data.dataClass, title: data.title ?? doc.title })
+  }
 
   const now = new Date().toISOString()
   const patch: Record<string, unknown> = { updatedAt: now }
@@ -96,6 +102,7 @@ export async function updateDocumentMetadata(args: {
   if (data.description !== undefined) patch.description = data.description || null
   if (data.worksiteId !== undefined) patch.worksiteId = data.worksiteId || null
   if (data.confidentiality !== undefined) patch.confidentiality = data.confidentiality
+  if (data.dataClass !== undefined) patch.dataClass = data.dataClass
   if (data.effectiveFrom !== undefined) patch.effectiveFrom = data.effectiveFrom || null
   if (data.expiresAt !== undefined) patch.expiresAt = data.expiresAt || null
   if (data.responsibleUserId !== undefined) patch.responsibleUserId = data.responsibleUserId || null
@@ -129,6 +136,7 @@ export async function uploadDocumentVersion(args: {
   assertScopeAccess(doc.worksiteId, args.scope)
   assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
   if (doc.status === "archivado") throw new Error("No se puede subir versiones a un documento archivado.")
+  assertGeneralLibraryContentAllowed({ dataClass: doc.dataClass, title: doc.title, fileName: args.input.file.name })
 
   const file = await readFileToBuffer(args.input.file)
   if (file.size > MAX_FILE_SIZE) throw new Error(`El archivo supera el máximo permitido de ${Math.round(MAX_FILE_SIZE / 1024 / 1024)} MB.`)
@@ -152,7 +160,7 @@ export async function uploadDocumentVersion(args: {
   const [row] = await db.insert(sstDocumentVersions).values({
     id, documentId: data.documentId,
     version: sql`(SELECT COALESCE(MAX(${sstDocumentVersions.version}), 0) + 1 FROM ${sstDocumentVersions} WHERE ${sstDocumentVersions.documentId} = ${data.documentId})`,
-    status: "vigente", fileName: file.name, storageName, filePath: relativePath,
+    status: "borrador", fileName: file.name, storageName, filePath: relativePath,
     mimeType: validated.mimeType, fileSize: file.size, checksum,
     effectiveFrom: data.effectiveFrom || null, effectiveTo: data.effectiveTo || null,
     changelog: data.changelog || null, uploadedBy: args.ctx.userId,
@@ -165,18 +173,17 @@ export async function uploadDocumentVersion(args: {
     catch (err) { logger.warn("[documents-library] no se pudo limpiar archivo huérfano", err) }
     throw new Error("No se pudo registrar la nueva versión.")
   }
-  await db.update(sstDocuments)
-    .set({ currentVersionId: id, checksum, updatedAt: now })
-    .where(eq(sstDocuments.id, data.documentId))
-  if (doc.currentVersionId && doc.currentVersionId !== id) {
-    await db.update(sstDocumentVersions)
-      .set({ status: "reemplazado", effectiveTo: now.slice(0, 10), updatedAt: now })
-      .where(eq(sstDocumentVersions.id, doc.currentVersionId))
-  }
   await recordAuditEntry({
     documentId: data.documentId, versionId: id, userId: args.ctx.userId, userEmail: args.ctx.userEmail,
-    action: "upload", ip: args.ctx.ip, comment: data.changelog || null,
-    metadata: { fileName: file.name, size: file.size, mime: validated.mimeType, version: row.version },
+    action: "upload", fromStatus: null, toStatus: "borrador", ip: args.ctx.ip,
+    comment: data.changelog || null,
+    metadata: {
+      fileName: file.name,
+      size: file.size,
+      mime: validated.mimeType,
+      version: row.version,
+      publication: "pending_review",
+    },
   })
   return row
 }
