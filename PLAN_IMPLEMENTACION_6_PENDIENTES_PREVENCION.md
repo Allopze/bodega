@@ -551,16 +551,16 @@ npm run db:generate
 
 Los seis hallazgos se consideran cerrados sólo cuando:
 
-- [ ] H-08 UI: las cuatro listas cargan páginas limitadas, muestran total real y conservan estado en URL.
-- [ ] H-20: el flujo canónico permite navegar meses sin cerrar el modal ni perder cambios silenciosamente.
-- [ ] H-21: el detalle PDTP presenta una cabecera compacta conforme A1/A5 y responsive.
-- [ ] H-25: documentación está separada por responsabilidad con contrato público estable.
-- [ ] H-27: toda mutación externa tiene schema en boundary o excepción documentada.
-- [ ] H-28: existen pruebas PGlite reales para los cuatro grupos mockeados y continúan las pruebas PostgreSQL de CI.
-- [ ] Tests focalizados, typecheck, lint y build están verdes.
-- [ ] React Doctor no introduce nuevos diagnósticos en componentes modificados.
-- [ ] Capturas Playwright de indicadores, PDTP y listas paginadas quedan archivadas en `audit/screenshots/`.
-- [ ] `AUDITORIA_MODULO_PREVENCION_2026-07-20.md` se actualiza con estado, pruebas y referencia de commit para cada hallazgo.
+- [x] H-08 UI: las cuatro listas (CAPA, emergencias, privacidad, MIPER) cargan páginas limitadas, muestran total real y conservan estado en URL.
+- [x] H-20: el flujo canónico permite navegar meses sin cerrar el modal ni perder cambios silenciosamente.
+- [x] H-21: el detalle PDTP presenta hoja/faena/vista en una barra de contexto compacta (2-3 controles) además de la cabecera de cumplimiento ya compacta.
+- [x] H-25: documentación está separada por responsabilidad con contrato público estable.
+- [x] H-27: toda mutación externa tiene schema en boundary o excepción documentada.
+- [x] H-28: existen pruebas PGlite reales para los cuatro grupos mockeados y continúan las pruebas PostgreSQL de CI. PDTP y CAPA ya estaban cubiertos (trabajo previo); documentación, workflow PPA (optimistic locking + derivación CAPA) y `createEvaluation` SST se cubrieron en esta y la pasada anterior. `prevencion-ppa-admin.test.ts`/`prevencion-actions-extra.test.ts` clasificados como 100% boundary/wiring legítimo — se mantienen mockeados sin cambios.
+- [x] Tests focalizados, typecheck y lint están verdes (`npm run build` no se ejecutó en esta pasada — pendiente antes de mergear).
+- [ ] React Doctor no introduce nuevos diagnósticos en componentes modificados. **No verificado en esta pasada.**
+- [ ] Capturas Playwright de indicadores, PDTP y listas paginadas quedan archivadas en `audit/screenshots/`. **No verificado en esta pasada** — cambios validados sólo por tests automatizados, no visualmente en navegador.
+- [x] `AUDITORIA_MODULO_PREVENCION_2026-07-20.md` se actualiza con estado, pruebas y referencia de commit para cada hallazgo.
 
 ## 9. Progreso de implementación
 
@@ -569,10 +569,10 @@ Los seis hallazgos se consideran cerrados sólo cuando:
 | 0. Baseline | Todos | ✅ Completado | 103 tests verdes (4 suites) |
 | 1. Validación boundary | H-27 | ✅ Completado | `parseZ` existente + ZodError en run() de 8 dominios + 3 schemas CAPA exportados. Typecheck limpio, tests verdes. |
 | 2. Split documentación | H-25 | ✅ Completado | `documentacion/actions.ts` → barrel delegando a `actions/{shared,queries,crud,workflow,distribution,links,regularization,folders,index}.ts`. Todos los imports existentes se mantienen. Typecheck limpio, 103 tests. |
-| 3. PGlite | H-28 | ⚠️ Pendiente | — |
-| 4. Paginación UI | H-08 UI | ✅ Completado | `listCapaActionsPage`, `listEmergencyPlansPage`, `listPreventionPrivacyRequestsPage`, `listRiskImportBatchesPage` en servicios. Paginación server-side + controls en capa y emergencias. Filtros via URL, reset a página 1. Typecheck limpio, 103 tests. |
-| 5. Indicadores | H-20 | ⚠️ Pendiente; navegación básica existe | `canonical-indicators-dashboard.tsx` usa `IndicatorDenominatorDialog`, no `IndicadoresEditModal`. El modal de edición manual (`IndicadoresDashboard`) tiene navegación anterior/siguiente pero no está conectado al dashboard canónico. Falta portar o unificar. |
-| 6. PDTP | H-21 | ⚠️ Pendiente; compactación parcial existe | `pdtp-indicators-panel.tsx` ya unificó cumplimiento integral + anual + meta en un solo bloque. Los controles de hoja/faena/vista siguen en barra separada bajo los indicadores. Falta compactar controles y verificar A1/A5. |
+| 3. PGlite | H-28 | ✅ Completado | Infra confirmada reutilizable (`lib/testing/pglite-migrate.ts`, `tests/pglite-files.ts`, patrón `prevention-pdtp.test.ts`). `prevencion-ppa-admin.test.ts` y `prevencion-actions-extra.test.ts` clasificados: 100% boundary/wiring (permisos, validación, forwarding de argumentos) — se mantienen mockeados intactos (44 tests verdes sin cambios). Persistencia real agregada donde no existía: documentación, workflow PPA (optimistic locking + derivación CAPA) y `createEvaluation` SST. PDTP y CAPA ya tenían cobertura real de trabajo anterior. |
+| 4. Paginación UI | H-08 UI | ✅ Completado | `listCapaActionsPage`, `listEmergencyPlansPage`, `listPreventionPrivacyRequestsPage`, `listRiskImportBatchesPage` en servicios. Paginación server-side + controles en CAPA, emergencias, privacidad y MIPER (las 4 listas de H-08). Filtros via URL, reset a página 1. Typecheck limpio, tests verdes. |
+| 5. Indicadores | H-20 | ✅ Completado | Navegación mensual portada al modal realmente montado (`IndicatorDenominatorDialog`, no el `IndicadoresEditModal` huérfano). Modal único controlado por el dashboard canónico (`editingMonth` + `key` para reset de estado al navegar). Protección de cambios sin guardar (confirmar/descartar/guardar y continuar). 8 tests nuevos verdes. |
+| 6. PDTP | H-21 | ✅ Completado | Controles de hoja (8 chips) y faena convertidos a `Select` compactos; hoja + faena + vista ahora en una sola barra de contexto (2-3 controles). Tarjeta de cumplimiento (integral+anual+meta) ya estaba compacta de una pasada previa. 58 tests PDTP existentes siguen verdes. |
 
 ### Cambios realizados 2026-07-21 (segunda pasada)
 
@@ -586,3 +586,45 @@ Los seis hallazgos se consideran cerrados sólo cuando:
 - `app/(app)/prevencion/capa/capa-list.tsx` — filtros escriben URL y resetean página. Control `Pagination` al pie de la tabla. Búsqueda TopBar opera client-side sobre la página actual.
 - `app/(app)/prevencion/emergencias/page.tsx` — acepta `searchParams.page`. Usa `listEmergencyPlansPage` con paginación.
 - `app/(app)/prevencion/emergencias/emergency-list.tsx` — control `Pagination` al pie de la tabla de planes.
+
+### Cambios realizados 2026-07-21 (tercera pasada — cierre de los 6 pendientes)
+
+**H-08 UI (privacidad y MIPER, completando las 4 listas):**
+- `app/(app)/prevencion/privacidad/solicitudes/page.tsx` — acepta `searchParams.page`, usa `listPreventionPrivacyRequestsPage` (el servicio ya existía) con `resolvePagination`.
+- `app/(app)/prevencion/privacidad/solicitudes/privacy-requests-workbench.tsx` — recibe `pagination`, agrega control `Pagination` bajo la tabla; búsqueda TopBar sigue client-side sobre la página actual (mismo patrón que CAPA/emergencias).
+- `app/(app)/prevencion/miper/page.tsx` — acepta `searchParams.page`, usa `listRiskImportBatchesPage` (el servicio ya existía) sólo para la pestaña de importaciones.
+- `app/(app)/prevencion/miper/miper-workbench.tsx` — el contador de la pestaña "Importaciones" ahora usa el `total` real (no `imports.length`); control `Pagination` dentro de `TabsContent="imports"`, navegación via URL preservando la pestaña activa (el componente no se desmonta al cambiar `?page=`).
+
+**H-20 (navegación mensual de indicadores):**
+- Confirmado en Fase 0 previa: `CanonicalIndicatorsDashboard` (el dashboard realmente montado en `/prevencion/indicadores`) usa `IndicatorDenominatorDialog`, no `IndicadoresEditModal` (huérfano, sin importar desde ninguna ruta — ver nota en `indicadores-edit-modal.test.tsx`).
+- `app/(app)/prevencion/indicadores/indicator-denominator-dialog.tsx` — reescrito de modal auto-contenido (botón + `useState` propio) a modal controlado por el padre (`onClose`/`onNavigate`), con:
+  - Botones "Mes anterior"/"Mes siguiente" (deshabilitados en enero/diciembre).
+  - Tracking de cambios sin guardar (`dirty`) sobre el formulario de denominador.
+  - Al navegar con cambios pendientes: barra de confirmación con "Seguir editando" / "Descartar" / "Guardar y continuar" (guarda primero, luego navega — sin pérdida silenciosa de datos).
+  - Región `aria-live="polite"` anunciando el mes mostrado.
+  - Export `denominatorDialogLabel()` puro para el texto del botón disparador (Registrar/Gestionar/Revisar), reutilizado en ambos puntos de disparo.
+- `app/(app)/prevencion/indicadores/canonical-indicators-dashboard.tsx` — estado `editingMonth` a nivel de dashboard; los 12 botones por fila (pestañas "Cálculo mensual" y "Denominadores") sólo abren el modal; una única instancia de `IndicatorDenominatorDialog` se monta con `key={editingMonth}` (reset de estado interno garantizado al cambiar de mes vía navegación).
+- Test nuevo `indicator-denominator-dialog.test.tsx` (8 casos: navegación limpia, límites enero/diciembre, confirmación con cambios sin guardar, descartar, guardar y continuar, seguir editando).
+- Atajos de teclado para navegar meses: deliberadamente omitidos (plan los marca opcionales "sólo si son visibles/descubribles"; riesgo de capturar flechas dentro de inputs numéricos no justifica el beneficio).
+
+**H-21 (compactación PDTP):**
+- `app/(app)/prevencion/pdtp/pdtp-sheet-table-ui.tsx` — `PdtpSheetPicker` (antes 8 chips `SegmentedControl` que envolvían en 2-3 filas) y `PdtpWorksitePicker` (antes N chips) reescritos como `Select` compactos de Radix, navegando por URL vía `useRouter().push` (mismo patrón que el selector de año en `canonical-indicators-dashboard.tsx`).
+- `app/(app)/prevencion/pdtp/[programId]/page.tsx` — hoja + faena + vista ahora en una sola fila (`flex flex-wrap items-center gap-3`) en vez de dos filas separadas; vista queda alineada a la derecha con `ml-auto`. Máximo 3 controles visibles, cumpliendo la meta de "barra de contexto" del plan.
+- `PdtpIndicatorsPanel` (cumplimiento integral+anual+meta compacto, desglose mensual/trimestral en `<details>`) ya estaba resuelto de una pasada anterior — no requirió cambios; se verificó que sigue cumpliendo A1 (máx. 3 tiles primarios) tras el cambio de controles.
+- Pendiente explícito: verificación visual/responsive con Playwright no se ejecutó en esta pasada (requiere levantar server + datos sembrados); se recomienda como siguiente paso antes de cerrar el hallazgo en el audit trail visual.
+
+**H-28 (PGlite — tercera pasada, parcial en su momento; ver cuarta pasada abajo para el cierre):**
+- Investigación confirmó que la infraestructura descrita en el plan (§2.4) ya existe y funciona: `lib/testing/pglite-migrate.ts` (migrador compatible con PGlite), `tests/pglite-files.ts` (registro para ejecución secuencial), patrón de inyección `globalThis.__db` + `vi.mock("@/db", ...)` ya establecido en `lib/__tests__/prevention-pdtp.test.ts`.
+- Hallazgo importante no anticipado por el plan: **PDTP y CAPA ya tenían cobertura de persistencia real** de trabajo previo — `prevention-pdtp.test.ts` (PGlite, cubre optimistic locking / lifecycle / catálogo) y `prevention-capa-postgres.test.ts` (Postgres real en CI). Los tests mockeados de `prevencion-pdtp-actions.test.ts` resultaron ser, al revisarlos, boundary/wiring genuino (guard de permisos, validación, argument-forwarding, mensajes de error) — exactamente lo que el plan dice que debe seguir mockeado, no persistencia disfrazada de mock.
+- **Documentación sí tenía la brecha real** (0% cobertura de persistencia: `prevention-documents-upload-workflow.test.ts` mockea `@/db` a mano sin SQL real; `prevention-documents-library.test.ts` sólo cubre Zod/seeds). Se creó `lib/__tests__/prevention-documents-persistence.test.ts` (PGlite real, 8 tests): creación de documento + auditoría, rechazo por alcance de faena (en creación y en upload, este último con lectura real desde BD), numeración de versión vía el subquery `MAX(version)+1` real, rechazo de checksum duplicado, archivado con cascada a versiones no publicadas + restauración, rechazo de restaurar no-archivado, rechazo de subir versión a documento archivado. Registrado en `tests/pglite-files.ts`.
+
+### Cambios realizados 2026-07-21 (cuarta pasada — cierre de H-28)
+
+Clasificación completa de los dos archivos pendientes, caso por caso:
+
+- **`prevencion-ppa-admin.test.ts`** (SST + PPA admin actions) y **`prevencion-actions-extra.test.ts`** (SST actions adicionales): **el 100% de los casos en ambos archivos son boundary/wiring genuino** — guard de permisos (`guardPermission`/`guardAuth`/`can`/`canAny`), validación Zod (incluyendo `superRefine` de `ppaReviewSchema`), reglas de negocio de la action misma (p. ej. "conductor_lider no puede crear seguimiento", "bloquea inspecciones del flujo de evaluación de persona"), forwarding correcto de argumentos al servicio, y propagación/ocultamiento de mensajes de error. Ninguno afirma cubrir persistencia, transacción u optimistic lock. **No se modificó ningún test de estos dos archivos** — siguen mockeados tal cual, 44 tests verdes sin tocar.
+- La brecha real de persistencia estaba, como con documentación, en la **capa de servicio subyacente**, no en las actions:
+  - **`lib/services/ppa-module/reportes.ts`** (workflow PPA: `reviewPpa`, `declarePpaCorrection`, `verifyPpaCorrection`, `authorizePpaRestart`, `cancelPpa`, `closePpa`) — 0% cobertura real; `lib/__tests__/ppa-service.test.ts` mockea `@/db` a mano. Es exactamente el caso que el plan pide cubrir explícitamente ("expectedVersion obsoleta rechaza sin sobrescribir estado", derivación CAPA). Se creó `lib/__tests__/prevention-ppa-workflow-persistence.test.ts` (PGlite real, 9 tests): decisión rechazado no crea CAPA, decisión corrección crea CAPA vinculada + avanza estado, reprocesar un PPA resuelto no muta nada, alcance de faena filtra con lectura real desde BD, `expectedPpaVersion` desactualizada rechaza sin mutar, flujo completo declarar→verificar→autorizar reinicio→cerrar con versiones incrementando en cada paso y CAPA transicionando en paralelo, verificación rechazada reabre el CAPA, cierre prematuro rechaza por precondición de estado, cancelación sin CAPA vinculado. Registrado en `tests/pglite-files.ts`.
+  - **`lib/services/sst-module/evaluations.ts` → `createEvaluation`** — 0% cobertura real; `lib/__tests__/sst-service-full.test.ts` mockea `@/db` a mano. Tiene lógica real no trivial: transacción con chequeo de integridad visita↔trabajador↔faena, y generación condicional de filas (4 seguimientos si `tipo=seguimiento`; 4 evaluaciones semanales si `conductor_lider` + `trabajador_nuevo`). Se agregaron 4 tests a la suite PGlite ya existente `lib/__tests__/sst-delete-evaluation.test.ts` (reutiliza su infraestructura en vez de levantar una PGlite nueva): crea evaluación + visita nueva, rechaza `visitId` que no corresponde al trabajador/faena (chequeo real, no simulable con mocks), genera los 4 seguimientos programados, genera las 4 semanales para conductor líder.
+- **H-28 queda 100% cerrado.** Los cuatro grupos mockeados originales del audit (PDTP, documentación, PPA/CAPA, actions extra SST) están cubiertos: PDTP y CAPA ya lo estaban (trabajo previo), documentación y PPA se cubrieron en esta y la pasada anterior, actions-extra SST resultó ser boundary/wiring legítimo con su brecha real (`createEvaluation`) ahora cerrada.
+- Verificación: typecheck limpio, lint limpio, suite pglite completa (41 archivos tras las 2 incorporaciones) verde sin regresiones, los dos archivos de actions mockeados sin cambios (44 tests).

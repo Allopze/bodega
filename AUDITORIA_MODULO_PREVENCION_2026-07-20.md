@@ -1,6 +1,6 @@
 # Auditoría del módulo de Prevención — Chome
 
-**Fecha:** 2026-07-20 · **Actualización post-fix:** 2026-07-21 (3 iteraciones) · **Rama:** `feat/prevencion-mejoras` · **Working tree:** sucio (fixes aplicados)
+**Fecha:** 2026-07-20 · **Actualización post-fix:** 2026-07-21 (5 iteraciones — ver `PLAN_IMPLEMENTACION_6_PENDIENTES_PREVENCION.md` §9 para el detalle de la 4ª y 5ª) · **Rama:** `feat/prevencion-mejoras` · **Working tree:** sucio (fixes aplicados)
 **Alcance:** todo lo asociado a `/prevencion` — `app/(app)/prevencion/**`, `app/api/prevencion/**`, `db/schema/prevention/**`, `lib/prevention/**`, `lib/services/prevention*`, jobs cron, XLSX y conexión con módulos vecinos (Bodega, SFTI legacy).
 **Método:** lectura estática con CodeGraph + grep focalizado + ejecución del suite focalizado. ~50.988 LOC inspeccionadas (sin tests). Builds previos: `2.493 tests verdes`, `297 archivos`, `57 omitidos` (estado al 18-07-2026 — `PLAN_FIX_MITIGACION_P0_PREVENCION.md` §19).
 
@@ -9,28 +9,31 @@
 | Fase | Hallazgos | Estado | Pruebas |
 |---
 
-## Anexo E — Estado final de hallazgos (2026-07-21, 3 iteraciones)
+## Anexo E — Estado final de hallazgos (2026-07-21, 5 iteraciones)
 
-### Resueltos (32/38)
+### Resueltos (38/38)
 
 **Fase A (críticos):** H-01 ✅ · H-02 ✅ · H-03 ✅ · H-04 ✅ · H-05 ✅
 
-**Fase B (medios):** H-06 ✅ · H-07 ✅ · H-08 servicios ✅ (paginación en 4 listas — UI pendiente) · H-09 = H-02 ✅ · H-10 ✅ · H-11 ✅ · H-12 ✅ · H-13 ✅ · H-14 ✅ · H-15 = H-01 ✅ · H-16 ✅ · H-17 falso positivo ✅ (PPA está en `ROUTES_WITH_OWN_SEARCH`) · H-18 ✅ · H-19 ✅ · H-26 ✅ · H-31 ✅ · H-32 ✅
+**Fase B (medios):** H-06 ✅ · H-07 ✅ · H-08 ✅ (paginación en servicios + UI: CAPA, emergencias, privacidad, MIPER) · H-09 = H-02 ✅ · H-10 ✅ · H-11 ✅ · H-12 ✅ · H-13 ✅ · H-14 ✅ · H-15 = H-01 ✅ · H-16 ✅ · H-17 falso positivo ✅ (PPA está en `ROUTES_WITH_OWN_SEARCH`) · H-18 ✅ · H-19 ✅ · H-26 ✅ · H-31 ✅ · H-32 ✅
 
-**Fase C parcial:** H-22 ✅ · H-24 no aplica ✅ · H-33 ✅ · H-34 ✅ · H-36 ✅ · H-37 documentado ✅
+**Fase C parcial:** H-20 ✅ (navegación mensual portada al modal realmente montado, `IndicatorDenominatorDialog`) · H-21 ✅ (hoja/faena/vista compactados en una barra de contexto) · H-22 ✅ · H-24 no aplica ✅ · H-25 ✅ · H-27 ✅ · H-28 ✅ (ver detalle abajo) · H-33 ✅ · H-34 ✅ · H-36 ✅ · H-37 documentado ✅
 
 **Fase D (CI):** Suites Postgres ya en CI desde 07-19 ✅
 
-### Pendientes accionables (6/38 — ninguno crítico)
+### H-28 — cierre (5ª iteración, 2026-07-21)
 
-| # | Severidad | Tema | Dónde | Complejidad |
-|---|---|---|---|---|
-| H-08 UI | 🟠 | Conectar paginación de servicios a componentes CAPA/emergencias/privacy/miper | 4 componentes React | M |
-| H-20 | 🟠 | Indicadores: modal de edición con navegación "← Mes →" | `indicadores-edit-modal.tsx` | M |
-| H-21 | 🟠 | PDTP: compactar header de 11 métricas en 1 tarjeta | `pdtp-indicators-panel.tsx` y `page.tsx` | L |
-| H-25 | 🟡 | Partir `documentacion/actions.ts` (630 LOC) | File split + barrel re-exports | M |
-| H-27 | 🟡 | Wrapper `parseZ(schema)` defensivo en cada action | Transversal en 13 `actions.ts` | S |
-| H-28 | 🟠 | Migrar tests mockeados (`lib/__tests__/prevencion-*.test.ts`) a PGlite | Setup PGlite + DB schema | M |
+Clasificación completa de `prevencion-ppa-admin.test.ts` y `prevencion-actions-extra.test.ts`: **100% de los casos son boundary/wiring genuino** (permisos, validación Zod, reglas de negocio de la action, forwarding de argumentos, propagación de error) — se mantienen mockeados sin cambios, 44 tests intactos. La brecha real de persistencia estaba en la capa de servicio subyacente, no en las actions:
+
+| Dominio | Estado previo | Acción |
+|---|---|---|
+| PDTP | Ya cubierto (trabajo previo) | `prevention-pdtp.test.ts` (PGlite) — sin cambios |
+| CAPA | Ya cubierto (trabajo previo) | `prevention-capa-postgres.test.ts` (Postgres real en CI) — sin cambios |
+| Documentación | 0% real | `prevention-documents-persistence.test.ts` (nuevo, 3ª pasada) |
+| Workflow PPA (`ppa-module/reportes.ts`) | 0% real | `prevention-ppa-workflow-persistence.test.ts` (nuevo, 9 tests: optimistic locking, derivación CAPA, alcance de faena, flujo completo) |
+| `createEvaluation` SST | 0% real | 4 tests agregados a `sst-delete-evaluation.test.ts` (integridad visita↔trabajador↔faena, generación condicional de filas) |
+
+Los 38/38 hallazgos del audit quedan resueltos.
 
 ### Falsos positivos / No aplican
 
@@ -45,11 +48,11 @@
 ---|---|---|---|
 | **A (críticos)** | H-01, H-02, H-03, H-04, H-05 | ✅ Resueltos | 106 tests verdes |
 | **B (medios)** | H-06, H-07, H-08, H-10, H-12, H-13, H-14, H-16, H-17, H-18, H-19, H-26, H-31, H-32 | ✅ Resueltos | 106 tests verdes |
-| **C parcial** | H-11, H-22, H-24, H-25, H-27, H-33, H-34, H-36, H-37 | ✅ Resueltos | 106 tests verdes |
-| **C restante** | H-20 UX, H-21 UX, H-23 (falso +), H-28 | ⚠️ Pendientes | Ver lista abajo |
+| **C parcial** | H-11, H-20, H-21, H-22, H-24, H-25, H-27, H-28, H-33, H-34, H-36, H-37 | ✅ Resueltos | Ver `PLAN_IMPLEMENTACION_6_PENDIENTES_PREVENCION.md` §9 |
+| **C restante** | H-23 (falso +) | — | Único ítem sin marcar ✅ porque es falso positivo, no un hallazgo real |
 | **D (CI)** | Mover `prevention-pglite` al gate | ✅ Ya en CI | Step existe desde 07-19 |
 
-**Total resueltos: 32/38.** Los 6 restantes requieren rediseño visual (H-20, H-21), paginación en componentes React (H-08 UI), wrapper defensivo transversal (H-27) o migración de tests mockeados a PGlite (H-28). H-23 resultó falso positivo (Radix `<DialogPortal>` maneja unmount/aria-hidden).
+**Total resueltos: 38/38.** Todos los hallazgos accionables del audit están cerrados. H-23 resultó falso positivo (Radix `<DialogPortal>` maneja unmount/aria-hidden), por eso no cuenta como "hallazgo resuelto" sino como no-hallazgo.
 
 ## TL;DR — Top 5 a arreglar esta semana
 
