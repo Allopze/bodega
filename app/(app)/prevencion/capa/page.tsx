@@ -3,25 +3,38 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { resolvePagination } from "@/lib/pagination"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { getCapaDashboardCounts, listCapaActions, listCapaWorksites } from "@/lib/services/prevention-capa"
+import { getCapaDashboardCounts, listCapaActionsPage, listCapaWorksites } from "@/lib/services/prevention-capa"
 import { CapaList } from "./capa-list"
 
 export const metadata: Metadata = { title: "Acciones CAPA" }
 
-export default async function CapaPage() {
+type SearchParams = { page?: string; status?: string; source?: string; worksite?: string }
+
+export default async function CapaPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let session
   try { session = await requirePermission("prevention:capa:view") }
   catch { redirect("/forbidden") }
   const scope = resolveWorksiteScope(session)
   const access = { scope, permissions: session.user.permissions }
-  const [actions, worksites, counts] = await Promise.all([
-    listCapaActions(access),
+  const raw = await searchParams
+  const pageSize = 50
+  const pagination = resolvePagination({ pageParam: raw.page, totalItems: 0, pageSize })
+
+  const status = raw.status && raw.status !== "all" ? raw.status : undefined
+  const source = raw.source && raw.source !== "all" ? raw.source : undefined
+  const worksite = raw.worksite && raw.worksite !== "all" ? raw.worksite : undefined
+
+  const [{ rows: actions, total }, worksites, counts] = await Promise.all([
+    listCapaActionsPage({ ...access, status, sourceType: source, worksiteId: worksite, limit: pageSize, offset: pagination.offset }),
     listCapaWorksites(access),
     getCapaDashboardCounts(access),
   ])
+
+  const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: total, pageSize })
 
   return (
     <PageContainer>
@@ -39,7 +52,7 @@ export default async function CapaPage() {
           </Button>
         }
       />
-      <CapaList actions={actions} worksites={worksites} counts={counts} />
+      <CapaList actions={actions} worksites={worksites} counts={counts} pagination={resolvedPagination} />
     </PageContainer>
   )
 }

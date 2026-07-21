@@ -440,7 +440,7 @@ export async function listEmergencyPlansPage(access: EmergencyAccess, opts?: { l
     db.select({ count: sql<number>`count(*)::int` }).from(preventionEmergencyPlans)
       .where(scopeCondition(access.scope, preventionEmergencyPlans.worksiteId)),
   ])
-  return { rows, total: totalRow?.count ?? 0, limit, offset }
+  return { rows, total: totalRow2?.count ?? 0, limit, offset }
 }
 
 export async function listEmergencyDrills(access: EmergencyAccess) {

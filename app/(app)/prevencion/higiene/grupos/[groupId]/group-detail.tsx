@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   AGENT_TYPE_LABELS,
@@ -13,7 +14,7 @@ import {
   measurementOutcomeBadgeVariant,
 } from "@/lib/prevention/hygiene"
 import { addExposureGroupMemberAction, recordExposureMeasurementAction } from "../../actions"
-import { Field, selectClass, useOperation } from "../../hygiene-form-kit"
+import { Field, useOperation } from "../../hygiene-form-kit"
 
 interface GroupInfo {
   id: string
@@ -190,6 +191,7 @@ function AddMemberDialog({ groupId, eligibleWorkers, existingNames }: {
 }) {
   const [open, setOpen] = React.useState(false)
   const [defaultValue, setDefaultValue] = React.useState("")
+  const [workerId, setWorkerId] = React.useState("")
   const operation = useOperation()
   const existing = new Set(existingNames)
   const available = eligibleWorkers.filter((worker) => !existing.has(worker.name))
@@ -218,9 +220,7 @@ function AddMemberDialog({ groupId, eligibleWorkers, existingNames }: {
           ) : (
             <>
               <Field label="Persona">
-                <select name="workerId" className={selectClass} required>
-                  {available.map((worker) => <option key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</option>)}
-                </select>
+                <Select value={workerId} onValueChange={setWorkerId}><SelectTrigger><SelectValue placeholder="Selecciona persona" /></SelectTrigger><SelectContent>{available.map((worker) => <SelectItem key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</SelectItem>)}</SelectContent></Select><input type="hidden" name="workerId" value={workerId} />
               </Field>
               <Field label="Incorporado el"><Input name="joinedOn" type="date" required defaultValue={defaultValue} /></Field>
             </>

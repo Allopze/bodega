@@ -5,11 +5,12 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { PROGRAM_STATUS_LABELS, SURVEILLANCE_STATUS_LABELS } from "@/lib/prevention/hygiene"
 import { enrollGroupInSurveillanceAction, recordSurveillanceOutcomeAction } from "../../actions"
-import { Field, selectClass, useOperation } from "../../hygiene-form-kit"
+import { Field, useOperation } from "../../hygiene-form-kit"
 
 interface ProgramInfo {
   id: string
@@ -133,6 +134,7 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
 function EnrollGroupDialog({ programId, eligibleGroups }: { programId: string; eligibleGroups: GroupOption[] }) {
   const [open, setOpen] = React.useState(false)
   const [defaultValue, setDefaultValue] = React.useState("")
+  const [groupId, setGroupId] = React.useState(eligibleGroups[0]?.id ?? "")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -156,9 +158,7 @@ function EnrollGroupDialog({ programId, eligibleGroups }: { programId: string; e
             <DialogDescription>Matricula a todas las personas activas del grupo. La próxima fecha se calcula desde la periodicidad del programa.</DialogDescription>
           </DialogHeader>
           <Field label="Grupo de exposición">
-            <select name="groupId" className={selectClass} required>
-              {eligibleGroups.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.memberCount} personas)</option>)}
-            </select>
+            <Select value={groupId} onValueChange={setGroupId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{eligibleGroups.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} ({item.memberCount} personas)</SelectItem>)}</SelectContent></Select><input type="hidden" name="groupId" value={groupId} />
           </Field>
           <Field label="Desde" hint="Opcional. Por defecto, hoy."><Input name="startingOn" type="date" defaultValue={defaultValue} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
@@ -175,6 +175,13 @@ function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
   const [open, setOpen] = React.useState(false)
   const [status, setStatus] = React.useState<"summoned" | "attended" | "absent" | "exempt">("summoned")
   const operation = useOperation()
+
+  const OUTCOME_OPTIONS: { value: typeof status; label: string }[] = [
+    { value: "summoned", label: "Citado" },
+    { value: "attended", label: "Asistió" },
+    { value: "absent", label: "Ausente" },
+    { value: "exempt", label: "Exento" },
+  ]
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -201,12 +208,7 @@ function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
             <DialogDescription>{enrollment.workerName} · vence {enrollment.dueOn}</DialogDescription>
           </DialogHeader>
           <Field label="Resultado">
-            <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} className={selectClass}>
-              <option value="summoned">Citado</option>
-              <option value="attended">Asistió</option>
-              <option value="absent">Ausente</option>
-              <option value="exempt">Exento</option>
-            </select>
+            <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{OUTCOME_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent></Select>
           </Field>
           {status === "attended" && (
             <>

@@ -439,7 +439,7 @@ export async function listRiskImportBatchesPage(access: RiskLegalAccess, opts?: 
   for (const row of rows) rowsByBatch.set(row.batchId, [...(rowsByBatch.get(row.batchId) ?? []), row])
   return {
     rows: batches.map((batch) => ({ ...batch, rows: rowsByBatch.get(batch.id) ?? [] })),
-    total: total ?? 0,
+    total: totalRow?.count ?? 0,
     limit,
     offset,
   }

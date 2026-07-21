@@ -293,7 +293,7 @@ export async function listPreventionPrivacyRequestsPage(scope: WorksiteScope, op
       .innerJoin(workers, eq(workers.id, preventionPrivacyRequests.subjectWorkerId))
       .where(where),
   ])
-  return { rows, total: total ?? 0, limit, offset }
+  return { rows, total: totalRow?.count ?? 0, limit, offset }
 }
 
 export async function getPreventionPrivacyExportDataset(args: {
