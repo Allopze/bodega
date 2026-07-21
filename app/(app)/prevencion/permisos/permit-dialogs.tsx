@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PERMIT_CREW_ROLE_LABELS } from "@/lib/prevention/permits"
 import { createPermitTypeAction, createWorkPermitAction } from "./actions"
-import { Field, selectClass, useOperation } from "./permit-form-kit"
+import { Field, useOperation } from "./permit-form-kit"
 
 interface PermitTypeItem {
   id: string

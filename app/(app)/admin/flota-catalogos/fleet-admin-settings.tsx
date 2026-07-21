@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -17,7 +17,7 @@ interface FleetAdminSettingsProps {
 }
 
 export function FleetAdminSettings({ warningDays, defaultVehicleStatus }: FleetAdminSettingsProps) {
-  const [vehicleStatus, setVehicleStatus] = React.useState(defaultVehicleStatus)
+  const [vehicleStatus, setVehicleStatus] = useState(defaultVehicleStatus)
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
       const result = await saveFleetAdminSettingsAction(prev, formData)

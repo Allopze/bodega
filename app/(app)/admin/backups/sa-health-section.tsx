@@ -147,11 +147,11 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
 
   // ── Interval change handler ──────────────────────────────────────────────
 
-  const handleIntervalChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = Number(e.target.value)
-    setIntervalMs(value)
+  const handleIntervalChange = useCallback((value: string) => {
+    const numVal = Number(value)
+    setIntervalMs(numVal)
     try {
-      localStorage.setItem(STORAGE_KEY, String(value))
+      localStorage.setItem(STORAGE_KEY, String(numVal))
     } catch { /* ignore */ }
   }, [])
 
@@ -209,11 +209,7 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
           <div className="relative">
             <Select
               value={String(intervalMs)}
-              onValueChange={(v) => {
-                const value = Number(v)
-                setIntervalMs(value)
-                handleIntervalChange({ target: { value } } as React.ChangeEvent<HTMLSelectElement>)
-              }}
+              onValueChange={handleIntervalChange}
             >
               <SelectTrigger aria-label="Intervalo de auto-refresh" className="h-7 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 pr-5 text-[11px] font-medium">
                 <SelectValue />

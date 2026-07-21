@@ -21,7 +21,7 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { BitacoraTable } from "./bitacora-table"
 import { BitacoraExportButton } from "./export-button"
-import { FilterSelect } from "./filter-select"
+import { FilterSelect } from "../filter-select"
 
 export const metadata: Metadata = { title: "Bitácora general de combustible" }
 

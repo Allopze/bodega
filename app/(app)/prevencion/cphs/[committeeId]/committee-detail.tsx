@@ -24,7 +24,7 @@ import {
   closeCommitteeMeetingAction,
   scheduleCommitteeMeetingAction,
 } from "../actions"
-import { Field, selectClass, toLocalInputValue, useOperation } from "../cphs-form-kit"
+import { Field, toLocalInputValue, useOperation } from "../cphs-form-kit"
 
 interface CommitteeInfo {
   id: string

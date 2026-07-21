@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { closeManagementReviewAction, constituteCommitteeAction, createManagementReviewAction } from "./actions"
-import { Field, selectClass, toLocalInputValue, useOperation } from "./cphs-form-kit"
+import { Field, toLocalInputValue, useOperation } from "./cphs-form-kit"
 
 /* ── Alta de comité ───────────────────────────────────────────────────────── */
 

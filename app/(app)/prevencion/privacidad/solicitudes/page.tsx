@@ -70,6 +70,20 @@ export default async function PreventionPrivacyRequestsPage() {
         }))}
         canExport={can(session, "prevention:privacy:export_subject")}
         canExportClinical={can(session, "prevention:health:view_clinical")}
+        pagination={resolvedPagination}
+      />
+    </PageContainer>
+  )
+}
+Container>
+  )
+}
+ )
+}
+dAt: row.request.identityVerifiedAt,
+        }))}
+        canExport={can(session, "prevention:privacy:export_subject")}
+        canExportClinical={can(session, "prevention:health:view_clinical")}
       />
     </PageContainer>
   )

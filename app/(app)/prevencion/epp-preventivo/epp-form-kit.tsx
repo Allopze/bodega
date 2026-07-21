@@ -34,4 +34,3 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   )
 }
 
-export const selectClass = "h-10 rounded-md border border-[var(--color-border)] bg-transparent px-3 text-sm"

@@ -28,7 +28,7 @@ import {
   transitionWorkPermitAction,
   verifyPermitControlAction,
 } from "../actions"
-import { Field, linesToArray, selectClass, toLocalInputValue, useOperation } from "../permit-form-kit"
+import { Field, linesToArray, toLocalInputValue, useOperation } from "../permit-form-kit"
 
 interface PermitInfo {
   id: string

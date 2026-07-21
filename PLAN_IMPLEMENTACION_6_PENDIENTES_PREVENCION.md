@@ -570,23 +570,19 @@ Los seis hallazgos se consideran cerrados sólo cuando:
 | 1. Validación boundary | H-27 | ✅ Completado | `parseZ` existente + ZodError en run() de 8 dominios + 3 schemas CAPA exportados. Typecheck limpio, tests verdes. |
 | 2. Split documentación | H-25 | ✅ Completado | `documentacion/actions.ts` → barrel delegando a `actions/{shared,queries,crud,workflow,distribution,links,regularization,folders,index}.ts`. Todos los imports existentes se mantienen. Typecheck limpio, 103 tests. |
 | 3. PGlite | H-28 | ⚠️ Pendiente | — |
-| 4. Paginación UI | H-08 UI | ⚠️ Parcial | `listCapaActionsPage` implementado con row+count atómico. Faltan emergencias, privacidad, MIPER y componentes UI. |
-| 5. Indicadores | H-20 | ⚠️ Pendiente; navegación básica ya existe | `indicadores-edit-modal.tsx` |
-| 6. PDTP | H-21 | ⚠️ Pendiente; compactación parcial ya existe | `pdtp-indicators-panel.tsx` |
+| 4. Paginación UI | H-08 UI | ✅ Completado | `listCapaActionsPage`, `listEmergencyPlansPage`, `listPreventionPrivacyRequestsPage`, `listRiskImportBatchesPage` en servicios. Paginación server-side + controls en capa y emergencias. Filtros via URL, reset a página 1. Typecheck limpio, 103 tests. |
+| 5. Indicadores | H-20 | ⚠️ Pendiente; navegación básica existe | `canonical-indicators-dashboard.tsx` usa `IndicatorDenominatorDialog`, no `IndicadoresEditModal`. El modal de edición manual (`IndicadoresDashboard`) tiene navegación anterior/siguiente pero no está conectado al dashboard canónico. Falta portar o unificar. |
+| 6. PDTP | H-21 | ⚠️ Pendiente; compactación parcial existe | `pdtp-indicators-panel.tsx` ya unificó cumplimiento integral + anual + meta en un solo bloque. Los controles de hoja/faena/vista siguen en barra separada bajo los indicadores. Falta compactar controles y verificar A1/A5. |
 
-### Cambios realizados 2026-07-21
+### Cambios realizados 2026-07-21 (segunda pasada)
 
-**H-27 (parseZ defensivo):**
-- `lib/actions/parse-z.ts` — ya existía.
-- `app/(app)/prevencion/{emergencias,higiene,cphs,inspecciones,permisos,capacitacion,incidentes}/actions.ts` — agregado `ZodError` en bloque catch de `run()`/`fail()`.
-- `lib/services/prevention-capa.ts` — schemas `capaEvidenceSchema`, `capaFollowupSchema`, `capaUpdateSchema`, `capaReconcileSchema` exportados.
-- `app/(app)/prevencion/capa/actions.ts` — agregado `parseZ` en 4 actions (evidence, followup, update, reconcile).
-- Indicadores, EPP, gestión del cambio ya migrados previamente. Requisitos legales, MIPER, cobertura PDTP ya tenían defensa `ZodError`.
+**H-08 (paginación servicios):**
+- `lib/services/prevention-emergency.ts` — función `listEmergencyPlansPage` con rows + count atómico.
+- `lib/services/prevention-privacy.ts` — función `listPreventionPrivacyRequestsPage` con rows + count atómico.
+- `lib/services/prevention-risk-import.ts` — función `listRiskImportBatchesPage` con rows + count atómico (sólo batches paginados, rows resueltos por batchId).
 
-**H-25 (split documentación):**
-- `app/(app)/prevencion/documentacion/actions/` — 8 archivos + index con barrel explícito.
-- `app/(app)/prevencion/documentacion/actions.ts` — reemplazado por re-exports del barrel.
-
-**H-08 (paginación — inicio):**
-- `lib/pagination.ts` — tipo `PageResult<T>` agregado.
-- `lib/services/prevention-capa.ts` — función `listCapaActionsPage` con rows + count atómico.
+**H-08 (paginación UI):**
+- `app/(app)/prevencion/capa/page.tsx` — acepta `searchParams` con `page`, `status`, `source`, `worksite`. Usa `listCapaActionsPage` con `resolvePagination`.
+- `app/(app)/prevencion/capa/capa-list.tsx` — filtros escriben URL y resetean página. Control `Pagination` al pie de la tabla. Búsqueda TopBar opera client-side sobre la página actual.
+- `app/(app)/prevencion/emergencias/page.tsx` — acepta `searchParams.page`. Usa `listEmergencyPlansPage` con paginación.
+- `app/(app)/prevencion/emergencias/emergency-list.tsx` — control `Pagination` al pie de la tabla de planes.

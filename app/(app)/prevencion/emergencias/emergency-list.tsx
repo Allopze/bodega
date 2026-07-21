@@ -147,7 +147,7 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
         </>
       )}
 
-      {tab === "drills" && (filteredDrills.length === 0 ? (
+      {tab === "drills" && filteredDrills.length === 0 && (
         <EmptyState
           icon={<Siren size={20} />}
           title={drills.length === 0 ? "Aún no hay simulacros programados" : "Ningún simulacro coincide con la búsqueda"}
@@ -155,7 +155,9 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
             ? "Sólo un plan aprobado puede programar simulacros. Prográmalos desde el detalle del plan."
             : "Ajusta el texto del buscador superior."}
         />
-      ) : (
+      )}
+
+      {tab === "drills" && filteredDrills.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
           <Table>
             <TableHeader>
@@ -191,7 +193,7 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
             </TableBody>
           </Table>
         </div>
-      ))}
+      )}
     </div>
   )
 }

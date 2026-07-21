@@ -26,7 +26,7 @@ import {
   createTrainingCourseVersionAction,
   transitionTrainingCourseVersionAction,
 } from "../actions"
-import { Field, selectClass, useOperation } from "../form-kit"
+import { Field, useOperation } from "../form-kit"
 
 interface CourseItem {
   id: string
