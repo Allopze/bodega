@@ -7,7 +7,7 @@ import { resolvePagination } from "@/lib/pagination"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { getCapaDashboardCounts, listCapaActionsPage, listCapaWorksites } from "@/lib/services/prevention-capa"
+import { getCapaDashboardCounts, listCapaActionsPage, listCapaWorksites, type CapaStatus } from "@/lib/services/prevention-capa"
 import { CapaList } from "./capa-list"
 
 export const metadata: Metadata = { title: "Acciones CAPA" }
@@ -29,7 +29,7 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
   const worksite = raw.worksite && raw.worksite !== "all" ? raw.worksite : undefined
 
   const [{ rows: actions, total }, worksites, counts] = await Promise.all([
-    listCapaActionsPage({ ...access, status, sourceType: source, worksiteId: worksite, limit: pageSize, offset: pagination.offset }),
+    listCapaActionsPage({ ...access, status: status as CapaStatus, sourceType: source, worksiteId: worksite, limit: pageSize, offset: pagination.offset }),
     listCapaWorksites(access),
     getCapaDashboardCounts(access),
   ])

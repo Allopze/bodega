@@ -3,10 +3,11 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { EPP_REQUIREMENT_SCOPE_LABELS } from "@/lib/prevention/epp"
 import { createEppRequirementAction } from "./actions"
-import { Field, selectClass, useOperation } from "./epp-form-kit"
+import { Field, useOperation } from "./epp-form-kit"
 
 const SCOPE_TYPES = Object.keys(EPP_REQUIREMENT_SCOPE_LABELS).filter((type) => type !== "task")
 
@@ -21,6 +22,9 @@ export function NewRequirementDialog({ eppTypes, families, worksites }: {
   const [open, setOpen] = React.useState(false)
   const [scopeType, setScopeType] = React.useState("global")
   const [eppTypeId, setEppTypeId] = React.useState(eppTypes[0]?.id ?? "")
+  const [enforcement, setEnforcement] = React.useState("warning")
+  const [worksiteId, setWorksiteId] = React.useState("")
+  const [preferredFamilyId, setPreferredFamilyId] = React.useState("_none")
   const operation = useOperation()
 
   const eligibleFamilies = families.filter((family) => family.eppTypeId === eppTypeId)
@@ -29,16 +33,14 @@ export function NewRequirementDialog({ eppTypes, families, worksites }: {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const scopeValue = String(form.get("scopeValue") ?? "").trim()
-    const worksiteId = String(form.get("worksiteId") ?? "").trim()
-    const preferredFamilyId = String(form.get("preferredFamilyId") ?? "").trim()
     operation.run(() => createEppRequirementAction({
       eppTypeId,
       scopeType,
       scopeValue: scopeValue || null,
       worksiteId: worksiteId || null,
-      enforcement: form.get("enforcement"),
+      enforcement,
       reason: form.get("reason"),
-      preferredFamilyId: preferredFamilyId || null,
+      preferredFamilyId: preferredFamilyId === "_none" ? null : preferredFamilyId,
     }), () => setOpen(false))
   }
 
@@ -54,39 +56,56 @@ export function NewRequirementDialog({ eppTypes, families, worksites }: {
             </DialogDescription>
           </DialogHeader>
           <Field label="Tipo de EPP">
-            <select value={eppTypeId} onChange={(event) => setEppTypeId(event.target.value)} className={selectClass} required>
-              {eppTypes.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
-            </select>
+            <Select value={eppTypeId} onValueChange={setEppTypeId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {eppTypes.map((type) => <SelectItem key={type.id} value={type.id}>{type.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Alcance">
-              <select value={scopeType} onChange={(event) => setScopeType(event.target.value)} className={selectClass}>
-                {SCOPE_TYPES.map((type) => <option key={type} value={type}>{EPP_REQUIREMENT_SCOPE_LABELS[type]}</option>)}
-              </select>
+              <Select value={scopeType} onValueChange={setScopeType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SCOPE_TYPES.map((type) => <SelectItem key={type} value={type}>{EPP_REQUIREMENT_SCOPE_LABELS[type]}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </Field>
             <Field label="Exigibilidad">
-              <select name="enforcement" className={selectClass} defaultValue="warning">
-                <option value="warning">Advertencia</option>
-                <option value="blocking">Bloqueante</option>
-              </select>
+              <Select value={enforcement} onValueChange={setEnforcement}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="warning">Advertencia</SelectItem>
+                  <SelectItem value="blocking">Bloqueante</SelectItem>
+                </SelectContent>
+              </Select>
+              <input type="hidden" name="enforcement" value={enforcement} />
             </Field>
           </div>
           {scopeType === "worksite" && (
             <Field label="Faena">
-              <select name="worksiteId" className={selectClass} required>
-                {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={worksiteId} onValueChange={setWorksiteId}>
+                <SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
+                <SelectContent>
+                  {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
           )}
           {scopeType === "position" && (
-            <Field label="Cargo" hint="Debe coincidir con el cargo registrado del trabajador."><input name="scopeValue" required className={selectClass + " px-3"} /></Field>
+            <Field label="Cargo" hint="Debe coincidir con el cargo registrado del trabajador."><input name="scopeValue" required className="h-10 rounded-md border border-[var(--color-border)] bg-transparent px-3 text-sm" /></Field>
           )}
           {eligibleFamilies.length > 0 && (
             <Field label="Familia de producto sugerida" hint="Opcional. Ayuda a Bodega a saber qué entregar.">
-              <select name="preferredFamilyId" className={selectClass} defaultValue="">
-                <option value="">Sin sugerir</option>
-                {eligibleFamilies.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}
-              </select>
+              <Select value={preferredFamilyId} onValueChange={setPreferredFamilyId}>
+                <SelectTrigger><SelectValue placeholder="Sin sugerir" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Sin sugerir</SelectItem>
+                  {eligibleFamilies.map((family) => <SelectItem key={family.id} value={family.id}>{family.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </Field>
           )}
           <Field label="Fundamento" hint="Mínimo 10 caracteres. Norma o riesgo que exige este EPP.">
