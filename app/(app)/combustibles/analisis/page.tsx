@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { PerformanceGroupChart } from "./performance-charts"
 import { HistogramChart } from "./histogram-chart"
+import { FilterSelect } from "../filter-select"
 
 export const metadata: Metadata = { title: "Análisis de rendimiento por equipo" }
 
@@ -90,8 +91,8 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
 
       <form className="mb-4 grid gap-3 border-b border-(--color-border) pb-4 md:grid-cols-5">
         <input type="hidden" name="preset" value={preset} />
-        <select name="agrupar" defaultValue={aggregateBy} className="control">{AGGREGATIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}</select>
-        <select name="faena" defaultValue={worksiteId} className="control"><option value="">Todas las autorizadas</option>{worksitesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <FilterSelect name="agrupar" defaultValue={aggregateBy} options={AGGREGATIONS.map((a) => ({ value: a.value, label: a.label }))} placeholder="Selecciona agrupación" />
+        <FilterSelect name="faena" defaultValue={worksiteId} options={worksitesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todas las autorizadas" />
         <DatePicker name="desde" defaultValue={from} placeholder="Desde" />
         <DatePicker name="hasta" defaultValue={to} placeholder="Hasta" />
         <Button type="submit" variant="secondary">Aplicar</Button>

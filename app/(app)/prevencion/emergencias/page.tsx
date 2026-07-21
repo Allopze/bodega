@@ -4,16 +4,19 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { resolvePagination } from "@/lib/pagination"
 import {
   listEmergencyDrills,
-  listEmergencyPlans,
+  listEmergencyPlansPage,
   listEmergencyWorksites,
 } from "@/lib/services/prevention-emergency"
 import { EmergencyList } from "./emergency-list"
 
 export const metadata: Metadata = { title: "Emergencias y simulacros" }
 
-export default async function EmergenciasPage() {
+type SearchParams = { page?: string }
+
+export default async function EmergenciasPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let session
   try { session = await requirePermission("prevention:emergency:view") }
   catch { redirect("/forbidden") }
@@ -24,12 +27,16 @@ export default async function EmergenciasPage() {
     permissions: session.user.permissions,
   }
   const canManage = session.user.permissions.includes("prevention:emergency:manage")
+  const raw = await searchParams
+  const pagination = resolvePagination({ pageParam: raw.page, totalItems: 0, pageSize: 50 })
 
-  const [plans, drills, worksites] = await Promise.all([
-    listEmergencyPlans(access),
+  const [plansPage, drills, worksites] = await Promise.all([
+    listEmergencyPlansPage(access, { limit: 50, offset: pagination.offset }),
     listEmergencyDrills(access),
     canManage ? listEmergencyWorksites(access) : Promise.resolve([]),
   ])
+
+  const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: plansPage.total, pageSize: 50 })
 
   return (
     <PageContainer>
@@ -43,7 +50,7 @@ export default async function EmergenciasPage() {
         ]} />}
       />
       <EmergencyList
-        plans={plans.map((row) => ({
+        plans={plansPage.rows.map((row) => ({
           id: row.plan.id,
           code: row.plan.code,
           title: row.plan.title,
@@ -64,6 +71,7 @@ export default async function EmergenciasPage() {
         }))}
         worksites={worksites}
         canManage={canManage}
+        plansPagination={resolvedPagination}
       />
     </PageContainer>
   )

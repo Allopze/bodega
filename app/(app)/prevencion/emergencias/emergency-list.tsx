@@ -2,11 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Siren } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Pagination } from "@/components/ui/pagination"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import type { PaginationState } from "@/lib/pagination"
 import {
   EMERGENCY_DRILL_OUTCOME_LABELS,
   EMERGENCY_DRILL_STATUS_LABELS,
@@ -133,7 +136,12 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
             </TableBody>
           </Table>
         </div>
-      ))}
+        {tab === "plans" && plansPagination.totalPages > 1 && (
+          <div className="flex justify-center pt-2">
+            <Pagination page={plansPagination.page} total={plansPagination.totalItems} perPage={plansPagination.limit} onPage={navigatePlansPage} />
+          </div>
+        )}
+      )}
 
       {tab === "drills" && (filteredDrills.length === 0 ? (
         <EmptyState

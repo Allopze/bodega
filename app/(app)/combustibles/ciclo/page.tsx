@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { CycleWorkbench } from "./cycle-workbench"
 import { CycleStageChart, type CycleStagePoint } from "./cycle-stage-chart"
+import { FilterSelect } from "../filter-select"
 
 const liters = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 })
 const dateTime = new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short" })
@@ -143,8 +144,8 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
       <form className="mb-5 grid gap-3 border-y border-[var(--color-border)] py-4 md:grid-cols-5">
         <label className="grid gap-1 text-xs font-medium">Desde<DatePicker name="desde" defaultValue={from} placeholder="Desde" /></label>
         <label className="grid gap-1 text-xs font-medium">Hasta<DatePicker name="hasta" defaultValue={to} placeholder="Hasta" /></label>
-        <label className="grid gap-1 text-xs font-medium">Faena<select name="faena" defaultValue={worksiteId} className="control"><option value="">Todas las autorizadas</option>{worksitesList.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label className="grid gap-1 text-xs font-medium">Producto<select name="producto" defaultValue={productId} className="control"><option value="">Todos</option>{products.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="grid gap-1 text-xs font-medium">Faena<FilterSelect name="faena" defaultValue={worksiteId} options={worksitesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todas las autorizadas" /></label>
+        <label className="grid gap-1 text-xs font-medium">Producto<FilterSelect name="producto" defaultValue={productId} options={products.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos" /></label>
         <div className="flex items-end"><Button type="submit" variant="secondary" className="w-full">Aplicar</Button></div>
       </form>
 
