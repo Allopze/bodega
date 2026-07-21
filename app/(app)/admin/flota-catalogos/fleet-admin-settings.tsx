@@ -4,6 +4,7 @@ import { useActionState } from "react"
 import { Card } from "@/components/ui/card"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
@@ -16,6 +17,7 @@ interface FleetAdminSettingsProps {
 }
 
 export function FleetAdminSettings({ warningDays, defaultVehicleStatus }: FleetAdminSettingsProps) {
+  const [vehicleStatus, setVehicleStatus] = React.useState(defaultVehicleStatus)
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
       const result = await saveFleetAdminSettingsAction(prev, formData)
@@ -63,16 +65,17 @@ export function FleetAdminSettings({ warningDays, defaultVehicleStatus }: FleetA
               helper="Aplicado al crear un vehículo desde el módulo administrativo."
               error={state.fieldErrors?.defaultVehicleStatus?.[0]}
             >
-              <select
-                id="defaultVehicleStatus"
-                name="defaultVehicleStatus"
-                defaultValue={defaultVehicleStatus}
-                className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm"
-              >
-                {FUEL_VEHICLE_STATUSES.map((s) => (
-                  <option key={s} value={s}>{FUEL_VEHICLE_STATUS_LABELS[s]}</option>
-                ))}
-              </select>
+              <Select value={vehicleStatus} onValueChange={setVehicleStatus}>
+                <SelectTrigger id="defaultVehicleStatus" className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FUEL_VEHICLE_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>{FUEL_VEHICLE_STATUS_LABELS[s]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <input type="hidden" name="defaultVehicleStatus" value={vehicleStatus} />
             </Field>
           </div>
         </FieldGroup>

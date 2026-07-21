@@ -92,7 +92,7 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
         </div>
       </div>
 
-      {tab === "plans" && (filteredPlans.length === 0 ? (
+      {tab === "plans" && filteredPlans.length === 0 && (
         <EmptyState
           icon={<Siren size={20} />}
           title={plans.length === 0 ? "Aún no hay planes de emergencia" : "Ningún plan coincide con la búsqueda"}
@@ -101,7 +101,9 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
             : "Ajusta el texto del buscador superior."}
           action={canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
         />
-      ) : (
+      )}
+
+      {tab === "plans" && filteredPlans.length > 0 && (
         <>
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
           <Table>
@@ -137,7 +139,7 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
             </TableBody>
           </Table>
         </div>
-        {tab === "plans" && plansPagination.totalPages > 1 && (
+        {plansPagination.totalPages > 1 && (
           <div className="flex justify-center pt-2">
             <Pagination page={plansPagination.page} total={plansPagination.totalItems} perPage={plansPagination.limit} onPage={navigatePlansPage} />
           </div>

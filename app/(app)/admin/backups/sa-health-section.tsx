@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect, useRef } from "react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { DriveHealth } from "@/lib/services/backups"
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -206,16 +207,23 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
           )}
 
           <div className="relative">
-            <select
-              value={intervalMs}
-              onChange={handleIntervalChange}
-              className="appearance-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 pr-5 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-focus-ring)]"
-              aria-label="Intervalo de auto-refresh"
+            <Select
+              value={String(intervalMs)}
+              onValueChange={(v) => {
+                const value = Number(v)
+                setIntervalMs(value)
+                handleIntervalChange({ target: { value } } as React.ChangeEvent<HTMLSelectElement>)
+              }}
             >
-              {REFRESH_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+              <SelectTrigger aria-label="Intervalo de auto-refresh" className="h-7 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 pr-5 text-[11px] font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REFRESH_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {/* Chevron */}
             <svg
               xmlns="http://www.w3.org/2000/svg"

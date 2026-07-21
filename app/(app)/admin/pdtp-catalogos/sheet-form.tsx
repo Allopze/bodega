@@ -15,6 +15,7 @@ import {
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { toast } from "@/lib/toast"
@@ -51,6 +52,7 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
   const [selected, setSelected] = React.useState<Set<string>>(
     () => new Set(editSheet?.defaultScopeRoles ?? []),
   )
+  const [programId, setProgramId] = React.useState(editSheet?.programId ?? "")
 
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -116,19 +118,18 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
                 />
               </Field>
               <Field label="Programa (opcional)" htmlFor="sht-prog" error={state.fieldErrors?.programId?.[0]} helper="Vacío para hoja plantilla global.">
-                <select
-                  id="sht-prog"
-                  name="programId"
-                  defaultValue={editSheet?.programId ?? ""}
-                  className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm"
-                >
-                  <option value="">— Hoja plantilla global —</option>
-                  {programs.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title} · {p.year} v{p.version} ({p.status})
-                    </option>
-                  ))}
-                </select>
+                <Select value={programId} onValueChange={setProgramId}>
+                  <SelectTrigger id="sht-prog" className="h-9 w-full">
+                    <SelectValue placeholder="— Hoja plantilla global —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— Hoja plantilla global —</SelectItem>
+                    {programs.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.title} · {p.year} v{p.version} ({p.status})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <input type="hidden" name="programId" value={programId} />
               </Field>
               <div>
                 <p className="text-eyebrow mb-2">Alcance RBAC predeterminado</p>

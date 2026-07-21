@@ -3,6 +3,7 @@
 import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { createCostCenterAction, updateCostCenterAction } from "./actions"
 
@@ -32,6 +33,7 @@ interface CostCenterFormProps {
 
 export function CostCenterForm({ open, onClose, editCostCenter, worksites }: CostCenterFormProps) {
   const isEdit = !!editCostCenter
+  const [worksiteId, setWorksiteId] = React.useState(editCostCenter?.worksiteId ?? "")
 
   return (
     <CatalogFormSheet
@@ -66,17 +68,18 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites }: Cos
                 />
               </Field>
               <Field label="Faena (opcional)" htmlFor="cc-worksite" error={state.fieldErrors?.worksiteId?.[0]}>
-                <select
-                  id="cc-worksite"
-                  name="worksiteId"
-                  defaultValue={editCostCenter?.worksiteId ?? ""}
-                  className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)]"
-                >
-                  <option value="">Sin faena asociada</option>
-                  {worksites.map((w) => (
-                    <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
-                  ))}
-                </select>
+                <Select value={worksiteId} onValueChange={setWorksiteId}>
+                  <SelectTrigger id="cc-worksite" className="h-9 w-full">
+                    <SelectValue placeholder="Sin faena asociada" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Sin faena asociada</SelectItem>
+                    {worksites.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>{w.name} ({w.code})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <input type="hidden" name="worksiteId" value={worksiteId} />
               </Field>
               <Field label="Descripción (opcional)" htmlFor="cc-desc" error={state.fieldErrors?.description?.[0]}>
                 <Input
