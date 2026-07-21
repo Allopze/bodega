@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PERMIT_CREW_ROLE_LABELS } from "@/lib/prevention/permits"
@@ -128,6 +129,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
   const [crew, setCrew] = React.useState<Record<string, string>>({})
   const [workerQuery, setWorkerQuery] = React.useState("")
   const [controls, setControls] = React.useState<{ description: string; isMandatory: boolean }[]>([])
+  const [supervisorUserId, setSupervisorUserId] = React.useState(supervisors[0]?.id ?? "")
   const [defaultStart, setDefaultStart] = React.useState("")
   const [defaultEnd, setDefaultEnd] = React.useState("")
   const operation = useOperation()
@@ -201,9 +203,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
           </DialogHeader>
 
           <Field label="Tipo de permiso">
-            <select value={typeId} onChange={(event) => setTypeId(event.target.value)} className={selectClass} required>
-              {types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
+            <Select value={typeId} onValueChange={setTypeId}><SelectTrigger><SelectValue placeholder="Selecciona tipo" /></SelectTrigger><SelectContent>{types.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
           </Field>
           {type && (
             <p className="text-xs text-[var(--color-text-subtle)]">
@@ -217,9 +217,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">
-              <select value={worksiteId} onChange={(event) => changeWorksite(event.target.value)} className={selectClass} required>
-                {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={worksiteId} onValueChange={changeWorksite}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
             </Field>
             <Field label="Lugar" hint="Mínimo 3 caracteres."><Input name="location" required minLength={3} maxLength={300} /></Field>
           </div>
@@ -230,9 +228,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Supervisor">
-              <select name="supervisorUserId" className={selectClass} required>
-                {supervisors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={supervisorUserId} onValueChange={setSupervisorUserId}><SelectTrigger><SelectValue placeholder="Selecciona supervisor" /></SelectTrigger><SelectContent>{supervisors.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="supervisorUserId" value={supervisorUserId} />
             </Field>
             <Field label="Peligro MIPER de origen" hint="Opcional. ID del peligro en la matriz.">
               <Input name="riskEntryId" placeholder="ID del peligro en la MIPER" />
@@ -269,13 +265,15 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
                           {worker.position && <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{worker.position}</span>}
                         </span>
                         {selected && (
-                          <select
+                          <Select
                             value={crew[worker.id]}
-                            onChange={(event) => setCrew((current) => ({ ...current, [worker.id]: event.target.value }))}
-                            className="h-8 rounded border border-[var(--color-border)] bg-transparent px-2 text-xs"
+                            onValueChange={(v) => setCrew((current) => ({ ...current, [worker.id]: v }))}
                           >
-                            {Object.entries(PERMIT_CREW_ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                          </select>
+                            <SelectTrigger className="h-8 text-xs px-2" aria-label="Rol en cuadrilla"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(PERMIT_CREW_ROLE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
                         )}
                       </div>
                     )

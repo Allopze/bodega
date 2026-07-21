@@ -4,6 +4,7 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -622,12 +623,7 @@ function JsaDialog({ permitId, steps }: { permitId: string; steps: JsaStepItem[]
                 </Field>
               </div>
               <Field label="Riesgo residual">
-                <select
-                  value={step.residualRisk} className={selectClass}
-                  onChange={(event) => setDraft((current) => current.map((s, i) => i === index ? { ...s, residualRisk: event.target.value } : s))}
-                >
-                  {Object.entries(RESIDUAL_RISK_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
+                <Select value={step.residualRisk} onValueChange={(v) => setDraft((current) => current.map((s, i) => i === index ? { ...s, residualRisk: v } : s))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(RESIDUAL_RISK_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
               </Field>
             </div>
           ))}
@@ -669,10 +665,7 @@ function ControlVerifyDialog({ control }: { control: ControlItem }) {
             <DialogDescription>{control.description}</DialogDescription>
           </DialogHeader>
           <Field label="Resultado">
-            <select value={verified ? "yes" : "no"} onChange={(event) => setVerified(event.target.value === "yes")} className={selectClass}>
-              <option value="yes">Verificado en terreno</option>
-              <option value="no">No aplica</option>
-            </select>
+            <Select value={verified ? "yes" : "no"} onValueChange={(v) => setVerified(v === "yes")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="yes">Verificado en terreno</SelectItem><SelectItem value="no">No aplica</SelectItem></SelectContent></Select>
           </Field>
           {!verified && (
             <Field label="Por qué no aplica" hint="Obligatorio para no verificar un control.">
@@ -691,6 +684,7 @@ function ControlVerifyDialog({ control }: { control: ControlItem }) {
 
 function AddIsolationDialog({ permitId }: { permitId: string }) {
   const [open, setOpen] = React.useState(false)
+  const [energySource, setEnergySource] = React.useState("electrical")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -716,9 +710,7 @@ function AddIsolationDialog({ permitId }: { permitId: string }) {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Fuente de energía">
-              <select name="energySource" className={selectClass} required>
-                {Object.entries(ENERGY_SOURCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              <Select value={energySource} onValueChange={setEnergySource}><SelectTrigger><SelectValue placeholder="Selecciona fuente" /></SelectTrigger><SelectContent>{Object.entries(ENERGY_SOURCE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="energySource" value={energySource} />
             </Field>
             <Field label="ID de candado/tarjeta"><Input name="lockTagId" required maxLength={120} /></Field>
           </div>

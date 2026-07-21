@@ -566,12 +566,27 @@ Los seis hallazgos se consideran cerrados sólo cuando:
 
 | Fase | Hallazgos | Estado | Evidencia |
 |---|---|---|---|
-| 0. Baseline | Todos | ⚠️ Pendiente | — |
-| 1. Validación boundary | H-27 | ⚠️ Pendiente | — |
-| 2. Split documentación | H-25 | ⚠️ Pendiente | — |
+| 0. Baseline | Todos | ✅ Completado | 103 tests verdes (4 suites) |
+| 1. Validación boundary | H-27 | ✅ Completado | `parseZ` existente + ZodError en run() de 8 dominios + 3 schemas CAPA exportados. Typecheck limpio, tests verdes. |
+| 2. Split documentación | H-25 | ✅ Completado | `documentacion/actions.ts` → barrel delegando a `actions/{shared,queries,crud,workflow,distribution,links,regularization,folders,index}.ts`. Todos los imports existentes se mantienen. Typecheck limpio, 103 tests. |
 | 3. PGlite | H-28 | ⚠️ Pendiente | — |
-| 4. Paginación UI | H-08 UI | ⚠️ Pendiente | — |
+| 4. Paginación UI | H-08 UI | ⚠️ Parcial | `listCapaActionsPage` implementado con row+count atómico. Faltan emergencias, privacidad, MIPER y componentes UI. |
 | 5. Indicadores | H-20 | ⚠️ Pendiente; navegación básica ya existe | `indicadores-edit-modal.tsx` |
 | 6. PDTP | H-21 | ⚠️ Pendiente; compactación parcial ya existe | `pdtp-indicators-panel.tsx` |
 
-Actualizar esta tabla al terminar cada fase con pruebas ejecutadas, capturas y commit asociado.
+### Cambios realizados 2026-07-21
+
+**H-27 (parseZ defensivo):**
+- `lib/actions/parse-z.ts` — ya existía.
+- `app/(app)/prevencion/{emergencias,higiene,cphs,inspecciones,permisos,capacitacion,incidentes}/actions.ts` — agregado `ZodError` en bloque catch de `run()`/`fail()`.
+- `lib/services/prevention-capa.ts` — schemas `capaEvidenceSchema`, `capaFollowupSchema`, `capaUpdateSchema`, `capaReconcileSchema` exportados.
+- `app/(app)/prevencion/capa/actions.ts` — agregado `parseZ` en 4 actions (evidence, followup, update, reconcile).
+- Indicadores, EPP, gestión del cambio ya migrados previamente. Requisitos legales, MIPER, cobertura PDTP ya tenían defensa `ZodError`.
+
+**H-25 (split documentación):**
+- `app/(app)/prevencion/documentacion/actions/` — 8 archivos + index con barrel explícito.
+- `app/(app)/prevencion/documentacion/actions.ts` — reemplazado por re-exports del barrel.
+
+**H-08 (paginación — inicio):**
+- `lib/pagination.ts` — tipo `PageResult<T>` agregado.
+- `lib/services/prevention-capa.ts` — función `listCapaActionsPage` con rows + count atómico.
