@@ -7,6 +7,7 @@ Indice de la seccion:
 - [Trabajadores](./admin/trabajadores.md)
 - [Roles](./admin/roles.md)
 - [Productos](./admin/productos.md)
+- [Importacion EPP](./admin/importacion-epp.md)
 - [Catalogos de productos](./admin/catalogos-productos.md)
 - [Proveedores](./admin/proveedores.md)
 - [Centros de costo](./admin/centros-costo.md)

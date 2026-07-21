@@ -20,7 +20,7 @@ export interface NormalizedEppRow {
 
 export const UNIT_ALIASES: Record<string, string> = { uni: "unidad", un: "unidad", unidad: "unidad", par: "par", pares: "par", caja: "caja", pack: "paquete", paquete: "paquete", set: "set", juego: "juego" }
 export const COLOR_ALIASES: Record<string, string> = { blanco: "Blanco", negra: "Negro", negro: "Negro", azul: "Azul", "azul marino": "Azul marino", rojo: "Rojo", roja: "Rojo", amarillo: "Amarillo", amarilla: "Amarillo", verde: "Verde", gris: "Gris", claro: "Claro", transparente: "Transparente" }
-export const EPP_TYPES = ["casco", "guante", "lente", "antiparra", "botin", "zapato", "chaleco", "mascarilla", "respirador", "arnes", "protector auditivo", "buzo", "traje", "pantalon", "chaqueta"] as const
+export const EPP_TYPES = ["casco", "guante", "lente", "antiparra", "botin", "zapato", "chaleco", "mascarilla", "respirador", "arnes", "protector auditivo", "buzo", "traje", "pantalon", "chaqueta", "otros"] as const
 export const VALID_UNITS = ["unidad", "par", "caja", "paquete", "set", "juego"] as const
 export const VALID_COLORS = [...new Set(Object.values(COLOR_ALIASES))]
 

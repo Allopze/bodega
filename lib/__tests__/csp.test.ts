@@ -2,19 +2,27 @@ import { describe, expect, it } from "vitest"
 import { createCspHeader } from "@/lib/security/csp"
 
 describe("createCspHeader (audit S-09)", () => {
-  it("includes the nonce in script-src", () => {
+  it("includes the nonce and 'strict-dynamic' in production (no 'unsafe-inline' in script-src)", () => {
     const csp = createCspHeader("abc123nonce", { isDev: false })
     expect(csp).toContain("script-src 'self' 'nonce-abc123nonce' 'strict-dynamic'")
+    // 'unsafe-inline' still appears in style-src-* directives, so scope the
+    // check to the script-src portion only.
+    const scriptSrc = csp.split(";").find((p) => p.trim().startsWith("script-src"))
+    expect(scriptSrc).not.toContain("'unsafe-inline'")
+  })
+
+  it("uses 'unsafe-inline' + 'unsafe-eval' in development (not 'strict-dynamic')", () => {
+    const csp = createCspHeader("nonce", { isDev: true })
+    expect(csp).toContain("'unsafe-inline'")
+    expect(csp).toContain("'unsafe-eval'")
+    // strict-dynamic would ignore 'self' in Chrome — dev needs self-based
+    // script loading for Turbopack chunks that don't carry the nonce.
+    expect(csp).not.toContain("'strict-dynamic'")
   })
 
   it("does NOT include 'unsafe-eval' in production", () => {
     const csp = createCspHeader("nonce", { isDev: false })
     expect(csp).not.toContain("'unsafe-eval'")
-  })
-
-  it("includes 'unsafe-eval' in development", () => {
-    const csp = createCspHeader("nonce", { isDev: true })
-    expect(csp).toContain("'unsafe-eval'")
   })
 
   it("splits style-src into style-src-elem and style-src-attr (S-09)", () => {
