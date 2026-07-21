@@ -3,10 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { parseZ } from "@/lib/actions/parse-z"
 import type { ActionState } from "@/lib/validation/masters"
 import {
   addCapaEvidence,
   addCapaFollowup,
+  capaTransitionSchema,
   reconcileCapaAction,
   transitionCapaAction,
   updateCapaAction,
@@ -42,9 +44,13 @@ export async function transitionCapaActionAction(input: {
 }): Promise<ActionState> {
   const guard = await guardPermission(permissionForTransition(input.toStatus))
   if (guard.error) return guard.error
+  // Validado DESPUÉS del guard de permiso (no antes) para no exponer
+  // detalles de validación a quien no tiene permiso sobre esta transición.
+  const parsed = parseZ(capaTransitionSchema, input)
+  if (!parsed.ok) return parsed
   try {
     await transitionCapaAction({
-      input,
+      input: parsed.data,
       ctx: { userId: guard.session.user.id },
       scope: resolveWorksiteScope(guard.session),
       permissions: guard.session.user.permissions,

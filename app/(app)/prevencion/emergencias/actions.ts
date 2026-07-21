@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { parseZ } from "@/lib/actions/parse-z"
 import {
   addEmergencyContact,
   addEmergencyResource,
@@ -11,6 +12,7 @@ import {
   approveEmergencyPlan,
   completeEmergencyDrill,
   createEmergencyPlan,
+  planSchema,
   scheduleEmergencyDrill,
   type EmergencyAccess,
 } from "@/lib/services/prevention-emergency"
@@ -38,7 +40,14 @@ async function run(access: EmergencyAccess, operation: (access: EmergencyAccess)
 export async function createEmergencyPlanAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createEmergencyPlan(input, access))
+  // Boundary de validación con parseZ (Fase 1 H-27): antes, un input
+  // inválido caía en el catch de `run()` y devolvía el mensaje crudo de
+  // ZodError sin fieldErrors. Ahora se rechaza aquí con fieldErrors
+  // estructurados — mejora intencional, no un cambio de comportamiento
+  // en el camino exitoso.
+  const parsed = parseZ(planSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => createEmergencyPlan(parsed.data, access))
 }
 
 export async function addEmergencyScenarioAction(input: unknown): Promise<ActionState> {

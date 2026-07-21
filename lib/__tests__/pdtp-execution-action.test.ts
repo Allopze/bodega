@@ -91,4 +91,25 @@ describe("markPdtpExecutionAction", () => {
     expect(input.evidenceUrl).toBe("")
     expect(input.evidencePhotos).toEqual([])
   })
+
+  it("rejects invalid input via the parseZ boundary before calling the service", async () => {
+    const { markPdtpExecutionAction } = await import("@/app/(app)/prevencion/pdtp/actions")
+
+    // activityId vacío viola pdtpExecutionSchema (min 1) — debe rechazarse
+    // en el boundary, sin invocar markPdtpExecution.
+    const fd = makeFormData({
+      activityId: "",
+      worksiteId: "ws-1",
+      year: "2026",
+      month: "1",
+      week: "1",
+      executedQuantity: "3",
+    })
+
+    const res = await markPdtpExecutionAction(fd)
+
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.activityId).toBeDefined()
+    expect(mockMarkPdtpExecution).not.toHaveBeenCalled()
+  })
 })

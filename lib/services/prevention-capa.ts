@@ -48,7 +48,10 @@ const capaCreateSchema = z.object({
   legacySnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 
-const capaTransitionSchema = z.object({
+// Exportado para que transitionCapaActionAction (Server Action) pueda
+// validar en el boundary con `parseZ` antes de invocar el servicio —
+// misma forma, sin duplicar el schema en un archivo nuevo.
+export const capaTransitionSchema = z.object({
   actionId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   toStatus: z.enum(CAPA_STATUSES),

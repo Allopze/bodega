@@ -6,13 +6,20 @@ const mockTransition = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
-vi.mock("@/lib/services/prevention-capa", () => ({
-  transitionCapaAction: mockTransition,
-  addCapaEvidence: vi.fn(),
-  addCapaFollowup: vi.fn(),
-  updateCapaAction: vi.fn(),
-  reconcileCapaAction: vi.fn(),
-}))
+// Mockea solo las funciones de servicio; deja pasar capaTransitionSchema y
+// CAPA_STATUSES reales para que el boundary parseZ de la action se valide
+// contra el schema de producción real, no un doble de prueba.
+vi.mock("@/lib/services/prevention-capa", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/services/prevention-capa")>()
+  return {
+    ...actual,
+    transitionCapaAction: mockTransition,
+    addCapaEvidence: vi.fn(),
+    addCapaFollowup: vi.fn(),
+    updateCapaAction: vi.fn(),
+    reconcileCapaAction: vi.fn(),
+  }
+})
 
 function session(permissions: string[], worksiteIds = ["w1"]): Session {
   return {
@@ -65,5 +72,34 @@ describe("CAPA server actions", () => {
     const result = await transitionCapaActionAction({ actionId: "c1", expectedVersion: 3, toStatus: "closed" })
     expect(result.ok).toBe(false)
     expect(mockTransition).not.toHaveBeenCalled()
+  })
+
+  it("rejects invalid input via the parseZ boundary before calling the service", async () => {
+    // Permiso válido para "verified", pero actionId vacío viola
+    // capaTransitionSchema (min 1) — debe rechazarse antes de invocar
+    // transitionCapaAction.
+    mockAuth.mockResolvedValue(session(["prevention:capa:verify"]))
+    const { transitionCapaActionAction } = await import("@/app/(app)/prevencion/capa/actions")
+    const result = await transitionCapaActionAction({
+      actionId: "", expectedVersion: 2, toStatus: "verified",
+      effectivenessStatus: "effective", effectivenessAssessment: "Control observado en terreno",
+    })
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.actionId).toBeDefined()
+    expect(mockTransition).not.toHaveBeenCalled()
+  })
+})
+
+describe("capaTransitionSchema", () => {
+  it("accepts a minimal valid transition payload", async () => {
+    const { capaTransitionSchema } = await import("@/lib/services/prevention-capa")
+    const result = capaTransitionSchema.safeParse({ actionId: "c1", expectedVersion: 1, toStatus: "in_progress" })
+    expect(result.success).toBe(true)
+  })
+
+  it("rejects an unknown toStatus value", async () => {
+    const { capaTransitionSchema } = await import("@/lib/services/prevention-capa")
+    const result = capaTransitionSchema.safeParse({ actionId: "c1", expectedVersion: 1, toStatus: "not_a_status" })
+    expect(result.success).toBe(false)
   })
 })

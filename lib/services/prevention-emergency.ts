@@ -76,7 +76,10 @@ async function history(client: Client, args: {
 
 /* ── Plan ─────────────────────────────────────────────────────────────────── */
 
-const planSchema = z.object({
+// Exportado para que la Server Action (createEmergencyPlanAction) pueda
+// validar en el boundary con `parseZ` antes de invocar este servicio —
+// misma forma, sin duplicar el schema.
+export const planSchema = z.object({
   worksiteId: z.string().min(1),
   title: z.string().trim().min(3).max(200),
   description: z.string().trim().max(5000).nullable().optional(),
