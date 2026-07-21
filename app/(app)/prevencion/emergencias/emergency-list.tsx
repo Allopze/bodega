@@ -45,9 +45,17 @@ interface Props {
   drills: DrillItem[]
   worksites: { id: string; name: string }[]
   canManage: boolean
+  plansPagination: PaginationState
 }
 
-export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
+export function EmergencyList({ plans, drills, worksites, canManage, plansPagination }: Props) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const navigatePlansPage = React.useCallback((page: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", String(page))
+    router.push(`?${params.toString()}`)
+  }, [router, searchParams])
   const { searchQuery } = useSafeShellHeader()
   const [tab, setTab] = React.useState<"plans" | "drills">("plans")
 
