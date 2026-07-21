@@ -373,3 +373,56 @@ describe("getDocumentDetailAction", () => {
     expect(res.canArchive).toBe(true)
   })
 })
+
+/**
+ * Fase 0 (baseline): fija el contrato público de exports de este módulo antes
+ * del split de Fase 2 (H-25), que convertirá `actions.ts` en un directorio
+ * `actions/` con `index.ts` como barrel. Este test importa por el mismo
+ * specifier que usa el resto de la app (`@/app/(app)/prevencion/documentacion/actions`),
+ * así que sigue funcionando sin cambios cuando ese specifier resuelva a
+ * `actions/index.ts` en lugar de `actions.ts` — a diferencia de
+ * `lib/__tests__/prevention-documentation-canonical.test.ts`, que lee el
+ * archivo con `readFileSync("actions.ts")` y se rompería con el split.
+ */
+describe("documentacion/actions.ts — contrato público de exports (Fase 0 baseline)", () => {
+  it("expone exactamente los 24 exports nombrados usados hoy por la app y los tests", async () => {
+    const mod: Record<string, unknown> = await import("@/app/(app)/prevencion/documentacion/actions")
+
+    const expectedExportNames = [
+      "createAndUploadSstDocumentAction",
+      "uploadSstDocumentVersionAction",
+      "archiveSstDocumentAction",
+      "restoreSstDocumentAction",
+      "submitSstDocumentVersionForReviewAction",
+      "returnObservedSstDocumentVersionToDraftAction",
+      "markSstDocumentVersionReviewedAction",
+      "observeSstDocumentVersionAction",
+      "approveSstDocumentVersionAction",
+      "publishSstDocumentVersionAction",
+      "assignSstDocumentRecipientsAction",
+      "acknowledgeSstDocumentVersionAction",
+      "exemptSstDocumentRecipientAction",
+      "createSstDocumentLinkAction",
+      "removeSstDocumentLinkAction",
+      "regularizeSstDocumentIntegrityAction",
+      "createSstDocumentFolderAction",
+      "renameSstDocumentFolderAction",
+      "moveSstDocumentFolderAction",
+      "archiveSstDocumentFolderAction",
+      "restoreSstDocumentFolderAction",
+      "moveSstDocumentAction",
+      "revalidateBiblioteca",
+      "getDocumentDetailAction",
+    ]
+
+    for (const name of expectedExportNames) {
+      expect(mod, `falta el export "${name}"`).toHaveProperty(name)
+      expect(typeof mod[name], `"${name}" debería seguir siendo una función`).toBe("function")
+    }
+
+    // Comparación exhaustiva: si aparece un export nuevo o desaparece uno
+    // existente, este test debe fallar y forzar revisión explícita de la lista
+    // (protege contra "export *" accidentales al hacer el split de Fase 2).
+    expect(Object.keys(mod).sort()).toEqual([...expectedExportNames].sort())
+  })
+})

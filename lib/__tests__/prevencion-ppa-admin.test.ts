@@ -229,6 +229,35 @@ describe("prevencion PPA admin actions", () => {
       })
       expect(r.ok).toBe(false); expect(r.message).toContain("no encontrado")
     })
+
+    // Fase 0 (baseline): fija el mensaje y los fieldErrors que produce hoy la
+    // validación manual (`ppaReviewSchema.safeParse`) dentro de la action, antes
+    // de que Fase 1 (H-27) adopte `parseZ` en este boundary. El helper no debe
+    // cambiar estos mensajes sin que un test lo note.
+    it("rejects a payload missing decision without calling the service", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("ppa:review", [], true))
+      const { reviewPpaAction } = await import("@/app/(app)/prevencion/ppa/actions")
+      const r = await reviewPpaAction({ ppaId: "ppa-1", fuiAlLugar: true } as Parameters<typeof reviewPpaAction>[0])
+      expect(r.ok).toBe(false)
+      expect(r.message).toBe("Revisa los campos del formulario.")
+      expect(r.fieldErrors).toEqual({ decision: ["Selecciona una decisión"] })
+      expect(mockReviewPpa).not.toHaveBeenCalled()
+    })
+
+    it("rejects a 'correccion' decision missing the corrective-action fields required by superRefine", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("ppa:review", [], true))
+      const { reviewPpaAction } = await import("@/app/(app)/prevencion/ppa/actions")
+      const r = await reviewPpaAction({ ppaId: "ppa-1", fuiAlLugar: true, decision: "correccion" })
+      expect(r.ok).toBe(false)
+      expect(r.fieldErrors).toEqual({
+        accionCorrectiva: ["Describe la acción correctiva requerida antes del reinicio."],
+        responsibleRole: ["Selecciona el rol responsable de la acción."],
+        responsible: ["Indica la persona responsable de la acción."],
+        dueDate: ["Indica un plazo válido para la acción."],
+        priority: ["Selecciona la prioridad de la acción."],
+      })
+      expect(mockReviewPpa).not.toHaveBeenCalled()
+    })
   })
 
   describe("closePpaAction", () => {
