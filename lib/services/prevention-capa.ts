@@ -539,10 +539,14 @@ export async function listCapaActions(args: {
   status?: CapaStatus
   sourceType?: string
   worksiteId?: string
+  limit?: number
+  offset?: number
 }) {
   requirePermission(args.permissions, "prevention:capa:view")
   if (args.scope.mode === "none") return []
   if (args.worksiteId && !scopeAllows(args.scope, args.worksiteId)) return []
+  const effectiveLimit = Math.min(args.limit ?? 500, 500)
+  const offset = args.offset ?? 0
   const scopeWhere = args.worksiteId
     ? eq(preventionCapaActions.worksiteId, args.worksiteId)
     : args.scope.mode === "some"
@@ -552,7 +556,7 @@ export async function listCapaActions(args: {
     scopeWhere,
     args.status ? eq(preventionCapaActions.status, args.status) : undefined,
     args.sourceType ? eq(preventionCapaActions.sourceType, args.sourceType) : undefined,
-  )).orderBy(desc(preventionCapaActions.createdAt))
+  )).orderBy(desc(preventionCapaActions.createdAt)).limit(effectiveLimit).offset(offset)
 }
 
 export async function getCapaActionBundle(args: {
@@ -724,7 +728,10 @@ export async function buildCapaExport(args: {
     db.select().from(preventionCapaFollowups).where(inArray(preventionCapaFollowups.actionId, actionIds)).orderBy(asc(preventionCapaFollowups.createdAt)),
     db.select({ id: worksites.id, name: worksites.name }).from(worksites)
       .where(inArray(worksites.id, [...new Set(actions.map((item) => item.worksiteId))])),
-    db.select({ id: users.id, name: users.name }).from(users),
+    db.select({ id: users.id, name: users.name }).from(users)
+      .where(inArray(users.id, [
+        ...new Set(actions.flatMap((item) => [item.responsibleUserId, item.createdByUserId, item.completedByUserId, item.verifiedByUserId].filter((id): id is string => id !== null && id !== undefined))),
+      ])),
   ])
   const worksiteName = new Map(worksiteRows.map((item) => [item.id, item.name]))
   const userName = new Map(userRows.map((item) => [item.id, item.name]))

@@ -327,18 +327,15 @@ export async function enrollGroupInSurveillance(input: unknown, access: HygieneA
 
     const enrolledOn = data.startingOn ?? todayInChile()
     const dueOn = nextSurveillanceDate(enrolledOn, program.periodicityMonths)
-    let created = 0
-    for (const member of members) {
-      const [row] = await tx.insert(preventionSurveillanceEnrollments).values({
-        id: `surven-${nanoid()}`,
-        programId: data.programId,
-        workerId: member.workerId,
-        groupId: data.groupId,
-        enrolledOn,
-        dueOn,
-      }).onConflictDoNothing().returning()
-      if (row) created += 1
-    }
+    const result = await tx.insert(preventionSurveillanceEnrollments).values(members.map((member) => ({
+      id: `surven-${nanoid()}`,
+      programId: data.programId,
+      workerId: member.workerId,
+      groupId: data.groupId,
+      enrolledOn,
+      dueOn,
+    }))).onConflictDoNothing().returning()
+    const created = result.length
 
     await history(tx, { entityType: "program", entityId: data.programId, worksiteId: program.worksiteId, changeType: "enrolled", reason: `${created} persona(s) matriculadas desde el GES ${group.code}`, actorUserId: access.userId })
     return { enrolled: created, total: members.length, dueOn }

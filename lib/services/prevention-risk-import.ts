@@ -11,10 +11,10 @@ import {
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import type { RiskLegalAccess } from "@/lib/services/prevention-risk-legal"
 import {
-  addRiskEntry,
-  createRiskMatrixDraft,
-  type RiskLegalAccess,
+  createRiskMatrixDraftWithClient,
+  addRiskEntryWithClient,
 } from "@/lib/services/prevention-risk-legal"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import { resolveStorageDir } from "@/lib/storage/config"
@@ -365,51 +365,59 @@ export async function activateRiskImportBatch(input: unknown, access: RiskLegalA
     participationSummary: z.string().trim().min(10).max(5000),
     consultationEvidenceReference: z.string().trim().min(3).max(2000),
   }).parse(input)
-  const [batch] = await db.select().from(preventionRiskImportBatches).where(eq(preventionRiskImportBatches.id, data.batchId)).limit(1)
-  if (!batch) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
-  assertPermission(access, "prevention:risk:edit", batch.worksiteId)
-  if (!inArrayStatus(batch.status, ["approved", "activated"])) throw new Error("El lote debe estar aprobado antes de activarlo.")
-  let [matrix] = await db.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.sourceImportBatchId, batch.id)).limit(1)
-  if (!matrix) {
-    matrix = await createRiskMatrixDraft({
-      worksiteId: batch.worksiteId,
-      title: data.title,
-      methodologyId: data.methodologyId,
-      revisionReason: data.revisionReason,
-      participationSummary: data.participationSummary,
-      consultationEvidenceReference: data.consultationEvidenceReference,
-      sourceImportBatchId: batch.id,
-    }, access)
-  }
-  if (matrix.status !== "draft") return { matrix, completed: batch.status === "activated", remaining: 0 }
-  const rows = await db.select().from(preventionRiskImportRows).where(and(eq(preventionRiskImportRows.batchId, batch.id), eq(preventionRiskImportRows.status, "ready"))).orderBy(asc(preventionRiskImportRows.rowNumber))
-  for (const row of rows) {
-    const normalized = row.normalized as NormalizedRiskImportRow
-    const { entry } = await addRiskEntry({
-      matrixId: matrix.id,
-      ...normalized,
-      sourceRowNumber: row.rowNumber,
-      sourceOriginal: row.original,
-      sourceNormalized: row.normalized as Record<string, unknown>,
-      normalizationDecision: row.resolution ?? "Normalización automática pendiente de aprobación de la versión MIPER",
-    }, access)
-    await db.update(preventionRiskImportRows).set({ status: "activated", riskEntryId: entry.id }).where(eq(preventionRiskImportRows.id, row.id))
-  }
-  const counts = await db.select({ remaining: sql<number>`count(*) filter (where ${preventionRiskImportRows.status} IN ('ready', 'needs_review'))::int` }).from(preventionRiskImportRows).where(eq(preventionRiskImportRows.batchId, batch.id))
-  const remaining = counts[0]?.remaining ?? 0
-  const completed = remaining === 0
-  if (completed) await db.update(preventionRiskImportBatches).set({ status: "activated", activatedMatrixId: matrix.id, activatedByUserId: access.userId, activatedAt: new Date().toISOString() }).where(eq(preventionRiskImportBatches.id, batch.id))
-  return { matrix, completed, remaining }
+
+  return db.transaction(async (tx) => {
+    const [batch] = await tx.select().from(preventionRiskImportBatches).where(eq(preventionRiskImportBatches.id, data.batchId)).limit(1)
+    if (!batch) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
+    assertPermission(access, "prevention:risk:edit", batch.worksiteId)
+    if (!inArrayStatus(batch.status, ["approved", "activated"])) throw new Error("El lote debe estar aprobado antes de activarlo.")
+
+    let [matrix] = await tx.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.sourceImportBatchId, batch.id)).limit(1)
+    if (!matrix) {
+      matrix = await createRiskMatrixDraftWithClient(tx, {
+        worksiteId: batch.worksiteId,
+        title: data.title,
+        methodologyId: data.methodologyId,
+        revisionReason: data.revisionReason,
+        participationSummary: data.participationSummary,
+        consultationEvidenceReference: data.consultationEvidenceReference,
+        sourceImportBatchId: batch.id,
+      }, access)
+    }
+    if (matrix.status !== "draft") return { matrix, completed: batch.status === "activated", remaining: 0 }
+
+    const rows = await tx.select().from(preventionRiskImportRows).where(and(eq(preventionRiskImportRows.batchId, batch.id), eq(preventionRiskImportRows.status, "ready"))).orderBy(asc(preventionRiskImportRows.rowNumber))
+    for (const row of rows) {
+      const normalized = row.normalized as NormalizedRiskImportRow
+      const { entry } = await addRiskEntryWithClient(tx, {
+        matrixId: matrix.id,
+        ...normalized,
+        sourceRowNumber: row.rowNumber,
+        sourceOriginal: row.original,
+        sourceNormalized: row.normalized as Record<string, unknown>,
+        normalizationDecision: row.resolution ?? "Normalización automática pendiente de aprobación de la versión MIPER",
+      }, access)
+      await tx.update(preventionRiskImportRows).set({ status: "activated", riskEntryId: entry.id }).where(eq(preventionRiskImportRows.id, row.id))
+    }
+
+    const counts = await tx.select({ remaining: sql<number>`count(*) filter (where ${preventionRiskImportRows.status} IN ('ready', 'needs_review'))::int` }).from(preventionRiskImportRows).where(eq(preventionRiskImportRows.batchId, batch.id))
+    const remaining = counts[0]?.remaining ?? 0
+    const completed = remaining === 0
+    if (completed) await tx.update(preventionRiskImportBatches).set({ status: "activated", activatedMatrixId: matrix.id, activatedByUserId: access.userId, activatedAt: new Date().toISOString() }).where(eq(preventionRiskImportBatches.id, batch.id))
+    return { matrix, completed, remaining }
+  })
 }
 
 function inArrayStatus<T extends string>(value: string, allowed: readonly T[]): value is T {
   return allowed.includes(value as T)
 }
 
-export async function listRiskImportBatches(access: RiskLegalAccess) {
+export async function listRiskImportBatches(access: RiskLegalAccess, opts?: { limit?: number; offset?: number }) {
   assertPermission(access, "prevention:risk:view")
   if (access.scope.mode === "none") return []
-  const batches = await db.select().from(preventionRiskImportBatches).where(access.scope.mode === "all" ? undefined : inArray(preventionRiskImportBatches.worksiteId, access.scope.ids)).orderBy(asc(preventionRiskImportBatches.createdAt))
+  const limit = Math.min(opts?.limit ?? 500, 500)
+  const offset = opts?.offset ?? 0
+  const batches = await db.select().from(preventionRiskImportBatches).where(access.scope.mode === "all" ? undefined : inArray(preventionRiskImportBatches.worksiteId, access.scope.ids)).orderBy(asc(preventionRiskImportBatches.createdAt)).limit(limit).offset(offset)
   const rows = batches.length ? await db.select().from(preventionRiskImportRows).where(inArray(preventionRiskImportRows.batchId, batches.map((item) => item.id))).orderBy(asc(preventionRiskImportRows.rowNumber)) : []
   const rowsByBatch = new Map<string, typeof rows>()
   for (const row of rows) rowsByBatch.set(row.batchId, [...(rowsByBatch.get(row.batchId) ?? []), row])

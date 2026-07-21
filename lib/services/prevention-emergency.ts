@@ -399,8 +399,10 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */
 
-export async function listEmergencyPlans(access: EmergencyAccess) {
+export async function listEmergencyPlans(access: EmergencyAccess, opts?: { limit?: number; offset?: number }) {
   requireAccess(access, "prevention:emergency:view")
+  const limit = Math.min(opts?.limit ?? 500, 500)
+  const offset = opts?.offset ?? 0
   return db.select({
     plan: preventionEmergencyPlans,
     worksiteName: worksites.name,
@@ -412,6 +414,8 @@ export async function listEmergencyPlans(access: EmergencyAccess) {
     .innerJoin(worksites, eq(preventionEmergencyPlans.worksiteId, worksites.id))
     .where(scopeCondition(access.scope, preventionEmergencyPlans.worksiteId))
     .orderBy(asc(worksites.name))
+    .limit(limit)
+    .offset(offset)
 }
 
 export async function listEmergencyDrills(access: EmergencyAccess) {

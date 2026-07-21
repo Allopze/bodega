@@ -32,6 +32,19 @@ export async function runPreventionIncidentReminders(now = new Date()): Promise<
       eq(preventionIncidentNotifications.incidentId, preventionIncidents.id),
     ))
 
+  // Pre-resolver permission lookups per worksite
+  const uniqueWorksiteIds = [...new Set(lanes.map((l) => l.worksiteId))]
+  const notifyByWs = new Map<string, string[]>()
+  const closeByWs = new Map<string, string[]>()
+  await Promise.all(uniqueWorksiteIds.map(async (wsId) => {
+    const [notifiers, closers] = await Promise.all([
+      getUserIdsWithPermissionForWorksite("prevention:incidents:notify", wsId),
+      getUserIdsWithPermissionForWorksite("prevention:incidents:close", wsId),
+    ])
+    notifyByWs.set(wsId, notifiers)
+    closeByWs.set(wsId, closers)
+  }))
+
   const notified = new Set<string>()
   let upcomingLanes = 0
   let overdueLanes = 0
@@ -48,7 +61,7 @@ export async function runPreventionIncidentReminders(now = new Date()): Promise<
     if (!isImmediateFatalLane && !isUpcoming && !isOverdue) continue
 
     const owners = lane.responsibleUserId ? [lane.responsibleUserId] : []
-    const managers = await getUserIdsWithPermissionForWorksite("prevention:incidents:notify", worksiteId)
+    const managers = notifyByWs.get(worksiteId) ?? []
     const recipients = [...new Set([...owners, ...managers])]
     recipients.forEach((id) => notified.add(id))
     if (isImmediateFatalLane) fatalImmediateLanes++
@@ -71,7 +84,7 @@ export async function runPreventionIncidentReminders(now = new Date()): Promise<
     })
 
     if (isOverdue || isImmediateFatalLane) {
-      const escalation = await getUserIdsWithPermissionForWorksite("prevention:incidents:close", worksiteId)
+      const escalation = closeByWs.get(worksiteId) ?? []
       escalation.forEach((id) => notified.add(id))
       await createNotifications(escalation, {
         type: "system_alert",

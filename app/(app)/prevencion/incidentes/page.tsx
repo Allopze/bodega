@@ -21,16 +21,27 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   const indicator = ["accidentability", "frequency", "severity", "pending"].includes(query.indicator ?? "")
     ? query.indicator as "accidentability" | "frequency" | "severity" | "pending"
     : undefined
+  const INDICATOR_LABELS: Record<string, string> = {
+    accidentability: "accidentabilidad",
+    frequency: "frecuencia",
+    severity: "gravedad",
+    pending: "pendientes",
+  }
+  const indicatorLabel = indicator ? INDICATOR_LABELS[indicator] ?? indicator : undefined
   const year = Number(query.year)
-  const monthFrom = Number(query.monthFrom)
-  const monthTo = Number(query.monthTo)
+  const monthFromRaw = Number(query.monthFrom)
+  const monthToRaw = Number(query.monthTo)
+  const monthFrom = Number.isInteger(monthFromRaw) && monthFromRaw >= 1 && monthFromRaw <= 12 ? monthFromRaw : undefined
+  const monthTo = Number.isInteger(monthToRaw) && monthToRaw >= 1 && monthToRaw <= 12 ? monthToRaw : undefined
+  const effectiveMonthFrom = monthFrom && monthTo && monthFrom > monthTo ? undefined : monthFrom
+  const effectiveMonthTo = monthFrom && monthTo && monthFrom > monthTo ? undefined : monthTo
   const [incidents, worksites, counts] = await Promise.all([
     listPreventionIncidents({
       access,
       worksiteId: query.worksiteId || undefined,
       year: Number.isInteger(year) && year >= 2024 && year <= 2100 ? year : undefined,
-      monthFrom: Number.isInteger(monthFrom) && monthFrom >= 1 && monthFrom <= 12 ? monthFrom : undefined,
-      monthTo: Number.isInteger(monthTo) && monthTo >= 1 && monthTo <= 12 ? monthTo : undefined,
+      monthFrom: effectiveMonthFrom,
+      monthTo: effectiveMonthTo,
       indicator,
     }),
     listIncidentWorksites(access),
@@ -50,7 +61,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
           {canExport && <Button asChild variant="secondary"><Link href="/api/prevencion/incidentes/export"><DownloadSimple className="size-4" />Exportar XLSX</Link></Button>}
         </div>}
       />
-      <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicator ? `Fuente del indicador ${indicator} · ${query.monthFrom ?? "1"}-${query.monthTo ?? "12"}/${query.year ?? ""}` : undefined} />
+      <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicatorLabel ? `Fuente del indicador de ${indicatorLabel} · ${effectiveMonthFrom ?? "—"}-${effectiveMonthTo ?? "—"}/${query.year ?? ""}` : undefined} />
     </PageContainer>
   )
 }

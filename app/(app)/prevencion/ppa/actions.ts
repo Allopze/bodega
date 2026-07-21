@@ -242,7 +242,8 @@ export async function revokePpaTokenAction(
 ): Promise<ActionState> {
   const { session, error } = await guardPermission("ppa:manage")
   if (error) return error
-  const id = formData.get("id") as string
+  const rawId = formData.get("id")
+  const id = typeof rawId === "string" ? rawId : ""
   if (!id) return { ok: false, message: "Falta el identificador del PPA." }
 
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))

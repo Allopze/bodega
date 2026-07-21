@@ -21,6 +21,11 @@ import type { ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/indicadores"
 
+function refresh(year?: number, month?: number) {
+  revalidatePath(REVALIDATE)
+  if (year && month) revalidatePath(`${REVALIDATE}/${year}/${month}`, "page")
+}
+
 export async function saveSafetyIndicatorMonthAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:indicadores:manage")
   if (guard.error) return guard.error
@@ -30,10 +35,15 @@ export async function saveSafetyIndicatorMonthAction(input: unknown): Promise<Ac
   try {
     await upsertSafetyIndicatorMonth(parsed.data, session.user.id, resolveWorksiteScope(session), session.user.permissions.includes("prevention:indicadores:close"))
     revalidatePath(REVALIDATE)
+    const data = input as Record<string, unknown> | null | undefined
+    if (data && typeof data.year === "number" && typeof data.month === "number") {
+      revalidatePath(`${REVALIDATE}/${String(data.year)}/${String(data.month)}`, "page")
+    }
     return { ok: true }
   } catch (e) {
     return unexpectedActionError(e, "prevencion/indicadores/actions")
   }
+  return { ok: true }
 }
 
 export async function closeSafetyIndicatorPeriodAction(input: unknown): Promise<ActionState> {
@@ -43,7 +53,7 @@ export async function closeSafetyIndicatorPeriodAction(input: unknown): Promise<
   if (!parsed.ok) return parsed
   try {
     await closeSafetyIndicatorPeriod(parsed.data, guard.session.user.id, resolveWorksiteScope(guard.session))
-    revalidatePath(REVALIDATE)
+    refresh(parsed.data.year, parsed.data.month)
     return { ok: true }
   } catch (e) {
     return unexpectedActionError(e, "prevencion/indicadores/actions")

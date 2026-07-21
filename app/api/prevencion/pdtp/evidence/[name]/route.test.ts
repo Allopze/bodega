@@ -84,7 +84,7 @@ describe("GET /api/prevencion/pdtp/evidence/[name]", () => {
     expect(res.status).toBe(404)
   })
 
-  it("rechaza con 403 si el dueño de la evidencia está fuera del scope del usuario", async () => {
+  it("rechaza con 404 si el dueño de la evidencia está fuera del scope del usuario (sin distinguir existencia)", async () => {
     queryResult.rows = [{ worksiteId: "ws-other" }]
     mockResolveWorksiteScope.mockReturnValueOnce({ mode: "some", ids: ["ws-1"] })
     mockAssertWorksiteAccess.mockImplementationOnce(() => {
@@ -92,7 +92,7 @@ describe("GET /api/prevencion/pdtp/evidence/[name]", () => {
     })
     const { GET } = await import("./route")
     const res = await GET(makeRequest("abc.jpg") as never, { params: Promise.resolve({ name: "abc.jpg" }) })
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(404)
   })
 
   it("sirve el archivo con el content-type correcto cuando todo encaja", async () => {

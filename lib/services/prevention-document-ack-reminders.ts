@@ -50,6 +50,13 @@ export async function runPreventionDocumentAckReminders(now = new Date()): Promi
   let escalatedTargets = 0
   const today = now.toISOString().slice(0, 10)
 
+  // Pre-resolver managers de distribución por faena
+  const worksiteIds = [...new Set(rows.map((r) => r.target.worksiteId ?? r.documentWorksiteId).filter((id): id is string => id !== null && id !== undefined))]
+  const managersByWs = new Map<string, string[]>()
+  await Promise.all(worksiteIds.map(async (wsId) => {
+    managersByWs.set(wsId, await getUserIdsWithPermissionForWorksite("prevention:docs:distribute", wsId))
+  }))
+
   for (const row of rows) {
     const target = row.target
     const overdue = Boolean(target.dueAt && Date.parse(target.dueAt) < now.getTime())
@@ -64,7 +71,7 @@ export async function runPreventionDocumentAckReminders(now = new Date()): Promi
     }
     const worksiteId = target.worksiteId ?? row.documentWorksiteId
     const managers = worksiteId
-      ? await getUserIdsWithPermissionForWorksite("prevention:docs:distribute", worksiteId)
+      ? (managersByWs.get(worksiteId) ?? [])
       : []
     if (recipientIds.length === 0) recipientIds = managers
     const href = `/prevencion/documentacion/${row.documentId}`

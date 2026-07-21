@@ -27,6 +27,22 @@ export async function runPreventionCapaReminders(): Promise<CapaReminderResult> 
   let overdueActions = 0
   let pendingVerificationActions = 0
 
+  // Pre-resolver permission lookups por faena para evitar N+1
+  const uniqueWorksiteIds = [...new Set(actions.map((a) => a.worksiteId))]
+  const verifyByWs = new Map<string, string[]>()
+  const closeByWs = new Map<string, string[]>()
+  const manageByWs = new Map<string, string[]>()
+  await Promise.all(uniqueWorksiteIds.map(async (wsId) => {
+    const [verifiers, closers, managers] = await Promise.all([
+      getUserIdsWithPermissionForWorksite("prevention:capa:verify", wsId),
+      getUserIdsWithPermissionForWorksite("prevention:capa:close", wsId),
+      getUserIdsWithPermissionForWorksite("prevention:capa:manage", wsId),
+    ])
+    verifyByWs.set(wsId, verifiers)
+    closeByWs.set(wsId, closers)
+    manageByWs.set(wsId, managers)
+  }))
+
   for (const action of actions) {
     const href = `/prevencion/capa/${action.id}`
     if (action.responsibleUserId) {
@@ -45,7 +61,7 @@ export async function runPreventionCapaReminders(): Promise<CapaReminderResult> 
 
     if (action.status === "pending_verification") {
       pendingVerificationActions++
-      const verifiers = await getUserIdsWithPermissionForWorksite("prevention:capa:verify", action.worksiteId)
+      const verifiers = verifyByWs.get(action.worksiteId) ?? []
       verifiers.forEach((id) => notified.add(id))
       await createNotifications(verifiers, {
         type: "system_alert",
@@ -61,7 +77,7 @@ export async function runPreventionCapaReminders(): Promise<CapaReminderResult> 
     if (action.targetDate >= today || ["verified", "closed", "cancelled"].includes(action.status)) continue
     overdueActions++
     const overdueDays = Math.max(1, Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${action.targetDate}T00:00:00Z`)) / 86_400_000))
-    const managers = await getUserIdsWithPermissionForWorksite("prevention:capa:manage", action.worksiteId)
+    const managers = manageByWs.get(action.worksiteId) ?? []
     const owners = action.responsibleUserId ? [action.responsibleUserId] : []
     const firstLevel = [...new Set([...owners, ...managers])]
     firstLevel.forEach((id) => notified.add(id))
@@ -76,7 +92,7 @@ export async function runPreventionCapaReminders(): Promise<CapaReminderResult> 
     })
 
     if (overdueDays >= 3 || action.priority === "high" || action.priority === "critical") {
-      const escalation = await getUserIdsWithPermissionForWorksite("prevention:capa:close", action.worksiteId)
+      const escalation = closeByWs.get(action.worksiteId) ?? []
       escalation.forEach((id) => notified.add(id))
       await createNotifications(escalation, {
         type: "system_alert",

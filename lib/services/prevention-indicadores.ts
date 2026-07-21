@@ -291,10 +291,56 @@ export async function getCanonicalSafetyIndicatorYear(year: number, scope: Works
   const ids = worksitesVisible.map((item) => item.id)
   const effectiveScope: WorksiteScope = ids.length > 0 ? { mode: "some", ids } : { mode: "none", ids: [] }
   const source = await loadCanonicalSourceRows(db, year, effectiveScope)
+
+  // Pre-agrupar por worksiteId:month para evitar re-escanear los mismos arrays en cada calculateGroup
+  const key = (wsId: string, m: number) => `${wsId}:${m}`
+  const eventsByWsMonth = new Map<string, typeof source.events>()
+  const casesByWsMonth = new Map<string, typeof source.cases>()
+  const denomByWsMonth = new Map<string, typeof source.denominators>()
+  for (const wsId of ids) {
+    for (let m = 1; m <= 12; m++) {
+      const k = key(wsId, m)
+      eventsByWsMonth.set(k, [])
+      casesByWsMonth.set(k, [])
+      denomByWsMonth.set(k, [])
+    }
+  }
+  for (const e of source.events) {
+    const k = key(e.worksiteId, e.month)
+    eventsByWsMonth.get(k)?.push(e)
+  }
+  for (const c of source.cases) {
+    const k = key(c.worksiteId, c.month)
+    casesByWsMonth.get(k)?.push(c)
+  }
+  for (const d of source.denominators) {
+    const k = key(d.worksiteId, d.month)
+    denomByWsMonth.get(k)?.push(d)
+  }
+
+  function slicesFor(worksiteIds: string[], startMonth: number, endMonth: number) {
+    let events: typeof source.events = []
+    let cases: typeof source.cases = []
+    let denominators: typeof source.denominators = []
+    for (const wsId of worksiteIds) {
+      for (let m = startMonth; m <= endMonth; m++) {
+        events = events.concat(eventsByWsMonth.get(key(wsId, m)) ?? [])
+        cases = cases.concat(casesByWsMonth.get(key(wsId, m)) ?? [])
+        denominators = denominators.concat(denomByWsMonth.get(key(wsId, m)) ?? [])
+      }
+    }
+    return { events, cases, denominators }
+  }
+
+  function groupedCalculate(worksiteIds: string[], startMonth: number, endMonth: number) {
+    const { events, cases, denominators } = slicesFor(worksiteIds, startMonth, endMonth)
+    return calculateGroup({ year, startMonth, endMonth, worksiteIds, source: { ...source, events, cases, denominators } })
+  }
+
   const groups: CanonicalIndicatorGroup[] = worksitesVisible.map((worksite) => {
     const monthly = Array.from({ length: 12 }, (_, index) => {
       const month = index + 1
-      const result = calculateGroup({ year, startMonth: month, endMonth: month, worksiteIds: [worksite.id], source })
+      const result = groupedCalculate([worksite.id], month, month)
       return {
         ...result,
         legacyComparison: compareLegacy(result, source.legacyRows.filter((item) => item.worksiteId === worksite.id && item.month === month)),
@@ -305,16 +351,16 @@ export async function getCanonicalSafetyIndicatorYear(year: number, scope: Works
       worksiteName: worksite.name,
       monthly,
       semesters: [
-        calculateGroup({ year, startMonth: 1, endMonth: 6, worksiteIds: [worksite.id], source }),
-        calculateGroup({ year, startMonth: 7, endMonth: 12, worksiteIds: [worksite.id], source }),
+        groupedCalculate([worksite.id], 1, 6),
+        groupedCalculate([worksite.id], 7, 12),
       ],
-      annual: calculateGroup({ year, startMonth: 1, endMonth: 12, worksiteIds: [worksite.id], source }),
+      annual: groupedCalculate([worksite.id], 1, 12),
     }
   })
   if (ids.length > 0) {
     const monthly = Array.from({ length: 12 }, (_, index) => {
       const month = index + 1
-      const result = calculateGroup({ year, startMonth: month, endMonth: month, worksiteIds: ids, source })
+      const result = groupedCalculate(ids, month, month)
       return {
         ...result,
         legacyComparison: compareLegacy(result, source.legacyRows.filter((item) => item.month === month)),
@@ -325,10 +371,10 @@ export async function getCanonicalSafetyIndicatorYear(year: number, scope: Works
       worksiteName: "Total de faenas visibles",
       monthly,
       semesters: [
-        calculateGroup({ year, startMonth: 1, endMonth: 6, worksiteIds: ids, source }),
-        calculateGroup({ year, startMonth: 7, endMonth: 12, worksiteIds: ids, source }),
+        groupedCalculate(ids, 1, 6),
+        groupedCalculate(ids, 7, 12),
       ],
-      annual: calculateGroup({ year, startMonth: 1, endMonth: 12, worksiteIds: ids, source }),
+      annual: groupedCalculate(ids, 1, 12),
     })
   }
   const [denominators, closedPeriods, snapshots] = await Promise.all([

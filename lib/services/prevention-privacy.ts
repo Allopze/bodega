@@ -247,8 +247,10 @@ export async function transitionPreventionPrivacyRequest(args: {
   })
 }
 
-export async function listPreventionPrivacyRequests(scope: WorksiteScope) {
+export async function listPreventionPrivacyRequests(scope: WorksiteScope, opts?: { limit?: number; offset?: number }) {
   if (scope.mode === "none") return []
+  const limit = Math.min(opts?.limit ?? 500, 500)
+  const offset = opts?.offset ?? 0
   const scopeWhere = scope.mode === "some" ? inArray(workers.worksiteId, scope.ids) : undefined
   return db.select({
     request: preventionPrivacyRequests,
@@ -262,6 +264,8 @@ export async function listPreventionPrivacyRequests(scope: WorksiteScope) {
     .innerJoin(worksites, eq(worksites.id, workers.worksiteId))
     .where(scopeWhere)
     .orderBy(asc(preventionPrivacyRequests.dueAt), desc(preventionPrivacyRequests.receivedAt))
+    .limit(limit)
+    .offset(offset)
 }
 
 export async function getPreventionPrivacyExportDataset(args: {

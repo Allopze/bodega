@@ -3,12 +3,16 @@ export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
+import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { createPreventionHealthRecord } from "@/lib/services/prevention-health"
 
 export async function POST(request: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  if (!can(session, "prevention:health:upload_clinical")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+  }
   let input: unknown
   try { input = await request.json() }
   catch { return NextResponse.json({ error: "Body JSON inválido" }, { status: 400 }) }

@@ -144,80 +144,88 @@ export async function ensureIspRiskMethodology(access: RiskLegalAccess) {
   return methodology
 }
 
-export async function createRiskMatrixDraft(input: unknown, access: RiskLegalAccess) {
-  const data = riskMatrixDraftSchema.parse(input)
-  requireAccess(access, "prevention:risk:edit", data.worksiteId)
-  return db.transaction(async (tx) => {
-    const [[worksite], [methodology], versionRows] = await Promise.all([
-      tx.select({ id: worksites.id }).from(worksites).where(and(eq(worksites.id, data.worksiteId), eq(worksites.isActive, true))).limit(1),
-      tx.select().from(preventionRiskMethodologies).where(and(eq(preventionRiskMethodologies.id, data.methodologyId), eq(preventionRiskMethodologies.isActive, true))).limit(1),
-      tx.select({ matrixVersion: preventionRiskMatrices.matrixVersion }).from(preventionRiskMatrices).where(eq(preventionRiskMatrices.worksiteId, data.worksiteId)).orderBy(desc(preventionRiskMatrices.matrixVersion)).limit(1),
-    ])
-    if (!worksite || !methodology) throw new Error("Faena o metodología no encontrada.")
+export async function createRiskMatrixDraftWithClient(
+  client: Client,
+  input: z.infer<typeof riskMatrixDraftSchema>,
+  access: RiskLegalAccess,
+) {
+  const data = input
 
-    let source: typeof preventionRiskMatrices.$inferSelect | null = null
-    if (data.sourceMatrixId) {
-      const sourceRows = await tx.select().from(preventionRiskMatrices).where(and(eq(preventionRiskMatrices.id, data.sourceMatrixId), eq(preventionRiskMatrices.worksiteId, data.worksiteId), eq(preventionRiskMatrices.status, "published"))).limit(1)
-      source = sourceRows[0] ?? null
-      if (!source) throw new Error("La versión fuente no está publicada o está fuera de alcance.")
-    }
-    if (data.sourceImportBatchId) {
-      const [batch] = await tx.select().from(preventionRiskImportBatches).where(and(
-        eq(preventionRiskImportBatches.id, data.sourceImportBatchId),
-        eq(preventionRiskImportBatches.worksiteId, data.worksiteId),
-        eq(preventionRiskImportBatches.status, "approved"),
-      )).limit(1)
-      if (!batch) throw new Error("El lote de importación no está aprobado o está fuera de alcance.")
-    }
+  const [[worksite], [methodology], versionRows] = await Promise.all([
+    client.select({ id: worksites.id }).from(worksites).where(and(eq(worksites.id, data.worksiteId), eq(worksites.isActive, true))).limit(1),
+    client.select().from(preventionRiskMethodologies).where(and(eq(preventionRiskMethodologies.id, data.methodologyId), eq(preventionRiskMethodologies.isActive, true))).limit(1),
+    client.select({ matrixVersion: preventionRiskMatrices.matrixVersion }).from(preventionRiskMatrices).where(eq(preventionRiskMatrices.worksiteId, data.worksiteId)).orderBy(desc(preventionRiskMatrices.matrixVersion)).limit(1),
+  ])
+  if (!worksite || !methodology) throw new Error("Faena o metodología no encontrada.")
 
-    const matrixVersion = (versionRows[0]?.matrixVersion ?? 0) + 1
-    const now = new Date().toISOString()
-    const [matrix] = await tx.insert(preventionRiskMatrices).values({
-      id: `riskmatrix-${nanoid()}`,
-      worksiteId: data.worksiteId,
-      matrixVersion,
-      title: data.title,
-      methodologyId: methodology.id,
-      methodologySnapshot: { code: methodology.code, name: methodology.name, versionLabel: methodology.versionLabel, kind: methodology.kind, authoritySource: methodology.authoritySource, configuration: methodology.configuration },
-      revisionReason: data.revisionReason,
-      participationSummary: data.participationSummary,
-      consultationEvidenceReference: data.consultationEvidenceReference,
-      sourceImportBatchId: data.sourceImportBatchId ?? null,
-      supersedesMatrixId: source?.id ?? null,
-      createdByUserId: access.userId,
-      createdAt: now,
-      updatedAt: now,
-    }).returning()
-    if (!matrix) throw new Error("No se pudo crear la versión MIPER.")
+  let source: typeof preventionRiskMatrices.$inferSelect | null = null
+  if (data.sourceMatrixId) {
+    const sourceRows = await client.select().from(preventionRiskMatrices).where(and(eq(preventionRiskMatrices.id, data.sourceMatrixId), eq(preventionRiskMatrices.worksiteId, data.worksiteId), eq(preventionRiskMatrices.status, "published"))).limit(1)
+    source = sourceRows[0] ?? null
+    if (!source) throw new Error("La versión fuente no está publicada o está fuera de alcance.")
+  }
+  if (data.sourceImportBatchId) {
+    const [batch] = await client.select().from(preventionRiskImportBatches).where(and(
+      eq(preventionRiskImportBatches.id, data.sourceImportBatchId),
+      eq(preventionRiskImportBatches.worksiteId, data.worksiteId),
+      eq(preventionRiskImportBatches.status, "approved"),
+    )).limit(1)
+    if (!batch) throw new Error("El lote de importación no está aprobado o está fuera de alcance.")
+  }
 
-    if (source) {
-      const entries = await tx.select().from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, source.id)).orderBy(asc(preventionRiskEntries.createdAt))
-      for (const entry of entries) {
-        const newEntryId = `riskentry-${nanoid()}`
-        await tx.insert(preventionRiskEntries).values({
-          ...entry,
-          id: newEntryId,
-          matrixId: matrix.id,
+  const matrixVersion = (versionRows[0]?.matrixVersion ?? 0) + 1
+  const now = new Date().toISOString()
+  const [matrix] = await client.insert(preventionRiskMatrices).values({
+    id: `riskmatrix-${nanoid()}`,
+    worksiteId: data.worksiteId,
+    matrixVersion,
+    title: data.title,
+    methodologyId: methodology.id,
+    methodologySnapshot: { code: methodology.code, name: methodology.name, versionLabel: methodology.versionLabel, kind: methodology.kind, authoritySource: methodology.authoritySource, configuration: methodology.configuration },
+    revisionReason: data.revisionReason,
+    participationSummary: data.participationSummary,
+    consultationEvidenceReference: data.consultationEvidenceReference,
+    sourceImportBatchId: data.sourceImportBatchId ?? null,
+    supersedesMatrixId: source?.id ?? null,
+    createdByUserId: access.userId,
+    createdAt: now,
+    updatedAt: now,
+  }).returning()
+  if (!matrix) throw new Error("No se pudo crear la versión MIPER.")
+
+  if (source) {
+    const entries = await client.select().from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, source.id)).orderBy(asc(preventionRiskEntries.createdAt))
+    for (const entry of entries) {
+      const newEntryId = `riskentry-${nanoid()}`
+      await client.insert(preventionRiskEntries).values({
+        ...entry,
+        id: newEntryId,
+        matrixId: matrix.id,
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+      const controls = await client.select().from(preventionRiskControls).where(eq(preventionRiskControls.riskEntryId, entry.id))
+      for (const control of controls) {
+        await client.insert(preventionRiskControls).values({
+          ...control,
+          id: `riskcontrol-${nanoid()}`,
+          riskEntryId: newEntryId,
           version: 1,
           createdAt: now,
           updatedAt: now,
         })
-        const controls = await tx.select().from(preventionRiskControls).where(eq(preventionRiskControls.riskEntryId, entry.id))
-        for (const control of controls) {
-          await tx.insert(preventionRiskControls).values({
-            ...control,
-            id: `riskcontrol-${nanoid()}`,
-            riskEntryId: newEntryId,
-            version: 1,
-            createdAt: now,
-            updatedAt: now,
-          })
-        }
       }
     }
-    await history(tx, { domain: "risk", entityType: "matrix", entityId: matrix.id, worksiteId: matrix.worksiteId, changeType: source ? "revision_created" : "created", reason: data.revisionReason, afterState: { matrixVersion, sourceMatrixId: source?.id ?? null }, actorUserId: access.userId })
-    return matrix
-  })
+  }
+  await history(client, { domain: "risk", entityType: "matrix", entityId: matrix.id, worksiteId: matrix.worksiteId, changeType: source ? "revision_created" : "created", reason: data.revisionReason, afterState: { matrixVersion, sourceMatrixId: source?.id ?? null }, actorUserId: access.userId })
+  return matrix
+}
+
+export async function createRiskMatrixDraft(input: unknown, access: RiskLegalAccess) {
+  const data = riskMatrixDraftSchema.parse(input)
+  requireAccess(access, "prevention:risk:edit", data.worksiteId)
+  return db.transaction(async (tx) => createRiskMatrixDraftWithClient(tx, data, access))
 }
 
 async function resolveHierarchy(client: Client, worksiteId: string, data: z.infer<typeof riskEntrySchema>) {
@@ -240,77 +248,83 @@ async function resolveHierarchy(client: Client, worksiteId: string, data: z.infe
   return { process, task, position }
 }
 
-export async function addRiskEntry(input: unknown, access: RiskLegalAccess) {
+export async function addRiskEntryWithClient(
+  client: Client,
+  input: unknown,
+  access: RiskLegalAccess,
+) {
   const data = riskEntrySchema.parse(input)
-  return db.transaction(async (tx) => {
-    const [matrix] = await tx.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, data.matrixId)).limit(1)
-    if (!matrix) throw new Error("MIPER no encontrada o fuera de alcance.")
-    requireAccess(access, "prevention:risk:edit", matrix.worksiteId)
-    if (matrix.status !== "draft") throw new Error("Sólo una versión MIPER en borrador admite cambios.")
-    await assertActiveUser(tx, data.responsibleUserId)
-    for (const control of data.controls) await assertActiveUser(tx, control.responsibleUserId)
-    const hierarchy = await resolveHierarchy(tx, matrix.worksiteId, data)
-    const now = new Date().toISOString()
-    const [entry] = await tx.insert(preventionRiskEntries).values({
-      id: `riskentry-${nanoid()}`,
-      matrixId: matrix.id,
-      processId: hierarchy.process.id,
-      taskId: hierarchy.task.id,
-      positionId: hierarchy.position.id,
-      hazardCode: data.hazardCode,
-      hazard: data.hazard,
-      riskFactor: data.riskFactor,
-      expectedEventOrDamage: data.expectedEventOrDamage,
-      exposedPeopleDescription: data.exposedPeopleDescription,
-      exposedPeopleCount: data.exposedPeopleCount ?? null,
-      genderConsiderations: data.genderConsiderations,
-      sensitiveWorkerConsiderations: data.sensitiveWorkerConsiderations,
-      specialMethodologyReference: data.specialMethodologyReference ?? null,
-      inherentDimensions: data.inherentDimensions,
-      inherentScore: data.inherentScore ?? null,
-      inherentLevel: data.inherentLevel,
-      residualDimensions: data.residualDimensions,
-      residualScore: data.residualScore ?? null,
-      residualLevel: data.residualLevel,
-      isCritical: data.isCritical,
-      responsibleUserId: data.responsibleUserId ?? null,
-      responsibleSnapshot: data.responsibleSnapshot,
-      evidenceReference: data.evidenceReference ?? null,
-      sourceRowNumber: data.sourceRowNumber ?? null,
-      sourceOriginal: data.sourceOriginal ?? null,
-      sourceNormalized: data.sourceNormalized ?? null,
-      normalizationDecision: data.normalizationDecision ?? null,
+  const [matrix] = await client.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, data.matrixId)).limit(1)
+  if (!matrix) throw new Error("MIPER no encontrada o fuera de alcance.")
+  requireAccess(access, "prevention:risk:edit", matrix.worksiteId)
+  if (matrix.status !== "draft") throw new Error("Sólo una versión MIPER en borrador admite cambios.")
+  await assertActiveUser(client, data.responsibleUserId)
+  for (const control of data.controls) await assertActiveUser(client, control.responsibleUserId)
+  const hierarchy = await resolveHierarchy(client, matrix.worksiteId, data)
+  const now = new Date().toISOString()
+  const [entry] = await client.insert(preventionRiskEntries).values({
+    id: `riskentry-${nanoid()}`,
+    matrixId: matrix.id,
+    processId: hierarchy.process.id,
+    taskId: hierarchy.task.id,
+    positionId: hierarchy.position.id,
+    hazardCode: data.hazardCode,
+    hazard: data.hazard,
+    riskFactor: data.riskFactor,
+    expectedEventOrDamage: data.expectedEventOrDamage,
+    exposedPeopleDescription: data.exposedPeopleDescription,
+    exposedPeopleCount: data.exposedPeopleCount ?? null,
+    genderConsiderations: data.genderConsiderations,
+    sensitiveWorkerConsiderations: data.sensitiveWorkerConsiderations,
+    specialMethodologyReference: data.specialMethodologyReference ?? null,
+    inherentDimensions: data.inherentDimensions,
+    inherentScore: data.inherentScore ?? null,
+    inherentLevel: data.inherentLevel,
+    residualDimensions: data.residualDimensions,
+    residualScore: data.residualScore ?? null,
+    residualLevel: data.residualLevel,
+    isCritical: data.isCritical,
+    responsibleUserId: data.responsibleUserId ?? null,
+    responsibleSnapshot: data.responsibleSnapshot,
+    evidenceReference: data.evidenceReference ?? null,
+    sourceRowNumber: data.sourceRowNumber ?? null,
+    sourceOriginal: data.sourceOriginal ?? null,
+    sourceNormalized: data.sourceNormalized ?? null,
+    normalizationDecision: data.normalizationDecision ?? null,
+    createdAt: now,
+    updatedAt: now,
+  }).returning()
+  if (!entry) throw new Error("No se pudo agregar el peligro a la MIPER.")
+  const controls = []
+  for (const control of data.controls) {
+    const [created] = await client.insert(preventionRiskControls).values({
+      id: `riskcontrol-${nanoid()}`,
+      riskEntryId: entry.id,
+      description: control.description,
+      hierarchy: control.hierarchy,
+      isExisting: control.isExisting,
+      isCritical: control.isCritical,
+      performanceStandard: control.performanceStandard ?? null,
+      verificationFrequency: control.verificationFrequency ?? null,
+      responsibleUserId: control.responsibleUserId ?? null,
+      responsibleSnapshot: control.responsibleSnapshot,
+      dueDate: control.dueDate ?? null,
+      status: control.status,
+      evidenceReference: control.evidenceReference ?? null,
+      effectivenessStatus: control.status === "verified" ? "effective" : "not_assessed",
+      lastVerifiedByUserId: control.status === "verified" ? access.userId : null,
+      lastVerifiedAt: control.status === "verified" ? now : null,
       createdAt: now,
       updatedAt: now,
     }).returning()
-    if (!entry) throw new Error("No se pudo agregar el peligro a la MIPER.")
-    const controls = []
-    for (const control of data.controls) {
-      const [created] = await tx.insert(preventionRiskControls).values({
-        id: `riskcontrol-${nanoid()}`,
-        riskEntryId: entry.id,
-        description: control.description,
-        hierarchy: control.hierarchy,
-        isExisting: control.isExisting,
-        isCritical: control.isCritical,
-        performanceStandard: control.performanceStandard ?? null,
-        verificationFrequency: control.verificationFrequency ?? null,
-        responsibleUserId: control.responsibleUserId ?? null,
-        responsibleSnapshot: control.responsibleSnapshot,
-        dueDate: control.dueDate ?? null,
-        status: control.status,
-        evidenceReference: control.evidenceReference ?? null,
-        effectivenessStatus: control.status === "verified" ? "effective" : "not_assessed",
-        lastVerifiedByUserId: control.status === "verified" ? access.userId : null,
-        lastVerifiedAt: control.status === "verified" ? now : null,
-        createdAt: now,
-        updatedAt: now,
-      }).returning()
-      if (created) controls.push(created)
-    }
-    await history(tx, { domain: "risk", entityType: "entry", entityId: entry.id, worksiteId: matrix.worksiteId, changeType: "created", reason: "Peligro y controles agregados a versión borrador", afterState: { entry, controlIds: controls.map((item) => item.id) }, actorUserId: access.userId })
-    return { entry, controls }
-  })
+    if (created) controls.push(created)
+  }
+  await history(client, { domain: "risk", entityType: "entry", entityId: entry.id, worksiteId: matrix.worksiteId, changeType: "created", reason: "Peligro y controles agregados a versión borrador", afterState: { entry, controlIds: controls.map((item) => item.id) }, actorUserId: access.userId })
+  return { entry, controls }
+}
+
+export async function addRiskEntry(input: unknown, access: RiskLegalAccess) {
+  return db.transaction(async (tx) => addRiskEntryWithClient(tx, input, access))
 }
 
 const MATRIX_TRANSITIONS: Record<string, readonly string[]> = {

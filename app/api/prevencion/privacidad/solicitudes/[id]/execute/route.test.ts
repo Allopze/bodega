@@ -11,7 +11,7 @@ async function post() {
   const { POST } = await import("./route")
   return POST(new Request("http://localhost/api/prevencion/privacidad/solicitudes/ppr-1/execute", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "idempotency-key": "test-key-12345678" },
     body: JSON.stringify({ domain: "health_record", entityId: "health-1", operation: "deletion", reason: "motivo fundado", changes: {} }),
   }), { params: Promise.resolve({ id: "ppr-1" }) })
 }

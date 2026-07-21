@@ -674,11 +674,11 @@ export async function escalateBlockingGapsToCapa(access: TrainingAccess, args: {
 
   let created = 0
   let skipped = 0
-  for (const gap of gaps) {
-    const sourceId = `${gap.workerId}:${gap.courseId}`
-    if (alreadyOpen.has(sourceId)) { skipped += 1; continue }
+  await db.transaction(async (tx) => {
+    for (const gap of gaps) {
+      const sourceId = `${gap.workerId}:${gap.courseId}`
+      if (alreadyOpen.has(sourceId)) { skipped += 1; continue }
 
-    await db.transaction(async (tx) => {
       await createCapaActionWithClient(tx, {
         sourceType: "training",
         sourceId,
@@ -691,9 +691,9 @@ export async function escalateBlockingGapsToCapa(access: TrainingAccess, args: {
         targetDate: args.targetDate,
         evidenceRequired: true,
       }, access.userId)
-    })
-    created += 1
-  }
+      created += 1
+    }
+  })
   return { created, skipped }
 }
 

@@ -198,11 +198,11 @@ export async function escalateBlockingEppGapsToCapa(access: EppAccess, args: { t
 
   let created = 0
   let skipped = 0
-  for (const gap of gaps) {
-    const sourceId = `${gap.workerId}:${gap.eppTypeId}`
-    if (alreadyOpen.has(sourceId)) { skipped += 1; continue }
+  await db.transaction(async (tx) => {
+    for (const gap of gaps) {
+      const sourceId = `${gap.workerId}:${gap.eppTypeId}`
+      if (alreadyOpen.has(sourceId)) { skipped += 1; continue }
 
-    await db.transaction(async (tx) => {
       await createCapaActionWithClient(tx, {
         sourceType: "epp",
         sourceId,
@@ -214,9 +214,9 @@ export async function escalateBlockingEppGapsToCapa(access: EppAccess, args: { t
         targetDate: args.targetDate,
         evidenceRequired: true,
       }, access.userId)
-    })
-    created += 1
-  }
+      created += 1
+    }
+  })
   return { created, skipped }
 }
 

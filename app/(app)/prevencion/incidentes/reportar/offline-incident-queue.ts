@@ -1,3 +1,15 @@
+export interface QueuedPerson {
+  workerId?: string
+  workerName?: string
+  displayLabel?: string
+  employerName: string
+  relationshipType: string
+  identificationHint?: string
+  absenceAtLeastNormalShift?: boolean
+  absenceDays?: number
+  chargeDays?: number
+}
+
 export interface OfflineIncidentReport {
   clientSubmissionId: string
   worksiteId: string
@@ -14,7 +26,7 @@ export interface OfflineIncidentReport {
   evacuated: boolean
   isFatalOrSerious: boolean
   offlineSync: boolean
-  people: unknown[]
+  people: QueuedPerson[]
 }
 
 interface QueueEntry {
@@ -28,6 +40,11 @@ interface QueueEntry {
 const DB_NAME = "chome-prevention-offline"
 const DB_VERSION = 1
 const STORE = "incident-reports"
+const MAX_QUEUED = 25
+const MAX_AGE_DAYS = 30
+const MAX_RETRIES = 8
+
+let flushLock: Promise<unknown> | null = null
 
 function openQueueDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -55,13 +72,33 @@ export function createIncidentSubmissionId() {
 export async function queueIncidentReport(payload: OfflineIncidentReport) {
   const database = await openQueueDatabase()
   try {
+    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
+    const all = await transactionPromise(store.getAll()) as QueueEntry[]
+
+    // Purgar expirados y retry-max-out
+    const now = new Date()
+    const cutoff = new Date(now.getTime() - MAX_AGE_DAYS * 86_400_000)
+    for (const entry of all) {
+      if (entry.attempts >= MAX_RETRIES && new Date(entry.queuedAt) < cutoff) {
+        await transactionPromise(store.delete(entry.id))
+      }
+    }
+
+    // FIFO trim: keep MAX_QUEUED - 1 most recent
+    const remaining = all.filter((e) => !(e.attempts >= MAX_RETRIES && new Date(e.queuedAt) < cutoff))
+    remaining.sort((a, b) => new Date(a.queuedAt).getTime() - new Date(b.queuedAt).getTime())
+    while (remaining.length >= MAX_QUEUED) {
+      const oldest = remaining.shift()!
+      await transactionPromise(store.delete(oldest.id))
+    }
+
     const entry: QueueEntry = {
       id: payload.clientSubmissionId,
       payload: { ...payload, offlineSync: true },
       queuedAt: new Date().toISOString(),
       attempts: 0,
     }
-    await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put(entry))
+    await transactionPromise(store.put(entry))
     return entry
   } finally {
     database.close()
@@ -80,40 +117,53 @@ export async function listQueuedIncidentReports() {
 export async function flushIncidentReportQueue(
   sender: (payload: OfflineIncidentReport) => Promise<{ ok: boolean; message?: string }>,
 ) {
-  const entries = await listQueuedIncidentReports()
-  const result = { synchronized: 0, pending: 0 }
-  for (const entry of entries) {
-    try {
-      const response = await sender(entry.payload)
-      const database = await openQueueDatabase()
+  if (flushLock) await flushLock
+  let resolveLock: () => void
+  flushLock = new Promise<void>((resolve) => { resolveLock = resolve })
+
+  try {
+    const entries = await listQueuedIncidentReports()
+    const result = { synchronized: 0, pending: 0 }
+    for (const entry of entries) {
+      if (entry.attempts >= MAX_RETRIES) {
+        result.pending++
+        continue
+      }
       try {
-        if (response.ok) {
-          await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).delete(entry.id))
-          result.synchronized++
-        } else {
+        const response = await sender(entry.payload)
+        const database = await openQueueDatabase()
+        try {
+          if (response.ok) {
+            await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).delete(entry.id))
+            result.synchronized++
+          } else {
+            await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put({
+              ...entry,
+              attempts: entry.attempts + 1,
+              lastError: response.message ?? "Sincronización rechazada",
+            }))
+            result.pending++
+          }
+        } finally {
+          database.close()
+        }
+      } catch (error) {
+        const database = await openQueueDatabase()
+        try {
           await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put({
             ...entry,
             attempts: entry.attempts + 1,
-            lastError: response.message ?? "Sincronización rechazada",
+            lastError: error instanceof Error ? error.message : "Sin conexión",
           }))
-          result.pending++
+        } finally {
+          database.close()
         }
-      } finally {
-        database.close()
+        result.pending++
       }
-    } catch (error) {
-      const database = await openQueueDatabase()
-      try {
-        await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put({
-          ...entry,
-          attempts: entry.attempts + 1,
-          lastError: error instanceof Error ? error.message : "Sin conexión",
-        }))
-      } finally {
-        database.close()
-      }
-      result.pending++
     }
+    return result
+  } finally {
+    resolveLock!()
+    flushLock = null
   }
-  return result
 }
