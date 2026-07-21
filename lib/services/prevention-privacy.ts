@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import {
@@ -266,6 +266,34 @@ export async function listPreventionPrivacyRequests(scope: WorksiteScope, opts?:
     .orderBy(asc(preventionPrivacyRequests.dueAt), desc(preventionPrivacyRequests.receivedAt))
     .limit(limit)
     .offset(offset)
+}
+
+export async function listPreventionPrivacyRequestsPage(scope: WorksiteScope, opts?: { limit?: number; offset?: number }) {
+  if (scope.mode === "none") return { rows: [], total: 0, limit: opts?.limit ?? 50, offset: opts?.offset ?? 0 }
+  const limit = Math.min(opts?.limit ?? 50, 500)
+  const offset = opts?.offset ?? 0
+  const scopeWhere = scope.mode === "some" ? inArray(workers.worksiteId, scope.ids) : undefined
+  const where = scopeWhere ?? undefined
+  const [rows, [totalRow]] = await Promise.all([
+    db.select({
+      request: preventionPrivacyRequests,
+      workerName: workers.firstName,
+      workerLastName: workers.lastName,
+      workerRut: workers.rut,
+      worksiteName: worksites.name,
+      worksiteId: workers.worksiteId,
+    }).from(preventionPrivacyRequests)
+      .innerJoin(workers, eq(workers.id, preventionPrivacyRequests.subjectWorkerId))
+      .innerJoin(worksites, eq(worksites.id, workers.worksiteId))
+      .where(where)
+      .orderBy(asc(preventionPrivacyRequests.dueAt), desc(preventionPrivacyRequests.receivedAt))
+      .limit(limit)
+      .offset(offset),
+    db.select({ count: sql<number>`count(*)::int` }).from(preventionPrivacyRequests)
+      .innerJoin(workers, eq(workers.id, preventionPrivacyRequests.subjectWorkerId))
+      .where(where),
+  ])
+  return { rows, total: total ?? 0, limit, offset }
 }
 
 export async function getPreventionPrivacyExportDataset(args: {

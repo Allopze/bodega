@@ -4,6 +4,7 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -307,6 +308,7 @@ export function PlanDetail({
 
 function AddScenarioDialog({ planId }: { planId: string }) {
   const [open, setOpen] = React.useState(false)
+  const [type, setType] = React.useState("")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -332,10 +334,7 @@ function AddScenarioDialog({ planId }: { planId: string }) {
             <DialogDescription>Cada escenario declara su propio procedimiento de respuesta.</DialogDescription>
           </DialogHeader>
           <Field label="Tipo">
-            <select name="type" className={selectClass} required defaultValue="">
-              <option value="" disabled>Selecciona un tipo</option>
-              {SCENARIO_TYPES.map((type) => <option key={type} value={type}>{EMERGENCY_SCENARIO_TYPE_LABELS[type]}</option>)}
-            </select>
+            <Select value={type} onValueChange={setType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{SCENARIO_TYPES.map((t) => <SelectItem key={t} value={t}>{EMERGENCY_SCENARIO_TYPE_LABELS[t]}</SelectItem>)}</SelectContent></Select><input type="hidden" name="type" value={type} />
           </Field>
           <Field label="Título"><Input name="title" required minLength={3} maxLength={200} /></Field>
           <Field label="Descripción" hint="Opcional."><Textarea name="description" maxLength={3000} /></Field>
@@ -354,6 +353,8 @@ function AddScenarioDialog({ planId }: { planId: string }) {
 
 function AddRoleDialog({ planId, eligibleWorkers }: { planId: string; eligibleWorkers: WorkerOption[] }) {
   const [open, setOpen] = React.useState(false)
+  const [assigneeWorkerId, setAssigneeWorkerId] = React.useState(eligibleWorkers[0]?.id ?? "")
+  const [backupWorkerId, setBackupWorkerId] = React.useState("_none")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -381,15 +382,10 @@ function AddRoleDialog({ planId, eligibleWorkers }: { planId: string; eligibleWo
             <Input name="roleName" required minLength={2} maxLength={120} />
           </Field>
           <Field label="Titular">
-            <select name="assigneeWorkerId" className={selectClass} required>
-              {eligibleWorkers.map((worker) => <option key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</option>)}
-            </select>
+            <Select value={assigneeWorkerId} onValueChange={setAssigneeWorkerId}><SelectTrigger><SelectValue placeholder="Selecciona titular" /></SelectTrigger><SelectContent>{eligibleWorkers.map((worker) => <SelectItem key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assigneeWorkerId" value={assigneeWorkerId} />
           </Field>
           <Field label="Reemplazo" hint="Opcional.">
-            <select name="backupWorkerId" className={selectClass} defaultValue="">
-              <option value="">Sin declarar</option>
-              {eligibleWorkers.map((worker) => <option key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</option>)}
-            </select>
+            <Select value={backupWorkerId} onValueChange={setBackupWorkerId}><SelectTrigger><SelectValue placeholder="Sin declarar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin declarar</SelectItem>{eligibleWorkers.map((worker) => <SelectItem key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</SelectItem>)}</SelectContent></Select><input type="hidden" name="backupWorkerId" value={backupWorkerId === "_none" ? "" : backupWorkerId} />
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Agregar</Button></DialogFooter>
@@ -493,6 +489,7 @@ function AddContactDialog({ planId }: { planId: string }) {
 function ScheduleDrillDialog({ planId }: { planId: string }) {
   const [open, setOpen] = React.useState(false)
   const [defaultValue, setDefaultValue] = React.useState("")
+  const [scenarioType, setScenarioType] = React.useState("")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -515,10 +512,7 @@ function ScheduleDrillDialog({ planId }: { planId: string }) {
             <DialogDescription>Sólo un plan aprobado puede programar simulacros.</DialogDescription>
           </DialogHeader>
           <Field label="Escenario">
-            <select name="scenarioType" className={selectClass} required defaultValue="">
-              <option value="" disabled>Selecciona un tipo</option>
-              {SCENARIO_TYPES.map((type) => <option key={type} value={type}>{EMERGENCY_SCENARIO_TYPE_LABELS[type]}</option>)}
-            </select>
+            <Select value={scenarioType} onValueChange={setScenarioType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{SCENARIO_TYPES.map((t) => <SelectItem key={t} value={t}>{EMERGENCY_SCENARIO_TYPE_LABELS[t]}</SelectItem>)}</SelectContent></Select><input type="hidden" name="scenarioType" value={scenarioType} />
           </Field>
           <Field label="Fecha y hora"><Input name="scheduledFor" type="datetime-local" required defaultValue={defaultValue} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
@@ -540,6 +534,7 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
   const [executedAt, setExecutedAt] = React.useState("")
   const [present, setPresent] = React.useState<Set<string>>(new Set())
   const [outcome, setOutcome] = React.useState<"" | "satisfactory" | "needs_improvement">("")
+  const [responsibleUserId, setResponsibleUserId] = React.useState("_none")
   const operation = useOperation()
 
   const readiness = React.useMemo(() => assessDrillCompletion({
@@ -571,7 +566,7 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
       durationMinutes: durationMinutes ? Number(durationMinutes) : null,
       evacuationSeconds: evacuationSeconds ? Number(evacuationSeconds) : null,
       observations: observations || null,
-      outcome,
+      outcome: outcome || null,
       participants: eligibleWorkers.map((worker) => ({ workerId: worker.id, present: present.has(worker.id) })),
       responsibleUserId: responsibleUserId || null,
       targetDate: targetDate || null,
@@ -614,11 +609,7 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
           </div>
 
           <Field label="Resultado">
-            <select value={outcome} onChange={(event) => setOutcome(event.target.value as typeof outcome)} className={selectClass} required>
-              <option value="" disabled>Selecciona un resultado</option>
-              <option value="satisfactory">Satisfactorio</option>
-              <option value="needs_improvement">Requiere mejora</option>
-            </select>
+            <Select value={outcome || "_none"} onValueChange={(v) => setOutcome(v === "_none" ? "" : v as "satisfactory" | "needs_improvement")}><SelectTrigger><SelectValue placeholder="Selecciona un resultado" /></SelectTrigger><SelectContent><SelectItem value="_none" className="hidden">Selecciona un resultado</SelectItem><SelectItem value="satisfactory">Satisfactorio</SelectItem><SelectItem value="needs_improvement">Requiere mejora</SelectItem></SelectContent></Select>
           </Field>
 
           <Field label="Observaciones" hint="Opcional."><Textarea name="observations" maxLength={5000} /></Field>
@@ -628,10 +619,7 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
               <p className="text-sm font-medium">Acción correctiva derivada a CAPA</p>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Responsable" hint="Opcional.">
-                  <select name="responsibleUserId" className={selectClass} defaultValue="">
-                    <option value="">Sin asignar</option>
-                    {assignees.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
+                  <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId === "_none" ? "" : responsibleUserId} />
                 </Field>
                 <Field label="Plazo"><Input name="targetDate" type="date" required /></Field>
               </div>

@@ -424,6 +424,27 @@ export async function listRiskImportBatches(access: RiskLegalAccess, opts?: { li
   return batches.map((batch) => ({ ...batch, rows: rowsByBatch.get(batch.id) ?? [] }))
 }
 
+export async function listRiskImportBatchesPage(access: RiskLegalAccess, opts?: { limit?: number; offset?: number }) {
+  assertPermission(access, "prevention:risk:view")
+  if (access.scope.mode === "none") return { rows: [], total: 0, limit: opts?.limit ?? 50, offset: opts?.offset ?? 0 }
+  const limit = Math.min(opts?.limit ?? 50, 500)
+  const offset = opts?.offset ?? 0
+  const where = access.scope.mode === "all" ? undefined : inArray(preventionRiskImportBatches.worksiteId, access.scope.ids)
+  const [batches, [totalRow]] = await Promise.all([
+    db.select().from(preventionRiskImportBatches).where(where).orderBy(asc(preventionRiskImportBatches.createdAt)).limit(limit).offset(offset),
+    db.select({ count: sql<number>`count(*)::int` }).from(preventionRiskImportBatches).where(where),
+  ])
+  const rows = batches.length ? await db.select().from(preventionRiskImportRows).where(inArray(preventionRiskImportRows.batchId, batches.map((item) => item.id))).orderBy(asc(preventionRiskImportRows.rowNumber)) : []
+  const rowsByBatch = new Map<string, typeof rows>()
+  for (const row of rows) rowsByBatch.set(row.batchId, [...(rowsByBatch.get(row.batchId) ?? []), row])
+  return {
+    rows: batches.map((batch) => ({ ...batch, rows: rowsByBatch.get(batch.id) ?? [] })),
+    total: total ?? 0,
+    limit,
+    offset,
+  }
+}
+
 export function resolveRiskImportSourcePath(filePath: string) {
   if (!filePath.startsWith(STORAGE_PREFIX)) return null
   const fileName = filePath.slice(STORAGE_PREFIX.length)

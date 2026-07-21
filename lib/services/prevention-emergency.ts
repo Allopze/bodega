@@ -418,6 +418,31 @@ export async function listEmergencyPlans(access: EmergencyAccess, opts?: { limit
     .offset(offset)
 }
 
+export async function listEmergencyPlansPage(access: EmergencyAccess, opts?: { limit?: number; offset?: number }) {
+  requireAccess(access, "prevention:emergency:view")
+  const limit = Math.min(opts?.limit ?? 50, 500)
+  const offset = opts?.offset ?? 0
+  const where = scopeCondition(access.scope, preventionEmergencyPlans.worksiteId)
+  const [rows, [totalRow2]] = await Promise.all([
+    db.select({
+      plan: preventionEmergencyPlans,
+      worksiteName: worksites.name,
+      scenarios: sql<number>`(SELECT COUNT(*)::int FROM prevention_emergency_scenarios s WHERE s.plan_id = ${preventionEmergencyPlans.id})`,
+      roles: sql<number>`(SELECT COUNT(*)::int FROM prevention_emergency_roles r WHERE r.plan_id = ${preventionEmergencyPlans.id})`,
+      drills: sql<number>`(SELECT COUNT(*)::int FROM prevention_emergency_drills d WHERE d.plan_id = ${preventionEmergencyPlans.id})`,
+    })
+      .from(preventionEmergencyPlans)
+      .innerJoin(worksites, eq(preventionEmergencyPlans.worksiteId, worksites.id))
+      .where(where)
+      .orderBy(asc(worksites.name))
+      .limit(limit)
+      .offset(offset),
+    db.select({ count: sql<number>`count(*)::int` }).from(preventionEmergencyPlans)
+      .where(scopeCondition(access.scope, preventionEmergencyPlans.worksiteId)),
+  ])
+  return { rows, total: totalRow?.count ?? 0, limit, offset }
+}
+
 export async function listEmergencyDrills(access: EmergencyAccess) {
   requireAccess(access, "prevention:emergency:view")
   return db.select({

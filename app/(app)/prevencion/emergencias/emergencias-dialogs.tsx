@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { createEmergencyPlanAction } from "./actions"
@@ -10,6 +11,7 @@ import { Field, useOperation } from "./emergencias-form-kit"
 
 export function NewPlanDialog({ worksites }: { worksites: { id: string; name: string }[] }) {
   const [open, setOpen] = React.useState(false)
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -35,9 +37,7 @@ export function NewPlanDialog({ worksites }: { worksites: { id: string; name: st
             </DialogDescription>
           </DialogHeader>
           <Field label="Faena">
-            <select name="worksiteId" className="h-10 rounded-md border border-[var(--color-border)] bg-transparent px-3 text-sm" required>
-              {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
+            <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
           <Field label="Título"><Input name="title" required minLength={3} maxLength={200} placeholder="Plan de emergencia Faena Central" /></Field>
           <Field label="Descripción" hint="Opcional."><Textarea name="description" maxLength={5000} /></Field>
