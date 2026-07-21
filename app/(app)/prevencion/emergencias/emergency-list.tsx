@@ -102,6 +102,7 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
           action={canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
         />
       ) : (
+        <>
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
           <Table>
             <TableHeader>
@@ -141,6 +142,7 @@ export function EmergencyList({ plans, drills, worksites, canManage }: Props) {
             <Pagination page={plansPagination.page} total={plansPagination.totalItems} perPage={plansPagination.limit} onPage={navigatePlansPage} />
           </div>
         )}
+        </>
       )}
 
       {tab === "drills" && (filteredDrills.length === 0 ? (

@@ -4,27 +4,31 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { CHANGE_TYPE_LABELS } from "@/lib/prevention/change"
 import { createChangeRequestAction } from "./actions"
-import { Field, selectClass, useOperation } from "./change-form-kit"
+import { Field, useOperation } from "./change-form-kit"
 
 const CHANGE_TYPES = Object.keys(CHANGE_TYPE_LABELS)
 
 export function NewChangeDialog({ worksites }: { worksites: { id: string; name: string }[] }) {
   const [open, setOpen] = React.useState(false)
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const [changeType, setChangeType] = React.useState("_none")
+  const [riskLevel, setRiskLevel] = React.useState("medium")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     operation.run(() => createChangeRequestAction({
-      worksiteId: form.get("worksiteId"),
+      worksiteId,
       title: form.get("title"),
-      changeType: form.get("changeType"),
+      changeType: changeType === "_none" ? "" : changeType,
       description: form.get("description"),
       reason: form.get("reason"),
-      riskLevel: form.get("riskLevel"),
+      riskLevel,
     }), () => setOpen(false))
   }
 
@@ -40,25 +44,34 @@ export function NewChangeDialog({ worksites }: { worksites: { id: string; name: 
             </DialogDescription>
           </DialogHeader>
           <Field label="Faena">
-            <select name="worksiteId" className={selectClass} required>
-              {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
+            <Select value={worksiteId} onValueChange={setWorksiteId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </Field>
           <Field label="Título"><Input name="title" required minLength={3} maxLength={200} /></Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo de cambio">
-              <select name="changeType" className={selectClass} required defaultValue="">
-                <option value="" disabled>Selecciona un tipo</option>
-                {CHANGE_TYPES.map((type) => <option key={type} value={type}>{CHANGE_TYPE_LABELS[type]}</option>)}
-              </select>
+              <Select value={changeType} onValueChange={setChangeType}>
+                <SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none" className="hidden">Selecciona un tipo</SelectItem>
+                  {CHANGE_TYPES.map((type) => <SelectItem key={type} value={type}>{CHANGE_TYPE_LABELS[type]}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </Field>
             <Field label="Nivel de riesgo">
-              <select name="riskLevel" className={selectClass} defaultValue="medium">
-                <option value="low">Bajo</option>
-                <option value="medium">Medio</option>
-                <option value="high">Alto</option>
-                <option value="critical">Crítico</option>
-              </select>
+              <Select value={riskLevel} onValueChange={setRiskLevel}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Bajo</SelectItem>
+                  <SelectItem value="medium">Medio</SelectItem>
+                  <SelectItem value="high">Alto</SelectItem>
+                  <SelectItem value="critical">Crítico</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           </div>
           <Field label="Descripción del cambio" hint="Mínimo 10 caracteres.">

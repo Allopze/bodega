@@ -19,7 +19,8 @@ import {
   evaluateChangeDimensionAction,
   rejectChangeRequestAction,
 } from "../actions"
-import { Field, selectClass, useOperation } from "../change-form-kit"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Field, useOperation } from "../change-form-kit"
 
 interface RequestInfo {
   id: string
@@ -159,6 +160,8 @@ function EvaluateDialog({ changeRequestId, assessment, assignees }: {
   const [open, setOpen] = React.useState(false)
   const [impacted, setImpacted] = React.useState(assessment.impacted)
   const [actionRequired, setActionRequired] = React.useState(assessment.actionRequired)
+  const [responsibleUserId, setResponsibleUserId] = React.useState("_none")
+  const [priority, setPriority] = React.useState("medium")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -166,7 +169,6 @@ function EvaluateDialog({ changeRequestId, assessment, assignees }: {
     const form = new FormData(event.currentTarget)
     const notes = String(form.get("notes") ?? "").trim()
     const actionDescription = String(form.get("actionDescription") ?? "").trim()
-    const responsibleUserId = String(form.get("responsibleUserId") ?? "").trim()
     const targetDate = String(form.get("targetDate") ?? "").trim()
     operation.run(() => evaluateChangeDimensionAction({
       changeRequestId,
@@ -175,8 +177,8 @@ function EvaluateDialog({ changeRequestId, assessment, assignees }: {
       notes: notes || null,
       actionRequired,
       actionDescription: actionRequired ? actionDescription : null,
-      responsibleUserId: actionRequired ? (responsibleUserId || null) : null,
-      priority: form.get("priority"),
+      responsibleUserId: actionRequired ? (responsibleUserId === "_none" ? null : responsibleUserId) : null,
+      priority,
       targetDate: actionRequired ? (targetDate || null) : null,
     }), () => setOpen(false))
   }
@@ -208,18 +210,26 @@ function EvaluateDialog({ changeRequestId, assessment, assignees }: {
               </Field>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Responsable" hint="Opcional.">
-                  <select name="responsibleUserId" className={selectClass} defaultValue="">
-                    <option value="">Sin asignar</option>
-                    {assignees.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
+                  <Select value={responsibleUserId} onValueChange={setResponsibleUserId}>
+                    <SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Sin asignar</SelectItem>
+                      {assignees.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <input type="hidden" name="responsibleUserId" value={responsibleUserId === "_none" ? "" : responsibleUserId} />
                 </Field>
                 <Field label="Prioridad">
-                  <select name="priority" className={selectClass} defaultValue="medium">
-                    <option value="low">Baja</option>
-                    <option value="medium">Media</option>
-                    <option value="high">Alta</option>
-                    <option value="critical">Crítica</option>
-                  </select>
+                  <Select value={priority} onValueChange={setPriority}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Baja</SelectItem>
+                      <SelectItem value="medium">Media</SelectItem>
+                      <SelectItem value="high">Alta</SelectItem>
+                      <SelectItem value="critical">Crítica</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <input type="hidden" name="priority" value={priority} />
                 </Field>
               </div>
               <Field label="Plazo"><Input name="targetDate" type="date" required /></Field>
