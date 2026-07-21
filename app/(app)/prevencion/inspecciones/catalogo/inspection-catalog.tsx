@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { INSPECTION_FREQUENCY_LABELS, INSPECTION_KIND_LABELS } from "@/lib/prevention/inspections"
@@ -15,7 +16,7 @@ import {
   createInspectionProgramAction,
   importInspectionTemplateAction,
 } from "../actions"
-import { Field, selectClass, useOperation } from "../inspection-form-kit"
+import { Field, useOperation } from "../inspection-form-kit"
 
 interface Coverage {
   totalItems: number
@@ -192,6 +193,7 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
 function ImportTemplateDialog({ importable }: { importable: ImportableDefinition[] }) {
   const [open, setOpen] = React.useState(false)
   const [code, setCode] = React.useState(importable[0]?.code ?? "")
+  const [kind, setKind] = React.useState("inspection")
   const operation = useOperation()
   const definition = importable.find((item) => item.code === code)
 
@@ -218,9 +220,7 @@ function ImportTemplateDialog({ importable }: { importable: ImportableDefinition
             </DialogDescription>
           </DialogHeader>
           <Field label="Definición del catálogo SST">
-            <select value={code} onChange={(event) => setCode(event.target.value)} className={selectClass} required>
-              {importable.map((item) => <option key={item.code} value={item.code}>{item.title}</option>)}
-            </select>
+            <Select value={code} onValueChange={setCode}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{importable.map((item) => <SelectItem key={item.code} value={item.code}>{item.title}</SelectItem>)}</SelectContent></Select>
           </Field>
           {definition && (
             <p className="text-xs text-[var(--color-text-subtle)]">
@@ -230,9 +230,7 @@ function ImportTemplateDialog({ importable }: { importable: ImportableDefinition
           )}
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo">
-              <select name="kind" className={selectClass} defaultValue="inspection">
-                {Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              <Select value={kind} onValueChange={setKind}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="kind" value={kind} />
             </Field>
             <Field label="Etiqueta de versión" hint={`Vacío = ${definition?.version ?? "versión de la definición"}.`}>
               <Input name="versionLabel" maxLength={80} />
@@ -286,6 +284,10 @@ function ProgramDialog({ templates, worksites, assignees }: {
 }) {
   const [open, setOpen] = React.useState(false)
   const [defaultStart, setDefaultStart] = React.useState("")
+  const [templateId, setTemplateId] = React.useState(templates[0]?.id ?? "")
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const [frequency, setFrequency] = React.useState("monthly")
+  const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -315,20 +317,14 @@ function ProgramDialog({ templates, worksites, assignees }: {
             <DialogDescription>Sólo puede programarse una plantilla aprobada.</DialogDescription>
           </DialogHeader>
           <Field label="Plantilla">
-            <select name="templateId" className={selectClass} required>
-              {templates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.versionLabel}</option>)}
-            </select>
+            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">
-              <select name="worksiteId" className={selectClass} required>
-                {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
             <Field label="Frecuencia">
-              <select name="frequency" className={selectClass} defaultValue="monthly">
-                {Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -336,10 +332,7 @@ function ProgramDialog({ templates, worksites, assignees }: {
               <Input name="startsOn" type="date" required defaultValue={defaultStart} />
             </Field>
             <Field label="Asignada a" hint="Opcional.">
-              <select name="assignedToUserId" className={selectClass} defaultValue="">
-                <option value="">Sin asignar</option>
-                {assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">

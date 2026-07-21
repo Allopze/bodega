@@ -18,7 +18,7 @@ import {
 } from "@/lib/prevention/inspections"
 import { formatDateTime } from "@/lib/utils"
 import { createInspectionRunAction } from "./actions"
-import { Field, selectClass, useOperation } from "./inspection-form-kit"
+import { Field, useOperation } from "./inspection-form-kit"
 
 interface TemplateOption {
   id: string
@@ -202,6 +202,9 @@ function NewRunDialog({ templates, worksites, assignees }: {
   assignees: { id: string; name: string }[]
 }) {
   const [open, setOpen] = React.useState(false)
+  const [templateId, setTemplateId] = React.useState(templates[0]?.id ?? "")
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -231,14 +234,10 @@ function NewRunDialog({ templates, worksites, assignees }: {
             <DialogDescription>Sólo puede ejecutarse una plantilla aprobada. Las respuestas se registran después, desde el detalle.</DialogDescription>
           </DialogHeader>
           <Field label="Plantilla">
-            <select name="templateId" className={selectClass} required>
-              {templates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.versionLabel}</option>)}
-            </select>
+            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <Field label="Faena">
-            <select name="worksiteId" className={selectClass} required>
-              {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
+            <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
@@ -247,10 +246,7 @@ function NewRunDialog({ templates, worksites, assignees }: {
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Programada para" hint="Opcional."><Input name="scheduledFor" type="date" /></Field>
             <Field label="Asignada a" hint="Vacío = quien la crea.">
-              <select name="assignedToUserId" className={selectClass} defaultValue="">
-                <option value="">Quien la crea</option>
-                {assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Quien la crea" /></SelectTrigger><SelectContent><SelectItem value="_none">Quien la crea</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -29,7 +30,7 @@ import {
   reviewInspectionRunAction,
   saveInspectionAnswersAction,
 } from "../actions"
-import { Field, selectClass, useOperation } from "../inspection-form-kit"
+import { Field, useOperation } from "../inspection-form-kit"
 
 interface RunInfo {
   id: string
@@ -226,15 +227,13 @@ export function InspectionRunDetail({
                         </TableCell>
                         <TableCell>
                           {editable ? (
-                            <select
-                              value={draft.result}
-                              onChange={(event) => update(section.id, item.id, { result: event.target.value as ResultValue })}
-                              className={selectClass}
-                              aria-label={`Resultado de ${item.label}`}
-                            >
-                              <option value="">Sin responder</option>
-                              {Object.entries(INSPECTION_RESULT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                            </select>
+                            <Select value={draft.result || "__unset__"} onValueChange={(v) => update(section.id, item.id, { result: (v === "__unset__" ? "" : v) as ResultValue })}>
+                              <SelectTrigger aria-label={`Resultado de ${item.label}`}><SelectValue placeholder="Sin responder" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__unset__">Sin responder</SelectItem>
+                                {Object.entries(INSPECTION_RESULT_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
                           ) : draft.result ? (
                             <Badge variant={draft.result === "non_conforming" ? "danger" : draft.result === "not_applicable" ? "outline" : "success"}>
                               {INSPECTION_RESULT_LABELS[draft.result] ?? draft.result}
@@ -360,6 +359,7 @@ function CompleteDialog({ run, completion }: {
 
 function CapaDialog({ finding, assignees }: { finding: FindingInfo; assignees: { id: string; name: string }[] }) {
   const [open, setOpen] = React.useState(false)
+  const [responsibleUserId, setResponsibleUserId] = React.useState("_none")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -391,10 +391,7 @@ function CapaDialog({ finding, assignees }: { finding: FindingInfo; assignees: {
             <Textarea name="immediateMeasure" maxLength={3000} />
           </Field>
           <Field label="Responsable" hint="Opcional.">
-            <select name="responsibleUserId" className={selectClass} defaultValue="">
-              <option value="">Sin asignar</option>
-              {assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
+            <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId === "_none" ? "" : responsibleUserId} />
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Derivar</Button></DialogFooter>
