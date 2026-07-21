@@ -30,6 +30,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-reminders-dedup.test.ts",
   "lib/__tests__/physical-inventory-service.test.ts",
   "lib/__tests__/prevention-pdtp.test.ts",
+  "lib/__tests__/prevention-documents-persistence.test.ts",
+  "lib/__tests__/prevention-ppa-workflow-persistence.test.ts",
   "lib/__tests__/purchase-order-edit-items.test.ts",
   "lib/__tests__/purchasing-service.test.ts",
   "lib/__tests__/receiving-two-stage.test.ts",

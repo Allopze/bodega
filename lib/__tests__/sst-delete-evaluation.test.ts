@@ -27,8 +27,10 @@ afterAll(async () => {
 beforeEach(async () => {
   await inMemoryDb.delete(schema.sstActionPlan)
   await inMemoryDb.delete(schema.sstScheduledFollowups)
+  await inMemoryDb.delete(schema.sstWeeklyEvaluations)
   await inMemoryDb.delete(schema.sstResponses)
   await inMemoryDb.delete(schema.sstEvaluations)
+  await inMemoryDb.delete(schema.sstEvaluationVisits)
   await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
@@ -102,6 +104,80 @@ async function seedEvaluation(evaluationId = "sst-1") {
     estado: "pendiente",
   })
 }
+
+/**
+ * H-28: `createEvaluation` (visita+evaluación en una transacción, con
+ * generación condicional de seguimientos/semanas) sólo tenía cobertura con
+ * `@/db` mockeado a mano (`sst-service-full.test.ts`) — nunca ejercitó el
+ * chequeo de integridad de la visita ni el conteo real de filas generadas.
+ */
+describe("createEvaluation", () => {
+  async function seedWorkerOnly() {
+    await inMemoryDb.insert(schema.users).values({ id: "user-1", name: "Admin", email: "admin@example.test", hashedPassword: "x" })
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: "ws-1", name: "Faena A", code: "FA", isActive: true },
+      { id: "ws-2", name: "Faena B", code: "FB", isActive: true },
+    ])
+    await inMemoryDb.insert(schema.workers).values({
+      id: "worker-1", firstName: "Ada", lastName: "Lovelace", rut: "11.111.111-1",
+      position: "Operadora", worksiteId: "ws-1", isActive: true, createdAt: "2026-06-19T00:00:00.000Z",
+    })
+  }
+
+  it("crea la evaluación y una nueva visita cuando no se pasa visitId", async () => {
+    await seedWorkerOnly()
+    const { createEvaluation } = await import("@/lib/services/sst")
+    const evaluation = await createEvaluation({
+      tipo: "nuevo", definicionCode: "trabajador_nuevo", workerId: "worker-1",
+      worksiteId: "ws-1", fechaEvaluacion: "2026-07-20", cargos: ["conductor_ampliroll"],
+    }, "user-1")
+
+    expect(evaluation.estado).toBe("borrador")
+    const visits = await inMemoryDb.select().from(schema.sstEvaluationVisits)
+    expect(visits).toHaveLength(1)
+    expect(visits[0]?.id).toBe(evaluation.visitId)
+  })
+
+  it("rechaza un visitId cuyo trabajador o faena no coincide con la evaluación", async () => {
+    await seedWorkerOnly()
+    await inMemoryDb.insert(schema.sstEvaluationVisits).values({
+      id: "visit-other", worksiteId: "ws-2", workerId: "worker-1",
+      fechaVisita: "2026-07-19", createdBy: "user-1", createdAt: "2026-07-19T00:00:00.000Z", updatedAt: "2026-07-19T00:00:00.000Z",
+    })
+    const { createEvaluation } = await import("@/lib/services/sst")
+    await expect(createEvaluation({
+      tipo: "nuevo", definicionCode: "trabajador_nuevo", workerId: "worker-1",
+      worksiteId: "ws-1", fechaEvaluacion: "2026-07-20", cargos: ["conductor_ampliroll"], visitId: "visit-other",
+    }, "user-1")).rejects.toThrow(/no corresponde al trabajador y faena/i)
+
+    expect(await inMemoryDb.select().from(schema.sstEvaluations)).toHaveLength(0)
+  })
+
+  it("tipo=seguimiento genera los 4 seguimientos programados (día 0/7/15/30)", async () => {
+    await seedWorkerOnly()
+    const { createEvaluation } = await import("@/lib/services/sst")
+    const evaluation = await createEvaluation({
+      tipo: "seguimiento", definicionCode: "trabajador_antiguo", workerId: "worker-1",
+      worksiteId: "ws-1", fechaEvaluacion: "2026-07-20", cargos: ["conductor_ampliroll"], motivo: "control_periodico",
+    }, "user-1")
+
+    const followups = await inMemoryDb.select().from(schema.sstScheduledFollowups).where(eq(schema.sstScheduledFollowups.evaluationId, evaluation.id))
+    expect(followups.map((f) => f.instancia).sort()).toEqual(["dia_0", "dia_15", "dia_30", "dia_7"])
+  })
+
+  it("conductor_lider + trabajador_nuevo genera las 4 evaluaciones semanales", async () => {
+    await seedWorkerOnly()
+    const { createEvaluation } = await import("@/lib/services/sst")
+    const evaluation = await createEvaluation({
+      tipo: "nuevo", definicionCode: "trabajador_nuevo", workerId: "worker-1",
+      worksiteId: "ws-1", fechaEvaluacion: "2026-07-20", cargos: ["conductor_ampliroll"],
+    }, "user-1", "conductor_lider")
+
+    const weeks = await inMemoryDb.select().from(schema.sstWeeklyEvaluations).where(eq(schema.sstWeeklyEvaluations.evaluationId, evaluation.id))
+    expect(weeks).toHaveLength(4)
+    expect(weeks.map((w) => w.semana).sort()).toEqual([1, 2, 3, 4])
+  })
+})
 
 describe("deleteEvaluation", () => {
   it("deletes an evaluation and its dependent SST records within scope", async () => {
