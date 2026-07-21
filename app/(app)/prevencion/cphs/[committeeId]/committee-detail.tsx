@@ -4,6 +4,7 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -232,6 +233,10 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
   existingMemberNames: string[]
 }) {
   const [open, setOpen] = React.useState(false)
+  const [workerId, setWorkerId] = React.useState(eligibleWorkers[0]?.id ?? "")
+  const [representation, setRepresentation] = React.useState("company")
+  const [seat, setSeat] = React.useState("titular")
+  const [role, setRole] = React.useState("")
   const operation = useOperation()
   const existing = new Set(existingMemberNames)
   const available = eligibleWorkers.filter((worker) => !existing.has(worker.name))
@@ -268,31 +273,19 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
           ) : (
             <>
               <Field label="Persona">
-                <select name="workerId" className={selectClass} required>
-                  {available.map((worker) => <option key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</option>)}
-                </select>
+                <Select value={workerId} onValueChange={setWorkerId}><SelectTrigger><SelectValue placeholder="Selecciona persona" /></SelectTrigger><SelectContent>{available.map((worker) => <SelectItem key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</SelectItem>)}</SelectContent></Select><input type="hidden" name="workerId" value={workerId} />
               </Field>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Representación">
-                  <select name="representation" className={selectClass} required>
-                    <option value="company">Empresa</option>
-                    <option value="workers">Personas trabajadoras</option>
-                  </select>
+                  <Select value={representation} onValueChange={setRepresentation}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="company">Empresa</SelectItem><SelectItem value="workers">Personas trabajadoras</SelectItem></SelectContent></Select><input type="hidden" name="representation" value={representation} />
                 </Field>
                 <Field label="Asiento">
-                  <select name="seat" className={selectClass} required>
-                    <option value="titular">Titular</option>
-                    <option value="suplente">Suplente</option>
-                  </select>
+                  <Select value={seat} onValueChange={setSeat}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="titular">Titular</SelectItem><SelectItem value="suplente">Suplente</SelectItem></SelectContent></Select><input type="hidden" name="seat" value={seat} />
                 </Field>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Cargo" hint="Opcional.">
-                  <select name="role" className={selectClass} defaultValue="">
-                    <option value="">Integrante</option>
-                    <option value="presidente">Presidente</option>
-                    <option value="secretario">Secretario</option>
-                  </select>
+                  <Select value={role} onValueChange={setRole}><SelectTrigger><SelectValue placeholder="Integrante" /></SelectTrigger><SelectContent><SelectItem value="_none">Integrante</SelectItem><SelectItem value="presidente">Presidente</SelectItem><SelectItem value="secretario">Secretario</SelectItem></SelectContent></Select><input type="hidden" name="role" value={role === "_none" ? "" : role} />
                 </Field>
                 <label className="mt-6 flex items-center gap-2 text-sm">
                   <input type="checkbox" name="hasFuero" /> Tiene fuero sindical
@@ -317,6 +310,7 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
 function ScheduleMeetingDialog({ committeeId }: { committeeId: string }) {
   const [open, setOpen] = React.useState(false)
   const [defaultValue, setDefaultValue] = React.useState("")
+  const [meetingType, setMeetingType] = React.useState("ordinary")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -341,10 +335,7 @@ function ScheduleMeetingDialog({ committeeId }: { committeeId: string }) {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo">
-              <select name="meetingType" className={selectClass} defaultValue="ordinary">
-                <option value="ordinary">Ordinaria</option>
-                <option value="extraordinary">Extraordinaria</option>
-              </select>
+              <Select value={meetingType} onValueChange={setMeetingType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ordinary">Ordinaria</SelectItem><SelectItem value="extraordinary">Extraordinaria</SelectItem></SelectContent></Select><input type="hidden" name="meetingType" value={meetingType} />
             </Field>
             <Field label="Fecha y hora"><Input name="scheduledFor" type="datetime-local" required defaultValue={defaultValue} /></Field>
           </div>
@@ -491,20 +482,10 @@ function CloseMeetingDialog({ meeting, members, assignees }: {
                 </Field>
                 <div className="grid gap-2 md:grid-cols-3">
                   <Field label="Responsable" hint="Opcional.">
-                    <select value={item.responsibleUserId} className={selectClass}
-                      onChange={(event) => setAgreements((current) => current.map((a, i) => i === index ? { ...a, responsibleUserId: event.target.value } : a))}>
-                      <option value="">Sin asignar</option>
-                      {assignees.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
+                    <Select value={item.responsibleUserId} onValueChange={(v) => setAgreements((current) => current.map((a, i) => i === index ? { ...a, responsibleUserId: v === "_none" ? "" : v } : a))}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent></Select>
                   </Field>
                   <Field label="Prioridad">
-                    <select value={item.priority} className={selectClass}
-                      onChange={(event) => setAgreements((current) => current.map((a, i) => i === index ? { ...a, priority: event.target.value as AgreementDraft["priority"] } : a))}>
-                      <option value="low">Baja</option>
-                      <option value="medium">Media</option>
-                      <option value="high">Alta</option>
-                      <option value="critical">Crítica</option>
-                    </select>
+                    <Select value={item.priority} onValueChange={(v) => setAgreements((current) => current.map((a, i) => i === index ? { ...a, priority: v as AgreementDraft["priority"] } : a))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem></SelectContent></Select>
                   </Field>
                   <Field label="Plazo">
                     <Input type="date" required value={item.targetDate}

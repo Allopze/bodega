@@ -559,6 +559,37 @@ export async function listCapaActions(args: {
   )).orderBy(desc(preventionCapaActions.createdAt)).limit(effectiveLimit).offset(offset)
 }
 
+export async function listCapaActionsPage(args: {
+  scope: WorksiteScope
+  permissions: readonly string[]
+  status?: CapaStatus
+  sourceType?: string
+  worksiteId?: string
+  limit?: number
+  offset?: number
+}): Promise<{ rows: Array<Awaited<ReturnType<typeof db.select>>>[number]; total: number; limit: number; offset: number }> {
+  requirePermission(args.permissions, "prevention:capa:view")
+  if (args.scope.mode === "none") return { rows: [], total: 0, limit: args.limit ?? 50, offset: args.offset ?? 0 }
+  if (args.worksiteId && !scopeAllows(args.scope, args.worksiteId)) return { rows: [], total: 0, limit: args.limit ?? 50, offset: args.offset ?? 0 }
+  const effectiveLimit = Math.min(args.limit ?? 50, 500)
+  const effectiveOffset = args.offset ?? 0
+  const scopeWhere = args.worksiteId
+    ? eq(preventionCapaActions.worksiteId, args.worksiteId)
+    : args.scope.mode === "some"
+      ? inArray(preventionCapaActions.worksiteId, args.scope.ids)
+      : undefined
+  const where = and(
+    scopeWhere,
+    args.status ? eq(preventionCapaActions.status, args.status) : undefined,
+    args.sourceType ? eq(preventionCapaActions.sourceType, args.sourceType) : undefined,
+  )
+  const [rows, [{ count: total }]] = await Promise.all([
+    db.select().from(preventionCapaActions).where(where).orderBy(desc(preventionCapaActions.createdAt)).limit(effectiveLimit).offset(effectiveOffset),
+    db.select({ count: sql<number>`count(*)::int` }).from(preventionCapaActions).where(where),
+  ])
+  return { rows: rows as Array<typeof rows[number]>, total: Number(total), limit: effectiveLimit, offset: effectiveOffset }
+}
+
 export async function getCapaActionBundle(args: {
   actionId: string
   scope: WorksiteScope

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { closeManagementReviewAction, constituteCommitteeAction, createManagementReviewAction } from "./actions"
@@ -12,6 +13,7 @@ import { Field, selectClass, toLocalInputValue, useOperation } from "./cphs-form
 
 export function NewCommitteeDialog({ worksites }: { worksites: { id: string; name: string }[] }) {
   const [open, setOpen] = React.useState(false)
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -40,9 +42,7 @@ export function NewCommitteeDialog({ worksites }: { worksites: { id: string; nam
             </DialogDescription>
           </DialogHeader>
           <Field label="Faena">
-            <select name="worksiteId" className={selectClass} required>
-              {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
+            <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
           <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="CPHS Faena Central" /></Field>
           <div className="grid gap-3 md:grid-cols-2">
@@ -65,6 +65,7 @@ export function NewCommitteeDialog({ worksites }: { worksites: { id: string; nam
 export function NewReviewDialog({ worksites }: { worksites: { id: string; name: string }[] }) {
   const [open, setOpen] = React.useState(false)
   const [defaultValue, setDefaultValue] = React.useState("")
+  const [worksiteId, setWorksiteId] = React.useState("_all")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -91,10 +92,7 @@ export function NewReviewDialog({ worksites }: { worksites: { id: string; name: 
           <Field label="Período" hint="Ej: 1er semestre 2026."><Input name="periodLabel" required minLength={4} maxLength={60} /></Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena" hint="Vacío = revisión de toda la organización.">
-              <select name="worksiteId" className={selectClass} defaultValue="">
-                <option value="">Toda la organización</option>
-                {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Toda la organización" /></SelectTrigger><SelectContent><SelectItem value="_all">Toda la organización</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId === "_all" ? "" : worksiteId} />
             </Field>
             <Field label="Realizada el"><Input name="heldAt" type="datetime-local" required defaultValue={defaultValue} /></Field>
           </div>
@@ -194,25 +192,15 @@ export function CloseReviewDialog({ review, worksites, assignees }: {
                 </Field>
                 <div className="grid gap-2 md:grid-cols-2">
                   <Field label="Faena">
-                    <select value={item.worksiteId} onChange={(event) => update(index, { worksiteId: event.target.value })} className={selectClass} required>
-                      {worksites.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                    </select>
+                    <Select value={item.worksiteId} onValueChange={(v) => update(index, { worksiteId: v })}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent></Select>
                   </Field>
                   <Field label="Responsable" hint="Opcional.">
-                    <select value={item.responsibleUserId} onChange={(event) => update(index, { responsibleUserId: event.target.value })} className={selectClass}>
-                      <option value="">Sin asignar</option>
-                      {assignees.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
+                    <Select value={item.responsibleUserId} onValueChange={(v) => update(index, { responsibleUserId: v === "_none" ? "" : v })}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent></Select>
                   </Field>
                 </div>
                 <div className="grid gap-2 md:grid-cols-2">
                   <Field label="Prioridad">
-                    <select value={item.priority} onChange={(event) => update(index, { priority: event.target.value as Commitment["priority"] })} className={selectClass}>
-                      <option value="low">Baja</option>
-                      <option value="medium">Media</option>
-                      <option value="high">Alta</option>
-                      <option value="critical">Crítica</option>
-                    </select>
+                    <Select value={item.priority} onValueChange={(v) => update(index, { priority: v as Commitment["priority"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem></SelectContent></Select>
                   </Field>
                   <Field label="Plazo">
                     <Input type="date" value={item.targetDate} required onChange={(event) => update(index, { targetDate: event.target.value })} />
