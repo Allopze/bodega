@@ -1,6 +1,4 @@
-"use server"
-
-export { revalidateBiblioteca } from "./shared"
+export { revalidateBiblioteca } from "./revalidate"
 export { getDocumentDetailAction } from "./queries"
 
 export {
