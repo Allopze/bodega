@@ -5,6 +5,7 @@ import { Certificate } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -278,9 +279,7 @@ function CourseDialog() {
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Código"><Input name="code" required minLength={2} maxLength={60} placeholder="LEG-8H" /></Field>
             <Field label="Tipo">
-              <select value={kind} onChange={(event) => setKind(event.target.value)} className={selectClass}>
-                {Object.entries(TRAINING_KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              <Select value={kind} onValueChange={setKind}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRAINING_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
             </Field>
           </div>
           <Field label="Nombre"><Input name="name" required minLength={3} maxLength={300} /></Field>
@@ -302,10 +301,7 @@ function CourseDialog() {
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Evaluación">
-              <select value={requiresAssessment ? "yes" : "no"} onChange={(event) => setRequiresAssessment(event.target.value === "yes")} className={selectClass}>
-                <option value="yes">Exigida</option>
-                <option value="no">No exigida</option>
-              </select>
+              <Select value={requiresAssessment ? "yes" : "no"} onValueChange={(v) => setRequiresAssessment(v === "yes")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="yes">Exigida</SelectItem><SelectItem value="no">No exigida</SelectItem></SelectContent></Select>
             </Field>
             <Field label="Nota de aprobación (%)">
               <Input name="passingScore" type="number" min={0} max={100} defaultValue={70} required />
@@ -335,6 +331,9 @@ function CourseDialog() {
 function VersionDialog({ courses }: { courses: CourseItem[] }) {
   const [open, setOpen] = React.useState(false)
   const [modules, setModules] = React.useState([{ title: "", minutes: 60 }])
+  const [courseId, setCourseId] = React.useState(courses[0]?.id ?? "")
+  const [modality, setModality] = React.useState("presencial")
+  const [assessmentType, setAssessmentType] = React.useState("theoretical")
   const operation = useOperation()
   const declaredMinutes = modules.reduce((total, item) => total + (Number(item.minutes) || 0), 0)
 
@@ -365,26 +364,17 @@ function VersionDialog({ courses }: { courses: CourseItem[] }) {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Curso">
-              <select name="courseId" className={selectClass} required>
-                {courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={courseId} onValueChange={setCourseId}><SelectTrigger><SelectValue placeholder="Selecciona curso" /></SelectTrigger><SelectContent>{courses.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="courseId" value={courseId} />
             </Field>
             <Field label="Etiqueta de versión"><Input name="versionLabel" required maxLength={80} defaultValue="v1" /></Field>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Duración total (min)"><Input name="durationMinutes" type="number" min={1} defaultValue={480} required /></Field>
             <Field label="Modalidad">
-              <select name="modality" className={selectClass}>
-                {Object.entries(TRAINING_MODALITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              <Select value={modality} onValueChange={setModality}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRAINING_MODALITY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="modality" value={modality} />
             </Field>
             <Field label="Evaluación">
-              <select name="assessmentType" className={selectClass} defaultValue="theoretical">
-                <option value="none">Sin evaluación</option>
-                <option value="theoretical">Teórica</option>
-                <option value="practical">Práctica</option>
-                <option value="both">Teórica y práctica</option>
-              </select>
+              <Select value={assessmentType} onValueChange={setAssessmentType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sin evaluación</SelectItem><SelectItem value="theoretical">Teórica</SelectItem><SelectItem value="practical">Práctica</SelectItem><SelectItem value="both">Teórica y práctica</SelectItem></SelectContent></Select><input type="hidden" name="assessmentType" value={assessmentType} />
             </Field>
           </div>
           <Field label="Nota de aprobación (%)"><Input name="passingScore" type="number" min={0} max={100} defaultValue={70} required /></Field>
@@ -492,6 +482,9 @@ function VersionTransition({ version, canManage, canApprove }: { version: Versio
 function RequirementDialog({ courses, worksites }: { courses: CourseItem[]; worksites: { id: string; name: string }[] }) {
   const [open, setOpen] = React.useState(false)
   const [scopeType, setScopeType] = React.useState("position")
+  const [courseId, setCourseId] = React.useState(courses[0]?.id ?? "")
+  const [enforcement, setEnforcement] = React.useState("warning")
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -520,24 +513,14 @@ function RequirementDialog({ courses, worksites }: { courses: CourseItem[]; work
             </DialogDescription>
           </DialogHeader>
           <Field label="Curso exigido">
-            <select name="courseId" className={selectClass} required>
-              {courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
+            <Select value={courseId} onValueChange={setCourseId}><SelectTrigger><SelectValue placeholder="Selecciona curso" /></SelectTrigger><SelectContent>{courses.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="courseId" value={courseId} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Alcance">
-              <select value={scopeType} onChange={(event) => setScopeType(event.target.value)} className={selectClass}>
-                <option value="position">Cargo</option>
-                <option value="worksite">Faena</option>
-                <option value="global">Toda la organización</option>
-                <option value="task">Tarea (se resuelve en el permiso de trabajo)</option>
-              </select>
+              <Select value={scopeType} onValueChange={setScopeType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="position">Cargo</SelectItem><SelectItem value="worksite">Faena</SelectItem><SelectItem value="global">Toda la organización</SelectItem><SelectItem value="task">Tarea (se resuelve en el permiso de trabajo)</SelectItem></SelectContent></Select>
             </Field>
             <Field label="Exigibilidad">
-              <select name="enforcement" className={selectClass} defaultValue="warning">
-                <option value="warning">Advertencia</option>
-                <option value="blocking">Bloqueante</option>
-              </select>
+              <Select value={enforcement} onValueChange={setEnforcement}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="warning">Advertencia</SelectItem><SelectItem value="blocking">Bloqueante</SelectItem></SelectContent></Select><input type="hidden" name="enforcement" value={enforcement} />
             </Field>
           </div>
           {scopeType === "position" && (
@@ -552,9 +535,7 @@ function RequirementDialog({ courses, worksites }: { courses: CourseItem[]; work
           )}
           {scopeType === "worksite" && (
             <Field label="Faena">
-              <select name="worksiteId" className={selectClass} required>
-                {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
           )}
           <Field label="Fundamento" hint="Por qué se exige. Mínimo 10 caracteres.">

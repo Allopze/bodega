@@ -4,6 +4,7 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -229,16 +230,14 @@ export function SessionDetail({ session, course, attendance, canDeliver, canMana
                       </TableCell>
                       <TableCell>
                         {editable ? (
-                          <select
-                            value={draft.status}
-                            onChange={(event) => update(row.id, { status: event.target.value })}
-                            className={selectClass}
-                            aria-label={`Asistencia de ${row.workerName}`}
-                          >
-                            {Object.entries(TRAINING_ATTENDANCE_STATUS_LABELS).map(([value, label]) => (
-                              <option key={value} value={value}>{label}</option>
-                            ))}
-                          </select>
+                          <Select value={draft.status} onValueChange={(v) => update(row.id, { status: v })}>
+                            <SelectTrigger aria-label={`Asistencia de ${row.workerName}`}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(TRAINING_ATTENDANCE_STATUS_LABELS).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>{label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         ) : (
                           <Badge variant={attendanceBadgeVariant(row.status)}>
                             {TRAINING_ATTENDANCE_STATUS_LABELS[row.status] ?? row.status}

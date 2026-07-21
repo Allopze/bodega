@@ -286,7 +286,9 @@ function SessionDialog({ versions, worksites, workers }: {
   // un valor distinto en el servidor y en el navegador, y eso es un desajuste
   // de hidratación. Al abrir, el contenido del diálogo recién se monta.
   const [defaultScheduledAt, setDefaultScheduledAt] = React.useState("")
+  const [courseVersionId, setCourseVersionId] = React.useState(versions[0]?.id ?? "")
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const [modality, setModality] = React.useState("presencial")
   const [instructorKind, setInstructorKind] = React.useState<"internal" | "external">("external")
   const [convened, setConvened] = React.useState<string[]>([])
   const [workerQuery, setWorkerQuery] = React.useState("")
@@ -342,18 +344,12 @@ function SessionDialog({ versions, worksites, workers }: {
           </DialogHeader>
 
           <Field label="Contenido a dictar" hint="Sólo aparecen las versiones publicadas.">
-            <select name="courseVersionId" className={selectClass} required>
-              {versions.map((item) => (
-                <option key={item.id} value={item.id}>{item.courseName} · {item.versionLabel}</option>
-              ))}
-            </select>
+            <Select value={courseVersionId} onValueChange={setCourseVersionId}><SelectTrigger><SelectValue placeholder="Selecciona contenido" /></SelectTrigger><SelectContent>{versions.map((item) => <SelectItem key={item.id} value={item.id}>{item.courseName} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="courseVersionId" value={courseVersionId} />
           </Field>
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">
-              <select value={worksiteId} onChange={(event) => changeWorksite(event.target.value)} className={selectClass} required>
-                {worksites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <Select value={worksiteId} onValueChange={changeWorksite}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
             <Field label="Fecha y hora programada">
               <Input name="scheduledAt" type="datetime-local" required defaultValue={defaultScheduledAt} />
@@ -362,19 +358,14 @@ function SessionDialog({ versions, worksites, workers }: {
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Modalidad">
-              <select name="modality" className={selectClass} defaultValue="presencial">
-                {Object.entries(TRAINING_MODALITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              <Select value={modality} onValueChange={setModality}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRAINING_MODALITY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="modality" value={modality} />
             </Field>
             <Field label="Lugar" hint="Sala, faena o plataforma."><Input name="location" maxLength={300} /></Field>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Relator">
-              <select value={instructorKind} onChange={(event) => setInstructorKind(event.target.value as "internal" | "external")} className={selectClass}>
-                <option value="external">Externo</option>
-                <option value="internal">Interno (usuario de la plataforma)</option>
-              </select>
+              <Select value={instructorKind} onValueChange={(v) => setInstructorKind(v as "internal" | "external")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="external">Externo</SelectItem><SelectItem value="internal">Interno (usuario de la plataforma)</SelectItem></SelectContent></Select>
             </Field>
             {instructorKind === "external"
               ? <Field label="Nombre del relator externo"><Input name="instructorExternalName" required minLength={3} maxLength={300} /></Field>
