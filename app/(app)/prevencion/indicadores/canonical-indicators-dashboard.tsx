@@ -4,13 +4,14 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { CanonicalIndicatorResult } from "@/lib/prevention/safety-indicators-calc"
 import type { CanonicalIndicatorYearView } from "@/lib/services/prevention-indicadores"
-import { IndicatorDenominatorDialog } from "./indicator-denominator-dialog"
+import { denominatorDialogLabel, IndicatorDenominatorDialog } from "./indicator-denominator-dialog"
 import { IndicatorPeriodCloseButton } from "./indicator-period-close-button"
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -40,6 +41,7 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
 }) {
   const router = useRouter()
   const [selectedWorksiteId, setSelectedWorksiteId] = useState(view.groups.find((item) => item.worksiteId === "total")?.worksiteId ?? view.groups[0]?.worksiteId ?? "")
+  const [editingMonth, setEditingMonth] = useState<number | null>(null)
   const group = view.groups.find((item) => item.worksiteId === selectedWorksiteId) ?? view.groups[0]
   const denominatorByPeriod = useMemo(() => new Map(view.denominators.map((item) => [`${item.worksiteId}:${item.month}`, item])), [view.denominators])
   const closedKeys = useMemo(() => new Set(view.closedPeriods.map((item) => `${item.worksiteId}:${item.month}`)), [view.closedPeriods])
@@ -91,7 +93,7 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
                 const denominator = selectedIsTotal ? null : denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null
                 const closed = !selectedIsTotal && closedKeys.has(`${group.worksiteId}:${index + 1}`)
                 const metrics = item.status === "provisional" ? item.provisional : item.confirmed
-                return <TableRow key={index}><TableCell><p className="font-medium">{MONTHS[index]}</p><Badge className="mt-1" variant={statusVariant(item.status)}>{STATUS_LABELS[item.status] ?? item.status}</Badge>{item.pendingCaseCount > 0 && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">{item.pendingCaseCount} pendiente(s)</p>}</TableCell><TableCell><Link href={incidentHref(item, "frequency")} className="font-medium text-[var(--color-primary-ink)] hover:underline">{metrics.injuredPeople}</Link></TableCell><TableCell>{item.workedHours.toLocaleString("es-CL")}</TableCell><TableCell className="font-medium">{rate(metricValue(item, "frequencyRate"))}</TableCell><TableCell>{metrics.absenceDays} + {metrics.chargeDays}</TableCell><TableCell>{rate(metricValue(item, "accidentabilityRate"))}</TableCell>{!selectedIsTotal && (canManage || canClose) && <TableCell className="text-right"><div className="flex justify-end gap-1"><IndicatorDenominatorDialog worksiteId={String(group.worksiteId)} year={view.year} month={index + 1} denominator={denominator ?? null} canManage={canManage} canApprove={canClose} currentUserId={currentUserId} />{closed ? <Badge variant="success">Cerrado</Badge> : canClose && item.status === "reconciled" && <IndicatorPeriodCloseButton worksiteId={String(group.worksiteId)} year={view.year} month={index + 1} />}</div></TableCell>}</TableRow>
+                return <TableRow key={index}><TableCell><p className="font-medium">{MONTHS[index]}</p><Badge className="mt-1" variant={statusVariant(item.status)}>{STATUS_LABELS[item.status] ?? item.status}</Badge>{item.pendingCaseCount > 0 && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">{item.pendingCaseCount} pendiente(s)</p>}</TableCell><TableCell><Link href={incidentHref(item, "frequency")} className="font-medium text-[var(--color-primary-ink)] hover:underline">{metrics.injuredPeople}</Link></TableCell><TableCell>{item.workedHours.toLocaleString("es-CL")}</TableCell><TableCell className="font-medium">{rate(metricValue(item, "frequencyRate"))}</TableCell><TableCell>{metrics.absenceDays} + {metrics.chargeDays}</TableCell><TableCell>{rate(metricValue(item, "accidentabilityRate"))}</TableCell>{!selectedIsTotal && (canManage || canClose) && <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(denominator ?? null)}</Button>{closed ? <Badge variant="success">Cerrado</Badge> : canClose && item.status === "reconciled" && <IndicatorPeriodCloseButton worksiteId={String(group.worksiteId)} year={view.year} month={index + 1} />}</div></TableCell>}</TableRow>
               })}</TableBody></Table>
           </div>
           <div className="grid gap-3 md:grid-cols-2">{group.semesters.map((semester, index) => <div key={index} className="rounded-lg border border-[var(--color-border)] p-4"><div className="flex justify-between"><h3 className="font-medium">Semestre {index + 1}</h3><Badge variant={statusVariant(semester.status)}>{STATUS_LABELS[semester.status]}</Badge></div><p className="mt-3 font-mono text-2xl font-semibold">{rate(metricValue(semester, "severityRate"))}</p><p className="text-xs text-[var(--color-text-subtle)]">Calculada desde los seis meses brutos, no desde un promedio de tasas.</p></div>)}</div>
@@ -99,13 +101,27 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
         </TabsContent>
 
         <TabsContent value="denominators">
-          {selectedIsTotal ? <EmptyState title="Selecciona una faena" description="La fuente y aprobación se gestionan por faena y mes; la vista total sólo agrega resultados autorizados." /> : <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead>Dotación</TableHead><TableHead>HH</TableHead><TableHead>Fuente</TableHead><TableHead>Conciliación</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>{MONTHS.map((month, index) => { const item = denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null; return <TableRow key={month}><TableCell>{month}</TableCell><TableCell>{item?.workerCount ?? "—"}</TableCell><TableCell>{item?.workedHours?.toLocaleString("es-CL") ?? "—"}</TableCell><TableCell>{item?.sourceReference ?? "Sin fuente"}</TableCell><TableCell><Badge variant={statusVariant(item?.reconciliationStatus ?? "pending")}>{item?.reconciliationStatus ?? "Pendiente"}</Badge></TableCell><TableCell><Badge variant={statusVariant(item?.status ?? "draft")}>{item?.status ?? "Sin registro"}</Badge></TableCell><TableCell className="text-right"><IndicatorDenominatorDialog worksiteId={String(group.worksiteId)} year={view.year} month={index + 1} denominator={item} canManage={canManage} canApprove={canClose} currentUserId={currentUserId} /></TableCell></TableRow> })}</TableBody></Table></div>}
+          {selectedIsTotal ? <EmptyState title="Selecciona una faena" description="La fuente y aprobación se gestionan por faena y mes; la vista total sólo agrega resultados autorizados." /> : <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead>Dotación</TableHead><TableHead>HH</TableHead><TableHead>Fuente</TableHead><TableHead>Conciliación</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>{MONTHS.map((month, index) => { const item = denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null; return <TableRow key={month}><TableCell>{month}</TableCell><TableCell>{item?.workerCount ?? "—"}</TableCell><TableCell>{item?.workedHours?.toLocaleString("es-CL") ?? "—"}</TableCell><TableCell>{item?.sourceReference ?? "Sin fuente"}</TableCell><TableCell><Badge variant={statusVariant(item?.reconciliationStatus ?? "pending")}>{item?.reconciliationStatus ?? "Pendiente"}</Badge></TableCell><TableCell><Badge variant={statusVariant(item?.status ?? "draft")}>{item?.status ?? "Sin registro"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(item)}</Button></TableCell></TableRow> })}</TableBody></Table></div>}
         </TabsContent>
 
         <TabsContent value="reconciliation">
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead>Estado</TableHead><TableHead>HH legado → canónico</TableHead><TableHead>Accidentes legado → fuente</TableHead><TableHead>Días legado → ausencia+cargo</TableHead><TableHead>Daños / incidentes</TableHead></TableRow></TableHeader><TableBody>{group.monthly.map((item, index) => { const comparison = item.legacyComparison; return <TableRow key={index}><TableCell>{MONTHS[index]}</TableCell><TableCell><Badge variant={comparison.status === "match" ? "success" : comparison.status === "difference" ? "warning" : "default"}>{comparison.status === "match" ? "Cuadra" : comparison.status === "difference" ? "Diferencia" : "Sin legado"}</Badge></TableCell><TableCell>{comparison.legacy?.horasHombre ?? "—"} → {comparison.derived.horasHombre}</TableCell><TableCell>{comparison.legacy?.accConTiempoPerdido ?? "—"} → {comparison.derived.accConTiempoPerdido}</TableCell><TableCell>{comparison.legacy?.diasPerdidos ?? "—"} → {comparison.derived.diasPerdidos}</TableCell><TableCell>{comparison.derived.incidentes} inc. · {comparison.derived.danoMaterial} mat. · {comparison.derived.danoAmbiental} amb.</TableCell></TableRow> })}</TableBody></Table></div>
         </TabsContent>
       </Tabs>
+      {editingMonth !== null && !selectedIsTotal && (
+        <IndicatorDenominatorDialog
+          key={editingMonth}
+          worksiteId={String(group.worksiteId)}
+          year={view.year}
+          month={editingMonth}
+          denominator={denominatorByPeriod.get(`${group.worksiteId}:${editingMonth}`) ?? null}
+          canManage={canManage}
+          canApprove={canClose}
+          currentUserId={currentUserId}
+          onClose={() => setEditingMonth(null)}
+          onNavigate={setEditingMonth}
+        />
+      )}
     </div>
   )
 }

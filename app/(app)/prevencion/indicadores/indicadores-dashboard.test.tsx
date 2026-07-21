@@ -22,7 +22,10 @@ vi.mock("@/components/ui/tabs", () => ({
   TabsTrigger: ({ children }: PropsWithChildren) => <button type="button">{children}</button>,
   TabsContent: ({ children }: PropsWithChildren) => <div>{children}</div>,
 }))
-vi.mock("./indicator-denominator-dialog", () => ({ IndicatorDenominatorDialog: () => <button type="button">Denominador</button> }))
+vi.mock("./indicator-denominator-dialog", () => ({
+  IndicatorDenominatorDialog: () => <button type="button">Denominador</button>,
+  denominatorDialogLabel: () => "Registrar",
+}))
 vi.mock("./indicator-period-close-button", () => ({ IndicatorPeriodCloseButton: () => <button type="button">Cerrar período</button> }))
 
 import { CanonicalIndicatorsDashboard } from "./canonical-indicators-dashboard"
