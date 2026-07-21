@@ -70,14 +70,14 @@ export const capaEvidenceSchema = z.object({
   checksumSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
 })
 
-const capaFollowupSchema = z.object({
+export const capaFollowupSchema = z.object({
   actionId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   note: z.string().trim().min(3).max(3000),
   progress: z.number().int().min(0).max(100).nullable().optional(),
 })
 
-const capaUpdateSchema = z.object({
+export const capaUpdateSchema = z.object({
   actionId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   finding: z.string().trim().min(3).max(3000).optional(),
@@ -93,7 +93,7 @@ const capaUpdateSchema = z.object({
   message: "No hay cambios CAPA para guardar.",
 })
 
-const capaReconcileSchema = z.object({
+export const capaReconcileSchema = z.object({
   actionId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   responsibleUserId: z.string().min(1).nullable(),
