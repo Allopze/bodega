@@ -2,12 +2,17 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
-import ExcelJS from "exceljs"
 import { guardPermission } from "@/lib/auth/can"
-import { importPdtpFromExcel } from "@/lib/services/prevention-pdtp"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { applyPdtpImportBatch, cancelPdtpImportBatch, stagePdtpXlsxImport } from "@/lib/services/prevention-pdtp"
 import { logger } from "@/lib/logger"
+import { PDTP_XLSX_MAX_BYTES } from "@/lib/services/pdtp/xlsx-security"
 
-const MAX_EXCEL_SIZE = 15 * 1024 * 1024
+function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
+  if (scope.mode === "all") return "all"
+  if (scope.mode === "none") return []
+  return scope.ids
+}
 
 /**
  * POST /api/prevencion/pdtp/import
@@ -30,32 +35,73 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Body inválido: se esperaba multipart/form-data." }, { status: 400 })
   }
 
-  const programId = String(form.get("programId") ?? "")
-  if (!programId) {
-    return NextResponse.json({ error: "Falta el programa (programId)." }, { status: 400 })
+  const mode = String(form.get("mode") ?? "stage")
+  if (mode === "apply") {
+    const batchId = String(form.get("batchId") ?? "")
+    if (!batchId) return NextResponse.json({ error: "Falta el lote de importación." }, { status: 400 })
+    try {
+      const result = await applyPdtpImportBatch({
+        batchId,
+        userId: guard.session.user.id,
+        worksiteId: String(form.get("worksiteId") ?? "") || undefined,
+        acceptMissingEvidence: String(form.get("acceptMissingEvidence") ?? "") === "true",
+        acceptanceReason: String(form.get("acceptanceReason") ?? "") || undefined,
+        scope: scopeToIds(resolveWorksiteScope(guard.session)),
+      })
+      return NextResponse.json({ ok: true, message: "Lote aplicado correctamente.", result })
+    } catch (err) {
+      logger.error("[pdtp/import/apply]", err)
+      const message = err instanceof Error ? err.message : "Error al aplicar el lote de importación."
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
   }
+  if (mode === "cancel") {
+    const batchId = String(form.get("batchId") ?? "")
+    if (!batchId) return NextResponse.json({ error: "Falta el lote de importación." }, { status: 400 })
+    try {
+      const result = await cancelPdtpImportBatch({
+        batchId,
+        userId: guard.session.user.id,
+        reason: String(form.get("reason") ?? ""),
+      })
+      return NextResponse.json({ ok: true, message: "Preview cancelado sin modificar el programa.", result })
+    } catch (err) {
+      logger.error("[pdtp/import/cancel]", err)
+      const message = err instanceof Error ? err.message : "Error al cancelar el lote de importación."
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
+  }
+  if (mode !== "stage") return NextResponse.json({ error: "Operación de importación no reconocida." }, { status: 400 })
+
+  const programId = String(form.get("programId") ?? "")
+  if (!programId) return NextResponse.json({ error: "Falta el programa (programId)." }, { status: 400 })
 
   const file = form.get("file")
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ error: "Selecciona un archivo Excel (.xlsx)." }, { status: 400 })
   }
-  if (file.size > MAX_EXCEL_SIZE) {
+  if (file.size > PDTP_XLSX_MAX_BYTES) {
     return NextResponse.json({
-      error: `El archivo supera el límite de ${Math.round(MAX_EXCEL_SIZE / 1024 / 1024)} MB.`,
+      error: `El archivo supera el límite de ${Math.round(PDTP_XLSX_MAX_BYTES / 1024 / 1024)} MB.`,
     }, { status: 400 })
   }
-  if (!/\.xlsx?$/i.test(file.name)) {
-    return NextResponse.json({ error: "El archivo debe ser .xlsx o .xls." }, { status: 400 })
+  if (!/\.xlsx$/i.test(file.name)) {
+    return NextResponse.json({ error: "El archivo debe ser .xlsx; .xls no está permitido." }, { status: 400 })
   }
 
   try {
-    const arrayBuffer = await file.arrayBuffer()
-    const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(arrayBuffer)
-    const result = await importPdtpFromExcel({ programId, workbook, userId: guard.session.user.id })
+    const result = await stagePdtpXlsxImport({
+      programId,
+      bytes: new Uint8Array(await file.arrayBuffer()),
+      fileName: file.name,
+      mimeType: file.type,
+      userId: guard.session.user.id,
+    })
     return NextResponse.json({
       ok: true,
-      message: `${result.activityCount} actividades importadas en ${result.sheetCount} hojas.`,
+      message: "Archivo analizado. Revisa el preview antes de aplicar.",
+      batchId: result.batch.id,
+      preview: result.preview,
     })
   } catch (err) {
     logger.error("[pdtp/import]", err)

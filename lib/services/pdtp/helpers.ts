@@ -7,10 +7,12 @@ import {
   pdtpChangeLog,
   pdtpExecutionChecklists,
   pdtpExecutions,
+  pdtpPrograms,
   pdtpSheets,
+  worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { ROLE_RESPONSIBLE_SLUGS } from "./constants"
+import { ROLE_RESPONSIBLE_SLUGS } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 
 export type WorksiteScope = string[] | "all"
@@ -25,6 +27,41 @@ export function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): 
   if (!scope.includes(worksiteId)) {
     throw new Error("Actividad PDTP no encontrada o sin acceso a la faena.")
   }
+}
+
+/** Evita que un usuario global use un identificador arbitrario como contexto de exportación. */
+export async function isActivePdtpWorksite(worksiteId: string): Promise<boolean> {
+  const [worksite] = await db
+    .select({ id: worksites.id })
+    .from(worksites)
+    .where(and(eq(worksites.id, worksiteId), eq(worksites.isActive, true)))
+    .limit(1)
+  return Boolean(worksite)
+}
+
+type EditableProgramState = Pick<
+  typeof pdtpPrograms.$inferSelect,
+  "status" | "approvedByJdprUserId" | "approvedByLegalUserId" | "contentDigest" | "reviewStartedAt"
+>
+
+/** Bloquea contenido que ya entro a revision, incluidas firmas legacy que aun figuren como draft. */
+export function assertPdtpProgramEditableState(program: EditableProgramState): void {
+  if (
+    program.status !== "draft"
+    || program.approvedByJdprUserId
+    || program.approvedByLegalUserId
+    || program.contentDigest
+    || program.reviewStartedAt
+  ) {
+    throw new Error("El programa ya entró a revisión y su contenido está bloqueado. Crea una nueva versión o reábrelo formalmente.")
+  }
+}
+
+export async function assertPdtpProgramEditable(programId: string): Promise<typeof pdtpPrograms.$inferSelect> {
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  assertPdtpProgramEditableState(program)
+  return program
 }
 
 /** Verifica que una ejecución exista y pertenezca a una faena visible. */
@@ -90,7 +127,7 @@ export function pdtpProgramId(year: number, version: number) {
  * Resuelve la hoja PDTP (template o program-scoped) para un código dado.
  * Un código puede tener dos filas: una plantilla global (`program_id
  * NULL`, del seed) y una program-scoped (`program_id = programId`, creada
- * por `createPdtpProgram`/`importPdtpFromExcel`). Sin este orden explícito,
+ * por `createPdtpProgram`/el adaptador de importación por lotes). Sin este orden explícito,
  * `.limit(1)` sobre ambas filas elige de forma arbitraria y puede devolver
  * la plantilla — cuyas membresías (`pdtp_sheet_activities`) no incluyen las
  * actividades de este programa — dando una vista vacía en silencio.
@@ -164,7 +201,7 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
   const [scheduleRows, executionRows, overrideRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds)),
     worksiteId
-      ? db.select().from(pdtpExecutions).where(and(inArray(pdtpExecutions.activityId, activityIds), eq(pdtpExecutions.worksiteId, worksiteId), eq(pdtpExecutions.year, year)))
+      ? db.select().from(pdtpExecutions).where(and(inArray(pdtpExecutions.activityId, activityIds), eq(pdtpExecutions.worksiteId, worksiteId), eq(pdtpExecutions.year, year), isNull(pdtpExecutions.obligationId)))
       : Promise.resolve([] as Array<typeof pdtpExecutions.$inferSelect>),
     worksiteId
       ? loadPdtpOverrides(activityIds, year, worksiteId)

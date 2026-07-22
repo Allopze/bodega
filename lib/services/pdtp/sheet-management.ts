@@ -1,15 +1,16 @@
 import { and, eq, isNull, or } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpPrograms, pdtpSheets } from "@/db/schema"
+import { assertPdtpProgramEditableState } from "./helpers"
 
 export type PdtpSheetCreateInput = {
   programId: string; code: string; label: string; area: string
 }
 
 async function assertDraftProgram(programId: string): Promise<void> {
-  const [program] = await db.select({ status: pdtpPrograms.status }).from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status !== "draft") throw new Error("Solo se pueden gestionar hojas de programas en estado borrador (draft).")
+  assertPdtpProgramEditableState(program)
 }
 
 export async function createPdtpSheet(input: PdtpSheetCreateInput) {

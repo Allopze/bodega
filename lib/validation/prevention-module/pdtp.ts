@@ -46,27 +46,67 @@ export const pdtpScheduleCellSchema = z.object({
   plannedQuantity: z.coerce.number().min(0),
 })
 
+export const pdtpRecurrenceRuleSchema = z.object({
+  frequency: z.enum(["weekly", "monthly", "quarterly", "semiannual", "annual", "custom"]),
+  interval: z.coerce.number().int().min(1).max(52).default(1),
+  plannedQuantity: z.coerce.number().positive().max(100000).default(1),
+  months: z.array(z.coerce.number().int().min(1).max(12)).max(12).optional(),
+  weekOfMonth: z.coerce.number().int().min(1).max(4).default(1),
+})
+
+const pdtpScheduleModeSchema = z.enum(["scheduled", "on_demand", "triggered"])
+const pdtpScheduleClassificationStatusSchema = z.enum(["confirmed", "needs_review"])
+const pdtpIndicatorModeSchema = z.enum(["planned_vs_completed", "closed_on_time", "completed_count", "not_applicable"])
+
 export const pdtpActivityUpdateSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),
-  activity: z.string().trim().max(200).optional(),
-  program: z.string().trim().max(200).optional(),
-  notes: z.string().max(2000).optional().or(z.literal("")),
+  objectiveOrder: z.coerce.number().int().min(1).max(999).optional(),
+  objective: z.string().trim().min(1).max(1000).optional(),
+  activity: z.string().trim().max(4000).optional(),
+  program: z.string().trim().max(2000).optional(),
+  notes: z.string().max(5000).optional().or(z.literal("")),
   responsibleSlugs: z.array(z.string().min(1)).optional(),
   responsibleDisplay: z.string().trim().max(160).optional(),
+  audienceRoles: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  scheduleMode: pdtpScheduleModeSchema.optional(),
+  scheduleClassificationStatus: pdtpScheduleClassificationStatusSchema.optional(),
+  recurrenceRule: pdtpRecurrenceRuleSchema.nullable().optional(),
+  triggerType: z.string().trim().max(100).nullable().optional(),
+  triggerDescription: z.string().trim().max(2000).nullable().optional(),
+  dueDays: z.coerce.number().int().min(0).max(3650).nullable().optional(),
+  evidenceRequirement: z.string().trim().max(3000).nullable().optional(),
+  indicatorMode: pdtpIndicatorModeSchema.optional(),
+  targetValue: z.coerce.number().min(0).max(1000000).nullable().optional(),
+  targetUnit: z.string().trim().max(80).nullable().optional(),
   scheduleOverrides: z.array(pdtpScheduleCellSchema).optional(),
 })
 
 export const pdtpActivityAddSchema = z.object({
   programId: z.string().min(1, "Programa requerido"),
-  objectiveOrder: z.coerce.number().int().min(1).max(8),
-  objective: z.string().trim().min(1).max(200),
-  activity: z.string().trim().min(1).max(200),
-  program: z.string().trim().min(1).max(200),
+  objectiveOrder: z.coerce.number().int().min(1).max(999),
+  objective: z.string().trim().min(1).max(1000),
+  activity: z.string().trim().min(1).max(4000),
+  program: z.string().trim().min(1).max(2000),
   responsibleSlugs: z.array(z.string().min(1)).min(1, "Al menos un responsable"),
   responsibleDisplay: z.string().trim().min(1).max(160),
-  notes: z.string().max(2000).optional().or(z.literal("")),
+  audienceRoles: z.array(z.string().trim().min(1).max(100)).max(50).default([]),
+  scheduleMode: pdtpScheduleModeSchema.default("scheduled"),
+  scheduleClassificationStatus: pdtpScheduleClassificationStatusSchema.default("confirmed"),
+  recurrenceRule: pdtpRecurrenceRuleSchema.nullable().optional(),
+  triggerType: z.string().trim().max(100).nullable().optional(),
+  triggerDescription: z.string().trim().max(2000).nullable().optional(),
+  dueDays: z.coerce.number().int().min(0).max(3650).nullable().optional(),
+  evidenceRequirement: z.string().trim().max(3000).nullable().optional(),
+  indicatorMode: pdtpIndicatorModeSchema.default("planned_vs_completed"),
+  targetValue: z.coerce.number().min(0).max(1000000).nullable().optional(),
+  targetUnit: z.string().trim().max(80).nullable().optional(),
+  notes: z.string().max(5000).optional().or(z.literal("")),
   sheetCodes: z.array(z.string().min(1)).min(1, "Al menos una hoja"),
   schedule: z.array(pdtpScheduleCellSchema).optional(),
+}).superRefine((value, ctx) => {
+  if (value.scheduleMode === "triggered" && !value.triggerDescription?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["triggerDescription"], message: "Describe el evento que genera la obligación" })
+  }
 })
 
 export const pdtpActivityOverrideSchema = z.object({
@@ -76,12 +116,54 @@ export const pdtpActivityOverrideSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
   week: z.coerce.number().int().min(1).max(4),
   plannedQuantity: z.coerce.number().min(0),
+  reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(1000),
+})
+
+export const pdtpObligationCreateSchema = z.object({
+  activityId: z.string().min(1, "Actividad requerida"),
+  worksiteId: z.string().min(1, "Faena requerida"),
+  origin: z.enum(["manual", "integration"]),
+  clientRequestId: z.string().trim().min(8).max(500),
+  sourceType: z.string().trim().min(1).max(100).nullable().optional(),
+  sourceId: z.string().trim().min(1).max(500).nullable().optional(),
+  sourceOccurredAt: z.string().datetime({ offset: true }).nullable().optional(),
+  plannedQuantity: z.coerce.number().positive().max(1000000).default(1),
+  manualReason: z.string().trim().max(3000).nullable().optional(),
+  sourceMetadata: z.record(z.string(), z.unknown()).default({}),
+}).superRefine((value, ctx) => {
+  if (value.origin === "manual" && (value.manualReason?.length ?? 0) < 10) {
+    ctx.addIssue({ code: "custom", path: ["manualReason"], message: "El registro manual exige un motivo de al menos 10 caracteres" })
+  }
+})
+
+export const pdtpObligationReportSchema = z.object({
+  obligationId: z.string().min(1, "Obligación requerida"),
+  executedQuantity: z.coerce.number().positive().max(1000000),
+  evidenceText: z.string().trim().max(5000).nullable().optional(),
+  evidenceUrl: pdtpEvidenceUrl.nullable().optional(),
+  evidencePhotos: z.array(pdtpEvidencePhotoItem).max(20).default([]),
+  reportedAt: z.string().datetime({ offset: true }).optional(),
+})
+
+export const pdtpObligationCancelSchema = z.object({
+  obligationId: z.string().min(1, "Obligación requerida"),
+  reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(3000),
 })
 
 export const pdtpProgramCreateSchema = z.object({
   year: z.coerce.number().int().min(2024, "El año debe ser al menos 2024").max(2100, "El año no puede superar 2100"),
   title: z.string().trim().min(1, "Título requerido").max(200, "Máximo 200 caracteres"),
   copySheetsFromProgramId: z.string().optional(),
+  templateVersionId: z.string().optional(),
+}).refine((value) => !(value.copySheetsFromProgramId && value.templateVersionId), {
+  path: ["templateVersionId"],
+  message: "Elige una plantilla o un programa anterior, no ambos",
+})
+
+export const pdtpTemplatePublishSchema = z.object({
+  sourceProgramId: z.string().min(1, "Programa requerido"),
+  name: z.string().trim().min(3, "El nombre debe tener al menos 3 caracteres").max(200),
+  description: z.string().trim().max(1000).optional().or(z.literal("")),
 })
 
 export const pdtpProgramUpdateSchema = z.object({
@@ -92,6 +174,29 @@ export const pdtpProgramUpdateSchema = z.object({
 
 export const pdtpProgramDeleteSchema = z.object({
   programId: z.string().min(1, "Programa requerido"),
+})
+
+export const pdtpReconcileDeclaredActorSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  historyEntryId: z.string().min(1, "Declaración requerida"),
+  linkedUserId: z.string().min(1).nullable(),
+  reason: z.string().trim().min(10, "Explica en al menos 10 caracteres a qué persona corresponde o por qué se desvincula."),
+})
+
+export const pdtpProgramLifecycleReasonSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(3000),
+})
+
+export const pdtpApprovalDecisionSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  stepId: z.string().min(1, "Paso de aprobación requerido"),
+  decision: z.enum(["approved", "rejected"]),
+  reason: z.string().trim().max(3000).optional(),
+}).superRefine((value, ctx) => {
+  if (value.decision === "rejected" && (value.reason?.trim().length ?? 0) < 10) {
+    ctx.addIssue({ code: "custom", path: ["reason"], message: "El motivo debe tener al menos 10 caracteres" })
+  }
 })
 
 export const pdtpSheetCreateSchema = z.object({
@@ -108,6 +213,20 @@ export const pdtpSheetDeleteSchema = z.object({
 
 export const pdtpActivityDeleteSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),
+})
+
+export const pdtpActivityDuplicateSchema = pdtpActivityDeleteSchema
+
+export const pdtpActivityBatchUpdateSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  activityIds: z.array(z.string().min(1)).min(1, "Selecciona al menos una actividad").max(200),
+  objectiveOrder: z.coerce.number().int().min(1).max(999).optional(),
+  objective: z.string().trim().min(1).max(1000).optional(),
+  responsibleSlugs: z.array(z.string().min(1)).min(1).optional(),
+  responsibleDisplay: z.string().trim().min(1).max(160).optional(),
+  evidenceRequirement: z.string().trim().max(3000).nullable().optional(),
+}).refine((value) => value.objectiveOrder !== undefined || value.responsibleSlugs !== undefined || value.evidenceRequirement !== undefined, {
+  message: "Selecciona al menos un cambio para aplicar",
 })
 
 export const pdtpActivityReorderSchema = z.object({

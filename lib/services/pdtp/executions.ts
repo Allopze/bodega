@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, ne } from "drizzle-orm"
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpExecutions, pdtpPrograms, worksites } from "@/db/schema"
+import { pdtpActivities, pdtpExecutions, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
 import { assertWorksiteAccess } from "./helpers"
 import type { WorksiteScope } from "./helpers"
@@ -43,6 +43,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
       eq(pdtpExecutions.year, data.year),
       eq(pdtpExecutions.month, data.month),
       eq(pdtpExecutions.week, data.week),
+      isNull(pdtpExecutions.obligationId),
     ))
     .limit(1)
   if (existing && existing.status === "approved") {
@@ -110,6 +111,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
   }).onConflictDoUpdate({
     target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
+    targetWhere: sql`${pdtpExecutions.obligationId} IS NULL`,
     set: {
       executedQuantity: data.executedQuantity, status: "submitted",
       evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
@@ -130,34 +132,46 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
 }
 
 export async function approvePdtpExecution(executionId: string, userId: string, scope: WorksiteScope) {
-  const [execution] = await db.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
-  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
-  if (execution.status === "approved") throw new Error("La ejecución ya fue aprobada.")
-  if (execution.status !== "submitted" && execution.status !== "rejected") {
-    throw new Error("Solo se pueden aprobar ejecuciones en estado 'submitted' o 'rejected'.")
-  }
-  assertWorksiteAccess(execution.worksiteId, scope)
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpExecutions} WHERE id = ${executionId} FOR UPDATE`)
+    const [execution] = await tx.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
+    if (!execution) throw new Error("Ejecución PDTP no encontrada.")
+    if (execution.status === "approved") throw new Error("La ejecución ya fue aprobada.")
+    if (execution.status !== "submitted" && execution.status !== "rejected") {
+      throw new Error("Solo se pueden aprobar ejecuciones en estado 'submitted' o 'rejected'.")
+    }
+    assertWorksiteAccess(execution.worksiteId, scope)
 
-  const now = new Date().toISOString()
-  const [updated] = await db.update(pdtpExecutions)
-    .set({
-      status: "approved",
-      approvedByUserId: userId,
-      approvedAt: now,
-      // Aprobar limpia cualquier rechazo previo.
-      rejectedByUserId: null,
-      rejectedAt: null,
-      rejectionReason: null,
-      updatedAt: now,
-    })
-    // Compare-and-set: si otro revisor cambió el estado entre la lectura y
-    // esta escritura, no se modifica la fila que ya dejó de ser aprobable.
-    .where(and(
-      eq(pdtpExecutions.id, executionId),
-      inArray(pdtpExecutions.status, ["submitted", "rejected"]),
-    )).returning()
-  if (!updated) throw new Error("La ejecución cambió de estado antes de poder aprobarse. Actualiza la página e inténtalo nuevamente.")
-  return updated
+    const now = new Date().toISOString()
+    const [updated] = await tx.update(pdtpExecutions)
+      .set({
+        status: "approved",
+        approvedByUserId: userId,
+        approvedAt: now,
+        rejectedByUserId: null,
+        rejectedAt: null,
+        rejectionReason: null,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(pdtpExecutions.id, executionId),
+        inArray(pdtpExecutions.status, ["submitted", "rejected"]),
+      )).returning()
+    if (!updated) throw new Error("La ejecución cambió de estado antes de poder aprobarse. Actualiza la página e inténtalo nuevamente.")
+    if (execution.obligationId) {
+      const [closed] = await tx.update(pdtpObligations).set({
+        status: "completed",
+        completedQuantity: execution.executedQuantity,
+        completedAt: now,
+        updatedAt: now,
+      }).where(and(
+        eq(pdtpObligations.id, execution.obligationId),
+        eq(pdtpObligations.status, "reported"),
+      )).returning({ id: pdtpObligations.id })
+      if (!closed) throw new Error("La obligación asociada cambió antes de completar su aprobación.")
+    }
+    return updated
+  })
 }
 
 export async function rejectPdtpExecution(
@@ -172,30 +186,39 @@ export async function rejectPdtpExecution(
   if (reason.length > 1000) {
     throw new Error("El motivo del rechazo no puede superar 1000 caracteres.")
   }
-  const [execution] = await db.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
-  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
-  if (execution.status === "approved") throw new Error("La ejecución ya fue aprobada, no se puede rechazar.")
-  if (execution.status === "rejected") throw new Error("La ejecución ya fue rechazada.")
-  if (execution.status !== "submitted") throw new Error("Solo se pueden rechazar ejecuciones en estado 'submitted'.")
-  assertWorksiteAccess(execution.worksiteId, scope)
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpExecutions} WHERE id = ${executionId} FOR UPDATE`)
+    const [execution] = await tx.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
+    if (!execution) throw new Error("Ejecución PDTP no encontrada.")
+    if (execution.status === "approved") throw new Error("La ejecución ya fue aprobada, no se puede rechazar.")
+    if (execution.status === "rejected") throw new Error("La ejecución ya fue rechazada.")
+    if (execution.status !== "submitted") throw new Error("Solo se pueden rechazar ejecuciones en estado 'submitted'.")
+    assertWorksiteAccess(execution.worksiteId, scope)
 
-  const now = new Date().toISOString()
-  const [updated] = await db.update(pdtpExecutions)
-    .set({
-      status: "rejected",
-      rejectedByUserId: userId,
-      rejectedAt: now,
-      rejectionReason: reason.trim(),
-      updatedAt: now,
-    })
-    // Compare-and-set simétrico: un rechazo jamás puede sobrescribir una
-    // aprobación que ocurrió después del SELECT de autorización/scope.
-    .where(and(
-      eq(pdtpExecutions.id, executionId),
-      eq(pdtpExecutions.status, "submitted"),
-    )).returning()
-  if (!updated) throw new Error("La ejecución cambió de estado antes de poder rechazarse. Actualiza la página e inténtalo nuevamente.")
-  return updated
+    const now = new Date().toISOString()
+    const [updated] = await tx.update(pdtpExecutions)
+      .set({
+        status: "rejected",
+        rejectedByUserId: userId,
+        rejectedAt: now,
+        rejectionReason: reason.trim(),
+        updatedAt: now,
+      })
+      .where(and(
+        eq(pdtpExecutions.id, executionId),
+        eq(pdtpExecutions.status, "submitted"),
+      )).returning()
+    if (!updated) throw new Error("La ejecución cambió de estado antes de poder rechazarse. Actualiza la página e inténtalo nuevamente.")
+    if (execution.obligationId) {
+      await tx.update(pdtpObligations).set({
+        status: sql`CASE WHEN ${pdtpObligations.dueAt} < ${now} THEN 'overdue' ELSE 'pending' END`,
+        completedQuantity: 0,
+        reportedAt: null,
+        updatedAt: now,
+      }).where(and(eq(pdtpObligations.id, execution.obligationId), eq(pdtpObligations.status, "reported")))
+    }
+    return updated
+  })
 }
 
 export type PendingPdtpExecution = {

@@ -25,6 +25,7 @@ import {
   users,
   worksites,
 } from "@/db/schema"
+import { assertPdtpProgramEditableState } from "./pdtp/helpers"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -688,6 +689,7 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
   return db.transaction(async (tx) => {
     const [activity] = await tx.select({ activity: pdtpActivities, program: pdtpPrograms }).from(pdtpActivities).innerJoin(pdtpPrograms, eq(pdtpPrograms.id, pdtpActivities.programId)).where(eq(pdtpActivities.id, data.activityId)).limit(1)
     if (!activity) throw new Error("Actividad PDTP no encontrada.")
+    assertPdtpProgramEditableState(activity.program)
     let sourceVersionSnapshot = "Fuente manual"
     let sourceEntityId = data.sourceId
     if (data.sourceType === "risk_control") {

@@ -1,27 +1,23 @@
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm"
 import { db } from "@/db"
 import { nanoid } from "@/lib/id"
 import {
   pdtpActivities,
+  pdtpActivityChecklists,
   pdtpActivitySchedule,
   pdtpPrograms,
-  pdtpResponsibleCatalog,
   pdtpSheetActivities,
   pdtpSheets,
   preventionPdtpSourceLinks,
   users as schemaUsers,
 } from "@/db/schema"
-import { SHEET_META } from "./constants"
-import { addPdtpChangeLogEntry, displayNameForSlug, collectResponsibleCatalog, isUniqueViolation, pdtpActivityId, pdtpProgramId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
-import type { PdtpSheetCode, PdtpWorkbook } from "@/lib/services/prevention-pdtp-catalog"
-import { extractPdtpCatalogFromWorkbook } from "@/lib/services/prevention-pdtp-catalog"
+import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, isUniqueViolation, pdtpActivityId, pdtpProgramId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
+import { copyPdtpApprovalSteps, ensureDefaultPdtpApprovalSteps } from "./approval-flow"
+import { pdtpActivityChecklistId } from "./checklist-domain"
+import { getPdtpTemplateVersion, instantiatePdtpTemplateVersion } from "./templates"
 
 export type PdtpProgramCreateInput = {
-  year: number; title: string; userId: string; copySheetsFromProgramId?: string
-}
-
-export type PdtpProgramImportInput = {
-  programId: string; workbook: PdtpWorkbook; userId: string
+  year: number; title: string; userId: string; copySheetsFromProgramId?: string; templateVersionId?: string
 }
 
 export async function createPdtpProgram(input: PdtpProgramCreateInput) {
@@ -29,12 +25,31 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
 
   try {
     return await db.transaction(async (tx) => {
+      if (input.copySheetsFromProgramId && input.templateVersionId) {
+        throw new Error("Selecciona un solo origen: plantilla o programa anterior.")
+      }
       const existingVersion = await tx.select({ version: pdtpPrograms.version })
         .from(pdtpPrograms)
         .where(eq(pdtpPrograms.year, input.year))
         .orderBy(desc(pdtpPrograms.version)).limit(1)
       const version = (existingVersion[0]?.version ?? 0) + 1
       const programId = pdtpProgramId(input.year, version)
+
+      const sourceProgram = input.copySheetsFromProgramId
+        ? (await tx.select({ id: pdtpPrograms.id, contentVersion: pdtpPrograms.contentVersion })
+            .from(pdtpPrograms)
+            .where(eq(pdtpPrograms.id, input.copySheetsFromProgramId))
+            .limit(1))[0]
+        : undefined
+      if (input.copySheetsFromProgramId && !sourceProgram) {
+        throw new Error("El programa de origen ya no existe.")
+      }
+      const templateVersion = input.templateVersionId
+        ? await getPdtpTemplateVersion(input.templateVersionId, tx)
+        : null
+      if (input.templateVersionId && !templateVersion) {
+        throw new Error("La versión de plantilla seleccionada ya no existe.")
+      }
 
       const [elaborator] = await tx
         .select({ name: schemaUsers.name })
@@ -46,16 +61,42 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
 
       const [program] = await tx.insert(pdtpPrograms).values({
         id: programId, year: input.year, version, status: "draft", title: input.title,
+        periodStart: `${input.year}-01-01`, periodEnd: `${input.year}-12-31`,
+        creationMode: templateVersion ? "template" : sourceProgram ? "program_copy" : "blank",
+        sourceProgramId: templateVersion?.sourceProgramId ?? sourceProgram?.id ?? null,
+        sourceContentVersion: templateVersion?.sourceContentVersion ?? sourceProgram?.contentVersion ?? null,
+        sourceTemplateVersionId: templateVersion?.id ?? null,
         elaboratedByUserId: input.userId, elaboratedByName, elaboratedByTitle,
         createdAt: now, updatedAt: now,
       }).returning()
       if (!program) throw new Error("No se pudo crear el programa PDTP.")
 
-      if (input.copySheetsFromProgramId) {
-        const sourceSheets = await tx.select().from(pdtpSheets)
+      if (templateVersion) {
+        await instantiatePdtpTemplateVersion({
+          templateVersionId: templateVersion.id,
+          targetProgramId: programId,
+          targetYear: input.year,
+          client: tx,
+        })
+      } else if (input.copySheetsFromProgramId) {
+        await copyPdtpApprovalSteps(input.copySheetsFromProgramId, programId, tx)
+      } else {
+        await ensureDefaultPdtpApprovalSteps(programId, tx)
+      }
+
+      if (templateVersion) {
+        // La estructura completa fue materializada desde la foto inmutable.
+      } else if (input.copySheetsFromProgramId) {
+        const sourceSheetCandidates = await tx.select().from(pdtpSheets)
           .where(and(
             or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, input.copySheetsFromProgramId)),
           ))
+        const sourceSheetByCode = new Map<string, typeof pdtpSheets.$inferSelect>()
+        for (const sheet of sourceSheetCandidates) {
+          const current = sourceSheetByCode.get(sheet.code)
+          if (!current || sheet.programId === input.copySheetsFromProgramId) sourceSheetByCode.set(sheet.code, sheet)
+        }
+        const sourceSheets = [...sourceSheetByCode.values()]
         if (sourceSheets.length > 0) {
           await tx.insert(pdtpSheets).values(sourceSheets.map((sheet) => ({
             id: `${programId}-${sheet.code}`,
@@ -86,6 +127,12 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
             id: newActivityId, programId, n: activity.n, objectiveOrder: activity.objectiveOrder,
             objective: activity.objective, activity: activity.activity, program: activity.program,
             responsibleSlugs: activity.responsibleSlugs, responsibleDisplay: activity.responsibleDisplay,
+            audienceRoles: activity.audienceRoles, scheduleMode: activity.scheduleMode,
+            scheduleClassificationStatus: activity.scheduleClassificationStatus,
+            recurrenceRule: activity.recurrenceRule, triggerType: activity.triggerType,
+            triggerDescription: activity.triggerDescription, dueDays: activity.dueDays,
+            evidenceRequirement: activity.evidenceRequirement, indicatorMode: activity.indicatorMode,
+            targetValue: activity.targetValue, targetUnit: activity.targetUnit,
             sourceSheetRow: activity.sourceSheetRow, notes: activity.notes, createdAt: now, updatedAt: now,
           })
         }
@@ -93,10 +140,11 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
 
         if (activityIdMap.size > 0) {
           const sourceActivityIds = [...activityIdMap.keys()]
-          const [scheduleRows, membershipRows, sourceLinks] = await Promise.all([
+          const [scheduleRows, membershipRows, sourceLinks, checklistRows] = await Promise.all([
             tx.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, sourceActivityIds)),
             tx.select().from(pdtpSheetActivities).where(inArray(pdtpSheetActivities.activityId, sourceActivityIds)),
             tx.select().from(preventionPdtpSourceLinks).where(and(inArray(preventionPdtpSourceLinks.activityId, sourceActivityIds), eq(preventionPdtpSourceLinks.isActive, true))),
+            tx.select().from(pdtpActivityChecklists).where(and(inArray(pdtpActivityChecklists.activityId, sourceActivityIds), eq(pdtpActivityChecklists.isActive, true))),
           ])
           const copiedSchedule: Array<typeof pdtpActivitySchedule.$inferInsert> = []
           for (const cell of scheduleRows) {
@@ -134,16 +182,31 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
               createdAt: now,
             }))).onConflictDoNothing()
           }
+
+          if (checklistRows.length > 0) {
+            await tx.insert(pdtpActivityChecklists).values(checklistRows.map((checklist) => {
+              const newActivityId = activityIdMap.get(checklist.activityId)!
+              return {
+                id: pdtpActivityChecklistId(newActivityId, checklist.version),
+                activityId: newActivityId,
+                programId,
+                version: checklist.version,
+                label: checklist.label,
+                definitionJson: checklist.definitionJson,
+                isActive: checklist.isActive,
+                createdAt: now,
+                updatedAt: now,
+              }
+            })).onConflictDoNothing()
+          }
         }
       } else {
-        await tx.insert(pdtpSheets).values((Object.entries(SHEET_META) as Array<[PdtpSheetCode, typeof SHEET_META[PdtpSheetCode]]>).map(([code, meta]) => ({
-            id: `${programId}-${code}`,
-            code,
-            programId,
-            label: meta.label,
-            area: meta.area,
-            defaultScopeRoles: meta.defaultScopeRoles,
-          })))
+        // Vista única por defecto para un programa en blanco: no asume la
+        // estructura de ocho hojas de la plantilla 2026.
+        await tx.insert(pdtpSheets).values({
+          id: `${programId}-pdtp_general`, code: "pdtp_general", programId,
+          label: "Vista general", area: "prevencion", defaultScopeRoles: ["prevencionista", "administrador"],
+        })
       }
 
       await addPdtpChangeLogEntry(programId, version, input.userId, "lifecycle", null, { status: "draft" }, "Programa creado.", tx)
@@ -163,7 +226,7 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
 export async function updatePdtpProgram(programId: string, input: { title?: string; complianceTarget?: number }, userId: string) {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status !== "draft") throw new Error("Solo se pueden editar programas en estado borrador (draft).")
+  assertPdtpProgramEditableState(program)
 
   const now = new Date().toISOString()
   const before: Record<string, unknown> = {}
@@ -202,124 +265,11 @@ export async function getPdtpProgram(programId: string) {
 export async function deletePdtpProgram(programId: string) {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status !== "draft") throw new Error("Solo se pueden eliminar programas en estado borrador (draft).")
+  assertPdtpProgramEditableState(program)
 
   // El delete cascadea a hojas/actividades/schedule/ejecuciones/overrides/
   // change_log (FK ON DELETE CASCADE). No escribimos un changelog "programa
   // eliminado" después: el programa ya no existe, y la fila violaría su
   // propia FK (además, el cascade ya borró el historial previo).
   await db.delete(pdtpPrograms).where(eq(pdtpPrograms.id, programId))
-}
-
-export async function importPdtpFromExcel(input: PdtpProgramImportInput) {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
-  if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status !== "draft") throw new Error("Solo se pueden importar actividades a programas en estado borrador (draft).")
-
-  const catalog = extractPdtpCatalogFromWorkbook(input.workbook)
-  const now = new Date().toISOString()
-
-  return db.transaction(async (tx) => {
-    let sheetCount = 0
-    let activityCount = 0
-
-    // Re-import es reemplazo total, no acumulación: antes un segundo import
-    // solo agregaba actividades nuevas cuyo membership chocaba (mismo id
-    // por `activityNumber` original) y quedaba sin hoja asociada —
-    // duplicación silenciosa. Partir de cero evita eso; el cascade de
-    // `pdtp_activities` limpia schedule + sheet_activities.
-    await tx.delete(pdtpActivities).where(eq(pdtpActivities.programId, input.programId))
-
-    // Sync responsible catalog in one statement. `excluded` keeps every row's
-    // own values during a bulk upsert instead of reusing the first item.
-    const responsibleRows = collectResponsibleCatalog(catalog)
-    if (responsibleRows.length > 0) {
-      await tx.insert(pdtpResponsibleCatalog).values(responsibleRows).onConflictDoUpdate({
-        target: pdtpResponsibleCatalog.slug,
-        set: {
-          displayName: sql`excluded.display_name`,
-          roleName: sql`excluded.role_name`,
-          kind: sql`excluded.kind`,
-          notes: sql`excluded.notes`,
-        },
-      })
-    }
-
-    // Import sheet-scoped copies
-    const sheetRows: Array<typeof pdtpSheets.$inferInsert> = []
-    for (const [code, meta] of Object.entries(SHEET_META) as Array<[PdtpSheetCode, typeof SHEET_META[PdtpSheetCode]]>) {
-      if (catalog.sheetActivities[code]) {
-        sheetRows.push({
-          id: `${input.programId}-${code}`,
-          code,
-          programId: input.programId,
-          label: meta.label,
-          area: meta.area,
-          defaultScopeRoles: meta.defaultScopeRoles,
-        })
-      }
-    }
-    sheetCount = sheetRows.length
-    if (sheetRows.length > 0) {
-      await tx.insert(pdtpSheets).values(sheetRows).onConflictDoUpdate({
-          target: [pdtpSheets.id],
-          set: {
-            code: sql`excluded.code`,
-            label: sql`excluded.label`,
-            area: sql`excluded.area`,
-            defaultScopeRoles: sql`excluded.default_scope_roles`,
-          },
-        })
-    }
-
-    const activityIdByNumber = new Map<number, string>()
-    const activityRows: Array<typeof pdtpActivities.$inferInsert> = []
-    const scheduleRows: Array<typeof pdtpActivitySchedule.$inferInsert> = []
-
-    for (const activity of catalog.activities) {
-      const newN = activityCount + 1
-      const activityId = pdtpActivityId(input.programId, newN)
-      activityIdByNumber.set(activity.n, activityId)
-      activityCount++
-
-      activityRows.push({
-        id: activityId, programId: input.programId, n: newN, objectiveOrder: activity.objectiveOrder,
-        objective: activity.objective, activity: activity.activity, program: activity.program,
-        responsibleSlugs: activity.responsibleSlugs,
-        responsibleDisplay: activity.responsibleSlugs.map((s) => displayNameForSlug(s, s)).join(", "),
-        sourceSheetRow: activity.sourceSheetRow, notes: null, createdAt: now, updatedAt: now,
-      })
-
-      for (const cell of activity.schedule) {
-        scheduleRows.push({
-          id: pdtpScheduleId(activityId, program.year, cell.month, cell.week), activityId,
-          year: program.year, month: cell.month, week: cell.week, plannedQuantity: cell.plannedQuantity, sourceColumn: cell.sourceColumn,
-        })
-      }
-    }
-    if (activityRows.length > 0) await tx.insert(pdtpActivities).values(activityRows)
-    if (scheduleRows.length > 0) await tx.insert(pdtpActivitySchedule).values(scheduleRows).onConflictDoNothing()
-
-    const membershipRows: Array<typeof pdtpSheetActivities.$inferInsert> = []
-    for (const [sheetCode, activityNumbers] of Object.entries(catalog.sheetActivities) as Array<[PdtpSheetCode, number[]]>) {
-      const sheetId = `${input.programId}-${sheetCode}`
-      let row = 0
-      for (const activityNumber of activityNumbers) {
-        const activityId = activityIdByNumber.get(activityNumber)
-        if (activityId) {
-          row++
-          membershipRows.push({
-            id: pdtpSheetActivityId(input.programId, sheetCode, activityNumber),
-            sheetId, sheetCode, activityId,
-            sheetRow: row, displayOrder: row,
-          })
-        }
-      }
-    }
-    if (membershipRows.length > 0) await tx.insert(pdtpSheetActivities).values(membershipRows).onConflictDoNothing()
-
-    await addPdtpChangeLogEntry(input.programId, program.version, input.userId, "import:excel", null, { sheetCount, activityCount }, `${activityCount} actividades importadas desde Excel en ${sheetCount} hojas.`, tx)
-
-    return { sheetCount, activityCount }
-  })
 }

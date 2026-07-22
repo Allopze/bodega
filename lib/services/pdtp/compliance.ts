@@ -21,6 +21,10 @@ export type PdtpComplianceIndicators = {
   monthly: PdtpComplianceMonth[]
   quarterly: Array<{ quarter: number; planned: number; executed: number; percent: number | null }>
   annual: { planned: number; executed: number; percent: number | null }
+  /** Última `updatedAt` entre las ejecuciones aprobadas que componen el
+   * indicador, o `null` si no hay ninguna todavía. No es la hora del
+   * cálculo (eso es "corte", ver `asOf` en el caller) sino de los datos. */
+  lastExecutionUpdatedAt: string | null
 }
 
 export async function getPdtpComplianceIndicators(yearOrProgramId: number | string, worksiteId?: string): Promise<PdtpComplianceIndicators | null> {
@@ -47,6 +51,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
       monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null })),
       quarterly: Array.from({ length: 4 }, (_, i) => ({ quarter: i + 1, planned: 0, executed: 0, percent: null })),
       annual: { planned: 0, executed: 0, percent: null },
+      lastExecutionUpdatedAt: null,
     }
   }
 
@@ -91,7 +96,56 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null,
   }
 
-  return { programId: program.id, year, target: program.complianceTarget, monthly, quarterly, annual }
+  const lastExecutionUpdatedAt = approvedExecutionRows.reduce<string | null>((latest, row) => {
+    return !latest || row.updatedAt > latest ? row.updatedAt : latest
+  }, null)
+
+  return { programId: program.id, year, target: program.complianceTarget, monthly, quarterly, annual, lastExecutionUpdatedAt }
+}
+
+/**
+ * Agrega el indicador de cumplimiento sobre varias faenas autorizadas (por
+ * ejemplo, todas las que ve un usuario global) reutilizando el cálculo
+ * por-faena ya correcto, en vez de omitir `worksiteId` — omitirlo deja
+ * `executed` en 0 aunque exista avance real (UX-01). Falla cerrado: sin
+ * faenas explícitas no hay agregado.
+ */
+export async function getPdtpComplianceIndicatorsForScope(
+  yearOrProgramId: number | string,
+  worksiteIds: string[],
+): Promise<(PdtpComplianceIndicators & { worksiteCount: number }) | null> {
+  if (worksiteIds.length === 0) return null
+  const perWorksite = await Promise.all(worksiteIds.map((id) => getPdtpComplianceIndicators(yearOrProgramId, id)))
+  const resolved = perWorksite.filter((x): x is PdtpComplianceIndicators => x !== null)
+  if (resolved.length === 0) return null
+
+  const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
+    const planned = resolved.reduce((sum, entry) => sum + entry.monthly[i]!.planned, 0)
+    const executed = resolved.reduce((sum, entry) => sum + entry.monthly[i]!.executed, 0)
+    return { month: i + 1, planned, executed, percent: planned > 0 ? Math.round((executed / planned) * 100) / 100 : null }
+  })
+  const quarterly = Array.from({ length: 4 }, (_, q) => {
+    const months = monthly.slice(q * 3, q * 3 + 3)
+    const planned = months.reduce((s, m) => s + m.planned, 0)
+    const executed = months.reduce((s, m) => s + m.executed, 0)
+    return { quarter: q + 1, planned, executed, percent: planned > 0 ? Math.round((executed / planned) * 100) / 100 : null }
+  })
+  const annualPlanned = monthly.reduce((s, m) => s + m.planned, 0)
+  const annualExecuted = monthly.reduce((s, m) => s + m.executed, 0)
+  const lastExecutionUpdatedAt = resolved.reduce<string | null>((latest, entry) => {
+    return entry.lastExecutionUpdatedAt && (!latest || entry.lastExecutionUpdatedAt > latest) ? entry.lastExecutionUpdatedAt : latest
+  }, null)
+
+  return {
+    programId: resolved[0]!.programId,
+    year: resolved[0]!.year,
+    target: resolved[0]!.target,
+    monthly,
+    quarterly,
+    annual: { planned: annualPlanned, executed: annualExecuted, percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null },
+    lastExecutionUpdatedAt,
+    worksiteCount: worksiteIds.length,
+  }
 }
 
 /* ── Cumplimiento integral (3 ejes: ejecución + verificación + cierre) ────── */

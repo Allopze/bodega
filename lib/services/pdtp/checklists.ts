@@ -11,7 +11,7 @@ import { db } from "@/db"
 import { pdtpActivities, pdtpActivityChecklists } from "@/db/schema"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { nanoid } from "@/lib/id"
-import { isUniqueViolation } from "./helpers"
+import { assertPdtpProgramEditable, isUniqueViolation } from "./helpers"
 
 export type PdtpChecklistTemplateInput = {
   activityId: string
@@ -45,6 +45,7 @@ export async function savePdtpActivityChecklist(
   input: PdtpChecklistTemplateInput,
 ): Promise<PdtpChecklistTemplate> {
   const programId = await getActivityProgramId(input.activityId)
+  await assertPdtpProgramEditable(programId)
   const now = new Date().toISOString()
 
   return db.transaction(async (tx) => {
@@ -116,6 +117,12 @@ export async function listProgramActiveChecklists(programId: string): Promise<Pd
 
 /** Elimina una plantilla (solo si no tiene instancias de ejecución asociadas). */
 export async function deletePdtpActivityChecklist(checklistId: string): Promise<void> {
+  const [checklist] = await db.select({ programId: pdtpActivityChecklists.programId })
+    .from(pdtpActivityChecklists)
+    .where(eq(pdtpActivityChecklists.id, checklistId))
+    .limit(1)
+  if (!checklist) throw new Error("Plantilla de checklist PDTP no encontrada.")
+  await assertPdtpProgramEditable(checklist.programId)
   await db.delete(pdtpActivityChecklists).where(eq(pdtpActivityChecklists.id, checklistId))
 }
 

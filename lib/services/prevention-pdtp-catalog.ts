@@ -43,6 +43,37 @@ export type PdtpScheduleCell = {
   sourceColumn: string
 }
 
+export type PdtpImportedExecutionCell = {
+  activityNumber: number
+  month: number
+  week: number
+  executedQuantity: number
+  sourceSheet: string
+  sourceRow: number
+  sourceColumn: string
+  sourceCell: string
+}
+
+export type PdtpWorkbookMetadata = {
+  title: string | null
+  documentCode: string | null
+  indicatorObjective: string | null
+  indicatorType: string | null
+  indicatorFormula: string | null
+  indicatorTarget: number | null
+  indicatorPeriodicity: string | null
+  measurementOwner: string | null
+  elaboratedByName: string | null
+  elaboratedByTitle: string | null
+  elaboratedAt: string | null
+  approvedByName: string | null
+  approvedByTitle: string | null
+  approvedAt: string | null
+  changeControl: Array<{ date: string | null; description: string }>
+  roleLegend: Array<{ code: string; label: string }>
+  scheduleLegend: string | null
+}
+
 export type PdtpCatalogActivity = {
   n: number
   objectiveOrder: number
@@ -59,6 +90,9 @@ export type PdtpCatalog = {
   objectives: PdtpObjective[]
   activities: PdtpCatalogActivity[]
   sheetActivities: Record<PdtpSheetCode, number[]>
+  importedExecutions?: PdtpImportedExecutionCell[]
+  metadata?: PdtpWorkbookMetadata
+  warnings?: string[]
 }
 
 type ActivityCandidate = {
@@ -79,10 +113,13 @@ export async function readPdtpWorkbook(filePath: string): Promise<PdtpWorkbook> 
 export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCatalog {
   const general = workbook.getWorksheet("PDTP GENERAL")
   if (!general) throw new Error("No se encontro la hoja PDTP GENERAL en el libro PDTP.")
+  validateGeneralScheduleStructure(general)
 
   const generalRows = sheetRows(general)
   const objectives: PdtpObjective[] = []
   const activities: PdtpCatalogActivity[] = []
+  const importedExecutions: PdtpImportedExecutionCell[] = []
+  const scheduleWarnings: string[] = []
   let currentObjective: PdtpObjective | null = null
 
   for (let index = 0; index < generalRows.length; index++) {
@@ -120,6 +157,8 @@ export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCata
       sourceSheetRow: candidate.sourceSheetRow,
       schedule: extractSchedule(row, candidate.plannedStartIndex),
     })
+    importedExecutions.push(...extractExecutedCells(row, candidate, general.name))
+    scheduleWarnings.push(...inspectScheduleCells(row, candidate, general.name))
   }
 
   const expected = Array.from({ length: 89 }, (_, index) => index + 1)
@@ -132,6 +171,9 @@ export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCata
     objectives,
     activities,
     sheetActivities: extractSheetMembership(workbook),
+    importedExecutions,
+    metadata: extractWorkbookMetadata(general),
+    warnings: [...extractWorkbookWarnings(general), ...scheduleWarnings],
   }
 }
 
@@ -201,6 +243,113 @@ function extractSchedule(row: unknown[], plannedStartIndex: number): PdtpSchedul
   }
 
   return schedule
+}
+
+function extractExecutedCells(
+  row: unknown[],
+  activity: ActivityCandidate,
+  sourceSheet: string,
+): PdtpImportedExecutionCell[] {
+  const executions: PdtpImportedExecutionCell[] = []
+  for (let executedIndex = activity.plannedStartIndex + 1; executedIndex < row.length; executedIndex += 2) {
+    const quantity = numericValue(row[executedIndex])
+    if (quantity === null || quantity <= 0) continue
+    const sequence = (executedIndex - (activity.plannedStartIndex + 1)) / 2
+    const sourceColumn = encodeColumn(executedIndex)
+    executions.push({
+      activityNumber: activity.n,
+      month: Math.floor(sequence / 4) + 1,
+      week: (sequence % 4) + 1,
+      executedQuantity: quantity,
+      sourceSheet,
+      sourceRow: activity.sourceSheetRow,
+      sourceColumn,
+      sourceCell: `${sourceColumn}${activity.sourceSheetRow}`,
+    })
+  }
+  return executions
+}
+
+function extractWorkbookMetadata(sheet: ExcelJS.Worksheet): PdtpWorkbookMetadata {
+  const text = (address: string) => normalizeWhitespace(normalizeCell(sheet.getCell(address).value)) || null
+  const afterLabel = (address: string, label: RegExp) => text(address)?.replace(label, "").trim() || null
+  const dateFromLabel = (address: string) => afterLabel(address, /^fecha\s*:\s*/i)
+  const indicatorTarget = numericValue(sheet.getCell("AP7").value)
+  const changeDate = text("C119")
+  const changeDescription = text("D119")
+  const roleLegend = [123, 124, 125, 126, 127].flatMap((row) => {
+    const code = normalizeWhitespace(normalizeCell(sheet.getCell(`B${row}`).value))
+    const label = normalizeWhitespace(normalizeCell(sheet.getCell(`C${row}`).value))
+    return code && label ? [{ code, label }] : []
+  })
+
+  return {
+    title: text("A2"),
+    documentCode: afterLabel("CJ2", /^c[oó]digo\s*:\s*/i),
+    indicatorObjective: text("A7"),
+    indicatorType: text("I7"),
+    indicatorFormula: text("Z7"),
+    indicatorTarget,
+    indicatorPeriodicity: text("BD7"),
+    measurementOwner: text("BT7"),
+    elaboratedByName: text("C113"),
+    elaboratedByTitle: afterLabel("C116", /^cargo\s*:\s*/i),
+    elaboratedAt: dateFromLabel("C115"),
+    approvedByName: text("E113"),
+    approvedByTitle: afterLabel("E116", /^cargo\s*:\s*/i),
+    approvedAt: dateFromLabel("E115"),
+    changeControl: changeDescription ? [{ date: changeDate, description: changeDescription }] : [],
+    roleLegend,
+    scheduleLegend: text("C129"),
+  }
+}
+
+function validateGeneralScheduleStructure(sheet: ExcelJS.Worksheet) {
+  const firstColumn = 6 // F
+  const pairs = 48
+  for (let sequence = 0; sequence < pairs; sequence++) {
+    const plannedColumn = firstColumn + sequence * 2
+    const executedColumn = plannedColumn + 1
+    const plannedLabel = normalizeWhitespace(normalizeCell(sheet.getRow(12).getCell(plannedColumn).value)).toLocaleUpperCase("es-CL")
+    const executedLabel = normalizeWhitespace(normalizeCell(sheet.getRow(12).getCell(executedColumn).value)).toLocaleUpperCase("es-CL")
+    if (plannedLabel !== "P" || executedLabel !== "E") {
+      throw new Error(`Estructura PDTP alterada: se esperaba el par P/E en ${encodeColumn(plannedColumn - 1)}12:${encodeColumn(executedColumn - 1)}12.`)
+    }
+  }
+}
+
+function inspectScheduleCells(row: unknown[], activity: ActivityCandidate, sourceSheet: string): string[] {
+  const warnings: string[] = []
+  for (let offset = 0; offset < 96; offset++) {
+    const index = activity.plannedStartIndex + offset
+    const value = row[index]
+    if (value && typeof value === "object" && "formula" in value && !("result" in value)) {
+      warnings.push(`La fórmula de ${sourceSheet}!${encodeColumn(index)}${activity.sourceSheetRow} no tiene resultado evaluable.`)
+      continue
+    }
+    const normalized = normalizeWhitespace(normalizeCell(value))
+    if (!normalized) {
+      if (value && typeof value === "object" && "formula" in value) {
+        warnings.push(`La fórmula de ${sourceSheet}!${encodeColumn(index)}${activity.sourceSheetRow} no tiene resultado evaluable.`)
+      }
+      continue
+    }
+    const numeric = numericValue(value)
+    if (numeric === null) {
+      warnings.push(`La celda ${sourceSheet}!${encodeColumn(index)}${activity.sourceSheetRow} contiene un valor P/E desconocido: “${normalized.slice(0, 80)}”.`)
+    } else if (numeric < 0) {
+      warnings.push(`La celda ${sourceSheet}!${encodeColumn(index)}${activity.sourceSheetRow} contiene una cantidad negativa no importable.`)
+    }
+  }
+  return warnings
+}
+
+function extractWorkbookWarnings(sheet: ExcelJS.Worksheet): string[] {
+  const warnings: string[] = []
+  if (!normalizeWhitespace(normalizeCell(sheet.getCell("Z7").value))) {
+    warnings.push("La fórmula del indicador no tiene un valor legible en la celda Z7; debe reconciliarse antes de aprobar la migración.")
+  }
+  return warnings
 }
 
 function parseActivityRow(row: unknown[], sourceSheetRow: number): ActivityCandidate | null {

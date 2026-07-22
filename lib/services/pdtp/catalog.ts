@@ -9,9 +9,10 @@ import {
   pdtpSheets,
   users as schemaUsers,
 } from "@/db/schema"
-import { SHEET_META } from "./constants"
+import { SHEET_META } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
 import { collectResponsibleCatalog, displayNameForActivity, pdtpActivityId, pdtpProgramId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
 import type { PdtpCatalog, PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
+import { ensureDefaultPdtpApprovalSteps } from "./approval-flow"
 
 type LoadPdtpCatalogInput = {
   year: number; version: number; title: string; catalog: PdtpCatalog; userId: string
@@ -41,12 +42,14 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
 
   const [program] = await database.insert(pdtpPrograms).values({
     id: programId, year: input.year, version: input.version, status: "draft", title: input.title,
+    creationMode: "xlsx_import",
     elaboratedByUserId: input.userId, elaboratedByName,
     elaboratedByTitle, createdAt: now, updatedAt: now,
   }).onConflictDoUpdate({
     target: [pdtpPrograms.year, pdtpPrograms.version],
     set: {
       title: input.title,
+      creationMode: "xlsx_import",
       elaboratedByUserId: input.userId,
       elaboratedByName,
       elaboratedByTitle,
@@ -54,6 +57,7 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
     },
   }).returning()
   if (!program) throw new Error("No se pudo cargar el programa PDTP.")
+  await ensureDefaultPdtpApprovalSteps(program.id, database)
 
   for (const responsible of collectResponsibleCatalog(input.catalog)) {
     await database.insert(pdtpResponsibleCatalog).values(responsible).onConflictDoUpdate({
@@ -80,6 +84,8 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
       objective: activity.objective, activity: activity.activity, program: activity.program,
       responsibleSlugs: activity.responsibleSlugs,
       responsibleDisplay: displayNameForActivity(activity.responsibleSlugs, activity.responsibleDisplay),
+      scheduleMode: activity.schedule.length > 0 ? "scheduled" : "on_demand",
+      indicatorMode: activity.schedule.length > 0 ? "planned_vs_completed" : "closed_on_time",
       sourceSheetRow: activity.sourceSheetRow, createdAt: now, updatedAt: now,
     }).onConflictDoUpdate({
       target: [pdtpActivities.programId, pdtpActivities.n],
@@ -87,6 +93,9 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
         objectiveOrder: activity.objectiveOrder, objective: activity.objective,
         activity: activity.activity, program: activity.program, responsibleSlugs: activity.responsibleSlugs,
         responsibleDisplay: displayNameForActivity(activity.responsibleSlugs, activity.responsibleDisplay),
+        scheduleMode: activity.schedule.length > 0 ? "scheduled" : "on_demand",
+        scheduleClassificationStatus: activity.schedule.length > 0 ? "confirmed" : "needs_review",
+        indicatorMode: activity.schedule.length > 0 ? "planned_vs_completed" : "closed_on_time",
         sourceSheetRow: activity.sourceSheetRow, updatedAt: now,
       },
     })

@@ -1,13 +1,20 @@
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
-import { SHEET_EXPORT_NAMES, MONTH_LABELS } from "./constants"
-import { emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
+import { MONTH_LABELS } from "./constants"
+import { SHEET_EXPORT_NAMES } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
+import { assertWorksiteAccess, emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
+import type { WorksiteScope } from "./helpers"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import type { ReportData, ReportCell, ReportSheet } from "@/lib/reports/export"
+// `sheetCode` es `string`, no `PdtpSheetCode`: un programa distinto al 2026
+// puede tener vistas propias con cualquier código. `SHEET_EXPORT_NAMES` solo
+// cubre las ocho hojas de la referencia 2026; para cualquier otro código se
+// usa `sheet.label`, que sí es genérico (ver getPdtpSheetViewByProgram).
 import { listActionsByProgram, countActionsByExecution } from "./action-plan"
 import { listFollowups } from "./followups"
 import { countNoCumpleByExecution } from "./execution-checklists"
+import { readPdtpActivityContent } from "./activity-content"
 
 export type PdtpSheetView = {
   program: typeof pdtpPrograms.$inferSelect
@@ -45,7 +52,7 @@ export type PdtpSheetView = {
  * Vista de hoja PDTP por programId. Busca la hoja (template o program-scoped)
  * y filtra las actividades al programa indicado.
  */
-export async function getPdtpSheetViewByProgram(programId: string, sheetCode: PdtpSheetCode, worksiteId?: string): Promise<PdtpSheetView | null> {
+export async function getPdtpSheetViewByProgram(programId: string, sheetCode: string, worksiteId?: string): Promise<PdtpSheetView | null> {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) return null
 
@@ -142,9 +149,10 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: Pd
   return { program, sheet, activities, monthlyTotals }
 }
 
-export async function buildPdtpExport({ programId, year, sheetCode, worksiteId }: {
-  programId?: string; year: number; sheetCode: PdtpSheetCode; worksiteId?: string
+export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, scope = "all" }: {
+  programId?: string; year: number; sheetCode: string; worksiteId: string; scope?: WorksiteScope
 }): Promise<ReportData> {
+  assertWorksiteAccess(worksiteId, scope)
   const view = programId
     ? await getPdtpSheetViewByProgram(programId, sheetCode, worksiteId)
     : await getPdtpSheetView(year, sheetCode, worksiteId)
@@ -156,27 +164,33 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId }
   }
 
   const monthHeaders = MONTH_LABELS.flatMap((month) => [`${month} P`, `${month} E`])
-  const headers = ["N°", "Objetivo", "Actividad", "Programa", "Responsables", ...monthHeaders, "Plan anual", "Ejecutado anual", "%"]
+  const headers = ["N°", "Objetivo", "Actividad preventiva", "Guía de ejecución", "Responsables", ...monthHeaders, "Plan anual", "Ejecutado anual", "%"]
   const rows: ReportCell[][] = view.activities.map((activity) => {
+    const content = readPdtpActivityContent(activity)
     const monthly = MONTH_LABELS.flatMap((_, index) => [activity.monthlyPlanned[index] ?? 0, activity.monthlyExecuted[index] ?? 0])
     const percent = activity.totalPlanned > 0 ? Math.round((activity.totalExecuted / activity.totalPlanned) * 100) : null
-    return [activity.n, activity.objective, activity.activity, activity.program, activity.responsibleDisplay, ...monthly, activity.totalPlanned, activity.totalExecuted, percent]
+    return [activity.n, activity.objective, content.activityDescription, content.executionGuidance, activity.responsibleDisplay, ...monthly, activity.totalPlanned, activity.totalExecuted, percent]
   })
 
-  const actionItems = await listActionsByProgram(view.program.id, { worksiteId })
+  const actionItems = await listActionsByProgram(view.program.id, { worksiteId, scope })
   const actionPlanSheet = buildActionPlanSheet(actionItems)
   const seguimientoSheet = await buildSeguimientoSheet(actionItems)
+
+  // Nombre de hoja: el catálogo de nombres 2026 solo cubre sus ocho códigos
+  // fijos; cualquier otro programa usa el label real de su vista (`view.sheet`),
+  // que ya es un dato general por-programa y no depende del adaptador 2026.
+  const worksheetName = SHEET_EXPORT_NAMES[sheetCode as PdtpSheetCode] ?? view.sheet.label
 
   // El filename usa el año real del programa (view.program.year), no el
   // arg `year`: cuando el caller pasa `programId`, ese `year` puede venir
   // de un `?year=` legado que no coincide con el programa resuelto.
   return {
     filenameBase: `pdtp-sg-sst-${view.program.year}-${sheetCode}`,
-    worksheetName: SHEET_EXPORT_NAMES[sheetCode],
+    worksheetName,
     headers,
     rows,
     sheets: [
-      { worksheetName: SHEET_EXPORT_NAMES[sheetCode], headers, rows },
+      { worksheetName, headers, rows },
       actionPlanSheet,
       seguimientoSheet,
     ],
@@ -207,7 +221,7 @@ async function buildSeguimientoSheet(items: Awaited<ReturnType<typeof listAction
 /**
  * Backward-compatible: busca por año. Usa el programa activo o el más reciente.
  */
-export async function getPdtpSheetView(year: number, sheetCode: PdtpSheetCode, worksiteId?: string): Promise<PdtpSheetView | null> {
+export async function getPdtpSheetView(year: number, sheetCode: string, worksiteId?: string): Promise<PdtpSheetView | null> {
   const programs = await db.select().from(pdtpPrograms)
     .where(eq(pdtpPrograms.year, year))
     .orderBy(desc(pdtpPrograms.version))

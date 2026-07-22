@@ -26,6 +26,7 @@ export type PdtpOverrideInput = {
   month: number
   week: number
   plannedQuantity: number
+  reason: string
 }
 
 function overrideId(activityId: string, worksiteId: string, year: number, month: number, week: number): string {
@@ -69,6 +70,17 @@ export async function setPdtpActivityOverride(
 
   const now = new Date().toISOString()
   const id = overrideId(input.activityId, input.worksiteId, input.year, input.month, input.week)
+  const [before] = await db
+    .select()
+    .from(pdtpActivityScheduleOverrides)
+    .where(and(
+      eq(pdtpActivityScheduleOverrides.activityId, input.activityId),
+      eq(pdtpActivityScheduleOverrides.worksiteId, input.worksiteId),
+      eq(pdtpActivityScheduleOverrides.year, input.year),
+      eq(pdtpActivityScheduleOverrides.month, input.month),
+      eq(pdtpActivityScheduleOverrides.week, input.week),
+    ))
+    .limit(1)
 
   const [row] = await db
     .insert(pdtpActivityScheduleOverrides)
@@ -105,8 +117,22 @@ export async function setPdtpActivityOverride(
   // el resto del módulo, que sí registra "control de cambios".
   await addPdtpChangeLogEntry(
     activity.programId, program.version, userId, `override:${activity.n}`,
-    null, { worksiteId: input.worksiteId, year: input.year, month: input.month, week: input.week, plannedQuantity: input.plannedQuantity },
-    `Meta por faena fijada para actividad ${activity.n} (faena ${input.worksiteId}, ${input.month}/${input.week}).`,
+    before ? {
+      worksiteId: before.worksiteId,
+      year: before.year,
+      month: before.month,
+      week: before.week,
+      plannedQuantity: before.plannedQuantity,
+    } : null,
+    {
+      worksiteId: input.worksiteId,
+      year: input.year,
+      month: input.month,
+      week: input.week,
+      plannedQuantity: input.plannedQuantity,
+      reason: input.reason,
+    },
+    `Meta por faena ${before ? "actualizada" : "creada"} para actividad ${activity.n}. Motivo: ${input.reason}`,
   )
   return row
 }
@@ -130,6 +156,29 @@ export async function deletePdtpActivityOverride(
     assertPdtpWorksiteAccess(input.worksiteId, scope)
   }
 
+  const [existing] = await db
+    .select()
+    .from(pdtpActivityScheduleOverrides)
+    .where(and(
+      eq(pdtpActivityScheduleOverrides.activityId, input.activityId),
+      eq(pdtpActivityScheduleOverrides.worksiteId, input.worksiteId),
+      eq(pdtpActivityScheduleOverrides.year, input.year),
+      eq(pdtpActivityScheduleOverrides.month, input.month),
+      eq(pdtpActivityScheduleOverrides.week, input.week),
+    ))
+    .limit(1)
+  if (!existing) throw new Error("Override PDTP no encontrado.")
+
+  const [program] = await db
+    .select({ status: pdtpPrograms.status, version: pdtpPrograms.version })
+    .from(pdtpPrograms)
+    .where(eq(pdtpPrograms.id, activity.programId))
+    .limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (program.status !== "active") {
+    throw new Error("Solo se pueden eliminar overrides de programas PDTP en estado activo.")
+  }
+
   await db
     .delete(pdtpActivityScheduleOverrides)
     .where(and(
@@ -140,14 +189,18 @@ export async function deletePdtpActivityOverride(
       eq(pdtpActivityScheduleOverrides.week, input.week),
     ))
 
-  const [program] = await db.select({ version: pdtpPrograms.version }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
-  if (program) {
-    await addPdtpChangeLogEntry(
-      activity.programId, program.version, userId, `override:${activity.n}`,
-      { worksiteId: input.worksiteId, year: input.year, month: input.month, week: input.week }, null,
-      `Meta por faena eliminada para actividad ${activity.n} (faena ${input.worksiteId}, ${input.month}/${input.week}).`,
-    )
-  }
+  await addPdtpChangeLogEntry(
+    activity.programId, program.version, userId, `override:${activity.n}`,
+    {
+      worksiteId: existing.worksiteId,
+      year: existing.year,
+      month: existing.month,
+      week: existing.week,
+      plannedQuantity: existing.plannedQuantity,
+    },
+    { reason: input.reason },
+    `Meta por faena eliminada para actividad ${activity.n}. Motivo: ${input.reason}`,
+  )
 }
 
 /**

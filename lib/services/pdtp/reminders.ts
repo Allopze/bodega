@@ -10,12 +10,13 @@
 
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpExecutions, pdtpPrograms, worksites } from "@/db/schema"
+import { pdtpActivities, pdtpExecutions, pdtpObligationReminders, pdtpPrograms, worksites } from "@/db/schema"
 import { currentPdtpPeriod, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
 import { createNotifications, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { listVencidas } from "./followups"
 import { loadProgramScheduleAndExecutions } from "./helpers"
+import { listPdtpObligationReminderCandidates, recordPdtpObligationReminder, type PdtpReminderWindow } from "./obligations"
 
 export type PdtpPendingTarget = {
   worksiteId: string
@@ -177,6 +178,68 @@ export async function runPdtpWeeklyReminders(period: PdtpPeriod = currentPdtpPer
 export type PdtpActionVencidasReminderResult = {
   vencidas: number
   notifiedUsers: number
+}
+
+export type PdtpObligationReminderResult = {
+  candidates: number
+  notificationsCreated: number
+  notifiedUsers: number
+}
+
+const OBLIGATION_WINDOW_COPY: Record<PdtpReminderWindow, { title: string; body: string }> = {
+  due_7d: { title: "Obligación preventiva próxima a vencer", body: "vence dentro de los próximos 7 días" },
+  due_1d: { title: "Obligación preventiva por vencer", body: "vence dentro de 1 día" },
+  overdue: { title: "Obligación preventiva vencida", body: "está vencida y requiere atención" },
+}
+
+/**
+ * Extiende el cron PDTP a las obligaciones nacidas de necesidades o eventos.
+ * La deduplicación funcional queda en `pdtp_obligation_reminders`; la clave de
+ * `notifications` protege además frente a dos procesos cron concurrentes.
+ */
+export async function runPdtpObligationReminders(asOf = new Date()): Promise<PdtpObligationReminderResult> {
+  const candidates = await listPdtpObligationReminderCandidates({ scope: "all", asOf })
+  const notifiedUserIds = new Set<string>()
+  let notificationsCreated = 0
+
+  for (const candidate of candidates) {
+    const recipientIds = await getUserIdsWithPermissionForWorksite(
+      "prevention:pdtp:execute",
+      candidate.obligation.worksiteId,
+    )
+    for (const recipientUserId of recipientIds) {
+      const [alreadyRecorded] = await db.select({ id: pdtpObligationReminders.id })
+        .from(pdtpObligationReminders)
+        .where(and(
+          eq(pdtpObligationReminders.obligationId, candidate.obligation.id),
+          eq(pdtpObligationReminders.recipientUserId, recipientUserId),
+          eq(pdtpObligationReminders.reminderWindow, candidate.window),
+        ))
+        .limit(1)
+      if (alreadyRecorded) continue
+
+      const copy = OBLIGATION_WINDOW_COPY[candidate.window]
+      const dedupeKey = `pdtp-obligation:${candidate.obligation.id}:${recipientUserId}:${candidate.window}`
+      await createNotifications([recipientUserId], {
+        type: "system_alert",
+        title: copy.title,
+        body: `Actividad N°${candidate.activityNumber} en “${candidate.worksiteName}”: ${candidate.activityName} ${copy.body}.`,
+        entityType: "pdtp_obligation",
+        entityId: candidate.obligation.id,
+        entityHref: "/prevencion/pdtp/obligaciones",
+        dedupeKey,
+      })
+      const recorded = await recordPdtpObligationReminder({
+        obligationId: candidate.obligation.id,
+        recipientUserId,
+        window: candidate.window,
+      })
+      if (recorded.created) notificationsCreated += 1
+      notifiedUserIds.add(recipientUserId)
+    }
+  }
+
+  return { candidates: candidates.length, notificationsCreated, notifiedUsers: notifiedUserIds.size }
 }
 
 /**
