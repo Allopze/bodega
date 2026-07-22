@@ -9,6 +9,7 @@ import {
   CheckCircle,
   CheckSquare,
   Coins,
+  HardHat,
   ShoppingCart,
   Truck,
   Warehouse,
@@ -24,6 +25,7 @@ interface MetricBarProps {
   ordersPendingReceipt: number
   deliveryTasks:        number
   stockAlerts:          number
+  eppGaps?:             number
   totalCosts:           number
   approvalRate:         number
 }
@@ -59,6 +61,7 @@ export function MetricBar({
   ordersPendingReceipt,
   deliveryTasks,
   stockAlerts,
+  eppGaps,
   totalCosts,
   approvalRate,
 }: MetricBarProps) {
@@ -69,6 +72,7 @@ export function MetricBar({
     { key: "to-receive", label: "Por recibir",   value: ordersPendingReceipt, icon: <Truck size={13} />, href: "/recepcion",      permissions: ["receiving:view"] },
     { key: "deliveries", label: "Entregas",      value: deliveryTasks,        icon: <Warehouse size={13} />, href: "/entregas",      permissions: ["warehouse:register_movement"] },
     { key: "stock",      label: "Alertas stock", value: stockAlerts,          icon: <Warning size={13} />, href: "/bodega",         permissions: ["warehouse:view_stock"], tone: "signal" },
+    { key: "epp-gaps",   label: "Brechas EPP",   value: eppGaps ?? 0,         icon: <HardHat size={13} />, href: "/prevencion/epp-preventivo", permissions: ["prevention:epp:view"], tone: "signal" },
     { key: "investment", label: "Inversión",     value: formatCLP(totalCosts),icon: <Coins size={13} />, permissions: ["purchasing:view", "reports:view"] },
     { key: "rate",       label: "Tasa aprob.",   value: `${approvalRate}%`,   icon: <ChartLineUp size={13} />, permissions: ["approvals:approve", "reports:view"], progress: approvalRate },
   ]

@@ -18,6 +18,7 @@ import { loadPdtpComplianceSummary, PdtpComplianceCard } from "./pdtp-compliance
 import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
 import { TaskRow } from "./dashboard-task-row"
 import { scopeToWorksiteIds } from "./dashboard-helpers"
+import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -55,6 +56,12 @@ export default async function DashboardPage() {
   const currentYear = new Date().getFullYear()
   const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
   const shouldSuggestNextYear = activeProgram && !hasNextYearProgram && canManagePdtp
+
+  const canViewEpp = can(session, "prevention:epp:view")
+  const eppGapsCount = canViewEpp
+    ? (await listEppCoverageGaps({ userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }))
+        .filter((g) => g.enforcement === "blocking").length
+    : 0
 
   // Los conteos accionables (por aprobar, sin OC, por recibir, alertas de stock) ya viven
   // en la MetricBar de abajo, que es responsive y se ve en desktop y móvil. Duplicarlos en
@@ -114,6 +121,7 @@ export default async function DashboardPage() {
           ordersPendingReceipt={data.metrics.orders_pending_receipt}
           deliveryTasks={deliveryTaskCount}
           stockAlerts={stockAlertCount}
+          eppGaps={eppGapsCount}
           totalCosts={data.summary.totalCosts}
           approvalRate={approvalRate}
         />
