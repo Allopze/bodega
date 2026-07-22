@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import { Breadcrumbs } from "@/components/ui/page-header"
 import { BrandMark } from "./brand-mark"
 import { findActiveBreadcrumb } from "./nav-items"
-import { useShellHeader } from "./header-context"
+import { useSafeShellHeader, useShellHeader } from "./header-context"
 import { UserMenu } from "./top-bar-user-menu"
 
 const NotificationBell = React.lazy(() =>
@@ -36,7 +36,8 @@ const TopBarInner = React.memo(function TopBarInner({
   hidden = false,
 }: TopBarProps) {
   const pathname = usePathname()
-  const { header, searchQuery, setSearchQuery } = useShellHeader()
+  const { header } = useShellHeader()
+  const { searchQuery, setSearchQuery } = useSafeShellHeader()
 
   // Clear search on navigation
   React.useEffect(() => {
