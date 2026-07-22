@@ -51,4 +51,40 @@ describe("AudiencePreviewPanel", () => {
     fireEvent.click(screen.getByText("subgerente"))
     expect(screen.getByText("2 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
   })
+
+  it("does not show a faena filter when no worksites are passed (backward compatible)", () => {
+    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} />)
+    expect(screen.queryByLabelText("Faena")).toBeNull()
+  })
+
+  const WORKSITES = [{ id: "ws-1", name: "Faena Uno", code: "F1" }, { id: "ws-2", name: "Faena Dos", code: "F2" }]
+
+  it("excludes an activity only for the faena it was excluded from", () => {
+    render(
+      <AudiencePreviewPanel
+        activities={ACTIVITIES}
+        responsibleCatalog={RESPONSIBLES}
+        visibleWorksites={WORKSITES}
+        exclusions={[{ activityId: "a1", worksiteId: "ws-1" }]}
+      />,
+    )
+    fireEvent.click(screen.getByLabelText("Faena"))
+    fireEvent.click(screen.getByText("Faena Uno"))
+    expect(screen.getByText("2 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
+    expect(screen.queryByText(/N°1/)).toBeNull()
+  })
+
+  it("shows a warning and zero activities for a faena outside a declared membership", () => {
+    render(
+      <AudiencePreviewPanel
+        activities={ACTIVITIES}
+        responsibleCatalog={RESPONSIBLES}
+        visibleWorksites={WORKSITES}
+        memberWorksiteIds={["ws-2"]}
+      />,
+    )
+    fireEvent.click(screen.getByLabelText("Faena"))
+    fireEvent.click(screen.getByText("Faena Uno"))
+    expect(screen.getByText(/no está habilitada para este programa/)).toBeDefined()
+  })
 })

@@ -1,6 +1,6 @@
 /**
  * GET /api/prevencion/ppa/export
- * Exporta los PPA visibles para el usuario como XLSX.
+ * Exporta los PPA visibles para el usuario como Excel.
  */
 
 export const dynamic = "force-dynamic"

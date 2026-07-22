@@ -11,7 +11,7 @@ vi.mock("@/lib/services/prevention-documents-library", () => ({
   getDocumentIntegrityFindings: mockGetFindings,
 }))
 
-describe("GET document integrity XLSX", () => {
+describe("GET document integrity Excel", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockAuth.mockResolvedValue(null)
@@ -28,7 +28,7 @@ describe("GET document integrity XLSX", () => {
     expect(mockCan).toHaveBeenCalledWith(expect.anything(), "prevention:docs:publish")
   })
 
-  it("exports an explicit non-usable evidence register as XLSX", async () => {
+  it("exports an explicit non-usable evidence register as Excel", async () => {
     mockAuth.mockResolvedValue({ user: { id: "jefa-1", permissions: ["prevention:docs:publish"] } })
     mockCan.mockReturnValue(true)
     mockGetFindings.mockResolvedValue([{

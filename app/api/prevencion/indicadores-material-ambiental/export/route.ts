@@ -1,4 +1,4 @@
-/** GET /api/prevencion/indicadores-material-ambiental/export — export XLSX de indicadores material y ambiental. */
+/** GET /api/prevencion/indicadores-material-ambiental/export — export Excel de indicadores material y ambiental. */
 
 export const dynamic = "force-dynamic"
 
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
       entityType: "prevention_material_environmental_indicators",
       entityId: String(year),
       newState: { worksiteCount: groups.length, sheetCount: workbook.worksheets.length },
-      reason: "Exportación XLSX de indicadores material y ambiental",
+      reason: "Exportación Excel de indicadores material y ambiental",
     })
 
     const xlsx = await workbook.xlsx.writeBuffer()

@@ -65,6 +65,9 @@ type PdtpSheetTableProps = {
   viewMode: "semana" | "anual"
   currentPeriod: PdtpPeriod
   sheetCode: string
+  /** Objetivo (`objectiveOrder`) al que llega un KPI del reporte de gestión — el numerador/denominador visible coincide exactamente con esa fila. */
+  objectiveOrder?: number
+  programId?: string
 }
 
 export function PdtpSheetTable({
@@ -77,6 +80,8 @@ export function PdtpSheetTable({
   viewMode,
   currentPeriod,
   sheetCode,
+  objectiveOrder,
+  programId,
 }: PdtpSheetTableProps) {
   const canOperate = canExecute || canManageProgram
   const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">("all")
@@ -92,7 +97,20 @@ export function PdtpSheetTable({
   )
 
   // Derive status for all activities in the current view
-  const sourceActivities = viewMode === "semana" ? weeklyActivities : view.activities
+  const viewActivities = viewMode === "semana" ? weeklyActivities : view.activities
+  // Un objetivo llegado por URL (KPI del reporte de gestión) acota todo lo
+  // demas (contadores de estado, agrupacion) para que lo visible coincida
+  // exactamente con el numerador/denominador de esa fila del reporte.
+  const objectiveLabel = objectiveOrder !== undefined
+    ? viewActivities.find((activity) => activity.objectiveOrder === objectiveOrder)?.objective ?? null
+    : null
+  const sourceActivities = objectiveOrder !== undefined
+    ? viewActivities.filter((activity) => activity.objectiveOrder === objectiveOrder)
+    : viewActivities
+  // Reconstruido desde las props ya conocidas (mismo patron que PdtpViewToggle/
+  // PdtpWorksitePicker en pdtp-sheet-table-ui.tsx), no leyendo el search params
+  // ambiente: evita depender del contexto de App Router en este componente.
+  const clearObjectiveHref = `${programId ? `/prevencion/pdtp/${programId}` : ""}?hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${viewMode}`
 
   // Compute status counts for the summary
   const statusCounts: PdtpStatusCounts = React.useMemo(() => {
@@ -129,6 +147,12 @@ export function PdtpSheetTable({
 
   return (
     <div className="space-y-4">
+      {objectiveOrder !== undefined && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-3 py-2 text-sm text-[var(--color-info-ink)]">
+          <span>Mostrando solo el objetivo {objectiveOrder}{objectiveLabel ? `: ${objectiveLabel}` : ""}.</span>
+          <Link href={clearObjectiveHref} className="font-medium underline hover:no-underline">Quitar filtro</Link>
+        </div>
+      )}
       {/* Activity status summary + density toggle */}
       {sourceActivities.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">

@@ -9,7 +9,7 @@ export function ExportIndicadoresButton({ year }: { year: number }) {
         title="Exportar cálculo canónico, fuentes y conciliación"
       >
       <FileXls className="h-4 w-4 mr-1" />
-      Exportar XLSX
+      Exportar Excel
       </a>
     </Button>
   )

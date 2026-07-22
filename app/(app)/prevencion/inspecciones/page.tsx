@@ -50,7 +50,7 @@ export default async function InspeccionesPage() {
         actions={
           session.user.permissions.includes("prevention:inspections:export") ? (
             <Button asChild variant="secondary">
-              <Link href="/api/prevencion/inspecciones/export">Exportar XLSX</Link>
+              <Link href="/api/prevencion/inspecciones/export">Exportar Excel</Link>
             </Button>
           ) : undefined
         }

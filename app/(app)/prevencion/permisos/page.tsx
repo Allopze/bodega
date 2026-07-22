@@ -54,7 +54,7 @@ export default async function PermisosPage() {
         actions={
           session.user.permissions.includes("prevention:permits:export") ? (
             <Button asChild variant="secondary">
-              <Link href="/api/prevencion/permisos/export">Exportar XLSX</Link>
+              <Link href="/api/prevencion/permisos/export">Exportar Excel</Link>
             </Button>
           ) : undefined
         }

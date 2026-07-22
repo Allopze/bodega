@@ -31,6 +31,6 @@ export async function GET() {
     })
   } catch (error) {
     logger.error("[prevencion/permisos/export]", error)
-    return NextResponse.json({ error: "No se pudo generar el XLSX de permisos de trabajo" }, { status: 500 })
+    return NextResponse.json({ error: "No se pudo generar el Excel de permisos de trabajo" }, { status: 500 })
   }
 }

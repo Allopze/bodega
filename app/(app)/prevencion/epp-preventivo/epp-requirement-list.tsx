@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { HardHat } from "@phosphor-icons/react"
 import { EPP_REQUIREMENT_SCOPE_LABELS } from "@/lib/prevention/epp"
-import { NewRequirementDialog } from "./epp-dialogs"
+import { NewRequirementDialog, EditRequirementDialog, DeactivateRequirementDialog } from "./epp-dialogs"
 
 interface RequirementItem {
   id: string
@@ -50,11 +50,12 @@ export function EppRequirementList({ requirements, eppTypes, families, worksites
                 <TableHead>Alcance</TableHead>
                 <TableHead>Exigibilidad</TableHead>
                 <TableHead>Fundamento</TableHead>
+                {canManage && <TableHead className="w-28"><span className="sr-only">Acciones</span></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {requirements.map((item) => (
-                <TableRow key={item.id}>
+                <TableRow key={item.id} className={!item.isActive ? "opacity-50" : undefined}>
                   <TableCell className="text-sm font-medium">{item.eppTypeLabel}</TableCell>
                   <TableCell className="text-sm">
                     {EPP_REQUIREMENT_SCOPE_LABELS[item.scopeType] ?? item.scopeType}
@@ -67,6 +68,22 @@ export function EppRequirementList({ requirements, eppTypes, families, worksites
                     </Badge>
                   </TableCell>
                   <TableCell className="max-w-md text-xs text-[var(--color-text-subtle)]">{item.reason}</TableCell>
+                  {canManage && (
+                    <TableCell>
+                      {item.isActive ? (
+                        <div className="flex items-center gap-3">
+                          <EditRequirementDialog
+                            id={item.id}
+                            currentEnforcement={item.enforcement}
+                            currentReason={item.reason}
+                          />
+                          <DeactivateRequirementDialog id={item.id} />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-[var(--color-text-subtle)]">Inactivo</span>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

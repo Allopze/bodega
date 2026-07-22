@@ -29,7 +29,7 @@ describe("document evidence workbook", () => {
     })
   })
 
-  it("exports version, distribution, ack and audit evidence in XLSX", async () => {
+  it("exports version, distribution, ack and audit evidence in Excel", async () => {
     const { GET } = await import("./route")
     const response = await GET(new Request("http://localhost/api/prevencion/documentacion/doc-1/expediente"), {
       params: Promise.resolve({ id: "doc-1" }),

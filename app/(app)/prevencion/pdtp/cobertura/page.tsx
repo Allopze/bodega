@@ -32,8 +32,16 @@ export default async function PdtpCoveragePage() {
       ) : (
         <PdtpCoverageWorkbench
           coverage={coverage}
-          riskControls={coverage.sourceOptions.riskControls}
-          legalRequirements={coverage.sourceOptions.legalRequirements}
+          sourceOptions={{
+            risk_control: coverage.sourceOptions.riskControls,
+            legal_requirement: coverage.sourceOptions.legalRequirements,
+            incident_capa: coverage.sourceOptions.capaActions,
+            capacitacion: coverage.sourceOptions.trainingSessions,
+            inspeccion: coverage.sourceOptions.inspectionRuns,
+            cphs: coverage.sourceOptions.committees,
+            epp: coverage.sourceOptions.eppRequirements,
+            emergencia: coverage.sourceOptions.emergencyPlans,
+          }}
           worksites={coverage.worksites}
           canManage={can(session, "prevention:pdtp:program:manage")}
         />

@@ -6,9 +6,13 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { parseZ } from "@/lib/actions/parse-z"
 import {
   createEppRequirement,
+  deactivateEppRequirement,
+  deactivateRequirementSchema,
   escalateBlockingEppGapsSchema,
   escalateBlockingEppGapsToCapa,
   requirementSchema,
+  updateEppRequirement,
+  updateRequirementSchema,
   type EppAccess,
 } from "@/lib/services/prevention-epp"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -37,6 +41,22 @@ export async function createEppRequirementAction(input: unknown): Promise<Action
   const parsed = parseZ(requirementSchema, input)
   if (!parsed.ok) return parsed
   return run(accessFromSession(guard.session), (access) => createEppRequirement(parsed.data, access))
+}
+
+export async function updateEppRequirementAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:epp:manage")
+  if (guard.error) return guard.error
+  const parsed = parseZ(updateRequirementSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => updateEppRequirement(parsed.data, access))
+}
+
+export async function deactivateEppRequirementAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:epp:manage")
+  if (guard.error) return guard.error
+  const parsed = parseZ(deactivateRequirementSchema, input)
+  if (!parsed.ok) return parsed
+  return run(accessFromSession(guard.session), (access) => deactivateEppRequirement(parsed.data, access))
 }
 
 export async function escalateBlockingEppGapsAction(input: unknown): Promise<ActionState> {

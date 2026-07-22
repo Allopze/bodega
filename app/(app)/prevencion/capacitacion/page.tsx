@@ -55,7 +55,7 @@ export default async function CapacitacionPage() {
         actions={
           session.user.permissions.includes("prevention:training:export") ? (
             <Button asChild variant="secondary">
-              <Link href="/api/prevencion/capacitacion/export">Exportar XLSX</Link>
+              <Link href="/api/prevencion/capacitacion/export">Exportar Excel</Link>
             </Button>
           ) : undefined
         }

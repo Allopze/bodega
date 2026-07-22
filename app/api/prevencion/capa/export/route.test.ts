@@ -20,7 +20,7 @@ beforeEach(() => {
   mockXlsx.mockResolvedValue(new Uint8Array([1, 2, 3]).buffer)
 })
 
-describe("GET CAPA XLSX", () => {
+describe("GET CAPA Excel", () => {
   it("returns 401 without a session", async () => {
     mockAuth.mockResolvedValue(null)
     expect((await GET()).status).toBe(401)
@@ -32,7 +32,7 @@ describe("GET CAPA XLSX", () => {
     expect(mockBuild).not.toHaveBeenCalled()
   })
 
-  it("exports XLSX within the exact worksite scope", async () => {
+  it("exports Excel within the exact worksite scope", async () => {
     mockAuth.mockResolvedValue(session(["prevention:capa:view"]))
     const response = await GET()
     expect(response.status).toBe(200)

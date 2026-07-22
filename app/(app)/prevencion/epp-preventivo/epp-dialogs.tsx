@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { EPP_REQUIREMENT_SCOPE_LABELS } from "@/lib/prevention/epp"
-import { createEppRequirementAction } from "./actions"
+import { createEppRequirementAction, updateEppRequirementAction, deactivateEppRequirementAction } from "./actions"
 import { Field, useOperation } from "./epp-form-kit"
 
 const SCOPE_TYPES = Object.keys(EPP_REQUIREMENT_SCOPE_LABELS).filter((type) => type !== "task")
@@ -113,6 +113,106 @@ export function NewRequirementDialog({ eppTypes, families, worksites }: {
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Crear</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function EditRequirementDialog({ id, currentEnforcement, currentReason }: {
+  id: string
+  currentEnforcement: string
+  currentReason: string
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [enforcement, setEnforcement] = React.useState(currentEnforcement)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    operation.run(() => updateEppRequirementAction({
+      id,
+      enforcement,
+      reason: String(form.get("reason") ?? "").trim() || undefined,
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-ink)] transition-colors"
+        >
+          Editar
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Editar requisito de EPP</DialogTitle>
+            <DialogDescription>Actualiza la exigibilidad o el fundamento del requisito.</DialogDescription>
+          </DialogHeader>
+          <Field label="Exigibilidad">
+            <Select value={enforcement} onValueChange={setEnforcement}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="warning">Advertencia</SelectItem>
+                <SelectItem value="blocking">Bloqueante</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Fundamento" hint="Deja en blanco para mantener el actual.">
+            <Textarea name="reason" defaultValue={currentReason} minLength={10} maxLength={2000} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar cambios</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function DeactivateRequirementDialog({ id }: { id: string }) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    operation.run(() => deactivateEppRequirementAction({
+      id,
+      reason: String(form.get("reason") ?? "").trim(),
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="text-xs text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] transition-colors"
+        >
+          Desactivar
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Desactivar requisito de EPP</DialogTitle>
+            <DialogDescription>
+              El requisito dejará de generar brechas de cobertura. Esta acción se puede revertir solo editando la base de datos directamente.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo de desactivación" hint="Mínimo 10 caracteres. Ej: norma derogada, cargo eliminado.">
+            <Textarea name="reason" required minLength={10} maxLength={2000} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm text-[var(--color-danger)]">{operation.message}</p>}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="submit" variant="destructive" disabled={operation.pending}>Desactivar</Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

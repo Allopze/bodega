@@ -58,7 +58,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes" }]} />}
         actions={<div className="flex gap-2">
           {canReport && <Button asChild><Link href="/prevencion/incidentes/reportar"><Plus className="size-4" />Reportar</Link></Button>}
-          {canExport && <Button asChild variant="secondary"><Link href="/api/prevencion/incidentes/export"><DownloadSimple className="size-4" />Exportar XLSX</Link></Button>}
+          {canExport && <Button asChild variant="secondary"><Link href="/api/prevencion/incidentes/export"><DownloadSimple className="size-4" />Exportar Excel</Link></Button>}
         </div>}
       />
       <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicatorLabel ? `Fuente del indicador de ${indicatorLabel} · ${effectiveMonthFrom ?? "—"}-${effectiveMonthTo ?? "—"}/${query.year ?? ""}` : undefined} />

@@ -67,7 +67,7 @@ export default async function DocumentDetailPage({ params }: Props) {
           { label: "Documentación", href: "/prevencion/documentacion" },
           { label: bundle.doc.title.slice(0, 48) },
         ]} />}
-        actions={<Button asChild size="sm" variant="secondary"><Link href={`/api/prevencion/documentacion/${id}/expediente`}>Exportar expediente XLSX</Link></Button>}
+        actions={<Button asChild size="sm" variant="secondary"><Link href={`/api/prevencion/documentacion/${id}/expediente`}>Exportar expediente Excel</Link></Button>}
       />
       <DocumentDetailView
         bundle={bundle}

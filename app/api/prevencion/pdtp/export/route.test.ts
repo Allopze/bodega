@@ -46,7 +46,7 @@ beforeEach(() => {
   mockIsActiveWorksite.mockResolvedValue(true)
 })
 
-describe("GET PDTP XLSX", () => {
+describe("GET PDTP Excel", () => {
   it("returns 401 without a session", async () => {
     mockAuth.mockResolvedValue(null)
     expect((await GET(request())).status).toBe(401)

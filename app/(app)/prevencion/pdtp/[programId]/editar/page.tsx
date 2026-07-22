@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation"
 import { and, eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getPdtpProgram, listPdtpProgramSheets, listPdtpProgramActivities, listProgramActiveChecklists, listPdtpResponsibleCatalog } from "@/lib/services/prevention-pdtp"
+import { getPdtpProgram, listPdtpProgramSheets, listPdtpProgramActivities, listProgramActiveChecklists, listPdtpResponsibleCatalog, listPdtpProgramWorksites, listPdtpActivityWorksiteExclusions } from "@/lib/services/prevention-pdtp"
 import { db } from "@/db"
 import { pdtpActivitySchedule, worksites } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
@@ -26,7 +26,7 @@ export default async function PdtpEditProgramPage({ params }: Props) {
   if (program.status !== "draft") redirect(`/prevencion/pdtp/${programId}`)
 
   const worksiteScope = resolveWorksiteScope(session)
-  const [sheets, activities, checklists, responsibleCatalog, visibleWorksites] = await Promise.all([
+  const [sheets, activities, checklists, responsibleCatalog, visibleWorksites, programWorksites] = await Promise.all([
     listPdtpProgramSheets(programId),
     listPdtpProgramActivities(programId),
     listProgramActiveChecklists(programId),
@@ -38,7 +38,9 @@ export default async function PdtpEditProgramPage({ params }: Props) {
             ? eq(worksites.isActive, true)
             : and(eq(worksites.isActive, true), inArray(worksites.id, worksiteScope.ids)))
           .orderBy(worksites.name),
+    listPdtpProgramWorksites(programId),
   ])
+  const activityWorksiteExclusions = await listPdtpActivityWorksiteExclusions(programId)
   const schedule = activities.length > 0
     ? await db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activities.map((a) => a.id)))
     : []
@@ -65,6 +67,8 @@ export default async function PdtpEditProgramPage({ params }: Props) {
         checklists={checklists}
         responsibleCatalog={responsibleCatalog.filter((responsible) => responsible.isActive)}
         visibleWorksites={visibleWorksites}
+        memberWorksiteIds={programWorksites.map((w) => w.worksiteId)}
+        activityWorksiteExclusions={activityWorksiteExclusions}
         userId={session.user.id}
         canDelete={can(session, "prevention:pdtp:program:manage")}
       />

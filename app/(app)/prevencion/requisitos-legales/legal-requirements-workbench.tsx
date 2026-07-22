@@ -40,7 +40,7 @@ function useOperation() {
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid gap-1 text-sm"><span className="font-medium">{label}</span>{children}</label> }
 
 export function LegalRequirementsHeaderActions({ canAssess, canExport }: { canAssess: boolean; canExport: boolean }) {
-  return <div className="flex gap-2">{canExport && <Button asChild variant="secondary"><Link href="/api/prevencion/requisitos-legales/export">Exportar XLSX</Link></Button>}{canAssess && <CreateRequirementDialog />}</div>
+  return <div className="flex gap-2">{canExport && <Button asChild variant="secondary"><Link href="/api/prevencion/requisitos-legales/export">Exportar Excel</Link></Button>}{canAssess && <CreateRequirementDialog />}</div>
 }
 
 function CreateRequirementDialog() {

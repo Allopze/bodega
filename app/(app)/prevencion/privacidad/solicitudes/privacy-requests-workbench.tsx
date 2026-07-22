@@ -222,7 +222,7 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
             <Textarea id="privacy-export-purpose" value={exportPurpose} onChange={(event) => setExportPurpose(event.target.value)} maxLength={300} />
           </Field>
           {canExportClinical && <Checkbox id="privacy-export-clinical" label="Incluir contenido clínico (requiere canal de entrega reforzado)" checked={includeClinical} onChange={(event) => setIncludeClinical(event.target.checked)} />}
-          <DialogFooter><Button type="button" onClick={startExport} disabled={exportPurpose.trim().length < 3}>Generar XLSX auditado</Button></DialogFooter>
+          <DialogFooter><Button type="button" onClick={startExport} disabled={exportPurpose.trim().length < 3}>Generar Excel auditado</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>

@@ -13,6 +13,8 @@ import {
 } from "@/lib/services/prevention-epp"
 import { EppTabs } from "./epp-tabs"
 
+import { Button } from "@/components/ui/button"
+
 export const metadata: Metadata = { title: "EPP preventivo" }
 
 export default async function EppPreventivoPage() {
@@ -45,6 +47,13 @@ export default async function EppPreventivoPage() {
           { label: "Prevención" },
           { label: "EPP preventivo" },
         ]} />}
+        actions={
+          <Button asChild variant="secondary" size="sm">
+            <a href="/api/prevencion/epp/export" download>
+              Exportar cobertura Excel
+            </a>
+          </Button>
+        }
       />
       <EppTabs
         gaps={gaps}

@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 
@@ -84,7 +85,7 @@ describe("GET PDTP expediente auditor", () => {
     expect(mockDossier).not.toHaveBeenCalled()
   })
 
-  it("derives the only authorized worksite and returns a signed XLSX", async () => {
+  it("derives the only authorized worksite and returns a signed Excel", async () => {
     mockAuth.mockResolvedValue(session())
 
     const response = await GET(request("?programId=p1"))
@@ -95,6 +96,35 @@ describe("GET PDTP expediente auditor", () => {
     expect(response.headers.get("content-disposition")).toContain("pdtp-expediente-auditor-p1.xlsx")
     expect(mockDossier).toHaveBeenCalledWith({ programId: "p1", worksiteId: "w1", scope: ["w1"] })
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "export", entityType: "prevention_pdtp_program" }))
+
+    // El Excel real generado por la ruta (no mockeado) debe reabrir sin errores.
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(await response.arrayBuffer())
+    expect(reopened.worksheets.map((ws) => ws.name)).toEqual([
+      "Programa", "Ejecuciones", "Fuentes", "Obligaciones a demanda",
+      "Acciones correctivas", "Seguimiento", "Aprobaciones", "Cambios", "Lotes de importación", "Metadatos",
+    ])
+  })
+
+  it("escapes source justification text that looks like a formula so Excel never evaluates it", async () => {
+    mockAuth.mockResolvedValue(session())
+    mockDossier.mockResolvedValue({
+      ...BASE_DOSSIER,
+      sourceLinks: [{
+        activityN: 1, activityName: "Actividad", sourceType: "internal_objective", sourceId: "obj-1",
+        isActive: true, justification: "=SUM(A1:A10)", createdByUserId: "user-1", createdAt: "2026-01-01",
+        retiredByUserId: null, retiredAt: null, retirementReason: null,
+      }],
+    })
+
+    const response = await GET(request("?programId=p1"))
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(await response.arrayBuffer())
+    const sources = reopened.getWorksheet("Fuentes")!
+    const justificationCell = sources.getRow(2).getCell(5)
+
+    expect(justificationCell.type).not.toBe(ExcelJS.ValueType.Formula)
+    expect(String(justificationCell.value)).toBe("'=SUM(A1:A10)")
   })
 
   it("returns 404 when the program does not exist", async () => {

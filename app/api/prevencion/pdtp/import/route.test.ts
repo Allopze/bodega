@@ -37,7 +37,7 @@ beforeEach(() => {
   mockCancel.mockResolvedValue({ batchId: "batch-1", cancelled: true })
 })
 
-describe("POST PDTP XLSX import staging", () => {
+describe("POST PDTP Excel import staging", () => {
   it("fails closed without the program-management permission", async () => {
     mockGuardPermission.mockResolvedValue({ session: null, error: { ok: false, message: "No tienes permisos" } })
     const response = await POST(formRequest({ mode: "stage", programId: "p1" }))

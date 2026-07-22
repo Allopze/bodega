@@ -43,7 +43,7 @@ export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SS
 
 type PdtpPageProps = {
   params: Promise<{ programId: string }>
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; actividadError?: string | string[]; overrideError?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; objetivo?: string | string[]; actividadError?: string | string[]; overrideError?: string | string[] }>
 }
 
 export default async function PdtpDetailPage({ params, searchParams }: PdtpPageProps) {
@@ -71,9 +71,12 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const requestedSheet = Array.isArray(query.hoja) ? query.hoja[0] : query.hoja
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
   const requestedView = Array.isArray(query.vista) ? query.vista[0] : query.vista
+  const requestedObjective = Array.isArray(query.objetivo) ? query.objetivo[0] : query.objetivo
   const actividadError = Array.isArray(query.actividadError) ? query.actividadError[0] : query.actividadError
   const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
+  const parsedObjective = Number.parseInt(requestedObjective ?? "", 10)
+  const objectiveOrder = Number.isFinite(parsedObjective) ? parsedObjective : undefined
   const currentPeriod = currentPdtpPeriod()
   const sheetCode = normalizeSheetCode(requestedSheet, programSheets)
     ?? defaultSheetForRoles(session.user.roles, programSheets)
@@ -242,6 +245,8 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
               viewMode={viewMode}
               currentPeriod={currentPeriod}
               sheetCode={sheetCode}
+              objectiveOrder={objectiveOrder}
+              programId={programId}
             />
           </div>
         ) : (

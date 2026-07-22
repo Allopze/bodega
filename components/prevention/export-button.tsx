@@ -9,7 +9,7 @@ interface Props {
   label?: string
 }
 
-export function PreventionExportButton({ href, label = "Exportar XLSX" }: Props) {
+export function PreventionExportButton({ href, label = "Exportar Excel" }: Props) {
   return (
     <Button asChild variant="secondary" size="sm">
       <a href={href} download>

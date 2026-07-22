@@ -36,7 +36,7 @@ describe("GET privacy subject export", () => {
     expect(mockBuild).not.toHaveBeenCalled()
   })
 
-  it("returns a no-store XLSX and propagates the clinical opt-in", async () => {
+  it("returns a no-store Excel and propagates the clinical opt-in", async () => {
     mockAuth.mockResolvedValue({
       user: {
         id: "user-1",

@@ -1,4 +1,4 @@
-/** GET /api/prevencion/indicadores/export — motor canónico y conciliación XLSX. */
+/** GET /api/prevencion/indicadores/export — motor canónico y conciliación Excel. */
 
 export const dynamic = "force-dynamic"
 
@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
       entityType: "prevention_safety_indicators",
       entityId: String(year),
       newState: { formulaVersions: [...new Set(groups.map((item) => item.annual.formulaVersion))], worksiteCount: groups.length, sheetCount: workbook.worksheets.length },
-      reason: "Exportación XLSX canónica de indicadores, fuentes y conciliación",
+      reason: "Exportación Excel canónica de indicadores, fuentes y conciliación",
     })
     const reconciled = groups.every((group) => group.monthly.every((item) => item.status === "reconciled"))
     const xlsx = await workbook.xlsx.writeBuffer()

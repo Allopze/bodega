@@ -93,7 +93,7 @@ export async function stageRiskImportAction(formData: FormData): Promise<ActionS
   try {
     const file = formData.get("file")
     const worksiteId = String(formData.get("worksiteId") ?? "")
-    if (!(file instanceof File)) return { ok: false, message: "Selecciona un archivo XLSX." }
+    if (!(file instanceof File)) return { ok: false, message: "Selecciona un archivo Excel." }
     await stageRiskImport({ worksiteId, fileName: file.name, buffer: Buffer.from(await file.arrayBuffer()), access: accessFromSession(guard.session) })
     revalidatePath(REVALIDATE)
     return { ok: true }

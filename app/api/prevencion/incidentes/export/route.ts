@@ -29,6 +29,6 @@ export async function GET() {
     } })
   } catch (error) {
     logger.error("[prevencion/incidentes/export]", error)
-    return NextResponse.json({ error: "No se pudo generar el registro XLSX" }, { status: 500 })
+    return NextResponse.json({ error: "No se pudo generar el registro Excel" }, { status: 500 })
   }
 }

@@ -31,6 +31,6 @@ export async function GET() {
     })
   } catch (error) {
     logger.error("[prevencion/capa/export]", error)
-    return NextResponse.json({ error: "No se pudo generar el XLSX CAPA" }, { status: 500 })
+    return NextResponse.json({ error: "No se pudo generar el Excel CAPA" }, { status: 500 })
   }
 }

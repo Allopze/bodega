@@ -31,7 +31,7 @@ export async function GET() {
   gaps.addRow(["Requisito", "Faena", "Estado", "Evidencia", "Responsable"])
   dashboard.gaps.forEach((item) => gaps.addRow([safe(item.requirement.code), safe(item.worksiteName), item.applicability.complianceStatus, safe(item.applicability.evidenceReference), safe(item.applicability.responsibleSnapshot)])); style(gaps)
   addExportMetadataSheet(workbook, session, { filters: { scope: resolveWorksiteScope(session).mode, requirementCount: dashboard.requirements.length, gapCount: dashboard.gaps.length }, rowCount: dashboard.applicabilities.length })
-  await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export", entityType: "prevention_legal_register", entityId: "scoped", newState: { sheets: workbook.worksheets.length, requirements: dashboard.requirements.length, applicabilities: dashboard.applicabilities.length, gaps: dashboard.gaps.length }, reason: "Exportación XLSX del registro legal" })
+  await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export", entityType: "prevention_legal_register", entityId: "scoped", newState: { sheets: workbook.worksheets.length, requirements: dashboard.requirements.length, applicabilities: dashboard.applicabilities.length, gaps: dashboard.gaps.length }, reason: "Exportación Excel del registro legal" })
   const bytes = await workbook.xlsx.writeBuffer()
   return new NextResponse(bytes, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": encodeContentDisposition(`registro_legal_${new Date().toISOString().slice(0, 10)}.xlsx`, "attachment"), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } })
 }

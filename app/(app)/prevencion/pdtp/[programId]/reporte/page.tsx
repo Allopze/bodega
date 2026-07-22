@@ -67,7 +67,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
     <PageContainer>
       <PageHeader
         title="Reporte de gestión"
-        description="Avance, desviaciones y responsables por objetivo — la misma vista que se descarga en XLSX."
+        description="Avance, desviaciones y responsables por objetivo — la misma vista que se descarga en Excel."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -81,7 +81,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
           <Button asChild size="sm">
             <a href={`/api/prevencion/pdtp/reporte-gestion?${downloadParams}`} download className="flex items-center gap-2">
               <DownloadSimple size={14} />
-              Descargar XLSX
+              Descargar Excel
             </a>
           </Button>
         ) : undefined}
@@ -136,7 +136,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
                   <TableCell className="max-w-xs text-xs text-[var(--color-text-muted)]">{row.responsibles.join(", ") || "Sin responsable"}</TableCell>
                   <TableCell>
                     <Button asChild size="sm" variant="ghost">
-                      <Link href={`/prevencion/pdtp/${programId}?faena=${selectedWorksiteId}#registros-pdtp`}>Ver registros</Link>
+                      <Link href={`/prevencion/pdtp/${programId}?faena=${selectedWorksiteId}&objetivo=${row.objectiveOrder}#registros-pdtp`}>Ver registros</Link>
                     </Button>
                   </TableCell>
                 </TableRow>

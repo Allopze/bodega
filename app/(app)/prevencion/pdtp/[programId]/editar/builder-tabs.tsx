@@ -34,9 +34,15 @@ import {
   renamePdtpObjectiveAction,
   publishPdtpTemplateAction,
 } from "../../actions"
+import {
+  setPdtpProgramWorksitesAction,
+  excludeActivityForWorksiteAction,
+  includeActivityForWorksiteAction,
+} from "../../actions/worksites-actions"
 import { ChecklistTab } from "./checklist-tab"
 import { GuidedActivityForm } from "./guided-activity-form"
-import { describePdtpRecurrence, describePdtpRecurrenceImpact, type PdtpRecurrenceFrequency, type PdtpRecurrenceRule } from "@/lib/services/pdtp/recurrence"
+import { describePdtpRecurrence, describePdtpRecurrenceImpact, deriveScheduleHorizon, type PdtpRecurrenceFrequency, type PdtpRecurrenceRule, type PdtpScheduleHorizon } from "@/lib/services/pdtp/recurrence"
+import { useDebouncedAutosave, autosaveStatusLabel } from "@/lib/hooks/use-debounced-autosave"
 
 import type { pdtpPrograms, pdtpSheets, pdtpActivities, pdtpActivitySchedule } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
@@ -51,6 +57,8 @@ type PdtpBuilderTabsProps = {
   canDelete: boolean
   responsibleCatalog: Array<{ slug: string; displayName: string }>
   visibleWorksites: Array<{ id: string; name: string; code: string }>
+  memberWorksiteIds: string[]
+  activityWorksiteExclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
 }
 
 const BUILDER_STEPS = [
@@ -62,7 +70,7 @@ const BUILDER_STEPS = [
   { value: "revision", label: "Revisión" },
 ] as const
 
-export function PdtpBuilderTabs({ program, sheets, activities, schedule, checklists, userId, canDelete, responsibleCatalog, visibleWorksites }: PdtpBuilderTabsProps) {
+export function PdtpBuilderTabs({ program, sheets, activities, schedule, checklists, userId, canDelete, responsibleCatalog, visibleWorksites, memberWorksiteIds, activityWorksiteExclusions }: PdtpBuilderTabsProps) {
   const [activeStep, setActiveStep] = React.useState<(typeof BUILDER_STEPS)[number]["value"]>("datos")
   const stepIndex = BUILDER_STEPS.findIndex((step) => step.value === activeStep)
   const objectiveCount = new Set(activities.map((activity) => activity.objectiveOrder)).size
@@ -89,7 +97,14 @@ export function PdtpBuilderTabs({ program, sheets, activities, schedule, checkli
       </TabsList>
 
       <TabsContent value="datos">
-        <MetadataTab program={program} canDelete={canDelete} />
+        <MetadataTab
+          program={program}
+          canDelete={canDelete}
+          activities={activities}
+          visibleWorksites={visibleWorksites}
+          memberWorksiteIds={memberWorksiteIds}
+          exclusions={activityWorksiteExclusions}
+        />
       </TabsContent>
       <TabsContent value="objetivos">
         <ObjetivosTab programId={program.id} activities={activities} />
@@ -111,16 +126,24 @@ export function PdtpBuilderTabs({ program, sheets, activities, schedule, checkli
         <details className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-2">
           <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Abrir matriz semanal avanzada</summary>
           <p className="mt-2 text-xs text-[var(--color-text-muted)]">Esta proyección existe para compatibilidad y ajustes excepcionales; no es el editor principal del programa.</p>
-          <div className="mt-3"><PlanificacionTab programId={program.id} year={program.year} activities={activities} schedule={schedule} /></div>
+          <div className="mt-3"><PlanificacionTab programId={program.id} year={program.year} periodStart={program.periodStart} periodEnd={program.periodEnd} activities={activities} schedule={schedule} /></div>
         </details>
       </TabsContent>
       <TabsContent value="requisitos">
         <ChecklistTab programId={program.id} activities={activities} checklists={checklists} />
       </TabsContent>
       <TabsContent value="revision">
-        <ReviewTab program={program} activities={activities} checklists={checklists} responsibleCatalog={responsibleCatalog} />
+        <ReviewTab
+          program={program}
+          activities={activities}
+          checklists={checklists}
+          responsibleCatalog={responsibleCatalog}
+          visibleWorksites={visibleWorksites}
+          memberWorksiteIds={memberWorksiteIds}
+          activityWorksiteExclusions={activityWorksiteExclusions}
+        />
         <details className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Vistas avanzadas y migración desde XLSX</summary>
+          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Vistas avanzadas y migración desde Excel</summary>
           <div className="mt-4 space-y-6">
             <SheetsTab programId={program.id} sheets={sheets} userId={userId} />
             <ImportExcelSection programId={program.id} visibleWorksites={visibleWorksites} />
@@ -143,7 +166,14 @@ export function PdtpBuilderTabs({ program, sheets, activities, schedule, checkli
 /** Debounce antes de autoguardar un campo tras la última pulsación. */
 const AUTOSAVE_DEBOUNCE_MS = 1500
 
-export function MetadataTab({ program, canDelete }: { program: typeof pdtpPrograms.$inferSelect; canDelete: boolean }) {
+export function MetadataTab({ program, canDelete, activities = [], visibleWorksites = [], memberWorksiteIds = [], exclusions = [] }: {
+  program: typeof pdtpPrograms.$inferSelect
+  canDelete: boolean
+  activities?: PdtpActivityRow[]
+  visibleWorksites?: Array<{ id: string; name: string; code: string }>
+  memberWorksiteIds?: string[]
+  exclusions?: Array<{ activityId: string; worksiteId: string; reason: string }>
+}) {
   const router = useRouter()
   const [updateState, updateAction, updatePending] = useActionState(updatePdtpProgramAction, null)
   const [deleteState, deleteAction, deletePending] = useActionState(deletePdtpProgramAction, null)
@@ -268,6 +298,16 @@ export function MetadataTab({ program, canDelete }: { program: typeof pdtpProgra
         <SubmitButton label="Guardar cambios" loadingLabel="Guardando..." size="sm" />
       </form>
 
+      {visibleWorksites.length > 0 && (
+        <WorksiteScopePanel
+          programId={program.id}
+          activities={activities}
+          visibleWorksites={visibleWorksites}
+          memberWorksiteIds={memberWorksiteIds}
+          exclusions={exclusions}
+        />
+      )}
+
       {canDelete && (
         <div className="max-w-md border-t border-[var(--color-border)] pt-6">
           <h3 className="mb-2 text-sm font-semibold text-[var(--color-danger)]">Zona de peligro</h3>
@@ -287,6 +327,161 @@ export function MetadataTab({ program, canDelete }: { program: typeof pdtpProgra
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Membresía de faenas del programa. Sin ninguna seleccionada, el programa
+ * aplica a todas las faenas del scope del usuario (comportamiento por
+ * defecto, retrocompatible con todo programa existente) — seleccionar
+ * faenas aquí las restringe a esas, no crea copias del programa.
+ */
+export function WorksiteScopePanel({ programId, activities, visibleWorksites, memberWorksiteIds, exclusions }: {
+  programId: string
+  activities: PdtpActivityRow[]
+  visibleWorksites: Array<{ id: string; name: string; code: string }>
+  memberWorksiteIds: string[]
+  exclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
+}) {
+  const router = useRouter()
+  const [selected, setSelected] = React.useState<string[]>(memberWorksiteIds)
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => setSelected(memberWorksiteIds), [memberWorksiteIds])
+
+  const isDirty = JSON.stringify([...selected].sort()) !== JSON.stringify([...memberWorksiteIds].sort())
+
+  function toggle(worksiteId: string) {
+    setSelected((current) => current.includes(worksiteId) ? current.filter((id) => id !== worksiteId) : [...current, worksiteId])
+  }
+
+  async function save() {
+    setPending(true)
+    setError(null)
+    try {
+      const result = await setPdtpProgramWorksitesAction({ programId, worksiteIds: selected })
+      if (!result.ok) setError(result.message ?? "Error al guardar las faenas.")
+      else router.refresh()
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="max-w-md border-t border-[var(--color-border)] pt-6">
+      <h3 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Faenas que cubre este programa</h3>
+      <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+        Sin ninguna faena marcada, el programa aplica a todas tus faenas autorizadas. Marca faenas solo si este programa no debe cubrirlas todas.
+      </p>
+      <ul className="space-y-1">
+        {visibleWorksites.map((worksite) => (
+          <li key={worksite.id}>
+            <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+              <input type="checkbox" checked={selected.includes(worksite.id)} onChange={() => toggle(worksite.id)} />
+              {worksite.name} <span className="text-xs text-[var(--color-text-subtle)]">({worksite.code})</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 flex items-center gap-2">
+        <Button type="button" size="sm" disabled={pending || !isDirty} onClick={save}>{pending ? "Guardando..." : "Guardar faenas"}</Button>
+        <span className="text-xs text-[var(--color-text-subtle)]">
+          {selected.length === 0 ? "Aplica a todas las faenas autorizadas" : `${selected.length} faena(s) seleccionada(s)`}
+        </span>
+      </div>
+      {error && <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p>}
+
+      <ActivityExclusionsEditor programId={programId} activities={activities} visibleWorksites={visibleWorksites} exclusions={exclusions} />
+    </div>
+  )
+}
+
+/**
+ * Excepción puntual de herencia: una faena no ve una actividad concreta.
+ * No cambia la cantidad planificada (eso es `pdtpActivityScheduleOverrides`,
+ * ver overrides.ts) — excluye la actividad completa para esa faena.
+ */
+function ActivityExclusionsEditor({ programId, activities, visibleWorksites, exclusions }: {
+  programId: string
+  activities: PdtpActivityRow[]
+  visibleWorksites: Array<{ id: string; name: string; code: string }>
+  exclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
+}) {
+  const router = useRouter()
+  const [activityId, setActivityId] = React.useState(activities[0]?.id ?? "")
+  const [worksiteId, setWorksiteId] = React.useState("")
+  const [reason, setReason] = React.useState("")
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const worksiteById = new Map(visibleWorksites.map((w) => [w.id, w]))
+  const activityById = new Map(activities.map((a) => [a.id, a]))
+  const reasonReady = reason.trim().length >= 10
+
+  async function add() {
+    if (!activityId || !worksiteId || !reasonReady) {
+      setError("Selecciona actividad, faena e indica un motivo de al menos 10 caracteres.")
+      return
+    }
+    setPending(true)
+    setError(null)
+    try {
+      const result = await excludeActivityForWorksiteAction({ programId, activityId, worksiteId, reason })
+      if (!result.ok) setError(result.message ?? "Error al excluir la actividad.")
+      else { setReason(""); router.refresh() }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function remove(exclusion: { activityId: string; worksiteId: string }) {
+    if (!reasonReady) {
+      setError("Escribe un motivo de al menos 10 caracteres para volver a incluir la actividad.")
+      return
+    }
+    setPending(true)
+    setError(null)
+    try {
+      const result = await includeActivityForWorksiteAction({ programId, activityId: exclusion.activityId, worksiteId: exclusion.worksiteId, reason })
+      if (!result.ok) setError(result.message ?? "Error al incluir la actividad.")
+      else { setReason(""); router.refresh() }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  if (activities.length === 0 || visibleWorksites.length === 0) return null
+
+  return (
+    <div className="mt-5 border-t border-[var(--color-border)] pt-4">
+      <h4 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Excluir una actividad de una faena</h4>
+      <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+        Escribe el motivo abajo antes de excluir o de volver a incluir una actividad.
+      </p>
+      {exclusions.length > 0 && (
+        <ul className="mb-3 space-y-1">
+          {exclusions.map((exclusion) => (
+            <li key={`${exclusion.activityId}-${exclusion.worksiteId}`} className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs">
+              <span>N°{activityById.get(exclusion.activityId)?.n ?? "?"} — {worksiteById.get(exclusion.worksiteId)?.name ?? exclusion.worksiteId}</span>
+              <Button type="button" variant="ghost" size="sm" disabled={pending || !reasonReady} onClick={() => remove(exclusion)}>Quitar</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Select value={activityId} onValueChange={setActivityId}>
+          <SelectTrigger aria-label="Actividad a excluir"><SelectValue placeholder="Actividad" /></SelectTrigger>
+          <SelectContent>{activities.map((a) => <SelectItem key={a.id} value={a.id}>N°{a.n} — {a.activity.slice(0, 40)}</SelectItem>)}</SelectContent>
+        </Select>
+        <Select value={worksiteId} onValueChange={setWorksiteId}>
+          <SelectTrigger aria-label="Faena a excluir"><SelectValue placeholder="Faena" /></SelectTrigger>
+          <SelectContent>{visibleWorksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
+        </Select>
+        <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo (mín. 10 caracteres)" />
+      </div>
+      <Button type="button" size="sm" className="mt-2" disabled={pending || !activityId || !worksiteId || !reasonReady} onClick={add}>{pending ? "Guardando..." : "Excluir"}</Button>
+      {error && <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p>}
     </div>
   )
 }
@@ -504,7 +699,7 @@ function ImportExcelSection({ programId, visibleWorksites }: {
 
   return (
     <div className="border-t border-[var(--color-border)] pt-6">
-      <h3 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Migrar un programa desde XLSX</h3>
+      <h3 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Migrar un programa desde Excel</h3>
       <p className="mb-3 max-w-2xl text-xs leading-5 text-[var(--color-text-muted)]">
         El archivo se analiza primero y no cambia el programa hasta que confirmes el preview. El adaptador traduce su contenido al modelo general; no convierte la planilla en la interfaz de trabajo.
       </p>
@@ -512,7 +707,7 @@ function ImportExcelSection({ programId, visibleWorksites }: {
         <form ref={formRef} onSubmit={handleStage} className="max-w-md space-y-3">
           <FileInput ref={fileRef} name="file" accept=".xlsx" required />
           <Button type="submit" size="sm" variant="secondary" disabled={pending}>
-            {pending ? "Analizando..." : "Analizar XLSX"}
+            {pending ? "Analizando..." : "Analizar Excel"}
           </Button>
         </form>
       ) : (
@@ -1010,7 +1205,7 @@ function RecurrenceImpactPreview({
 
 // ── Tab Objetivos: renombrar el objetivo compartido por cada grupo (1-8) ───
 
-function ObjetivosTab({ programId, activities }: { programId: string; activities: PdtpActivityRow[] }) {
+export function ObjetivosTab({ programId, activities }: { programId: string; activities: PdtpActivityRow[] }) {
   const groups = React.useMemo(() => {
     const byOrder = new Map<number, { objective: string; count: number }>()
     for (const activity of activities) {
@@ -1044,33 +1239,28 @@ function ObjectiveRow({ programId, group }: {
 }) {
   const router = useRouter()
   const [value, setValue] = React.useState(group.objective)
-  const [pending, setPending] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  const isDirty = value.trim() !== "" && value !== group.objective
 
   React.useEffect(() => setValue(group.objective), [group.objective])
 
-  async function handleSave() {
-    if (!value.trim() || value === group.objective) return
-    setPending(true)
-    setError(null)
-    try {
+  const { status, error, saveNow } = useDebouncedAutosave({
+    watchKey: value,
+    isDirty,
+    onSave: async () => {
       const result = await renamePdtpObjectiveAction({ programId, objectiveOrder: group.objectiveOrder, objective: value })
-      if (!result.ok) {
-        setError(result.message ?? "Error al renombrar el objetivo.")
-      } else {
-        router.refresh()
-      }
-    } finally {
-      setPending(false)
-    }
-  }
+      if (result.ok) router.refresh()
+      return result
+    },
+  })
+  const pending = status === "saving"
 
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
       <div className="flex items-center gap-2">
         <span className="w-6 shrink-0 font-mono text-xs text-[var(--color-text-subtle)]">{group.objectiveOrder}</span>
         <Input value={value} onChange={(e) => setValue(e.target.value)} className="h-8 flex-1" placeholder="Sin actividades en este objetivo aún" />
-        <Button type="button" size="sm" disabled={pending || !value.trim() || value === group.objective} onClick={handleSave}>
+        <span aria-live="polite" className="shrink-0 text-[11px] text-[var(--color-text-subtle)]">{autosaveStatusLabel(status)}</span>
+        <Button type="button" size="sm" disabled={pending || !isDirty} onClick={saveNow}>
           {pending ? "..." : "Guardar"}
         </Button>
       </div>
@@ -1134,11 +1324,17 @@ function ReviewTab({
   activities,
   checklists,
   responsibleCatalog,
+  visibleWorksites,
+  memberWorksiteIds,
+  activityWorksiteExclusions,
 }: {
   program: typeof pdtpPrograms.$inferSelect
   activities: PdtpActivityRow[]
   checklists: PdtpChecklistTemplate[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
+  visibleWorksites: Array<{ id: string; name: string; code: string }>
+  memberWorksiteIds: string[]
+  activityWorksiteExclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
 }) {
   const objectiveCount = new Set(activities.map((activity) => activity.objectiveOrder)).size
   const missingSchedule = activities.filter((activity) => (activity.scheduleMode ?? "scheduled") === "scheduled" && !activity.recurrenceRule && activity.sourceSheetRow === 0).length
@@ -1175,7 +1371,13 @@ function ReviewTab({
       <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 text-xs text-[var(--color-text-muted)]">
         La aprobación ocurre fuera del editor y congela una versión exacta del contenido.
       </div>
-      <AudiencePreviewPanel activities={activities} responsibleCatalog={responsibleCatalog} />
+      <AudiencePreviewPanel
+        activities={activities}
+        responsibleCatalog={responsibleCatalog}
+        visibleWorksites={visibleWorksites}
+        memberWorksiteIds={memberWorksiteIds}
+        exclusions={activityWorksiteExclusions}
+      />
       <TemplatePublishPanel program={program} ready={ready} />
     </section>
   )
@@ -1185,25 +1387,39 @@ function ReviewTab({
  * Previsualiza qué actividades ve cada responsable/audiencia sin crear
  * copias ni consultas nuevas: filtra en el cliente sobre `responsibleSlugs`
  * y `audienceRoles`, que ya son datos generales por actividad (no una tabla
- * especial por hoja). La previsualización por faena queda pendiente: hoy
- * ninguna actividad se excluye por faena, solo su cantidad planificada
- * puede tener una excepción registrada aparte.
+ * especial por hoja). La dimensión de faena reutiliza `pdtpProgramWorksites`
+ * (membresía) y `pdtpActivityWorksiteExclusions` (excepción puntual), ya
+ * cargadas por la página del editor — sin faena seleccionada, o sin ninguna
+ * de las dos props recibida (compatibilidad), el filtro por faena no se
+ * muestra y el resultado es idéntico al de antes.
  */
 export function AudiencePreviewPanel({
   activities,
   responsibleCatalog,
+  visibleWorksites = [],
+  memberWorksiteIds = [],
+  exclusions = [],
 }: {
   activities: PdtpActivityRow[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
+  visibleWorksites?: Array<{ id: string; name: string; code: string }>
+  memberWorksiteIds?: string[]
+  exclusions?: Array<{ activityId: string; worksiteId: string }>
 }) {
   const ALL = "__all__"
   const [responsableSlug, setResponsableSlug] = React.useState(ALL)
   const [audienceRole, setAudienceRole] = React.useState(ALL)
+  const [worksiteId, setWorksiteId] = React.useState(ALL)
 
   const labelBySlug = new Map(responsibleCatalog.map((r) => [r.slug, r.displayName]))
   const audienceRoles = [...new Set(activities.flatMap((activity) => (Array.isArray(activity.audienceRoles) ? activity.audienceRoles as string[] : [])))].sort()
 
-  const filtered = activities.filter((activity) => {
+  const worksiteSelected = worksiteId !== ALL
+  const worksiteCanOperate = !worksiteSelected || memberWorksiteIds.length === 0 || memberWorksiteIds.includes(worksiteId)
+  const excludedActivityIds = new Set(worksiteSelected ? exclusions.filter((e) => e.worksiteId === worksiteId).map((e) => e.activityId) : [])
+
+  const filtered = !worksiteCanOperate ? [] : activities.filter((activity) => {
+    if (worksiteSelected && excludedActivityIds.has(activity.id)) return false
     const responsibleSlugs = Array.isArray(activity.responsibleSlugs) ? activity.responsibleSlugs as string[] : []
     if (responsableSlug !== ALL && !responsibleSlugs.includes(responsableSlug)) return false
     if (audienceRole !== ALL) {
@@ -1215,8 +1431,8 @@ export function AudiencePreviewPanel({
 
   return (
     <div className="border-t border-[var(--color-border)] px-4 py-4">
-      <h4 className="text-sm font-semibold text-[var(--color-text)]">Previsualizar por responsable o audiencia</h4>
-      <p className="mt-1 text-xs text-[var(--color-text-muted)]">Muestra exactamente qué actividades vería ese rol, sin crear una copia del programa.</p>
+      <h4 className="text-sm font-semibold text-[var(--color-text)]">Previsualizar por responsable, audiencia o faena</h4>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">Muestra exactamente qué actividades vería esa combinación, sin crear una copia del programa.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Select value={responsableSlug} onValueChange={setResponsableSlug}>
           <SelectTrigger className="w-56" aria-label="Responsable"><SelectValue /></SelectTrigger>
@@ -1232,13 +1448,28 @@ export function AudiencePreviewPanel({
             {audienceRoles.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}
           </SelectContent>
         </Select>
+        {visibleWorksites.length > 0 && (
+          <Select value={worksiteId} onValueChange={setWorksiteId}>
+            <SelectTrigger className="w-56" aria-label="Faena"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Todas las faenas</SelectItem>
+              {visibleWorksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
       </div>
       {audienceRoles.length === 0 && responsableSlug === ALL && (
         <p className="mt-2 text-xs text-[var(--color-text-subtle)]">Ninguna actividad tiene audiencia asignada todavía; el filtro por responsable sigue disponible.</p>
       )}
-      <p className="mt-3 text-sm text-[var(--color-text)]">
-        {filtered.length} de {activities.length} actividad(es) visibles para esta combinación.
-      </p>
+      {worksiteSelected && !worksiteCanOperate ? (
+        <p className="mt-3 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+          Esta faena no está habilitada para este programa: la membresía declarada no la incluye.
+        </p>
+      ) : (
+        <p className="mt-3 text-sm text-[var(--color-text)]">
+          {filtered.length} de {activities.length} actividad(es) visibles para esta combinación.
+        </p>
+      )}
       {filtered.length > 0 && (filtered.length !== activities.length) && (
         <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-[var(--color-text-muted)]">
           {filtered.map((activity) => (
@@ -1331,9 +1562,11 @@ function scheduleKey(month: number, week: number) {
   return `${month}-${week}`
 }
 
-function PlanificacionTab({ programId: _programId, year, activities, schedule }: {
+export function PlanificacionTab({ programId: _programId, year, periodStart, periodEnd, activities, schedule }: {
   programId: string
   year: number
+  periodStart?: string | null
+  periodEnd?: string | null
   activities: PdtpActivityRow[]
   schedule: PdtpScheduleRow[]
 }) {
@@ -1347,6 +1580,13 @@ function PlanificacionTab({ programId: _programId, year, activities, schedule }:
     return map
   }, [activities, schedule])
 
+  // El horizonte real del programa (meses que su período cubre dentro del
+  // año) acota "Rellenar": sin período declarado equivale al año completo,
+  // igual que antes; con un período parcial, no fabrica celdas fuera de él.
+  const horizon = React.useMemo(() => deriveScheduleHorizon({ year, periodStart, periodEnd }), [year, periodStart, periodEnd])
+  const horizonMonths = new Set(horizon.months)
+  const visibleMonthLabels = PLAN_MONTH_LABELS.filter((_, index) => horizonMonths.has(index + 1))
+
   if (activities.length === 0) {
     return (
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center text-sm text-[var(--color-text-muted)]">
@@ -1358,15 +1598,16 @@ function PlanificacionTab({ programId: _programId, year, activities, schedule }:
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--color-text-muted)]">
-        Cantidad planificada por semana para {year}. Cada mes tiene 4 celdas (S1-S4). &ldquo;Rellenar&rdquo;
-        fija una cantidad en las 48 semanas de la fila (sin guardar todavía) — revisa y presiona Guardar.
+        Cantidad planificada por semana para {year}
+        {horizon.months.length < 12 ? ` (período de ${horizon.months.length} mes(es))` : ""}. Cada mes tiene {horizon.weeksPerMonth} celda(s).
+        &ldquo;Rellenar&rdquo; fija una cantidad en las {horizon.months.length * horizon.weeksPerMonth} semanas del período de la fila (sin guardar todavía) — revisa y presiona Guardar.
       </p>
       <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
         <table className="w-full border-collapse text-sm">
           <thead className="bg-[var(--color-surface-2)] text-xs text-[var(--color-text-subtle)]">
             <tr>
               <th className="sticky left-0 z-10 min-w-[16rem] border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-left">Actividad</th>
-              {PLAN_MONTH_LABELS.map((m) => (
+              {visibleMonthLabels.map((m) => (
                 <th key={m} className="min-w-[5.5rem] border-b border-[var(--color-border)] px-1 py-2 text-center">{m}</th>
               ))}
               <th className="min-w-[13rem] border-b border-[var(--color-border)] px-2 py-2 text-left">Rellenar / Guardar</th>
@@ -1374,7 +1615,7 @@ function PlanificacionTab({ programId: _programId, year, activities, schedule }:
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
             {activities.map((activity) => (
-              <PlanificacionRow key={activity.id} activity={activity} initial={scheduleByActivity.get(activity.id) ?? {}} />
+              <PlanificacionRow key={activity.id} activity={activity} initial={scheduleByActivity.get(activity.id) ?? {}} horizon={horizon} />
             ))}
           </tbody>
         </table>
@@ -1383,12 +1624,22 @@ function PlanificacionTab({ programId: _programId, year, activities, schedule }:
   )
 }
 
-function PlanificacionRow({ activity, initial }: { activity: PdtpActivityRow; initial: Record<string, number> }) {
+/** Huella estable (orden e ausencia-vs-cero no importan) para detectar cambios reales de planificación. */
+function scheduleFingerprint(values: Record<string, number>): string {
+  return Object.entries(values)
+    .filter(([, quantity]) => quantity > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, quantity]) => `${key}=${quantity}`)
+    .join(",")
+}
+
+function PlanificacionRow({ activity, initial, horizon }: { activity: PdtpActivityRow; initial: Record<string, number>; horizon: PdtpScheduleHorizon }) {
   const router = useRouter()
   const [values, setValues] = React.useState<Record<string, number>>(initial)
   const [fillValue, setFillValue] = React.useState("")
-  const [pending, setPending] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  const savedFingerprint = React.useMemo(() => scheduleFingerprint(initial), [initial])
+  const currentFingerprint = React.useMemo(() => scheduleFingerprint(values), [values])
+  const isDirty = currentFingerprint !== savedFingerprint
 
   React.useEffect(() => setValues(initial), [initial])
 
@@ -1401,45 +1652,42 @@ function PlanificacionRow({ activity, initial }: { activity: PdtpActivityRow; in
     const n = Number(fillValue)
     if (!Number.isFinite(n) || n < 0) return
     const next: Record<string, number> = {}
-    for (let m = 1; m <= 12; m++) for (let w = 1; w <= 4; w++) next[scheduleKey(m, w)] = n
+    // Solo rellena los meses del horizonte real del programa (año completo
+    // por defecto); un período parcial no fabrica celdas fuera de su rango.
+    for (const m of horizon.months) for (let w = 1; w <= horizon.weeksPerMonth; w++) next[scheduleKey(m, w)] = n
     setValues(next)
   }
 
-  async function handleSave() {
-    const scheduleOverrides = Object.entries(values)
-      .map(([key, plannedQuantity]) => {
-        const [month, week] = key.split("-").map(Number) as [number, number]
-        return { month, week, plannedQuantity }
-      })
-      .filter((c) => c.plannedQuantity > 0)
-
-    setPending(true)
-    setError(null)
-    try {
+  const { status, error, saveNow } = useDebouncedAutosave({
+    watchKey: currentFingerprint,
+    isDirty,
+    onSave: async () => {
       // scheduleOverrides es autoritativo para el año del programa: reemplaza
       // por completo la planificación de esta actividad (ver updatePdtpActivity
       // en lib/services/pdtp/activities.ts). Por eso la matriz mantiene las 48
       // celdas en memoria en vez de solo las que el usuario tocó.
+      const scheduleOverrides = Object.entries(values)
+        .map(([key, plannedQuantity]) => {
+          const [month, week] = key.split("-").map(Number) as [number, number]
+          return { month, week, plannedQuantity }
+        })
+        .filter((c) => c.plannedQuantity > 0)
       const result = await updatePdtpActivityAction({ activityId: activity.id, scheduleOverrides })
-      if (!result.ok) {
-        setError(result.message ?? "Error al guardar la planificación.")
-      } else {
-        router.refresh()
-      }
-    } finally {
-      setPending(false)
-    }
-  }
+      if (result.ok) router.refresh()
+      return result
+    },
+  })
+  const pending = status === "saving"
 
   return (
     <tr className="bg-[var(--color-surface)] align-top">
       <td className="sticky left-0 z-10 border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs">
         <span className="font-mono text-[var(--color-text-subtle)]">N°{activity.n}</span> {activity.activity}
       </td>
-      {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+      {horizon.months.map((month) => (
         <td key={month} className="p-1">
           <div className="grid grid-cols-2 gap-0.5">
-            {[1, 2, 3, 4].map((week) => (
+            {Array.from({ length: horizon.weeksPerMonth }, (_, i) => i + 1).map((week) => (
               <input
                 key={week}
                 type="number"
@@ -1466,8 +1714,9 @@ function PlanificacionRow({ activity, initial }: { activity: PdtpActivityRow; in
             className="h-7 w-14 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-xs text-[var(--color-text)]"
           />
           <Button type="button" variant="ghost" size="sm" onClick={fillAll} disabled={fillValue === ""}>Rellenar</Button>
-          <Button type="button" size="sm" onClick={handleSave} disabled={pending}>{pending ? "..." : "Guardar"}</Button>
+          <Button type="button" size="sm" onClick={saveNow} disabled={pending || !isDirty}>{pending ? "..." : "Guardar"}</Button>
         </div>
+        <p aria-live="polite" className="mt-1 text-[11px] text-[var(--color-text-subtle)]">{autosaveStatusLabel(status)}</p>
         {error && <p className="mt-1 text-[11px] text-[var(--color-danger)]">{error}</p>}
       </td>
     </tr>

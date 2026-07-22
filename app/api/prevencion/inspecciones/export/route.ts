@@ -31,6 +31,6 @@ export async function GET() {
     })
   } catch (error) {
     logger.error("[prevencion/inspecciones/export]", error)
-    return NextResponse.json({ error: "No se pudo generar el XLSX de inspecciones" }, { status: 500 })
+    return NextResponse.json({ error: "No se pudo generar el Excel de inspecciones" }, { status: 500 })
   }
 }

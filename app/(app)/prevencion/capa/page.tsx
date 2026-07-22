@@ -48,7 +48,7 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
         ]} />}
         actions={
           <Button asChild variant="secondary">
-            <Link href="/api/prevencion/capa/export">Exportar XLSX</Link>
+            <Link href="/api/prevencion/capa/export">Exportar Excel</Link>
           </Button>
         }
       />

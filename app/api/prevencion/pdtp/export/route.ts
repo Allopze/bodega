@@ -1,6 +1,6 @@
 /**
  * GET /api/prevencion/pdtp/export
- * Exporta una hoja del Programa de Trabajo Preventivo SG-SST como XLSX.
+ * Exporta una hoja del Programa de Trabajo Preventivo SG-SST como Excel.
  */
 
 export const dynamic = "force-dynamic"
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     }
     const report = await buildPdtpExport({ programId, year, sheetCode, worksiteId, scope: worksiteIds })
     const xlsx = await buildXlsxBuffer(report)
-    await auditOutcome("success", `Exportación XLSX de programa preventivo acotada por faena (${year}, ${sheetCode}, ${report.sheets?.length ?? 1} hoja(s))`, worksiteId)
+    await auditOutcome("success", `Exportación Excel de programa preventivo acotada por faena (${year}, ${sheetCode}, ${report.sheets?.length ?? 1} hoja(s))`, worksiteId)
 
     return new NextResponse(xlsx, {
       status: 200,

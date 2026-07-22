@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 
@@ -84,7 +85,7 @@ describe("GET PDTP reporte de gestión", () => {
     expect(mockReport).not.toHaveBeenCalled()
   })
 
-  it("derives the only authorized worksite, resolves the active program, and returns a signed XLSX", async () => {
+  it("derives the only authorized worksite, resolves the active program, and returns a signed Excel", async () => {
     mockAuth.mockResolvedValue(session())
 
     const response = await GET(request("?year=2026"))
@@ -96,6 +97,31 @@ describe("GET PDTP reporte de gestión", () => {
     expect(mockResolveProgram).toHaveBeenCalledWith(2026)
     expect(mockReport).toHaveBeenCalledWith({ programId: "p1", worksiteId: "w1", scope: ["w1"], filters: {} })
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "export", entityType: "prevention_pdtp_program" }))
+
+    // El Excel real generado por la ruta (no mockeado) debe reabrir sin errores.
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(await response.arrayBuffer())
+    expect(reopened.worksheets.map((ws) => ws.name)).toEqual(expect.arrayContaining(["Resumen por objetivo", "Indicadores"]))
+  })
+
+  it("escapes objective/responsible text that looks like a formula so Excel never evaluates it", async () => {
+    mockAuth.mockResolvedValue(session())
+    mockReport.mockResolvedValue({
+      ...BASE_REPORT,
+      objectives: [{ ...BASE_REPORT.objectives[0], objective: "=SUM(A1:A10)", responsibles: ["+2+5"] }],
+    })
+
+    const response = await GET(request("?year=2026"))
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(await response.arrayBuffer())
+    const summary = reopened.getWorksheet("Resumen por objetivo")!
+
+    const objectiveCell = summary.getRow(2).getCell(2)
+    const responsiblesCell = summary.getRow(2).getCell(8)
+    expect(objectiveCell.type).not.toBe(ExcelJS.ValueType.Formula)
+    expect(objectiveCell.value).toBe("'=SUM(A1:A10)")
+    expect(responsiblesCell.type).not.toBe(ExcelJS.ValueType.Formula)
+    expect(responsiblesCell.value).toBe("'+2+5")
   })
 
   it("parses cut filters from the query string", async () => {

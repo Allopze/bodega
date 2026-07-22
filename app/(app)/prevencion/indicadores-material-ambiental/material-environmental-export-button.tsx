@@ -9,7 +9,7 @@ export function ExportMaterialAmbientalButton({ year }: { year: number }) {
         title="Exportar indicadores material y ambiental"
       >
       <FileXls className="h-4 w-4 mr-1" />
-      Exportar XLSX
+      Exportar Excel
       </a>
     </Button>
   )
