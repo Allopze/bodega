@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import type { Session } from "next-auth"
 import { uploadFleetDocument, deleteFleetDocument, type UploadFleetDocumentInput } from "@/lib/services/fleet"
 
 // Mock audit and db
@@ -27,9 +28,9 @@ vi.mock("@/db", () => ({
 }))
 
 describe("Fleet Document Management (uploadFleetDocument / deleteFleetDocument)", () => {
-  const dummySession: any = {
+  const dummySession = {
     user: { id: "user-1", email: "admin@chome.cl" },
-  }
+  } as unknown as Session
 
   it("validates required input parameters when uploading fleet document", async () => {
     const invalidInput: UploadFleetDocumentInput = {

@@ -8,7 +8,7 @@ const mockTransaction = vi.fn()
 vi.mock("@/db", () => ({
   db: {
     select: () => mockSelect(),
-    transaction: (cb: any) => mockTransaction(cb),
+    transaction: (cb: unknown) => mockTransaction(cb),
   },
 }))
 

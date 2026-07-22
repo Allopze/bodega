@@ -797,8 +797,6 @@ export async function getMaterialEnvironmentalEvents(
     incidentScope,
   ))
 
-  const worksiteNames = new Map(worksitesVisible.map((item) => [item.id, item.name]))
-
   type Accumulator = { dangerousIncidents: number; materialDamage: number; environmentalSpills: number }
 
   function emptyAcc(): Accumulator {

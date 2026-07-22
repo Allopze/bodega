@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from "vitest"
 import { applyMovementTx, type ApplyMovementInput } from "@/lib/services/stock-movement"
 
+type TxParam = Parameters<typeof applyMovementTx>[0]
+
 describe("Stock Movement Service (applyMovementTx)", () => {
   it("rejects movements for non-existent worksites", async () => {
-    const mockTx: any = {
+    const mockTx = {
       query: {
         worksites: {
           findFirst: vi.fn().mockResolvedValue(null),
         },
       },
-    }
+    } as unknown as TxParam
 
     const input: ApplyMovementInput = {
       worksiteId: "ws-999",
@@ -23,13 +25,13 @@ describe("Stock Movement Service (applyMovementTx)", () => {
   })
 
   it("rejects movements for inactive worksites", async () => {
-    const mockTx: any = {
+    const mockTx = {
       query: {
         worksites: {
           findFirst: vi.fn().mockResolvedValue({ id: "ws-1", name: "Faena Inactiva", isActive: false }),
         },
       },
-    }
+    } as unknown as TxParam
 
     const input: ApplyMovementInput = {
       worksiteId: "ws-1",
@@ -43,13 +45,13 @@ describe("Stock Movement Service (applyMovementTx)", () => {
   })
 
   it("requires a non-empty reason for manual adjustments", async () => {
-    const mockTx: any = {
+    const mockTx = {
       query: {
         worksites: {
           findFirst: vi.fn().mockResolvedValue({ id: "ws-1", name: "Faena Centro", isActive: true }),
         },
       },
-    }
+    } as unknown as TxParam
 
     const input: ApplyMovementInput = {
       worksiteId: "ws-1",
@@ -64,13 +66,13 @@ describe("Stock Movement Service (applyMovementTx)", () => {
   })
 
   it("rejects adjustment of zero quantity", async () => {
-    const mockTx: any = {
+    const mockTx = {
       query: {
         worksites: {
           findFirst: vi.fn().mockResolvedValue({ id: "ws-1", name: "Faena Centro", isActive: true }),
         },
       },
-    }
+    } as unknown as TxParam
 
     const input: ApplyMovementInput = {
       worksiteId: "ws-1",
@@ -85,13 +87,13 @@ describe("Stock Movement Service (applyMovementTx)", () => {
   })
 
   it("rejects discard movement with zero or negative quantity", async () => {
-    const mockTx: any = {
+    const mockTx = {
       query: {
         worksites: {
           findFirst: vi.fn().mockResolvedValue({ id: "ws-1", name: "Faena Centro", isActive: true }),
         },
       },
-    }
+    } as unknown as TxParam
 
     const input: ApplyMovementInput = {
       worksiteId: "ws-1",

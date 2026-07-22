@@ -116,7 +116,7 @@ describe("capture-all-routes route inventory", () => {
   })
 })
 
-function discoverConcretePagePaths() {
+function _discoverConcretePagePaths() {
   return findPageFiles(path.join(root, "app"))
     .map((file) => pageFileToRoutePattern(file))
     .filter((route): route is string => route !== null)

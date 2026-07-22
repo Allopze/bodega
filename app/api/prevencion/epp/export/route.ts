@@ -8,7 +8,7 @@ import { encodeContentDisposition } from "@/lib/utils"
 
 const MAX_EXPORT_ROWS = 10_000
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const session = await auth()
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })

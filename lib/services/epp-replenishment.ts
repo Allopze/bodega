@@ -3,7 +3,7 @@
  * Generates draft purchase requests based on prevention coverage gaps (expired / missing EPP).
  */
 import { db } from "@/db"
-import { purchaseRequests, purchaseRequestItems, products } from "@/db/schema"
+import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { listEppCoverageGaps, type EppAccess } from "./prevention-epp"

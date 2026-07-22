@@ -1,10 +1,10 @@
 import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm"
+import { and, desc, eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  workers, worksites, deliveries, deliveryItems,
-  products, eppProductFamilies, eppTypes,
+  workers, deliveries, deliveryItems,
+  products,
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
@@ -13,7 +13,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils"
-import { User, HardHat, CheckCircle, Warning, Clock } from "@phosphor-icons/react/dist/ssr"
+import { User, HardHat, CheckCircle, Warning } from "@phosphor-icons/react/dist/ssr"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 
 export const metadata: Metadata = { title: "Trazabilidad EPP del Trabajador" }

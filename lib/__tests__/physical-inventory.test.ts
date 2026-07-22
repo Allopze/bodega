@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
+import type { Session } from "next-auth"
 import { closePhysicalInventoryCount } from "@/lib/services/physical-inventory"
 
 describe("Physical Inventory Count Service (physical-inventory.ts)", () => {
-  const dummySession: any = {
+  const dummySession = {
     user: { id: "user-1", email: "bodeguero@chome.cl" },
-  }
+  } as unknown as Session
 
   it("rejects inventory count without worksiteId", async () => {
     await expect(closePhysicalInventoryCount(dummySession, {

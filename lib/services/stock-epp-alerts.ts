@@ -4,7 +4,7 @@
  * Checks worksite stock against `minStock` thresholds specifically for EPP products (products.isEpp = true).
  */
 import { db } from "@/db"
-import { worksiteStock, worksites, products } from "@/db/schema"
+import { worksiteStock, products } from "@/db/schema"
 import { and, eq, sql } from "drizzle-orm"
 import { getStockAlerts, type StockAlert } from "./stock-alerts"
 

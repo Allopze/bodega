@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import type { Session } from "next-auth"
 import { createMaintenanceRecord, type CreateMaintenanceInput } from "@/lib/services/maintenance"
 
 const mockFindFirst = vi.fn()
@@ -20,9 +21,9 @@ vi.mock("@/lib/audit", () => ({
 }))
 
 describe("Maintenance Service (createMaintenanceRecord)", () => {
-  const dummySession: any = {
+  const dummySession = {
     user: { id: "user-1", email: "mantencion@chome.cl", role: "admin" },
-  }
+  } as unknown as Session
 
   it("rejects maintenance record creation for non-existent vehicle", async () => {
     mockFindFirst.mockResolvedValueOnce(null)
@@ -43,9 +44,9 @@ describe("Maintenance Service (createMaintenanceRecord)", () => {
   it("checks worksite access scope when session is restricted", async () => {
     mockFindFirst.mockResolvedValueOnce({ id: "veh-1", worksiteId: "ws-restricted" })
 
-    const restrictedSession: any = {
+    const restrictedSession = {
       user: { id: "user-2", role: "user", worksiteIds: ["ws-allowed"] },
-    }
+    } as unknown as Session
 
     const input: CreateMaintenanceInput = {
       vehicleId: "veh-1",
