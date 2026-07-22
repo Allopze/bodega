@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation"
 import { and, eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  deliveries, deliveryItems, products, workers, worksites, users, attachments,
+  deliveries, deliveryItems, products, users,
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"

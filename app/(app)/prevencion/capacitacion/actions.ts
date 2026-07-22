@@ -2,7 +2,6 @@
 
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
-import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import type { Permission } from "@/modules/permissions"
 import { resolveWorksiteScope } from "@/lib/auth/scope"

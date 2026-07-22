@@ -30,12 +30,12 @@ export interface MaterialEnvironmentalData {
 }
 
 export function MaterialEnvironmentalDashboard({
-  worksites,
+  worksites: _worksites,
   eventData,
   year,
   currentYear,
 }: {
-  worksites: Array<{ id: string; name: string }>
+  worksites?: Array<{ id: string; name: string }>
   eventData: MaterialEnvironmentalData[]
   year: number
   currentYear: number

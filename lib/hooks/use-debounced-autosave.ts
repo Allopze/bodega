@@ -34,7 +34,9 @@ export function useDebouncedAutosave({
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const onSaveRef = React.useRef(onSave)
-  onSaveRef.current = onSave
+  React.useEffect(() => {
+    onSaveRef.current = onSave
+  })
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const runSave = React.useCallback(async () => {
