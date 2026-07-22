@@ -1,15 +1,15 @@
 /**
- * E2E test: EPP import flow — subir XLSX → revisar → cancelar lote.
+ * E2E test: EPP import flow — subir Excel → revisar → cancelar lote.
  *
  * Prereq: setup-db.ts seeds the admin user (admin@e2e.chome.cl / chome2026)
  * with full permissions including admin:epp_import_upload and admin:epp_import_confirm.
  *
  * Flow:
- *  1. Generate a valid XLSX in-memory with ExcelJS
+ *  1. Generate a valid Excel in-memory with ExcelJS
  *  2. Log in as admin
  *  3. Navigate to /admin/productos
- *  4. Open the import panel ("Importar XLSX")
- *  5. Upload the XLSX file
+ *  4. Open the import panel ("Importar Excel")
+ *  5. Upload the Excel file
  *  6. Verify success: "Análisis listo" with a "Revisar lote" button
  *  7. Click "Revisar lote" → lands on the review page
  *  8. Click "Cancelar importación"
@@ -20,8 +20,8 @@ import { expect, test } from "@playwright/test"
 import ExcelJS from "exceljs"
 import { login } from "./helpers"
 
-test("EPP import: subir XLSX, revisar en página de lote y cancelar importación", async ({ page }) => {
-  // ── 1. Generate a valid XLSX in memory ────────────────────────────────
+test("EPP import: subir Excel, revisar en página de lote y cancelar importación", async ({ page }) => {
+  // ── 1. Generate a valid Excel in memory ────────────────────────────────
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("EPP")
   sheet.addRow(["Nombre", "Unidad", "Color", "Talla", "Proveedor", "Precio"])
@@ -42,8 +42,8 @@ test("EPP import: subir XLSX, revisar en página de lote y cancelar importación
   const dialog = page.getByRole("dialog").filter({ hasText: "Importar equipos de protección (EPP)" })
   await expect(dialog).toBeVisible()
 
-  // ── 5. Upload the XLSX file ────────────────────────────────────────────
-  await page.getByLabel("Archivo XLSX").setInputFiles({
+  // ── 5. Upload the Excel file ────────────────────────────────────────────
+  await page.getByLabel("Archivo Excel").setInputFiles({
     name: "epp-e2e-test.xlsx",
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     buffer: xlsxBuffer,

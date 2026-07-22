@@ -150,20 +150,20 @@ test.describe("PPA Digital — revisión del responsable", () => {
   })
 })
 
-test.describe("PPA Digital — exportación XLSX", () => {
-  test("abrir dialogo de exportación y descargar XLSX", async ({ page }) => {
+test.describe("PPA Digital — exportación Excel", () => {
+  test("abrir dialogo de exportación y descargar Excel", async ({ page }) => {
     await login(page)
     await gotoWithRetry(page, "/prevencion/ppa")
 
     // Abrir el dialogo de exportación.
-    await page.getByRole("button", { name: /Exportar XLSX/ }).click()
+    await page.getByRole("button", { name: /Exportar Excel/ }).click()
     await expect(page.getByRole("dialog")).toBeVisible()
     await expect(page.getByText("Exportar PPA Digital")).toBeVisible()
 
     // Seleccionar filtro de estado.
     await selectRadixById(page, "ppa-export-estado", "Trabajo detenido")
 
-    // Descargar y verificar que devuelve un XLSX.
+    // Descargar y verificar que devuelve un Excel.
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("link", { name: "Descargar" }).click(),

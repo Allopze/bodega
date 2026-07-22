@@ -53,7 +53,7 @@ export function CatalogImportPanel({ open, onClose, title, description, action, 
         <form action={formAction} className="flex min-h-0 flex-1 flex-col">
           <SheetBody>
             <FieldGroup>
-              <Field label="Archivo XLSX" htmlFor="catalog-import-file" required
+              <Field label="Archivo Excel" htmlFor="catalog-import-file" required
                 error={state.fieldErrors?.file?.[0]}
                 helper={helperText}>
                 <FileInput id="catalog-import-file" name="file"
@@ -84,7 +84,7 @@ export function CatalogImportPanel({ open, onClose, title, description, action, 
           </SheetBody>
           <SheetFooter>
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
-            <SubmitButton label="Importar XLSX" loadingLabel="Importando...">
+            <SubmitButton label="Importar Excel" loadingLabel="Importando...">
               <UploadSimple size={16} />
             </SubmitButton>
           </SheetFooter>

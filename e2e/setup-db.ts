@@ -128,7 +128,7 @@ async function main() {
     { id: "p-prev-docs-arch", name: "prevention:docs:archive", module: "prevention", description: "Archivar documentos" },
     { id: "p-prev-docs-ack", name: "prevention:docs:ack", module: "prevention", description: "Acuse de lectura de documentos" },
     { id: "p-prev-docs-link", name: "prevention:docs:link", module: "prevention", description: "Asociar documentos con entidades" },
-    { id: "p-prev-docs-e", name: "prevention:docs:export", module: "prevention", description: "Exportar documentación (XLSX)" },
+    { id: "p-prev-docs-e", name: "prevention:docs:export", module: "prevention", description: "Exportar documentación (Excel)" },
     { id: "p-prev-docs-sens", name: "prevention:docs:manage_sensitive", module: "prevention", description: "Gestionar documentos sensibles" },
     { id: "p-prev-docs-rest", name: "prevention:docs:manage_restricted", module: "prevention", description: "Gestionar documentos restringidos" },
     { id: "p-prev-pdtp-view", name: "prevention:pdtp:view", module: "prevention", description: "Ver Programa de Trabajo Preventivo SG-SST" },

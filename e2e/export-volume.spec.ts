@@ -3,7 +3,7 @@ import ExcelJS from "exceljs"
 import { clearRateLimits } from "./helpers"
 
 
-test("exportes: genera XLSX parseable con volumen operativo alto", async ({ page }) => {
+test("exportes: genera Excel parseable con volumen operativo alto", async ({ page }) => {
   await login(page)
 
   const response = await page.request.get("/api/reportes/export?tipo=items_sin_oc")

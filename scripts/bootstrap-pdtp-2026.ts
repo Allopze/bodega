@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import ExcelJS from "exceljs"
-import { PDTP_2026_INVARIANTS, PDTP_2026_SOURCE } from "../lib/services/pdtp-adapters/contract-2026"
+import { PDTP_2026_INVARIANTS, PDTP_2026_PROGRAM_SOURCE } from "../lib/services/pdtp-adapters/contract-2026"
 import { extractPdtpCatalogFromWorkbook } from "../lib/services/prevention-pdtp-catalog"
 import { validateLoadedPdtpWorkbook, validatePdtpXlsxEnvelope } from "../lib/services/pdtp/xlsx-security"
 
@@ -138,9 +138,9 @@ async function inspectSource(options: CliOptions) {
     buffer: bytes,
   })
   const checksumSha256 = createHash("sha256").update(bytes).digest("hex")
-  const sourceOfficial = checksumSha256 === PDTP_2026_SOURCE.sha256
+  const sourceOfficial = checksumSha256 === PDTP_2026_PROGRAM_SOURCE.sha256
   if (!sourceOfficial && !options.allowCompatibleSource) {
-    throw new Error(`El SHA-256 no coincide con la fuente oficial congelada (${PDTP_2026_SOURCE.sha256}). Usa --allow-compatible-source sólo para una fixture controlada.`)
+    throw new Error(`El SHA-256 no coincide con la fuente oficial congelada del programa vigente (${PDTP_2026_PROGRAM_SOURCE.sha256}). Usa --allow-compatible-source sólo para una fixture controlada.`)
   }
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(bytes as never)

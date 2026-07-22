@@ -1,6 +1,6 @@
 /**
  * Exporta todos los EPP (Elementos de Protección Personal) del catálogo
- * a un archivo XLSX con código correlativo.
+ * a un archivo Excel con código correlativo.
  *
  * Uso: npx tsx scripts/export-epps-xlsx.ts [--output ruta]
  *
@@ -108,7 +108,7 @@ async function main() {
     activo: r.isActive ? "Sí" : "No",
   }))
 
-  // ── Generar XLSX ─────────────────────────────────────────────────────
+  // ── Generar Excel ─────────────────────────────────────────────────────
   const workbook = new ExcelJS.Workbook()
   workbook.creator = "Plataforma Chome"
   workbook.created = new Date()
@@ -184,7 +184,7 @@ async function main() {
   const buffer = await workbook.xlsx.writeBuffer()
   writeFileSync(OUTPUT, Buffer.from(buffer))
 
-  console.log(`\n✅ XLSX generado: ${OUTPUT}`)
+  console.log(`\n✅ Excel generado: ${OUTPUT}`)
   console.log(`   Total EPP: ${data.length}`)
   console.log(`   Archivo: ${resolve(OUTPUT)}`)
 

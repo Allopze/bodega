@@ -24,7 +24,7 @@ interface ListFiltersProps {
   worksiteOptions?: FilterOption[]
   /** When provided, renders the supplier (proveedor) select. */
   supplierOptions?: FilterOption[]
-  /** When provided, renders an "Exportar XLSX" button that respects the
+  /** When provided, renders an "Exportar Excel" button that respects the
    *  active filters. Value is the export `tipo` (e.g. "solicitudes"). */
   exportTipo?: string
   /** Right-aligned slot for primary actions (e.g. "Nueva"). */
@@ -224,7 +224,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
               className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
             >
               <DownloadSimple size={13} />
-              Exportar XLSX
+              Exportar Excel
             </a>
           )}
           {actions}

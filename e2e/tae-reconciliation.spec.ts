@@ -55,7 +55,7 @@ test.describe("TAE — conciliación con Copec TCT", () => {
     }
   })
 
-  test("presenta ambos canales por producto y exporta XLSX", async ({ page }) => {
+  test("presenta ambos canales por producto y exporta Excel", async ({ page }) => {
     await login(page)
     await page.goto("/combustibles/tae/conciliacion?desde=2026-07-01&hasta=2026-07-31&faena=ws-e2e")
 
@@ -68,7 +68,7 @@ test.describe("TAE — conciliación con Copec TCT", () => {
     await expect(equipmentRow).toContainText("Ambos")
 
     const downloadPromise = page.waitForEvent("download")
-    await page.getByRole("button", { name: "Exportar XLSX" }).click()
+    await page.getByRole("button", { name: "Exportar Excel" }).click()
     const download = await downloadPromise
     expect(download.suggestedFilename()).toMatch(/^conciliacion_tae_tct_.*\.xlsx$/)
   })

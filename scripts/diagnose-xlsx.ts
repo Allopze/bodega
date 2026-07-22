@@ -1,5 +1,5 @@
 /**
- * Diagnóstico de archivos XLSX para importación.
+ * Diagnóstico de archivos Excel para importación.
  *
  * Uso:
  *   npx tsx scripts/diagnose-xlsx.ts <ruta-al-archivo.xlsx>
@@ -30,7 +30,7 @@ function main() {
   // ── 1. Verificar que sea un ZIP válido ────────────────────────────
   const MAGIC_ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04])
   if (raw.slice(0, 4).equals(MAGIC_ZIP)) {
-    console.log("✅ Es un ZIP válido (XLSX = ZIP)")
+    console.log("✅ Es un ZIP válido (Excel = ZIP)")
   } else {
     console.log(`❌ NO ES UN ZIP. Magic bytes: ${raw.slice(0, 4).toString("hex")}`)
     console.log("   Posibles causas: archivo truncado, formato .xls antiguo, o no es un Excel.")
@@ -78,7 +78,7 @@ function main() {
     })
     console.log("✅ ExcelJS cargó el workbook correctamente")
   } catch (err) {
-    console.error("\n❌ ExcelJS falló al cargar el XLSX:")
+    console.error("\n❌ ExcelJS falló al cargar el Excel:")
     console.error(`   ${err instanceof Error ? err.message : err}`)
     if (err instanceof Error && err.stack) {
       console.error("\n   Stack (primeras líneas):")

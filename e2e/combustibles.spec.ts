@@ -60,7 +60,7 @@ test.describe("Combustibles module", () => {
   })
 
   test("import operational log: upload, preview, confirm and view batch detail", async ({ page }) => {
-    // Genera un XLSX con los encabezados reales del "CONSOLIDADO COMBUSTIBLES
+    // Genera un Excel con los encabezados reales del "CONSOLIDADO COMBUSTIBLES
     // CHOME" (con anotaciones "(AUTOMATICO)"/"(DIGITAR)" pegadas al título),
     // para validar también el manejo de esos encabezados en el parser.
     const workbook = new ExcelJS.Workbook()

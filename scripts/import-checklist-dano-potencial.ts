@@ -183,7 +183,7 @@ function applyToSource(source: string, itemId: string, dano: string): { source: 
 function main() {
   const file = process.argv[2]
   const dryRun = process.argv.includes("--dry-run")
-  if (!file) throw new Error("Indica el archivo XLSX de calibración.")
+  if (!file) throw new Error("Indica el archivo Excel de calibración.")
 
   const rows = readCalibration(file)
   const invalid = rows.filter((row) => !VALID.has(row.dano))
