@@ -10,7 +10,8 @@ programa, las evaluaciones, PPA, documentación o indicadores.
 - [Programa de Trabajo Preventivo SG-SST](./prevencion/pdtp.md)
 - [Para, Piensa y Actúa (PPA)](./prevencion/ppa-digital.md)
 - [Documentación preventiva](./prevencion/documentacion.md)
-- [Indicadores de accidentabilidad](./prevencion/indicadores.md)
+- [Indicadores de seguridad y salud en el trabajo](./prevencion/indicadores.md)
+- [Indicadores material y ambiental](./prevencion/indicadores-material-ambiental.md)
 
 El acceso `PPA por revisar` abre directamente los casos que requieren
 revisión. Usa el enlace de regreso del detalle o el botón Atrás del navegador

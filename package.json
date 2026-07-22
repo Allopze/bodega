@@ -21,6 +21,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env.local db/seed.ts",
     "db:seed-pdtp-checklists": "tsx --env-file=.env.local scripts/seed-pdtp-checklists-2026.ts",
+    "pdtp:bootstrap-2026": "tsx --env-file=.env.local scripts/bootstrap-pdtp-2026.ts",
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",
     "db:normalize-fuel-suppliers": "tsx --env-file=.env.local scripts/normalize-fuel-suppliers.ts",
     "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",
