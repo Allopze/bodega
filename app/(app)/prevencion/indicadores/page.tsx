@@ -8,7 +8,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { CanonicalIndicatorsDashboard } from "./canonical-indicators-dashboard"
 import { ExportIndicadoresButton } from "./indicadores-export-button"
 
-export const metadata: Metadata = { title: "Indicadores de accidentabilidad" }
+export const metadata: Metadata = { title: "Indicadores de seguridad y salud en el trabajo" }
 
 type IndicadoresPageProps = {
   searchParams: Promise<{ year?: string }>
@@ -31,13 +31,13 @@ export default async function IndicadoresPage({ searchParams }: IndicadoresPageP
   return (
     <PageContainer>
       <PageHeader
-        title="Indicadores de accidentabilidad"
-        description="Registro mensual de indicadores de seguridad y salud ocupacional por faena."
+        title="Indicadores de seguridad y salud en el trabajo"
+        description="Registro mensual de indicadores de seguridad y salud ocupacional: tasa de accidentabilidad, frecuencia y gravedad por faena."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
-            { label: "Indicadores de accidentabilidad" },
+            { label: "Indicadores de seguridad y salud en el trabajo" },
           ]} />
         }
         actions={<ExportIndicadoresButton year={year} />}

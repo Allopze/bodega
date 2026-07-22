@@ -6,11 +6,11 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Indicadores de seguridad y salud en el trabajo"
+        title="Indicadores material y ambiental"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Prevención", href: "/prevencion" },
-            { label: "Indicadores de seguridad y salud en el trabajo" },
+            { label: "Indicadores material y ambiental" },
           ]} />
         }
       />

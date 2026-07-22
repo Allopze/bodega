@@ -744,3 +744,139 @@ export async function invalidateClosedIndicatorPeriod(args: {
 export function safetyIndicatorPeriodIdentity(worksiteId: string, year: number, month: number) {
   return periodKey(worksiteId, year, month)
 }
+
+export interface MaterialEnvironmentalEventData {
+  worksiteId: string
+  worksiteName: string
+  monthly: Array<{
+    month: number
+    dangerousIncidents: number
+    materialDamage: number
+    environmentalSpills: number
+  }>
+  annual: {
+    dangerousIncidents: number
+    materialDamage: number
+    environmentalSpills: number
+  }
+}
+
+/**
+ * Obtiene el conteo canónico de eventos material y ambiental desde el registro
+ * de incidentes, agrupado por faena y mes. Solo considera eventos tipo:
+ * - dangerous_incident (incidente peligroso)
+ * - material_damage (daño material)
+ * - environmental_spill (daño ambiental/derrame)
+ */
+export async function getMaterialEnvironmentalEvents(
+  year: number,
+  scope: WorksiteScope,
+): Promise<{ worksites: Array<{ id: string; name: string }>; eventData: MaterialEnvironmentalEventData[] }> {
+  if (!Number.isInteger(year) || year < 2024 || year > 2100) throw new Error("Año inválido.")
+
+  const worksitesVisible = await listVisibleWorksites(scope)
+  const ids = worksitesVisible.map((item) => item.id)
+  if (ids.length === 0) return { worksites: [], eventData: [] }
+
+  const effectiveScope: WorksiteScope = ids.length > 0 ? { mode: "some", ids } : { mode: "none", ids: [] }
+
+  const period = periodExpressions()
+  const incidentScope = scopeCondition(effectiveScope, preventionIncidents.worksiteId)
+
+  const eventTypes = ["dangerous_incident", "material_damage", "environmental_spill"]
+
+  const rows = await db.select({
+    incidentId: preventionIncidents.id,
+    worksiteId: preventionIncidents.worksiteId,
+    year: period.year,
+    month: period.month,
+    eventType: preventionIncidents.eventType,
+  }).from(preventionIncidents).where(and(
+    sql`${period.year} = ${year}`,
+    inArray(preventionIncidents.eventType, eventTypes),
+    incidentScope,
+  ))
+
+  const worksiteNames = new Map(worksitesVisible.map((item) => [item.id, item.name]))
+
+  type Accumulator = { dangerousIncidents: number; materialDamage: number; environmentalSpills: number }
+
+  function emptyAcc(): Accumulator {
+    return { dangerousIncidents: 0, materialDamage: 0, environmentalSpills: 0 }
+  }
+
+  // Agrupar por worksiteId + month
+  const byWsMonth = new Map<string, Accumulator>()
+  const byWsYear = new Map<string, Accumulator>()
+
+  for (const row of rows) {
+    const wsKey = `${row.worksiteId}:${row.month}`
+    const wsAnnualKey = row.worksiteId
+
+    if (!byWsMonth.has(wsKey)) byWsMonth.set(wsKey, emptyAcc())
+    if (!byWsYear.has(wsAnnualKey)) byWsYear.set(wsAnnualKey, emptyAcc())
+
+    const monthAcc = byWsMonth.get(wsKey)!
+    const yearAcc = byWsYear.get(wsAnnualKey)!
+
+    if (row.eventType === "dangerous_incident") {
+      monthAcc.dangerousIncidents++
+      yearAcc.dangerousIncidents++
+    } else if (row.eventType === "material_damage") {
+      monthAcc.materialDamage++
+      yearAcc.materialDamage++
+    } else if (row.eventType === "environmental_spill") {
+      monthAcc.environmentalSpills++
+      yearAcc.environmentalSpills++
+    }
+  }
+
+  // Armar data por faena
+  const eventData: MaterialEnvironmentalEventData[] = worksitesVisible.map((worksite) => {
+    const monthly = Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1
+      const acc = byWsMonth.get(`${worksite.id}:${month}`) ?? emptyAcc()
+      return { month, ...acc }
+    })
+    const annual = byWsYear.get(worksite.id) ?? emptyAcc()
+    return { worksiteId: worksite.id, worksiteName: worksite.name, monthly, annual }
+  })
+
+  // Armar total
+  if (ids.length > 0) {
+    const totalMonthly = Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1
+      let dangerousIncidents = 0
+      let materialDamage = 0
+      let environmentalSpills = 0
+      for (const wsId of ids) {
+        const acc = byWsMonth.get(`${wsId}:${month}`) ?? emptyAcc()
+        dangerousIncidents += acc.dangerousIncidents
+        materialDamage += acc.materialDamage
+        environmentalSpills += acc.environmentalSpills
+      }
+      return { month, dangerousIncidents, materialDamage, environmentalSpills }
+    })
+
+    let totalDangerous = 0
+    let totalMaterial = 0
+    let totalEnvironmental = 0
+    for (const [, acc] of byWsYear) {
+      totalDangerous += acc.dangerousIncidents
+      totalMaterial += acc.materialDamage
+      totalEnvironmental += acc.environmentalSpills
+    }
+
+    eventData.push({
+      worksiteId: "total",
+      worksiteName: "Total de faenas visibles",
+      monthly: totalMonthly,
+      annual: { dangerousIncidents: totalDangerous, materialDamage: totalMaterial, environmentalSpills: totalEnvironmental },
+    })
+  }
+
+  return {
+    worksites: worksitesVisible,
+    eventData,
+  }
+}
