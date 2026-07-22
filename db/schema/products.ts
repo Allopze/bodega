@@ -19,6 +19,7 @@ export const eppProductFamilies = pgTable("epp_product_families", {
   categoryId:     text("category_id").notNull().references(() => productCategories.id),
   canonicalName:  text("canonical_name").notNull(),
   identityKey:    text("identity_key").notNull().unique(),
+  /** @deprecated Usar eppTypeId (FK canónica a epp_types.id) */
   eppType:        text("epp_type"),
   eppTypeId:      text("epp_type_id").references(() => eppTypes.id),
   brand:          text("brand"),

@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { EPP_GAP_TYPE_LABELS, type EppCoverageGap } from "@/lib/prevention/epp"
-import { escalateBlockingEppGapsAction } from "./actions"
+import { escalateBlockingEppGapsAction, generateReplenishmentAction } from "./actions"
 
 interface Props {
   gaps: EppCoverageGap[]
@@ -60,11 +60,21 @@ export function EppGapList({ gaps, canEscalate }: Props) {
             Escalar crea una acción CAPA por persona y tipo de EPP; no cierra la brecha por sí mismo.
           </p>
           {canEscalate && (
-            <Button type="button" size="sm" className="mt-3" disabled={pending} onClick={escalate}>
-              Escalar brechas bloqueantes a CAPA
-            </Button>
-          )}
-          {message && <p role="status" className="mt-2 text-sm">{message}</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="destructive" disabled={pending} onClick={escalate}>
+                Escalar brechas bloqueantes a CAPA
+              </Button>
+              <Button size="sm" variant="secondary" disabled={pending} onClick={() => {
+                setMessage(null)
+                startTransition(async () => {
+                  const res = await generateReplenishmentAction()
+                  setMessage(res.ok ? "Borradores de solicitud de reposición creados en Solicitudes." : res.message ?? "Error")
+                })
+              }}>
+                Generar Solicitud de Reposición
+              </Button>
+            </div>
+          )}{message && <p role="status" className="mt-2 text-sm">{message}</p>}
         </div>
       )}
 

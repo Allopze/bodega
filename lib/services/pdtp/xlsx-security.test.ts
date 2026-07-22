@@ -23,7 +23,7 @@ describe("PDTP Excel upload security", () => {
     const buffer = await workbookBuffer()
     expect(() => validatePdtpXlsxEnvelope({ name: "programa.xls", type: "application/vnd.ms-excel", size: buffer.length, buffer })).toThrow(/\.xls no está permitido/i)
     const corrupt = Buffer.from("no es un zip")
-    expect(() => validatePdtpXlsxEnvelope({ name: "programa.xlsx", type: "application/octet-stream", size: corrupt.length, buffer: corrupt })).toThrow(/firma zip\/xlsx/i)
+    expect(() => validatePdtpXlsxEnvelope({ name: "programa.xlsx", type: "application/octet-stream", size: corrupt.length, buffer: corrupt })).toThrow(/firma zip\/excel/i)
     expect(() => validatePdtpXlsxEnvelope({ name: "programa.xlsx", type: "text/plain", size: buffer.length, buffer })).toThrow(/mime/i)
   })
 

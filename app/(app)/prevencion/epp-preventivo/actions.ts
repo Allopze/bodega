@@ -15,6 +15,7 @@ import {
   updateRequirementSchema,
   type EppAccess,
 } from "@/lib/services/prevention-epp"
+import { generateReplenishmentDrafts } from "@/lib/services/epp-replenishment"
 import type { ActionState } from "@/lib/validation/prevention"
 
 const BASE = "/prevencion/epp-preventivo"
@@ -65,4 +66,15 @@ export async function escalateBlockingEppGapsAction(input: unknown): Promise<Act
   const parsed = parseZ(escalateBlockingEppGapsSchema, input)
   if (!parsed.ok) return parsed
   return run(accessFromSession(guard.session), (access) => escalateBlockingEppGapsToCapa(access, parsed.data))
+}
+
+export async function generateReplenishmentAction(): Promise<ActionState> {
+  const guard = await guardPermission("prevention:epp:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), async (access) => {
+    const res = await generateReplenishmentDrafts(access)
+    if (res.createdCount === 0) {
+      throw new Error("No hay brechas activas para generar reposición.")
+    }
+  })
 }
