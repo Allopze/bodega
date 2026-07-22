@@ -21,6 +21,13 @@ const CRITICAL_PAGES = [
   { path: "/admin/trabajadores", name: "Admin trabajadores" },
   { path: "/admin/auditoria",  name: "Admin auditoría" },
   { path: "/login",            name: "Login" },
+  { path: "/prevencion/pdtp",             name: "PDTP — Programas" },
+  { path: "/prevencion/pdtp/nuevo",       name: "PDTP — Nuevo programa" },
+  { path: "/prevencion/pdtp/obligaciones", name: "PDTP — Trabajo por eventos" },
+  { path: "/prevencion/pdtp/plantillas",  name: "PDTP — Plantillas" },
+  { path: "/prevencion/pdtp/aprobaciones", name: "PDTP — Aprobaciones" },
+  { path: "/prevencion/pdtp/acciones",    name: "PDTP — Acciones correctivas" },
+  { path: "/prevencion/pdtp/cobertura",   name: "PDTP — Cobertura MIPER y legal" },
 ]
 
 test.describe("Accessibility audit", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ROLE_RESPONSIBLE_SLUGS, SHEET_META } from "@/lib/services/pdtp/constants"
+import { ROLE_RESPONSIBLE_SLUGS, SHEET_META } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
 
 describe("PDTP role scope", () => {
   it("uses jefe_terreno for the supervision sheet without a separate supervisor_faena role", () => {

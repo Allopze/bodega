@@ -54,4 +54,63 @@ describe("prevention PDTP catalog extraction", () => {
     expect(driverReport?.responsibleSlugs).toContain("conductores_operadores_choferes")
     expect(driverReport?.responsibleDisplay).toBe("Conductores, operadores y choferes")
   })
+
+  it("extracts historical E cells with coordinates and auditable workbook metadata", async () => {
+    const workbook = await readPdtpWorkbook(workbookPath)
+    const catalog = extractPdtpCatalogFromWorkbook(workbook)
+
+    expect(catalog.importedExecutions).toEqual([
+      expect.objectContaining({ activityNumber: 1, month: 1, week: 4, executedQuantity: 1, sourceCell: "M14" }),
+      expect.objectContaining({ activityNumber: 2, month: 2, week: 1, executedQuantity: 1, sourceCell: "O15" }),
+      expect.objectContaining({ activityNumber: 6, month: 1, week: 1, executedQuantity: 1, sourceCell: "G19" }),
+      expect.objectContaining({ activityNumber: 6, month: 1, week: 2, executedQuantity: 1, sourceCell: "I19" }),
+      expect.objectContaining({ activityNumber: 6, month: 1, week: 3, executedQuantity: 1, sourceCell: "K19" }),
+      expect.objectContaining({ activityNumber: 6, month: 1, week: 4, executedQuantity: 1, sourceCell: "M19" }),
+    ])
+    expect(catalog.metadata).toMatchObject({
+      documentCode: "RE-36",
+      indicatorType: "Proceso",
+      indicatorTarget: 0.9,
+      indicatorPeriodicity: "Mensual",
+      measurementOwner: "Cada faena",
+      elaboratedByName: "Lorena Alvarado Cornejo",
+      approvedByName: "Paulette Recart Andrades",
+    })
+    expect(catalog.metadata?.changeControl).toEqual([
+      expect.objectContaining({ date: expect.stringContaining("2026-02-12"), description: expect.stringContaining("items 3") }),
+    ])
+    expect(catalog.metadata?.roleLegend).toEqual([
+      { code: "JDPR", label: "Jefa departamento de Prevención de Riesgos" },
+      { code: "PRF", label: "Prevención de Riesgos de Faena" },
+      { code: "Sup.", label: "Supervisor de Faena" },
+      { code: "JT", label: "Jefe de Terreno" },
+      { code: "CPHS", label: "Comité Pariatrio de Higiene y Seguridad" },
+    ])
+    expect(catalog.metadata?.scheduleLegend).toMatch(/cada vez que sea necesario/i)
+    expect(catalog.warnings).toEqual([expect.stringContaining("fórmula")])
+  })
+
+  it("rejects missing official sheets and altered P/E structure explicitly", async () => {
+    const missingSheetWorkbook = await readPdtpWorkbook(workbookPath)
+    const cphs = missingSheetWorkbook.getWorksheet("CPHS")
+    expect(cphs).toBeDefined()
+    missingSheetWorkbook.removeWorksheet(cphs!.id)
+    expect(() => extractPdtpCatalogFromWorkbook(missingSheetWorkbook)).toThrow(/no se encontro la hoja CPHS/i)
+
+    const alteredWorkbook = await readPdtpWorkbook(workbookPath)
+    alteredWorkbook.getWorksheet("PDTP GENERAL")!.getCell("F12").value = "E"
+    expect(() => extractPdtpCatalogFromWorkbook(alteredWorkbook)).toThrow(/estructura PDTP alterada.*par P\/E/i)
+  })
+
+  it("reports unknown schedule values and formulas without a cached result", async () => {
+    const workbook = await readPdtpWorkbook(workbookPath)
+    const general = workbook.getWorksheet("PDTP GENERAL")!
+    general.getCell("F14").value = "pendiente"
+    general.getCell("H14").value = { formula: "1+1" }
+    const catalog = extractPdtpCatalogFromWorkbook(workbook)
+    expect(catalog.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/F14.*valor P\/E desconocido/i),
+      expect.stringMatching(/H14.*no tiene resultado evaluable/i),
+    ]))
+  })
 })

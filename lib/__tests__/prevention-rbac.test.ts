@@ -8,8 +8,12 @@ describe("prevention module RBAC", () => {
       "prevention:pdtp:view",
       "prevention:pdtp:execute",
       "prevention:pdtp:program:manage",
+      "prevention:pdtp:override:manage",
+      "prevention:pdtp:submit_review",
       "prevention:pdtp:approve",
       "prevention:pdtp:sign_legal",
+      "prevention:pdtp:activate",
+      "prevention:pdtp:lifecycle:manage",
       "prevention:docs:view",
       "prevention:docs:manage",
       "prevention:docs:submit_review",
@@ -149,6 +153,22 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:pdtp:program:manage")).toEqual([
       "administrador",
       "prevencionista",
+    ])
+    expect(rolesFor("prevention:pdtp:override:manage")).toEqual([
+      "administrador",
+      "prevencionista",
+    ])
+    expect(rolesFor("prevention:pdtp:submit_review")).toEqual([
+      "administrador",
+      "prevencionista",
+    ])
+    expect(rolesFor("prevention:pdtp:activate")).toEqual([
+      "administrador",
+      "jefa_chome",
+    ])
+    expect(rolesFor("prevention:pdtp:lifecycle:manage")).toEqual([
+      "administrador",
+      "jefa_chome",
     ])
   })
 

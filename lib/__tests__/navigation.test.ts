@@ -101,10 +101,12 @@ describe("sidebar navigation", () => {
       "Para, Piensa y Actúa",
       "Programa preventivo SG-SST",
       "Documentación",
-      "Indicadores de accidentabilidad",
+      "Indicadores de seguridad y salud en el trabajo",
+      "Indicadores material y ambiental",
     ])
     expect(prevention?.items.map((item) => item.href)).not.toContain("/prevencion")
     expect(prevention?.items.find((item) => item.href === "/prevencion/pdtp")?.children?.map((item) => item.label)).toEqual([
+      "Trabajo por eventos",
       "Aprobaciones",
       "Acciones correctivas",
       "Cobertura MIPER y legal",

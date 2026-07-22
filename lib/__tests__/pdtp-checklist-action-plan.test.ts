@@ -1,6 +1,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
@@ -52,6 +53,25 @@ async function seedBaseFixtures() {
   })
 }
 
+/**
+ * Siembra una plantilla de checklist directo en la base (bypassa el servicio
+ * guardado). `prog-1` se fija en `active` para los tests de operación real
+ * (llenado de checklist, plan de acción); la plantilla se asume preexistente
+ * desde antes de la activación, tal como exige el guard de contenido firmado.
+ */
+async function seedChecklistTemplate(
+  activityId: string,
+  label: string,
+  definition: Record<string, unknown>,
+): Promise<string> {
+  const id = `cl-${activityId}-${Math.random().toString(36).slice(2, 10)}`
+  await inMemoryDb.insert(schema.pdtpActivityChecklists).values({
+    id, activityId, programId: "prog-1", version: "01", label,
+    definitionJson: definition, isActive: true, createdAt: NOW(), updatedAt: NOW(),
+  })
+  return id
+}
+
 async function completeActionForVerification(actionPlanItemId: string) {
   const { addFollowup } = await import("@/lib/services/pdtp/followups")
   await addFollowup({
@@ -82,6 +102,8 @@ beforeEach(async () => {
 
 describe("pdtp checklist templates", () => {
   it("crea una plantilla por defecto y la recupera como activa", async () => {
+    // La plantilla se autora en `draft`, antes de que el programa entre a revisión.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "draft" }).where(eq(schema.pdtpPrograms.id, "prog-1"))
     const { ensureDefaultChecklist, getActivePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
     const created = await ensureDefaultChecklist("act-1", "Charla de seguridad")
     expect(created.isActive).toBe(true)
@@ -92,6 +114,7 @@ describe("pdtp checklist templates", () => {
   })
 
   it("savePdtpActivityChecklist desactiva la versión anterior al crear una nueva", async () => {
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "draft" }).where(eq(schema.pdtpPrograms.id, "prog-1"))
     const { savePdtpActivityChecklist, listPdtpActivityChecklists } = await import("@/lib/services/pdtp/checklists")
     const def = {
       code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo" as const,
@@ -125,25 +148,20 @@ describe("pdtp checklist templates", () => {
 
 describe("pdtp execution checklist → plan de acción handoff", () => {
   it("submitExecutionChecklist completa el checklist y genera acciones para ítems no_cumple", async () => {
-    const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
     const { getOrCreateExecutionChecklist, upsertChecklistResponses, getExecutionChecklist } = await import("@/lib/services/pdtp/execution-checklists")
     const { submitExecutionChecklist } = await import("@/lib/services/pdtp/action-plan")
 
-    await savePdtpActivityChecklist({
-      activityId: "act-1",
-      label: "L1",
-      definition: {
-        code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
-        legalFramework: [], applicableTo: "",
-        sections: [{
-          id: "s1", title: "Sección 1",
-          items: [
-            { id: "i1", label: "Ítem 1", kind: "cumple_nocumple_obs" },
-            { id: "i2", label: "Ítem 2", kind: "cumple_nocumple_obs" },
-          ],
-        }],
-        closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
-      },
+    await seedChecklistTemplate("act-1", "L1", {
+      code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "s1", title: "Sección 1",
+        items: [
+          { id: "i1", label: "Ítem 1", kind: "cumple_nocumple_obs" },
+          { id: "i2", label: "Ítem 2", kind: "cumple_nocumple_obs" },
+        ],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
     })
 
     const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
@@ -175,25 +193,20 @@ describe("pdtp execution checklist → plan de acción handoff", () => {
   })
 
   it("deriva prioridad/plazo del danoPotencial del ítem; sin ese campo usa el default 'media'", async () => {
-    const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
     const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
     const { submitExecutionChecklist, listActionPlanItems } = await import("@/lib/services/pdtp/action-plan")
 
-    await savePdtpActivityChecklist({
-      activityId: "act-1",
-      label: "L1",
-      definition: {
-        code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
-        legalFramework: [], applicableTo: "",
-        sections: [{
-          id: "s1", title: "Sección 1",
-          items: [
-            { id: "i1", label: "Sin daño potencial", kind: "cumple_nocumple_obs" },
-            { id: "i2", label: "Riesgo grave", kind: "cumple_nocumple_obs", danoPotencial: "grave" },
-          ],
-        }],
-        closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
-      },
+    await seedChecklistTemplate("act-1", "L1", {
+      code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "s1", title: "Sección 1",
+        items: [
+          { id: "i1", label: "Sin daño potencial", kind: "cumple_nocumple_obs" },
+          { id: "i2", label: "Riesgo grave", kind: "cumple_nocumple_obs", danoPotencial: "grave" },
+        ],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
     })
 
     const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
@@ -306,25 +319,20 @@ describe("pdtp checklist and action-plan scope", () => {
 
 describe("pdtp checklist multi-sujeto", () => {
   it("una ejecución sostiene N instancias por sujeto, cada una con su plan de acción prefijado", async () => {
-    const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
     const {
       getOrCreateExecutionChecklist, listExecutionChecklists, recalcExecutionQuantityFromInstances,
     } = await import("@/lib/services/pdtp/execution-checklists")
     const { submitExecutionChecklist, listActionPlanItems } = await import("@/lib/services/pdtp/action-plan")
 
     // Misma definición para ambos extintores (patrón C: un def, N sujetos).
-    await savePdtpActivityChecklist({
-      activityId: "act-1",
-      label: "Extintores",
-      definition: {
-        code: "ext", version: "01", revisionDate: "2026-01-01", title: "Extintores", tipo: "nuevo",
-        legalFramework: [], applicableTo: "",
-        sections: [{
-          id: "s1", title: "Estado",
-          items: [{ id: "i1", label: "Manómetro en zona verde", kind: "cumple_nocumple_obs" }],
-        }],
-        closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
-      },
+    await seedChecklistTemplate("act-1", "Extintores", {
+      code: "ext", version: "01", revisionDate: "2026-01-01", title: "Extintores", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "s1", title: "Estado",
+        items: [{ id: "i1", label: "Manómetro en zona verde", kind: "cumple_nocumple_obs" }],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
     })
 
     // Dos sujetos distintos para la MISMA ejecución.
@@ -371,17 +379,13 @@ describe("pdtp checklist multi-sujeto", () => {
   })
 
   it("getOrCreateExecutionChecklist sin sujeto crea la instancia de faena única (backward-compat)", async () => {
-    const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
     const { getOrCreateExecutionChecklist, recalcExecutionQuantityFromInstances } = await import("@/lib/services/pdtp/execution-checklists")
 
-    await savePdtpActivityChecklist({
-      activityId: "act-1", label: "Taller",
-      definition: {
-        code: "t", version: "01", revisionDate: "2026-01-01", title: "T", tipo: "nuevo",
-        legalFramework: [], applicableTo: "",
-        sections: [{ id: "s1", title: "S1", items: [{ id: "i1", label: "I1", kind: "cumple_nocumple_obs" }] }],
-        closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
-      },
+    await seedChecklistTemplate("act-1", "Taller", {
+      code: "t", version: "01", revisionDate: "2026-01-01", title: "T", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{ id: "s1", title: "S1", items: [{ id: "i1", label: "I1", kind: "cumple_nocumple_obs" }] }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
     })
 
     // Sin subject → faena única (subjectId='').
@@ -398,7 +402,6 @@ describe("pdtp checklist multi-sujeto", () => {
 
 describe("pdtp cumplimiento integral", () => {
   it("calcula los 3 ejes y el ponderado a partir de checklist + plan de acción", async () => {
-    const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
     const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
     const { submitExecutionChecklist, verifyActionPlanItem, listActionPlanItems } = await import("@/lib/services/pdtp/action-plan")
     const { approvePdtpExecution } = await import("@/lib/services/pdtp/executions")
@@ -409,14 +412,11 @@ describe("pdtp cumplimiento integral", () => {
       plannedQuantity: 1, sourceColumn: "S1",
     })
 
-    await savePdtpActivityChecklist({
-      activityId: "act-1", label: "L1",
-      definition: {
-        code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
-        legalFramework: [], applicableTo: "",
-        sections: [{ id: "s1", title: "S1", items: [{ id: "i1", label: "I1", kind: "cumple_nocumple_obs" }] }],
-        closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
-      },
+    await seedChecklistTemplate("act-1", "L1", {
+      code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{ id: "s1", title: "S1", items: [{ id: "i1", label: "I1", kind: "cumple_nocumple_obs" }] }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
     })
     const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
     await upsertChecklistResponses(instance.id, [{ seccionId: "s1", itemId: "i1", estado: "no_cumple", observacion: "Falla" }], "u1")
@@ -441,24 +441,20 @@ describe("pdtp cumplimiento integral", () => {
 
 describe("pdtp conteos por ejecución (badges de la hoja)", () => {
   it("countNoCumpleByExecution y countActionsByExecution agregan en batch sin N+1", async () => {
-    const { savePdtpActivityChecklist } = await import("@/lib/services/pdtp/checklists")
     const { getOrCreateExecutionChecklist, upsertChecklistResponses, countNoCumpleByExecution } = await import("@/lib/services/pdtp/execution-checklists")
     const { submitExecutionChecklist, listActionPlanItems, verifyActionPlanItem, countActionsByExecution } = await import("@/lib/services/pdtp/action-plan")
 
-    await savePdtpActivityChecklist({
-      activityId: "act-1", label: "L1",
-      definition: {
-        code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
-        legalFramework: [], applicableTo: "",
-        sections: [{
-          id: "s1", title: "S1",
-          items: [
-            { id: "i1", label: "I1", kind: "cumple_nocumple_obs" },
-            { id: "i2", label: "I2", kind: "cumple_nocumple_obs" },
-          ],
-        }],
-        closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
-      },
+    await seedChecklistTemplate("act-1", "L1", {
+      code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "s1", title: "S1",
+        items: [
+          { id: "i1", label: "I1", kind: "cumple_nocumple_obs" },
+          { id: "i2", label: "I2", kind: "cumple_nocumple_obs" },
+        ],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
     })
     const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
     await upsertChecklistResponses(instance.id, [
