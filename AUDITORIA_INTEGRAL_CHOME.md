@@ -20,7 +20,7 @@ Los bloques de problema/reproducción bajo cada hallazgo conservan la evidencia 
 
 Se aplicaron estos cambios en el checkout:
 
-- **CHO-001:** el export XLSX de trabajadores aplica `worksiteScopeSql` desde la sesión; el import valida IDs existentes dentro del scope, exige una faena destino existente y accesible para nuevas filas y vuelve a comprobar el scope en el `UPDATE ... RETURNING`.
+- **CHO-001:** el export Excel de trabajadores aplica `worksiteScopeSql` desde la sesión; el import valida IDs existentes dentro del scope, exige una faena destino existente y accesible para nuevas filas y vuelve a comprobar el scope en el `UPDATE ... RETURNING`.
 - **CHO-002:** la activación masiva de vehículos resuelve la sesión, deduplica IDs, exige que todos pertenezcan al scope y usa la cantidad real retornada. La importación de cargas valida permisos de creación y destinos antes de crear faenas, conserva el scope de faenas creadas y registra el scope del vehículo autocreado. La vinculación de consumos rechaza vehículos cuya `worksiteId` no coincide con la faena del lote.
 - **CHO-003:** las rutas de descarga de cotizaciones de repuestos y servicios ahora exigen propiedad cuando el usuario no tiene `view_all`, manteniendo respuesta 404 para no enumerar archivos.
 - **CHO-006:** la validación de permisos usa `inArray` con IDs únicos y el formulario envía el slug de un rol protegido mediante un campo hidden.
@@ -51,7 +51,7 @@ Se aplicaron estos cambios:
 - **CHO-010:** `instrumentation.ts` importa los config server/edge y exporta `onRequestError`; se agregó `instrumentation-client.ts`, `sentry.edge.config.ts` y captura explícita en `app/global-error.tsx`, conservando redacción de headers sensibles.
 - **CHO-012:** TAE dejó cuatro controles primarios más período, movió punto/sellos/evidencia a “Más filtros (N activos)”, y usa `DatePicker`. Reportes y Analítica quedaron en cuatro KPIs accionables.
 - **CHO-013:** las acciones móviles de Usuarios y el editor de stock mínimo tienen hit-area de 44 px en móvil y nombres accesibles contextuales.
-- **CHO-014:** `exceljs` se importa dinámicamente solo al descargar el XLSX de errores.
+- **CHO-014:** `exceljs` se importa dinámicamente solo al descargar el Excel de errores.
 - **CHO-015:** cobertura incluye rutas API y actions anidadas; CI incorpora un smoke de rutas críticas además de axe.
 - **CHO-016:** el benchmark siembra un tipo de equipo válido y la E2E de conciliación TAE incluye `equipment_type_id`, eliminando el fallo conocido de constraint antes de medir.
 - **CHO-017:** PRODUCT/README ya no congelan el conteo de permisos/secciones, describen el TTL real de RBAC, reflejan los movimientos vigentes y corrigen el enlace a `docs/diseño/DESIGN.md`.
@@ -133,7 +133,7 @@ Cambios aplicados en esta subpasada:
 
 #### Subpasada 5.5 — EPP, toggles y gates estáticos (2026-07-17)
 
-EPP quedó validado focalmente: el flujo actual es `Importar → Equipos de protección (EPP) → Importar XLSX → Revisar lote → Cancelar importación` y pasó tras alinear el test con ese contrato.
+EPP quedó validado focalmente: el flujo actual es `Importar → Equipos de protección (EPP) → Importar Excel → Revisar lote → Cancelar importación` y pasó tras alinear el test con ese contrato.
 
 Se corrigió el componente base `Switch`: el contenedor `<label>` y el `<input>` exponían simultáneamente el mismo `aria-label`, lo que producía dos controles accesibles para una sola acción. El nombre queda ahora únicamente en el input.
 
@@ -194,7 +194,7 @@ La repetición de `tae-reconciliation.spec.ts`, `tae-history-import.spec.ts` y `
 
 - histórico: `971` filas importadas, evidencias preservadas, decisiones ambiguas resueltas y reimportación del mismo archivo bloqueada;
 - público: QR, carga online y segunda carga offline sincronizada;
-- conciliación: canales TAE, TCT Diésel y TCT BlueMax presentados y exportación XLSX validada.
+- conciliación: canales TAE, TCT Diésel y TCT BlueMax presentados y exportación Excel validada.
 
 El log de servidor de la segunda importación registra el error esperado de archivo duplicado; la prueba confirmó que no aumentan lotes ni submissions.
 
@@ -511,7 +511,7 @@ La línea base confirmó dos bypasses de alcance de faena: uno exponía y permit
 - `npm run build`: aprobado con Next.js 16.2.10/Turbopack.
 - PostgreSQL real: 6/6 pruebas de concurrencia aprobadas para aprobaciones, entregas, recepción, egreso normal de stock y rate limit.
 - 63 migraciones SQL y 63 entradas del journal; índices contiguos, tags uno-a-uno y timestamps estrictamente crecientes.
-- Los exportes revisados usan XLSX; no se encontró un flujo de exportación CSV.
+- Los exportes revisados usan Excel; no se encontró un flujo de exportación CSV.
 
 ## Hallazgos Detallados
 
@@ -521,10 +521,10 @@ La línea base confirmó dos bypasses de alcance de faena: uno exponía y permit
 - **Tipo:** Seguridad / autorización / privacidad
 - **Certeza:** Confirmado por código y por contraste entre la página acotada y sus endpoints
 - **Archivos y líneas:** `app/api/admin/catalogos/export/route.ts:26-53,165-180`; `app/(app)/admin/trabajadores/actions.ts:148-193`; `lib/services/catalog-import.ts:72-92`; `modules/admin/manifest.ts:137-139`; referencia correcta en `app/(app)/admin/trabajadores/page.tsx:17-31`
-- **Ruta/flujo:** `/admin/trabajadores` → `GET /api/admin/catalogos/export?tipo=trabajadores` → importación XLSX
-- **Problema:** `admin:workers` se concede a roles acotados por faena, pero el export consulta todos los trabajadores sin `worksiteScopeSql`. El import confía en la columna `ID` del XLSX y actualiza por `workers.id` sin verificar que el trabajador pertenezca a una faena accesible. La creación usa la faena primaria o el literal `ws-default`, no una faena autorizada elegida/validada.
+- **Ruta/flujo:** `/admin/trabajadores` → `GET /api/admin/catalogos/export?tipo=trabajadores` → importación Excel
+- **Problema:** `admin:workers` se concede a roles acotados por faena, pero el export consulta todos los trabajadores sin `worksiteScopeSql`. El import confía en la columna `ID` del Excel y actualiza por `workers.id` sin verificar que el trabajador pertenezca a una faena accesible. La creación usa la faena primaria o el literal `ws-default`, no una faena autorizada elegida/validada.
 - **Impacto:** exposición de RUT, nombre, cargo, supervisor, prevencionista y faena de toda la organización; modificación cross-faena de PII; asignaciones incorrectas a `ws-default`.
-- **Reproducción:** iniciar sesión como `solicitante_faena` o `prevencionista_faena`; solicitar el XLSX de trabajadores y observar registros de otras faenas. Luego importar una fila cuyo `ID` corresponda a un trabajador fuera del alcance y modificar su cargo o estado.
+- **Reproducción:** iniciar sesión como `solicitante_faena` o `prevencionista_faena`; solicitar el Excel de trabajadores y observar registros de otras faenas. Luego importar una fila cuyo `ID` corresponda a un trabajador fuera del alcance y modificar su cargo o estado.
 - **Código exacto:**
 
 ```ts
@@ -536,7 +536,7 @@ const allWorkers = await db
   .from(workers)
   .leftJoin(worksites, eq(workers.worksiteId, worksites.id))
 
-await tx.update(workers).set({ /* datos del XLSX */ })
+await tx.update(workers).set({ /* datos del Excel */ })
   .where(eq(workers.id, row.existingId!))
 ```
 
@@ -851,7 +851,7 @@ icon: "h-8 w-8 p-0",
 - **Archivos y líneas:** `lib/combustibles/wizard-helpers.tsx:1-24`; `.next/diagnostics/route-bundle-stats.json`; chunk `.next/static/chunks/3dtoegaq6-47y.js`
 - **Ruta/flujo:** `/combustibles/importar`, `/combustibles/facturas`, revisión de importación de productos
 - **Problema:** `wizard-helpers.tsx` importa `exceljs` estáticamente aunque solo se usa al descargar errores. El chunk asociado pesa 931.235 bytes sin comprimir. El build reporta 2.201.854 bytes first-load JS para `/combustibles/importar`, 2.192.366 para `/combustibles/facturas` y 2.026.654 para `/admin/productos/importar/[batchId]`.
-- **Impacto:** parse/descarga innecesaria antes de que el usuario pida un XLSX, especialmente costosa en faena con red o dispositivo limitado.
+- **Impacto:** parse/descarga innecesaria antes de que el usuario pida un Excel, especialmente costosa en faena con red o dispositivo limitado.
 - **Reproducción:** ejecutar build y revisar `route-bundle-stats.json`; el chunk de 931 KB está en el first-load de las rutas.
 - **Código exacto:**
 
@@ -864,7 +864,7 @@ export function downloadErrorsXlsx(/* ... */) {
 }
 ```
 
-- **Solución propuesta:** `const ExcelJS = await import("exceljs")` dentro del handler o generar el XLSX en una ruta/Server Action; separar helpers visuales de helpers de exportación para que el bundler pueda cortar la dependencia. Añadir presupuesto de first-load por ruta.
+- **Solución propuesta:** `const ExcelJS = await import("exceljs")` dentro del handler o generar el Excel en una ruta/Server Action; separar helpers visuales de helpers de exportación para que el bundler pueda cortar la dependencia. Añadir presupuesto de first-load por ruta.
 - **Dependencias/orden:** medir después del cambio con el mismo build.
 
 ### CHO-015 — Los gates automatizados no representan los flujos críticos
@@ -1024,5 +1024,5 @@ await insertChunks(db, schema.fuelVehicles, Array.from({ length: 60 }, (_, index
 - Las pruebas de base usaron exclusivamente `bodega_e2e` en el contenedor desechable ya previsto por el repositorio; no se apuntó a una base productiva.
 - El benchmark local pasó con la base desechable; queda pendiente repetirlo en CI/staging con cardinalidad representativa.
 - Se encontró un archivo versionado vacío con un nombre accidental parecido a una comprensión de Python. Es deuda menor de higiene y no se elevó a hallazgo para evitar ruido.
-- Se revisaron positivamente headers de seguridad/CSP, rutas de archivos representativas con path seguro, healthcheck compatible con BusyBox, logger con redacción, formato XLSX, Docker standalone y guards públicos/rate limit representativos.
+- Se revisaron positivamente headers de seguridad/CSP, rutas de archivos representativas con path seguro, healthcheck compatible con BusyBox, logger con redacción, formato Excel, Docker standalone y guards públicos/rate limit representativos.
 - Este informe describe el checkout del 17 de julio de 2026; no afirma el estado de una imagen productiva distinta ni de secretos/servicios externos no conectados durante la auditoría.

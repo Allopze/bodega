@@ -1,6 +1,6 @@
-# Importacion de EPP desde XLSX
+# Importacion de EPP desde Excel
 
-Puedes cargar varios productos EPP de una sola vez subiendo un archivo XLSX.
+Puedes cargar varios productos EPP de una sola vez subiendo un archivo Excel.
 El sistema analiza los datos, los normaliza automaticamente y te permite
 revisar cada fila antes de incorporarla al catalogo.
 
@@ -152,7 +152,7 @@ Si no se especifica, se asigna "Elementos de Proteccion Personal".
 
 1. Entra a `Administracion > Productos`.
 2. Haz clic en `Importar` y luego `Equipos de proteccion (EPP)`.
-3. Selecciona el archivo XLSX y haz clic en `Importar XLSX`.
+3. Selecciona el archivo Excel y haz clic en `Importar Excel`.
 4. El sistema analiza el archivo y muestra un resumen del lote.
 5. Haz clic en `Revisar lote` para ver cada fila con sus correcciones.
 6. Decide que hacer con cada fila: **Crear nuevo**, **Actualizar existente**

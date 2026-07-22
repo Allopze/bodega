@@ -19,5 +19,5 @@ preventivos. Al entrar desde Inicio se muestran primero los casos `Por revisar`.
 
 - Usa el acceso del encabezado para obtener el enlace o QR publico del PPA por
   faena.
-- Si tienes permiso de gestión, usa `Exportar XLSX` para descargar los PPA
+- Si tienes permiso de gestión, usa `Exportar Excel` para descargar los PPA
   visibles con los filtros seleccionados.

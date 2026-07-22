@@ -1,7 +1,7 @@
 # Auditoría del módulo de Prevención — Chome
 
 **Fecha:** 2026-07-20 · **Actualización post-fix:** 2026-07-21 (5 iteraciones — ver `PLAN_IMPLEMENTACION_6_PENDIENTES_PREVENCION.md` §9 para el detalle de la 4ª y 5ª) · **Rama:** `feat/prevencion-mejoras` · **Working tree:** sucio (fixes aplicados)
-**Alcance:** todo lo asociado a `/prevencion` — `app/(app)/prevencion/**`, `app/api/prevencion/**`, `db/schema/prevention/**`, `lib/prevention/**`, `lib/services/prevention*`, jobs cron, XLSX y conexión con módulos vecinos (Bodega, SFTI legacy).
+**Alcance:** todo lo asociado a `/prevencion` — `app/(app)/prevencion/**`, `app/api/prevencion/**`, `db/schema/prevention/**`, `lib/prevention/**`, `lib/services/prevention*`, jobs cron, Excel y conexión con módulos vecinos (Bodega, SFTI legacy).
 **Método:** lectura estática con CodeGraph + grep focalizado + ejecución del suite focalizado. ~50.988 LOC inspeccionadas (sin tests). Builds previos: `2.493 tests verdes`, `297 archivos`, `57 omitidos` (estado al 18-07-2026 — `PLAN_FIX_MITIGACION_P0_PREVENCION.md` §19).
 
 ## Estado de remediación — 2026-07-21 (3 iteraciones)
@@ -75,7 +75,7 @@ Capacidad técnica P0 ya está cerrada (ver §19 del `PLAN_FIX_MITIGACION_P0_PRE
 | Carpeta | Archivos | LOC sin tests | Notas |
 |---|---:|---:|---|
 | `app/(app)/prevencion/**` | 240+ | ~37.000 | 23 sub-áreas, 13 server actions distintas |
-| `app/api/prevencion/**` | 33 routes | ~3.200 | XLSX + bulk-download + evidencia |
+| `app/api/prevencion/**` | 33 routes | ~3.200 | Excel + bulk-download + evidencia |
 | `db/schema/prevention/**` | 16 tablas + relaciones | ~3.200 | 15 dominios: CAPA, PDTP, MIPER, indicadores, salud… |
 | `lib/services/prevention*` | ~28 servicios | ~12.000 | Capa de dominio |
 | `lib/prevention/**` | 14 helpers | ~800 | Etiquetas, badges, cálculos puros |
@@ -285,7 +285,7 @@ const [allUsers, allWorksites] = await Promise.all([
 ])
 ```
 
-Sin `where`. Para empresas con 50k usuarios, cada export XLSX hace full table scan. **Más relevante** porque CAPA export corre desde la bandeja por supervisores.
+Sin `where`. Para empresas con 50k usuarios, cada export Excel hace full table scan. **Más relevante** porque CAPA export corre desde la bandeja por supervisores.
 
 **Fix:**
 ```ts

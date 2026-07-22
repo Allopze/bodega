@@ -6,12 +6,12 @@
 
 **Architecture:** Cada feature sigue el patrón ya establecido del área `prevencion`: lógica en `lib/services/prevention-*.ts` (funciones puras con `scope: WorksiteScope`), validación Zod en `lib/validation/prevention.ts`, server actions en `app/(app)/prevencion/<área>/actions.ts` con `guardPermission`, y UI en client components con `Table`/`TableRoot`/`EmptyState` del design system. Tests con PGlite en `lib/__tests__/prevention-*.test.ts`.
 
-**Tech Stack:** Next.js (App Router, versión con breaking changes — leer `node_modules/next/dist/docs/` antes de tocar APIs de Next), Drizzle ORM (Postgres), Zod, Vitest + PGlite, recharts, XLSX (`buildXlsxBuffer`, nunca CSV).
+**Tech Stack:** Next.js (App Router, versión con breaking changes — leer `node_modules/next/dist/docs/` antes de tocar APIs de Next), Drizzle ORM (Postgres), Zod, Vitest + PGlite, recharts, Excel (`buildXlsxBuffer`, nunca CSV).
 
 ## Global Constraints
 
 - Lógica de negocio SOLO en `lib/` + `app/`, nunca en `modules/*` salvo nav/permisos/seed (regla `AGENTS.md`).
-- Exports SIEMPRE XLSX vía `buildXlsxBuffer`, nunca CSV.
+- Exports SIEMPRE Excel vía `buildXlsxBuffer`, nunca CSV.
 - Cambios de schema → `npm run db:generate` (NUNCA editar `db/migrations/meta/_journal.json` a mano); aplicar con `npm run db:migrate`; verificar que `db:generate` reporte "No schema changes" después.
 - Tests e2e/PGlite: correr con `PGHOST=/var/run/postgresql` disponible.
 - `WorksiteScope = string[] | "all"`; el helper `scopeToIds(resolveWorksiteScope(session))` convierte la sesión a scope. `resolveWorksiteScope` retorna `{ mode: "all" | "some" | "none", ids?: string[] }`.

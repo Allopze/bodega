@@ -56,8 +56,8 @@ rechaza.
 | `/api/health` | `app/api/health/route.ts` | GET | Healthcheck (público) |
 | `/api/notifications` | `app/api/notifications/route.ts` | GET | Leer notificaciones + unreadCount |
 | `/api/attachments/[id]` | `app/api/attachments/[id]/route.ts` | GET | Descargar adjunto (ownership check) |
-| `/api/reportes/export` | `app/api/reportes/export/route.ts` | GET | Exportar reportes XLSX |
-| `/api/trazabilidad/export` | `app/api/trazabilidad/export/route.ts` | GET | Exportar trazabilidad XLSX |
+| `/api/reportes/export` | `app/api/reportes/export/route.ts` | GET | Exportar reportes Excel |
+| `/api/trazabilidad/export` | `app/api/trazabilidad/export/route.ts` | GET | Exportar trazabilidad Excel |
 | `/api/purchase-orders/invoices/[id]` | `app/api/purchase-orders/invoices/[id]/route.ts` | GET | Descargar factura |
 | `/api/servicios/cotizaciones/[id]` | `app/api/servicios/cotizaciones/[id]/route.ts` | GET | Descargar cotización |
 | `/api/repuestos/quotaciones/[id]` | `app/api/repuestos/quotaciones/[id]/route.ts` | GET | Descargar cotización |

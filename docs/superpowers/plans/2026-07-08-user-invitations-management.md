@@ -1243,7 +1243,7 @@ git commit -m "test: verify invitation management flow"
 
 - Expired invitation cleanup job: optional, because rows are useful audit evidence.
 - Bulk cancellation: defer until there is demonstrated operational need.
-- Export invitations: defer; if added later, follow the repo rule and export XLSX, never CSV.
+- Export invitations: defer; if added later, follow the repo rule and export Excel, never CSV.
 - Invitation detail route: defer; the panel should be enough for pending/recent operational management.
 - Notification to inviter when accepted: useful but separate from viewing/cancelling sent invitations.
 

@@ -8,6 +8,8 @@
 
 **Objetivo:** definir qué falta para que Prevención pueda sustituir las plataformas fragmentadas que usa Chome y convertirse en un sistema integral, trazable y ajustado a su operación de residuos industriales.
 
+**Nota de fuente (2026-07-22):** la fuente de verdad del PDTP es ahora `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx` (**87 actividades**, tras la quita total de N°4 y N°8). Las menciones a `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` y a "89 actividades" en este documento son bitácora histórica y se conservan sin alterar como registro de auditoría. Detalle del contraste y del cambio: §2.0 de `PLAN_AJUSTE_INTEGRAL_PREVENCION_PDTP_SGSST_2026.md`.
+
 ---
 
 ## 0. Reauditoría post-remediación P0 — 18 de julio de 2026
@@ -20,7 +22,7 @@ El checkout ya dispone de la **capacidad técnica P0** necesaria para controlar 
 
 La plataforma **todavía no debe sustituir SFTI ni las fuentes formales externas en producción**. El PostgreSQL local no contiene los registros productivos necesarios para demostrar conciliación histórica, cobertura MIPER/legal, distribución documental, denominadores de indicadores o aceptación de los dueños del proceso. En consecuencia:
 
-- la implementación P0 está cerrada en código, schema, RBAC, UI, XLSX y pruebas;
+- la implementación P0 está cerrada en código, schema, RBAC, UI, Excel y pruebas;
 - el corte productivo, los backfills, la operación paralela y las aceptaciones permanecen abiertos;
 - ningún porcentaje de cobertura o cumplimiento regulatorio se presume a partir de una base local vacía;
 - las decisiones jurídicas, metodológicas y participativas siguen correspondiendo a profesionales y responsables competentes.
@@ -29,11 +31,11 @@ La plataforma **todavía no debe sustituir SFTI ni las fuentes formales externas
 
 | P0 | Capacidad actual demostrada | Estado residual |
 |---|---|---|
-| P0-01 Indicadores | Registro canónico de denominadores y eventos, fórmula versionada DS 44, snapshots inmutables, conciliación, cierres segregados, drill-down y XLSX común con la UI. | Falta cargar denominadores/evidencias reales, reconciliar históricos y obtener firma de las reglas y diferencias. |
+| P0-01 Indicadores | Registro canónico de denominadores y eventos, fórmula versionada DS 44, snapshots inmutables, conciliación, cierres segregados, drill-down y Excel común con la UI. | Falta cargar denominadores/evidencias reales, reconciliar históricos y obtener firma de las reglas y diferencias. |
 | P0-02 PPA | Cierre y reinicio bloqueados mientras exista corrección pendiente; rechazo exige cancelación fundada o retorno a corrección; CAPA, evidencia, verificación, eficacia, alertas e historial. | Falta auditar PPA productivos anteriores y aceptar la semántica operativa. |
-| P0-03 Documentos | Workflow borrador–revisión–aprobación–publicación, segregación, distribución nominativa, acuse firmado por versión, recordatorios, regularización, vínculos validados y expediente XLSX. | Falta resolver hallazgos y destinatarios de la biblioteca productiva y obtener firma del dueño documental. |
+| P0-03 Documentos | Workflow borrador–revisión–aprobación–publicación, segregación, distribución nominativa, acuse firmado por versión, recordatorios, regularización, vínculos validados y expediente Excel. | Falta resolver hallazgos y destinatarios de la biblioteca productiva y obtener firma del dueño documental. |
 | P0-04 Incidentes | Registro idempotente, reporte móvil/offline, triage, investigación, DIAT/DIEP y fatal-grave con plazos, CAPA, reinicio, expediente y acceso sensible segregado. | Falta operar en paralelo y autorizar el corte. Chome no declara envío automático a autoridades. La importación desde SFTI fue retirada el 19-07-2026 (sección 0.9). |
-| P0-05 MIPER/legal | MIPER versionada, metodología configurable, controles y revisión anual/disparadores, registro legal por requisito, aplicabilidad aprobada, CAPA por brecha, staging XLSX, fuentes PDTP y reloj de 30 días. | Falta cargar y aprobar matrices/requisitos reales, alcanzar cobertura por faena y obtener aceptación participativa y jurídica. |
+| P0-05 MIPER/legal | MIPER versionada, metodología configurable, controles y revisión anual/disparadores, registro legal por requisito, aplicabilidad aprobada, CAPA por brecha, staging Excel, fuentes PDTP y reloj de 30 días. | Falta cargar y aprobar matrices/requisitos reales, alcanzar cobertura por faena y obtener aceptación participativa y jurídica. |
 | P0-06 Privacidad | Datos clínicos cifrados, proyección mínima de aptitud, casos reservados nominativos, finalidad, auditoría especializada, retención, derechos del titular, reubicación y exportación minimizada. | Falta inventario/reubicación productiva, matriz de finalidades aprobada y aceptación jurídica/seguridad. |
 
 ### 0.3 Evidencia verificable del checkout
@@ -41,7 +43,7 @@ La plataforma **todavía no debe sustituir SFTI ni las fuentes formales externas
 - Contratos aditivos en `db/schema/prevention/**` y migraciones generadas `0063` a `0077`, aplicadas en PostgreSQL local; una generación posterior informa `No schema changes`.
 - Servicios canónicos bajo `lib/services/**`, con scope por faena, permisos, segregación, transacciones, locks/versiones optimistas, historial y hashes donde corresponde.
 - Superficies visibles bajo `/prevencion/capa`, `/prevencion/incidentes`, `/prevencion/indicadores`, `/prevencion/miper`, `/prevencion/requisitos-legales`, `/prevencion/pdtp/cobertura`, `/prevencion/documentacion/**` y `/prevencion/privacidad/**`.
-- Exportaciones exclusivamente XLSX con neutralización de fórmulas, metadatos, `no-store`, `nosniff`, autorización y auditoría.
+- Exportaciones exclusivamente Excel con neutralización de fórmulas, metadatos, `no-store`, `nosniff`, autorización y auditoría.
 - 297 archivos de pruebas aprobados y 2.493 pruebas aprobadas en la suite no-PGlite; además pasan los escenarios PostgreSQL reales de privacidad, incidentes, indicadores y MIPER/legal.
 - Build de producción Next.js 16.2.10, typecheck y ESLint focalizado verdes. React Doctor queda en 90/100: los hallazgos nuevos de este lote fueron corregidos y los seis avisos restantes fueron clasificados como falsos positivos o cambios preexistentes fuera de alcance.
 
@@ -77,9 +79,9 @@ Primera capacidad P1 implementada, elegida por prioridad legal: el DS 44 art. 16
 - requisitos de competencia por alcance global/faena/cargo con exigibilidad **bloqueante o de advertencia**, y motor de brechas que cruza dotación activa × requisitos × competencias;
 - escalamiento de brecha bloqueante a **CAPA común** (`sourceType = 'training'`), idempotente por trabajador y curso;
 - job diario de vencimientos, avisos previos (60 días) y brechas bloqueantes, con dedupe estable;
-- exportación XLSX de seis hojas (matriz, brechas, sesiones, asistencia/evaluación, requisitos, contenidos) con neutralización de fórmulas.
+- exportación Excel de seis hojas (matriz, brechas, sesiones, asistencia/evaluación, requisitos, contenidos) con neutralización de fórmulas.
 
-**Evidencia:** migración `0078_fearless_overlord.sql` generada desde schema, segunda generación sin drift y aplicada al PostgreSQL local (7 tablas verificadas). 23 pruebas puras del motor de brechas y del piso legal, 7 de paridad RBAC y **19 escenarios sobre PostgreSQL real** que cubren segregación, versión optimista, scope negativo entre faenas, idempotencia de cierre y de escalamiento CAPA, acuse por titular, vencimiento, convalidación, revocación y XLSX. Typecheck, ESLint y build de producción verdes; React Doctor sin errores nuevos.
+**Evidencia:** migración `0078_fearless_overlord.sql` generada desde schema, segunda generación sin drift y aplicada al PostgreSQL local (7 tablas verificadas). 23 pruebas puras del motor de brechas y del piso legal, 7 de paridad RBAC y **19 escenarios sobre PostgreSQL real** que cubren segregación, versión optimista, scope negativo entre faenas, idempotencia de cierre y de escalamiento CAPA, acuse por titular, vencimiento, convalidación, revocación y Excel. Typecheck, ESLint y build de producción verdes; React Doctor sin errores nuevos.
 
 **Formularios (19-07-2026):** capacidad **cerrada de punta a punta en UI**. El catálogo tiene alta en `/prevencion/capacitacion/catalogo` (curso, contenido versionado, transiciones y requisitos), y `/prevencion/capacitacion` permite programar sesión y convocar, con detalle por sesión en `/prevencion/capacitacion/[sessionId]` para registrar asistencia y evaluación, cerrar otorgando competencias y cancelar. El cierre muestra el piso del DS 44 art. 16 antes de enviar, reusando la misma función que valida el servicio. Queda pendiente sólo la captura móvil/offline en terreno.
 
@@ -124,7 +126,7 @@ Tercera capacidad P1. Es la que amarra las anteriores: el permiso es el punto do
 - **mediciones** con límites, equipo, calibración y evaluación de rango persistida;
 - una **decisión de habilitación** que devuelve todos los bloqueadores a la vez y que se recalcula en el momento de activar: controles pendientes, aislamiento faltante o sin verificar, medición ausente, vencida o fuera de rango, AST ausente, cuadrilla vacía y **falta de competencia vigente**;
 - no se retira un aislamiento con el permiso vigente ni se cierra el permiso con energías bloqueadas; la ventana vencida suspende el permiso automáticamente;
-- exportación XLSX de seis hojas como expediente del permiso.
+- exportación Excel de seis hojas como expediente del permiso.
 
 **Integración que cierra deuda previa:** los requisitos de competencia con alcance `task`, diferidos en la capacidad 1, quedaron cerrados aquí sin tablas nuevas. El PPA recibió una columna `work_permit_id` para poder ser la verificación breve dentro del permiso, como pide §7.7.
 
@@ -150,7 +152,7 @@ Por decisión de producto se eliminó la capacidad de importar incidentes desde 
 
 La cobertura que aportaba el escenario de staging y que sí valía conservar —que el job de recordatorios no reinicia el atraso de un carril legal ya escalado— se mantiene en una prueba equivalente que no depende de SFTI.
 
-**Nota sobre el importador MIPER:** no se tocó. `prevention_risk_import_batches` es un importador XLSX genérico de matrices, no un conector a SFTI; sólo se corrigió el título de un caso de prueba que lo etiquetaba así.
+**Nota sobre el importador MIPER:** no se tocó. `prevention_risk_import_batches` es un importador Excel genérico de matrices, no un conector a SFTI; sólo se corrigió el título de un caso de prueba que lo etiquetaba así.
 
 ---
 
@@ -422,7 +424,7 @@ Capacidades verificadas:
 - responsable usuario, prioridad y fecha de vencimiento;
 - evidencia de cierre, verificación, rechazo y reapertura;
 - seguimientos y recordatorios;
-- importación y exportación XLSX;
+- importación y exportación Excel;
 - cálculo ponderado de cumplimiento.
 
 **Brecha estructural:** el PDTP no se genera ni mantiene a partir de MIPER, obligaciones legales, cambios operacionales, incidentes, resultados de salud ocupacional, brechas de contratistas o controles críticos. Puede medir con precisión la ejecución de un plan que no necesariamente representa todos los riesgos y requisitos vigentes.
@@ -458,7 +460,7 @@ Fortalezas:
 - revisión autenticada;
 - resultado público por token;
 - cola offline;
-- exportación XLSX.
+- exportación Excel.
 
 Brechas verificadas:
 
@@ -1057,7 +1059,7 @@ El sistema requiere contratos de integración para:
 - organismo administrador/mutualidad cuando exista interfaz habilitada;
 - SIDREP, SINADER u otros portales mediante mecanismos autorizados;
 - identidad corporativa, SSO y MFA;
-- BI y exportación XLSX.
+- BI y exportación Excel.
 
 Se deben publicar API y webhooks versionados con trazabilidad, idempotencia, alcance por faena y mínimo privilegio.
 

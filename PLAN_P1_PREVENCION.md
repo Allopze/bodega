@@ -10,6 +10,8 @@
 
 **Estado:** en ejecución.
 
+**Nota de fuente (2026-07-22):** la fuente de verdad del PDTP es ahora `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx` (**87 actividades**, tras la quita total de N°4 y N°8). Las menciones al fixture `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` en la bitácora de abajo son históricas (registro de una restauración) y se conservan sin alterar. Contraste y cambio: §2.0 de `PLAN_AJUSTE_INTEGRAL_PREVENCION_PDTP_SGSST_2026.md`.
+
 ---
 
 ## 1. Objetivo
@@ -265,7 +267,7 @@ La migración `0081_condemned_logan.sql` es destructiva y lleva una **guarda pre
 
 La cobertura del job de recordatorios que vivía dentro del escenario SFTI —conservar el primer `escalatedAt` de un carril atrasado entre corridas— se reescribió sobre un incidente reportado normalmente, para no perderla junto con la importación.
 
-El importador XLSX de MIPER **no se tocó**: es genérico, no un conector a SFTI.
+El importador Excel de MIPER **no se tocó**: es genérico, no un conector a SFTI.
 
 - [ ] **Operación** — Decidir qué se hace con la historia de incidentes que vivía en SFTI: la plataforma ya no ofrece un camino de importación versionado para ese origen.
 - [ ] **Producción** — Aplicar la migración `0081`. Si la guarda aborta, hay datos productivos con procedencia SFTI que deben conciliarse antes.
@@ -601,7 +603,7 @@ Segunda entrega de «hacer usable lo construido», y la que **cierra la capacida
 ### 19 de julio de 2026 — Capacidad 1: capacitación, ODI y competencias
 
 - [x] Orden de prioridad derivado de la matriz legal y la hoja de ruta de la auditoría, no de conveniencia de implementación.
-- [x] Patrón del repositorio estudiado antes de escribir código: schema CAPA/risk-legal, manifiesto y grants, servicio con scope por faena, exportación XLSX, jobs de recordatorio y pruebas PostgreSQL.
+- [x] Patrón del repositorio estudiado antes de escribir código: schema CAPA/risk-legal, manifiesto y grants, servicio con scope por faena, exportación Excel, jobs de recordatorio y pruebas PostgreSQL.
 - [x] Contrato de datos agregado en `db/schema/prevention/training.ts` con 7 tablas aditivas y checks que sostienen las reglas en la base, no sólo en el servicio.
 - [x] CAPA común extendida a `sourceType = 'training'` en vez de crear un segundo motor de acciones; etiqueta y enlace de origen agregados a `lib/prevention/capa.ts`.
 - [x] Piso del DS 44 art. 16 implementado como parámetro por curso con cita normativa y verificado en tres momentos: creación del curso, versión del contenido y cierre de la sesión.
@@ -610,9 +612,9 @@ Segunda entrega de «hacer usable lo construido», y la que **cierra la capacida
 - [x] Ocho permisos declarados con grants deliberados; `convalidate` y `revoke` quedan fuera de los roles de terreno porque alteran la habilitación sin evidencia formativa.
 - [x] El test de paridad RBAC dejó de tratar `prevention:training:*` como permiso eliminado: capacitación vuelve como módulo implementado, no como resto de la poda de 2026-07-02. El cambio quedó comentado en el propio test.
 - [x] UI conectada: bandeja de sesiones con cuatro métricas accionables, acuse propio en contexto, matriz de competencias con pestaña de requisitos y bandeja de brechas con escalamiento a CAPA. Estados y alcances en español, sin exponer enums internos.
-- [x] Exportación XLSX de seis hojas con neutralización de fórmulas, `no-store` y `nosniff`.
+- [x] Exportación Excel de seis hojas con neutralización de fórmulas, `no-store` y `nosniff`.
 - [x] Job diario agregado con dedupe estable por fecha de vencimiento; el N+1 de resolución de permisos por faena se resolvió con caché dentro de la corrida.
-- [x] 19 escenarios en PostgreSQL real cubren segregación autor/aprobador, versión optimista obsoleta, convocatoria y scope entre faenas, cierre bloqueado por asistencia incompleta y por duración insuficiente, otorgamiento sólo a quien aprobó, doble cierre idempotente, escalamiento CAPA exactamente una vez, acuse por titular y no por terceros, vencimiento, convalidación, revocación y XLSX.
+- [x] 19 escenarios en PostgreSQL real cubren segregación autor/aprobador, versión optimista obsoleta, convocatoria y scope entre faenas, cierre bloqueado por asistencia incompleta y por duración insuficiente, otorgamiento sólo a quien aprobó, doble cierre idempotente, escalamiento CAPA exactamente una vez, acuse por titular y no por terceros, vencimiento, convalidación, revocación y Excel.
 - [x] Gate React Doctor corregido de 11 errores a 0 inlineando la autorización en cada Server Action, en línea con el refactor que el usuario ya tenía en curso en otros módulos de prevención.
 - [x] `formatDateTime` del design system reutilizado en vez de `toLocaleString` en render, eliminando el riesgo de desajuste de hidratación.
 - [x] Typecheck, ESLint, build de producción y regresión de prevención verdes.
@@ -630,7 +632,7 @@ Segunda entrega de «hacer usable lo construido», y la que **cierra la capacida
 - [x] Migración `0079_polite_morlun.sql` generada desde schema, sin drift, aplicada y verificada en PostgreSQL real.
 - [x] Siete permisos declarados con grants deliberados; `accredit` y `authorize_access` quedan fuera de los roles de terreno y separados de `submit`, con aserciones negativas en el test de RBAC.
 - [x] UI conectada: bandeja de contratos con cuatro métricas accionables y estado de acceso explícito, bandeja de brechas y bandeja de coordinación. Estados y relaciones en español.
-- [x] Exportación XLSX de siete hojas: registro de faena, personas, evidencia, brechas, requisitos, coordinación y asistencia.
+- [x] Exportación Excel de siete hojas: registro de faena, personas, evidencia, brechas, requisitos, coordinación y asistencia.
 - [x] 17 escenarios en PostgreSQL real cubren acceso bloqueado por defecto, scope negativo entre faenas, segregación presentador/revisor, requisito sin vencimiento, requisito por persona sin persona, bloqueo parcial por trabajador, acreditación al aprobar, reenvío que limpia la revisión previa, vencimiento que re-bloquea, suspensión que corta acceso, acuerdos derivados a CAPA y doble cierre rechazado.
 - [x] React Doctor sin errores; se corrigieron el índice como key en las métricas y un N+1 en la actualización de asistentes.
 - [x] Typecheck, ESLint, build de producción y regresión (28 archivos, 201 pruebas + 7 suites PostgreSQL con 55 pruebas) verdes.

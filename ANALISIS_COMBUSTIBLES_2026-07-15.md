@@ -39,7 +39,7 @@ Es un caso poco común de remediación disciplinada: los fixes citan los código
 | Anomalías | `/combustibles/anomalias/**` · `anomaly-detector.ts` + `anomaly-cases.ts` · cron `fuel-anomaly-detection` |
 | Otros | Bitácora unificada (`fuel-log.ts`), sellos, facturas, ciclo, análisis, reportes, estadísticas de rendimiento · crons `fuel-copec-sync`, `fuel-statement-notifications` |
 
-**Salud transversal:** exports 100% XLSX con cap de filas y permiso `export_sensitive` para montos; layout PageHeader/PageContainer correcto (los 2 "faltantes" son stubs `redirect()` a `/admin/flota-catalogos`); sin `<h1>` sueltos ni sonner; `/combustibles` registrado en `ROUTES_WITH_OWN_SEARCH`; schema con 27 índices/uniques en TAE y uniques compuestos donde importa.
+**Salud transversal:** exports 100% Excel con cap de filas y permiso `export_sensitive` para montos; layout PageHeader/PageContainer correcto (los 2 "faltantes" son stubs `redirect()` a `/admin/flota-catalogos`); sin `<h1>` sueltos ni sonner; `/combustibles` registrado en `ROUTES_WITH_OWN_SEARCH`; schema con 27 índices/uniques en TAE y uniques compuestos donde importa.
 
 ---
 
@@ -72,7 +72,7 @@ Es un caso poco común de remediación disciplinada: los fixes citan los código
 
 ### N7 — Exports como server actions con base64 🟢 menor
 
-`exportFuelLoadsXlsxAction` y los exports de bitácora devuelven el XLSX en base64 por server action (con cap `MAX_FUEL_EXPORT_ROWS`, bien), mientras TAE/PPA/PDTP usan rutas API con streaming. Funciona, pero duplica patrón y paga la serialización RSC — mismo apunte que en el informe de prevención para indicadores.
+`exportFuelLoadsXlsxAction` y los exports de bitácora devuelven el Excel en base64 por server action (con cap `MAX_FUEL_EXPORT_ROWS`, bien), mientras TAE/PPA/PDTP usan rutas API con streaming. Funciona, pero duplica patrón y paga la serialización RSC — mismo apunte que en el informe de prevención para indicadores.
 
 ### N8 — Micro-limpiezas 🟢
 
@@ -88,7 +88,7 @@ Es un caso poco común de remediación disciplinada: los fixes citan los código
 
 - **La PWA pública TAE es la superficie pública mejor defendida del repo:** rate limit doble (volumen por IP + ventana por huella de token), tokens de acceso **hasheados en DB** (mejor que el token PPA), validación de imagen por magic bytes + `sharp` con límite anti-pixel-bomb, 4 evidencias obligatorias con SHA-256, idempotencia offline por `clientSubmissionId`, archivos escritos antes de la transacción con limpieza compensatoria si falla, y minimización de PII calcada de PPA en la identificación por RUT.
 - **OCR bien acotado:** semáforo de concurrencia configurable, diccionarios desactivados en init (con el comentario explicando por qué `setParameters` no sirve), whitelist de dígitos, fallback de PSM, y confianza persistida que alimenta la alerta de revisión.
-- **Importaciones con ciclo de vida completo:** dry-run con reporte XLSX descargable, frase de confirmación, lote con hash de archivo (dedup con override explícito), revert transaccional auditado, reprocesamiento de filas rechazadas, y decisiones de mapeo persistidas por faena con validación de scope — es el flujo de import más maduro del sistema.
+- **Importaciones con ciclo de vida completo:** dry-run con reporte Excel descargable, frase de confirmación, lote con hash de archivo (dedup con override explícito), revert transaccional auditado, reprocesamiento de filas rechazadas, y decisiones de mapeo persistidas por faena con validación de scope — es el flujo de import más maduro del sistema.
 - **Integridad financiera:** `SELECT ... FOR UPDATE` en la creación de resúmenes y pagos, `paidAmount` recalculado desde `SUM` real, coherencia de montos en tres puntos de entrada, y auditoría con estados previos/nuevos.
 - **Revisión TAE con concurrencia optimista** (expectedStatus + update condicional dentro de la transacción) y máquina de estados explícita.
 

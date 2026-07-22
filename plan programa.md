@@ -3,16 +3,18 @@
 ## Context
 
 El submódulo `prevencion/pdtp` **digitaliza con altísima fidelidad** el
-`PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`: parsea el libro real
-(`lib/services/prevention-pdtp-catalog.ts`), valida en duro las 89 actividades /
-9 objetivos, reconstruye las 8 hojas oficiales como vistas filtradas, el
+`PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx` (fuente vigente desde
+2026-07-22; antes `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`): parsea el
+libro real (`lib/services/prevention-pdtp-catalog.ts`), valida en duro las 87
+actividades / 8 objetivos, reconstruye las 8 hojas oficiales como vistas
+filtradas, el
 cronograma semanal P/E (12 meses × 4 semanas), el KPI de cumplimiento con meta
 90 % y el flujo de firma Elaborado → JDPR → Legal → Activo. La base (P0–P3 de
 `docs/auditoria/PLAN_PREVENCION.md`) está sólida y con RBAC completo.
 
 El problema no es fidelidad: es que **se usa igual que el Excel**. La tabla
-muestra siempre 89 filas × 12 meses; para registrar hoy el prevencionista busca
-su fila entre 89 y elige mes+semana en un `<select>`; nada indica "esta semana"
+muestra siempre 87 filas × 12 meses; para registrar hoy el prevencionista busca
+su fila entre 87 y elige mes+semana en un `<select>`; nada indica "esta semana"
 ni "quedó pendiente"; la evidencia es un texto fijo (`"Registro desde tabla
 PDTP"`); la aprobación son botones sueltos por fila; no hay recordatorios; y la
 cantidad planeada es un número global aunque el propio Excel dice "según la
@@ -129,7 +131,7 @@ lógica no trivial.
   jefatura fije la cantidad por faena de una actividad; nuevo action + schema Zod
   (`lib/validation/prevention-module/pdtp.ts`).
 - **Export:** `buildPdtpExport` (`sheets.ts:89`) usa `getPdtpSheetView`, así que
-  el XLSX ya refleja la meta por faena (regla XLSX-only intacta).
+  el Excel ya refleja la meta por faena (regla Excel-only intacta).
 
 ---
 

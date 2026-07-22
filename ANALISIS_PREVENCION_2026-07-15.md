@@ -32,7 +32,7 @@ Transversal: 2 crons (`/api/cron/sst-weekly-alerts`, `/api/cron/pdtp-weekly-remi
 |---|---|
 | Tests del módulo | ✅ 113/113 en verde (PDTP, PPA, SST, documentación, RBAC) |
 | Typecheck | ✅ `tsc --noEmit` sin errores |
-| Regla exports XLSX (nunca CSV) | ✅ Cumplida en las 4 rutas de export + action de indicadores |
+| Regla exports Excel (nunca CSV) | ✅ Cumplida en las 4 rutas de export + action de indicadores |
 | Reglas de layout (PageHeader/PageContainer, sin `<h1>` sueltos) | ✅ 17/20 páginas; las 3 restantes son stubs `redirect()` (ok) |
 | Búsqueda (TopBar vs propia) | ✅ `/prevencion/ppa` está en `ROUTES_WITH_OWN_SEARCH` y es la única con input propio |
 | Toasts | ✅ Todos vía `@/lib/toast`, ninguno importa `sonner` directo |
@@ -153,7 +153,7 @@ El patrón `return { ok: false, message: (e as Error).message }` en las actions 
 | H5 | Resuelto | Upsert de ejecución no degrada aprobadas y transiciones aprobar/rechazar son condicionales al estado persistido. |
 | H6 | Resuelto | Fallo de primera carga archiva el documento creado y registra cualquier fallo de compensación. |
 | H7 | Resuelto | El cumplimiento formal mide cantidades, se limita a 100% y considera solo ejecuciones `approved`; las `submitted` permanecen visibles como avance operativo y pendientes de validación. |
-| H8 | Resuelto | Metadata XLSX pasó a `lib/reports`; indicadores exporta por ruta HTTP protegida, sin base64 por Server Action. |
+| H8 | Resuelto | Metadata Excel pasó a `lib/reports`; indicadores exporta por ruta HTTP protegida, sin base64 por Server Action. |
 | H9 | Resuelto | La URL de evidencia destacada no se duplica en `evidencePhotos`. |
 | H10 | Resuelto | Errores inesperados se registran en servidor y devuelven un mensaje genérico; Zod conserva errores de validación. |
 | H11 | Resuelto | Se eliminaron flags muertos, stubs se reemplazaron por redirects permanentes, se quitó el parámetro sin uso y la consulta PPA duplicada. |

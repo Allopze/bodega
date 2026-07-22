@@ -48,7 +48,7 @@ La portada conserva los filtros URL del análisis TCT (`desde`, `hasta`, `faena`
 - `sello=faltante`;
 - `evidencia=faltante`.
 
-La bitácora y su exportación XLSX aplican esos filtros en el servidor. No se cargan todas las filas en el navegador.
+La bitácora y su exportación Excel aplican esos filtros en el servidor. No se cargan todas las filas en el navegador.
 
 ## Límites actuales
 

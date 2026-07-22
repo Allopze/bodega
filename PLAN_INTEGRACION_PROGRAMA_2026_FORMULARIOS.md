@@ -38,8 +38,9 @@ Los 14 markdowns describen un SaaS de prevención "desde cero": proponen ~30 ent
 lectura que hay que rechazar.** El repositorio **ya tiene** ese SaaS construido y en producción:
 
 - El **cronograma anual** (módulo 01) **es** `pdtpPrograms → pdtpActivities → pdtpActivitySchedule`.
-  El programa 2026 ya está sembrado: **89 actividades, 8 objetivos, 8 hojas**
-  (`db/seed/pdtp-catalog-2026.json`).
+  El programa 2026 (fuente vigente desde 2026-07-22) es **87 actividades, 8 objetivos, 8 hojas**
+  (`db/seed/pdtp-catalog-2026.json`; la semilla aún refleja las 89 previas y debe
+  regenerarse tras la quita de N°4 y N°8 — ver §2.0 de PLAN_AJUSTE_INTEGRAL_PREVENCION_PDTP_SGSST_2026).
 - El **seguimiento y control de hallazgos** (módulo 09) **es** `pdtpActionPlan → pdtpActionPlanFollowups`
   + la página `/prevencion/pdtp/acciones`.
 - El patrón **checklist → observación → acción → seguimiento → % cumplimiento** ya está
@@ -78,7 +79,7 @@ que **NO** hay que construir para no duplicar el motor.
 | Bitácora de seguimiento con evidencia | `pdtpActionPlanFollowups`; `lib/services/pdtp/followups.ts` | Seguimiento de cierres de 04/09 |
 | Cumplimiento integral 3 ejes + panel | `lib/services/pdtp/compliance.ts` (`getPdtpIntegralCompliance`, `getAverageVerificationCompliance`, `getActionPlanClosureRate`) · `pdtp-indicators-panel.tsx` | Dashboards/KPI de todos los módulos |
 | Recordatorios (semanal + acciones vencidas) | `lib/services/pdtp/reminders.ts` + `app/api/cron/pdtp-weekly-reminders` | Alertas/escalamiento de 04/09/10/11 |
-| Export XLSX multi-hoja (programa + plan de acción + seguimiento) | `lib/services/pdtp/sheets.ts` (`buildPdtpExport`) + `app/api/prevencion/pdtp/export` | Reportería XLSX de todos (regla del proyecto: XLSX, no CSV) |
+| Export Excel multi-hoja (programa + plan de acción + seguimiento) | `lib/services/pdtp/sheets.ts` (`buildPdtpExport`) + `app/api/prevencion/pdtp/export` | Reportería Excel de todos (regla del proyecto: Excel, no CSV) |
 | Subida/GC de evidencia fotográfica | `app/api/prevencion/pdtp/evidence/*` (+ `evidence-gc`) | Fotos "antes/después" de 04, fotos de hallazgos |
 | **Registro de equipos/flota** (patente, código interno, tipo, faena, SOAP/rev. técnica/permiso/seguro con vencimientos, estado operacional, documentos) | `db/schema/fuel-vehicles.ts` (`fuelVehicles`, `fleetVehicleDocuments`, `fuelEquipmentTypes`) · UI `app/(app)/flota/` | **Sujeto** de módulos 05/07 (equipos, carros); sección DOCUMENTOS ya tiene su fuente de verdad |
 | **Registro de trabajadores** (rut, nombre, cargo, supervisor, prevencionista, faena) | `db/schema/worksites.ts` (`workers`) | **Sujeto** de módulos 03/11/12/13 |
@@ -86,7 +87,7 @@ que **NO** hay que construir para no duplicar el motor.
 
 **Conclusión del inventario:** el sujeto de datos (equipos, trabajadores), el contenedor de
 ejecución (executions), el motor de verificación (checklist), el cierre (action plan/followups),
-el KPI (integral), la evidencia (API) y el export (XLSX) **ya existen**. Falta **contenido**
+el KPI (integral), la evidencia (API) y el export (Excel) **ya existen**. Falta **contenido**
 (las definiciones) y **una** pieza estructural (multi-sujeto).
 
 ---
@@ -485,7 +486,7 @@ Orden crítico: **A → B → C** es la columna vertebral. D y E son paralelizab
   cierre (acciones cerradas) — **sin una sola tabla nueva de "InspecciónExtintores"**.
 - Una observación de operador (12/13) calcula `buenas/22`, marca reinstrucción y firma triple con la
   misma maquinaria que una inspección de taller.
-- El export XLSX del programa trae, en las hojas ya existentes de plan de acción/seguimiento, los
+- El export Excel del programa trae, en las hojas ya existentes de plan de acción/seguimiento, los
   hallazgos de **todos** los formularios, no de silos separados.
 - El dashboard PDTP muestra el ponderado de 3 ejes alimentado por checklists de equipos, EPP,
   observaciones y talleres — un solo número, una sola fuente.

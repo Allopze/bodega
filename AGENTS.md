@@ -7,7 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- BEGIN:export-rule -->
 # Export Format Rule
 
-All data exports in this app must use **XLSX** format. Never use CSV for exports. Use a library like `xlsx` or `exceljs` to generate proper `.xlsx` files with formatting support.
+All data exports in this app must use **Excel** format. Never use CSV for exports. Use a library like `xlsx` or `exceljs` to generate proper `.xlsx` files with formatting support.
 <!-- END:export-rule -->
 
 <!-- BEGIN:source-of-truth -->
@@ -120,7 +120,7 @@ Internal spacing between sections should use `gap-*` or `space-y-*` **inside**
 
 ## 5. Page-level action buttons (import, export, create, etc.) go in `PageHeader`'s `actions` — never as a separate inline toolbar
 
-Buttons like "Nuevo producto", "Exportar XLSX", "Importar" operate on the whole
+Buttons like "Nuevo producto", "Exportar Excel", "Importar" operate on the whole
 page/list, not on a single row — they are page-level actions and belong in
 `PageHeader`'s `actions` prop (see rule 2) so they render consistently in the
 `TopBar` (desktop) and header block (mobile).

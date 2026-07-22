@@ -42,9 +42,9 @@ Usa la leyenda para mostrar u ocultar series.
 Tabla con el total anual de cada tipo de evento por faena y un total
 general de todas las faenas visibles.
 
-## Exportar a XLSX
+## Exportar a Excel
 
-Usa el botón `Exportar XLSX` en la esquina superior derecha para descargar
+Usa el botón `Exportar Excel` en la esquina superior derecha para descargar
 un archivo de Excel con tres hojas:
 - **Desglose mensual:** todos los meses de todas las faenas.
 - **Resumen anual:** totales por faena.

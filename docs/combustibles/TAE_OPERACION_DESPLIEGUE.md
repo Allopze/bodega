@@ -20,8 +20,8 @@ Los dos canales no son documentos espejo: la conciliación muestra cobertura y l
 1. Abrir `/combustibles/tae/configuracion`, crear los puntos de carga y generar sus accesos QR.
 2. Probar un QR desde un teléfono: activación, cuatro fotografías, envío conectado y envío sin red con sincronización posterior.
 3. Importar `CONTROL_MANUAL_COMBUSTIBLES_UNIFICADO.xlsx` primero como reporte. Revisar faenas, equipos, conductores, supervisores, continuidad de sellos y la fila inválida antes de confirmar.
-4. Descargar desde Copec TCT cada mes y producto por separado. Importar los XLSX desde `/combustibles/importar` y verificar que la fuente quede como `Copec TCT Diesel` o `Copec TCT BlueMax`.
-5. Revisar `/combustibles/tae/conciliacion`; resolver los registros sin equipo asociado y exportar el XLSX de control.
+4. Descargar desde Copec TCT cada mes y producto por separado. Importar los Excel desde `/combustibles/importar` y verificar que la fuente quede como `Copec TCT Diesel` o `Copec TCT BlueMax`.
+5. Revisar `/combustibles/tae/conciliacion`; resolver los registros sin equipo asociado y exportar el Excel de control.
 
 ## Verificación posterior
 

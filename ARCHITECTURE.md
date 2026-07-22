@@ -22,7 +22,7 @@ sobrevive para navegación, permisos y seed (ver [AGENTS.md](AGENTS.md)).
 | Fuentes | Exo (títulos), Myriad Pro (cuerpo), Geist Mono (datos) | `next/font/local` + `geist` |
 | Data fetching | TanStack React Query | 5.x |
 | Validación | Zod | 4.x |
-| Exportación | ExcelJS (XLSX — **nunca CSV**) | 4.x |
+| Exportación | ExcelJS (Excel — **nunca CSV**) | 4.x |
 | Hashing | bcryptjs | 3.x |
 | Notificaciones | Sonner (toasts) | 2.x |
 | Utilidades | clsx, tailwind-merge, class-variance-authority | latest |
@@ -119,7 +119,7 @@ plataforma-chome/
 │   │   ├── bodega/                   # Stock, kardex, devoluciones
 │   │   ├── entregas/                 # Entregas a faena/trabajador
 │   │   ├── trazabilidad/             # Matriz de trazabilidad
-│   │   ├── reportes/                 # Reportes + exportación XLSX
+│   │   ├── reportes/                 # Reportes + exportación Excel
 │   │   ├── analitica/                # Analítica
 │   │   ├── combustibles/             # Cargas, cuentas corrientes, TAE, bitácora, import
 │   │   ├── flota/                    # Vehículos
@@ -146,7 +146,7 @@ plataforma-chome/
 │   ├── auth/                         # NextAuth, RBAC (can/canAny/requirePermission), visibilidad por faena
 │   ├── services/                     # Lógica de negocio (stock, notificaciones, rate-limit, exports)
 │   ├── combustibles/                 # Servicios de combustibles (TAE, Copec, reportes, anomalías)
-│   ├── reports/                      # Builder XLSX (ExcelJS)
+│   ├── reports/                      # Builder Excel (ExcelJS)
 │   ├── validation/                   # Schemas Zod (masters, operations)
 │   ├── hooks/                        # React hooks (login, notifications, hide-on-scroll)
 │   ├── audit.ts                      # recordAudit() + recordStatusChange()
@@ -165,7 +165,7 @@ plataforma-chome/
 ### API routes
 
 Solo existen endpoints REST donde las Server Actions no aplican: autenticación,
-descarga/subida de archivos, polling, exportación XLSX, cron jobs e integración
+descarga/subida de archivos, polling, exportación Excel, cron jobs e integración
 externa TAE.
 
 ```
@@ -344,9 +344,9 @@ Requisitos operativos con storage local:
 2. **Per-item state tracking** — la unidad de control es el ítem, no la solicitud
    ni la OC. Resuelve "ítems perdidos".
 3. **Sin API REST para mutaciones** — Server Actions; REST solo para auth,
-   archivos, notificaciones, exportación XLSX, cron y TAE.
+   archivos, notificaciones, exportación Excel, cron y TAE.
 4. **Sin estado global** — React Query + SessionProvider.
-5. **Exportación solo XLSX** — regla de proyecto, nunca CSV, siempre ExcelJS.
+5. **Exportación solo Excel** — regla de proyecto, nunca CSV, siempre ExcelJS.
 6. **Sin librería de animación externa** — transiciones CSS + Radix, respetando
    `prefers-reduced-motion`.
 7. **Single-tenant, siempre claro** — una instalación por organización; sin

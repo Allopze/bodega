@@ -30,7 +30,7 @@ Eres un **auditor de código senior** con 15+ años de experiencia en TypeScript
 - La búsqueda textual pertenece al TopBar/DataTable cuando la lista ya está cargada; una búsqueda server-side debe declarar su ruta en `ROUTES_WITH_OWN_SEARCH` y mantener su contrato URL-synced. Toda búsqueda visible debe producir un efecto real.
 - La autorización no se puede sustituir por filtros de UI. Audita permisos en rutas, Server Actions, APIs, exportaciones, enlaces directos, roles, permisos directos y alcance por `faena`.
 - Las migraciones se generan desde `db/schema` y se aplican con `db:migrate`; nunca edites el journal ni una migración existente. RBAC se valida como seed/bootstrap, no como dato implícito de una pantalla.
-- Todos los exports de datos deben ser XLSX; reportar CSV como incumplimiento aunque el contenido sea correcto.
+- Todos los exports de datos deben ser Excel; reportar CSV como incumplimiento aunque el contenido sea correcto.
 
 ### Planes y fuentes de contexto
 
@@ -81,11 +81,11 @@ app/                          # Next.js App Router
 │   │   ├── pdtp-catalogos/    # Catálogos PDTP (responsables, hojas, programas)
 │   │   ├── plantillas/
 │   │   ├── productos/         # Productos + importación EPP + importación catálogo
-│   │   ├── proveedores/       # Proveedores + importación XLSX
+│   │   ├── proveedores/       # Proveedores + importación Excel
 │   │   ├── roles/
 │   │   ├── seguridad/
 │   │   ├── taxonomia-sst/     # Taxonomía documental SST (catálogo)
-│   │   └── trabajadores/      # Trabajadores + importación XLSX
+│   │   └── trabajadores/      # Trabajadores + importación Excel
 │   ├── analitica/
 │   ├── aprobaciones/
 │   ├── bodega/

@@ -29,7 +29,7 @@ purchaseRequests (requestType, status, urgency, requiredDate, deliveryMode)
   `Talla` (XS–3XL), `Talla calzado` (36–46), `Color` (8 colores).
 - Variantes agrupadas por `familyId` con `groupProductVariants()` y
   `formatProductVariant()` en `lib/products/variant-grouping.ts`.
-- Importador XLSX (`lib/services/epp-import.types.ts`) detecta multi-talla /
+- Importador Excel (`lib/services/epp-import.types.ts`) detecta multi-talla /
   multi-color separados por coma.
 - Validación Zod en `lib/validation/operations.ts` bloquea el envío si faltan
   atributos `isRequired`.
@@ -361,7 +361,7 @@ las últimas 5 solicitudes del usuario con el mismo `productId` o
       `formatProductVariant`.
 - [ ] Tests de los constraints CHECK (PGlite + try/catch).
 - [ ] Tests e2e del flow "crear solicitud con tallas múltiples" extendido.
-- [ ] Tests del importador XLSX con tallas US (9.5, 10.5) — hoy caen en
+- [ ] Tests del importador Excel con tallas US (9.5, 10.5) — hoy caen en
       "ropa" por la heurística de 2 dígitos.
 
 ---

@@ -13,7 +13,7 @@ ocupacional por faena (accidentabilidad, frecuencia y gravedad).
    escritorio como en móvil.
 4. Dentro del editor puedes avanzar o retroceder de mes sin cerrarlo.
 5. Revisa los gráficos solo después de completar los meses relevantes.
-6. Usa `Exportar XLSX` para descargar el período mostrado.
+6. Usa `Exportar Excel` para descargar el período mostrado.
 
 Los permisos determinan si puedes solo consultar o también registrar y editar
 valores. Los indicadores no inventan fuente, unidad, responsable ni

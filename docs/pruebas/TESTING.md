@@ -52,7 +52,7 @@ lib/__tests__/
 ├── item-state.test.ts            # Máquina de estados: transiciones válidas/inválidas
 ├── order-totals.test.ts          # Cálculo de totales de OC (neto, IVA 19%, total)
 ├── postpone-item-action.test.ts  # Validaciones de postponeItemAction (23 tests)
-└── report-export.test.ts         # Generación de reportes XLSX
+└── report-export.test.ts         # Generación de reportes Excel
 ```
 
 ### 2.3. Qué prueban
@@ -64,7 +64,7 @@ lib/__tests__/
 | `item-state.test.ts` | `canTransition()`, `ALLOWED_TRANSITIONS` | Ninguna |
 | `order-totals.test.ts` | `computeOrderTotals()` | Ninguna |
 | `postpone-item-action.test.ts` | `postponeItemAction()` (server action) | next-auth + DB (mockeados) |
-| `report-export.test.ts` | Exportación XLSX | DB mockeada |
+| `report-export.test.ts` | Exportación Excel | DB mockeada |
 
 ### 2.4. Agregar una prueba unitaria nueva
 
@@ -106,7 +106,7 @@ La suite Playwright cubre los flujos principales y algunos bordes operativos:
 | `e2e/admin-flow.spec.ts` | Usuarios/admin: invitaciones, sesión y pantallas administrativas críticas. |
 | `e2e/purchase-flow.spec.ts` | Solicitud → aprobación/rechazo → OC → emisión/envío → recepción en oficina/faena → trazabilidad → export Excel desde API y descarga real. |
 | `e2e/worker-delivery-flow.spec.ts` | Entregas de EPP: sobrecantidad bloqueada, comprobante inválido rechazado, comprobante PDF descargable y entrega nominal. |
-| `e2e/export-volume.spec.ts` | Export XLSX parseable con dataset operativo bulk de 120 ítems sin OC. |
+| `e2e/export-volume.spec.ts` | Export Excel parseable con dataset operativo bulk de 120 ítems sin OC. |
 
 ### 3.4. Base de datos E2E
 
@@ -130,7 +130,7 @@ Contiene datos semilla fijos:
 | Proveedor | Proveedor E2E |
 | Producto | Guante E2E (SKU: E2E-001) |
 | EPP | Casco EPP E2E |
-| Bulk export | 120 solicitudes/items aprobados `SOL-BULK-E2E-*` para validar XLSX con volumen |
+| Bulk export | 120 solicitudes/items aprobados `SOL-BULK-E2E-*` para validar Excel con volumen |
 
 ### 3.5. Arquitectura
 

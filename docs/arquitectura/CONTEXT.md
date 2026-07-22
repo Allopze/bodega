@@ -41,7 +41,7 @@ aprobación por prevencionista, historial de uso. `requiresPrevencion: true`.
 
 **Trazabilidad**
 Vista de auditoría end-to-end: desde la solicitud hasta la entrega final.
-Exportable como XLSX. Módulo `traceability`.
+Exportable como Excel. Módulo `traceability`.
 
 ---
 

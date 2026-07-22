@@ -129,7 +129,7 @@ reconciliacion es explicita, exige motivo y conserva siempre el nombre original.
 
 - La vista `Plan de accion` (dentro de Prevencion) lista todas las acciones
   del programa con filtros por estado, prioridad, faena y vencidas.
-- Usa `Exportar XLSX` para descargar el programa junto con hojas separadas de
+- Usa `Exportar Excel` para descargar el programa junto con hojas separadas de
   plan de accion y seguimiento.
 
 ## Navegación del programa

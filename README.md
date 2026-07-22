@@ -68,12 +68,12 @@ Para probar el sistema sin mocks, ingresa los datos desde la app en este orden:
 ## Pendiente para integraciones reales
 
 Dashboard y reportes consultan datos persistidos de solicitudes, OC, recepciones, stock y facturas anexas.
-Los reportes principales ya tienen exportacion XLSX desde `/reportes`.
+Los reportes principales ya tienen exportacion Excel desde `/reportes`.
 
 Hace falta implementar:
 
 - Importadores o conectores externos si los maestros vienen de ERP, planillas o proveedor contable.
-- Ajustes de formato avanzado si los reportes XLSX requieren plantillas contables.
+- Ajustes de formato avanzado si los reportes Excel requieren plantillas contables.
 - Facturacion contable avanzada con lineas de factura, estados de pago e integracion externa.
 - Pruebas E2E que creen datos por UI/API siguiendo el flujo anterior.
 

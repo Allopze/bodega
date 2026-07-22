@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Never edit an existing migration `.sql` file or `_journal.json` — run `npm run db:generate` to create new migrations.
-- All exports must use XLSX (not CSV). This plan does not touch export; constraint is here for awareness.
+- All exports must use Excel (not CSV). This plan does not touch export; constraint is here for awareness.
 - Run `npm test` after every task before committing.
 - Typecheck with `npm run typecheck` before committing.
 - `db.transaction()` is supported by the postgres-js driver already in use.
@@ -1138,7 +1138,7 @@ Add to `lib/combustibles/__tests__/import.test.ts`:
 ```typescript
   it("does not shift dates on servers with UTC offset (H11)", () => {
     // A Date at midnight local time: toISOString would give previous day in UTC-X zones.
-    // We create the date directly as a JS Date object (as XLSX does with cellDates:true)
+    // We create the date directly as a JS Date object (as Excel does with cellDates:true)
     // and verify the parsed loadDate matches the original calendar date.
     const dateWithMidnight = new Date(2026, 0, 15, 0, 0, 0, 0) // Jan 15 at local midnight
     const buffer = createTestExcel([{ ...validRow, "MES-AÑO": dateWithMidnight }])

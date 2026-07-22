@@ -230,7 +230,7 @@ Todas las pantallas nuevas viven bajo `app/(app)/prevencion/pdtp/` y reusan `Pag
 - `pdtp-indicators-panel.tsx` se extiende: además de la barra anual mensual/trimestral, agrega 3 mini-barras (Ejecución/Verificación/Cierre) por mes y el ponderado.
 
 ### 4.5 Vista global de planes de acción (transversal)
-- Nueva ruta `prevencion/pdtp/acciones/page.tsx` — DataTable con todas las acciones del programa/faena/período, filtros (estado, prioridad, responsable, vencidas), export XLSX (regla `export-rule`: **XLSX no CSV**, reusar el builder de `buildPdtpExport`).
+- Nueva ruta `prevencion/pdtp/acciones/page.tsx` — DataTable con todas las acciones del programa/faena/período, filtros (estado, prioridad, responsable, vencidas), export Excel (regla `export-rule`: **Excel no CSV**, reusar el builder de `buildPdtpExport`).
 
 ---
 
@@ -294,7 +294,7 @@ Cada fase es **deployable** y no rompe lo existente.
 
 ### Fase 6 — Cierre (1–2 días)
 - [ ] Ruta transversal `prevencion/pdtp/acciones` con DataTable + filtros.
-- [ ] Export XLSX ampliado (hoja extra "Plan de acción" + "Seguimiento").
+- [ ] Export Excel ampliado (hoja extra "Plan de acción" + "Seguimiento").
 - [ ] Seed de permisos + verificación de parity en `modules/permissions.ts`.
 - [ ] Tests E2E del flujo completo (crear actividad → checklist → no_cumple → acción → seguimiento → cierre → % sube).
 
@@ -350,4 +350,4 @@ Cada fase es **deployable** y no rompe lo existente.
 - Un prevencionista puede, en una ejecución, abrir un checklist, marcar ítems, generar observaciones y que **automáticamente** se cree un plan de acción.
 - El jefe de faena ve las acciones asignadas, registra seguimiento con evidencia, y al cerrarlas el **% de cumplimiento integral sube**.
 - El dashboard muestra el % ponderado y permite drill-down al detalle.
-- Export XLSX trae hojas separadas de ejecución, checklist, plan de acción y seguimiento.
+- Export Excel trae hojas separadas de ejecución, checklist, plan de acción y seguimiento.

@@ -10,6 +10,8 @@
 
 **Alcance:** P0-01 a P0-06 del módulo de Prevención, incluyendo mitigaciones operacionales, solución definitiva, migraciones, autorización, pruebas, despliegue y criterios de cierre.
 
+**Nota de fuente (2026-07-22):** la fuente de verdad del PDTP es ahora `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx` (**87 actividades**, tras la quita total de N°4 y N°8). La mención al fixture `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` y a su SHA-256 `a6adc0fa…` en la bitácora de abajo es histórica (registro de una restauración) y se conserva sin alterar. Contraste y cambio: §2.0 de `PLAN_AJUSTE_INTEGRAL_PREVENCION_PDTP_SGSST_2026.md`.
+
 ---
 
 ## 1. Objetivo
@@ -155,7 +157,7 @@ P0-02 puede liberarse antes que CAPA completo mediante un guard transitorio, per
 
 - [x] Deshabilitar el cierre de nuevos períodos mediante un toggle persistente en `system_settings`.
 - [x] Ocultar “tasa de frecuencia” y “tasa de gravedad” o rotularlas inequívocamente como no oficiales mientras usan la fórmula actual.
-- [x] Agregar marca “datos manuales no conciliados con registro de incidentes” en pantalla y XLSX.
+- [x] Agregar marca “datos manuales no conciliados con registro de incidentes” en pantalla y Excel.
 - [x] Impedir que un valor con `horasHombre = 0` aparezca como tasa cero; debe mostrarse “no calculable”.
 - [ ] Inventariar períodos cerrados y exportaciones emitidas.
 - [ ] Abrir una revisión formal de los períodos históricos potencialmente afectados.
@@ -334,7 +336,7 @@ Definiciones:
 - Mostrar en detalle la línea de tiempo, evidencia y responsable.
 - No presentar “Autorizar” antes de una verificación satisfactoria.
 - Añadir notificaciones a responsable, verificador y escalamiento por vencimiento.
-- Incluir estado y trazabilidad en XLSX.
+- Incluir estado y trazabilidad en Excel.
 
 ### 7.5 Permisos
 
@@ -367,7 +369,7 @@ Definiciones:
 - [x] Rol sin `ppa:verify` no verifica aunque tenga acceso a la faena.
 - [x] Usuario con permiso no opera sobre faena ajena.
 - [x] La UI oculta acciones y el server action también las rechaza.
-- [x] El XLSX refleja estados y fechas reales.
+- [x] El Excel refleja estados y fechas reales.
 
 ### 7.8 Cierre del P0-02
 
@@ -671,7 +673,7 @@ Carriles adicionales no sustituyen el estado principal:
 - CAPA.
 - Autorización de reinicio.
 - Vista reservada de datos personales/salud.
-- XLSX de expediente y registro legal.
+- Excel de expediente y registro legal.
 
 ### 10.6 Permisos
 
@@ -802,7 +804,7 @@ No sobrescribir historia sin trazabilidad.
 - [x] Numeradores derivados del registro canónico.
 - [x] Denominadores tienen fuente y aprobador.
 - [x] Todos los períodos históricos tienen estado de conciliación.
-- [x] XLSX y UI usan el mismo motor.
+- [x] Excel y UI usan el mismo motor.
 - [x] Ningún valor no calculable se muestra como cero.
 - [ ] Prevención firma el informe de diferencias y recálculo.
 
@@ -921,7 +923,7 @@ Reglas:
 - [x] Actualización MIPER inicia reloj de 30 días para PDTP.
 - [x] Toda medida PDTP navega a su fuente.
 - [x] Importación conserva original, normalización y decisiones.
-- [x] Matriz publicada es exportable en XLSX con evidencia de aprobación.
+- [x] Matriz publicada es exportable en Excel con evidencia de aprobación.
 
 ### 12.8 Cierre del P0-05
 
@@ -1014,7 +1016,7 @@ Contenido:
 - denominadores;
 - snapshots;
 - recálculo histórico;
-- XLSX y dashboard.
+- Excel y dashboard.
 
 Gate:
 
@@ -1204,7 +1206,7 @@ Una calendarización responsable se fija después de completar Ola 0, inventario
 - [x] Mitigación PPA server-side: una decisión de corrección ya no autoriza el trabajo; cierre exige acción `verificada`/`cerrada` y los rechazados no pueden cerrarse como resueltos.
 - [x] UI PPA alineada con el guard: el botón de cierre solo aparece si el caso está autorizado y la acción verificada.
 - [x] Regresión PPA verde: 4 archivos y 30 pruebas.
-- [x] Mitigación de indicadores: tasas legales ocultas por default seguro, cierres bloqueados, cero HH no calculable y XLSX marcado como no conciliado.
+- [x] Mitigación de indicadores: tasas legales ocultas por default seguro, cierres bloqueados, cero HH no calculable y Excel marcado como no conciliado.
 - [x] Factor de gravedad legado corregido de 1.000 a 1.000.000; continúa como proxy no oficial hasta P0-04/P0-01 definitivos.
 - [x] Toggles regulatorios implementados en lectura batched y con fallo seguro.
 - [x] Regresión indicadores verde: 5 archivos y 16 pruebas; typecheck y ESLint focalizado limpios.
@@ -1227,8 +1229,8 @@ Una calendarización responsable se fija después de completar Ola 0, inventario
 - [x] Pruebas de distribución cubren firma exacta, prohibición de acusar sin asignación, cierre del target propio y bloqueo de distribución masiva sensible; 4/4 pasan y ESLint focalizado queda limpio.
 - [x] Migración `0063_dapper_loki.sql` aplicada al Postgres local con `npm run db:migrate`; inspección real confirma 19 columnas, constraints de destinatario/estado/exención/recordatorios y `created_at` de migración `1784417241850`.
 - [x] Inventario automático de regularización implementado: detecta borrador con versión vigente, publicación sin aprobador, referencia actual inválida, múltiples vigentes, reemplazo sin sucesor, acuse sin distribución y audiencia sensible incompatible.
-- [x] Pantalla restringida `/prevencion/documentacion/regularizacion` y exportación XLSX agregadas; cada hallazgo declara la evidencia como no utilizable y recomienda una corrección auditada, sin mutar estados masivamente.
-- [x] Regresión de inventario/exportación verde: 3 archivos, 8 pruebas; valida autorización, XLSX y seis clases de inconsistencia.
+- [x] Pantalla restringida `/prevencion/documentacion/regularizacion` y exportación Excel agregadas; cada hallazgo declara la evidencia como no utilizable y recomienda una corrección auditada, sin mutar estados masivamente.
+- [x] Regresión de inventario/exportación verde: 3 archivos, 8 pruebas; valida autorización, Excel y seis clases de inconsistencia.
 - [x] Política de confidencialidad probada con default público y grants explícitos; combinada con la matriz negativa del endpoint, impide que roles generales vean archivos sensibles.
 - [x] Compensación de archivos probada: si falla el INSERT de versión, el binario persistido se elimina y no se actualiza el documento; 2 archivos y 7 pruebas pasan.
 - [x] Gate React Doctor del lote documental mejorado de 83 a 90: se corrigieron sandbox del visor, awaits independientes, ZIP secuencial, lookup cuadrático, estado innecesario y API booleana del workflow. Quedan 6 avisos: lectura dinámica de archivos falsamente clasificada como estática, Recharts ya cargado detrás de `next/dynamic`, y cambios locales preexistentes del modal/Combustibles que no se sobrescriben.
@@ -1244,8 +1246,8 @@ Una calendarización responsable se fija después de completar Ola 0, inventario
 - [x] Regresión del lote de endpoints/clasificación verde: 5 archivos y 40 pruebas, incluyendo auth, permiso investigador, finalidad, respuesta anti-inferencia, propagación de clase y rechazo server-side sin clasificación.
 - [x] Solicitudes de derechos implementadas con permiso dedicado: recepción, validación de identidad, proceso, retención legal, liberación expresa, completado/rechazo y bitácora inmutable de transiciones.
 - [x] Retención aplicada server-side: una solicitud no salta la validación de identidad, no se completa bajo `legalHold` y no sale de suspensión sin liberación expresa y motivo.
-- [x] Exportación XLSX minimizada implementada: requiere derecho de acceso/portabilidad, identidad validada, propósito y permiso dedicado; clínica es opt-in y exige además `view_clinical`. Cada hoja/fila declara clasificación, neutraliza fórmulas y excluye auditorías, terceros y casos sin vínculo estructurado.
-- [x] Entregas demostrables: cada XLSX se persiste con alcance, actor, propósito, inclusión clínica, conteo y checksum SHA-256 antes de responder; las rutas usan `no-store` y `nosniff`.
+- [x] Exportación Excel minimizada implementada: requiere derecho de acceso/portabilidad, identidad validada, propósito y permiso dedicado; clínica es opt-in y exige además `view_clinical`. Cada hoja/fila declara clasificación, neutraliza fórmulas y excluye auditorías, terceros y casos sin vínculo estructurado.
+- [x] Entregas demostrables: cada Excel se persiste con alcance, actor, propósito, inclusión clínica, conteo y checksum SHA-256 antes de responder; las rutas usan `no-store` y `nosniff`.
 - [x] Bandeja `/prevencion/privacidad/solicitudes` agregada con alta, validación, retención/liberación, cierre/rechazo y exportación. Usa el buscador del `TopBar`, estados en español y acciones en contexto.
 - [x] Migración `0065_colorful_vulcan.sql` generada desde schema, segunda generación sin drift, aplicada y verificada en Postgres: historial, entregas y cuatro campos de trazabilidad; `created_at` `1784419668997`.
 - [x] Regresión de privacidad ampliada: 11 archivos y 30 pruebas de cifrado, salud, casos reservados, RBAC, workflow, exportación y endpoints pasan; typecheck y ESLint focalizado quedan limpios.
@@ -1261,12 +1263,12 @@ Una calendarización responsable se fija después de completar Ola 0, inventario
 - [x] Backfill PPA conservador ejecutado: crea historial sólo con actores/fechas reales y reabre administrativamente autorizaciones/cierres cuya CAPA no esté verificada/cerrada. Las filas sin actor histórico no reciben una identidad inventada y quedan para conciliación explícita.
 - [x] Regresión parcial CAPA/PPA verde: 6 archivos y 42 pruebas de estados, cierre, revisión, RBAC y acciones comunes; typecheck completo pasa. Incluye Postgres real desechable: el backfill PPA ejecutado dos veces produce una sola CAPA/transición y dos mutaciones concurrentes con la misma versión dejan exactamente un ganador.
 - [x] Bandeja `/prevencion/capa` y detalle operable agregados: cuatro métricas accionables desde CAPA común, filtros, origen navegable, asignación/plazo/prioridad, evidencia, seguimiento, implementación, verificación, cierre, reapertura, cancelación y conciliación histórica.
-- [x] Exportación CAPA XLSX agregada con hojas de acciones, transiciones, evidencias y seguimientos; usa alcance por faena, neutraliza fórmulas y expone actores, timestamps, eficacia, conciliación y versión.
+- [x] Exportación CAPA Excel agregada con hojas de acciones, transiciones, evidencias y seguimientos; usa alcance por faena, neutraliza fórmulas y expone actores, timestamps, eficacia, conciliación y versión.
 - [x] Exportación PPA ampliada con actores/fechas de corrección, verificación, autorización, cancelación y cierre, además de código/estado/evidencia/eficacia/conciliación CAPA.
 - [x] Alertas CAPA diarias implementadas en `/api/cron/prevention-capa-reminders`: el responsable recibe la asignación antes del vencimiento; responsable y gestores reciben vencimientos; verificador recibe acciones implementadas; alta/crítica o 3+ días escala a jefatura con deduplicación estable.
 - [x] Adaptadores PDTP/SST endurecidos: nuevas altas escriben CAPA en la misma transacción, edición no cambia estados arbitrariamente, seguimiento PDTP replica evidencia/transiciones comunes, verificación exige eficacia y “eliminar” conserva el registro como cancelado.
 - [x] Migración `0069_premium_mad_thinker.sql` generada desde schema, segunda generación sin drift y aplicada; agrega `cancelado` al estado legado PDTP para convivencia no destructiva.
-- [x] Matriz focalizada CAPA/PPA/PDTP/SST verde: 12 archivos y 109 pruebas, más 3 pruebas en Postgres real que cubren idempotencia, concurrencia, rollback de verificación, workflow completo, scope y XLSX. Typecheck completo pasa.
+- [x] Matriz focalizada CAPA/PPA/PDTP/SST verde: 12 archivos y 109 pruebas, más 3 pruebas en Postgres real que cubren idempotencia, concurrencia, rollback de verificación, workflow completo, scope y Excel. Typecheck completo pasa.
 - [x] Aviso de asignación CAPA agregado al job diario: notifica al responsable antes del vencimiento con clave idempotente por acción, usuario y plazo; las pruebas cubren asignación, verificación, vencimiento y escalamiento.
 - [x] Regresiones React Doctor del lote corregidas: esperas independientes, búsquedas lineales dentro de bucle, iteraciones encadenadas y estado derivado/oculto. Gate final `90/100`, con exactamente los 6 avisos preexistentes preservados; ESLint focalizado, typecheck y 27 pruebas PDTP/PPA pasan.
 - [x] Inventario de conciliación ejecutado el 2026-07-18 sobre PostgreSQL local: 0 CAPA pendientes de conciliación, 0 acciones PDTP/SST/PPA sin vínculo CAPA y 0 PPA autorizados/cerrados sin CAPA verificada. La base local no contiene filas históricas reales; producción debe ejecutarse como gate operacional separado.
@@ -1276,7 +1278,7 @@ Una calendarización responsable se fija después de completar Ola 0, inventario
 - [x] Regularización documental ejecutable agregada: restaurar publicación aprobada, retirar publicación sin aprobador, limpiar `currentVersionId` inválido, elegir versión autoritativa, enlazar sucesora y retirar vínculos rotos operan caso a caso, revalidan el hallazgo y guardan antes/después en auditoría.
 - [x] Recordatorios de acuse agregados en `/api/cron/prevention-document-ack-reminders`: primera alerta, cadencia pre-vencimiento/sin plazo, recordatorio diario vencido, escalamiento a distribución, contador y `lastReminderAt`, todo con deduplicación diaria.
 - [x] Lectura de detalle documental ajustada para no filtrar existencia por error: faena ajena devuelve ausencia uniforme en UI y `404` en ambos endpoints de archivo; la prueba confirma que nunca se lee el binario ni se audita una vista inexistente.
-- [x] Expediente documental XLSX agregado con seis hojas —documento, versiones, distribución, acuses, vínculos y bitácora—, checksum exacto por acuse, neutralización de fórmulas, auditoría de descarga y respuesta `no-store`.
+- [x] Expediente documental Excel agregado con seis hojas —documento, versiones, distribución, acuses, vínculos y bitácora—, checksum exacto por acuse, neutralización de fórmulas, auditoría de descarga y respuesta `no-store`.
 - [x] Titulares de casos reservados modelados estructuralmente con relación, propósito, actor y retiro trazable; alta valida existencia, actividad y pertenencia a la faena sin guardar identidades en auditorías de acceso.
 - [x] Ejecución efectiva de rectificación, supresión, oposición y restricción agregada por dominio de salud, caso reservado, PPA y vínculo documental: exige identidad validada, estado en proceso, derecho compatible y ausencia de retención; registra hash antes/después, actor, resultado y campos afectados sin copiar contenido sensible.
 - [x] La solicitud ya no puede cerrarse sólo con una nota: acceso/portabilidad exige una entrega registrada; rectificación/supresión/oposición/restricción exige al menos una ejecución aplicada. La nueva vista por solicitud muestra inventario estructural y evidencia de ejecución.
@@ -1291,30 +1293,30 @@ Una calendarización responsable se fija después de completar Ola 0, inventario
 - [x] 2026-07-18 — Servicio canónico `prevention-incidents` implementado: alta idempotente por `clientSubmissionId`, scope por faena, deadline exacto de 24 h, carriles legales separados, triage optimista, investigación guiada/cifrada, evidencia, CAPA común, autorización de reinicio y cierre con gates. El atraso queda trazado por deadline, `escalatedAt`, fecha de envío e historial incluso después de regularizarse.
 - [x] 2026-07-18 — Proyección general excluye payload de identidad/lesión y evidencia sensible; la lectura nominativa exige `view_sensitive`, propósito, faena, descifra con AAD por persona y registra concesión/denegación en la auditoría sensible común. ESLint focalizado y typecheck completo pasan tras el lote de servicio.
 - [x] 2026-07-18 — Job idempotente `/api/cron/prevention-incident-reminders` agregado: recalcula atrasos, alerta seis horas antes, escala diariamente vencidos y trata DT/SEREMI fatal-grave como inmediato. La copia declara explícitamente que Chome controla presentación/evidencia y no finge una integración automática con autoridad.
-- [x] 2026-07-18 — Importación SFTI en staging implementada para XLSX: diccionario de columnas/aliases, archivo fuente cifrado + checksums, original de fila cifrado, normalizado seguro, resolución de faena, detección de duplicados, revisión, aprobación segregada y activación idempotente. La activación recién crea incidente, carriles legales, persona sensible cifrada e historial de procedencia.
+- [x] 2026-07-18 — Importación SFTI en staging implementada para Excel: diccionario de columnas/aliases, archivo fuente cifrado + checksums, original de fila cifrado, normalizado seguro, resolución de faena, detección de duplicados, revisión, aprobación segregada y activación idempotente. La activación recién crea incidente, carriles legales, persona sensible cifrada e historial de procedencia.
 - [x] 2026-07-18 — Los nueve permisos P0-04 y navegación fueron declarados en el manifiesto vivo; report/view/triage/investigate/notify/restart/close/export tienen grants deliberados. `view_sensitive` queda sin grant por defecto y requiere nominación. RBAC local sincronizado con `npm run db:sync-rbac`; typecheck y ESLint pasan.
 - [x] 2026-07-18 — UI P0-04 conectada: bandeja con cuatro métricas accionables, filtros estructurados y búsqueda TopBar; reporte móvil con fechas del design system, cola IndexedDB y sincronización idempotente; detalle con timeline, triage, carriles legales, investigación, evidencia, CAPA, reinicio, cierre y vista reservada por propósito; staging SFTI permite conciliar/aprobar/activar.
-- [x] 2026-07-18 — Exportación XLSX agregada para registro legal y expediente: siete hojas operacionales trazan evento, personas minimizadas, notificaciones/deadlines/evidencia, investigación, CAPA e historial; la vista sensible es opt-in con permiso/propósito/auditoría. Todas las celdas controladas neutralizan fórmulas y las rutas usan `no-store`/`nosniff`.
+- [x] 2026-07-18 — Exportación Excel agregada para registro legal y expediente: siete hojas operacionales trazan evento, personas minimizadas, notificaciones/deadlines/evidencia, investigación, CAPA e historial; la vista sensible es opt-in con permiso/propósito/auditoría. Todas las celdas controladas neutralizan fórmulas y las rutas usan `no-store`/`nosniff`.
 - [x] 2026-07-18 — La implementación App Router fue contrastada con documentación oficial de Next.js 16.2.x: `params`/`searchParams` asíncronos, Server Actions como entradas no confiables con autorización interna, revalidación y Route Handlers dinámicos. ESLint focalizado y typecheck completo vuelven a pasar.
 - [x] 2026-07-18 — La prueba PostgreSQL fatal/grave detectó que el constraint inicial impedía desactivar la suspensión incluso después de investigación, CAPA, avisos DT/SEREMI y autorización formal. Se corrigió sólo en schema y mediante la migración aditiva `0073_abandoned_menace.sql`; la segunda generación quedó sin drift y la migración fue aplicada localmente.
 - [x] 2026-07-18 — Los 10 gates obligatorios de P0-04 quedaron cubiertos: 13 pruebas unitarias/UI/API más 4 escenarios PostgreSQL reales verifican sincronización offline exactamente una vez, deadline, atraso persistente, fatal/grave y reinicio, contratista/faena, minimización y auditoría sensible, investigación/CAPA/cierre, historial, staging SFTI idempotente y matriz negativa rol/faena/endpoint.
-- [x] 2026-07-18 — La prueba PostgreSQL también genera y vuelve a leer el XLSX real: siete hojas de registro, ocho de expediente reservado, auditoría de exportación y neutralización de fórmula. El job de recordatorios fue ejecutado dos veces sobre un carril SFTI atrasado y conserva el primer `escalatedAt`, sin borrar ni reiniciar el atraso.
+- [x] 2026-07-18 — La prueba PostgreSQL también genera y vuelve a leer el Excel real: siete hojas de registro, ocho de expediente reservado, auditoría de exportación y neutralización de fórmula. El job de recordatorios fue ejecutado dos veces sobre un carril SFTI atrasado y conserva el primer `escalatedAt`, sin borrar ni reiniciar el atraso.
 - [x] 2026-07-18 — Gate de producción P0-04 verde: el build Next.js 16.2.10 detectó y se corrigieron seis Server Actions documentales no declaradas `async` y una fuga del servicio Node/PostgreSQL al bundle cliente SFTI. Typecheck, ESLint, build y React Doctor `90/100` pasan; Doctor queda sólo con los mismos seis avisos preexistentes del lote anterior.
 - [x] 2026-07-18 — Motor legal P0-01 implementado en `safety-indicators-calc`: versión explícita `ds44-art73-2025-v1`, numeradores canónicos, denominadores mensuales, agregación cruda semestral/anual, deduplicación persona-evento, provisionalidad, “no calculable” con cero HH y supresión de grupos pequeños por sexo.
 - [x] 2026-07-18 — Persistencia conciliable agregada: denominadores con fuente/evidencia/preparador/aprobador segregados, snapshots inmutables con hash y versión de fórmula, historial de cambios y períodos cerrados/reabiertos versionados. Las migraciones `0074_real_blockbuster.sql` y `0075_shiny_havok.sql` fueron generadas desde schema, una segunda generación quedó sin drift y ambas se aplicaron al PostgreSQL local.
 - [x] 2026-07-18 — Corrección de fuentes cerradas endurecida: cambiar la inclusión de una persona o un denominador aprobado exige permiso de cierre, motivo, versión optimista y reapertura atómica; el snapshot anterior queda `superseded` y el nuevo cierre genera otro hash e historial.
 - [x] 2026-07-18 — Dashboard canónico P0-01 conectado al registro de incidentes: denominadores y aprobación, conciliación legado/recalculado, estado provisional/confirmado, gravedad semestral, desagregación protegida, drill-down filtrado a los eventos fuente y cierre fundado. Los toggles de contención ya no deciden si un cálculo se presenta como oficial: lo hacen sus gates y su evidencia por período.
-- [x] 2026-07-18 — Exportación XLSX P0-01 usa el mismo resultado canónico que la UI y entrega resultados mensuales, gravedad semestral, accidentabilidad anual, denominadores, fuentes, conciliación legado, snapshots y metadatos; declara fórmula/versión/estado/fecha/procedencia, neutraliza fórmulas y conserva “No calculable” en vez de convertirlo en cero.
+- [x] 2026-07-18 — Exportación Excel P0-01 usa el mismo resultado canónico que la UI y entrega resultados mensuales, gravedad semestral, accidentabilidad anual, denominadores, fuentes, conciliación legado, snapshots y metadatos; declara fórmula/versión/estado/fecha/procedencia, neutraliza fórmulas y conserva “No calculable” en vez de convertirlo en cero.
 - [x] 2026-07-18 — Casos dorados completos: 13 pruebas puras validan 10,00/55,00/2,00, cero HH, ausencia menor a jornada, provisionalidad, deduplicación, semestre crudo y privacidad; 3 escenarios PostgreSQL reales validan además segregación, cierre/hash, reapertura/supersesión, historial y scope. La matriz de cierre/Server Actions añade 5 pruebas negativas/positivas de permiso, actor y faena; una prueba de dashboard confirma “No calculable”, privacidad y drill-down, y export/typecheck/ESLint focalizado pasan.
 - [x] 2026-07-18 — Inventario local P0-01 ejecutado: 0 filas legadas, 0 denominadores, 0 snapshots y 0 entradas de historial en la base local. Por ello no hay recálculos locales pendientes, pero producción debe inventariar y conciliar sus filas reales antes del corte.
-- [x] 2026-07-18 — Contrato de datos P0-05 agregado en `db/schema/prevention/risk-legal.ts`: 16 tablas aditivas para metodologías, jerarquía proceso/tarea/puesto, MIPER versionada, controles, disparadores, staging XLSX, requisitos/aplicabilidad/evaluaciones, vínculos PDTP, relojes e historial inmutable. Las migraciones `0076_equal_menace.sql` y `0077_tired_solo.sql` fueron generadas desde schema, aplicadas al PostgreSQL local y dos generaciones posteriores confirmaron `No schema changes`.
+- [x] 2026-07-18 — Contrato de datos P0-05 agregado en `db/schema/prevention/risk-legal.ts`: 16 tablas aditivas para metodologías, jerarquía proceso/tarea/puesto, MIPER versionada, controles, disparadores, staging Excel, requisitos/aplicabilidad/evaluaciones, vínculos PDTP, relojes e historial inmutable. Las migraciones `0076_equal_menace.sql` y `0077_tired_solo.sql` fueron generadas desde schema, aplicadas al PostgreSQL local y dos generaciones posteriores confirmaron `No schema changes`.
 - [x] 2026-07-18 — Workflow MIPER implementado con metodología ISP configurable, metodologías especiales, segregación autor/revisor/aprobador, versión optimista, hash de publicación, vigencia, revisión anual y disparadores por cambio/incidente/enfermedad/gravedad/auditoría. Publicar una revisión no sobrescribe la anterior: la marca `superseded`, incrementa su versión y registra antes/después, hash, actor, motivo y matriz reemplazante.
 - [x] 2026-07-18 — Registro legal implementado con fuente/artículo/vigencia, versiones, aplicabilidad por faena/proceso, fundamento obligatorio, aprobación segregada incluso para “no aplica”, responsable/evidencia/frecuencia y evaluación. Una brecha parcial/no conforme crea CAPA común atómicamente; reemplazar una versión conserva el hash anterior y escribe la transición indirecta en historial.
 - [x] 2026-07-18 — Integración PDTP operativa: cada actividad puede vincular control MIPER, requisito legal aplicable, incidente/CAPA, auditoría, objetivo interno u obligación contractual; la cobertura muestra actividades sin fuente, riesgos críticos sin control verificable y brechas legales. Publicar MIPER inicia reloj de 30 días corridos; sólo se cierra si el programa tiene vínculo a la fuente. Duplicar un programa copia vínculos activos con snapshot y procedencia sin inventar cobertura para actividades huérfanas.
-- [x] 2026-07-18 — Importación MIPER XLSX implementada como staging recuperable: límites de archivo/filas, aliases, checksum, original inmutable, normalización, fingerprint/duplicados, observaciones, decisión por fila, aprobación segregada, activación idempotente y descarga del original con scope/auditoría. Cada peligro activado conserva original, normalizado y decisión.
-- [x] 2026-07-18 — UI P0-05 conectada en `/prevencion/miper`, `/prevencion/requisitos-legales` y `/prevencion/pdtp/cobertura`, con cuatro métricas accionables, estados en español, filtros/acciones coherentes, detalle navegable de controles/requisitos y avisos explícitos de bloqueo. Las exportaciones XLSX entregan cinco hojas por dominio, evidencia de aprobación/hash/metadatos, neutralización de fórmulas, `no-store`, `nosniff` y auditoría.
+- [x] 2026-07-18 — Importación MIPER Excel implementada como staging recuperable: límites de archivo/filas, aliases, checksum, original inmutable, normalización, fingerprint/duplicados, observaciones, decisión por fila, aprobación segregada, activación idempotente y descarga del original con scope/auditoría. Cada peligro activado conserva original, normalizado y decisión.
+- [x] 2026-07-18 — UI P0-05 conectada en `/prevencion/miper`, `/prevencion/requisitos-legales` y `/prevencion/pdtp/cobertura`, con cuatro métricas accionables, estados en español, filtros/acciones coherentes, detalle navegable de controles/requisitos y avisos explícitos de bloqueo. Las exportaciones Excel entregan cinco hojas por dominio, evidencia de aprobación/hash/metadatos, neutralización de fórmulas, `no-store`, `nosniff` y auditoría.
 - [x] 2026-07-18 — Nueve permisos P0-05 y navegación sincronizados localmente con grants deliberados: lectura, edición, revisión, aprobación y publicación MIPER; lectura, evaluación, aprobación de aplicabilidad y exportación legal. Las Server Actions ignoran actor/scope forjados y derivan identidad, permisos y faenas de la sesión.
-- [x] 2026-07-18 — Gates P0-05 focalizados verdes: 21 pruebas de acciones/UI/endpoints más 4 escenarios PostgreSQL reales cubren workflow, concurrencia, segregación, scope negativo, versionado/hashes/historial, CAPA, reloj de 30 días, cobertura/copia PDTP, XLSX e importación. Typecheck y ESLint focalizado pasan. La regresión de incidentes también pasa y demuestra que una investigación que exige actualización MIPER no se completa con un checkbox: requiere una versión posterior publicada.
+- [x] 2026-07-18 — Gates P0-05 focalizados verdes: 21 pruebas de acciones/UI/endpoints más 4 escenarios PostgreSQL reales cubren workflow, concurrencia, segregación, scope negativo, versionado/hashes/historial, CAPA, reloj de 30 días, cobertura/copia PDTP, Excel e importación. Typecheck y ESLint focalizado pasan. La regresión de incidentes también pasa y demuestra que una investigación que exige actualización MIPER no se completa con un checkbox: requiere una versión posterior publicada.
 - [x] 2026-07-18 — Inventario P0-05 ejecutado en PostgreSQL local: 0 metodologías, matrices, procesos, tareas, puestos, peligros críticos, requisitos, aplicabilidades, vínculos, relojes, disparadores, lotes e historial. Por ello no hay backfill local posible ni cobertura productiva demostrable; los nueve permisos sí existen tras `db:sync-rbac`, con grants entre 2 y 6 roles según sensibilidad.
 - [x] 2026-07-18 — Backlog de administración de toggles regulatorios resuelto por eliminación, no por una pantalla: CodeGraph y búsqueda del checkout confirmaron que ambos toggles de contención quedaron sin consumidores tras P0-01. Se retiró el servicio/pruebas muertos y se prohibió crear una vía administrativa paralela a los gates canónicos de denominador, conciliación, snapshot y cierre.
 - [x] 2026-07-18 — El libro contractual `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` fue restaurado en la raíz desde la fuente exacta disponible en el workspace; origen y copia coinciden en SHA-256 `a6adc0fa017a9972dde09e5abdddb399cfce23526332807a122e52bfd15690a4`. La regresión PDTP volvió a validar las 28 pruebas del libro real.
@@ -1332,14 +1334,14 @@ No queda implementación P0 accionable de forma autónoma en este checkout. Los 
 
 - [ ] Operación/terceros — Completar M-01: inventario y revisión de períodos históricos/exportaciones potencialmente afectadas en producción; la contención técnica de tasas ya está implementada.
 - [ ] Operación/terceros — Completar M-02/P0-02: conciliar toda fila productiva sin actor/evidencia y obtener aceptación de semántica por Jefatura; máquina, alertas, cancelación, actores, evidencia, integración CAPA y prueba DB ya están implementados.
-- [ ] Operación/terceros — Ejecutar P0-03 en producción: resolver cada hallazgo real desde la bandeja, asignar toda distribución requerida y obtener firma del dueño; validación de enlaces, regularización caso a caso, recordatorios, prueba UI/endpoint y expediente XLSX ya están implementados.
+- [ ] Operación/terceros — Ejecutar P0-03 en producción: resolver cada hallazgo real desde la bandeja, asignar toda distribución requerida y obtener firma del dueño; validación de enlaces, regularización caso a caso, recordatorios, prueba UI/endpoint y expediente Excel ya están implementados.
 - [x] No crear administración para los toggles regulatorios de contención: quedaron sin consumidores tras P0-01 y se retiraron para no reintroducir un bypass. Los gates canónicos son la única autoridad de oficialidad/cierre.
-- [ ] Operación/terceros — Completar el corte CAPA: conciliar filas históricas productivas y autorizar el retiro de escrituras legadas; schema, servicio, UI, XLSX, contadores, alertas, conciliación y adaptadores PDTP/SST/PPA ya existen.
+- [ ] Operación/terceros — Completar el corte CAPA: conciliar filas históricas productivas y autorizar el retiro de escrituras legadas; schema, servicio, UI, Excel, contadores, alertas, conciliación y adaptadores PDTP/SST/PPA ya existen.
 - [x] Las matrices negativas rol × faena × endpoint de los dominios P0 quedaron cubiertas por pruebas de acciones/rutas y escenarios PostgreSQL: PPA, documentos, salud, casos reservados, privacidad, incidentes, indicadores y MIPER/legal.
 - [ ] Operación/terceros — Ejecutar P0-06 en producción: inventariar/reubicar expedientes reales, conciliar titulares reservados, aprobar matriz de finalidades y obtener aceptación jurídica/seguridad.
 - [ ] Operación/terceros — Ejecutar el corte de incidentes: operar en paralelo y obtener autorización de Jefatura. **La importación desde SFTI fue retirada el 19-07-2026** (migración `0081`), por lo que la carga de la exportación histórica ya no es un camino del producto: se resuelve fuera de la plataforma o mediante una carga puntual acordada.
 - [ ] Operación/terceros — Ejecutar P0-01: inventariar filas/períodos reales, cargar denominadores con evidencia, aprobar conciliaciones, firmar reglas/casos dorados y aceptar el informe de diferencias.
-- [ ] Operación/terceros — Ejecutar P0-05: cargar los XLSX MIPER y registro legal reales, resolver filas ambiguas, aprobar/publicar por faena, conciliar cada actividad PDTP, verificar controles críticos y obtener aceptación participativa/jurídica.
+- [ ] Operación/terceros — Ejecutar P0-05: cargar los Excel MIPER y registro legal reales, resolver filas ambiguas, aprobar/publicar por faena, conciliar cada actividad PDTP, verificar controles críticos y obtener aceptación participativa/jurídica.
 - [ ] Producción/autorización — Aplicar migraciones `0063` a `0077` y ejecutar los backfills/cargas reales; localmente están aplicadas y sin drift.
 - [x] Verificación del checkout — Typecheck, ESLint focalizado, pruebas focalizadas, PostgreSQL real, `test:fast`, build y React Doctor ejecutados sobre el lote final.
 - [x] Documentación — Bitácora y auditoría post-remediación actualizadas.
