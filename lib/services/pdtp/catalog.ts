@@ -10,7 +10,8 @@ import {
   users as schemaUsers,
 } from "@/db/schema"
 import { SHEET_META } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
-import { collectResponsibleCatalog, displayNameForActivity, pdtpActivityId, pdtpProgramId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
+import { collectResponsibleCatalog, displayNameForActivity } from "@/lib/services/pdtp-adapters/responsible-catalog-2026"
+import { pdtpActivityId, pdtpProgramId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
 import type { PdtpCatalog, PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import { ensureDefaultPdtpApprovalSteps } from "./approval-flow"
 

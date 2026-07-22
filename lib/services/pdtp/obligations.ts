@@ -12,6 +12,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { addPdtpChangeLogEntry, assertWorksiteAccess, isActivePdtpWorksite, type WorksiteScope } from "./helpers"
+import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 
 export type PdtpObligationOrigin = "manual" | "integration"
 export type PdtpObligationStatus = "pending" | "overdue" | "reported" | "completed" | "cancelled"
@@ -69,6 +70,10 @@ export async function createPdtpObligation(input: {
   if (!activity.evidenceRequirement?.trim()) throw new Error("La actividad debe definir su evidencia mínima antes de crear obligaciones.")
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program || program.status !== "active") throw new Error("Las obligaciones sólo se crean en programas activos.")
+  // Si el programa declara membresía de faenas, una faena fuera de ella no
+  // puede generar obligaciones — el alcance del programa nunca se amplía
+  // por omisión (ver lib/services/pdtp/worksites.ts).
+  await assertPdtpWorksiteCanOperateProgram(activity.programId, input.worksiteId)
   const plannedQuantity = input.plannedQuantity ?? 1
   if (!Number.isFinite(plannedQuantity) || plannedQuantity <= 0) throw new Error("La cantidad planificada debe ser mayor que cero.")
 

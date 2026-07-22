@@ -157,7 +157,7 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, 
     ? await getPdtpSheetViewByProgram(programId, sheetCode, worksiteId)
     : await getPdtpSheetView(year, sheetCode, worksiteId)
   if (!view) {
-    // Antes esto devolvía un XLSX "vacío" (headers/rows []) sin avisar al
+    // Antes esto devolvía un Excel "vacío" (headers/rows []) sin avisar al
     // usuario que no existe programa/hoja para ese año o sheetCode. Mejor
     // fallar explícito: el caller (route de export) ya maneja errores.
     throw new Error(`No se encontró un programa PDTP para ${programId ? `programId=${programId}` : `año ${year}`} / hoja ${sheetCode}.`)

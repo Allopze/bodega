@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto"
-import { asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityWorksiteExclusions,
   pdtpApprovalSteps,
   pdtpActivityChecklists,
   pdtpActivitySchedule,
   pdtpDocumentHistory,
   pdtpImportBatches,
   pdtpPrograms,
+  pdtpProgramWorksites,
   pdtpRoleLegendEntries,
   pdtpSheetActivities,
   pdtpSheets,
@@ -198,6 +200,27 @@ export async function buildPdtpProgramContentSnapshot(
     .where(eq(pdtpDocumentHistory.programId, programId))
     .orderBy(asc(pdtpDocumentHistory.entryKind), asc(pdtpDocumentHistory.sequence), asc(pdtpDocumentHistory.stableKey))
 
+  // Membresía de faenas y exclusiones puntuales: contenido de autoría (define
+  // qué faena ve el programa y qué actividad excluye), no un ajuste
+  // operacional como los overrides de meta — por eso firma, a diferencia de
+  // `pdtpActivityScheduleOverrides`.
+  const programWorksites = await client.select({
+    worksiteId: pdtpProgramWorksites.worksiteId,
+    isActive: pdtpProgramWorksites.isActive,
+  }).from(pdtpProgramWorksites)
+    .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
+    .orderBy(asc(pdtpProgramWorksites.worksiteId))
+
+  const activityWorksiteExclusions = activityIds.length > 0
+    ? await client.select({
+        activityId: pdtpActivityWorksiteExclusions.activityId,
+        worksiteId: pdtpActivityWorksiteExclusions.worksiteId,
+        reason: pdtpActivityWorksiteExclusions.reason,
+      }).from(pdtpActivityWorksiteExclusions)
+        .where(inArray(pdtpActivityWorksiteExclusions.activityId, activityIds))
+        .orderBy(asc(pdtpActivityWorksiteExclusions.activityId), asc(pdtpActivityWorksiteExclusions.worksiteId))
+    : []
+
   const roleLegend = await client.select({
     code: pdtpRoleLegendEntries.code,
     label: pdtpRoleLegendEntries.label,
@@ -209,7 +232,7 @@ export async function buildPdtpProgramContentSnapshot(
     .orderBy(asc(pdtpRoleLegendEntries.code))
 
   return stableJson({
-    schemaVersion: 5,
+    schemaVersion: 6,
     program,
     approvalSteps,
     activities: activities.map(({ id: _id, ...activity }) => activity),
@@ -230,6 +253,11 @@ export async function buildPdtpProgramContentSnapshot(
     })),
     documentHistory,
     roleLegend,
+    programWorksites,
+    activityWorksiteExclusions: activityWorksiteExclusions.map(({ activityId, ...exclusion }) => ({
+      activityNumber: activityNumberById.get(activityId),
+      ...exclusion,
+    })),
   })
 }
 

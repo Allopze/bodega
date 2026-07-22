@@ -2,7 +2,7 @@ import ExcelJS from "exceljs"
 import type { Session } from "next-auth"
 
 /**
- * Añade la hoja de trazabilidad común a todas las exportaciones XLSX.
+ * Añade la hoja de trazabilidad común a todas las exportaciones Excel.
  * Vive fuera de un módulo de negocio para evitar dependencias cruzadas.
  */
 export function addExportMetadataSheet(

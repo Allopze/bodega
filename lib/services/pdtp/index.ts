@@ -81,13 +81,23 @@ export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencida
 export type { PdtpPendingTarget, PdtpWeeklyPendingResult, PdtpActionVencidasReminderResult, PdtpObligationReminderResult } from "./reminders"
 export { setPdtpActivityOverride, deletePdtpActivityOverride, loadPdtpOverrides, applyOverridesToSchedule } from "./overrides"
 export type { PdtpOverrideInput } from "./overrides"
+export {
+  listPdtpProgramWorksites,
+  setPdtpProgramWorksites,
+  resolveProgramWorksiteIds,
+  listPdtpActivityWorksiteExclusions,
+  excludeActivityForWorksite,
+  includeActivityForWorksite,
+  resolvePdtpEffectiveActivitiesForWorksite,
+  assertPdtpWorksiteCanOperateProgram,
+} from "./worksites"
 export { cleanupPdtpEvidenceOrphans } from "./evidence-gc"
 export type { CleanupPdtpEvidenceOrphansOptions, CleanupPdtpEvidenceOrphansResult } from "./evidence-gc"
 export { createPdtpProgram, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram } from "./programs"
 export { stagePdtpXlsxImport, applyPdtpImportBatch, cancelPdtpImportBatch, finalizePdtpImportBootstrap, rollbackPdtpImportBatch, getPdtpImportBatch } from "./imports"
 export type { PdtpImportPreview } from "./imports"
 export { getPdtpDocumentMetadata, listPdtpReconciliationCandidates, reconcilePdtpDeclaredActor } from "./document-metadata"
-export { ensurePdtp2026ChecklistTemplates } from "./checklist-templates-2026"
+export { ensurePdtp2026ChecklistTemplates } from "@/lib/services/pdtp-adapters/checklist-templates-2026"
 export {
   createPdtpObligation,
   reportPdtpObligation,

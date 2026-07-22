@@ -1,7 +1,14 @@
 import ExcelJS from "exceljs"
 
+/**
+ * Nombre de la hoja consolidada en el libro fuente RE-36/2026. Vive aqui, en el
+ * adaptador, para que los servicios genericos de `lib/services/pdtp/**` no
+ * repitan literales de hojas del documento 2026 (regla de Fase 2.3 del plan).
+ */
+export const PDTP_2026_GENERAL_SHEET_NAME = "PDTP GENERAL"
+
 const OFFICIAL_SHEETS = [
-  ["PDTP GENERAL", "pdtp_general"],
+  [PDTP_2026_GENERAL_SHEET_NAME, "pdtp_general"],
   ["CPHS", "cphs"],
   ["PRF Y Adm. de contrato", "prf_adm_contrato"],
   ["Sup, JT", "sup_jt"],
@@ -111,8 +118,8 @@ export async function readPdtpWorkbook(filePath: string): Promise<PdtpWorkbook> 
 }
 
 export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCatalog {
-  const general = workbook.getWorksheet("PDTP GENERAL")
-  if (!general) throw new Error("No se encontro la hoja PDTP GENERAL en el libro PDTP.")
+  const general = workbook.getWorksheet(PDTP_2026_GENERAL_SHEET_NAME)
+  if (!general) throw new Error(`No se encontro la hoja ${PDTP_2026_GENERAL_SHEET_NAME} en el libro PDTP.`)
   validateGeneralScheduleStructure(general)
 
   const generalRows = sheetRows(general)
@@ -161,10 +168,16 @@ export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCata
     scheduleWarnings.push(...inspectScheduleCells(row, candidate, general.name))
   }
 
-  const expected = Array.from({ length: 89 }, (_, index) => index + 1)
+  // Integridad estructural de la numeracion: estrictamente creciente, unica y
+  // positiva. No se fija el conteo ni la contiguidad porque el programa vigente
+  // puede tener huecos por actividades retiradas (p. ej. la quita total de 4 y 8
+  // en 2026). Esto sigue detectando filas duplicadas, desordenadas o perdidas.
   const actual = activities.map((activity) => activity.n)
-  if (actual.length !== 89 || actual.some((n, index) => n !== expected[index])) {
-    throw new Error(`Catalogo PDTP invalido: se esperaban actividades 1-89 y se obtuvo ${actual.join(",")}.`)
+  const monotonicUnique = actual.every(
+    (n, index) => Number.isInteger(n) && n >= 1 && (index === 0 || n > actual[index - 1]!),
+  )
+  if (actual.length === 0 || !monotonicUnique) {
+    throw new Error(`Catalogo PDTP invalido: se esperaba numeracion de actividades estrictamente creciente y unica, y se obtuvo ${actual.join(",")}.`)
   }
 
   return {

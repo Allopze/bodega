@@ -234,7 +234,7 @@ export function resolvePdtpEvidenceFile(filePath: string): string | null {
 
 /* ── Importaciones de combustible ────────────────────────────────────────────
  *
- * Almacenamiento para el archivo XLSX original de cada lote de importación de
+ * Almacenamiento para el archivo Excel original de cada lote de importación de
  * consumos de combustible por patente (trazabilidad — ver AGENTS.md).
  * El `storageName` es siempre `${timestamp}-${nanoid}-${nombreSanitizado}`;
  * nunca se acepta el nombre original tal cual para evitar traversal.

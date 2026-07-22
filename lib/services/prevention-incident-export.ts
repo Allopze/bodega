@@ -64,7 +64,7 @@ export async function buildIncidentRegisterExport(access: IncidentAccess): Promi
     entityType: "prevention_incident_register",
     entityId: "scope",
     newState: { incidentCount: incidents.length, includesSensitive: false, sheetCount: sheets.length },
-    reason: "Exportación XLSX del registro canónico dentro del alcance autorizado",
+    reason: "Exportación Excel del registro canónico dentro del alcance autorizado",
     ipAddress: access.ctx.ip,
   })
   return {
@@ -127,7 +127,7 @@ export async function buildIncidentCaseExport(args: {
     entityId: incident.id,
     entityCode: incident.code,
     newState: { includesSensitive: args.includeSensitive, sheetCount: sheets.length },
-    reason: args.includeSensitive ? `Expediente XLSX reservado: ${args.purpose}` : "Expediente XLSX operacional",
+    reason: args.includeSensitive ? `Expediente Excel reservado: ${args.purpose}` : "Expediente Excel operacional",
     ipAddress: args.access.ctx.ip,
   })
   return {

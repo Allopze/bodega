@@ -46,7 +46,7 @@ function dataset(includesClinical: boolean) {
   }
 }
 
-describe("privacy subject XLSX", () => {
+describe("privacy subject Excel", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetDataset.mockResolvedValue(dataset(false))

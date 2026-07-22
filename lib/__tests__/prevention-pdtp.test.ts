@@ -126,7 +126,7 @@ describe("prevention PDTP service", () => {
     return submitPdtpProgramForReview(programId, "user-1")
   }
 
-  it("loads the XLSX catalog idempotently into the PDTP program tables", async () => {
+  it("loads the Excel catalog idempotently into the PDTP program tables", async () => {
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
     const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
@@ -508,7 +508,7 @@ describe("prevention PDTP service", () => {
     expect(view?.monthlyTotals[0]?.executed).toBe(4)
   })
 
-  it("builds an XLSX report payload for the selected sheet and worksite", async () => {
+  it("builds an Excel report payload for the selected sheet and worksite", async () => {
     const { loadPdtpCatalog, buildPdtpExport } = await import("@/lib/services/prevention-pdtp")
     const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
@@ -581,7 +581,7 @@ describe("prevention PDTP service", () => {
     // No executions yet
     expect(result!.monthly.every((m) => m.executed === 0)).toBe(true)
     expect(result!.annual.executed).toBe(0)
-    // Month 1 (January) has programmed activities in the XLSX
+    // Month 1 (January) has programmed activities in the Excel
     expect(result!.monthly[0]!.planned).toBe(76)
   })
 
@@ -635,6 +635,50 @@ describe("prevention PDTP service", () => {
     // operativo, pero no forman parte del cumplimiento formal.
     expect(result!.monthly[0]!.executed).toBe(2)
     expect(exec1.status).toBe("submitted")
+  })
+
+  it("shows overcompliance in full instead of silently capping the aggregate to the planned quantity (principio 5.2)", async () => {
+    const {
+      createPdtpProgram, addPdtpActivity, submitPdtpProgramForReview, approvePdtpProgramJdpr,
+      signPdtpProgramLegal, activatePdtpProgram, markPdtpExecution, approvePdtpExecution,
+      getPdtpComplianceIndicators,
+    } = await import("@/lib/services/prevention-pdtp")
+
+    const program = await createPdtpProgram({ year: 2029, title: "Programa con sobrecumplimiento", userId: "user-1" })
+    const activity = await addPdtpActivity({
+      programId: program.id,
+      objectiveOrder: 1,
+      objective: "Objetivo 1",
+      activity: "Actividad con meta baja y ejecución real mayor",
+      program: "Guía de ejecución",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "Prevencionista",
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+      evidenceRequirement: "Registro verificable",
+      indicatorMode: "planned_vs_completed",
+      sheetCodes: [],
+    }, "user-1")
+
+    await prepareProgramForReview(program.id)
+    await submitPdtpProgramForReview(program.id, "user-1")
+    await approvePdtpProgramJdpr(program.id, "user-jdpr")
+    await signPdtpProgramLegal(program.id, "user-legal")
+    await activatePdtpProgram(program.id, "user-jdpr")
+
+    // La meta del mes 1 es 1, pero se ejecutan 3 unidades reales.
+    const execution = await markPdtpExecution({
+      activityId: activity.id, worksiteId: "ws-1", year: 2029, month: 1, week: 1, executedQuantity: 3,
+    }, "user-1", ["ws-1"])
+    await approvePdtpExecution(execution.id, "user-1", ["ws-1"])
+
+    const result = await getPdtpComplianceIndicators(program.id, "ws-1")
+    // El agregado del mes conserva el dato real (3), no lo recorta a la meta
+    // (1): antes `executed` quedaba en 1 (Math.min contra planned).
+    expect(result!.monthly[0]).toMatchObject({ planned: 1, executed: 3, percent: 3 })
+    // El anual también conserva el ejecutado real sin recortarlo contra el
+    // planificado del año completo (recurrencia mensual: 12 celdas de 1).
+    expect(result!.annual).toMatchObject({ planned: 12, executed: 3, percent: 0.25 })
   })
 
   it("getPdtpComplianceIndicatorsForScope aggregates approved executions across authorized worksites instead of returning 0 without a faena (UX-01)", async () => {
@@ -1740,6 +1784,35 @@ describe("prevention PDTP service", () => {
     }
   })
 
+  it("mantiene los limites programa/plan/ejecucion: acreditar una ejecucion no muta el plan ni el contenido firmado", async () => {
+    const { markPdtpExecution, approvePdtpExecution, getActivePdtpProgram } = await import("@/lib/services/prevention-pdtp")
+    const program = await loadActiveCatalog()
+
+    const before = await getActivePdtpProgram(2026)
+    const activities = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(and(eq(schema.pdtpActivities.programId, program.id), eq(schema.pdtpActivities.objectiveOrder, 1), eq(schema.pdtpActivities.scheduleMode, "scheduled")))
+    const target = activities[0]!
+    const scheduleBefore = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(eq(schema.pdtpActivitySchedule.activityId, target.id))
+
+    const execution = await markPdtpExecution({
+      activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
+    }, "user-1", ["ws-1"])
+    await approvePdtpExecution(execution.id, "user-1", ["ws-1"])
+
+    // La ejecucion vive en su propia tabla: no reescribe la planificacion...
+    const scheduleAfter = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(eq(schema.pdtpActivitySchedule.activityId, target.id))
+    expect(scheduleAfter).toEqual(scheduleBefore)
+    // ...ni la definicion de la actividad...
+    const activityAfter = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, target.id))
+    expect(activityAfter[0]).toEqual(target)
+    // ...ni la version/digest firmados del programa (GOV-02: la firma cubre contenido, no avance).
+    const after = await getActivePdtpProgram(2026)
+    expect(after?.contentDigest).toBe(before?.contentDigest)
+    expect(after?.version).toBe(before?.version)
+  })
+
   it("audiences (sheet memberships) reuse the same 89 activities instead of duplicating rows per view", async () => {
     const { program } = await loadCatalog()
 
@@ -1767,11 +1840,12 @@ describe("prevention PDTP service", () => {
 
   it("keeps the 22 no-P activities visible without contaminating the calendarized denominator", async () => {
     const { listPdtpProgramActivities, getPdtpComplianceIndicators } = await import("@/lib/services/prevention-pdtp")
-    const { PDTP_2026_INVARIANTS, PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS } = await import("@/lib/services/pdtp-adapters/contract-2026")
+    // Fixture = documento histórico (archivo viejo, 89); usa las invariantes de la fuente, no las del programa vigente (87).
+    const { PDTP_2026_SOURCE_INVARIANTS, PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS } = await import("@/lib/services/pdtp-adapters/contract-2026")
     const { program } = await loadCatalog()
 
     const activities = await listPdtpProgramActivities(program.id)
-    expect(activities).toHaveLength(PDTP_2026_INVARIANTS.activityCount)
+    expect(activities).toHaveLength(PDTP_2026_SOURCE_INVARIANTS.activityCount)
     // Las 22 siguen visibles en el listado del constructor...
     for (const number of PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS) {
       expect(activities.some((a) => a.n === number)).toBe(true)
@@ -1782,12 +1856,13 @@ describe("prevention PDTP service", () => {
     // unidades de las 67 actividades que sí tienen P, sin inflar ni recortar
     // por la presencia de las 22 sin plan numérico.
     const indicators = await getPdtpComplianceIndicators(program.id, "ws-1")
-    expect(indicators?.annual.planned).toBe(PDTP_2026_INVARIANTS.plannedQuantityTotal)
+    expect(indicators?.annual.planned).toBe(PDTP_2026_SOURCE_INVARIANTS.plannedQuantityTotal)
   })
 
   it("getPdtpManagementReport groups avance/desviaciones/responsables by objetivo, filters, and fails closed outside scope", async () => {
     const { getPdtpManagementReport, markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
-    const { PDTP_2026_INVARIANTS, PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS } = await import("@/lib/services/pdtp-adapters/contract-2026")
+    // Fixture = documento histórico (archivo viejo, 89); usa las invariantes de la fuente, no las del programa vigente (87).
+    const { PDTP_2026_SOURCE_INVARIANTS, PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS } = await import("@/lib/services/pdtp-adapters/contract-2026")
     const program = await loadActiveCatalog()
 
     // Falla cerrado: una faena fuera del alcance del llamador nunca genera el reporte.
@@ -1800,7 +1875,7 @@ describe("prevention PDTP service", () => {
 
     // Solo actividades scheduled aportan al reporte: 89 - 22 sin P = 67.
     const scheduledCount = report!.objectives.reduce((sum, o) => sum + o.activityCount, 0)
-    expect(scheduledCount).toBe(PDTP_2026_INVARIANTS.activityCount - PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS.length)
+    expect(scheduledCount).toBe(PDTP_2026_SOURCE_INVARIANTS.activityCount - PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS.length)
     expect(report!.objectives.every((o) => o.executed === 0)).toBe(true)
     expect(report!.objectives.every((o) => o.responsibles.length > 0)).toBe(true)
 
@@ -1903,7 +1978,7 @@ describe("prevention PDTP service", () => {
     expect(otherFaena!.changes.length).toBe(dossier!.changes.length)
   })
 
-  it("stages the XLSX without mutations, applies P and E atomically, preserves checklist bindings and rolls back", async () => {
+  it("stages the Excel without mutations, applies P and E atomically, preserves checklist bindings and rolls back", async () => {
     const { readFile } = await import("node:fs/promises")
     const {
       addPdtpActivity,

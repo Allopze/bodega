@@ -30,31 +30,31 @@ export function validatePdtpXlsxEnvelope(upload: UploadEnvelope) {
   if (!upload.name.toLocaleLowerCase("es-CL").endsWith(".xlsx")) {
     throw new Error("El archivo debe usar el formato .xlsx; .xls no está permitido.")
   }
-  if (upload.size <= 0 || upload.buffer.length <= 0) throw new Error("El archivo XLSX está vacío.")
+  if (upload.size <= 0 || upload.buffer.length <= 0) throw new Error("El archivo Excel está vacío.")
   if (upload.size !== upload.buffer.length) throw new Error("El tamaño declarado del archivo no coincide con su contenido.")
-  if (upload.size > PDTP_XLSX_MAX_BYTES) throw new Error("El archivo XLSX supera el límite de 15 MB.")
-  if (!ALLOWED_MIME.has(upload.type.toLocaleLowerCase("en-US"))) throw new Error("El tipo MIME del archivo no corresponde a XLSX.")
+  if (upload.size > PDTP_XLSX_MAX_BYTES) throw new Error("El archivo Excel supera el límite de 15 MB.")
+  if (!ALLOWED_MIME.has(upload.type.toLocaleLowerCase("en-US"))) throw new Error("El tipo MIME del archivo no corresponde a Excel.")
   if (upload.buffer.length < 4 || upload.buffer.readUInt32LE(0) !== 0x04034b50) {
-    throw new Error("El archivo no tiene una firma ZIP/XLSX válida.")
+    throw new Error("El archivo no tiene una firma ZIP/Excel válida.")
   }
 
   const eocd = findEndOfCentralDirectory(upload.buffer)
-  if (eocd < 0) throw new Error("El contenedor XLSX está incompleto o corrupto.")
+  if (eocd < 0) throw new Error("El contenedor Excel está incompleto o corrupto.")
   const entryCount = upload.buffer.readUInt16LE(eocd + 10)
   const centralSize = upload.buffer.readUInt32LE(eocd + 12)
   const centralOffset = upload.buffer.readUInt32LE(eocd + 16)
   if (entryCount === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff) {
     throw new Error("Los contenedores ZIP64 no están permitidos para este importador.")
   }
-  if (entryCount <= 0 || entryCount > MAX_ZIP_ENTRIES) throw new Error("El XLSX contiene una cantidad de archivos internos no permitida.")
-  if (centralOffset + centralSize > eocd) throw new Error("El directorio del XLSX está corrupto.")
+  if (entryCount <= 0 || entryCount > MAX_ZIP_ENTRIES) throw new Error("El Excel contiene una cantidad de archivos internos no permitida.")
+  if (centralOffset + centralSize > eocd) throw new Error("El directorio del Excel está corrupto.")
 
   let offset = centralOffset
   let totalUncompressed = 0
   const names = new Set<string>()
   for (let index = 0; index < entryCount; index++) {
     if (offset + 46 > upload.buffer.length || upload.buffer.readUInt32LE(offset) !== 0x02014b50) {
-      throw new Error("El directorio del XLSX contiene una entrada inválida.")
+      throw new Error("El directorio del Excel contiene una entrada inválida.")
     }
     const flags = upload.buffer.readUInt16LE(offset + 8)
     const method = upload.buffer.readUInt16LE(offset + 10)
@@ -63,23 +63,23 @@ export function validatePdtpXlsxEnvelope(upload: UploadEnvelope) {
     const extraLength = upload.buffer.readUInt16LE(offset + 30)
     const commentLength = upload.buffer.readUInt16LE(offset + 32)
     const end = offset + 46 + fileNameLength + extraLength + commentLength
-    if (end > upload.buffer.length) throw new Error("El directorio del XLSX está truncado.")
-    if ((flags & 0x1) !== 0) throw new Error("Los XLSX cifrados no están permitidos.")
-    if (method !== 0 && method !== 8) throw new Error("El XLSX usa un método de compresión no permitido.")
+    if (end > upload.buffer.length) throw new Error("El directorio del Excel está truncado.")
+    if ((flags & 0x1) !== 0) throw new Error("Los Excel cifrados no están permitidos.")
+    if (method !== 0 && method !== 8) throw new Error("El Excel usa un método de compresión no permitido.")
     if (uncompressed === 0xffffffff || uncompressed > MAX_SINGLE_ENTRY_BYTES) {
-      throw new Error("Una parte interna del XLSX supera el límite permitido.")
+      throw new Error("Una parte interna del Excel supera el límite permitido.")
     }
     totalUncompressed += uncompressed
-    if (totalUncompressed > MAX_UNCOMPRESSED_BYTES) throw new Error("El XLSX excede el límite de expansión permitido.")
+    if (totalUncompressed > MAX_UNCOMPRESSED_BYTES) throw new Error("El Excel excede el límite de expansión permitido.")
     const name = upload.buffer.subarray(offset + 46, offset + 46 + fileNameLength).toString("utf8")
     if (!name || name.includes("..") || name.startsWith("/") || name.includes("\\")) {
-      throw new Error("El XLSX contiene una ruta interna no permitida.")
+      throw new Error("El Excel contiene una ruta interna no permitida.")
     }
     names.add(name)
     offset = end
   }
   if (!names.has("[Content_Types].xml") || !names.has("xl/workbook.xml")) {
-    throw new Error("El ZIP no contiene la estructura mínima de un libro XLSX.")
+    throw new Error("El ZIP no contiene la estructura mínima de un libro Excel.")
   }
 
   return { entryCount, totalUncompressedBytes: totalUncompressed }

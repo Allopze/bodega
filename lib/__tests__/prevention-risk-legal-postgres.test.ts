@@ -1,4 +1,4 @@
-/** Real PostgreSQL proof for MIPER, legal register, PDTP coverage and XLSX staging. */
+/** Real PostgreSQL proof for MIPER, legal register, PDTP coverage and Excel staging. */
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -255,7 +255,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     expect(copiedCoverage.activities.find((item) => item.n === 1)?.sources[0]?.justification).toContain("Copiado desde pdtp-risk-program")
   })
 
-  it("preserves XLSX original, normalization and activation decisions without cross-faena access", async () => {
+  it("preserves Excel original, normalization and activation decisions without cross-faena access", async () => {
     const importer = await import("@/lib/services/prevention-risk-import")
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet("MIPER")

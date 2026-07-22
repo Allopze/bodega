@@ -11,7 +11,7 @@ async function workbookBuffer(rows: unknown[][]) {
 }
 
 describe("parseProductImportWorkbook", () => {
-  it("parses EPP products from an XLSX with friendly column headers", async () => {
+  it("parses EPP products from an Excel with friendly column headers", async () => {
     const buffer = await workbookBuffer([
       ["SKU", "Nombre", "Proveedor", "Precio", "Atributos", "Descripción"],
       ["casco-001", "CASCO BLANCO", "TRECK", "$12.500", "Talla: M; Color: Blanco", "Casco certificado"],

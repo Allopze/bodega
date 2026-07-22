@@ -11,7 +11,7 @@ import { INSPECCION_EPP } from "@/lib/sst/definitions/inspeccion-epp"
 import { OBSERVACION_AMPLIROLL } from "@/lib/sst/definitions/observacion-ampliroll"
 import { OBSERVACION_MAQUINARIA } from "@/lib/sst/definitions/observacion-maquinaria"
 import type { ChecklistDefinition } from "@/lib/sst/types"
-import { getActivePdtpActivityChecklist, savePdtpActivityChecklist } from "./checklists"
+import { getActivePdtpActivityChecklist, savePdtpActivityChecklist } from "@/lib/services/pdtp/checklists"
 
 type ChecklistSpec = { n: number; label: string; definition: ChecklistDefinition }
 

@@ -2,7 +2,7 @@ import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities } from "@/db/schema"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
-import { projectRecurrenceToLegacySchedule, type PdtpRecurrenceRule } from "./recurrence"
+import { deriveScheduleHorizon, projectRecurrenceToLegacySchedule, type PdtpRecurrenceRule } from "./recurrence"
 import { pdtpActivityChecklistId } from "./checklist-domain"
 
 /** Todas las actividades de un programa, ordenadas por N°. Para el tab
@@ -192,7 +192,7 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     ? input.scheduleOverrides
     : (input.scheduleMode !== undefined || input.recurrenceRule !== undefined)
       ? ((input.scheduleMode ?? activity.scheduleMode) === "scheduled" && (input.recurrenceRule ?? activity.recurrenceRule)
-          ? projectRecurrenceToLegacySchedule((input.recurrenceRule ?? activity.recurrenceRule) as PdtpRecurrenceRule)
+          ? projectRecurrenceToLegacySchedule((input.recurrenceRule ?? activity.recurrenceRule) as PdtpRecurrenceRule, deriveScheduleHorizon(program))
           : [])
       : undefined
 
@@ -254,7 +254,7 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   if (!created) throw new Error("No se pudo crear la actividad PDTP.")
 
   const schedule = input.schedule ?? ((input.scheduleMode ?? "scheduled") === "scheduled" && input.recurrenceRule
-    ? projectRecurrenceToLegacySchedule(input.recurrenceRule)
+    ? projectRecurrenceToLegacySchedule(input.recurrenceRule, deriveScheduleHorizon(program))
     : [])
   if (schedule.length > 0) {
     for (const cell of schedule) {

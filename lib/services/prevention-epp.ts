@@ -126,6 +126,87 @@ export async function createEppRequirement(input: unknown, access: EppAccess) {
   return created
 }
 
+// Exported so the Server Action can validate at the boundary with parseZ
+export const updateRequirementSchema = z.object({
+  id:                  z.string().min(1),
+  enforcement:         z.enum(["blocking", "warning"]).optional(),
+  reason:              z.string().trim().min(10).max(2000).optional(),
+  preferredFamilyId:   z.string().min(1).nullable().optional(),
+  legalRequirementId:  z.string().min(1).nullable().optional(),
+  riskEntryId:         z.string().min(1).nullable().optional(),
+})
+
+export async function updateEppRequirement(input: unknown, access: EppAccess) {
+  const data = updateRequirementSchema.parse(input)
+  requireAccess(access, "prevention:epp:manage")
+
+  const existing = await db.query.preventionEppRequirements.findFirst({
+    where: eq(preventionEppRequirements.id, data.id),
+  })
+  if (!existing) throw new Error(NOT_FOUND)
+  if (existing.worksiteId) requireAccess(access, "prevention:epp:manage", existing.worksiteId)
+
+  const patch: Partial<typeof preventionEppRequirements.$inferInsert> = { updatedAt: todayInChile() }
+  if (data.enforcement        !== undefined) patch.enforcement        = data.enforcement
+  if (data.reason             !== undefined) patch.reason             = data.reason
+  if (data.preferredFamilyId  !== undefined) patch.preferredFamilyId  = data.preferredFamilyId
+  if (data.legalRequirementId !== undefined) patch.legalRequirementId = data.legalRequirementId
+  if (data.riskEntryId        !== undefined) patch.riskEntryId        = data.riskEntryId
+
+  const [updated] = await db
+    .update(preventionEppRequirements)
+    .set(patch)
+    .where(eq(preventionEppRequirements.id, data.id))
+    .returning()
+  if (!updated) throw new Error("No se pudo actualizar el requisito.")
+
+  await history(db, {
+    entityType:  "requirement",
+    entityId:    data.id,
+    worksiteId:  existing.worksiteId,
+    changeType:  "updated",
+    reason:      data.reason ?? existing.reason,
+    afterState:  updated,
+    actorUserId: access.userId,
+  })
+  return updated
+}
+
+// Exported so the Server Action can validate at the boundary with parseZ
+export const deactivateRequirementSchema = z.object({
+  id:     z.string().min(1),
+  reason: z.string().trim().min(10).max(2000),
+})
+
+export async function deactivateEppRequirement(input: unknown, access: EppAccess) {
+  const data = deactivateRequirementSchema.parse(input)
+  requireAccess(access, "prevention:epp:manage")
+
+  const existing = await db.query.preventionEppRequirements.findFirst({
+    where: eq(preventionEppRequirements.id, data.id),
+  })
+  if (!existing) throw new Error(NOT_FOUND)
+  if (existing.worksiteId) requireAccess(access, "prevention:epp:manage", existing.worksiteId)
+  if (!existing.isActive) throw new Error("El requisito ya está desactivado.")
+
+  const [deactivated] = await db
+    .update(preventionEppRequirements)
+    .set({ isActive: false, updatedAt: todayInChile() })
+    .where(eq(preventionEppRequirements.id, data.id))
+    .returning()
+
+  await history(db, {
+    entityType:  "requirement",
+    entityId:    data.id,
+    worksiteId:  existing.worksiteId,
+    changeType:  "deactivated",
+    reason:      data.reason,
+    afterState:  deactivated,
+    actorUserId: access.userId,
+  })
+  return deactivated
+}
+
 /* ── Cobertura y escalamiento ─────────────────────────────────────────────── */
 
 export async function listEppCoverageGaps(access: EppAccess): Promise<EppCoverageGap[]> {

@@ -1,12 +1,18 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
+  eppTypes,
   pdtpActivities,
   pdtpPrograms,
   preventionCapaActions,
+  preventionCommittees,
+  preventionEmergencyPlans,
+  preventionEppRequirements,
+  preventionInspectionRuns,
+  preventionInspectionTemplates,
   preventionLegalApplicabilities,
   preventionLegalAssessments,
   preventionLegalRequirements,
@@ -22,6 +28,9 @@ import {
   preventionRiskProcesses,
   preventionRiskReviewTriggers,
   preventionRiskTasks,
+  preventionTrainingCourseVersions,
+  preventionTrainingCourses,
+  preventionTrainingSessions,
   users,
   worksites,
 } from "@/db/schema"
@@ -705,6 +714,26 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
       const [source] = await tx.select().from(preventionCapaActions).where(and(eq(preventionCapaActions.id, data.sourceId), eq(preventionCapaActions.worksiteId, data.worksiteId))).limit(1)
       if (!source) throw new Error("CAPA de incidente no encontrada o fuera de alcance.")
       sourceVersionSnapshot = `${source.code} v${source.version}`
+    } else if (data.sourceType === "capacitacion") {
+      const [source] = await tx.select().from(preventionTrainingSessions).where(and(eq(preventionTrainingSessions.id, data.sourceId), eq(preventionTrainingSessions.worksiteId, data.worksiteId), ne(preventionTrainingSessions.status, "cancelled"))).limit(1)
+      if (!source) throw new Error("Sesión de capacitación no encontrada, cancelada o fuera de alcance.")
+      sourceVersionSnapshot = source.code
+    } else if (data.sourceType === "inspeccion") {
+      const [source] = await tx.select().from(preventionInspectionRuns).where(and(eq(preventionInspectionRuns.id, data.sourceId), eq(preventionInspectionRuns.worksiteId, data.worksiteId), ne(preventionInspectionRuns.status, "cancelled"))).limit(1)
+      if (!source) throw new Error("Inspección no encontrada, cancelada o fuera de alcance.")
+      sourceVersionSnapshot = source.code
+    } else if (data.sourceType === "cphs") {
+      const [source] = await tx.select().from(preventionCommittees).where(and(eq(preventionCommittees.id, data.sourceId), eq(preventionCommittees.worksiteId, data.worksiteId), eq(preventionCommittees.status, "active"))).limit(1)
+      if (!source) throw new Error("Comité CPHS no encontrado, no activo o fuera de alcance.")
+      sourceVersionSnapshot = `${source.name} v${source.version}`
+    } else if (data.sourceType === "epp") {
+      const [source] = await tx.select().from(preventionEppRequirements).where(and(eq(preventionEppRequirements.id, data.sourceId), eq(preventionEppRequirements.worksiteId, data.worksiteId), eq(preventionEppRequirements.isActive, true))).limit(1)
+      if (!source) throw new Error("Requisito de EPP no encontrado, inactivo o fuera de alcance.")
+      sourceVersionSnapshot = `EPP requerido desde ${source.createdAt.slice(0, 10)}`
+    } else if (data.sourceType === "emergencia") {
+      const [source] = await tx.select().from(preventionEmergencyPlans).where(and(eq(preventionEmergencyPlans.id, data.sourceId), eq(preventionEmergencyPlans.worksiteId, data.worksiteId), eq(preventionEmergencyPlans.status, "approved"))).limit(1)
+      if (!source) throw new Error("Plan de emergencia no encontrado, no aprobado o fuera de alcance.")
+      sourceVersionSnapshot = `${source.code} v${source.version}`
     }
     const [created] = await tx.insert(preventionPdtpSourceLinks).values({
       id: `pdtpsource-${nanoid()}`,
@@ -842,6 +871,62 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
     .innerJoin(preventionLegalRequirements, eq(preventionLegalRequirements.id, preventionLegalApplicabilities.requirementId))
     .where(and(eq(preventionLegalApplicabilities.applicabilityStatus, "applicable"), eq(preventionLegalRequirements.status, "published"), scopeCondition(access.scope, preventionLegalApplicabilities.worksiteId)))
     .orderBy(asc(preventionLegalRequirements.code))
+  const capaSources = await db.select({
+    id: preventionCapaActions.id,
+    worksiteId: preventionCapaActions.worksiteId,
+    code: preventionCapaActions.code,
+    finding: preventionCapaActions.finding,
+  }).from(preventionCapaActions)
+    .where(and(scopeCondition(access.scope, preventionCapaActions.worksiteId), ne(preventionCapaActions.status, "cancelled")))
+    .orderBy(asc(preventionCapaActions.code))
+  const trainingSources = await db.select({
+    id: preventionTrainingSessions.id,
+    worksiteId: preventionTrainingSessions.worksiteId,
+    code: preventionTrainingSessions.code,
+    courseName: preventionTrainingCourses.name,
+  }).from(preventionTrainingSessions)
+    .innerJoin(preventionTrainingCourseVersions, eq(preventionTrainingCourseVersions.id, preventionTrainingSessions.courseVersionId))
+    .innerJoin(preventionTrainingCourses, eq(preventionTrainingCourses.id, preventionTrainingCourseVersions.courseId))
+    .where(and(scopeCondition(access.scope, preventionTrainingSessions.worksiteId), ne(preventionTrainingSessions.status, "cancelled")))
+    .orderBy(asc(preventionTrainingSessions.code))
+  const inspectionSources = await db.select({
+    id: preventionInspectionRuns.id,
+    worksiteId: preventionInspectionRuns.worksiteId,
+    code: preventionInspectionRuns.code,
+    templateName: preventionInspectionTemplates.name,
+    subjectLabel: preventionInspectionRuns.subjectLabel,
+  }).from(preventionInspectionRuns)
+    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+    .where(and(scopeCondition(access.scope, preventionInspectionRuns.worksiteId), ne(preventionInspectionRuns.status, "cancelled")))
+    .orderBy(asc(preventionInspectionRuns.code))
+  const cphsSources = await db.select({
+    id: preventionCommittees.id,
+    worksiteId: preventionCommittees.worksiteId,
+    name: preventionCommittees.name,
+  }).from(preventionCommittees)
+    .where(and(scopeCondition(access.scope, preventionCommittees.worksiteId), eq(preventionCommittees.status, "active")))
+    .orderBy(asc(preventionCommittees.name))
+  const eppSources = await db.select({
+    id: preventionEppRequirements.id,
+    worksiteId: preventionEppRequirements.worksiteId,
+    typeLabel: eppTypes.label,
+    reason: preventionEppRequirements.reason,
+  }).from(preventionEppRequirements)
+    .innerJoin(eppTypes, eq(eppTypes.id, preventionEppRequirements.eppTypeId))
+    .where(and(
+      isNotNull(preventionEppRequirements.worksiteId),
+      scopeCondition(access.scope, preventionEppRequirements.worksiteId),
+      eq(preventionEppRequirements.isActive, true),
+    ))
+    .orderBy(asc(eppTypes.label))
+  const emergencySources = await db.select({
+    id: preventionEmergencyPlans.id,
+    worksiteId: preventionEmergencyPlans.worksiteId,
+    code: preventionEmergencyPlans.code,
+    title: preventionEmergencyPlans.title,
+  }).from(preventionEmergencyPlans)
+    .where(and(scopeCondition(access.scope, preventionEmergencyPlans.worksiteId), eq(preventionEmergencyPlans.status, "approved")))
+    .orderBy(asc(preventionEmergencyPlans.code))
   const linksByActivity = new Map<string, typeof links>()
   for (const link of links) linksByActivity.set(link.activityId, [...(linksByActivity.get(link.activityId) ?? []), link])
   return {
@@ -852,6 +937,12 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
     sourceOptions: {
       riskControls: riskSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.hazard} · ${item.description}` })),
       legalRequirements: legalSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.article}` })),
+      capaActions: capaSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.finding}` })),
+      trainingSessions: trainingSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.courseName}` })),
+      inspectionRuns: inspectionSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.templateName}${item.subjectLabel ? ` · ${item.subjectLabel}` : ""}` })),
+      committees: cphsSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: item.name })),
+      eppRequirements: eppSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId as string, label: `${item.typeLabel} · ${item.reason}` })),
+      emergencyPlans: emergencySources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.title}` })),
     },
     coverage: {
       totalActivities: activities.length,

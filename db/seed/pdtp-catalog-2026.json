@@ -7,11 +7,9 @@
         1,
         2,
         3,
-        4,
         5,
         6,
         7,
-        8,
         9
       ]
     },
@@ -196,86 +194,6 @@
           "week": 1,
           "plannedQuantity": 1,
           "sourceColumn": "N"
-        }
-      ]
-    },
-    {
-      "n": 4,
-      "objectiveOrder": 1,
-      "objective": "FORTALECER EL LIDERAZGO DE SEGURIDAD Y SALUD EN EL TRABAJO",
-      "activity": "Difundir los resultados de las actividades preventivas de cada faena",
-      "program": "Envia por correo a gerencias y subgerente operaciones",
-      "responsibleDisplay": "JDPR",
-      "responsibleSlugs": [
-        "jdpr"
-      ],
-      "sourceSheetRow": 17,
-      "schedule": [
-        {
-          "month": 2,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "R"
-        },
-        {
-          "month": 3,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "Z"
-        },
-        {
-          "month": 4,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "AH"
-        },
-        {
-          "month": 5,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "AP"
-        },
-        {
-          "month": 6,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "AX"
-        },
-        {
-          "month": 7,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "BF"
-        },
-        {
-          "month": 8,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "BN"
-        },
-        {
-          "month": 9,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "BV"
-        },
-        {
-          "month": 10,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "CD"
-        },
-        {
-          "month": 11,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "CL"
-        },
-        {
-          "month": 12,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "CT"
         }
       ]
     },
@@ -723,88 +641,6 @@
           "week": 1,
           "plannedQuantity": 1,
           "sourceColumn": "CP"
-        }
-      ]
-    },
-    {
-      "n": 8,
-      "objectiveOrder": 1,
-      "objective": "FORTALECER EL LIDERAZGO DE SEGURIDAD Y SALUD EN EL TRABAJO",
-      "activity": "Reunión revisión gestión preventiva SG-SST",
-      "program": "Reunión online",
-      "responsibleDisplay": "Gerente Legal y RRHH, JDPR,PRF",
-      "responsibleSlugs": [
-        "gerente_legal_rrhh",
-        "jdpr",
-        "prf"
-      ],
-      "sourceSheetRow": 21,
-      "schedule": [
-        {
-          "month": 2,
-          "week": 2,
-          "plannedQuantity": 1,
-          "sourceColumn": "P"
-        },
-        {
-          "month": 3,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "Z"
-        },
-        {
-          "month": 4,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "AH"
-        },
-        {
-          "month": 5,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "AP"
-        },
-        {
-          "month": 6,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "AX"
-        },
-        {
-          "month": 7,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "BF"
-        },
-        {
-          "month": 8,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "BN"
-        },
-        {
-          "month": 9,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "BV"
-        },
-        {
-          "month": 10,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "CD"
-        },
-        {
-          "month": 11,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "CL"
-        },
-        {
-          "month": 12,
-          "week": 3,
-          "plannedQuantity": 1,
-          "sourceColumn": "CT"
         }
       ]
     },
@@ -6483,11 +6319,9 @@
       1,
       2,
       3,
-      4,
       5,
       6,
       7,
-      8,
       9,
       10,
       11,
@@ -6580,11 +6414,9 @@
       1,
       2,
       3,
-      4,
       5,
       6,
       7,
-      8,
       9,
       10,
       13,

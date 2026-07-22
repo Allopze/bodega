@@ -301,7 +301,7 @@ describeIf("Capacitación y competencias on real PostgreSQL", () => {
     expect(gaps.find((gap) => gap.workerId === "wk-a2")?.gapType).toBe("revoked")
   })
 
-  it("produces an XLSX whose gap sheet matches the live gaps", async () => {
+  it("produces an Excel whose gap sheet matches the live gaps", async () => {
     const { buildTrainingExport } = await import("@/lib/services/prevention-training-export")
     const exporter = { ...AUTHOR, permissions: [...AUTHOR.permissions, "prevention:training:export"] }
     const report = await buildTrainingExport(exporter)

@@ -77,7 +77,7 @@ export async function parseProductImportWorkbook(buffer: Buffer): Promise<Parsed
   try {
     await workbook.xlsx.load(buffer as never)
   } catch {
-    return { items: [], errors: ["El archivo no es un XLSX válido o está dañado."] }
+    return { items: [], errors: ["El archivo no es un Excel válido o está dañado."] }
   }
 
   const sheet = workbook.worksheets[0]
@@ -163,7 +163,7 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
       const productId = existing?.id ?? nanoid()
       const notes = [
         item.notes,
-        `Importado desde XLSX. Fila ${item.rowNumber}.`,
+        `Importado desde Excel. Fila ${item.rowNumber}.`,
       ].filter(Boolean).join(" ")
 
       if (existing) {
@@ -363,7 +363,7 @@ async function resolveSupplier(
     id,
     name: supplierName,
     isActive: true,
-    notes: "Creado por importación XLSX de EPP.",
+    notes: "Creado por importación Excel de EPP.",
   }).onConflictDoNothing()
   cache.set(key, { id, created: true })
   return { id, created: true }

@@ -1,5 +1,5 @@
 /**
- * Stock and kardex XLSX export functions.
+ * Stock and kardex Excel export functions.
  */
 
 import { eq, and, sql, inArray } from "drizzle-orm"
@@ -22,7 +22,7 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
 }
 
 /**
- * Build an XLSX buffer with the current stock for the given session's scope.
+ * Build an Excel buffer with the current stock for the given session's scope.
  * Respects RBAC worksite visibility.
  */
 export async function getStockExport(
@@ -101,7 +101,7 @@ export interface KardexExportFilters {
 }
 
 /**
- * Build an XLSX buffer with the inventory movement history (kardex)
+ * Build an Excel buffer with the inventory movement history (kardex)
  * for the given session's scope. Respects RBAC worksite visibility.
  */
 export async function getKardexExport(

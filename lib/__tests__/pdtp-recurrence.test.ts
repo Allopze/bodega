@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { describePdtpRecurrence, describePdtpRecurrenceImpact, projectRecurrenceToLegacySchedule } from "@/lib/services/pdtp/recurrence"
+import { deriveScheduleHorizon, describePdtpRecurrence, describePdtpRecurrenceImpact, projectRecurrenceToLegacySchedule } from "@/lib/services/pdtp/recurrence"
 
 describe("PDTP recurrence rules", () => {
   it("projects a monthly rule without exposing the matrix as authoring input", () => {
@@ -43,5 +43,31 @@ describe("PDTP recurrence rules", () => {
       "scheduled",
       { frequency: "quarterly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
     )).toEqual({ currentCount: 12, nextCount: 4, changed: true })
+  })
+
+  it("derives the full calendar year when a program has no declared period (2026 regression)", () => {
+    expect(deriveScheduleHorizon({ year: 2026 })).toEqual({ months: Array.from({ length: 12 }, (_, i) => i + 1), weeksPerMonth: 4 })
+  })
+
+  it("bounds the horizon to a partial-year period without fabricating months outside it", () => {
+    const horizon = deriveScheduleHorizon({ year: 2027, periodStart: "2027-04-01", periodEnd: "2027-09-30" })
+    expect(horizon.months).toEqual([4, 5, 6, 7, 8, 9])
+
+    const cells = projectRecurrenceToLegacySchedule({ frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 }, horizon)
+    expect(cells).toHaveLength(6)
+    expect(cells.map((cell) => cell.month)).toEqual([4, 5, 6, 7, 8, 9])
+  })
+
+  it("respects a custom weeksPerMonth for weekly projections", () => {
+    const horizon = { months: [1, 2], weeksPerMonth: 2 }
+    const cells = projectRecurrenceToLegacySchedule({ frequency: "weekly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 }, horizon)
+    expect(cells).toHaveLength(4)
+    expect(cells.every((cell) => cell.week <= 2)).toBe(true)
+  })
+
+  it("still yields exactly 48 cells for the annual 2026 case (regression)", () => {
+    const horizon = deriveScheduleHorizon({ year: 2026 })
+    const cells = projectRecurrenceToLegacySchedule({ frequency: "weekly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 }, horizon)
+    expect(cells).toHaveLength(48)
   })
 })

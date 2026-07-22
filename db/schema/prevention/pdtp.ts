@@ -574,6 +574,45 @@ export const pdtpActionPlan = pgTable("pdtp_action_plan", {
   check("pdtp_action_plan_estado_check", sql`${table.estado} IN ('pendiente', 'en_proceso', 'completado', 'verificado', 'reabierto', 'cancelado')`),
 ])
 
+/**
+ * Membresía de faenas de un programa. Sin filas para un `programId`, el
+ * programa aplica a todas las faenas del scope del usuario (comportamiento
+ * histórico, retrocompatible). Con filas, solo esas faenas lo ven — la
+ * herencia es "todas las actividades menos sus exclusiones" (ver
+ * `pdtpActivityWorksiteExclusions`), no una copia del programa por faena.
+ */
+export const pdtpProgramWorksites = pgTable("pdtp_program_worksites", {
+  id:            text("id").primaryKey(),
+  programId:     text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
+  worksiteId:    text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  isActive:      boolean("is_active").notNull().default(true),
+  addedByUserId: text("added_by_user_id").references(() => users.id),
+  addedAt:       timestamp("added_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_program_worksites_program_worksite_unique").on(table.programId, table.worksiteId),
+  index("pdtp_program_worksites_worksite_idx").on(table.worksiteId),
+])
+
+/**
+ * Excepción de herencia: una faena miembro del programa (o cualquier faena,
+ * si el programa no declara membresía) no ve esta actividad puntual. No
+ * reemplaza el override de meta por faena (`pdtpActivityScheduleOverrides`,
+ * que solo cambia la cantidad planificada) — esto excluye la actividad
+ * completa para esa faena.
+ */
+export const pdtpActivityWorksiteExclusions = pgTable("pdtp_activity_worksite_exclusions", {
+  id:              text("id").primaryKey(),
+  activityId:      text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  worksiteId:      text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  reason:          text("reason").notNull(),
+  createdByUserId: text("created_by_user_id").references(() => users.id),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_activity_worksite_exclusions_activity_worksite_unique").on(table.activityId, table.worksiteId),
+  index("pdtp_activity_worksite_exclusions_worksite_idx").on(table.worksiteId),
+  check("pdtp_activity_worksite_exclusions_reason_check", sql`length(trim(${table.reason})) >= 10`),
+])
+
 /* ── PDTP Action Plan Followups (bitácora de seguimiento) ────────────────── */
 export const pdtpActionPlanFollowups = pgTable("pdtp_action_plan_followups", {
   id:               text("id").primaryKey(),
@@ -607,6 +646,19 @@ export const pdtpProgramsRelations = relations(pdtpPrograms, ({ many, one }) => 
   approvalDecisions: many(pdtpApprovalDecisions),
   documentHistory: many(pdtpDocumentHistory),
   roleLegendEntries: many(pdtpRoleLegendEntries),
+  worksites: many(pdtpProgramWorksites),
+}))
+
+export const pdtpProgramWorksitesRelations = relations(pdtpProgramWorksites, ({ one }) => ({
+  program: one(pdtpPrograms, { fields: [pdtpProgramWorksites.programId], references: [pdtpPrograms.id] }),
+  worksite: one(worksites, { fields: [pdtpProgramWorksites.worksiteId], references: [worksites.id] }),
+  addedByUser: one(users, { fields: [pdtpProgramWorksites.addedByUserId], references: [users.id] }),
+}))
+
+export const pdtpActivityWorksiteExclusionsRelations = relations(pdtpActivityWorksiteExclusions, ({ one }) => ({
+  activity: one(pdtpActivities, { fields: [pdtpActivityWorksiteExclusions.activityId], references: [pdtpActivities.id] }),
+  worksite: one(worksites, { fields: [pdtpActivityWorksiteExclusions.worksiteId], references: [worksites.id] }),
+  createdByUser: one(users, { fields: [pdtpActivityWorksiteExclusions.createdByUserId], references: [users.id] }),
 }))
 
 export const pdtpImportBatchesRelations = relations(pdtpImportBatches, ({ one, many }) => ({
@@ -656,6 +708,7 @@ export const pdtpActivitiesRelations = relations(pdtpActivities, ({ one, many })
   obligations: many(pdtpObligations),
   sheetMemberships: many(pdtpSheetActivities),
   checklists: many(pdtpActivityChecklists),
+  worksiteExclusions: many(pdtpActivityWorksiteExclusions),
 }))
 
 export const pdtpActivityScheduleRelations = relations(pdtpActivitySchedule, ({ one }) => ({
@@ -776,6 +829,10 @@ export type PdtpSheetActivity = typeof pdtpSheetActivities.$inferSelect
 export type NewPdtpSheetActivity = typeof pdtpSheetActivities.$inferInsert
 export type PdtpActivityScheduleOverride = typeof pdtpActivityScheduleOverrides.$inferSelect
 export type NewPdtpActivityScheduleOverride = typeof pdtpActivityScheduleOverrides.$inferInsert
+export type PdtpProgramWorksite = typeof pdtpProgramWorksites.$inferSelect
+export type NewPdtpProgramWorksite = typeof pdtpProgramWorksites.$inferInsert
+export type PdtpActivityWorksiteExclusion = typeof pdtpActivityWorksiteExclusions.$inferSelect
+export type NewPdtpActivityWorksiteExclusion = typeof pdtpActivityWorksiteExclusions.$inferInsert
 
 export type PdtpActivityChecklist = typeof pdtpActivityChecklists.$inferSelect
 export type NewPdtpActivityChecklist = typeof pdtpActivityChecklists.$inferInsert

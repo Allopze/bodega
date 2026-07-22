@@ -4,6 +4,7 @@ import { pdtpActivities, pdtpExecutions, pdtpObligations, pdtpPrograms, worksite
 import { pdtpExecutionId } from "./helpers"
 import { assertWorksiteAccess } from "./helpers"
 import type { WorksiteScope } from "./helpers"
+import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { pdtpExecutionSchema } from "@/lib/validation/prevention"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { existsSync } from "node:fs"
@@ -19,6 +20,9 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   const [program] = await db.select({ status: pdtpPrograms.status, year: pdtpPrograms.year }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   if (program.status !== "active") throw new Error("Solo se pueden registrar ejecuciones contra programas PDTP en estado activo.")
+  // Si el programa declara membresía de faenas, una faena fuera de ella no
+  // puede registrar ejecuciones (ver lib/services/pdtp/worksites.ts).
+  await assertPdtpWorksiteCanOperateProgram(activity.programId, data.worksiteId)
   // Espejo del guard de overrides.ts: sin esto, una ejecución con el año
   // calendario (en vez del año del programa) queda huérfana — el detalle y
   // /aprobaciones consultan por `program.year`, así que nunca aparecería.

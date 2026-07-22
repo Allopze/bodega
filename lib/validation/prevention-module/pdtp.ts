@@ -119,6 +119,18 @@ export const pdtpActivityOverrideSchema = z.object({
   reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(1000),
 })
 
+export const pdtpProgramWorksitesSetSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  worksiteIds: z.array(z.string().min(1)).max(200),
+})
+
+export const pdtpActivityWorksiteExclusionSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  activityId: z.string().min(1, "Actividad requerida"),
+  worksiteId: z.string().min(1, "Faena requerida"),
+  reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(1000),
+})
+
 export const pdtpObligationCreateSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),
   worksiteId: z.string().min(1, "Faena requerida"),

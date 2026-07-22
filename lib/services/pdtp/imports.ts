@@ -28,12 +28,13 @@ import {
   type PdtpImportedExecutionCell,
 } from "@/lib/services/prevention-pdtp-catalog"
 import { SHEET_META } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
+import { PDTP_2026_GENERAL_SHEET_NAME } from "@/lib/services/prevention-pdtp-catalog"
+import { collectResponsibleCatalog } from "@/lib/services/pdtp-adapters/responsible-catalog-2026"
 import { writePdtpActivityContent } from "./activity-content"
 import {
   addPdtpChangeLogEntry,
   assertPdtpProgramEditableState,
   assertWorksiteAccess,
-  collectResponsibleCatalog,
   isActivePdtpWorksite,
   pdtpActivityId,
   pdtpExecutionId,
@@ -307,7 +308,7 @@ export async function stagePdtpXlsxImport(input: {
         rowKind: "activity",
         stableKey: `activity:${activity.n}`,
         severity: "info",
-        sourceSheet: "PDTP GENERAL",
+        sourceSheet: PDTP_2026_GENERAL_SHEET_NAME,
         sourceRow: activity.sourceSheetRow,
         activityNumber: activity.n,
         payloadJson: activity,
@@ -328,7 +329,7 @@ export async function stagePdtpXlsxImport(input: {
       })),
       {
         id: `${batchId}-metadata`, batchId, rowKind: "metadata", stableKey: "metadata:workbook", severity: "info",
-        sourceSheet: "PDTP GENERAL", payloadJson: catalog.metadata ?? {}, createdAt: now,
+        sourceSheet: PDTP_2026_GENERAL_SHEET_NAME, payloadJson: catalog.metadata ?? {}, createdAt: now,
       },
       ...warnings.map((warning, index) => ({
         id: `${batchId}-warning-${index + 1}`, batchId, rowKind: "warning", stableKey: `warning:${index + 1}`,
@@ -338,7 +339,7 @@ export async function stagePdtpXlsxImport(input: {
     await tx.insert(pdtpImportRows).values(rows)
     await addPdtpChangeLogEntry(input.programId, program.version, input.userId, "import:stage", null, {
       batchId, checksumSha256, counts: summary.counts,
-    }, "Archivo XLSX analizado y guardado en staging; el programa no fue modificado.", tx)
+    }, "Archivo Excel analizado y guardado en staging; el programa no fue modificado.", tx)
     return [created]
   })
   return { batch: batch!, preview: summary }
@@ -572,7 +573,7 @@ export async function applyPdtpImportBatch(input: {
       appliedAt: now,
       updatedAt: now,
     }).where(and(eq(pdtpImportBatches.id, batch.id), ne(pdtpImportBatches.status, "applied")))
-    await addPdtpChangeLogEntry(batch.programId, program.version, input.userId, "import:apply", null, applyResult, "Lote XLSX aplicado atómicamente desde staging.", tx)
+    await addPdtpChangeLogEntry(batch.programId, program.version, input.userId, "import:apply", null, applyResult, "Lote Excel aplicado atómicamente desde staging.", tx)
     return applyResult
   })
   return result
@@ -680,7 +681,7 @@ export async function rollbackPdtpImportBatch(input: { batchId: string; userId: 
     for (const sheet of snapshot.sheets) await tx.insert(pdtpSheets).values(sheet).onConflictDoUpdate({ target: pdtpSheets.id, set: sheet })
     await tx.update(pdtpPrograms).set({ ...(snapshot.program as Partial<typeof pdtpPrograms.$inferInsert>), updatedAt: now }).where(eq(pdtpPrograms.id, batch.programId))
     await tx.update(pdtpImportBatches).set({ status: "rolled_back", rolledBackByUserId: input.userId, rolledBackAt: now, updatedAt: now }).where(eq(pdtpImportBatches.id, batch.id))
-    await addPdtpChangeLogEntry(batch.programId, Number(snapshot.program.version ?? 1), input.userId, "import:rollback", batch.applyResultJson as Record<string, unknown>, { reason: input.reason }, "Lote XLSX revertido desde su snapshot previo.", tx)
+    await addPdtpChangeLogEntry(batch.programId, Number(snapshot.program.version ?? 1), input.userId, "import:rollback", batch.applyResultJson as Record<string, unknown>, { reason: input.reason }, "Lote Excel revertido desde su snapshot previo.", tx)
   })
   return { rolledBack: true }
 }
@@ -708,7 +709,7 @@ export async function cancelPdtpImportBatch(input: { batchId: string; userId: st
       batchId: batch.id,
       reason,
       checksumSha256: batch.sourceChecksumSha256,
-    }, "Preview XLSX cancelado sin modificar el programa.", tx)
+    }, "Preview Excel cancelado sin modificar el programa.", tx)
   })
   return { cancelled: true, batchId: batch.id }
 }

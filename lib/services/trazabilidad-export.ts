@@ -1,5 +1,5 @@
 /**
- * Trazabilidad XLSX export.
+ * Trazabilidad Excel export.
  *
  * Reuses the same matrix-building queries as the trazabilidad page
  * but returns workbook data instead of rendering JSX.
@@ -211,7 +211,7 @@ export async function buildTrazabilidadRows(session: Session, filters: Trazabili
 }
 
 /**
- * GET handler helper: returns XLSX bytes + filename for the trazabilidad export.
+ * GET handler helper: returns Excel bytes + filename for the trazabilidad export.
  */
 export async function getTrazabilidadXlsx(
   session: Session,

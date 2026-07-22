@@ -1,8 +1,16 @@
 /**
  * Contrato de regresión del adaptador RE-36/SG-SST 2026.
  *
- * Estos valores describen el archivo fuente recibido. No son límites del
- * constructor general ni defaults obligatorios para nuevos programas.
+ * Dos capas desde 2026-07-22:
+ *  - SOURCE / SOURCE_INVARIANTS: el documento histórico recibido
+ *    (`PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`, 89 actividades). Se
+ *    conserva como fixture de fidelidad del parser; NO es el programa vigente.
+ *  - INVARIANTS / VIEW_MEMBERSHIPS: el PROGRAMA VIGENTE tras la quita total de
+ *    las actividades 4 y 8 (decisión 2026-07-22): 87 actividades. Es lo que el
+ *    seed (`db/seed/pdtp-catalog-2026.json`) sirve y lo que se bootstrapea.
+ *
+ * No son límites del constructor general ni defaults obligatorios para nuevos
+ * programas.
  */
 export const PDTP_2026_SOURCE = {
   filename: "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx",
@@ -10,13 +18,44 @@ export const PDTP_2026_SOURCE = {
   sizeBytes: 4_513_110,
 } as const
 
-export const PDTP_2026_INVARIANTS = {
+/** Métricas del documento histórico (antes de la quita de 4 y 8). */
+export const PDTP_2026_SOURCE_INVARIANTS = {
   objectiveCount: 8,
   activityCount: 89,
   viewCount: 8,
   horizonWeeks: 48,
   plannedCellCount: 843,
   plannedQuantityTotal: 1_035,
+  maxPlannedCellQuantity: 5,
+  noNumericPlanCount: 22,
+  executedQuantityTotal: 6,
+} as const
+
+/** Actividades retiradas del programa vigente por decisión 2026-07-22 (quita total). */
+export const PDTP_2026_REMOVED_ACTIVITIES = [4, 8] as const
+
+/**
+ * Fuente física congelada del PROGRAMA VIGENTE (87 actividades): el documento
+ * histórico con las filas de las actividades 4 y 8 vaciadas y ocultas en
+ * `PDTP GENERAL` y `PRF Y Adm. de contrato`. Conserva la columna OBJETIVO,
+ * imágenes, fusiones y metadatos del original (solo cambian esas dos hojas), y
+ * las filas no se desplazaron: las seis celdas E siguen en M14/O15/G19/I19/K19/M19.
+ * Es la fuente que se importa y bootstrapea.
+ */
+export const PDTP_2026_PROGRAM_SOURCE = {
+  filename: "PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (87 actividades).xlsx",
+  sha256: "55b780b91102696946ab38dfa02a02aff89130ff9a42df209b5713ef367263c1",
+  sizeBytes: 3_821_479,
+} as const
+
+/** Métricas del PROGRAMA VIGENTE (documento histórico menos las actividades 4 y 8). */
+export const PDTP_2026_INVARIANTS = {
+  objectiveCount: 8,
+  activityCount: 87,
+  viewCount: 8,
+  horizonWeeks: 48,
+  plannedCellCount: 821,
+  plannedQuantityTotal: 1_013,
   maxPlannedCellQuantity: 5,
   noNumericPlanCount: 22,
   executedQuantityTotal: 6,
@@ -38,10 +77,10 @@ export const PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS = [
 export const PDTP_2026_LONG_TEXT_ACTIVITY_IDS = [37, 38, 43, 51, 52] as const
 
 export const PDTP_2026_VIEW_MEMBERSHIPS = {
-  pdtp_general: Array.from({ length: 89 }, (_, index) => index + 1),
+  pdtp_general: Array.from({ length: 89 }, (_, index) => index + 1).filter((n) => n !== 4 && n !== 8),
   cphs: [11, 12, 13, 14],
   prf_adm_contrato: [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28,
+    1, 2, 3, 5, 6, 7, 9, 10, 13, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28,
     29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
     53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 71, 75, 77, 78, 79,
     80, 81, 82, 83, 84, 85, 88, 89,
@@ -81,7 +120,7 @@ export const PDTP_2026_COLUMN_DICTIONARY = {
 
 export const PDTP_2026_ELEMENT_CLASSIFICATION = {
   domainConcepts: ["objetivo", "actividad preventiva", "responsables", "programación", "ejecución", "evidencia", "indicador", "aprobación", "control de cambios"],
-  templateData: ["89 actividades", "8 objetivos", "roles declarados", "meta 90 %", "periodicidad mensual", "código RE-36"],
+  templateData: ["87 actividades", "8 objetivos", "roles declarados", "meta 90 %", "periodicidad mensual", "código RE-36"],
   derivedViews: ["PDTP GENERAL", "CPHS", "PRF y Administración de contrato", "Supervisión y Jefatura de turno", "PRF", "Administración de contrato", "Subgerencia", "Capacitación y campañas"],
   documentDecoration: ["logos", "colores", "anchos de columna", "celdas fusionadas", "bordes", "alturas de fila", "maquetación de firmas"],
 } as const

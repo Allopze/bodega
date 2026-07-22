@@ -75,8 +75,13 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
 
   const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
     const planned = plannedByMonth[i]!
-    // Sobre-ejecutar no puede inflar un indicador de cumplimiento sobre 100%.
-    const executed = Math.min(executedByMonth[i]!, planned)
+    // Sobreejecutar es real y se muestra completo (principio 5.2: "conservar
+    // el real y marcar sobrecumplimiento sin caparlo silenciosamente"); antes
+    // se recortaba `executed` a `planned` aquí, ocultando el dato agregado
+    // (el crudo en pdtpExecutions nunca se tocó). `percent` puede superar 1 —
+    // los consumidores (ComplianceBar, fmtPct) ya clampan solo la barra
+    // visual, no el texto ni el número.
+    const executed = executedByMonth[i]!
     const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
     return { month: i + 1, planned, executed, percent }
   })

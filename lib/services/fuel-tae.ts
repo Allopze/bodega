@@ -632,7 +632,7 @@ function computeTaeAlerts(submission: TaeSubmissionRow, previous: TaeSubmissionR
 /**
  * Reporte de mapeo sugerido del histórico TAE (Fase 5, dry-run de solo lectura):
  * parsea el Excel legado, lo compara contra los catálogos actuales y devuelve
- * un XLSX con el detalle por faena/equipo/conductor/supervisor para revisión
+ * un Excel con el detalle por faena/equipo/conductor/supervisor para revisión
  * manual. No escribe nada en la base de datos.
  */
 export async function generateTaeImportDryRunReport(fileBuffer: ArrayBuffer | Buffer): Promise<Buffer> {

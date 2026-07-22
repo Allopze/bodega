@@ -59,7 +59,7 @@ function cellText(value: unknown): string {
 export async function parseEppWorkbook(buffer: Buffer) {
   const workbook = new ExcelJS.Workbook()
   try { await workbook.xlsx.load(buffer as never, { ignoreNodes: ["dataValidations", "conditionalFormatting", "hyperlinks"] }) }
-  catch { return { rows: [] as SourceRow[], headers: {} as Record<string, number>, sheetName: "", errors: ["El archivo no es un XLSX válido o está dañado."] } }
+  catch { return { rows: [] as SourceRow[], headers: {} as Record<string, number>, sheetName: "", errors: ["El archivo no es un Excel válido o está dañado."] } }
   const sheet = workbook.worksheets[0]
   if (!sheet) return { rows: [] as SourceRow[], headers: {} as Record<string, number>, sheetName: "", errors: ["El archivo no contiene hojas."] }
   if (sheet.rowCount > 5000) return { rows: [] as SourceRow[], headers: {} as Record<string, number>, sheetName: sheet.name, errors: ["El archivo supera el máximo de 5.000 filas."] }

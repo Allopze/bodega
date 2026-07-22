@@ -1,6 +1,6 @@
 /**
  * Vocabulario fijo de la plantilla de referencia 2026: sus ocho hojas, los
- * nombres de hoja para exportación XLSX y la traducción de abreviaturas de
+ * nombres de hoja para exportación Excel y la traducción de abreviaturas de
  * rol del archivo (`jdpr`, `prf`, `sup`…) a roles RBAC. Describe el caso 2026,
  * no el modelo general — el constructor y las vistas de un programa cualquiera
  * leen `pdtpSheets` (label/area/defaultScopeRoles por fila), no este archivo.

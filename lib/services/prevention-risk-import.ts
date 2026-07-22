@@ -161,7 +161,7 @@ function buildColumnMap(row: ExcelJS.Row) {
   })
   const required = ["processName", "taskName", "positionName", "hazard", "riskFactor", "expectedEventOrDamage", "inherentLevel", "residualLevel", "responsibleSnapshot"]
   const missing = required.filter((field) => !map.has(field))
-  if (missing.length) throw new Error(`El XLSX MIPER no contiene columnas obligatorias reconocibles: ${missing.join(", ")}.`)
+  if (missing.length) throw new Error(`El Excel MIPER no contiene columnas obligatorias reconocibles: ${missing.join(", ")}.`)
   return map
 }
 
@@ -232,8 +232,8 @@ export async function stageRiskImport(args: {
   access: RiskLegalAccess
 }) {
   assertPermission(args.access, "prevention:risk:edit", args.worksiteId)
-  if (!args.fileName.toLowerCase().endsWith(".xlsx")) throw new Error("La importación MIPER exige un archivo XLSX.")
-  if (!args.buffer.length || args.buffer.length > MAX_BYTES) throw new Error("El XLSX MIPER está vacío o supera 20 MB.")
+  if (!args.fileName.toLowerCase().endsWith(".xlsx")) throw new Error("La importación MIPER exige un archivo Excel.")
+  if (!args.buffer.length || args.buffer.length > MAX_BYTES) throw new Error("El Excel MIPER está vacío o supera 20 MB.")
   const checksum = createHash("sha256").update(args.buffer).digest("hex")
   const [existing] = await db.select().from(preventionRiskImportBatches).where(and(eq(preventionRiskImportBatches.worksiteId, args.worksiteId), eq(preventionRiskImportBatches.sourceChecksumSha256, checksum))).limit(1)
   if (existing) return { batch: existing, idempotentReplay: true }
@@ -242,10 +242,10 @@ export async function stageRiskImport(args: {
 
   const workbook = new ExcelJS.Workbook()
   try { await workbook.xlsx.load(args.buffer as never, { ignoreNodes: ["dataValidations", "conditionalFormatting", "hyperlinks"] }) }
-  catch { throw new Error("El archivo no es un XLSX válido.") }
+  catch { throw new Error("El archivo no es un Excel válido.") }
   const sheet = workbook.worksheets[0]
-  if (!sheet) throw new Error("El XLSX no contiene hojas.")
-  if (sheet.rowCount - 1 > MAX_ROWS) throw new Error(`El XLSX supera ${MAX_ROWS} filas.`)
+  if (!sheet) throw new Error("El Excel no contiene hojas.")
+  if (sheet.rowCount - 1 > MAX_ROWS) throw new Error(`El Excel supera ${MAX_ROWS} filas.`)
   const columns = buildColumnMap(sheet.getRow(1))
   const rows: Array<{ rowNumber: number; original: Record<string, string>; normalized: NormalizedRiskImportRow; issues: string[]; fingerprint: string }> = []
   const seen = new Set<string>()
@@ -260,7 +260,7 @@ export async function stageRiskImport(args: {
     seen.add(rowFingerprint)
     rows.push({ rowNumber, original, normalized, issues: rowIssues, fingerprint: rowFingerprint })
   })
-  if (!rows.length) throw new Error("El XLSX no contiene filas MIPER utilizables.")
+  if (!rows.length) throw new Error("El Excel no contiene filas MIPER utilizables.")
 
   const batchId = `riskimport-${nanoid()}`
   const storageName = `${batchId}.xlsx`

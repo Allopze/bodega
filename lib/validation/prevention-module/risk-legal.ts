@@ -158,7 +158,10 @@ export const legalComplianceAssessmentSchema = z.object({
 export const pdtpSourceLinkSchema = z.object({
   activityId: z.string().min(1),
   worksiteId: z.string().min(1),
-  sourceType: z.enum(["risk_control", "legal_requirement", "incident_capa", "audit", "internal_objective", "contractual_obligation"]),
+  sourceType: z.enum([
+    "risk_control", "legal_requirement", "incident_capa", "audit", "internal_objective", "contractual_obligation",
+    "capacitacion", "inspeccion", "cphs", "epp", "emergencia", "campana",
+  ]),
   sourceId: z.string().trim().min(1).max(300),
   justification: reason,
 })

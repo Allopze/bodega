@@ -8,8 +8,8 @@ async function workbookBuffer(sheetCount = 1) {
   return Buffer.from(await workbook.xlsx.writeBuffer())
 }
 
-describe("PDTP XLSX upload security", () => {
-  it("accepts a bounded real XLSX envelope", async () => {
+describe("PDTP Excel upload security", () => {
+  it("accepts a bounded real Excel envelope", async () => {
     const buffer = await workbookBuffer()
     expect(validatePdtpXlsxEnvelope({
       name: "programa.xlsx",

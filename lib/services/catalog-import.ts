@@ -1,5 +1,5 @@
 /**
- * Generic XLSX import service for catalog maintenance.
+ * Generic Excel import service for catalog maintenance.
  *
  * Re-imports catalog data exported via /api/admin/catalogos/export.
  * Uses the ID column to determine create vs. update.
@@ -41,7 +41,7 @@ export async function parseCatalogWorkbook(buffer: Buffer): Promise<CatalogImpor
   try {
     await workbook.xlsx.load(buffer as never, { ignoreNodes: ["dataValidations", "conditionalFormatting", "hyperlinks"] })
   } catch {
-    return { ok: false, rows: [], headers: [], sheetName: "", errors: ["El archivo no es un XLSX válido o está dañado."] }
+    return { ok: false, rows: [], headers: [], sheetName: "", errors: ["El archivo no es un Excel válido o está dañado."] }
   }
   const sheet = workbook.worksheets[0]
   if (!sheet) {
@@ -60,12 +60,12 @@ export async function parseCatalogWorkbook(buffer: Buffer): Promise<CatalogImpor
     }
   }
   if (headers.length < 2) {
-    return { ok: false, rows: [], headers: [], sheetName: sheet.name, errors: ["El archivo no tiene suficientes columnas. Usa la plantilla del botón Exportar XLSX."] }
+    return { ok: false, rows: [], headers: [], sheetName: sheet.name, errors: ["El archivo no tiene suficientes columnas. Usa la plantilla del botón Exportar Excel."] }
   }
   if (!headers.includes(REQUIRED_HEADER)) {
     return {
       ok: false, rows: [], headers, sheetName: sheet.name,
-      errors: [`Falta la columna "${REQUIRED_HEADER}". El archivo tiene: ${headers.join(", ")}. Usa la plantilla del botón Exportar XLSX.`],
+      errors: [`Falta la columna "${REQUIRED_HEADER}". El archivo tiene: ${headers.join(", ")}. Usa la plantilla del botón Exportar Excel.`],
     }
   }
 
