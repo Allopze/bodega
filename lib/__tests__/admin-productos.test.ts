@@ -22,6 +22,7 @@ const mockDb = {
   query: {
     productCategories: { findFirst: vi.fn() },
     products: { findFirst: vi.fn() },
+    eppProductFamilies: { findFirst: vi.fn() },
   },
   insert: vi.fn(() => ({ values: mockInsertValues })),
   update: vi.fn(() => ({ set: mockUpdateSet })),
@@ -32,7 +33,10 @@ const mockDb = {
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
-vi.mock("@/lib/services/epp-import", () => ({ cancelEppImportBatch: mockCancelEppImportBatch }))
+vi.mock("@/lib/services/epp-import", async (importOriginal) => {
+  const original: Record<string, unknown> = await importOriginal()
+  return { ...original, cancelEppImportBatch: mockCancelEppImportBatch }
+})
 vi.mock("@/db", () => ({ db: mockDb }))
 
 function makeSession(perm: string): Session {
@@ -277,6 +281,137 @@ describe("admin/productos actions", () => {
       const r = await cancelEppImportBatchAction({ ok: false }, fd)
       expect(r.ok).toBe(false)
       expect(r.message).toBe("Batch not found")
+    })
+  })
+
+  // ── createProductVariantBatch ─────────────────────────────────────────
+
+  describe("createProductVariantBatch", () => {
+    const VALID_INPUT = {
+      categoryId: "cat-epp",
+      familyName: "Casco de seguridad",
+      unitOfMeasure: "unidad",
+      isEpp: true,
+      requiresPrevencion: false,
+      isActive: true,
+      referencePrice: null,
+      attributes: [
+        { name: "Color", type: "select" as const, options: JSON.stringify(["Blanco", "Azul"]), sortOrder: 0 },
+      ],
+      variants: [
+        { name: "Casco de seguridad Blanco", attributes: [{ name: "Color", value: "Blanco" }] },
+        { name: "Casco de seguridad Azul", attributes: [{ name: "Color", value: "Azul" }] },
+      ],
+      supplier: undefined,
+    }
+
+    it("denies without admin:products", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("other:perm"))
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch(VALID_INPUT)
+      expect(r.ok).toBe(false); expect(r.message).toContain("Sin permisos")
+    })
+
+    it("rejects missing categoryId", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch({ ...VALID_INPUT, categoryId: "" })
+      expect(r.ok).toBe(false)
+    })
+
+    it("rejects empty variants array", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch({ ...VALID_INPUT, variants: [] })
+      expect(r.ok).toBe(false)
+    })
+
+    it("rejects familyName that is too short", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch({ ...VALID_INPUT, familyName: "X" })
+      expect(r.ok).toBe(false)
+    })
+
+    it("creates all variants on happy path", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
+      mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
+      // generateUniqueSkus calls findFirst per SKU (null = unique); post-tx audit returns { sku } for tracing
+      mockDb.query.products.findFirst
+        .mockResolvedValueOnce(null)  // SKU 1: not found → unique, use it
+        .mockResolvedValueOnce(null)  // SKU 2: not found → unique, use it
+        .mockResolvedValue({ sku: "EPP-ABC123" }) // audit query
+
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch(VALID_INPUT)
+
+      expect(r.ok).toBe(true)
+      expect(r.message).toContain("2 productos")
+      expect(mockDb.transaction).toHaveBeenCalled()
+      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: "create", entityType: "product",
+        newState: { familyName: "Casco de seguridad", variantCount: 2 },
+      }))
+    })
+
+    it("returns error when category is not found", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      // findFirst returns null = category not found
+      mockDb.query.productCategories.findFirst.mockResolvedValue(null)
+
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch(VALID_INPUT)
+
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain("Categoría no encontrada")
+    })
+
+    it("creates variants with supplier when provided", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
+      mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
+      mockDb.query.products.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({ sku: "EPP-ABC123" })
+
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const withSupplier = {
+        ...VALID_INPUT,
+        variants: [{ name: "Casco Blanco", attributes: [{ name: "Color", value: "Blanco" }] }],
+        supplier: { supplierId: "sup-1", unitPrice: 5000, notes: "Entrega 15 días" },
+      }
+      const r = await createProductVariantBatch(withSupplier)
+
+      expect(r.ok).toBe(true)
+      expect(r.message).toContain("1 producto")
+      // Should have inserted productSuppliers for each variant
+      expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+        supplierId: "sup-1",
+        unitPrice: 5000,
+        isPreferred: true,
+        notes: "Entrega 15 días",
+      }))
+    })
+
+    it("includes audit record with batch tracing", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
+      mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
+      mockDb.query.products.findFirst
+        .mockResolvedValueOnce(null)  // SKU 1
+        .mockResolvedValueOnce(null)  // SKU 2
+        .mockResolvedValue({ sku: "EPP-ABC123" }) // audit
+
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch(VALID_INPUT)
+
+      expect(r.ok).toBe(true)
+      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        entityId: "batch_Casco de seguridad",
+        entityCode: "EPP-ABC123",
+        reason: "Creación por asistente EPP",
+      }))
     })
   })
 })
