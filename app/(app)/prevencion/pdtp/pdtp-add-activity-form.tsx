@@ -103,13 +103,13 @@ export function PdtpAddActivityForm({
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Orden objetivo (1-8)" htmlFor="pdtp-ao" required>
+              <Field label="Orden del objetivo" htmlFor="pdtp-ao" required>
                 <Input
                   id="pdtp-ao"
                   name="objectiveOrder"
                   type="number"
                   min="1"
-                  max="8"
+                  max="999"
                   defaultValue={defaultObjectiveOrder}
                   required
                 />
@@ -120,13 +120,13 @@ export function PdtpAddActivityForm({
               </Field>
 
               <div className="sm:col-span-2">
-                <Field label="Actividad" htmlFor="pdtp-act-desc" required>
-                  <Textarea id="pdtp-act-desc" name="activity" required rows={2} placeholder="Describe la actividad preventiva a realizar" />
+                <Field label="Actividad preventiva" htmlFor="pdtp-act-desc" required>
+                  <Textarea id="pdtp-act-desc" name="activity" required rows={4} maxLength={4000} placeholder="Describe la actividad preventiva a realizar" />
                 </Field>
               </div>
 
-              <Field label="Programa" htmlFor="pdtp-act-prog" required>
-                <Input id="pdtp-act-prog" name="program" required placeholder="Ej: Programa de Seguridad" />
+              <Field label="Guía de ejecución" htmlFor="pdtp-act-prog" required>
+                <Textarea id="pdtp-act-prog" name="program" required rows={3} maxLength={2000} placeholder="Ej.: inspeccionar, registrar hallazgos y definir acciones" />
               </Field>
 
               <Field label="Responsable (nombre)" htmlFor="pdtp-act-rname" required>

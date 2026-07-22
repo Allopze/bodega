@@ -1,0 +1,320 @@
+"use client"
+
+import * as React from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useSafeShellHeader } from "@/components/layout/header-context"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Field } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { PageContainer } from "@/components/ui/page-container"
+import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import type { PdtpPendingTarget, PendingPdtpExecution, listPdtpDemandActivities, listPdtpObligations } from "@/lib/services/prevention-pdtp"
+import { cancelPdtpObligationAction, createPdtpObligationAction, reportPdtpObligationAction } from "./actions"
+
+type DemandActivity = Awaited<ReturnType<typeof listPdtpDemandActivities>>[number]
+type ObligationRow = Awaited<ReturnType<typeof listPdtpObligations>>[number]
+type Worksite = { id: string; name: string }
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: "Pendiente",
+  overdue: "Vencida",
+  reported: "Reportada",
+  completed: "Completada",
+  cancelled: "Cancelada",
+}
+
+function statusVariant(status: string): "warning" | "danger" | "info" | "success" | "outline" {
+  if (status === "overdue") return "danger"
+  if (status === "pending") return "warning"
+  if (status === "reported") return "info"
+  if (status === "completed") return "success"
+  return "outline"
+}
+
+function dateTime(value: string | null) {
+  if (!value) return "Sin plazo"
+  return new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" }).format(new Date(value))
+}
+
+function clientRequestId() {
+  return globalThis.crypto?.randomUUID?.() ?? `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+export function PdtpObligationsWorkbench({
+  worksites, activities, initialObligations, weeklyPending, pendingApproval, canExecute,
+}: {
+  worksites: Worksite[]
+  activities: DemandActivity[]
+  initialObligations: ObligationRow[]
+  weeklyPending: PdtpPendingTarget[]
+  pendingApproval: PendingPdtpExecution[]
+  canExecute: boolean
+}) {
+  const router = useRouter()
+  const { searchQuery } = useSafeShellHeader()
+  const [status, setStatus] = React.useState("open")
+  const [worksiteId, setWorksiteId] = React.useState("all")
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const [reporting, setReporting] = React.useState<ObligationRow | null>(null)
+  const [cancelling, setCancelling] = React.useState<ObligationRow | null>(null)
+  const query = searchQuery.trim().toLocaleLowerCase("es-CL")
+
+  const counts = React.useMemo(() => ({
+    pending: initialObligations.filter((row) => row.effectiveStatus === "pending").length,
+    overdue: initialObligations.filter((row) => row.effectiveStatus === "overdue").length,
+    reported: initialObligations.filter((row) => row.effectiveStatus === "reported").length,
+    scheduled: weeklyPending.reduce((sum, target) => sum + target.activityIds.length, 0),
+  }), [initialObligations, weeklyPending])
+  const scheduledFiltered = worksiteId === "all" ? weeklyPending : weeklyPending.filter((t) => t.worksiteId === worksiteId)
+  const pendingApprovalFiltered = worksiteId === "all" ? pendingApproval : pendingApproval.filter((e) => e.worksiteId === worksiteId)
+  const rows = initialObligations.filter((row) => {
+    if (status !== "open" && row.effectiveStatus !== status) return false
+    if (worksiteId !== "all" && row.obligation.worksiteId !== worksiteId) return false
+    if (!query) return true
+    return [row.activityName, row.worksiteName, row.obligation.sourceType, row.obligation.sourceId]
+      .filter(Boolean).some((value) => String(value).toLocaleLowerCase("es-CL").includes(query))
+  })
+
+  function openCreate() {
+    setCreateOpen(true)
+  }
+
+  return (
+    <PageContainer width="wide">
+      <PageHeader
+        title="Trabajo por necesidad y eventos"
+        description="Gestiona casos reales, plazos y evidencias sin inventar cuotas para actividades que no son calendarizadas."
+        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Programa preventivo", href: "/prevencion/pdtp" }, { label: "Trabajo por eventos" }]} />}
+        actions={canExecute ? <Button type="button" onClick={openCreate} disabled={activities.length === 0 || worksites.length === 0}>Registrar necesidad o evento</Button> : undefined}
+      />
+
+      <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] sm:grid-cols-4">
+        {[
+          { key: "pending", label: "Pendientes", value: counts.pending, detail: "Dentro de plazo" },
+          { key: "overdue", label: "Vencidas", value: counts.overdue, detail: "Requieren atención" },
+          { key: "reported", label: "Por aprobar", value: counts.reported, detail: "Trabajo ya informado" },
+        ].map((metric) => (
+          <button key={metric.key} type="button" onClick={() => setStatus((current) => current === metric.key ? "open" : metric.key)} aria-pressed={status === metric.key} className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]">
+            <span className="text-eyebrow">{metric.label}</span>
+            <strong className="mt-1 block font-mono text-xl tabular-nums">{metric.value}</strong>
+            <span className="text-xs text-[var(--color-text-subtle)]">{metric.detail}</span>
+          </button>
+        ))}
+        <a href="#programadas-semana" className="border-r border-[var(--color-border)] px-4 py-3 text-left last:border-r-0 hover:bg-[var(--color-surface-2)]">
+          <span className="text-eyebrow">Programadas esta semana</span>
+          <strong className="mt-1 block font-mono text-xl tabular-nums">{counts.scheduled}</strong>
+          <span className="text-xs text-[var(--color-text-subtle)]">Calendarizadas, sin ejecutar</span>
+        </a>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger className="w-44" aria-label="Estado"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="open">Trabajo abierto</SelectItem>
+            <SelectItem value="pending">Pendientes</SelectItem>
+            <SelectItem value="overdue">Vencidas</SelectItem>
+            <SelectItem value="reported">Por aprobar</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={worksiteId} onValueChange={setWorksiteId}>
+          <SelectTrigger className="w-56" aria-label="Faena"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">Todas las faenas visibles</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+
+      {activities.length === 0 ? (
+        <EmptyState title="No hay actividades operables por evento" description="Activa un programa y confirma en el constructor cuáles actividades ocurren a demanda o por un evento, con plazo y evidencia definidos." />
+      ) : initialObligations.length === 0 ? (
+        <EmptyState
+          title="Sin casos"
+          description="Aún no ha ocurrido una necesidad o evento. Esto no equivale a 0 % ni a 100 % de cumplimiento."
+          action={canExecute ? <Button type="button" onClick={openCreate}>Registrar el primer caso</Button> : undefined}
+        />
+      ) : rows.length === 0 ? (
+        <EmptyState compact title="No hay resultados con estos filtros" description="Cambia el estado, la faena o el texto del filtro superior." action={<Button type="button" variant="secondary" onClick={() => { setStatus("open"); setWorksiteId("all") }}>Limpiar filtros</Button>} />
+      ) : (
+        <div className="mt-4 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+          {rows.map((row) => (
+            <article key={row.obligation.id} className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_15rem_auto] lg:items-center">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={statusVariant(row.effectiveStatus)} dot>{STATUS_LABEL[row.effectiveStatus] ?? row.effectiveStatus}</Badge>
+                  <span className="font-mono text-xs text-[var(--color-text-subtle)]">Actividad {row.activityNumber}</span>
+                  <span className="text-xs text-[var(--color-text-subtle)]">{row.worksiteName}</span>
+                </div>
+                <h2 className="mt-2 text-sm font-semibold text-[var(--color-text)]">{row.activityName}</h2>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  {row.obligation.sourceType && row.obligation.sourceId ? `Origen: ${row.obligation.sourceType} · ${row.obligation.sourceId}` : "Necesidad registrada manualmente"}
+                </p>
+              </div>
+              <div>
+                <p className="text-eyebrow">Plazo</p>
+                <p className={row.effectiveStatus === "overdue" ? "mt-1 text-sm font-semibold text-[var(--color-danger)]" : "mt-1 text-sm text-[var(--color-text)]"}>{dateTime(row.obligation.dueAt)}</p>
+                <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Cantidad esperada: {row.obligation.plannedQuantity}</p>
+              </div>
+              {canExecute && (
+                <div className="flex flex-wrap justify-end gap-2">
+                  {(row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" onClick={() => setReporting(row)}>Reportar trabajo</Button>}
+                  {(row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" variant="ghost" onClick={() => setCancelling(row)}>Cancelar</Button>}
+                  {row.effectiveStatus === "reported" && <Button type="button" size="sm" variant="secondary" onClick={() => router.push("/prevencion/pdtp/aprobaciones")}>Ir a aprobación</Button>}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+
+      <WeeklyScheduledSection targets={scheduledFiltered} />
+      <PendingApprovalSection executions={pendingApprovalFiltered} canExecute={canExecute} />
+
+      <CreateObligationDialog open={createOpen} onOpenChange={setCreateOpen} activities={activities} worksites={worksites} onSaved={() => router.refresh()} />
+      <ReportObligationDialog row={reporting} onClose={() => setReporting(null)} onSaved={() => router.refresh()} />
+      <CancelObligationDialog row={cancelling} onClose={() => setCancelling(null)} onSaved={() => router.refresh()} />
+    </PageContainer>
+  )
+}
+
+export function WeeklyScheduledSection({ targets }: { targets: PdtpPendingTarget[] }) {
+  return (
+    <section id="programadas-semana" className="mt-6 scroll-mt-4">
+      <h2 className="text-sm font-semibold text-[var(--color-text)]">Programadas esta semana</h2>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">Actividades calendarizadas con plan esta semana que aún no registran ejecución.</p>
+      {targets.length === 0 ? (
+        <EmptyState compact title="Sin pendientes calendarizados" description="No hay actividades programadas sin ejecutar para las faenas visibles." />
+      ) : (
+        <div className="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+          {targets.map((target) => (
+            <div key={target.worksiteId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-[var(--color-text)]">{target.worksiteName}</p>
+                <p className="text-xs text-[var(--color-text-muted)]">{target.activityIds.length} actividad(es) sin ejecutar esta semana</p>
+              </div>
+              <Button asChild size="sm" variant="secondary">
+                <Link href={`/prevencion/pdtp?faena=${target.worksiteId}`}>Ver programa</Link>
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+export function PendingApprovalSection({ executions, canExecute }: { executions: PendingPdtpExecution[]; canExecute: boolean }) {
+  return (
+    <section className="mt-6">
+      <h2 className="text-sm font-semibold text-[var(--color-text)]">Pendientes de evidencia o aprobación</h2>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">Ejecuciones calendarizadas ya reportadas que todavía no quedan aprobadas.</p>
+      {executions.length === 0 ? (
+        <EmptyState compact title="Sin ejecuciones pendientes de aprobación" description="No hay ejecuciones esperando revisión para las faenas visibles." />
+      ) : (
+        <div className="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+          {executions.map((execution) => (
+            <div key={execution.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[var(--color-text)]">N°{execution.activityN} · {execution.activityName}</p>
+                <p className="text-xs text-[var(--color-text-muted)]">{execution.worksiteName} · {execution.evidenceUrl || execution.evidenceText || execution.evidencePhotos.length > 0 ? "Con evidencia" : "Sin evidencia adjunta"}</p>
+              </div>
+              {canExecute && (
+                <Button asChild size="sm" variant="secondary">
+                  <Link href="/prevencion/pdtp/aprobaciones">Ir a aprobación</Link>
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function CreateObligationDialog({ open, onOpenChange, activities, worksites, onSaved }: { open: boolean; onOpenChange: (open: boolean) => void; activities: DemandActivity[]; worksites: Worksite[]; onSaved: () => void }) {
+  const [activityId, setActivityId] = React.useState(activities[0]?.id ?? "")
+  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const [sourceType, setSourceType] = React.useState("")
+  const [sourceId, setSourceId] = React.useState("")
+  const [quantity, setQuantity] = React.useState(1)
+  const [reason, setReason] = React.useState("")
+  const [requestId, setRequestId] = React.useState("")
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const activity = activities.find((item) => item.id === activityId)
+
+  React.useEffect(() => {
+    if (open) { setRequestId(clientRequestId()); setError(null) }
+  }, [open])
+
+  async function save() {
+    setPending(true); setError(null)
+    const result = await createPdtpObligationAction({
+      activityId, worksiteId, origin: "manual", clientRequestId: requestId,
+      sourceType: sourceType || null, sourceId: sourceId || null,
+      plannedQuantity: quantity, manualReason: reason, sourceMetadata: {},
+    })
+    setPending(false)
+    if (!result.ok) { setError(result.message ?? "No se pudo registrar el caso."); return }
+    onOpenChange(false); setReason(""); setSourceType(""); setSourceId(""); onSaved()
+  }
+
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent>
+    <DialogHeader><DialogTitle>Registrar una necesidad o evento</DialogTitle><DialogDescription>Esto abre una obligación real con plazo. No agrega una cuota ficticia al calendario.</DialogDescription></DialogHeader>
+    <div className="space-y-4">
+      <Field label="Actividad" required><Select value={activityId} onValueChange={setActivityId}><SelectTrigger><SelectValue placeholder="Selecciona una actividad" /></SelectTrigger><SelectContent>{activities.map((item) => <SelectItem key={item.id} value={item.id}>{item.programYear} · N°{item.n} · {item.activity}</SelectItem>)}</SelectContent></Select></Field>
+      {activity && <p className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">{activity.mode === "triggered" ? `Por evento: ${activity.triggerDescription}` : "A demanda"} · plazo {activity.dueDays} día(s) · evidencia: {activity.evidenceRequirement}</p>}
+      <Field label="Faena" required><Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
+      {activity?.mode === "triggered" && <div className="grid gap-3 sm:grid-cols-2"><Field label="Tipo de fuente" required><Input value={sourceType} onChange={(event) => setSourceType(event.target.value)} placeholder="Ej.: incidente" /></Field><Field label="Identificador de fuente" required><Input value={sourceId} onChange={(event) => setSourceId(event.target.value)} placeholder="Código o ID del caso" /></Field></div>}
+      <Field label="Cantidad esperada" required><Input className="max-w-32" type="number" min="0.01" step="0.25" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></Field>
+      <Field label="Motivo del registro manual" required helper="Explica por qué el caso se abre manualmente y qué hecho lo originó."><Textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} minLength={10} maxLength={3000} /></Field>
+      {error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}
+    </div>
+    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !activityId || !worksiteId || reason.trim().length < 10 || (activity?.mode === "triggered" && (!sourceType.trim() || !sourceId.trim()))}>{pending ? "Registrando..." : "Abrir obligación"}</Button></DialogFooter>
+  </DialogContent></Dialog>
+}
+
+function ReportObligationDialog({ row, onClose, onSaved }: { row: ObligationRow | null; onClose: () => void; onSaved: () => void }) {
+  const [quantity, setQuantity] = React.useState(1)
+  const [evidence, setEvidence] = React.useState("")
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  React.useEffect(() => { if (row) { setQuantity(row.obligation.plannedQuantity); setEvidence(""); setError(null) } }, [row])
+  async function save() {
+    if (!row) return
+    setPending(true); setError(null)
+    const result = await reportPdtpObligationAction({ obligationId: row.obligation.id, executedQuantity: quantity, evidenceText: evidence, evidencePhotos: [] })
+    setPending(false)
+    if (!result.ok) { setError(result.message ?? "No se pudo reportar el trabajo."); return }
+    onClose(); onSaved()
+  }
+  return <Dialog open={row !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
+    <DialogHeader><DialogTitle>Reportar trabajo realizado</DialogTitle><DialogDescription>La obligación quedará reportada y pasará a aprobación; aún no contará como cumplimiento formal.</DialogDescription></DialogHeader>
+    <div className="space-y-4"><p className="text-sm font-medium">{row?.activityName}</p><Field label="Cantidad realizada" required><Input className="max-w-32" type="number" min="0.01" step="0.25" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></Field><Field label="Evidencia" required helper="Describe el expediente, registro o respaldo verificable."><Textarea value={evidence} onChange={(event) => setEvidence(event.target.value)} rows={4} maxLength={5000} /></Field>{error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}</div>
+    <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || evidence.trim().length === 0}>{pending ? "Reportando..." : "Enviar a aprobación"}</Button></DialogFooter>
+  </DialogContent></Dialog>
+}
+
+function CancelObligationDialog({ row, onClose, onSaved }: { row: ObligationRow | null; onClose: () => void; onSaved: () => void }) {
+  const [reason, setReason] = React.useState("")
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  React.useEffect(() => { if (row) { setReason(""); setError(null) } }, [row])
+  async function save() {
+    if (!row) return
+    setPending(true); setError(null)
+    const result = await cancelPdtpObligationAction({ obligationId: row.obligation.id, reason })
+    setPending(false)
+    if (!result.ok) { setError(result.message ?? "No se pudo cancelar la obligación."); return }
+    onClose(); onSaved()
+  }
+  return <Dialog open={row !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
+    <DialogHeader><DialogTitle>Cancelar obligación</DialogTitle><DialogDescription>La cancelación no contará como caso cumplido y conservará el motivo en la trazabilidad.</DialogDescription></DialogHeader>
+    <div><Field label="Motivo" required><Textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={10} maxLength={3000} rows={3} /></Field>{error && <p role="alert" className="mt-2 text-sm text-[var(--color-danger)]">{error}</p>}</div>
+    <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Volver</Button><Button type="button" variant="destructive" onClick={save} disabled={pending || reason.trim().length < 10}>{pending ? "Cancelando..." : "Confirmar cancelación"}</Button></DialogFooter>
+  </DialogContent></Dialog>
+}

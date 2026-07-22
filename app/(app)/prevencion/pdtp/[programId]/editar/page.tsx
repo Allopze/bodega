@@ -1,10 +1,11 @@
 import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
-import { inArray } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
-import { getPdtpProgram, listPdtpProgramSheets, listPdtpProgramActivities, listProgramActiveChecklists } from "@/lib/services/prevention-pdtp"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { getPdtpProgram, listPdtpProgramSheets, listPdtpProgramActivities, listProgramActiveChecklists, listPdtpResponsibleCatalog } from "@/lib/services/prevention-pdtp"
 import { db } from "@/db"
-import { pdtpActivitySchedule } from "@/db/schema"
+import { pdtpActivitySchedule, worksites } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PdtpBuilderTabs } from "./builder-tabs"
@@ -24,10 +25,19 @@ export default async function PdtpEditProgramPage({ params }: Props) {
   if (!program) notFound()
   if (program.status !== "draft") redirect(`/prevencion/pdtp/${programId}`)
 
-  const [sheets, activities, checklists] = await Promise.all([
+  const worksiteScope = resolveWorksiteScope(session)
+  const [sheets, activities, checklists, responsibleCatalog, visibleWorksites] = await Promise.all([
     listPdtpProgramSheets(programId),
     listPdtpProgramActivities(programId),
     listProgramActiveChecklists(programId),
+    listPdtpResponsibleCatalog(),
+    worksiteScope.mode === "none"
+      ? Promise.resolve([])
+      : db.select({ id: worksites.id, name: worksites.name, code: worksites.code }).from(worksites)
+          .where(worksiteScope.mode === "all"
+            ? eq(worksites.isActive, true)
+            : and(eq(worksites.isActive, true), inArray(worksites.id, worksiteScope.ids)))
+          .orderBy(worksites.name),
   ])
   const schedule = activities.length > 0
     ? await db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activities.map((a) => a.id)))
@@ -53,6 +63,8 @@ export default async function PdtpEditProgramPage({ params }: Props) {
         activities={activities}
         schedule={schedule}
         checklists={checklists}
+        responsibleCatalog={responsibleCatalog.filter((responsible) => responsible.isActive)}
+        visibleWorksites={visibleWorksites}
         userId={session.user.id}
         canDelete={can(session, "prevention:pdtp:program:manage")}
       />

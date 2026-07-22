@@ -24,14 +24,22 @@ function ComplianceBar({ value, target }: { value: number | null; target: number
   )
 }
 
-export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIndicators; integral?: PdtpIntegralCompliance | null }) {
-  const { monthly, quarterly, annual, target } = data
+function fmtDateTime(iso: string): string {
+  return new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" }).format(new Date(iso))
+}
+
+export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpComplianceIndicators; integral?: PdtpIntegralCompliance | null; asOf?: string }) {
+  const { monthly, quarterly, annual, target, lastExecutionUpdatedAt } = data
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-[var(--color-text-muted)]">
-        El cumplimiento formal considera únicamente ejecuciones aprobadas.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
+        <p>El cumplimiento formal considera únicamente ejecuciones aprobadas.</p>
+        <p>
+          {asOf && <span>Datos al {fmtDateTime(asOf)}</span>}
+          {lastExecutionUpdatedAt && <span className="ml-2">· Última ejecución aprobada: {fmtDateTime(lastExecutionUpdatedAt)}</span>}
+        </p>
+      </div>
 
       {/* Cabecera compacta: integral (con desglose de ejes en una línea) + anual + meta.
           Los trimestres viven en el desglose plegable para no saturar la entrada. */}
@@ -39,8 +47,8 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
         <div className="-ml-px -mt-px flex flex-wrap">
           {integral && <IntegralTile integral={integral} />}
 
-          {/* Cumplimiento anual */}
-          <div className="flex-1 min-w-[10rem] border-l border-t border-[var(--color-border)]">
+          {/* Cumplimiento anual: navega a los registros que lo componen. */}
+          <a href="#registros-pdtp" className="flex-1 min-w-[10rem] border-l border-t border-[var(--color-border)] transition-colors hover:bg-[var(--color-surface-2)]">
             <div className="px-4 py-3">
               <div className="flex items-center gap-1.5">
                 <ChartBar size={13} className="shrink-0 text-[var(--color-text-faint)]" />
@@ -59,7 +67,7 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
               </div>
               <ComplianceBar value={annual.percent} target={target} />
             </div>
-          </div>
+          </a>
 
           {/* Meta */}
           <div className="flex-1 min-w-[8rem] border-l border-t border-[var(--color-border)]">
@@ -126,7 +134,11 @@ export function PdtpIndicatorsPanel({ data, integral }: { data: PdtpComplianceIn
                   const meetsTarget = m.percent !== null && m.percent >= target
                   return (
                     <TableRow key={m.month}>
-                      <TableCell className="py-1.5 pl-1 pr-3 text-xs font-medium text-[var(--color-text-subtle)]">{MONTH_LABELS[m.month - 1]}</TableCell>
+                      <TableCell className="py-1.5 pl-1 pr-3 text-xs font-medium text-[var(--color-text-subtle)]">
+                        <a href="#registros-pdtp" className="hover:text-[var(--color-primary)] hover:underline" title="Ver los registros de este mes">
+                          {MONTH_LABELS[m.month - 1]}
+                        </a>
+                      </TableCell>
                       <TableCellNum className="px-2 py-1.5 text-xs">{m.planned}</TableCellNum>
                       <TableCellNum className="px-2 py-1.5 text-xs">{m.executed}</TableCellNum>
                       <TableCellNum className={cn("px-2 py-1.5 text-xs font-semibold", meetsTarget ? "text-[var(--color-success)]" : m.executed > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]")}>

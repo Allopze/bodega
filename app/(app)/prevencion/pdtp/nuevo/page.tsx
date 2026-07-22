@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
-import { listPdtpPrograms, getPdtpComplianceIndicators, getPdtpProgramActivityCount } from "@/lib/services/prevention-pdtp"
+import { listPdtpPrograms, getPdtpComplianceIndicators, getPdtpProgramActivityCount, listActivePdtpTemplates } from "@/lib/services/prevention-pdtp"
 import { getActivePdtpProgram } from "@/lib/services/prevention-pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -17,7 +17,7 @@ export default async function PdtpCreateProgramPage() {
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:pdtp:program:manage")) redirect("/forbidden")
 
-  const existingPrograms = await listPdtpPrograms()
+  const [existingPrograms, templateRows] = await Promise.all([listPdtpPrograms(), listActivePdtpTemplates()])
 
   // Enriquecer con compliance + conteo de actividades para las mini-cards
   const [activeProgram, enrichedEntries] = await Promise.all([
@@ -56,6 +56,13 @@ export default async function PdtpCreateProgramPage() {
       <PdtpCreateProgramForm
         userId={session.user.id}
         existingPrograms={enrichedEntries}
+        templates={templateRows.map((template) => ({
+          id: template.id,
+          name: template.name,
+          description: template.description,
+          versionId: template.currentVersion.id,
+          version: template.currentVersion.version,
+        }))}
         suggestedYear={suggestedYear}
         hasActiveProgram={!!activeProgram}
       />

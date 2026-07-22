@@ -214,16 +214,21 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con año
         <p
           class="text-xs font-semibold uppercase tracking-wide text-text-subtle"
         >
-          Partir desde un programa existente
+          Elegir punto de partida
         </p>
       </div>
       <p
         class="text-xs text-[var(--color-text-muted)]"
       >
-        Copia hojas, actividades y planificación. Las ejecuciones no se copian.
+        Usa una plantilla publicada o copia un período anterior. Nunca se copian ejecuciones, evidencias ni firmas.
       </p>
       <input
         name="copySheetsFromProgramId"
+        type="hidden"
+        value=""
+      />
+      <input
+        name="templateVersionId"
         type="hidden"
         value=""
       />
@@ -260,7 +265,7 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con año
             <p
               class="text-xs text-[var(--color-text-muted)]"
             >
-              Empieza con las 8 hojas plantilla. Luego agregarás actividades desde el editor.
+              Empieza con una vista general y construye objetivos, actividades y frecuencias sin depender del Excel.
             </p>
           </div>
         </div>
@@ -270,6 +275,11 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con año
         class="space-y-2"
         role="radiogroup"
       >
+        <p
+          class="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+        >
+          Períodos anteriores
+        </p>
         <button
           aria-checked="false"
           class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
@@ -404,7 +414,7 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con año
         <p
           class="hidden text-xs text-[var(--color-text-faint)] sm:block"
         >
-          Programa vacío con 8 hojas plantilla
+          Programa vacío con una vista general
         </p>
         <button
           data-loading-label="Creando..."
@@ -641,16 +651,21 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con sugg
         <p
           class="text-xs font-semibold uppercase tracking-wide text-text-subtle"
         >
-          Partir desde un programa existente
+          Elegir punto de partida
         </p>
       </div>
       <p
         class="text-xs text-[var(--color-text-muted)]"
       >
-        Copia hojas, actividades y planificación. Las ejecuciones no se copian.
+        Usa una plantilla publicada o copia un período anterior. Nunca se copian ejecuciones, evidencias ni firmas.
       </p>
       <input
         name="copySheetsFromProgramId"
+        type="hidden"
+        value=""
+      />
+      <input
+        name="templateVersionId"
         type="hidden"
         value=""
       />
@@ -687,7 +702,7 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con sugg
             <p
               class="text-xs text-[var(--color-text-muted)]"
             >
-              Empieza con las 8 hojas plantilla. Luego agregarás actividades desde el editor.
+              Empieza con una vista general y construye objetivos, actividades y frecuencias sin depender del Excel.
             </p>
           </div>
         </div>
@@ -697,6 +712,11 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con sugg
         class="space-y-2"
         role="radiogroup"
       >
+        <p
+          class="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+        >
+          Períodos anteriores
+        </p>
         <button
           aria-checked="false"
           class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
@@ -831,7 +851,7 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con sugg
         <p
           class="hidden text-xs text-[var(--color-text-faint)] sm:block"
         >
-          Programa vacío con 8 hojas plantilla
+          Programa vacío con una vista general
         </p>
         <button
           data-loading-label="Creando..."
@@ -1058,16 +1078,21 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
         <p
           class="text-xs font-semibold uppercase tracking-wide text-text-subtle"
         >
-          Partir desde un programa existente
+          Elegir punto de partida
         </p>
       </div>
       <p
         class="text-xs text-[var(--color-text-muted)]"
       >
-        Copia hojas, actividades y planificación. Las ejecuciones no se copian.
+        Usa una plantilla publicada o copia un período anterior. Nunca se copian ejecuciones, evidencias ni firmas.
       </p>
       <input
         name="copySheetsFromProgramId"
+        type="hidden"
+        value=""
+      />
+      <input
+        name="templateVersionId"
         type="hidden"
         value=""
       />
@@ -1104,7 +1129,7 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
             <p
               class="text-xs text-[var(--color-text-muted)]"
             >
-              Empieza con las 8 hojas plantilla. Luego agregarás actividades desde el editor.
+              Empieza con una vista general y construye objetivos, actividades y frecuencias sin depender del Excel.
             </p>
           </div>
         </div>
@@ -1114,6 +1139,11 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
         class="space-y-2"
         role="radiogroup"
       >
+        <p
+          class="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+        >
+          Períodos anteriores
+        </p>
         <button
           aria-checked="false"
           class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
@@ -1248,7 +1278,7 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
         <p
           class="hidden text-xs text-[var(--color-text-faint)] sm:block"
         >
-          Programa vacío con 8 hojas plantilla
+          Programa vacío con una vista general
         </p>
         <button
           data-loading-label="Creando..."
@@ -1482,7 +1512,7 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
         <p
           class="hidden text-xs text-[var(--color-text-faint)] sm:block"
         >
-          Programa vacío con 8 hojas plantilla
+          Programa vacío con una vista general
         </p>
         <button
           data-loading-label="Creando..."

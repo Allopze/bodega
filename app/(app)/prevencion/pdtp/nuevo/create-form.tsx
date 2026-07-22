@@ -29,20 +29,31 @@ type EnrichedProgram = {
   activityCount: number
 }
 
+type TemplateOption = {
+  id: string
+  name: string
+  description: string | null
+  versionId: string
+  version: number
+}
+
 export function PdtpCreateProgramForm({
   userId,
   existingPrograms = [],
+  templates = [],
   suggestedYear = CURRENT_YEAR,
   hasActiveProgram = false,
 }: {
   userId: string
   existingPrograms?: EnrichedProgram[]
+  templates?: TemplateOption[]
   suggestedYear?: number
   hasActiveProgram?: boolean
 }) {
   const router = useRouter()
   const [state, formAction] = useActionState(createPdtpProgramAction, null)
   const [copyFrom, setCopyFrom] = React.useState("")
+  const [templateFrom, setTemplateFrom] = React.useState("")
   const [year, setYear] = React.useState(suggestedYear)
   const [title, setTitle] = React.useState("")
   const [titleManuallyEdited, setTitleManuallyEdited] = React.useState(false)
@@ -241,16 +252,16 @@ export function PdtpCreateProgramForm({
         </Field>
 
         {/* ── C: Selector visual de origen ──────────────────────────────── */}
-        {existingPrograms.length > 0 && (
+        {(existingPrograms.length > 0 || templates.length > 0) && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">
-                Partir desde un programa existente
+                Elegir punto de partida
               </p>
-              {copyFrom && (
+              {(copyFrom || templateFrom) && (
                 <button
                   type="button"
-                  onClick={() => setCopyFrom("")}
+                  onClick={() => { setCopyFrom(""); setTemplateFrom("") }}
                   className="text-xs text-[var(--color-text-muted)] underline hover:text-[var(--color-text)]"
                 >
                   No duplicar
@@ -258,19 +269,20 @@ export function PdtpCreateProgramForm({
               )}
             </div>
             <p className="text-xs text-[var(--color-text-muted)]">
-              Copia hojas, actividades y planificación. Las ejecuciones no se copian.
+              Usa una plantilla publicada o copia un período anterior. Nunca se copian ejecuciones, evidencias ni firmas.
             </p>
             <input type="hidden" name="copySheetsFromProgramId" value={copyFrom} />
+            <input type="hidden" name="templateVersionId" value={templateFrom} />
 
             {/* Opción vacía */}
             <button
               type="button"
               role="radio"
-              aria-checked={!copyFrom}
-              onClick={() => setCopyFrom("")}
+              aria-checked={!copyFrom && !templateFrom}
+              onClick={() => { setCopyFrom(""); setTemplateFrom("") }}
               className={cn(
                 "w-full rounded-[var(--radius)] border p-3 text-left transition-all",
-                !copyFrom
+                !copyFrom && !templateFrom
                   ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
                   : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
               )}
@@ -279,7 +291,7 @@ export function PdtpCreateProgramForm({
                 <span
                   className={cn(
                     "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold",
-                    !copyFrom
+                    !copyFrom && !templateFrom
                       ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
                       : "border-[var(--color-border)] text-[var(--color-text-faint)]",
                   )}
@@ -291,14 +303,47 @@ export function PdtpCreateProgramForm({
                     Programa vacío
                   </p>
                   <p className="text-xs text-[var(--color-text-muted)]">
-                    Empieza con las 8 hojas plantilla. Luego agregarás actividades desde el editor.
+                    Empieza con una vista general y construye objetivos, actividades y frecuencias sin depender del Excel.
                   </p>
                 </div>
               </div>
             </button>
 
+            {templates.length > 0 && (
+              <div className="space-y-2" role="radiogroup" aria-label="Plantillas publicadas">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Plantillas</p>
+                {templates.map((template) => {
+                  const selected = templateFrom === template.versionId
+                  return (
+                    <button
+                      key={template.versionId}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => { setTemplateFrom(template.versionId); setCopyFrom("") }}
+                      className={cn(
+                        "w-full rounded-[var(--radius)] border p-3 text-left transition-all",
+                        selected
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
+                          : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-[var(--color-text)]">{template.name}</p>
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">{template.description || "Base reutilizable publicada"} · versión {template.version}</p>
+                        </div>
+                        <Badge variant="info" size="sm">Plantilla</Badge>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             {/* Cards de programas existentes */}
-            <div className="space-y-2" role="radiogroup" aria-label="Programas existentes">
+            {existingPrograms.length > 0 && <div className="space-y-2" role="radiogroup" aria-label="Programas existentes">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Períodos anteriores</p>
               {sortedPrograms.map((p) => {
                 const isSelected = copyFrom === p.id
                 const statusBadge = {
@@ -313,7 +358,7 @@ export function PdtpCreateProgramForm({
                     type="button"
                     role="radio"
                     aria-checked={isSelected}
-                    onClick={() => setCopyFrom(p.id)}
+                    onClick={() => { setCopyFrom(p.id); setTemplateFrom("") }}
                     className={cn(
                       "w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm",
                       isSelected
@@ -371,7 +416,7 @@ export function PdtpCreateProgramForm({
                   </button>
                 )
               })}
-            </div>
+            </div>}
           </div>
         )}
 
@@ -391,9 +436,11 @@ export function PdtpCreateProgramForm({
           </Button>
           <div className="flex items-center gap-3">
             <p className="hidden text-xs text-[var(--color-text-faint)] sm:block">
-              {copyFrom
+              {templateFrom
+                ? "Se usará una versión inmutable de la plantilla seleccionada"
+                : copyFrom
                 ? `Se duplicarán actividades desde el programa seleccionado`
-                : `Programa vacío con 8 hojas plantilla`}
+                : `Programa vacío con una vista general`}
             </p>
             <SubmitButton label="Crear programa" loadingLabel="Creando..." />
           </div>

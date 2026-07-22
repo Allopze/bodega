@@ -30,6 +30,7 @@ const DATA: PdtpComplianceIndicators = {
     { quarter: 4, planned: 0, executed: 0, percent: null },
   ],
   annual: { planned: 20, executed: 9, percent: 0.45 },
+  lastExecutionUpdatedAt: "2026-01-15T10:30:00.000Z",
 }
 
 const INTEGRAL: PdtpIntegralCompliance = {
@@ -104,5 +105,30 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
     // Fila de marzo: sin datos -> "—".
     const marRow = within(details).getByText("Mar").closest("tr")!
     expect(within(marRow).getByText("—")).toBeInTheDocument()
+  })
+
+  it("muestra el corte temporal y la última ejecución aprobada, y enlaza el KPI anual a los registros", () => {
+    render(<PdtpIndicatorsPanel data={DATA} integral={INTEGRAL} asOf="2026-02-01T09:00:00.000Z" />)
+
+    expect(screen.getByText(/Datos al/)).toBeInTheDocument()
+    expect(screen.getByText(/Última ejecución aprobada/)).toBeInTheDocument()
+
+    const annualLink = screen.getByText("Cumplimiento anual").closest("a")!
+    expect(annualLink).toHaveAttribute("href", "#registros-pdtp")
+  })
+
+  it("no muestra el corte temporal ni la última ejecución cuando no hay dato disponible", () => {
+    const dataWithoutLastExecution: PdtpComplianceIndicators = { ...DATA, lastExecutionUpdatedAt: null }
+    render(<PdtpIndicatorsPanel data={dataWithoutLastExecution} integral={INTEGRAL} />)
+
+    expect(screen.queryByText(/Datos al/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Última ejecución aprobada/)).not.toBeInTheDocument()
+  })
+
+  it("cada fila mensual del desglose enlaza a los registros que la componen", () => {
+    const { container } = render(<PdtpIndicatorsPanel data={DATA} integral={INTEGRAL} />)
+    const details = container.querySelector("details") as HTMLDetailsElement
+    const eneroLink = within(details).getByText("Ene").closest("a")!
+    expect(eneroLink).toHaveAttribute("href", "#registros-pdtp")
   })
 })

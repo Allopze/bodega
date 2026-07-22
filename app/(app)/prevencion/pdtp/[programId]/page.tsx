@@ -9,15 +9,18 @@ import {
   getPdtpProgram,
   getPdtpComplianceIndicators,
   getPdtpIntegralCompliance,
+  getPdtpApprovalProgress,
+  getPdtpDocumentMetadata,
+  listPdtpReconciliationCandidates,
   listPdtpResponsibleCatalog,
   listPdtpProgramSheets,
 } from "@/lib/services/prevention-pdtp"
-import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
   DropdownMenu,
@@ -25,28 +28,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { DotsThree, DownloadSimple, PencilSimple } from "@phosphor-icons/react/dist/ssr"
+import { ChartBar, DotsThree, DownloadSimple, PencilSimple } from "@phosphor-icons/react/dist/ssr"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpAddActivityForm } from "../pdtp-add-activity-form"
-import { approvePdtpProgramJdprAction, signPdtpProgramLegalAction, activatePdtpProgramAction } from "../actions"
 import { db } from "@/db"
 import { pdtpExecutions, pdtpChangeLog } from "@/db/schema"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
+import { ProgramLifecycleControls } from "./program-lifecycle-controls"
+import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
 
 export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
-
-const SHEET_OPTIONS: Array<{ code: PdtpSheetCode; label: string }> = [
-  { code: "pdtp_general", label: "Programa preventivo general" },
-  { code: "cphs", label: "Comité Paritario de Higiene y Seguridad" },
-  { code: "prf_adm_contrato", label: "Prevencionista de faena y administración de contrato" },
-  { code: "sup_jt", label: "Supervisión y jefatura de terreno" },
-  { code: "prf", label: "Prevencionista de riesgos en faena" },
-  { code: "adm_contrato", label: "Administración de contrato" },
-  { code: "subgerente", label: "Subgerencia" },
-  { code: "capacitacion", label: "Capacitación" },
-]
 
 type PdtpPageProps = {
   params: Promise<{ programId: string }>
@@ -63,6 +56,17 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const program = await getPdtpProgram(programId)
   if (!program) notFound()
 
+  // Vistas reales del programa (plantillas globales + copias program-scoped,
+  // dedupe por código con la copia program-scoped ganando). No asumen las
+  // ocho hojas de la referencia 2026: un programa distinto solo trae las
+  // vistas que realmente tiene.
+  const programSheetsRaw = await listPdtpProgramSheets(programId)
+  const programSheets = [...new Map(
+    [...programSheetsRaw].sort((a, b) => (a.programId ? 1 : -1) - (b.programId ? 1 : -1))
+      .map((s) => [s.code, s] as const),
+  ).values()]
+  const sheetOptions = programSheets.map((s) => ({ code: s.code, label: s.label }))
+
   const query = await searchParams
   const requestedSheet = Array.isArray(query.hoja) ? query.hoja[0] : query.hoja
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
@@ -71,19 +75,23 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
   const currentPeriod = currentPdtpPeriod()
-  const sheetCode = normalizeSheetCode(requestedSheet) ?? defaultSheetForRoles(session.user.roles)
+  const sheetCode = normalizeSheetCode(requestedSheet, programSheets)
+    ?? defaultSheetForRoles(session.user.roles, programSheets)
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const worksites = await listScopedWorksites(worksiteIds)
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
-  const [view, indicators, integral] = selectedWorksiteId
-    ? await Promise.all([
-      getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId),
-      getPdtpComplianceIndicators(programId, selectedWorksiteId),
-      getPdtpIntegralCompliance(programId, selectedWorksiteId),
-    ])
-    : [null, null, null]
+  const [[view, indicators, integral], approvalProgress] = await Promise.all([
+    selectedWorksiteId
+      ? Promise.all([
+        getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId),
+        getPdtpComplianceIndicators(programId, selectedWorksiteId),
+        getPdtpIntegralCompliance(programId, selectedWorksiteId),
+      ])
+      : Promise.resolve([null, null, null] as const),
+    getPdtpApprovalProgress(programId),
+  ])
 
   const canApprove = can(session, "prevention:pdtp:approve")
 
@@ -102,25 +110,16 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   }
 
   const canSignLegal = can(session, "prevention:pdtp:sign_legal")
+  const canSubmitReview = can(session, "prevention:pdtp:submit_review")
+  const canActivate = can(session, "prevention:pdtp:activate")
+  const canManageLifecycle = can(session, "prevention:pdtp:lifecycle:manage")
   const canExecute = can(session, "prevention:pdtp:execute")
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
   const exportHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
 
-  const [responsibleCatalog, programSheetsRaw] = canManageProgram && program.status === "draft"
-    ? await Promise.all([listPdtpResponsibleCatalog(), listPdtpProgramSheets(programId)])
-    : [[], []]
-  // listPdtpProgramSheets devuelve plantillas (program_id NULL) Y las copias
-  // program-scoped que createPdtpProgram/importPdtpFromExcel crean con el
-  // mismo `code` — sin dedupe, el <Select> de "Hojas oficiales" repetía cada
-  // código dos veces (key de React duplicada, value de SelectItem ambigua).
-  // La copia program-scoped gana, igual que resolveSheetForProgram.
-  // Map(iterable) mantiene la ÚLTIMA entrada para una key repetida — por
-  // eso ordenamos las plantillas primero: la program-scoped llega después
-  // y sobreescribe, quedando como la única entrada por código.
-  const programSheets = [...new Map(
-    [...programSheetsRaw].sort((a, b) => (a.programId ? 1 : -1) - (b.programId ? 1 : -1))
-      .map((s) => [s.code, s] as const),
-  ).values()]
+  const responsibleCatalog = canManageProgram && program.status === "draft"
+    ? await listPdtpResponsibleCatalog()
+    : []
 
   return (
     <PageContainer>
@@ -155,6 +154,20 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                     Exportar programa
                   </a>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/prevencion/pdtp/${programId}/reporte${selectedWorksiteId ? `?faena=${selectedWorksiteId}` : ""}`} className="flex items-center gap-2">
+                    <ChartBar size={14} />
+                    Reporte de gestión
+                  </Link>
+                </DropdownMenuItem>
+                {selectedWorksiteId && (
+                  <DropdownMenuItem asChild>
+                    <a href={`/api/prevencion/pdtp/expediente-auditor?programId=${programId}&faena=${selectedWorksiteId}`} download className="flex items-center gap-2">
+                      <DownloadSimple size={14} />
+                      Expediente auditor
+                    </a>
+                  </DropdownMenuItem>
+                )}
                 {canManageProgram && program.status === "draft" && (
                   <DropdownMenuItem asChild>
                     <Link href={`/prevencion/pdtp/${programId}/editar`} className="flex items-center gap-2">
@@ -171,17 +184,29 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
 
       <div className="space-y-4">
         {/* Program lifecycle status block */}
-        <PdtpProgramStatusBlock
+        <ProgramLifecycleControls
           program={program}
-          canApprove={canApprove}
-          canSignLegal={canSignLegal}
+          permissions={{ canSubmitReview, canApprove, canSignLegal, canActivate, canManageLifecycle }}
+          approvalSteps={approvalProgress.map((step) => ({
+            id: step.id,
+            code: step.code,
+            label: step.label,
+            isRequired: step.isRequired,
+            canDecide: session.user.permissions.includes(step.requiredPermission),
+            decision: step.decision ? {
+              decision: step.decision.decision,
+              decidedAt: step.decision.decidedAt,
+            } : null,
+          }))}
         />
 
+        <PdtpDocumentMetadataSection programId={programId} canReconcile={canManageProgram && program.status === "draft"} />
+
         {/* Compliance indicators */}
-        {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} />}
+        {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} asOf={new Date().toISOString()} />}
 
         <div className="flex flex-wrap items-center gap-3 border-y border-[var(--color-border)] py-3">
-          <PdtpSheetPicker current={sheetCode} options={SHEET_OPTIONS} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
+          <PdtpSheetPicker current={sheetCode} options={sheetOptions} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
           {worksites.length > 1 && (
             <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} />
           )}
@@ -206,17 +231,19 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
             action={<div className="flex flex-wrap gap-2">{worksites.map((worksite) => <Button key={worksite.id} asChild size="sm"><Link href={`/prevencion/pdtp/${programId}?hoja=${sheetCode}&faena=${worksite.id}&vista=${viewMode}`}>{worksite.name}</Link></Button>)}</div>}
           />
         ) : view ? (
-          <PdtpSheetTable
-            view={view}
-            worksiteId={selectedWorksiteId}
-            canExecute={canExecute}
-            canManageProgram={canManageProgram}
-            canApprove={canApprove}
-            pendingApprovals={pendingApprovals}
-            viewMode={viewMode}
-            currentPeriod={currentPeriod}
-            sheetCode={sheetCode}
-          />
+          <div id="registros-pdtp" className="scroll-mt-4">
+            <PdtpSheetTable
+              view={view}
+              worksiteId={selectedWorksiteId}
+              canExecute={canExecute}
+              canManageProgram={canManageProgram}
+              canApprove={canApprove}
+              pendingApprovals={pendingApprovals}
+              viewMode={viewMode}
+              currentPeriod={currentPeriod}
+              sheetCode={sheetCode}
+            />
+          </div>
         ) : (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5">
             <p className="font-medium text-[var(--color-text)]">Catálogo PDTP no cargado</p>
@@ -237,7 +264,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
             faena={selectedWorksiteId ?? ""}
             errorMessage={actividadError}
             responsibleCatalog={responsibleCatalog.map((r) => ({ slug: r.slug, displayName: r.displayName }))}
-            sheetOptions={programSheets.map((s) => ({ code: s.code, label: s.label }))}
+            sheetOptions={sheetOptions}
           />
         )}
       </div>
@@ -245,70 +272,69 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   )
 }
 
-type PdtpProgramStatusBlockProps = {
-  program: {
-    id: string
-    status: string
-    elaboratedByName: string
-    elaboratedByTitle: string
-    approvedByJdprAt: string | null
-    approvedByLegalAt: string | null
-  }
-  canApprove: boolean
-  canSignLegal: boolean
+const DOCUMENT_ENTRY_LABEL: Record<string, string> = {
+  elaboration: "Elaboración declarada",
+  review: "Revisión declarada",
+  approval: "Aprobación declarada",
+  change_control: "Cambio documentado",
 }
 
-function PdtpProgramStatusBlock({ program, canApprove, canSignLegal }: PdtpProgramStatusBlockProps) {
-  const isActive = program.status === "active"
-  const hasJdpr = !!program.approvedByJdprAt
-  const hasLegal = !!program.approvedByLegalAt
+async function PdtpDocumentMetadataSection({ programId, canReconcile }: { programId: string; canReconcile: boolean }) {
+  const [metadata, candidates] = await Promise.all([
+    getPdtpDocumentMetadata(programId),
+    canReconcile ? listPdtpReconciliationCandidates() : Promise.resolve([]),
+  ])
+  if (metadata.history.length === 0 && metadata.roleLegend.length === 0) return null
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm">
-      <span className="text-[var(--color-text-subtle)]">Elaborado por:</span>
-      <span className="font-medium">{program.elaboratedByName}</span>
-      <span className="text-[var(--color-text-faint)]">·</span>
-
-      {hasJdpr ? (
-        <span className="text-[var(--color-success)]">✓ Aprobado JDPR</span>
-      ) : canApprove && !isActive ? (
-        <form action={async () => { "use server"; await approvePdtpProgramJdprAction(program.id) }}>
-          <button type="submit" className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]">
-            Aprobar (JDPR)
-          </button>
-        </form>
-      ) : (
-        <span className="text-[var(--color-text-faint)]">Pendiente aprobación JDPR</span>
-      )}
-
-      <span className="text-[var(--color-text-faint)]">·</span>
-
-      {hasLegal ? (
-        <span className="text-[var(--color-success)]">✓ Firmado Legal</span>
-      ) : canSignLegal && !isActive ? (
-        <form action={async () => { "use server"; await signPdtpProgramLegalAction(program.id) }}>
-          <button type="submit" className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)]">
-            Firmar (Legal)
-          </button>
-        </form>
-      ) : (
-        <span className="text-[var(--color-text-faint)]">Pendiente firma Legal</span>
-      )}
-
-      <span className="text-[var(--color-text-faint)]">·</span>
-
-      {isActive ? (
-        <span className="font-semibold text-[var(--color-success)]">● Activo</span>
-      ) : hasJdpr && hasLegal && canApprove ? (
-        <form action={async () => { "use server"; await activatePdtpProgramAction(program.id) }}>
-          <button type="submit" className="rounded border border-[var(--color-primary)] bg-[var(--color-primary-tint)] px-2 py-1 text-xs font-medium text-[var(--color-text)]">
-            Activar programa
-          </button>
-        </form>
-      ) : (
-        <span className="text-[var(--color-text-faint)]">Borrador</span>
-      )}
-    </div>
+    <details className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[var(--color-text)] marker:hidden">
+        Historia y referencias del documento importado
+        <span className="ml-2 font-normal text-[var(--color-text-muted)]">
+          {metadata.history.length} declaración(es) · {metadata.roleLegend.length} código(s) de rol
+        </span>
+      </summary>
+      <div className="border-t border-[var(--color-border)] px-4 py-4">
+        <p className="max-w-3xl text-xs text-[var(--color-text-muted)]">
+          Estos datos conservan lo declarado por la fuente. No sustituyen las identidades ni las aprobaciones nativas de Chome.
+        </p>
+        {metadata.history.length > 0 && (
+          <div className="mt-3 divide-y divide-[var(--color-border)]">
+            {metadata.history.map(({ entry, linkedUserName, adapterCode }) => (
+              <div key={entry.id} className="grid gap-1 py-3 text-sm md:grid-cols-[12rem_minmax(0,1fr)_auto] md:gap-4">
+                <span className="font-medium text-[var(--color-text)]">{DOCUMENT_ENTRY_LABEL[entry.entryKind] ?? entry.entryKind}</span>
+                <div className="min-w-0 text-[var(--color-text-muted)]">
+                  <p>{entry.declaredActorName || entry.description || "Sin persona declarada"}</p>
+                  {(entry.declaredActorTitle || entry.declaredAtText) && <p className="mt-0.5 text-xs">{[entry.declaredActorTitle, entry.declaredAtText].filter(Boolean).join(" · ")}</p>}
+                  {linkedUserName && <p className="mt-1 text-xs text-[var(--color-success)]">Reconciliado con {linkedUserName}</p>}
+                </div>
+                <div className="flex items-center gap-2">
+                  {adapterCode && <Badge variant="outline">{adapterCode}</Badge>}
+                  {canReconcile && entry.declaredActorName && (
+                    <ReconcileDeclaredActorButton
+                      programId={programId}
+                      historyEntryId={entry.id}
+                      declaredActorName={entry.declaredActorName}
+                      linkedUserId={entry.linkedUserId}
+                      candidates={candidates}
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {metadata.roleLegend.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2" aria-label="Leyenda de roles declarada">
+            {metadata.roleLegend.map(({ entry }) => (
+              <span key={entry.id} className="rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-muted)]" title={entry.label}>
+                <strong className="font-mono text-[var(--color-text)]">{entry.code}</strong> · {entry.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </details>
   )
 }
 
@@ -340,16 +366,29 @@ async function PdtpChangeLogSection({ programId }: { programId: string }) {
   )
 }
 
-function normalizeSheetCode(value: string | undefined): PdtpSheetCode | null {
+type PdtpProgramSheet = Awaited<ReturnType<typeof listPdtpProgramSheets>>[number]
+
+function normalizeSheetCode(value: string | undefined, sheets: PdtpProgramSheet[]): string | null {
   if (!value) return null
-  return SHEET_OPTIONS.some((option) => option.code === value) ? value as PdtpSheetCode : null
+  return sheets.some((sheet) => sheet.code === value) ? value : null
 }
 
-function defaultSheetForRoles(roles: string[]): PdtpSheetCode {
-  if (roles.includes("cphs")) return "cphs"
-  if (roles.includes("jefe_terreno")) return "sup_jt"
-  if (roles.includes("admin_contrato")) return "prf_adm_contrato"
-  if (roles.includes("prevencionista_faena")) return "prf"
-  if (roles.includes("jefa_chome")) return "subgerente"
-  return "pdtp_general"
+/**
+ * Vista de aterrizaje por rol: prioriza la vista del programa cuyo
+ * `defaultScopeRoles` intersecta los roles del usuario y es más específica
+ * (menos roles en su alcance); ante empate o sin coincidencias, cae a
+ * `pdtp_general` o a la primera vista disponible. No asume las ocho vistas
+ * ni los roles de la referencia 2026: lee lo que este programa realmente
+ * tiene configurado.
+ */
+function defaultSheetForRoles(roles: string[], sheets: PdtpProgramSheet[]): string {
+  const match = sheets
+    .map((sheet) => ({
+      code: sheet.code,
+      scopeRoles: Array.isArray(sheet.defaultScopeRoles) ? sheet.defaultScopeRoles as string[] : [],
+    }))
+    .filter((sheet) => sheet.scopeRoles.some((role) => roles.includes(role)))
+    .sort((a, b) => a.scopeRoles.length - b.scopeRoles.length)[0]
+  if (match) return match.code
+  return sheets.find((sheet) => sheet.code === "pdtp_general")?.code ?? sheets[0]?.code ?? "pdtp_general"
 }

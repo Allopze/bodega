@@ -2,7 +2,9 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
-import { listPdtpPrograms, getPdtpComplianceIndicators } from "@/lib/services/prevention-pdtp"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { listPdtpPrograms, getPdtpComplianceIndicatorsForScope } from "@/lib/services/prevention-pdtp"
+import { listScopedWorksites } from "@/lib/services/ppa"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -32,13 +34,21 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
     redirect(buildPdtpProgramHref(programs[0]!.id, query))
   }
 
+  // UX-01: omitir worksiteId deja `executed` en 0 aunque exista avance real
+  // (loadProgramScheduleAndExecutions no agrega ejecuciones sin faena). El
+  // agregado se calcula sobre las faenas que el usuario realmente puede ver,
+  // nunca "todas" por omisión.
+  const scope = resolveWorksiteScope(session)
+  const scopedWorksites = await listScopedWorksites(scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [])
+  const worksiteIds = scopedWorksites.map((w) => w.id)
+
   // Fetch quick compliance for each program. Antes se limitaba a los
   // primeros 5 (`slice(0, 5)`) sin avisar — programas 6+ mostraban la
   // card sin % de cumplimiento en silencio. En paralelo en vez de
   // secuencial: mismo costo total, N veces más rápido.
   const complianceEntries = await Promise.all(programs.map(async (program) => {
     try {
-      return [program.id, await getPdtpComplianceIndicators(program.id)] as const
+      return [program.id, await getPdtpComplianceIndicatorsForScope(program.id, worksiteIds)] as const
     } catch {
       return [program.id, null] as const
     }
@@ -59,12 +69,17 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
         }
         actions={
           canManageProgram && (
-            <Button asChild size="sm">
-              <Link href="/prevencion/pdtp/nuevo">
-                <Plus size={14} />
-                Nuevo programa
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild size="sm" variant="secondary">
+                <Link href="/prevencion/pdtp/plantillas">Plantillas</Link>
+              </Button>
+              <Button asChild size="sm">
+                <Link href="/prevencion/pdtp/nuevo">
+                  <Plus size={14} />
+                  Nuevo programa
+                </Link>
+              </Button>
+            </div>
           )
         }
       />
@@ -111,8 +126,8 @@ export default async function PdtpListPage({ searchParams }: PdtpListPageProps) 
                 </div>
                 <div className="mt-3 flex items-center gap-4 text-xs text-[var(--color-text-subtle)]">
                   {indicators?.annual && (
-                    <span>
-                      Cumplimiento: {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
+                    <span title={`Ejecutado / planificado agregado sobre ${indicators.worksiteCount} faena(s) autorizada(s)`}>
+                      Cumplimiento ({indicators.worksiteCount} faena{indicators.worksiteCount === 1 ? "" : "s"}): {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
                     </span>
                   )}
                   <span>Elaborado por: {program.elaboratedByName}</span>

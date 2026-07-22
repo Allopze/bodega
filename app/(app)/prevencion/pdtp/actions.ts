@@ -3,19 +3,27 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { ZodError } from "zod"
-import { guardPermission } from "@/lib/auth/can"
+import { guardAuth, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import { parseZ } from "@/lib/actions/parse-z"
 import {
   markPdtpExecution,
+  submitPdtpProgramForReview,
   approvePdtpProgramJdpr,
   signPdtpProgramLegal,
   activatePdtpProgram,
+  rejectPdtpApprovalStep,
+  reopenRejectedPdtpProgram,
+  archivePdtpProgram,
+  decidePdtpApprovalStep,
+  getPdtpApprovalStep,
   approvePdtpExecution,
   rejectPdtpExecution,
   updatePdtpActivity,
   addPdtpActivity,
+  duplicatePdtpActivity,
+  batchUpdatePdtpActivities,
   deletePdtpActivity,
   reorderPdtpActivities,
   setPdtpActivityOverride,
@@ -26,6 +34,8 @@ import {
   createPdtpSheet,
   deletePdtpSheet as deletePdtpSheetService,
   renamePdtpObjective,
+  createPdtpTemplateVersion,
+  reconcilePdtpDeclaredActor,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
@@ -38,11 +48,17 @@ import {
   pdtpProgramCreateSchema,
   pdtpProgramUpdateSchema,
   pdtpProgramDeleteSchema,
+  pdtpProgramLifecycleReasonSchema,
+  pdtpApprovalDecisionSchema,
   pdtpSheetCreateSchema,
   pdtpSheetDeleteSchema,
   pdtpActivityDeleteSchema,
+  pdtpActivityDuplicateSchema,
+  pdtpActivityBatchUpdateSchema,
   pdtpActivityReorderSchema,
   pdtpObjectiveRenameSchema,
+  pdtpTemplatePublishSchema,
+  pdtpReconcileDeclaredActorSchema,
 } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/pdtp"
@@ -106,6 +122,44 @@ export async function markPdtpExecutionFormAction(formData: FormData): Promise<A
 
 // ── WS2: Program lifecycle ──────────────────────────────────────────────────
 
+export async function submitPdtpProgramForReviewAction(programId: string): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:submit_review")
+  if (guard.error) return guard.error
+  try {
+    await submitPdtpProgramForReview(programId, guard.session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function decidePdtpApprovalStepAction(input: unknown): Promise<ActionState> {
+  const authGuard = await guardAuth()
+  if (authGuard.error) return authGuard.error
+  try {
+    const parsed = pdtpApprovalDecisionSchema.parse(input)
+    const step = await getPdtpApprovalStep(parsed.stepId)
+    if (!step || step.programId !== parsed.programId) throw new Error("Paso de aprobación no encontrado.")
+    if (!authGuard.session.user.permissions.includes(step.requiredPermission)) {
+      return { ok: false, message: "No tienes permisos para realizar esta acción" }
+    }
+    await decidePdtpApprovalStep({
+      programId: parsed.programId,
+      stepId: parsed.stepId,
+      actorUserId: authGuard.session.user.id,
+      decision: parsed.decision,
+      reason: parsed.reason,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
 export async function approvePdtpProgramJdprAction(programId: string): Promise<ActionState> {
   const guard = await guardPermission("prevention:pdtp:approve")
   if (guard.error) return guard.error
@@ -133,7 +187,7 @@ export async function signPdtpProgramLegalAction(programId: string): Promise<Act
 }
 
 export async function activatePdtpProgramAction(programId: string): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:approve")
+  const guard = await guardPermission("prevention:pdtp:activate")
   if (guard.error) return guard.error
   const session = guard.session
   try {
@@ -146,6 +200,61 @@ export async function activatePdtpProgramAction(programId: string): Promise<Acti
 }
 
 // ── WS3: Execution approval ─────────────────────────────────────────────────
+
+async function rejectPdtpProgramWithPermission(
+  programId: string,
+  stepCode: "jdpr" | "legal",
+  reason: string,
+  permission: "prevention:pdtp:approve" | "prevention:pdtp:sign_legal",
+): Promise<ActionState> {
+  const guard = await guardPermission(permission)
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpProgramLifecycleReasonSchema.parse({ programId, reason })
+    await rejectPdtpApprovalStep(parsed.programId, stepCode, guard.session.user.id, parsed.reason)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function rejectPdtpProgramAsJdprAction(programId: string, reason: string): Promise<ActionState> {
+  return rejectPdtpProgramWithPermission(programId, "jdpr", reason, "prevention:pdtp:approve")
+}
+
+export async function rejectPdtpProgramAsLegalAction(programId: string, reason: string): Promise<ActionState> {
+  return rejectPdtpProgramWithPermission(programId, "legal", reason, "prevention:pdtp:sign_legal")
+}
+
+export async function reopenRejectedPdtpProgramAction(programId: string, reason: string): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:lifecycle:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpProgramLifecycleReasonSchema.parse({ programId, reason })
+    await reopenRejectedPdtpProgram(parsed.programId, guard.session.user.id, parsed.reason)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function archivePdtpProgramAction(programId: string, reason: string): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:lifecycle:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpProgramLifecycleReasonSchema.parse({ programId, reason })
+    await archivePdtpProgram(parsed.programId, guard.session.user.id, parsed.reason)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
 
 export async function approvePdtpExecutionAction(executionId: string): Promise<ActionState> {
   const guard = await guardPermission("prevention:pdtp:approve")
@@ -211,6 +320,34 @@ export async function addPdtpActivityAction(input: unknown): Promise<ActionState
   }
 }
 
+export async function duplicatePdtpActivityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpActivityDuplicateSchema.parse(input)
+    const created = await duplicatePdtpActivity(parsed.activityId, guard.session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${created.programId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function batchUpdatePdtpActivitiesAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpActivityBatchUpdateSchema.parse(input)
+    await batchUpdatePdtpActivities(parsed, guard.session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
 export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<void> {
   const hoja = String(fd.get("hoja") ?? "")
   const faena = String(fd.get("faena") ?? "")
@@ -229,7 +366,7 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
     redirect(qs ? `${detailPath}?${qs}` : detailPath)
   }
 
-  const guard = await guardPermission("prevention:pdtp:program:manage")
+  const guard = await guardPermission("prevention:pdtp:override:manage")
   if (guard.error) return backTo(guard.error.message)
   const session = guard.session
 
@@ -242,6 +379,7 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
       month: fd.get("month"),
       week: fd.get("week"),
       plannedQuantity: fd.get("plannedQuantity"),
+      reason: fd.get("reason"),
     })
     if (mode === "delete" || parsed.plannedQuantity === 0) {
       await deletePdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
@@ -272,12 +410,14 @@ export async function createPdtpProgramAction(
       year: formData.get("year"),
       title: formData.get("title"),
       copySheetsFromProgramId: formData.get("copySheetsFromProgramId") || undefined,
+      templateVersionId: formData.get("templateVersionId") || undefined,
     })
     const program = await createPdtpProgram({
       year: parsed.year,
       title: parsed.title,
       userId: session.user.id,
       copySheetsFromProgramId: parsed.copySheetsFromProgramId,
+      templateVersionId: parsed.templateVersionId,
     })
     programId = program.id
   } catch (e) {
@@ -306,6 +446,35 @@ export async function updatePdtpProgramAction(
     revalidatePath(`${REVALIDATE}/${parsed.programId}`)
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function publishPdtpTemplateAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+
+  try {
+    const parsed = pdtpTemplatePublishSchema.parse({
+      sourceProgramId: formData.get("sourceProgramId"),
+      name: formData.get("name"),
+      description: formData.get("description") ?? "",
+    })
+    const published = await createPdtpTemplateVersion({
+      sourceProgramId: parsed.sourceProgramId,
+      name: parsed.name,
+      description: parsed.description || undefined,
+      userId: session.user.id,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/nuevo`)
+    revalidatePath(`${REVALIDATE}/${parsed.sourceProgramId}/editar`)
+    return { ok: true, message: `Plantilla ${published.template.name} v${published.version.version} publicada.` }
   } catch (e) {
     return fail(e)
   }
@@ -456,6 +625,8 @@ export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
       responsibleDisplay: fd.get("responsibleDisplay"),
       responsibleSlugs,
       sheetCodes,
+      scheduleMode: "on_demand",
+      indicatorMode: "completed_count",
       notes: fd.get("notes") ?? undefined,
     })
     await addPdtpActivity(parsed, session.user.id)
@@ -479,6 +650,27 @@ export async function renamePdtpObjectiveAction(input: unknown): Promise<ActionS
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.programId}`)
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+// ── Historia del documento importado: vincular/desvincular una identidad declarada ──
+
+export async function reconcilePdtpDeclaredActorAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    const parsed = pdtpReconcileDeclaredActorSchema.parse(input)
+    await reconcilePdtpDeclaredActor({
+      historyEntryId: parsed.historyEntryId,
+      linkedUserId: parsed.linkedUserId,
+      actorUserId: session.user.id,
+      reason: parsed.reason,
+    })
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
     return { ok: true }
   } catch (e) {
     return fail(e)

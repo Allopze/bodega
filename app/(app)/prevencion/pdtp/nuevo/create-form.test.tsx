@@ -181,8 +181,7 @@ describe("PdtpCreateProgramForm", () => {
     it("renderiza la opción 'Programa vacío'", () => {
       renderForm()
       expect(screen.getByText("Programa vacío")).toBeDefined()
-      // "8 hojas plantilla" appears in both the card and the footer hint
-      const matches = screen.getAllByText(/8 hojas plantilla/)
+      const matches = screen.getAllByText(/una vista general/)
       expect(matches.length).toBeGreaterThanOrEqual(1)
     })
 
@@ -222,6 +221,24 @@ describe("PdtpCreateProgramForm", () => {
       fireEvent.click(screen.getByText("No duplicar"))
       expect(screen.getByText("Programa vacío")).toBeDefined()
     })
+
+    it("permite partir desde una versión publicada de plantilla sin seleccionar un programa vivo", () => {
+      const { container } = renderForm({
+        templates: [{
+          id: "template-1",
+          name: "Programa preventivo base",
+          description: "Objetivos y reglas corporativas",
+          versionId: "template-1-v3",
+          version: 3,
+        }],
+      })
+
+      fireEvent.click(screen.getByText("Programa preventivo base"))
+
+      expect((container.querySelector('input[name="templateVersionId"]') as HTMLInputElement).value).toBe("template-1-v3")
+      expect((container.querySelector('input[name="copySheetsFromProgramId"]') as HTMLInputElement).value).toBe("")
+      expect(screen.getByText(/versión inmutable/)).toBeDefined()
+    })
   })
 
   describe("Hidden inputs", () => {
@@ -252,7 +269,7 @@ describe("PdtpCreateProgramForm", () => {
 
     it("renderiza texto contextual en el footer", () => {
       renderForm()
-      const matches = screen.getAllByText(/8 hojas plantilla/)
+      const matches = screen.getAllByText(/una vista general/)
       expect(matches.length).toBeGreaterThanOrEqual(1)
     })
 

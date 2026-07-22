@@ -126,6 +126,18 @@ export function PdtpOverrideForm(props: Props) {
           <p className="text-[11px] text-[var(--color-text-subtle)]">
             Define 0 para borrar el override y volver al plan global del catálogo.
           </p>
+          <Field label="Motivo de la excepción" htmlFor="ovr-reason">
+            <textarea
+              id="ovr-reason"
+              name="reason"
+              required
+              minLength={10}
+              maxLength={1000}
+              rows={3}
+              placeholder="Explica por qué esta faena necesita una meta diferente"
+              className="w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+            />
+          </Field>
           <DialogFooter>
             {currentOverride !== undefined && currentOverride > 0 && (
               <Button type="submit" size="sm" variant="ghost" name="mode" value="delete">
