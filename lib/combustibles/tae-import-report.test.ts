@@ -82,7 +82,7 @@ describe("buildTaeImportReport", () => {
     expect(report.missingReadingRows).toEqual([{ rowIndex: 3, equipmentCode: "KA-90", meterRaw: "Sin Odometro" }])
   })
 
-  it("renders a readable XLSX workbook with one sheet per dimension", async () => {
+  it("renders a readable Excel workbook with one sheet per dimension", async () => {
     const report = buildTaeImportReport({ rows: [row({})], errors: [{ rowIndex: 5, field: "Litros", message: "Fila incompleta" }], worksites, vehicles, workers })
     const buffer = await renderTaeImportReportXlsx(report)
     const wb = new ExcelJS.Workbook()

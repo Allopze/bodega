@@ -44,7 +44,7 @@ async function readImportForm(formData: FormData): Promise<
 > {
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, message: "Selecciona un archivo XLSX" }
+    return { ok: false, message: "Selecciona un archivo Excel" }
   }
   if (!file.name.toLocaleLowerCase("es-CL").endsWith(".xlsx")) {
     return { ok: false, message: "El archivo debe estar en formato .xlsx" }

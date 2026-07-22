@@ -1,7 +1,7 @@
 /**
  * GET /api/bodega/kardex/export?faena=<id>&producto=<id>
  *
- * Returns inventory movement history as an XLSX download, scoped by RBAC.
+ * Returns inventory movement history as an Excel download, scoped by RBAC.
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"

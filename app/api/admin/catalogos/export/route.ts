@@ -1,7 +1,7 @@
 /**
  * GET /api/admin/catalogos/export?tipo=productos|proveedores|trabajadores
  *
- * Exporta el catálogo completo como XLSX para mantenimiento masivo.
+ * Exporta el catálogo completo como Excel para mantenimiento masivo.
  * Cada fila incluye el ID interno para permitir re-importar con actualizaciones.
  */
 

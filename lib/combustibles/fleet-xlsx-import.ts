@@ -56,7 +56,7 @@ export async function parseFleetXlsx(fileBuffer: ArrayBuffer | Buffer): Promise<
   try {
     await workbook.xlsx.load(fileBuffer as never)
   } catch {
-    return { rows: [], errors: [{ rowIndex: 0, field: "file", message: "Archivo XLSX inválido o corrupto" }] }
+    return { rows: [], errors: [{ rowIndex: 0, field: "file", message: "Archivo Excel inválido o corrupto" }] }
   }
 
   const sheet = workbook.worksheets[0]

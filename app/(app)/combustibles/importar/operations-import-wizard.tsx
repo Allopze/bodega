@@ -33,7 +33,7 @@ export function OperationsImportWizard() {
   const [result, setResult] = useState<OperationsImportResultSummary | null>(null)
 
   function buildFormData(): FormData | null {
-    if (!file) { toast.error("Selecciona un archivo XLSX"); return null }
+    if (!file) { toast.error("Selecciona un archivo Excel"); return null }
     const fd = new FormData()
     fd.set("file", file)
     fd.set("notas", notas)

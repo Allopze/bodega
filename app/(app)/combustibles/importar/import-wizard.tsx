@@ -50,7 +50,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
   const [result, setResult] = useState<ConsumptionImportResult | null>(null)
 
   function buildFormData(): FormData | null {
-    if (!file) { toast.error("Selecciona un archivo XLSX"); return null }
+    if (!file) { toast.error("Selecciona un archivo Excel"); return null }
     if (!worksiteId) { toast.error("Selecciona la faena"); return null }
     if (!periodoDesde || !periodoHasta) { toast.error("Indica el período"); return null }
     const fd = new FormData()
@@ -347,7 +347,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
               <p className="text-xs text-muted-foreground mt-0.5">Reporte de tarjetas de combustible — .xlsx</p>
             )}
           </div>
-          <input type="file" accept=".xlsx" onChange={(e) => handleFile(e.target.files?.[0])} className="sr-only" aria-label="Seleccionar archivo XLSX" />
+          <input type="file" accept=".xlsx" onChange={(e) => handleFile(e.target.files?.[0])} className="sr-only" aria-label="Seleccionar archivo Excel" />
         </label>
 
         <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)]">

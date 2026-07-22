@@ -16,7 +16,7 @@ export function TaeCopecExportButton({ filters }: { filters: TaeCopecFilters }) 
     link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${result.data.base64}`
     link.download = result.data.filename
     link.click()
-    if (result.data.truncated) toast.warning("El XLSX alcanzó el límite de 10.000 filas")
+    if (result.data.truncated) toast.warning("El Excel alcanzó el límite de 10.000 filas")
     else toast.success("Conciliación exportada")
-  })}><FileXls size={16} />{pending ? "Exportando…" : "Exportar XLSX"}</Button>
+  })}><FileXls size={16} />{pending ? "Exportando…" : "Exportar Excel"}</Button>
 }

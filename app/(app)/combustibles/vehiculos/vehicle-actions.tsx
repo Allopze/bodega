@@ -46,7 +46,7 @@ export function VehicleActions({
       <CatalogImportPanel
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title="Importar vehículos desde XLSX"
+        title="Importar vehículos desde Excel"
         description="Crea o actualiza vehículos por patente usando el consolidado de combustibles de Chome."
         action={importFuelVehiclesFromXlsx}
         helperText="Columnas requeridas: CODIGO, PATENTE, FAENA, TIPO, MARCA, MODELO y AÑO. Las faenas deben existir y estar dentro de tu alcance."

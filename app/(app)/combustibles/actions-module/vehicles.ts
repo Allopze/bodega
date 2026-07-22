@@ -270,7 +270,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
   catch { return { ok: false, message: "Sin permisos" } }
 
   const file = formData.get("file")
-  if (!(file instanceof File) || file.size === 0) return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+  if (!(file instanceof File) || file.size === 0) return { ok: false, fieldErrors: { file: ["Selecciona un archivo Excel"] } }
   if (!file.name.toLowerCase().endsWith(".xlsx")) return { ok: false, fieldErrors: { file: ["El archivo debe estar en formato .xlsx"] } }
   if (file.size > 6 * 1024 * 1024) return { ok: false, fieldErrors: { file: ["El archivo no puede superar 6 MB"] } }
 
@@ -325,7 +325,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
           category: "other",
           defaultMeterType: "none",
           defaultPerformanceUnit: "not_applicable",
-          description: "Tipo creado desde importación XLSX; requiere revisión administrativa.",
+          description: "Tipo creado desde importación Excel; requiere revisión administrativa.",
           sortOrder: 1000 + index,
         }))
         await tx.insert(fuelEquipmentTypes).values(createdTypes)
@@ -358,7 +358,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
             vehicleId,
             status: "operativo",
             startedAt,
-            reason: `Alta mediante importación XLSX ${file.name}`,
+            reason: `Alta mediante importación Excel ${file.name}`,
             changedBy: session.user.id,
           })
         }

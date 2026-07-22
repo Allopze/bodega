@@ -1,7 +1,7 @@
 /**
  * GET /api/bodega/stock/export?faena=<id>
  *
- * Returns current stock as an XLSX download, scoped by RBAC.
+ * Returns current stock as an Excel download, scoped by RBAC.
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"

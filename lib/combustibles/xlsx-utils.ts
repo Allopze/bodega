@@ -1,5 +1,5 @@
 /**
- * Helpers XLSX compartidos del módulo combustibles: parsers de importación
+ * Helpers Excel compartidos del módulo combustibles: parsers de importación
  * (facturas — `import.ts` — y consumos por patente — `consumption-import.ts`)
  * y la hoja de metadatos que llevan las 4 exportaciones del módulo.
  */

@@ -213,7 +213,7 @@ async function importCopecPeriod(
 
     for (const [worksiteId, rows] of groups) {
       // Dedup por identidad lógica del período (faena + rango + fuente), NO por
-      // hash del archivo: Copec regenera el XLSX en cada descarga (hash distinto
+      // hash del archivo: Copec regenera el Excel en cada descarga (hash distinto
       // siempre), así que deduplicar por hash nunca acertaba y reimportar un
       // período DUPLICABA todo. La identidad lógica es estable entre descargas.
       const duplicate = await db.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")), columns: { id: true } })

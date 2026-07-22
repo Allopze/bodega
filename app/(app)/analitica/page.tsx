@@ -72,7 +72,7 @@ export default async function AnaliticaPage({
             className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 text-xs font-semibold text-white transition-colors hover:bg-[var(--color-primary-strong)]"
           >
             <DownloadSimple size={14} />
-            Exportar XLSX
+            Exportar Excel
           </Link>
         }
       />

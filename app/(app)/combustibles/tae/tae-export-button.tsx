@@ -37,7 +37,7 @@ export function TaeExportButton({ filters }: { filters?: TaeExportFilters }) {
   return (
     <Button variant="secondary" size="sm" onClick={handleExport} disabled={loading}>
       <FileXls className="h-4 w-4 mr-1" />
-      {loading ? "Exportando..." : "Exportar XLSX"}
+      {loading ? "Exportando..." : "Exportar Excel"}
     </Button>
   )
 }

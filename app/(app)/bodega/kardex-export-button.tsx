@@ -37,7 +37,7 @@ export function KardexExportButton({ worksites, canExport }: KardexExportButtonP
       <DialogTrigger asChild>
         <Button variant="secondary" size="sm">
           <DownloadSimple size={14} className="mr-1" />
-          Exportar XLSX
+          Exportar Excel
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">

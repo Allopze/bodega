@@ -172,7 +172,7 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
   catch { return { ok: false, message: "Sin permisos" } }
 
   const file = formData.get("file")
-  if (!(file instanceof File) || file.size === 0) return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+  if (!(file instanceof File) || file.size === 0) return { ok: false, fieldErrors: { file: ["Selecciona un archivo Excel"] } }
   if (!file.name.toLowerCase().endsWith(".xlsx")) return { ok: false, fieldErrors: { file: ["El archivo debe estar en formato .xlsx"] } }
 
   const buffer = Buffer.from(await file.arrayBuffer())

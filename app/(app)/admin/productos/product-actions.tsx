@@ -36,7 +36,7 @@ export function ProductActions({ categories, allSuppliers, units, templates }: P
         href="/api/admin/catalogos/export?tipo=productos"
         className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
       >
-        <DownloadSimple size={14} />Exportar XLSX
+        <DownloadSimple size={14} />Exportar Excel
       </a>
       <Button size="sm" variant="secondary" onClick={() => setImportChoiceOpen(true)}>
         <UploadSimple size={14} />Importar
@@ -62,7 +62,7 @@ export function ProductActions({ categories, allSuppliers, units, templates }: P
         <DialogContent>
           <DialogHeader>
             <DialogTitle>¿Qué quieres importar?</DialogTitle>
-            <DialogDescription>Elige el tipo de archivo XLSX que vas a subir.</DialogDescription>
+            <DialogDescription>Elige el tipo de archivo Excel que vas a subir.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
             <button
@@ -102,7 +102,7 @@ export function ProductActions({ categories, allSuppliers, units, templates }: P
         title="Importar catálogo de productos"
         description="Crea productos nuevos o actualiza los existentes según el SKU. Se aplica de inmediato, sin pantalla de revisión."
         action={importProductsFromXlsx}
-        helperText="Usa el botón Exportar XLSX para obtener la plantilla con los datos actuales."
+        helperText="Usa el botón Exportar Excel para obtener la plantilla con los datos actuales."
       />
     </>
   )

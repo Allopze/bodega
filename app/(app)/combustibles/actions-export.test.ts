@@ -65,7 +65,7 @@ describe("exportFuelLoadsXlsxAction", () => {
     })
   })
 
-  it("reads one extra row to cap the XLSX export and report truncation", async () => {
+  it("reads one extra row to cap the Excel export and report truncation", async () => {
     mockFindMany.mockResolvedValue(Array.from({ length: 10_001 }, (_, index) => ({
       id: `load-${index}`,
       loadDate: "2026-06-01",

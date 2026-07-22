@@ -20,10 +20,10 @@ export function WorkerActions({ worksites }: { worksites: WorksiteOption[] }) {
         href="/api/admin/catalogos/export?tipo=trabajadores"
         className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
       >
-        <DownloadSimple size={14} />Exportar XLSX
+        <DownloadSimple size={14} />Exportar Excel
       </a>
       <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
-        <UploadSimple size={14} />Importar XLSX
+        <UploadSimple size={14} />Importar Excel
       </Button>
       <Button size="sm" onClick={() => setFormOpen(true)}>
         <Plus size={14} />Nuevo trabajador
@@ -40,10 +40,10 @@ export function WorkerActions({ worksites }: { worksites: WorksiteOption[] }) {
       <CatalogImportPanel
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title="Importar trabajadores desde XLSX"
+        title="Importar trabajadores desde Excel"
         description="Importa trabajadores exportados desde el catálogo. La columna ID determina si se crea o actualiza."
         action={importWorkersFromXlsx}
-        helperText="Usa el botón Exportar XLSX para obtener la plantilla con los datos actuales."
+        helperText="Usa el botón Exportar Excel para obtener la plantilla con los datos actuales."
       />
     </>
   )

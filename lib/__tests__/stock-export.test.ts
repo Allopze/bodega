@@ -2,7 +2,7 @@
  * Integration tests for lib/services/stock.ts — getStockExport & getKardexExport.
  *
  * Uses PGlite in-memory database (same pattern as stock-service.test.ts).
- * Validates XLSX output with ExcelJS, RBAC scoping, filters, and truncation.
+ * Validates Excel output with ExcelJS, RBAC scoping, filters, and truncation.
  */
 
 import { PGlite } from "@electric-sql/pglite"
@@ -142,7 +142,7 @@ describe("getStockExport", () => {
     await inMemoryDb.delete(schema.inventoryMovements)
   })
 
-  it("returns a valid XLSX ArrayBuffer with stock rows", async () => {
+  it("returns a valid Excel ArrayBuffer with stock rows", async () => {
     await inMemoryDb.insert(schema.worksiteStock).values([
       {
         id: "stk-1", worksiteId: WS_1, productId: PROD_1,
@@ -191,7 +191,7 @@ describe("getStockExport", () => {
     expect(ws?.actualRowCount).toBe(2) // header + 1 data row
   })
 
-  it("returns empty XLSX when no stock exists", async () => {
+  it("returns empty Excel when no stock exists", async () => {
     const res = await getStockExport(globalSession())
 
     expect(res.buffer).toBeInstanceOf(ArrayBuffer)
@@ -275,7 +275,7 @@ describe("getKardexExport", () => {
 
   afterAll(async () => { await pg.close() })
 
-  it("returns a valid XLSX ArrayBuffer with movement rows", async () => {
+  it("returns a valid Excel ArrayBuffer with movement rows", async () => {
     await inMemoryDb.insert(schema.inventoryMovements).values([
       {
         id: "mov-1", worksiteId: WS_1, productId: PROD_1,
@@ -358,7 +358,7 @@ describe("getKardexExport", () => {
     expect(ws?.actualRowCount).toBe(2) // header + 1 row
   })
 
-  it("returns empty XLSX when no movements exist", async () => {
+  it("returns empty Excel when no movements exist", async () => {
     const res = await getKardexExport(globalSession())
 
     expect(res.buffer).toBeInstanceOf(ArrayBuffer)
@@ -453,7 +453,7 @@ describe("getKardexExport", () => {
     expect(ws?.getCell("E2").value).toBe("Ajuste")
   })
 
-  it("includes reason and notes in XLSX rows", async () => {
+  it("includes reason and notes in Excel rows", async () => {
     await inMemoryDb.insert(schema.inventoryMovements).values({
       id: "mov-reason", worksiteId: WS_1, productId: PROD_1,
       type: "egreso_entrega", quantity: -2, stockBefore: 10, stockAfter: 8,

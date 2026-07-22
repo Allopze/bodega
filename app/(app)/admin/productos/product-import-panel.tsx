@@ -68,7 +68,7 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
           <SheetBody>
             <FieldGroup>
               <Field
-                label="Archivo XLSX"
+                label="Archivo Excel"
                 htmlFor="product-import-file"
                 required
                 error={state.fieldErrors?.file?.[0]}
@@ -142,7 +142,7 @@ export function ProductImportPanel({ open, onClose }: ProductImportPanelProps) {
 
           <SheetFooter>
             <Button type="button" variant="ghost" onClick={onClose}>Cerrar</Button>
-            <SubmitButton label="Importar XLSX" loadingLabel="Importando...">
+            <SubmitButton label="Importar Excel" loadingLabel="Importando...">
               <UploadSimple size={16} />
             </SubmitButton>
           </SheetFooter>

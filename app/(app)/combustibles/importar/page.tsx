@@ -57,7 +57,7 @@ export default async function ImportarConsumosPage() {
     <PageContainer>
       <PageHeader
         title="Importar consumos TCT"
-        description="Sincroniza el detalle mensual de Diésel y BlueMax desde Copec, o carga un reporte XLSX manual"
+        description="Sincroniza el detalle mensual de Diésel y BlueMax desde Copec, o carga un reporte Excel manual"
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos" }]} />}
         actions={canViewTae ? (
           <Button asChild variant="secondary" size="sm">

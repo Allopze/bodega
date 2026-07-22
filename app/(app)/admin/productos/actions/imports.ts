@@ -13,7 +13,7 @@ import type { ActionState } from "@/lib/validation/masters"
 import { nanoid } from "@/lib/id"
 import { formString, generateUniqueProductSku, REVALIDATE } from "./helpers"
 
-// ── EPP Import (XLSX → review → confirm) ──────────────────────────────────────
+// ── EPP Import (Excel → review → confirm) ──────────────────────────────────────
 
 export async function importProductsXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
@@ -22,7 +22,7 @@ export async function importProductsXlsx(_prev: ActionState, formData: FormData)
 
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+    return { ok: false, fieldErrors: { file: ["Selecciona un archivo Excel"] } }
   }
 
   const fileName = file.name.toLocaleLowerCase("es-CL")
@@ -39,7 +39,7 @@ export async function importProductsXlsx(_prev: ActionState, formData: FormData)
   if (!result.ok) {
     return {
       ok: false,
-      message: "No se pudo analizar el XLSX",
+      message: "No se pudo analizar el Excel",
       data: {
         errors: result.errors.slice(0, 20), totalErrors: result.errors.length,
       },
@@ -105,7 +105,7 @@ export async function confirmEppImportBatchAction(_prev: ActionState, formData: 
   }
 }
 
-// ── Catalog Import (bulk XLSX → direct create/update) ─────────────────────────
+// ── Catalog Import (bulk Excel → direct create/update) ─────────────────────────
 
 async function resolveImportCategory(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], name: string) {
   const slug = name.toLowerCase().replace(/\s+/g, "_").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -123,7 +123,7 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
 
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, fieldErrors: { file: ["Selecciona un archivo XLSX"] } }
+    return { ok: false, fieldErrors: { file: ["Selecciona un archivo Excel"] } }
   }
   if (!file.name.toLowerCase().endsWith(".xlsx")) {
     return { ok: false, fieldErrors: { file: ["El archivo debe estar en formato .xlsx"] } }

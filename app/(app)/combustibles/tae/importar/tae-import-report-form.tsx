@@ -97,7 +97,7 @@ export function TaeImportReportForm() {
       <div>
         <p className="text-eyebrow">Reporte de mapeo sugerido</p>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          Sube el Excel del control manual TAE. Se genera un XLSX de solo lectura con la faena, equipo, conductor y
+          Sube el Excel del control manual TAE. Se genera un Excel de solo lectura con la faena, equipo, conductor y
           supervisor sugeridos para cada fila (con nivel de confianza), más observaciones de continuidad de sello y
           lecturas. Descarga y revisa ese reporte antes de habilitar la importación definitiva.
         </p>

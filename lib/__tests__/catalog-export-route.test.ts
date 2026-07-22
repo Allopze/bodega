@@ -1,5 +1,5 @@
 /**
- * Unit tests for catalog XLSX export API route — auth gates only.
+ * Unit tests for catalog Excel export API route — auth gates only.
  * Valid export responses are validated by typecheck and existing excel-builder tests.
  */
 
@@ -37,7 +37,7 @@ function makeReq(tipo?: string): NextRequest {
   return new NextRequest(url)
 }
 
-describe("catalog XLSX export — auth gates", () => {
+describe("catalog Excel export — auth gates", () => {
   beforeEach(() => vi.resetAllMocks())
 
   it("returns 401 when not authenticated", async () => {
