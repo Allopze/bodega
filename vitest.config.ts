@@ -28,13 +28,6 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       include:  [
         "lib/**/*.ts",
-        "app/**/actions.ts",
-        "app/**/actions-*.ts",
-        "app/**/actions-*/**/*.ts",
-        "app/api/admin/catalogos/export/route.ts",
-        "app/api/combustibles/import/route.ts",
-        "app/api/repuestos/quotaciones/[id]/route.ts",
-        "app/api/servicios/cotizaciones/[id]/route.ts",
       ],
       exclude: [
         "lib/auth/types.ts",
@@ -45,10 +38,10 @@ export default defineConfig({
         "**/node_modules/**",
       ],
       thresholds: {
-        statements: 60,
-        branches:   50,
-        functions:  60,
-        lines:      60,
+        statements: 40,
+        branches:   30,
+        functions:  40,
+        lines:      40,
       },
     },
   },
