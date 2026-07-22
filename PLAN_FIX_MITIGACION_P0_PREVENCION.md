@@ -10,7 +10,7 @@
 
 **Alcance:** P0-01 a P0-06 del módulo de Prevención, incluyendo mitigaciones operacionales, solución definitiva, migraciones, autorización, pruebas, despliegue y criterios de cierre.
 
-**Nota de fuente (2026-07-22):** la fuente de verdad del PDTP es ahora `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx` (**87 actividades**, tras la quita total de N°4 y N°8). La mención al fixture `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` y a su SHA-256 `a6adc0fa…` en la bitácora de abajo es histórica (registro de una restauración) y se conserva sin alterar. Contraste y cambio: §2.0 de `PLAN_AJUSTE_INTEGRAL_PREVENCION_PDTP_SGSST_2026.md`.
+**Nota de fuente (2026-07-22):** la fuente de verdad del PDTP es ahora `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (87 actividades).xlsx` (**87 actividades**, tras la quita total de N°4 y N°8; el archivo homónimo **sin** el sufijo fue un entregable degradado que no se adoptó). La mención al fixture `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` y a su SHA-256 `a6adc0fa…` en la bitácora de abajo es histórica (registro de una restauración) y se conserva sin alterar. Contraste y cambio: §2.0 de `PLAN_AJUSTE_INTEGRAL_PREVENCION_PDTP_SGSST_2026.md`.
 
 ---
 

@@ -3,13 +3,15 @@
 ## Context
 
 El submódulo `prevencion/pdtp` **digitaliza con altísima fidelidad** el
-`PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx` (fuente vigente desde
-2026-07-22; antes `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`): parsea el
-libro real (`lib/services/prevention-pdtp-catalog.ts`), valida en duro las 87
-actividades / 8 objetivos, reconstruye las 8 hojas oficiales como vistas
-filtradas, el
-cronograma semanal P/E (12 meses × 4 semanas), el KPI de cumplimiento con meta
-90 % y el flujo de firma Elaborado → JDPR → Legal → Activo. La base (P0–P3 de
+`PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (87 actividades).xlsx` (fuente
+canónica congelada desde 2026-07-22 en `PDTP_2026_PROGRAM_SOURCE`; antes
+`PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`): parsea el libro real
+(`lib/services/prevention-pdtp-catalog.ts`), que valida la **estructura**
+—numeración de actividades estrictamente creciente y única, hojas oficiales y
+pares P/E—, mientras el contrato del adaptador (`PDTP_2026_INVARIANTS`) fija las
+87 actividades / 8 objetivos; reconstruye las 8 hojas oficiales como vistas
+filtradas, el cronograma semanal P/E (12 meses × 4 semanas), el KPI de
+cumplimiento con meta 90 % y el flujo de firma Elaborado → JDPR → Legal → Activo. La base (P0–P3 de
 `docs/auditoria/PLAN_PREVENCION.md`) está sólida y con RBAC completo.
 
 El problema no es fidelidad: es que **se usa igual que el Excel**. La tabla

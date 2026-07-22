@@ -8,7 +8,7 @@
 
 **Objetivo:** definir qué falta para que Prevención pueda sustituir las plataformas fragmentadas que usa Chome y convertirse en un sistema integral, trazable y ajustado a su operación de residuos industriales.
 
-**Nota de fuente (2026-07-22):** la fuente de verdad del PDTP es ahora `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx` (**87 actividades**, tras la quita total de N°4 y N°8). Las menciones a `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` y a "89 actividades" en este documento son bitácora histórica y se conservan sin alterar como registro de auditoría. Detalle del contraste y del cambio: §2.0 de `PLAN_AJUSTE_INTEGRAL_PREVENCION_PDTP_SGSST_2026.md`.
+**Nota de fuente (2026-07-22):** la fuente de verdad del PDTP es ahora `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (87 actividades).xlsx` (**87 actividades**, tras la quita total de N°4 y N°8; el archivo homónimo **sin** el sufijo fue un entregable degradado que no se adoptó). Las menciones a `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` y a "89 actividades" en este documento son bitácora histórica y se conservan sin alterar como registro de auditoría. Detalle del contraste y del cambio: §2.0 de `PLAN_AJUSTE_INTEGRAL_PREVENCION_PDTP_SGSST_2026.md`.
 
 ---
 
