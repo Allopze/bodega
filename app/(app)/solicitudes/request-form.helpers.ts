@@ -61,9 +61,16 @@ export function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
 
 export function requestStatusLabel(status: string): string {
   const labels: Record<string, string> = {
-    draft: "Borrador", submitted: "Enviada", approved: "Aprobada",
-    partially_approved: "Aprobada parcial", rejected: "Rechazada",
-    in_purchase: "En OC", closed: "Cerrada", cancelled: "Cancelada", returned: "Devuelta",
+    draft:             "Borrador",
+    submitted:         "Enviada",
+    in_review:         "En revisión",
+    partially_approved: "Aprobada parcial",
+    approved:          "Aprobada",
+    rejected:          "Rechazada",
+    returned:          "Devuelta",
+    in_purchasing:     "En compra",
+    closed:            "Cerrada",
+    cancelled:         "Cancelada",
   }
   return labels[status] ?? status
 }

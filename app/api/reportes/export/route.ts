@@ -1,7 +1,7 @@
 /**
  * GET /api/reportes/export?tipo=<tipo>&from=<date>&to=<date>&faena=<id>&status=<status>
  *
- * Exports the requested report as XLSX with optional filters.
+ * Exports the requested report as Excel with optional filters.
  */
 
 import { type NextRequest, NextResponse } from "next/server"

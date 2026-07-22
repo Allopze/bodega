@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
+import { SignaturePad } from "@/components/ui/signature-pad"
 import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
@@ -217,6 +218,10 @@ export function DeliveryForm({
                 />
               </Field>
             </div>
+
+            <Field label="Firma del trabajador" helper="Opcional. Firma digital de recepción en terreno.">
+              <SignaturePad name="signatureFile" disabled={!selectedItem} />
+            </Field>
 
             <Field label="Notas" htmlFor="deliveryNotes" error={state.fieldErrors?.notes?.[0]}>
               <Textarea

@@ -245,6 +245,7 @@ export default async function Page({
       id: delivery.id,
       code: delivery.code,
       worksiteName: delivery.worksiteId ? (worksiteNameById.get(delivery.worksiteId) ?? "Faena") : "Faena",
+      workerId: delivery.workerId ?? null,
       workerName: delivery.workerId ? (workerNameById.get(delivery.workerId) ?? "Trabajador") : "Trabajador",
       receiverName: delivery.receiverName ?? null,
       itemSummary,
@@ -282,7 +283,16 @@ export default async function Page({
             { label: "Entregas" },
           ]} />
         }
-        actions={deliverableItems.length > 0 ? <DeliveryFormTrigger /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button asChild variant="secondary" size="sm">
+              <a href="/api/entregas/export" download>
+                Exportar Excel
+              </a>
+            </Button>
+            {deliverableItems.length > 0 ? <DeliveryFormTrigger /> : null}
+          </div>
+        }
       />
 
       <div className="flex flex-col gap-6">

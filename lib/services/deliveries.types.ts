@@ -30,6 +30,7 @@ export interface RegisterWorkerEppDeliveryInput {
   receiverName?: string | null
   notes?: string | null
   proofAttachment?: DeliveryAttachmentInput | null
+  signatureAttachment?: DeliveryAttachmentInput | null
   // Return of old/discarded EPP (opcional)
   returnProductId?: string | null
   returnProductNameFree?: string | null

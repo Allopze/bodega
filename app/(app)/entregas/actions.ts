@@ -60,6 +60,9 @@ export async function registerWorkerDeliveryAction(
   const proofResult = await persistProofFile(formData.get("proofFile"))
   if (!proofResult.ok) return { ok: false, message: proofResult.message }
 
+  const sigResult = await persistProofFile(formData.get("signatureFile"))
+  if (!sigResult.ok) return { ok: false, message: sigResult.message }
+
   try {
     await registerWorkerEppDelivery({
       worksiteId,
@@ -71,6 +74,7 @@ export async function registerWorkerDeliveryAction(
       receiverName: receiverName?.trim() || null,
       notes: notes || null,
       proofAttachment: proofResult.attachment,
+      signatureAttachment: sigResult.attachment,
       returnProductId: returnProductId || null,
       returnProductNameFree: returnProductNameFree || null,
       returnQuantity: returnQuantity || null,
@@ -86,6 +90,9 @@ export async function registerWorkerDeliveryAction(
   } catch (e) {
     if (proofResult.absolutePath) {
       await fs.unlink(proofResult.absolutePath).catch(() => undefined)
+    }
+    if (sigResult.absolutePath) {
+      await fs.unlink(sigResult.absolutePath).catch(() => undefined)
     }
     logger.error("[registerWorkerDeliveryAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar entrega" }

@@ -7,6 +7,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
+import { logger } from "@/lib/logger"
 import { deliverItemTx } from "@/lib/services/item-state"
 import { applyMovementTx } from "@/lib/services/stock"
 import type { RegisterWorkerEppDeliveryInput } from "./deliveries.types"
@@ -64,6 +65,15 @@ export async function registerWorkerEppDelivery(
     if (!product || !product.isActive) throw new Error("Producto no disponible")
     if (!product.isEpp) throw new Error("Solo se pueden entregar productos marcados como EPP")
 
+    // B-5: productos EPP sin familia no se cruzan con la matriz de requisitos de prevención.
+    // La entrega continúa (es válida operacionalmente) pero se registra para corrección de datos.
+    if (!product.familyId) {
+      logger.warn(
+        `[registerWorkerEppDelivery] Producto ${product.id} (${product.name}) no tiene familyId. ` +
+        "La entrega se registrará correctamente pero no contribuirá a la cobertura de prevención EPP.",
+      )
+    }
+
     const previousDeliveries = await tx
       .select({ quantity: deliveryItems.quantity })
       .from(deliveryItems)
@@ -99,7 +109,7 @@ export async function registerWorkerEppDelivery(
       worksiteId: input.worksiteId,
       workerId: input.workerId,
       receiverName,
-      signaturePath: null,
+      signaturePath: input.signatureAttachment?.filePath ?? null,
       notes,
       createdAt: now,
     })
@@ -146,6 +156,20 @@ export async function registerWorkerEppDelivery(
         filePath: input.proofAttachment.filePath,
         fileSize: input.proofAttachment.fileSize,
         mimeType: input.proofAttachment.mimeType,
+        uploadedBy: input.deliveredBy,
+        uploadedAt: now,
+      })
+    }
+
+    if (input.signatureAttachment) {
+      await tx.insert(attachments).values({
+        id: nanoid(),
+        entityType: "delivery",
+        entityId: deliveryId,
+        fileName: input.signatureAttachment.fileName,
+        filePath: input.signatureAttachment.filePath,
+        fileSize: input.signatureAttachment.fileSize,
+        mimeType: input.signatureAttachment.mimeType,
         uploadedBy: input.deliveredBy,
         uploadedAt: now,
       })

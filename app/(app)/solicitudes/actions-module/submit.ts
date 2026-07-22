@@ -89,7 +89,7 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     ))
 
     revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+    revalidateTag("badge-counts", { expire: 0 })
     redirect(`${REVALIDATE}/${requestId}`)
   }
 

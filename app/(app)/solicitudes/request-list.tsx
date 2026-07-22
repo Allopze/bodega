@@ -18,6 +18,7 @@ import { useActionState, useTransition } from "react"
 import { deleteRequestAction } from "./actions"
 import { DELETABLE_REQUEST_STATUSES, isOwnerDeletable } from "@/lib/services/requests-delete.constants"
 import { INITIAL_STATE } from "@/components/admin/form-state"
+import { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "@/lib/request-types"
 import type { ActionState } from "@/lib/validation/operations"
 
 export interface RequestRow {
@@ -52,19 +53,6 @@ const URGENCY_DOT: Record<string, string> = {
   critical: "text-[var(--color-danger)]",
 }
 
-const REQUEST_TYPE_LABELS: Record<string, string> = {
-  epp:        "EPP",
-  otro:       "Otro",
-  repuestos:  "Repuestos",
-  servicios:  "Servicios",
-}
-
-const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
-  epp:        "info",
-  otro:       "default",
-  repuestos:  "default",
-  servicios:  "info",
-}
 
 /** Tipos con detalle en su propio vertical (no en /solicitudes/[id]) */
 const DETAIL_BASE: Record<string, string> = {

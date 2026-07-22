@@ -2,7 +2,7 @@
  * Integration tests for GET /api/reportes/export/route.ts.
  *
  * Tests authentication, authorization, report type validation,
- * filter parsing, XLSX response format, and error handling.
+ * filter parsing, Excel response format, and error handling.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
@@ -224,7 +224,7 @@ describe("GET /api/reportes/export", () => {
   // ── Successful response ───────────────────────────────────────────────
 
   describe("successful response", () => {
-    it("returns XLSX with correct content type and disposition", async () => {
+    it("returns Excel with correct content type and disposition", async () => {
       const res = await GET(makeRequest("/api/reportes/export?tipo=gasto_faena"))
 
       expect(res.status).toBe(200)
@@ -236,7 +236,7 @@ describe("GET /api/reportes/export", () => {
       )
     })
 
-    it("returns XLSX buffer as response body", async () => {
+    it("returns Excel buffer as response body", async () => {
       const res = await GET(makeRequest("/api/reportes/export?tipo=gasto_faena"))
 
       const body = await res.arrayBuffer()
@@ -279,7 +279,7 @@ describe("GET /api/reportes/export", () => {
     })
 
     it("returns 500 when buildXlsxBuffer throws", async () => {
-      mockBuildXlsxBuffer.mockRejectedValueOnce(new Error("XLSX generation failed"))
+      mockBuildXlsxBuffer.mockRejectedValueOnce(new Error("Excel generation failed"))
 
       const res = await GET(makeRequest("/api/reportes/export?tipo=gasto_faena"))
 

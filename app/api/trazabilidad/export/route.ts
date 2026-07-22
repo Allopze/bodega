@@ -1,7 +1,7 @@
 /**
  * GET /api/trazabilidad/export?from=<date>&to=<date>&faena=<id>
  *
- * Returns the trazabilidad matrix as an XLSX download with optional filters.
+ * Returns the trazabilidad matrix as an Excel download with optional filters.
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"

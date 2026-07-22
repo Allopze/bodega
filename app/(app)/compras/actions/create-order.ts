@@ -114,6 +114,32 @@ export async function createOrderAction(
   if (activeSuppliers.length !== targetSupplierIds.length) {
     return { ok: false, message: "Uno o más proveedores no están activos o no existen" }
   }
+  const supplierNameMap = new Map(activeSuppliers.map((s) => [s.id, s.name]))
+
+  // Warn if an item's resolved supplier differs from its suggested supplier
+  // without an explicit per-item override by the user.
+  const supplierMismatches: string[] = []
+  for (const item of items) {
+    const dbItem = dbItemMap.get(item.requestItemId)
+    if (!dbItem?.suggestedSupplierId || item.isSupplierOverride) continue
+    const targetSupplierId = supplierIdsByItem.get(item.requestItemId)!
+    if (dbItem.suggestedSupplierId !== targetSupplierId) {
+      const suggestedName = supplierNameMap.get(dbItem.suggestedSupplierId) ?? dbItem.suggestedSupplierId
+      const actualName = supplierNameMap.get(targetSupplierId) ?? targetSupplierId
+      const productName = dbItem.productNameFree ?? `(producto ${item.productId ?? item.requestItemId})`
+      supplierMismatches.push(
+        `"${productName}": sugerido ${suggestedName}, asignado ${actualName}`
+      )
+    }
+  }
+
+  if (supplierMismatches.length > 0) {
+    return {
+      ok: false,
+      message: `Hay ítems con proveedor distinto al sugerido. Revisa la asignación o usa el selector por ítem para forzar un cambio explícito:
+${supplierMismatches.map((m) => `  • ${m}`).join("\n")}`,
+    }
+  }
 
   const groups = new Map<string, typeof items>()
   for (const item of items) {

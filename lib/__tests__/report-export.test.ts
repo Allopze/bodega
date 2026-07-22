@@ -131,7 +131,7 @@ const testReport: ReportData = {
 }
 
 describe("report export helpers", () => {
-  it("builds a parseable XLSX workbook with headers and rows", async () => {
+  it("builds a parseable Excel workbook with headers and rows", async () => {
     const buffer = await buildXlsxBuffer(testReport)
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(buffer) as never)
@@ -276,7 +276,7 @@ describe("report export helpers", () => {
 
   // ── buildXlsxBuffer edge cases ───────────────────────────────────────
 
-  it("builds XLSX with empty rows", async () => {
+  it("builds Excel with empty rows", async () => {
     const report: ReportData = {
       filenameBase: "empty",
       worksheetName: "Empty",
@@ -293,7 +293,7 @@ describe("report export helpers", () => {
     expect(Array.isArray(values) ? values.slice(1) : []).toEqual(["Col A", "Col B"])
   })
 
-  it("builds XLSX with rowLimitApplied flag set", async () => {
+  it("builds Excel with rowLimitApplied flag set", async () => {
     const report: ReportData = {
       filenameBase: "limited",
       worksheetName: "Limited",

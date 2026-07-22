@@ -217,6 +217,7 @@ export function useOcForm({
     includedItems.map((i) => ({
       requestItemId:   i.id,
       supplierId:      i.targetSupplierId || null,
+      isSupplierOverride: !!itemSuppliers[i.id],
       productId:       i.productId,
       productNameFree: i.productNameFree,
       quantity:        i.quantity,

@@ -6,7 +6,7 @@ import { buildTrazabilidadReportData } from "@/lib/services/trazabilidad-export-
 
 vi.mock("@/lib/auth/auth", () => ({ auth: vi.fn() }))
 
-describe("trazabilidad XLSX export", () => {
+describe("trazabilidad Excel export", () => {
   it("builds workbook-compatible report data", async () => {
     const report = buildTrazabilidadReportData([
       {

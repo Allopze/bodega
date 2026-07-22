@@ -60,6 +60,8 @@ vi.mock("./item-editor", () => ({
       <span>{item.productName || "Sin producto"}</span>
       <span data-testid={`item-supplier-${idx}`}>{item.suggestedSupplierId ?? ""}</span>
       <button type="button" onClick={() => onSelectProduct("prod-1")}>Elegir casco</button>
+      <button type="button" onClick={() => onSelectProduct("prod-3")}>Elegir insumo</button>
+      <button type="button" onClick={() => onSelectProduct("prod-4")}>Elegir insumo sin proveedor</button>
     </div>
   ),
   URGENCY_OPTS: [
@@ -102,6 +104,28 @@ const products: ProductOption[] = [
     attributes: [
       { id: "attr-1", name: "Talla", isRequired: true, type: "select", options: '["S","M","L"]' },
     ],
+  },
+  {
+    id: "prod-3",
+    name: "Insumo Aceite",
+    sku: "INS-001",
+    unitOfMeasure: "litro",
+    isEpp: false,
+    categoryName: "Insumos",
+    referencePrice: null,
+    preferredSupplierId: "sup-1",
+    attributes: [],
+  },
+  {
+    id: "prod-4",
+    name: "Insumo Trapo",
+    sku: "INS-002",
+    unitOfMeasure: "kg",
+    isEpp: false,
+    categoryName: "Insumos",
+    referencePrice: null,
+    preferredSupplierId: null,
+    attributes: [],
   },
 ]
 
@@ -282,6 +306,36 @@ describe("RequestForm", () => {
       fireEvent.click(screen.getByRole("button", { name: "Elegir casco" }))
 
       expect(screen.getByTestId("item-supplier-0").textContent).toBe("sup-1")
+    })
+
+    it("uses the selected non-EPP preferred supplier as the suggested supplier", () => {
+      render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          maxFileSizeMb={10}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Elegir insumo" }))
+
+      expect(screen.getByTestId("item-supplier-0").textContent).toBe("sup-1")
+    })
+
+    it("leaves suggestedSupplierId empty for non-EPP products without a preferred supplier", () => {
+      render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          maxFileSizeMb={10}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Elegir insumo sin proveedor" }))
+
+      expect(screen.getByTestId("item-supplier-0").textContent).toBe("")
     })
   })
 })

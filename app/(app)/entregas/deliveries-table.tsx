@@ -9,6 +9,7 @@ export interface DeliveryRow {
   id:           string
   code:         string
   worksiteName: string
+  workerId?:    string | null
   workerName:   string
   receiverName: string | null
   itemSummary:  string
@@ -45,7 +46,16 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
                 <User size={18} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" />
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{delivery.code}</p>
-                  <p className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                  {delivery.workerId ? (
+                    <a
+                      href={`/trazabilidad/trabajador/${delivery.workerId}`}
+                      className="mt-0.5 block truncate text-sm font-medium text-[var(--color-primary)] hover:underline"
+                    >
+                      {delivery.workerName}
+                    </a>
+                  ) : (
+                    <p className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                  )}
                   {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
                     <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
                   )}

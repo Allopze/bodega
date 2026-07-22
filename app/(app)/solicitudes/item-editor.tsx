@@ -17,6 +17,8 @@ import { VariantQuantityGrid } from "./variant-quantity-grid"
 import { ItemEditorAttributes } from "./item-editor-attributes"
 import { groupProductVariants } from "@/lib/products/variant-grouping"
 import { URGENCY_OPTS } from "./request-form.constants"
+import { getWorkerEppStatusAction, type WorkerEppStatusResult } from "./actions"
+import { formatDate } from "@/lib/utils"
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -50,6 +52,16 @@ export function ItemEditor({
   const variants = selectedProduct
     ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
     : []
+
+  const [statusInfo, setStatusInfo] = React.useState<WorkerEppStatusResult | null>(null)
+
+  React.useEffect(() => {
+    if (requestType === "epp" && item.workerId && item.productId) {
+      getWorkerEppStatusAction(item.workerId, item.productId).then(setStatusInfo)
+    } else {
+      setStatusInfo(null)
+    }
+  }, [requestType, item.workerId, item.productId])
 
   return (
     <div className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4 space-y-4">
@@ -170,6 +182,21 @@ export function ItemEditor({
             <p className="mt-1 text-[11px] text-(--color-text-subtle)">
               Usando tallas registradas para {item.workerName}
             </p>
+          )}
+
+          {/* F-6: Advertencia de solicitud duplicada */}
+          {statusInfo?.activeRequest && (
+            <div className="mt-2 rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-2 text-xs text-[var(--color-warning-ink)] font-medium">
+              ⚠️ Ya existe la solicitud <strong>{statusInfo.activeRequest.code}</strong> en trámite para este trabajador.
+            </div>
+          )}
+
+          {/* F-2: Vigencia / Entrega previa */}
+          {statusInfo?.lastDelivery && (
+            <div className="mt-1 text-xs">
+              <span className="text-[var(--color-text-subtle)]">Última entrega: </span>
+              <span className="font-medium text-[var(--color-text)]">{formatDate(statusInfo.lastDelivery.deliveredAt)}</span>
+            </div>
           )}
         </div>
       )}

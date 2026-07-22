@@ -9,12 +9,14 @@ import { db } from "@/db"
 import {
   receipts, receiptItems,
   purchaseOrders, purchaseOrderItems,
+  purchaseRequestItems,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { receiveItemTx } from "./item-state"
 import { applyMovementTx } from "./stock"
+import { notifyManyUser, notifyAfterCommit } from "./notifications"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -165,6 +167,25 @@ export async function registerReceipt(
             fullReceived,
             userEmail: input.userEmail,
           })
+
+          // F-7: notify the original requester when the item is fully received at faena.
+          if (fullReceived) {
+            const reqItem = await tx.query.purchaseRequestItems.findFirst({
+              where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
+              with: { request: { columns: { requesterId: true, code: true, id: true } } },
+            })
+            const requesterId = reqItem?.request?.requesterId
+            if (requesterId) {
+              notifyAfterCommit(() => notifyManyUser([requesterId], {
+                type: "receipt_done",
+                title: `Tu EPP llegó a faena`,
+                body: `El ítem de tu solicitud ${reqItem?.request?.code ?? ""} fue recepcionado en faena y está disponible para entrega.`,
+                entityType: "purchase_request",
+                entityId: reqItem?.request?.id ?? "",
+                entityHref: `/solicitudes/${reqItem?.request?.id ?? ""}`,
+              }))
+            }
+          }
 
           if (worksiteId && lockedOcItem.productId) {
             await applyMovementTx(tx, {

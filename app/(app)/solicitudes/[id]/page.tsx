@@ -104,6 +104,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       .select({
         productId:  productSuppliers.productId,
         supplierId: productSuppliers.supplierId,
+        isPreferred: productSuppliers.isPreferred,
       })
       .from(productSuppliers)
       .orderBy(desc(productSuppliers.isPreferred)),
@@ -158,8 +159,15 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
 
   const activeSupplierIds = new Set(allSuppliers.map((supplier) => supplier.id))
   const preferredSupplierByProduct = new Map<string, string>()
+  // First pass: prefer suppliers explicitly marked as isPreferred
   for (const row of productSupplierRows) {
-    if (activeSupplierIds.has(row.supplierId) && !preferredSupplierByProduct.has(row.productId)) {
+    if (row.isPreferred && activeSupplierIds.has(row.supplierId) && !preferredSupplierByProduct.has(row.productId)) {
+      preferredSupplierByProduct.set(row.productId, row.supplierId)
+    }
+  }
+  // Second pass: fill gaps with any active non-preferred supplier
+  for (const row of productSupplierRows) {
+    if (!preferredSupplierByProduct.has(row.productId) && activeSupplierIds.has(row.supplierId)) {
       preferredSupplierByProduct.set(row.productId, row.supplierId)
     }
   }

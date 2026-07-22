@@ -17,8 +17,12 @@ import {
 const AUTOSAVE_INTERVAL_MS = 60_000
 
 const SIZE_FIELD_MAP: Record<string, keyof Pick<WorkerOption, "sizeTop" | "sizeBottom" | "sizeShoe" | "sizeGloves" | "sizeHelmet">> = {
-  Talla: "sizeTop",
-  "Talla calzado": "sizeShoe",
+  Talla:              "sizeTop",
+  "Talla superior":   "sizeTop",
+  "Talla inferior":   "sizeBottom",
+  "Talla calzado":    "sizeShoe",
+  "Talla guantes":    "sizeGloves",
+  "Talla casco":      "sizeHelmet",
 }
 
 function suggestSize(attributeName: string, worker: WorkerOption | undefined): string | null {
@@ -210,7 +214,7 @@ export function useRequestForm({
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
       const attrs = buildAttrsFromProduct(prod)
-      return { ...i, productId: prod.id, productNameFree: "", productName: prod.name, unitOfMeasure: prod.unitOfMeasure, isEpp: prod.isEpp, suggestedSupplierId: prod.isEpp ? (prod.preferredSupplierId ?? "") : "", supplierHint: "", attributes: attrs, variantQuantities: {}, showAttrs: attrs.length > 0 }
+      return { ...i, productId: prod.id, productNameFree: "", productName: prod.name, unitOfMeasure: prod.unitOfMeasure, isEpp: prod.isEpp, suggestedSupplierId: prod.preferredSupplierId ?? "", supplierHint: "", attributes: attrs, variantQuantities: {}, showAttrs: attrs.length > 0 }
     }))
   }, [products])
 
