@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
+import { SelectableCard, SelectableCardDescription, SelectableCardTitle } from "@/components/ui/selectable-card"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { createPdtpProgramAction } from "../actions"
 
@@ -275,39 +276,16 @@ export function PdtpCreateProgramForm({
             <input type="hidden" name="templateVersionId" value={templateFrom} />
 
             {/* Opción vacía */}
-            <button
-              type="button"
-              role="radio"
-              aria-checked={!copyFrom && !templateFrom}
+            <SelectableCard
+              selected={!copyFrom && !templateFrom}
               onClick={() => { setCopyFrom(""); setTemplateFrom("") }}
-              className={cn(
-                "w-full rounded-[var(--radius)] border p-3 text-left transition-all",
-                !copyFrom && !templateFrom
-                  ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
-                  : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
-              )}
+              icon={<ClipboardText size={13} />}
             >
-              <div className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold",
-                    !copyFrom && !templateFrom
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                      : "border-[var(--color-border)] text-[var(--color-text-faint)]",
-                  )}
-                >
-                  <ClipboardText size={13} />
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-[var(--color-text)]">
-                    Programa vacío
-                  </p>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Empieza con una vista general y construye objetivos, actividades y frecuencias sin depender del Excel.
-                  </p>
-                </div>
-              </div>
-            </button>
+              <SelectableCardTitle>Programa vacío</SelectableCardTitle>
+              <SelectableCardDescription>
+                Empieza con una vista general y construye objetivos, actividades y frecuencias sin depender del Excel.
+              </SelectableCardDescription>
+            </SelectableCard>
 
             {templates.length > 0 && (
               <div className="space-y-2" role="radiogroup" aria-label="Plantillas publicadas">
@@ -315,27 +293,19 @@ export function PdtpCreateProgramForm({
                 {templates.map((template) => {
                   const selected = templateFrom === template.versionId
                   return (
-                    <button
+                    <SelectableCard
                       key={template.versionId}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
+                      selected={selected}
                       onClick={() => { setTemplateFrom(template.versionId); setCopyFrom("") }}
-                      className={cn(
-                        "w-full rounded-[var(--radius)] border p-3 text-left transition-all",
-                        selected
-                          ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
-                          : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]",
-                      )}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-medium text-[var(--color-text)]">{template.name}</p>
-                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">{template.description || "Base reutilizable publicada"} · versión {template.version}</p>
+                          <SelectableCardTitle>{template.name}</SelectableCardTitle>
+                          <SelectableCardDescription className="mt-1">{template.description || "Base reutilizable publicada"} · versión {template.version}</SelectableCardDescription>
                         </div>
                         <Badge variant="info" size="sm">Plantilla</Badge>
                       </div>
-                    </button>
+                    </SelectableCard>
                   )
                 })}
               </div>
@@ -353,56 +323,36 @@ export function PdtpCreateProgramForm({
                 }[p.status] ?? { label: p.status, variant: "default" as const }
 
                 return (
-                  <button
+                  <SelectableCard
                     key={p.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={isSelected}
+                    selected={isSelected}
                     onClick={() => { setCopyFrom(p.id); setTemplateFrom("") }}
-                    className={cn(
-                      "w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm",
-                      isSelected
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
-                        : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]",
-                    )}
+                    className="hover:shadow-sm"
+                    icon={p.year.toString().slice(-2)}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <span
-                          className={cn(
-                            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
-                            isSelected
-                              ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                              : "border-[var(--color-border)] text-[var(--color-text-faint)]",
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <SelectableCardTitle>{p.title}</SelectableCardTitle>
+                          <Badge variant={statusBadge.variant} size="sm">
+                            {statusBadge.label}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
+                          <span>Año {p.year} · v{p.version}</span>
+                          <span>{p.activityCount} actividades</span>
+                          {p.compliancePercent !== null && (
+                            <span
+                              className={cn(
+                                "font-medium",
+                                p.compliancePercent >= 80
+                                  ? "text-[var(--color-success)]"
+                                  : "text-[var(--color-signal)]",
+                              )}
+                            >
+                              {p.compliancePercent}% cumplimiento
+                            </span>
                           )}
-                        >
-                          {p.year.toString().slice(-2)}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="truncate text-sm font-medium text-[var(--color-text)]">
-                              {p.title}
-                            </p>
-                            <Badge variant={statusBadge.variant} size="sm">
-                              {statusBadge.label}
-                            </Badge>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
-                            <span>Año {p.year} · v{p.version}</span>
-                            <span>{p.activityCount} actividades</span>
-                            {p.compliancePercent !== null && (
-                              <span
-                                className={cn(
-                                  "font-medium",
-                                  p.compliancePercent >= 80
-                                    ? "text-[var(--color-success)]"
-                                    : "text-[var(--color-signal)]",
-                                )}
-                              >
-                                {p.compliancePercent}% cumplimiento
-                              </span>
-                            )}
-                          </div>
                         </div>
                       </div>
                       {isSelected && (
@@ -413,7 +363,7 @@ export function PdtpCreateProgramForm({
                         />
                       )}
                     </div>
-                  </button>
+                  </SelectableCard>
                 )
               })}
             </div>}

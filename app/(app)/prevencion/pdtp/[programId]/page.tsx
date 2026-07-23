@@ -186,7 +186,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
       />
 
       <div className="space-y-4">
-        {/* Program lifecycle status block */}
+        {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
         <ProgramLifecycleControls
           program={program}
           permissions={{ canSubmitReview, canApprove, canSignLegal, canActivate, canManageLifecycle }}
@@ -201,9 +201,9 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
               decidedAt: step.decision.decidedAt,
             } : null,
           }))}
-        />
-
-        <PdtpDocumentMetadataSection programId={programId} canReconcile={canManageProgram && program.status === "draft"} />
+        >
+          <PdtpDocumentMetadataSection programId={programId} canReconcile={canManageProgram && program.status === "draft"} />
+        </ProgramLifecycleControls>
 
         {/* Compliance indicators */}
         {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} asOf={new Date().toISOString()} />}
@@ -250,12 +250,17 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
             />
           </div>
         ) : (
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5">
-            <p className="font-medium text-[var(--color-text)]">Catálogo PDTP no cargado</p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Agrega actividades al programa desde el editor para comenzar.
-            </p>
-          </div>
+          <EmptyState
+            compact
+            align="start"
+            title="Catálogo PDTP no cargado"
+            description="Agrega actividades al programa desde el editor para comenzar."
+            action={canManageProgram && program.status === "draft" ? (
+              <Button asChild size="sm">
+                <Link href={`/prevencion/pdtp/${programId}/editar`}>Ir al editor</Link>
+              </Button>
+            ) : undefined}
+          />
         )}
 
         {/* Change log */}
@@ -292,7 +297,7 @@ async function PdtpDocumentMetadataSection({ programId, canReconcile }: { progra
   if (metadata.history.length === 0 && metadata.roleLegend.length === 0) return null
 
   return (
-    <details className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <details className="border-t border-[var(--color-border)]">
       <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[var(--color-text)] marker:hidden">
         Historia y referencias del documento importado
         <span className="ml-2 font-normal text-[var(--color-text-muted)]">
