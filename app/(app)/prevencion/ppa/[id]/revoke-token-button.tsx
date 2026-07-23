@@ -1,18 +1,17 @@
 "use client"
 
 import * as React from "react"
-import { useActionState } from "react"
+import { useActionState, useTransition } from "react"
 import { Prohibit } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { revokePpaTokenAction } from "../actions"
 import type { ActionState } from "@/lib/validation/ppa"
 
 export function RevokeTokenButton({ ppaId, revoked }: { ppaId: string; revoked: boolean }) {
   const [open, setOpen] = React.useState(false)
-  const [, action, pending] = useActionState<ActionState, FormData>(revokePpaTokenAction, { ok: false, message: "" })
+  const [, action] = useActionState<ActionState, FormData>(revokePpaTokenAction, { ok: false, message: "" })
+  const [pending, startTransition] = useTransition()
 
   if (revoked) {
     return (
@@ -22,32 +21,32 @@ export function RevokeTokenButton({ ppaId, revoked }: { ppaId: string; revoked: 
     )
   }
 
+  function handleConfirm() {
+    const fd = new FormData()
+    fd.set("id", ppaId)
+    startTransition(() => {
+      action(fd)
+      setOpen(false)
+    })
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="destructive" size="sm" className="mt-2">
-          <Prohibit size={14} />
-          Revocar acceso público
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>¿Revocar acceso público?</DialogTitle>
-          <DialogDescription>
-            El enlace compartido o QR dejará de mostrar el resultado. El caso
-            permanece registrado internamente.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>Cancelar</Button>
-          <form action={action}>
-            <input type="hidden" name="id" value={ppaId} />
-            <Button type="submit" variant="destructive" size="sm" disabled={pending}>
-              {pending ? "Revocando..." : "Sí, revocar acceso"}
-            </Button>
-          </form>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Button variant="destructive" size="sm" className="mt-2" onClick={() => setOpen(true)} disabled={pending}>
+        <Prohibit size={14} className="mr-1" />
+        Revocar acceso público
+      </Button>
+
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="¿Revocar acceso público?"
+        description="El enlace compartido o QR dejará de mostrar el resultado. El caso permanece registrado internamente."
+        confirmLabel="Sí, revocar acceso"
+        variant="destructive"
+        loading={pending}
+        onConfirm={handleConfirm}
+      />
+    </>
   )
 }

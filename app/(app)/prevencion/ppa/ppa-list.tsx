@@ -5,26 +5,21 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { MagnifyingGlass, ShieldCheck } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
+import { StateBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
 import {
   TableRoot, Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table"
 import { EmptyState } from "@/components/ui/empty-state"
-import { DatePicker } from "@/components/ui/date-picker"
-import {
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
-} from "@/components/ui/select"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
+import { WorksiteSelect } from "@/components/ui/worksite-select"
 import { Pagination } from "@/components/ui/pagination"
 import { cn, formatDateTime } from "@/lib/utils"
 import type { PpaRow, PpaStats } from "@/lib/services/ppa"
-import { estadoPpaLabel, estadoPpaBadgeVariant } from "@/lib/ppa/badges"
 import { tipoTrabajoLabel } from "@/lib/ppa/types"
 import { listPpaAction, type PpaListClientFilters } from "./actions"
 import { buildPpaDetailHref, buildPpaListFilters, buildPpaListHref, type PpaListFilterState } from "./list-filters"
 
-// Un único control de estado: estas pestañas. (Antes había además un <Select> que
-// filtraba el mismo campo — la misma dimensión representada dos veces.) `countKey`
-// apunta al contador en PpaStats; los estados sin contador propio no muestran número.
 const QUICK_FILTERS: { value: string; label: string; tone?: "signal"; countKey?: keyof PpaStats }[] = [
   { value: "",              label: "Todos",         countKey: "total" },
   { value: "pendientes",    label: "Por revisar",   tone: "signal", countKey: "pendientes" },
@@ -113,13 +108,11 @@ export function PpaList({
     [filterState],
   )
 
-  // Browser navigation and shared links restore the list exactly as it was.
   React.useEffect(() => {
     firstRender.current = true
     dispatch({ type: "sync", rows: initialRows, total: initialTotal, page: initialPage, filters: initialFilterState })
   }, [initialRows, initialTotal, initialPage, initialFilterState])
 
-  // Re-consulta server-side cuando cambian filtros (con debounce) o página.
   React.useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return }
     const requestId = ++latestRequestIdRef.current
@@ -139,7 +132,6 @@ export function PpaList({
     return () => clearTimeout(handle)
   }, [filters, page, pageSize, router, filterState])
 
-  // Cambiar un filtro vuelve a la primera página.
   function onFilterChange(patch: Partial<PpaListFilterState>) {
     dispatch({ type: "filters", patch })
   }
@@ -208,30 +200,21 @@ export function PpaList({
         </div>
 
         {worksiteOptions.length > 1 && (
-          <Select value={worksiteId || "all"} onValueChange={(v) => onFilterChange({ worksiteId: v === "all" ? "" : v })}>
-            <SelectTrigger className="w-44" aria-label="Filtrar por faena">
-              <SelectValue placeholder="Faena" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las faenas</SelectItem>
-              {worksiteOptions.map((w) => (
-                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <WorksiteSelect
+            worksites={worksiteOptions}
+            value={worksiteId}
+            onChange={(val) => onFilterChange({ worksiteId: val })}
+            triggerClassName="w-44 h-8 text-xs"
+          />
         )}
 
-        <DatePicker
-          value={dateFrom}
-          onChange={(iso) => onFilterChange({ dateFrom: iso })}
-          className="w-[9.5rem]"
-          placeholder="Desde"
-        />
-        <DatePicker
-          value={dateTo}
-          onChange={(iso) => onFilterChange({ dateTo: iso })}
-          className="w-[9.5rem]"
-          placeholder="Hasta"
+        <DateRangePicker
+          fromValue={dateFrom}
+          toValue={dateTo}
+          onFromChange={(iso) => onFilterChange({ dateFrom: iso })}
+          onToChange={(iso) => onFilterChange({ dateTo: iso })}
+          className="flex items-center gap-2"
+          pickerClassName="w-[9.5rem] h-8 text-xs"
         />
 
         {filtersActive && (
@@ -312,9 +295,7 @@ export function PpaList({
                       </TableCell>
                       <TableCell>
                         <Link href={href} className="block">
-                          <Badge variant={estadoPpaBadgeVariant(r.estado)} size="sm">
-                            {estadoPpaLabel(r.estado)}
-                          </Badge>
+                          <StateBadge state={r.estado} entity="ppa" size="sm" />
                         </Link>
                       </TableCell>
                     </TableRow>
@@ -341,9 +322,7 @@ export function PpaList({
                       <Badge variant="warning" size="sm" className="ml-2">Manual</Badge>
                     )}
                   </span>
-                  <Badge variant={estadoPpaBadgeVariant(r.estado)} size="sm">
-                    {estadoPpaLabel(r.estado)}
-                  </Badge>
+                  <StateBadge state={r.estado} entity="ppa" size="sm" />
                 </div>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                   {tipoTrabajoLabel(r.tipoTrabajo)} · {r.worksiteName ?? "—"}
