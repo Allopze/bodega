@@ -1,7 +1,10 @@
 import * as React from "react"
 import { Clock, ArrowRight, User } from "@phosphor-icons/react/dist/ssr"
 import { formatDate } from "@/lib/utils"
-import { REQUEST_STATE_META, OC_STATE_META, ITEM_STATE_META, type RequestStatus, type OcStatus } from "./state-badge"
+import {
+  REQUEST_STATE_META, OC_STATE_META, ITEM_STATE_META, PPA_STATE_META, FUEL_STATE_META,
+  type RequestStatus, type OcStatus,
+} from "./state-badge"
 import type { ItemStatus } from "@/lib/services/item-state"
 
 export interface TimelineEvent {
@@ -15,30 +18,41 @@ export interface TimelineEvent {
   userEmail:  string | null
 }
 
+export type TimelineEntityType = "request" | "oc" | "item" | "ppa" | "fuel_log" | "prevention" | "generic"
+
 interface EntityTimelineProps {
-  entityType: "request" | "oc" | "item"
+  entityType: TimelineEntityType
   events:     TimelineEvent[]
+  title?:     string
+  description?: string
+  className?: string
 }
 
-function getStatusLabel(status: string, entityType: "request" | "oc" | "item") {
-  if (entityType === "request") {
-    return REQUEST_STATE_META[status as RequestStatus]?.label ?? status
+function getStatusLabel(status: string, entityType: TimelineEntityType) {
+  switch (entityType) {
+    case "request":  return REQUEST_STATE_META[status as RequestStatus]?.label ?? status
+    case "oc":       return OC_STATE_META[status as OcStatus]?.label ?? status
+    case "ppa":      return PPA_STATE_META[status]?.label ?? status
+    case "fuel_log": return FUEL_STATE_META[status]?.label ?? status
+    case "item":     return ITEM_STATE_META[status as ItemStatus]?.label ?? status
+    default:         return status
   }
-  if (entityType === "item") {
-    return ITEM_STATE_META[status as ItemStatus]?.label ?? status
-  }
-  return OC_STATE_META[status as OcStatus]?.label ?? status
 }
 
-const EntityTimelineInner = React.memo(function EntityTimelineInner({ entityType, events }: EntityTimelineProps) {
-
+const EntityTimelineInner = React.memo(function EntityTimelineInner({
+  entityType,
+  events,
+  title = "Historial de cambios",
+  description = "Registro de transiciones y auditoría",
+  className,
+}: EntityTimelineProps) {
   return (
-    <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+    <section className={`rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] ${className ?? ""}`}>
       <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-4 py-3">
         <div>
-          <h2 className="text-h2">Historial de cambios</h2>
+          <h2 className="text-h2">{title}</h2>
           <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-            Registro de transiciones y auditoría
+            {description}
           </p>
         </div>
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]">
@@ -54,7 +68,7 @@ const EntityTimelineInner = React.memo(function EntityTimelineInner({ entityType
             {events.map((event) => {
               const labelFrom = event.fromStatus ? getStatusLabel(event.fromStatus, entityType) : null
               const labelTo   = getStatusLabel(event.toStatus, entityType)
-              
+
               return (
                 <div key={event.id} className="relative group">
                   {/* Timeline dot */}

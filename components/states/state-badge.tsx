@@ -12,11 +12,7 @@ interface StateMeta {
   family:  "neutral" | "success" | "warning" | "signal" | "info" | "danger"
 }
 
-/** Unified state vocabulary — every state in the system maps here.
- *  Label is in Spanish (es-CL). Variant drives the color family.
- *  The "signal" variant (chome-orange) is reserved ONLY for
- *  the never-miss alert state: pending_purchase.
- */
+/** Unified state vocabulary — every state in the system maps here. */
 const ITEM_STATE_META: Record<ItemStatus, StateMeta> = {
   draft:               { label: "Borrador",           variant: "default",  family: "neutral"  },
   requested:           { label: "Solicitado",          variant: "default",  family: "neutral"  },
@@ -88,8 +84,31 @@ export const FEEDBACK_TIPO_LABELS: Record<FeedbackTipo, string> = {
   sugerencia: "Sugerencia",
 }
 
+/* ── PPA states ──────────────────────────────────────────────────────────── */
+const PPA_STATE_META: Record<string, StateMeta> = {
+  submitted:     { label: "Por revisar",       variant: "warning", family: "warning" },
+  autorizado:    { label: "Autorizado",        variant: "success", family: "success" },
+  detenido:      { label: "Detenido",          variant: "danger",  family: "danger"  },
+  rechazado:     { label: "Rechazado",         variant: "danger",  family: "danger"  },
+  aprobado_auto: { label: "Aprob. auto",       variant: "info",    family: "info"    },
+  en_correccion: { label: "En corrección",     variant: "warning", family: "warning" },
+  cerrado:       { label: "Cerrado",           variant: "default", family: "neutral" },
+}
+
+/* ── Combustibles states ─────────────────────────────────────────────────── */
+const FUEL_STATE_META: Record<string, StateMeta> = {
+  submitted:   { label: "Recibida",    variant: "info",    family: "info"    },
+  observed:    { label: "Observada",   variant: "warning", family: "warning" },
+  validated:   { label: "Validada",    variant: "success", family: "success" },
+  voided:      { label: "Anulada",     variant: "danger",  family: "danger"  },
+  draft:       { label: "Borrador",    variant: "default", family: "neutral" },
+  registered:  { label: "Registrada",  variant: "info",    family: "info"    },
+  reconciled:  { label: "Conciliada",  variant: "success", family: "success" },
+  cancelled:   { label: "Anulada",     variant: "danger",  family: "danger"  },
+}
+
 /* ── StateBadge component ────────────────────────────────────────────────── */
-type EntityType = "item" | "request" | "oc" | "feedback"
+type EntityType = "item" | "request" | "oc" | "feedback" | "ppa" | "fuel_log" | "fleet" | "prevention"
 
 interface StateBadgeProps {
   state:      string
@@ -104,6 +123,8 @@ function getStateMeta(state: string, entity: EntityType): StateMeta {
     case "request":  return REQUEST_STATE_META[state as RequestStatus]   ?? { label: state, variant: "default", family: "neutral" }
     case "oc":       return OC_STATE_META[state as OcStatus]             ?? { label: state, variant: "default", family: "neutral" }
     case "feedback": return FEEDBACK_ESTADO_META[state as FeedbackEstado] ?? { label: state, variant: "default", family: "neutral" }
+    case "ppa":      return PPA_STATE_META[state]                        ?? { label: state, variant: "default", family: "neutral" }
+    case "fuel_log": return FUEL_STATE_META[state]                       ?? { label: state, variant: "default", family: "neutral" }
     default:         return ITEM_STATE_META[state as ItemStatus]          ?? { label: state, variant: "default", family: "neutral" }
   }
 }
@@ -122,7 +143,6 @@ export function StateBadge({
       size={size}
       dot={dot}
       className={cn(
-        // Signal states are visually louder — add a slightly heavier border
         meta.family === "signal" && "border-[1.5px]",
         className,
       )}
@@ -133,4 +153,4 @@ export function StateBadge({
 }
 
 /* ── Exports for external use ─────────────────────────────────────────────── */
-export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META }
+export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, PPA_STATE_META, FUEL_STATE_META }
