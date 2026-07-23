@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { ListDashes, Rows } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -335,21 +336,9 @@ export function PdtpDensityToggle({
         aria-label={density === "compact" ? "Cambiar a vista cómoda" : "Cambiar a vista compacta"}
       >
         {density === "compact" ? (
-          // Rows spacious icon
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-            <rect x="1" y="2" width="12" height="2.5" rx="0.5" fill="currentColor" />
-            <rect x="1" y="5.75" width="12" height="2.5" rx="0.5" fill="currentColor" />
-            <rect x="1" y="9.5" width="12" height="2.5" rx="0.5" fill="currentColor" />
-          </svg>
+          <Rows size={14} aria-hidden />
         ) : (
-          // Rows compact icon
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-            <rect x="1" y="1.5" width="12" height="1.5" rx="0.5" fill="currentColor" />
-            <rect x="1" y="4.25" width="12" height="1.5" rx="0.5" fill="currentColor" />
-            <rect x="1" y="7" width="12" height="1.5" rx="0.5" fill="currentColor" />
-            <rect x="1" y="9.75" width="12" height="1.5" rx="0.5" fill="currentColor" />
-            <rect x="1" y="12.5" width="12" height="0" rx="0.5" fill="currentColor" />
-          </svg>
+          <ListDashes size={14} aria-hidden />
         )}
       </button>
     </Tooltip>

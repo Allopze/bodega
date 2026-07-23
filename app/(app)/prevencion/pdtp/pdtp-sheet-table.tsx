@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { NotePencil } from "@phosphor-icons/react"
 import {
   Table,
   TableBody,
@@ -217,10 +218,11 @@ export function PdtpSheetTable({
                               <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
                               {activity.notes && (
                                 <p
-                                  className="mt-1 text-[11px] italic text-[var(--color-text-faint)]"
+                                  className="mt-1 flex items-start gap-1 text-[11px] italic text-[var(--color-text-faint)]"
                                   title={activity.notes}
                                 >
-                                  📝 {activity.notes.length > 100 ? `${activity.notes.slice(0, 100)}…` : activity.notes}
+                                  <NotePencil size={12} className="mt-0.5 shrink-0" aria-hidden />
+                                  <span>{activity.notes.length > 100 ? `${activity.notes.slice(0, 100)}…` : activity.notes}</span>
                                 </p>
                               )}
                               {worksiteId && activity.executions.length > 0 && (

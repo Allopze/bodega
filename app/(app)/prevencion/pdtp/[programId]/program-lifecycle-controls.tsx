@@ -75,10 +75,14 @@ export function ProgramLifecycleControls({
   program,
   permissions,
   approvalSteps,
+  children,
 }: {
   program: ProgramLifecycle
   permissions: LifecyclePermissions
   approvalSteps?: ApprovalStepProgress[]
+  /** Sección adicional (p. ej. metadata del documento importado) que se
+   *  pliega dentro de la misma tarjeta en vez de vivir en un bloque aparte. */
+  children?: React.ReactNode
 }) {
   const [pending, startTransition] = React.useTransition()
   const [error, setError] = React.useState<string | null>(null)
@@ -205,6 +209,8 @@ export function ProgramLifecycleControls({
       </div>
 
       {error && <p role="alert" className="border-t border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-4 py-2 text-sm text-[var(--color-danger-ink)]">{error}</p>}
+
+      {children}
     </section>
   )
 }
