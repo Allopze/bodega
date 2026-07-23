@@ -8,7 +8,13 @@ import {
   addPreventionIncidentEvidence,
   authorizePreventionIncidentRestart,
   classifyIncidentPersonForIndicators,
+  confirmIncidentDiffusion,
+  createPreliminaryReport,
   createPreventionIncidentCapa,
+  markIncidentDiffusion,
+  publishOnePageDiffusion,
+  recordBiweeklyFollowup,
+  recordIncidentStatement,
   recordPreventionIncidentNotification,
   reportPreventionIncident,
   savePreventionIncidentInvestigation,
@@ -159,6 +165,100 @@ export async function classifyIncidentPersonForIndicatorsAction(input: unknown):
     return { ok: true, message: "Clasificación para indicadores actualizada" }
   } catch (error) {
     return fail(error, "No se pudo actualizar la clasificación")
+  }
+}
+
+export async function createPreliminaryReportAction(args: { incidentId: string; preliminaryReportText: string }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:investigate")
+  if (guard.error) return guard.error
+  try {
+    const result = await createPreliminaryReport({ ...args, access: access(guard.session) })
+    refresh(result.incidentId)
+    return { ok: true, message: "Informe preliminar (3h) registrado y acreditado en PDTP" }
+  } catch (error) {
+    return fail(error, "No se pudo registrar el informe preliminar")
+  }
+}
+
+export async function recordIncidentStatementAction(args: {
+  incidentId: string
+  kind: "involved" | "witness" | "cphs"
+  deponentName: string
+  deponentRole?: string
+  statementText: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:investigate")
+  if (guard.error) return guard.error
+  try {
+    await recordIncidentStatement({ ...args, access: access(guard.session) })
+    refresh(args.incidentId)
+    return { ok: true, message: "Declaración firmada registrada y acreditada en PDTP" }
+  } catch (error) {
+    return fail(error, "No se pudo registrar la declaración")
+  }
+}
+
+export async function publishOnePageDiffusionAction(args: {
+  incidentId: string
+  onePageSummary: string
+  rootCauseText: string
+  actionPlanSummary: string
+  evidenceRef?: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:investigate")
+  if (guard.error) return guard.error
+  try {
+    await publishOnePageDiffusion({ ...args, access: access(guard.session) })
+    refresh(args.incidentId)
+    return { ok: true, message: "ONE PAGE RE-20-06 publicado y acreditado en PDTP" }
+  } catch (error) {
+    return fail(error, "No se pudo publicar el ONE PAGE")
+  }
+}
+
+export async function recordBiweeklyFollowupAction(args: {
+  incidentId: string
+  followupDate: string
+  note: string
+  evidenceRef?: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:investigate")
+  if (guard.error) return guard.error
+  try {
+    await recordBiweeklyFollowup({ ...args, access: access(guard.session) })
+    refresh(args.incidentId)
+    return { ok: true, message: "Seguimiento quincenal registrado y acreditado en PDTP" }
+  } catch (error) {
+    return fail(error, "No se pudo registrar el seguimiento quincenal")
+  }
+}
+
+export async function markIncidentDiffusionAction(args: {
+  incidentId: string
+  kind: "shift" | "corrective_measures"
+  summary: string
+  evidenceRef?: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:investigate")
+  if (guard.error) return guard.error
+  try {
+    await markIncidentDiffusion({ ...args, access: access(guard.session) })
+    refresh(args.incidentId)
+    return { ok: true, message: "Difusión marcada; queda pendiente de confirmación del supervisor" }
+  } catch (error) {
+    return fail(error, "No se pudo marcar la difusión")
+  }
+}
+
+export async function confirmIncidentDiffusionAction(args: { incidentId: string; diffusionId: string }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:close")
+  if (guard.error) return guard.error
+  try {
+    await confirmIncidentDiffusion({ diffusionId: args.diffusionId, access: access(guard.session) })
+    refresh(args.incidentId)
+    return { ok: true, message: "Difusión confirmada y acreditada en PDTP" }
+  } catch (error) {
+    return fail(error, "No se pudo confirmar la difusión")
   }
 }
 

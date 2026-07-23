@@ -19,10 +19,12 @@ import {
 } from "@/lib/prevention/incidents"
 import {
   getPreventionIncidentDetail,
+  listIncidentDiffusions,
   listIncidentNotificationResponsibles,
   type IncidentStatus,
 } from "@/lib/services/prevention-incidents"
 import { IncidentWorkflowPanel } from "./incident-workflow-panel"
+import { RE20Panel } from "./re20-panel"
 
 export const metadata: Metadata = { title: "Detalle de incidente" }
 
@@ -31,8 +33,10 @@ type PageProps = {
   searchParams: Promise<{ sensitive?: string; purpose?: string }>
 }
 
+const dateTimeFormatter = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" })
+
 function dateTime(value: string | null) {
-  return value ? new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—"
+  return value ? dateTimeFormatter.format(new Date(value)) : "—"
 }
 
 export default async function IncidentDetailPage({ params, searchParams }: PageProps) {
@@ -61,6 +65,14 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
     : []
   const canSensitive = can(session, "prevention:incidents:view_sensitive")
   const canExport = can(session, "prevention:incidents:export")
+  const diffusions = (await listIncidentDiffusions(incident.id)).map((d) => ({
+    id: d.id,
+    kind: d.kind as "shift" | "corrective_measures",
+    summary: d.summary,
+    status: d.status as "pending_confirmation" | "confirmed",
+    markedAt: d.markedAt,
+    confirmedAt: d.confirmedAt,
+  }))
   const defaultTargetDate = new Date(new Date(incident.updatedAt).getTime() + 7 * 86_400_000).toISOString().slice(0, 10)
 
   return (
@@ -108,6 +120,15 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
               currentUser={{ id: session.user.id, name: session.user.name ?? session.user.email ?? "Usuario" }}
               permissions={session.user.permissions}
               defaultTargetDate={defaultTargetDate}
+            />
+
+            <RE20Panel
+              incidentId={incident.id}
+              preliminaryReportText={bundle.investigation?.preliminaryReportText}
+              preliminaryReportAt={bundle.investigation?.preliminaryReportAt}
+              canInvestigate={can(session, "prevention:incidents:investigate")}
+              canConfirmDiffusion={can(session, "prevention:incidents:close")}
+              diffusions={diffusions}
             />
           </div>
 

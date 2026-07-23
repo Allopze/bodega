@@ -18,6 +18,8 @@ import {
   archivePdtpProgram,
   decidePdtpApprovalStep,
   getPdtpApprovalStep,
+  getPdtpProgram,
+  assertAllRequiredPdtpApprovalStepsApproved,
   approvePdtpExecution,
   rejectPdtpExecution,
   updatePdtpActivity,
@@ -36,6 +38,9 @@ import {
   renamePdtpObjective,
   createPdtpTemplateVersion,
   reconcilePdtpDeclaredActor,
+  excludeActivityForWorksite,
+  includeActivityForWorksite,
+  setPdtpActivityWorksiteParams,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
@@ -135,6 +140,24 @@ export async function submitPdtpProgramForReviewAction(programId: string): Promi
   }
 }
 
+/**
+ * R5 (respuesta 5.3 del cuestionario 2026-07): aprobar el último paso requerido
+ * activa el programa, sin un acto de activación aparte ("Legal aprueba y esa
+ * aprobación activa"). Se resuelve en la capa de acción para no acoplar el motor
+ * de aprobaciones —que sigue soportando activación explícita e idempotente y N
+ * pasos configurables—. Si aún quedan pasos requeridos, no hace nada.
+ */
+async function activatePdtpIfAllStepsApproved(programId: string, userId: string): Promise<void> {
+  const program = await getPdtpProgram(programId)
+  if (!program || program.status !== "in_review" || !program.contentDigest) return
+  try {
+    await assertAllRequiredPdtpApprovalStepsApproved(programId, program.contentVersion, program.contentDigest)
+  } catch {
+    return // faltan pasos requeridos: no se activa todavía
+  }
+  await activatePdtpProgram(programId, userId)
+}
+
 export async function decidePdtpApprovalStepAction(input: unknown): Promise<ActionState> {
   const authGuard = await guardAuth()
   if (authGuard.error) return authGuard.error
@@ -152,6 +175,9 @@ export async function decidePdtpApprovalStepAction(input: unknown): Promise<Acti
       decision: parsed.decision,
       reason: parsed.reason,
     })
+    if (parsed.decision === "approved") {
+      await activatePdtpIfAllStepsApproved(parsed.programId, authGuard.session.user.id)
+    }
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.programId}`)
     return { ok: true }
@@ -179,6 +205,7 @@ export async function signPdtpProgramLegalAction(programId: string): Promise<Act
   const session = guard.session
   try {
     await signPdtpProgramLegal(programId, session.user.id)
+    await activatePdtpIfAllStepsApproved(programId, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
@@ -671,6 +698,63 @@ export async function reconcilePdtpDeclaredActorAction(input: unknown): Promise<
       reason: parsed.reason,
     })
     revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+// ── Exclusiones y parámetros por faena (R1 sujetos, R2 cobertura, R4 aplicabilidad) ──
+
+export async function excludeActivityForWorksiteAction(input: {
+  activityId: string
+  worksiteId: string
+  reason: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    await excludeActivityForWorksite(input.activityId, input.worksiteId, input.reason, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function includeActivityForWorksiteAction(input: {
+  activityId: string
+  worksiteId: string
+  reason: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    await includeActivityForWorksite(input.activityId, input.worksiteId, input.reason, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function setPdtpActivityWorksiteParamsAction(input: {
+  activityId: string
+  worksiteId: string
+  expectedSubjectCount?: number | null
+  targetCoveragePercent?: number | null
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    await setPdtpActivityWorksiteParams(input.activityId, input.worksiteId, {
+      expectedSubjectCount: input.expectedSubjectCount,
+      targetCoveragePercent: input.targetCoveragePercent,
+    }, session.user.id)
+    revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
     return fail(e)
