@@ -294,7 +294,7 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   check("pdtp_activities_schedule_mode_check", sql`${table.scheduleMode} IN ('scheduled', 'on_demand', 'triggered')`),
   check("pdtp_activities_schedule_classification_check", sql`${table.scheduleClassificationStatus} IN ('confirmed', 'needs_review')`),
   check("pdtp_activities_due_days_check", sql`${table.dueDays} IS NULL OR ${table.dueDays} >= 0`),
-  check("pdtp_activities_indicator_mode_check", sql`${table.indicatorMode} IN ('planned_vs_completed', 'closed_on_time', 'completed_count', 'not_applicable')`),
+  check("prevention_pdtp_activity_indicator_mode_valid", sql`${table.indicatorMode} IN ('planned_vs_completed', 'closed_on_time', 'completed_count', 'not_applicable', 'coverage')`),
   check("pdtp_activities_target_value_check", sql`${table.targetValue} IS NULL OR ${table.targetValue} >= 0`),
 ])
 
@@ -610,7 +610,22 @@ export const pdtpActivityWorksiteExclusions = pgTable("pdtp_activity_worksite_ex
 }, (table) => [
   uniqueIndex("pdtp_activity_worksite_exclusions_activity_worksite_unique").on(table.activityId, table.worksiteId),
   index("pdtp_activity_worksite_exclusions_worksite_idx").on(table.worksiteId),
-  check("pdtp_activity_worksite_exclusions_reason_check", sql`length(trim(${table.reason})) >= 10`),
+])
+
+/* ── PDTP Activity Worksite Params (parámetros por faena: R1 sujetos, R2 cobertura) ── */
+export const pdtpActivityWorksiteParams = pgTable("pdtp_activity_worksite_params", {
+  id:                   text("id").primaryKey(),
+  activityId:           text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  worksiteId:           text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  expectedSubjectCount: integer("expected_subject_count"),
+  targetCoveragePercent: numeric("target_coverage_percent", { precision: 5, scale: 2, mode: "number" }),
+  updatedByUserId:      text("updated_by_user_id").references(() => users.id),
+  createdAt:            timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:            timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("pdtp_activity_worksite_params_unique").on(table.activityId, table.worksiteId),
+  index("pdtp_activity_worksite_params_worksite_idx").on(table.worksiteId),
+  check("pdtp_activity_worksite_params_subject_count_check", sql`${table.expectedSubjectCount} IS NULL OR ${table.expectedSubjectCount} >= 0`),
 ])
 
 /* ── PDTP Action Plan Followups (bitácora de seguimiento) ────────────────── */

@@ -144,6 +144,12 @@ export const preventionIncidentInvestigations = pgTable("prevention_incident_inv
   organizationalCauses: jsonb("organizational_causes").$type<string[]>().notNull().default([]),
   failedControls: jsonb("failed_controls").$type<string[]>().notNull().default([]),
   conclusions: text("conclusions"),
+  preliminaryReportText: text("preliminary_report_text"),
+  preliminaryReportAt: timestamp("preliminary_report_at", { withTimezone: true, mode: "string" }),
+  definitiveReportSentAt: timestamp("definitive_report_sent_at", { withTimezone: true, mode: "string" }),
+  riskProbability: integer("risk_probability"),
+  riskConsequence: integer("risk_consequence"),
+  riskLevel: text("risk_level"),
   interviewsEncrypted: text("interviews_encrypted"),
   interviewsIv: text("interviews_iv"),
   interviewsAuthTag: text("interviews_auth_tag"),
@@ -163,6 +169,85 @@ export const preventionIncidentInvestigations = pgTable("prevention_incident_inv
 }, (table) => [
   check("prevention_incident_investigation_status_valid", sql`${table.status} IN ('draft', 'in_progress', 'completed', 'reopened')`),
   check("prevention_incident_investigation_version_positive", sql`${table.version} >= 1`),
+])
+
+/* ── RE-20: Catálogo de Clasificación Taxonómica (~180 filas RE-20) ─────── */
+export const preventionIncidentClassificationCatalog = pgTable("prevention_incident_classification_catalog", {
+  id: text("id").primaryKey(),
+  category: text("category").notNull(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+}, (table) => [
+  uniqueIndex("prevention_incident_classification_cat_code_unique").on(table.category, table.code),
+  check("prevention_incident_classification_cat_valid", sql`${table.category} IN ('accident_type', 'situation', 'causal_agent', 'source', 'body_zone', 'mutual_status')`),
+])
+
+/* ── RE-20: Declaraciones y Entrevistas (Actividad 69 - SLA 24h) ────────── */
+export const preventionIncidentStatements = pgTable("prevention_incident_statements", {
+  id: text("id").primaryKey(),
+  incidentId: text("incident_id").notNull().references(() => preventionIncidents.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  deponentName: text("deponent_name").notNull(),
+  deponentRole: text("deponent_role"),
+  statementText: text("statement_text").notNull(),
+  signedAt: timestamp("signed_at", { withTimezone: true, mode: "string" }),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("prevention_incident_statements_incident_idx").on(table.incidentId),
+  check("prevention_incident_statement_kind_valid", sql`${table.kind} IN ('involved', 'witness', 'cphs')`),
+])
+
+/* ── RE-20: Difusión ONE PAGE RE-20-06 (Actividad 78 - SLA 24h) ────────── */
+export const preventionIncidentDiffusion = pgTable("prevention_incident_diffusion", {
+  id: text("id").primaryKey(),
+  incidentId: text("incident_id").notNull().references(() => preventionIncidents.id, { onDelete: "cascade" }),
+  onePageSummary: text("one_page_summary").notNull(),
+  rootCauseText: text("root_cause_text").notNull(),
+  actionPlanSummary: text("action_plan_summary").notNull(),
+  diffusedAt: timestamp("diffused_at", { withTimezone: true, mode: "string" }).notNull(),
+  evidenceRef: text("evidence_ref"),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("prevention_incident_diffusion_incident_idx").on(table.incidentId),
+])
+
+/* ── RE-20: Seguimiento Quincenal de Medidas (Actividad 76) ──────────────── */
+export const preventionIncidentFollowups = pgTable("prevention_incident_followups", {
+  id: text("id").primaryKey(),
+  incidentId: text("incident_id").notNull().references(() => preventionIncidents.id, { onDelete: "cascade" }),
+  followupDate: text("followup_date").notNull(),
+  note: text("note").notNull(),
+  status: text("status").notNull().default("completed"),
+  evidenceRef: text("evidence_ref"),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("prevention_incident_followups_incident_idx").on(table.incidentId),
+])
+
+/* ── RE-20: Difusiones en turnos (Act. 71) y de medidas correctivas (Act. 75) ──
+ * Doble confirmación: la prevencionista de faena marca la difusión como
+ * completada y el supervisor de faena la confirma. La auto-acreditación PDTP
+ * ocurre recién al confirmar. */
+export const preventionIncidentShiftDiffusions = pgTable("prevention_incident_shift_diffusions", {
+  id: text("id").primaryKey(),
+  incidentId: text("incident_id").notNull().references(() => preventionIncidents.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  summary: text("summary").notNull(),
+  evidenceRef: text("evidence_ref"),
+  status: text("status").notNull().default("pending_confirmation"),
+  markedByUserId: text("marked_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  markedAt: timestamp("marked_at", { withTimezone: true, mode: "string" }).notNull(),
+  confirmedByUserId: text("confirmed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true, mode: "string" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("prevention_incident_shift_diffusions_incident_idx").on(table.incidentId),
+  check("prevention_incident_shift_diffusion_kind_valid", sql`${table.kind} IN ('shift', 'corrective_measures')`),
+  check("prevention_incident_shift_diffusion_status_valid", sql`${table.status} IN ('pending_confirmation', 'confirmed')`),
 ])
 
 export const preventionIncidentEvidence = pgTable("prevention_incident_evidence", {

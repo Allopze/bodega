@@ -20,6 +20,9 @@ export const preventionEmergencyPlans = pgTable("prevention_emergency_plans", {
   approvedByUserId: text("approved_by_user_id").references(() => users.id, { onDelete: "restrict" }),
   approvedAt:      timestamp("approved_at", { withTimezone: true, mode: "string" }),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  /** Números de actividad PDTP (campo `n`) que los simulacros de este plan
+   * acreditan al completarse. Null = no vinculado al PDTP. */
+  pdtpActivityNumbers: jsonb("pdtp_activity_numbers").$type<number[]>(),
   version:         integer("version").notNull().default(1),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

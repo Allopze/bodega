@@ -27,6 +27,9 @@ export const preventionInspectionTemplates = pgTable("prevention_inspection_temp
   approvedAt:        timestamp("approved_at", { withTimezone: true, mode: "string" }),
   supersededAt:      timestamp("superseded_at", { withTimezone: true, mode: "string" }),
   supersededByTemplateId: text("superseded_by_template_id"),
+  /** Números de actividad PDTP (campo `n`) que esta plantilla acredita al
+   * completar un run. Null = no vinculado al PDTP (comportamiento previo). */
+  pdtpActivityNumbers: jsonb("pdtp_activity_numbers").$type<number[]>(),
   version:           integer("version").notNull().default(1),
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

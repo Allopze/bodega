@@ -12,6 +12,10 @@ export const users = pgTable("users", {
   isActive:           boolean("is_active").notNull().default(true),
   emailNotifications: boolean("email_notifications").notNull().default(true),
   workerId:           text("worker_id").unique().references(() => workers.id, { onDelete: "set null" }),
+  /** Cuentas temporales de reemplazo (R7 - ausencias de rol) */
+  isTemporary:        boolean("is_temporary").notNull().default(false),
+  validUntil:         timestamp("valid_until", { withTimezone: true, mode: "string" }),
+  substituteForUserId: text("substitute_for_user_id"),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })

@@ -1,0 +1,1 @@
+ALTER TABLE "prevention_emergency_plans" ADD COLUMN "pdtp_activity_numbers" jsonb;

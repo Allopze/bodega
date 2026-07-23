@@ -28,7 +28,6 @@
         18,
         19,
         20,
-        21,
         22,
         23,
         24,
@@ -1212,20 +1211,6 @@
           "sourceColumn": "CP"
         }
       ]
-    },
-    {
-      "n": 21,
-      "objectiveOrder": 2,
-      "objective": "MANTENER A LA EMPRESA Y SUS SUCURSALES ENTRE LOS MARGENES DE LA NORMATIVA LEGAL VIGENTE",
-      "activity": "Informes, cierres y seguimiento de accidentes e incidentes",
-      "program": "Revisar los cierres y envios a las partes interesadas",
-      "responsibleDisplay": "PRF, Adm. de contrato",
-      "responsibleSlugs": [
-        "prf",
-        "admin_contrato"
-      ],
-      "sourceSheetRow": 34,
-      "schedule": []
     },
     {
       "n": 22,
@@ -6334,7 +6319,6 @@
       18,
       19,
       20,
-      21,
       22,
       23,
       24,

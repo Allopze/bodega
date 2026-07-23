@@ -25,6 +25,9 @@ export const preventionTrainingCourses = pgTable("prevention_training_courses", 
   riskEntryId:            text("risk_entry_id").references(() => preventionRiskEntries.id, { onDelete: "set null" }),
   legalBasis:             text("legal_basis"),
   isActive:               boolean("is_active").notNull().default(true),
+  /** Números de actividad PDTP (campo `n`) que este curso acredita al cerrar
+   * una sesión. Null = no vinculado al PDTP (comportamiento previo). */
+  pdtpActivityNumbers:    jsonb("pdtp_activity_numbers").$type<number[]>(),
   createdByUserId:        text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt:              timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:              timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
