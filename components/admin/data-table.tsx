@@ -1,8 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { CaretUp, CaretDown, CaretUpDown } from "@phosphor-icons/react"
+import { CaretUp, CaretDown, CaretUpDown, GearSix } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   TableRoot, Table, TableHeader, TableBody, TableRow, TableHead,
 } from "@/components/ui/table"
@@ -35,8 +40,32 @@ const DataTableInner = <T extends Record<string, unknown>>({
   actions,
   loading = false,
   disableInternalSearch = false,
+  enableColumnToggle = false,
 }: DataTableProps<T>) => {
   const { searchQuery } = useSafeShellHeader()
+
+  // Column visibility state
+  const [visibleKeys, setVisibleKeys] = React.useState<Set<string>>(() => {
+    return new Set(
+      columns
+        .filter((col) => col.defaultVisible !== false)
+        .map((col) => col.key),
+    )
+  })
+
+  const visibleColumns = React.useMemo(() => {
+    if (!enableColumnToggle) return columns
+    return columns.filter((col) => visibleKeys.has(col.key))
+  }, [columns, enableColumnToggle, visibleKeys])
+
+  function toggleColumn(key: string) {
+    setVisibleKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   // If explicit search prop is given, use it. Otherwise, fall back to header context search.
   // When server-side filtering is in effect, the in-memory filter is a no-op.
@@ -99,24 +128,47 @@ const DataTableInner = <T extends Record<string, unknown>>({
 
   return (
     <div className={cn("flex flex-col", className)}>
-      {/* Toolbar — only shown when there's an explicit search input or actions */}
-      {(hasExplicitSearch || actions) && (
+      {/* Toolbar — shown when there's an explicit search input, actions, or column toggle */}
+      {(hasExplicitSearch || actions || enableColumnToggle) && (
         <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between">
-          {hasExplicitSearch ? (
-            <Input
-              type="search"
-              placeholder={searchPlaceholder}
-              value={search ?? ""}
-              onChange={(e) => {
-                onSearchChange?.(e.target.value)
-                setPage(1)
-              }}
-              className="h-8 text-xs sm:max-w-xs"
-              aria-label="Buscar en la tabla"
-            />
-          ) : (
-            <div />
-          )}
+          <div className="flex items-center gap-2">
+            {hasExplicitSearch && (
+              <Input
+                type="search"
+                placeholder={searchPlaceholder}
+                value={search ?? ""}
+                onChange={(e) => {
+                  onSearchChange?.(e.target.value)
+                  setPage(1)
+                }}
+                className="h-8 text-xs sm:max-w-xs"
+                aria-label="Buscar en la tabla"
+              />
+            )}
+            {enableColumnToggle && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs">
+                    <GearSix size={14} className="mr-1" />
+                    Columnas
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto p-2">
+                  <div className="space-y-1.5">
+                    {columns.map((column) => (
+                      <Checkbox
+                        key={column.key}
+                        id={`col-${column.key}`}
+                        label={column.label || column.key}
+                        checked={visibleKeys.has(column.key)}
+                        onChange={() => toggleColumn(column.key)}
+                      />
+                    ))}
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
@@ -126,7 +178,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
         <Table className={tableClassName}>
           <TableHeader>
             <TableRow>
-              {columns.map((col) => (
+              {visibleColumns.map((col) => (
                 <TableHead
                   key={col.key}
                   className={cn(col.width, col.numeric && "text-right")}
@@ -141,7 +193,6 @@ const DataTableInner = <T extends Record<string, unknown>>({
                         "inline-flex items-center gap-1",
                         "text-eyebrow hover:text-[var(--color-text)]",
                         "transition-[color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-                        "",
                         "select-none",
                       )}
                       aria-label={`Ordenar por ${col.label}${sortKey === col.key ? ` (${sortDir === "asc" ? "ascendente" : "descendente"})` : ""}`}
@@ -160,14 +211,14 @@ const DataTableInner = <T extends Record<string, unknown>>({
             {loading ? (
               Array.from({ length: Math.min(pageSize, 5) }).map((_, i) => (
                 <tr key={i}>
-                  <td colSpan={columns.length} className="p-0">
-                    <SkeletonRow cols={columns.length} />
+                  <td colSpan={visibleColumns.length} className="p-0">
+                    <SkeletonRow cols={visibleColumns.length} />
                   </td>
                 </tr>
               ))
             ) : paginated.length === 0 ? (
               <tr>
-                <td colSpan={columns.length}>
+                <td colSpan={visibleColumns.length}>
                   <EmptyState
                     title={emptyTitle}
                     description={emptyDescription}

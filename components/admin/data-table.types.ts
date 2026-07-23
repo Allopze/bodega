@@ -1,13 +1,15 @@
 import * as React from "react"
 
 export interface ColumnDef {
-  key:       string
-  label:     string
-  sortable?: boolean
+  key:            string
+  label:          string
+  sortable?:      boolean
   /** If true, renders with TableCellNum styles (mono, right-aligned) */
-  numeric?:  boolean
+  numeric?:       boolean
   /** Width hint (Tailwind class, e.g. "w-32") */
-  width?:    string
+  width?:         string
+  /** Default visibility state when column toggle is enabled */
+  defaultVisible?: boolean
 }
 
 export interface DataTableProps<T extends Record<string, unknown>> {
@@ -37,6 +39,18 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   loading?:     boolean
   /** When true, disables the in-memory text filter and its toolbar input. */
   disableInternalSearch?: boolean
+  /** When true, adds a "Columnas" dropdown menu allowing users to toggle column visibility */
+  enableColumnToggle?: boolean
+  /** When true, enables checkbox row selection */
+  enableRowSelection?: boolean
+  /** Function to extract unique key for a row (defaults to row.id) */
+  getRowKey?: (row: T) => string
+  /** Selected row keys when controlled */
+  selectedRowKeys?: string[]
+  /** Called when row selection changes */
+  onSelectionChange?: (selectedKeys: string[]) => void
+  /** Render custom action component for selected rows (e.g. Export selected) */
+  onSelectionExport?: (selectedRows: T[]) => React.ReactNode
 }
 
 export type SortDir = "asc" | "desc" | null
