@@ -119,6 +119,34 @@ export async function addInvoiceAction(
     return { ok: false, message: "El archivo de la factura es obligatorio" }
   }
 
+  // Extract line items from form data
+  const itemCount = parseInt(formData.get("itemCount") as string) || 0
+  const items: Array<{
+    purchaseOrderItemId?: string | null
+    productName: string
+    quantity: number
+    unitPrice: number
+    subtotal: number
+  }> = []
+
+  for (let i = 0; i < itemCount; i++) {
+    const ocItemId = formData.get(`item_ocItemId_${i}`) as string | null
+    const productName = formData.get(`item_productName_${i}`) as string | null
+    const quantity = parseFloat(formData.get(`item_qty_${i}`) as string) || 0
+    const unitPrice = parseFloat(formData.get(`item_price_${i}`) as string) || 0
+    const subtotal = parseFloat(formData.get(`item_subtotal_${i}`) as string) || quantity * unitPrice
+
+    if (productName && quantity > 0) {
+      items.push({
+        purchaseOrderItemId: ocItemId || null,
+        productName,
+        quantity,
+        unitPrice,
+        subtotal,
+      })
+    }
+  }
+
   try {
     await createPurchaseOrderInvoice({
       purchaseOrderId,
@@ -131,6 +159,7 @@ export async function addInvoiceAction(
       mimeType:  fileResult.attachment.mimeType,
       uploadedBy: session.user.id,
       userEmail:  session.user.email ?? undefined,
+      items: items.length > 0 ? items : undefined,
     })
     revalidatePath("/compras")
     revalidatePath(`/compras/${purchaseOrderId}`)

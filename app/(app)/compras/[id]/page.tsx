@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
-import { purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
+import { purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrders, statusHistory, users } from "@/db/schema"
 import { and, desc, eq } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
@@ -99,6 +99,20 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
       .orderBy(desc(purchaseOrderInvoices.uploadedAt)),
   ])
 
+  // Load invoice items for reconciliation
+  const invoiceIds = orderInvoices.map((inv) => inv.id)
+  const invoiceItemRows = invoiceIds.length > 0
+    ? await db.query.purchaseOrderInvoiceItems.findMany({
+        where: (t, { inArray }) => inArray(t.invoiceId, invoiceIds),
+      })
+    : []
+
+  // Attach items to invoices
+  const invoicesWithItems = orderInvoices.map((inv) => ({
+    ...inv,
+    items: invoiceItemRows.filter((item) => item.invoiceId === inv.id),
+  }))
+
   // Build maps
   const reqItemMap = Object.fromEntries(requestItemRows.map((ri) => [ri.id, ri]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
@@ -122,6 +136,39 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
 
   const orderItemIds = order.items.map((i) => i.id)
   const { totalReceived } = await getOcReconciliation(order.id, orderItemIds)
+
+  // Calculate invoice reconciliation warnings for the close form
+  const hasLineItems = invoiceItemRows.length > 0
+  const closeWarnings: string[] = []
+  if (!["draft", "cancelled"].includes(order.status)) {
+    if (orderInvoices.length === 0) {
+      closeWarnings.push("No hay facturas adjuntadas a esta orden.")
+    } else if (!hasLineItems) {
+      closeWarnings.push("Las facturas no tienen ítems detallados.")
+    } else {
+      // Check per-item reconciliation
+      const invoicedQtyMap = new Map<string, number>()
+      for (const item of invoiceItemRows) {
+        if (item.purchaseOrderItemId) {
+          const current = invoicedQtyMap.get(item.purchaseOrderItemId) ?? 0
+          invoicedQtyMap.set(item.purchaseOrderItemId, current + item.quantity)
+        }
+      }
+      for (const ocItem of order.items) {
+        const invoicedQty = invoicedQtyMap.get(ocItem.id) ?? 0
+        if (invoicedQty === 0) {
+          const name = ocItem.productNameFree ?? (ocItem.productId ? productMap[ocItem.productId]?.name : null) ?? "Ítem"
+          closeWarnings.push(`"${name}" sin factura asociada.`)
+        } else if (Math.abs(ocItem.quantity - invoicedQty) > 0.01) {
+          const name = ocItem.productNameFree ?? (ocItem.productId ? productMap[ocItem.productId]?.name : null) ?? "Ítem"
+          closeWarnings.push(`"${name}": cant. OC (${ocItem.quantity}) ≠ cant. facturada (${invoicedQty}).`)
+        }
+      }
+      if (Math.abs(orderInvoices.reduce((s, i) => s + (i.amount ?? 0), 0) - order.totalAmount) > 1) {
+        closeWarnings.push("Total facturado difiere del total OC.")
+      }
+    }
+  }
 
   return (
     <PageContainer width="workbench">
@@ -227,6 +274,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
                 canManage={canManage}
                 canSend={canSend}
                 canDelete={canDeleteOrder}
+                closeWarnings={closeWarnings}
               />
             </section>
           )}
@@ -234,7 +282,14 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
           {!["draft", "cancelled"].includes(order.status) && (
             <InvoicesSection
               purchaseOrderId={order.id}
-              invoices={orderInvoices}
+              invoices={invoicesWithItems as any}
+              ocItems={order.items.map((i) => ({
+                id: i.id,
+                productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
+                quantity: i.quantity,
+                unitPrice: i.unitPrice,
+                subtotal: i.subtotal,
+              }))}
               totalAmount={order.totalAmount}
               canManage={canInvoice}
             />

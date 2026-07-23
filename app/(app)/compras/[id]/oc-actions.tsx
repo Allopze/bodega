@@ -24,13 +24,15 @@ export function OcActions({
   canManage,
   canSend,
   canDelete = false,
+  closeWarnings = [],
 }: {
-  orderId:    string
-  orderCode:  string
-  status:     string
-  canManage:  boolean
-  canSend:    boolean
-  canDelete?: boolean
+  orderId:        string
+  orderCode:      string
+  status:         string
+  canManage:      boolean
+  canSend:        boolean
+  canDelete?:     boolean
+  closeWarnings?: string[]
 }) {
   const router = useRouter()
   const [showCancelForm, setShowCancelForm] = React.useState(false)
@@ -122,6 +124,16 @@ export function OcActions({
           <p className="text-xs text-danger flex items-center gap-1">
             <Warning size={12} /> {closeState.message}
           </p>
+        )}
+        {closeWarnings.length > 0 && (
+          <div className="rounded bg-[var(--color-warning-50)] border border-[var(--color-warning-200)] p-2 text-xs text-[var(--color-warning-700)]">
+            <p className="font-medium mb-1 flex items-center gap-1">
+              <Warning size={12} /> Advertencias de conciliación
+            </p>
+            <ul className="space-y-0.5 list-disc list-inside">
+              {closeWarnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </div>
         )}
         <div className="flex items-center justify-end gap-2 mt-1">
           <button

@@ -5,7 +5,7 @@ import { db } from "@/db"
 import { purchaseOrders } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
-import { cancelOrder, closeOrder, deleteOrder, isOrderDeletable } from "@/lib/services/purchasing"
+import { cancelOrder, closeOrder, deleteOrder, isOrderDeletable, reconcileOrderInvoices } from "@/lib/services/purchasing"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
 import { assertOrderAccess } from "../actions.helpers"
@@ -35,9 +35,24 @@ export async function closeOrderAction(
   if (accessError) return accessError
 
   try {
+    // Check invoice reconciliation before closing (for audit log)
+    const reconciliation = await reconcileOrderInvoices(orderId)
+
     await closeOrder(orderId, session.user.id, reason, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
     })
+
+    // Log reconciliation warnings in audit if any
+    if (reconciliation.warnings.length > 0) {
+      logger.warn("[closeOrderAction] Invoice reconciliation warnings", {
+        orderId,
+        warnings: reconciliation.warnings,
+        hasInvoices: reconciliation.hasInvoices,
+        totalInvoiced: reconciliation.totalInvoiced,
+        totalOC: reconciliation.totalOC,
+      })
+    }
+
     revalidatePath(REVALIDATE)
     revalidatePath(`/compras/${orderId}`)
     return { ok: true, message: "Orden de compra cerrada" }
