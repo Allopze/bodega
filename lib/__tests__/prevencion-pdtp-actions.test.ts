@@ -27,6 +27,8 @@ const mockGetPdtpApprovalStep = vi.hoisted(() => vi.fn(async () => ({
   programId: "prog-1",
   requiredPermission: "prevention:pdtp:approve",
 })))
+const mockGetPdtpProgram = vi.hoisted(() => vi.fn(async () => null as unknown))
+const mockAssertAllRequiredApproved = vi.hoisted(() => vi.fn(async () => undefined))
 const mockApprovePdtpExecution = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRejectPdtpExecution = vi.hoisted(() => vi.fn(async () => undefined))
 const mockUpdatePdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
@@ -65,6 +67,8 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
   archivePdtpProgram: mockArchivePdtpProgram,
   decidePdtpApprovalStep: mockDecidePdtpApprovalStep,
   getPdtpApprovalStep: mockGetPdtpApprovalStep,
+  getPdtpProgram: mockGetPdtpProgram,
+  assertAllRequiredPdtpApprovalStepsApproved: mockAssertAllRequiredApproved,
   approvePdtpExecution: mockApprovePdtpExecution,
   rejectPdtpExecution: mockRejectPdtpExecution,
   updatePdtpActivity: mockUpdatePdtpActivity,
@@ -195,6 +199,23 @@ describe("Program lifecycle actions", () => {
     const res = await signPdtpProgramLegalAction("prog-1")
     expect(res.ok).toBe(true)
     expect(mockSignPdtpProgramLegal).toHaveBeenCalledWith("prog-1", "user-1")
+  })
+
+  it("signPdtpProgramLegalAction activa el programa cuando ya no quedan pasos requeridos (R5)", async () => {
+    mockGetPdtpProgram.mockResolvedValueOnce({ id: "prog-1", status: "in_review", contentDigest: "digest", contentVersion: 1 })
+    // assertAllRequiredApproved no lanza => todos los pasos requeridos están aprobados.
+    const res = await signPdtpProgramLegalAction("prog-1")
+    expect(res.ok).toBe(true)
+    expect(mockSignPdtpProgramLegal).toHaveBeenCalledWith("prog-1", "user-1")
+    expect(mockActivatePdtpProgram).toHaveBeenCalledWith("prog-1", "user-1")
+  })
+
+  it("signPdtpProgramLegalAction NO activa si aún faltan pasos requeridos", async () => {
+    mockGetPdtpProgram.mockResolvedValueOnce({ id: "prog-1", status: "in_review", contentDigest: "digest", contentVersion: 1 })
+    mockAssertAllRequiredApproved.mockRejectedValueOnce(new Error("Faltan aprobaciones obligatorias: Legal."))
+    const res = await signPdtpProgramLegalAction("prog-1")
+    expect(res.ok).toBe(true)
+    expect(mockActivatePdtpProgram).not.toHaveBeenCalled()
   })
 
   it("activatePdtpProgramAction activa con permiso", async () => {
