@@ -18,7 +18,8 @@ import {
 } from "@/lib/prevention/inspections"
 import { formatDateTime } from "@/lib/utils"
 import { createInspectionRunAction } from "./actions"
-import { Field, useOperation } from "./inspection-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 interface TemplateOption {
   id: string

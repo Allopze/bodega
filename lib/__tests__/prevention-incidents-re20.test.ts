@@ -164,7 +164,7 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
     await createPreliminaryReport({
       incidentId: res.incident.id,
       preliminaryReportText: "Informe preliminar enviado dentro de las 3 horas del evento.",
-      access: access as any,
+      access: access as unknown as Parameters<typeof createPreliminaryReport>[0]["access"],
     })
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
@@ -198,7 +198,7 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
       kind: "involved",
       deponentName: "Juan Pérez",
       statementText: "El equipo no tenía la protección colocada al iniciar la maniobra.",
-      access: access as any,
+      access: access as unknown as Parameters<typeof recordIncidentStatement>[0]["access"],
     })
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
@@ -231,7 +231,7 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
       onePageSummary: "Resumen de lección aprendida del incidente en bodega.",
       rootCauseText: "Falta de bloqueo LOTO durante mantenimiento.",
       actionPlanSummary: "Instalar dispositivo LOTO adicional y capacitar.",
-      access: access as any,
+      access: access as unknown as Parameters<typeof publishOnePageDiffusion>[0]["access"],
     })
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)

@@ -30,7 +30,8 @@ import {
   reviewInspectionRunAction,
   saveInspectionAnswersAction,
 } from "../actions"
-import { Field, useOperation } from "../inspection-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 interface RunInfo {
   id: string

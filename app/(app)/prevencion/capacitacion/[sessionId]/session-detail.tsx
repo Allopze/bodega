@@ -22,7 +22,9 @@ import {
   closeTrainingSessionAction,
   recordTrainingAttendanceAction,
 } from "../actions"
-import { Field, toLocalInputValue, useOperation } from "../form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
+import { toLocalInputValue } from "@/lib/utils"
 
 interface SessionInfo {
   id: string

@@ -14,18 +14,12 @@ import { ChatCircleText } from "@phosphor-icons/react"
 import type { FeedbackRow } from "@/lib/services/feedback"
 import type { FeedbackTipo, FeedbackEstado } from "@/lib/validation/feedback"
 
+import { formatDate } from "@/lib/utils"
+
 interface Props {
   reports:   FeedbackRow[]
   canCreate: boolean
   canViewAll: boolean
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("es-CL", {
-    day:   "2-digit",
-    month: "short",
-    year:  "numeric",
-  })
 }
 
 export function ReportList({ reports, canCreate, canViewAll }: Props) {

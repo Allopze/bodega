@@ -2,7 +2,7 @@
 
 import { CheckCircle } from "@phosphor-icons/react"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
-import { OnboardingHint } from "@/components/adquisiciones/onboarding-hint"
+import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { RequestGroup } from "./request-group"
 import { URGENCY_OPTIONS } from "./types"
 import type { ApprovalRequest } from "./types"

@@ -20,7 +20,8 @@ import {
   rejectChangeRequestAction,
 } from "../actions"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Field, useOperation } from "../change-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 interface RequestInfo {
   id: string

@@ -19,7 +19,9 @@ import {
 } from "@/lib/prevention/training"
 import { formatDateTime } from "@/lib/utils"
 import { acknowledgeTrainingAction, createTrainingSessionAction } from "./actions"
-import { Field, toLocalInputValue, useOperation } from "./form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
+import { toLocalInputValue } from "@/lib/utils"
 
 interface SessionItem {
   id: string

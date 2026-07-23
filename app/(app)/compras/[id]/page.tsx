@@ -282,7 +282,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
           {!["draft", "cancelled"].includes(order.status) && (
             <InvoicesSection
               purchaseOrderId={order.id}
-              invoices={invoicesWithItems as any}
+              invoices={invoicesWithItems as unknown as React.ComponentProps<typeof InvoicesSection>["invoices"]}
               ocItems={order.items.map((i) => ({
                 id: i.id,
                 productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,

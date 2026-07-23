@@ -27,7 +27,9 @@ import {
   completeEmergencyDrillAction,
   scheduleEmergencyDrillAction,
 } from "../actions"
-import { Field, toLocalInputValue, useOperation } from "../emergencias-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
+import { toLocalInputValue } from "@/lib/utils"
 
 const SCENARIO_TYPES = Object.keys(EMERGENCY_SCENARIO_TYPE_LABELS)
 

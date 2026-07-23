@@ -26,7 +26,8 @@ import {
   createTrainingCourseVersionAction,
   transitionTrainingCourseVersionAction,
 } from "../actions"
-import { Field, useOperation } from "../form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 interface CourseItem {
   id: string

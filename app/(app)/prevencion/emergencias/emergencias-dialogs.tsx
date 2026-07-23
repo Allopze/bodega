@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { createEmergencyPlanAction } from "./actions"
-import { Field, useOperation } from "./emergencias-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 export function NewPlanDialog({ worksites }: { worksites: { id: string; name: string }[] }) {
   const [open, setOpen] = React.useState(false)

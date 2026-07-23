@@ -127,3 +127,16 @@ export function encodeContentDisposition(filename: string, disposition: "inline"
   const utf8 = encodeURIComponent(filename)
   return `${disposition}; filename="${ascii}"; filename*=UTF-8''${utf8}`
 }
+
+/** `datetime-local` exige `YYYY-MM-DDTHH:mm` en hora local, no un ISO en UTC. */
+export function toLocalInputValue(date: Date): string {
+  const offset = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+/** Divide un texto multilínea en un array de líneas no vacías. */
+export function linesToArray(value: string): string[] {
+  return value.split("\n").map((line) => line.trim()).filter(Boolean)
+}
+
+

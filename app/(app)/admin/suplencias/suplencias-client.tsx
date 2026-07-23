@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 import { PageHeader } from "@/components/ui/page-header"
+import { formatDate } from "@/lib/utils"
 import {
   Select,
   SelectContent,
@@ -171,7 +172,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
                       {substituteForName || user.substituteForUserId || "—"}
                     </td>
                     <td className="px-4 py-3 text-[var(--color-text-muted)]">
-                      {user.validUntil ? new Date(user.validUntil).toLocaleDateString("es-CL") : "—"}
+                      {user.validUntil ? formatDate(user.validUntil) : "—"}
                     </td>
                     <td className="px-4 py-3">{getStatusBadge(user, nowMs)}</td>
                     <td className="px-4 py-3 text-right space-x-2">

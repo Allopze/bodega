@@ -29,16 +29,17 @@ export function CrossFilterCell({
   const displayValue = children ?? value ?? "—"
   const filterVal = paramValue ?? value
 
-  if (!filterVal) return <span>—</span>
-
   const targetHref = React.useMemo(() => {
     if (href) return href
+    if (!filterVal) return pathname
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     params.set(paramKey, filterVal)
     params.delete("page")
     const query = params.toString()
     return query ? `${pathname}?${query}` : pathname
-  }, [href, searchParams, paramKey, filterVal, pathname])
+  }, [href, filterVal, searchParams, paramKey, pathname])
+
+  if (!filterVal) return <span>—</span>
 
   return (
     <Link

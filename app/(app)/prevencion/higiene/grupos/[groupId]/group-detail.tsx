@@ -14,7 +14,8 @@ import {
   measurementOutcomeBadgeVariant,
 } from "@/lib/prevention/hygiene"
 import { addExposureGroupMemberAction, recordExposureMeasurementAction } from "../../actions"
-import { Field, useOperation } from "../../hygiene-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 interface GroupInfo {
   id: string

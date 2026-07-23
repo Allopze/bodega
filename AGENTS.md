@@ -285,3 +285,22 @@ repitas la misma cifra en dos controles.
 - **Abreviaturas de dominio** (`Acc. c/TP`, `HH`, `T1`) llevan `title`/Tooltip
   con el nombre completo, o se renombran.
 <!-- END:screen-density-rules -->
+
+<!-- BEGIN:form-export-patterns -->
+# Form, export and date formatting standards
+
+## 1. Form Operation Pattern (`useOperation` & `Field`)
+- Use `useOperation` from `@/lib/hooks/use-operation` for form submissions with `useTransition` and user feedback.
+- ALWAYS use `Field` from `@/components/ui/field` for input wrappers (with accessible `Label`, `error`, `helper`/`hint` support). Never create local `form-kit.tsx` files or unaccessible `<label>` wrappers.
+- Use `toLocalInputValue` from `@/lib/utils` for formatting local Date objects in `<input type="datetime-local">`.
+
+## 2. Export Pattern (`ExportButton` & `ExportDialog`)
+- Direct exports (Server Actions): Use `ExportButton` from `@/components/ui/export-button`.
+- Filtered exports (Modal dialog): Use `ExportDialog` from `@/components/export-dialog`.
+- Never duplicate base64 download logic or create standalone export buttons.
+
+## 3. Date Formatting
+- ALWAYS use `formatDate` or `formatDateTime` from `@/lib/utils`.
+- NEVER use `toLocaleDateString()` directly in `.tsx` components to prevent locale mismatch inconsistencies across browsers.
+<!-- END:form-export-patterns -->
+

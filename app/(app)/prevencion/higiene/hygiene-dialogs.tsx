@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { AGENT_TYPE_LABELS } from "@/lib/prevention/hygiene"
 import { createExposureAgentAction, createExposureGroupAction, createSurveillanceProgramAction } from "./actions"
-import { Field, useOperation } from "./hygiene-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 interface AgentOption {
   id: string

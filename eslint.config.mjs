@@ -106,6 +106,11 @@ const eslintConfig = defineConfig([
               message:
                 "[freeze] core/ fue removido; usa las primitivas equivalentes en lib/.",
             },
+            {
+              group: ["**/*-form-kit*", "**/form-kit*"],
+              message:
+                "[design-system] No crees ni importes archivos form-kit locales. Usa useOperation de @/lib/hooks/use-operation y Field de @/components/ui/field (ver AGENTS.md).",
+            },
           ],
         },
       ],

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, formatDateTime } from "@/lib/utils"
 import { toggleProductActive, getProductForEdit, bulkToggleProductActiveAction } from "./actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { getProductWarnings, getFamilyWarnings, type ProductAttributeSummary } from "./product-list.helpers"
@@ -488,7 +488,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
                     <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
                       <Badge variant={statusInfo.variant} size="sm">{statusInfo.label}</Badge>
                       {batch.rowCount != null && <span>{batch.rowCount} filas</span>}
-                      <span>{new Date(batch.createdAt).toLocaleDateString("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                      <span>{formatDateTime(batch.createdAt)}</span>
                     </div>
                   </div>
                   {batch.status === "review" && (

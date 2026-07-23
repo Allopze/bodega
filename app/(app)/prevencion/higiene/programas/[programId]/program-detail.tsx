@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { PROGRAM_STATUS_LABELS, SURVEILLANCE_STATUS_LABELS } from "@/lib/prevention/hygiene"
 import { enrollGroupInSurveillanceAction, recordSurveillanceOutcomeAction } from "../../actions"
-import { Field, useOperation } from "../../hygiene-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 interface ProgramInfo {
   id: string

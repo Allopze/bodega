@@ -31,13 +31,15 @@ interface FieldProps {
   htmlFor?:    string
   required?:   boolean
   helper?:     string
+  hint?:       string
   error?:      string
   className?:  string
   children:    React.ReactNode
 }
 
-function Field({ label, htmlFor, required, helper, error, className, children }: FieldProps) {
-  const descriptionId = htmlFor && (error || helper)
+function Field({ label, htmlFor, required, helper, hint, error, className, children }: FieldProps) {
+  const helperText = helper || hint
+  const descriptionId = htmlFor && (error || helperText)
     ? `${htmlFor}-${error ? "error" : "helper"}`
     : undefined
   const labelId = htmlFor ? `${htmlFor}-label` : undefined
@@ -55,9 +57,9 @@ function Field({ label, htmlFor, required, helper, error, className, children }:
         <p id={descriptionId} className="mt-1.5 text-xs text-[var(--color-danger)] leading-tight" role="alert">
           {error}
         </p>
-      ) : helper ? (
+      ) : helperText ? (
         <p id={descriptionId} className="mt-1.5 text-xs text-[var(--color-text-subtle)] leading-tight">
-          {helper}
+          {helperText}
         </p>
       ) : null}
     </div>

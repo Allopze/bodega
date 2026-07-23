@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { CHANGE_TYPE_LABELS } from "@/lib/prevention/change"
 import { createChangeRequestAction } from "./actions"
-import { Field, useOperation } from "./change-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 const CHANGE_TYPES = Object.keys(CHANGE_TYPE_LABELS)
 

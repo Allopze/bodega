@@ -289,134 +289,91 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
     setLineItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)))
   }
 
-  // ── DTE XML auto-detection ────────────────────────────────────────────────
-  function handleFileChange(file: File | null) {
+  // ── File auto-detection (XML, PDF, images) ─────────────────────────────────
+  const [extracting, setExtracting] = React.useState(false)
+
+  async function handleFileChange(file: File | null) {
     if (!file) {
       setDteParsed(false)
       return
     }
 
-    const isXml = file.type === "application/xml" || file.type === "text/xml" || file.name.endsWith(".xml")
-    if (!isXml) {
+    // Only auto-extract for supported types
+    const supportedTypes = ["application/xml", "text/xml", "application/pdf", "image/jpeg", "image/png"]
+    const isSupported = supportedTypes.includes(file.type) || file.name.endsWith(".xml")
+    if (!isSupported) {
       setDteParsed(false)
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      const xmlString = evt.target?.result as string
-      const parsed = parseDteXmlClient(xmlString)
-      if (!parsed) {
-        toast.error("No se pudo parsear el XML como DTE válido")
+    setExtracting(true)
+    try {
+      const formData = new FormData()
+      formData.set("file", file)
+
+      const response = await fetch("/api/purchase-orders/invoices/extract", {
+        method: "POST",
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (!result.ok || !result.data) {
+        toast.error(result.error || "No se pudo extraer datos del archivo")
         return
       }
 
+      const { data, method, confidence } = result
+
       // Auto-fill form fields
-      if (invoiceNumberRef.current) {
-        invoiceNumberRef.current.value = parsed.invoiceNumber
+      if (data.invoiceNumber && invoiceNumberRef.current) {
+        invoiceNumberRef.current.value = data.invoiceNumber
       }
-      if (amountRef.current) {
-        amountRef.current.value = String(parsed.totalAmount)
+      if (data.totalAmount && amountRef.current) {
+        amountRef.current.value = String(data.totalAmount)
       }
-      if (issueDateRef.current && parsed.issueDate) {
-        issueDateRef.current.value = parsed.issueDate
+      if (data.issueDate && issueDateRef.current) {
+        issueDateRef.current.value = data.issueDate
       }
 
-      // Auto-match DTE items to OC items
-      if (parsed.items.length > 0 && ocItems.length > 0) {
-        const matched = matchDteItemsToOcItemsClient(parsed.items, ocItems)
+      // Auto-match items to OC items
+      if (data.items && data.items.length > 0 && ocItems.length > 0) {
+        const matched = matchItemsToOcItems(data.items, ocItems)
         setLineItems(matched.map((m) => ({
           ocItemId: m.ocItemId ?? "",
-          quantity: String(m.dteItem.quantity),
-          unitPrice: String(m.dteItem.unitPrice),
-          productName: m.dteItem.productName,
+          quantity: String(m.item.quantity),
+          unitPrice: String(m.item.unitPrice),
+          productName: m.item.productName,
         })))
       }
 
       setDteParsed(true)
-      toast.success(`DTE parseado: ${parsed.items.length} ítem(s), total ${formatCLP(parsed.totalAmount)}`)
-    }
-    reader.readAsText(file)
-  }
 
-  // ── Client-side DTE parser (browser DOMParser) ─────────────────────────────
-  function parseDteXmlClient(xmlString: string) {
-    try {
-      const parser = new DOMParser()
-      const doc = parser.parseFromString(xmlString, "text/xml")
-      const parseError = doc.querySelector("parsererror")
-      if (parseError) return null
-
-      const documento = doc.querySelector("DTE > Documento") ?? doc.querySelector("Documento")
-      if (!documento) return null
-
-      const folio = documento.querySelector("Encabezado > IdDoc > Folio")?.textContent?.trim() ?? ""
-      const fechaEmision = documento.querySelector("Encabezado > IdDoc > FechaEmision")?.textContent?.trim() ?? null
-      const mntTotal = parseInt(documento.querySelector("Encabezado > Totales > MntTotal")?.textContent?.trim() ?? "0", 10)
-      const mntNeto = parseInt(documento.querySelector("Encabezado > Totales > MntNeto")?.textContent?.trim() ?? "0", 10)
-      const iva = parseInt(documento.querySelector("Encabezado > Totales > IVA")?.textContent?.trim() ?? "0", 10)
-
-      const detailNodes = documento.querySelectorAll("Detalle > Item")
-      const items: Array<{
-        lineNumber: number
-        productCode: string | null
-        productName: string
-        quantity: number
-        unitPrice: number
-        amount: number
-      }> = []
-
-      detailNodes.forEach((itemNode) => {
-        const nroLinea = parseInt(itemNode.querySelector("NroLinea")?.textContent?.trim() ?? "0", 10)
-        const cdgItem = itemNode.querySelector("CdgItem")
-        const productCode = cdgItem?.querySelector("VlrCod")?.textContent?.trim() ?? null
-        const nmItem = itemNode.querySelector("NmItem")?.textContent?.trim() ?? ""
-        const qtyItem = parseInt(itemNode.querySelector("QtyItem")?.textContent?.trim() ?? "0", 10)
-        const prcItem = parseInt(itemNode.querySelector("PrcItem")?.textContent?.trim() ?? "0", 10)
-        const montoItem = parseInt(itemNode.querySelector("MontoItem")?.textContent?.trim() ?? "0", 10)
-
-        items.push({
-          lineNumber: nroLinea || items.length + 1,
-          productCode,
-          productName: nmItem,
-          quantity: qtyItem,
-          unitPrice: prcItem,
-          amount: montoItem || qtyItem * prcItem,
-        })
-      })
-
-      return {
-        invoiceNumber: folio,
-        issueDate: fechaEmision,
-        totalAmount: mntTotal || (mntNeto + iva),
-        items,
-      }
+      const methodLabel = method === "dte_xml" ? "DTE XML" : method === "pdf_text" ? "PDF" : method === "ocr" ? "OCR" : ""
+      const confidencePct = Math.round(confidence * 100)
+      toast.success(`Factura extraída (${methodLabel}, ${confidencePct}% confianza): ${data.items?.length ?? 0} ítem(s)`)
     } catch {
-      return null
+      toast.error("Error al procesar el archivo")
+    } finally {
+      setExtracting(false)
     }
   }
 
-  // ── Client-side DTE ↔ OC item matching ─────────────────────────────────────
-  function matchDteItemsToOcItemsClient(
-    dteItems: Array<{ productCode: string | null; productName: string; quantity: number; unitPrice: number }>,
+  // ── Match extracted items to OC items ──────────────────────────────────────
+  function matchItemsToOcItems(
+    extractedItems: Array<{ productName: string; quantity: number; unitPrice: number }>,
     ocItemsList: OcItem[],
   ) {
-    return dteItems.map((dteItem) => {
-      // Try match by product code
-      if (dteItem.productCode) {
-        const byCode = ocItemsList.find((oci) => oci.id === dteItem.productCode)
-        if (byCode) return { dteItem, ocItemId: byCode.id, matchType: "code" as const }
-      }
-
+    return extractedItems.map((item) => {
       // Try match by name (case-insensitive, substring)
-      const normalizedName = dteItem.productName.toLowerCase().trim()
+      const normalizedName = item.productName.toLowerCase().trim()
       const byName = ocItemsList.find((oci) => {
         const ocName = oci.productName.toLowerCase().trim()
         return ocName && (normalizedName.includes(ocName) || ocName.includes(normalizedName))
       })
-      if (byName) return { dteItem, ocItemId: byName.id, matchType: "name" as const }
+      if (byName) return { item, ocItemId: byName.id, matchType: "name" as const }
 
-      return { dteItem, ocItemId: null, matchType: "none" as const }
+      return { item, ocItemId: null, matchType: "none" as const }
     })
   }
 
@@ -553,7 +510,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       <Field
         label="Archivo"
         htmlFor="invoice-file"
-        helper="PDF, JPG, PNG o XML (DTE) — el XML se auto-detecta"
+        helper="PDF, JPG, PNG o XML (DTE) — se auto-extraen datos"
       >
         <FileInput
           id="invoice-file"
@@ -561,12 +518,20 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
           accept="application/pdf,image/jpeg,image/png,application/xml,text/xml"
           required
           onChange={handleFileChange}
+          disabled={extracting}
         />
       </Field>
 
-      {dteParsed && (
+      {extracting && (
+        <p className="text-[11px] text-(--color-text-muted) flex items-center gap-1">
+          <span className="inline-block animate-spin h-3 w-3 border border-current border-t-transparent rounded-full" />
+          Procesando archivo...
+        </p>
+      )}
+
+      {dteParsed && !extracting && (
         <p className="text-[11px] text-[var(--color-success)] flex items-center gap-1">
-          ✓ DTE detectado — campos auto-completados
+          ✓ Datos extraídos del archivo — campos auto-completados
         </p>
       )}
 

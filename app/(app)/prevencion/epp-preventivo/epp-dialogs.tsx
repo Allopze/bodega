@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { EPP_REQUIREMENT_SCOPE_LABELS } from "@/lib/prevention/epp"
 import { createEppRequirementAction, updateEppRequirementAction, deactivateEppRequirementAction } from "./actions"
-import { Field, useOperation } from "./epp-form-kit"
+import { Field } from "@/components/ui/field"
+import { useOperation } from "@/lib/hooks/use-operation"
 
 const SCOPE_TYPES = Object.keys(EPP_REQUIREMENT_SCOPE_LABELS).filter((type) => type !== "task")
 
