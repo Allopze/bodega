@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import Link from "next/link"
 import { ArrowDown, ArrowUp, Info } from "@phosphor-icons/react/dist/ssr"
 import { Card, CardContent } from "@/components/ui/card"
+import { Tooltip } from "@/components/ui/tooltip"
 
 export function KpiCard({
   icon,
@@ -36,12 +37,11 @@ export function KpiCard({
             </span>
           )}
           {glossary && (
-            <span className="group relative">
-              <Info size={14} className="text-[var(--color-text-subtle)] cursor-help" />
-              <span className="pointer-events-none absolute bottom-full right-0 mb-1 w-56 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs leading-5 text-[var(--color-text-muted)] shadow-[var(--shadow-card)] opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                {glossary}
+            <Tooltip content={glossary} side="top">
+              <span className="inline-flex cursor-help items-center text-[var(--color-text-subtle)] hover:text-[var(--color-text)]">
+                <Info size={14} />
               </span>
-            </span>
+            </Tooltip>
           )}
         </div>
         <p className="mt-4 text-xs font-medium uppercase text-[var(--color-text-subtle)]">{label}</p>

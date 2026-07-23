@@ -1,8 +1,7 @@
 "use client"
 
 import { useRouter, useSearchParams } from "next/navigation"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface FleetFiltersProps {
@@ -30,13 +29,39 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
     router.push(`?${params.toString()}`)
   }
 
+  function clearFilters() {
+    router.push("/flota")
+  }
+
+  const activeChips: ActiveFilterChip[] = []
+  if (current.estado) {
+    activeChips.push({ key: "estado", label: "Estado", value: current.estado, displayValue: current.estado })
+  }
+  if (current.responsable) {
+    const resp = responsibleUsers.find((r) => r.id === current.responsable)
+    if (resp) activeChips.push({ key: "responsable", label: "Responsable", value: resp.id, displayValue: resp.name })
+  }
+  if (current.vencimiento) {
+    const vencLabel = current.vencimiento === "vencidos"
+      ? "Documentos vencidos"
+      : current.vencimiento === "proximos"
+        ? `Próximos a vencer (${warningDays} días)`
+        : "Al día"
+    activeChips.push({ key: "vencimiento", label: "Vencimiento", value: current.vencimiento, displayValue: vencLabel })
+  }
+
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+    <FilterToolbar
+      activeChips={activeChips}
+      onRemoveChip={(key) => setFilter(key, "")}
+      onClearAll={clearFilters}
+      hasActiveFilters={activeChips.length > 0}
+    >
       <Select
         defaultValue={current.estado ?? "all"}
         onValueChange={(v) => setFilter("estado", v === "all" ? "" : v)}
       >
-        <SelectTrigger><SelectValue placeholder="Todos los estados" /></SelectTrigger>
+        <SelectTrigger className="w-44 h-8 text-xs"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos los estados</SelectItem>
           {operationalStatuses.map((s) => (
@@ -49,7 +74,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
         defaultValue={current.responsable ?? "all"}
         onValueChange={(v) => setFilter("responsable", v === "all" ? "" : v)}
       >
-        <SelectTrigger><SelectValue placeholder="Todos los responsables" /></SelectTrigger>
+        <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="Todos los responsables" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos los responsables</SelectItem>
           {responsibleUsers.map((u) => (
@@ -62,7 +87,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
         defaultValue={current.vencimiento ?? "all"}
         onValueChange={(v) => setFilter("vencimiento", v === "all" ? "" : v)}
       >
-        <SelectTrigger><SelectValue placeholder="Sin filtro de vencimiento" /></SelectTrigger>
+        <SelectTrigger className="w-52 h-8 text-xs"><SelectValue placeholder="Filtro de vencimiento" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Sin filtro de vencimiento</SelectItem>
           <SelectItem value="vencidos">Documentos vencidos</SelectItem>
@@ -70,12 +95,6 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
           <SelectItem value="al-dia">Al día</SelectItem>
         </SelectContent>
       </Select>
-
-      <div className="flex justify-end gap-2">
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/flota">Limpiar filtros</Link>
-        </Button>
-      </div>
-    </div>
+    </FilterToolbar>
   )
 }
