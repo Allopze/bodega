@@ -806,6 +806,13 @@
       "when": 1784822371968,
       "tag": "0114_strong_stone_men",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1784827187495,
+      "tag": "0115_lovely_kat_farrell",
+      "breakpoints": true
     }
   ]
 }
