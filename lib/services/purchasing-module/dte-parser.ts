@@ -3,6 +3,8 @@
  * Extracts invoice data: number, date, items, amounts.
  */
 
+import { XMLParser } from "fast-xml-parser"
+
 export interface DteItem {
   lineNumber:   number
   productCode:  string | null
@@ -26,54 +28,61 @@ export interface DteData {
   items:         DteItem[]
 }
 
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+})
+
 /**
  * Parse a Chilean DTE XML string into structured data.
  * Supports: Factura (33), Factura de Exenta (34), Nota de Crédito (61), Nota de Débito (56)
  */
 export function parseDteXml(xmlString: string): DteData | null {
   try {
-    const parser = new DOMParser()
-    const doc = parser.parseFromString(xmlString, "text/xml")
+    const parsed = xmlParser.parse(xmlString)
+    if (!parsed) return null
 
-    // Check for parse errors
-    const parseError = doc.querySelector("parsererror")
-    if (parseError) return null
-
-    // Try both <DTE> and direct <Documento> (some DTEs omit the wrapper)
-    const documento = doc.querySelector("DTE > Documento") ?? doc.querySelector("Documento")
+    // Try both <DTE><Documento> and direct <Documento>
+    const documento = parsed.DTE?.Documento ?? parsed.Documento
     if (!documento) return null
 
     // ── Header ──────────────────────────────────────────────────────────────
-    const folio = textContent(documento, "Encabezado > IdDoc > Folio")
-    const fechaEmision = textContent(documento, "Encabezado > IdDoc > FechaEmision")
-    const rutEmisor = textContent(documento, "Encabezado > Emisor > RUTEmisor")
-    const rznSocEmisor = textContent(documento, "Encabezado > Emisor > RznSocEmisor")
+    const encabezado = documento.Encabezado
+    if (!encabezado) return null
 
-    // ── Totals ──────────────────────────────────────────────────────────────
-    const mntNeto = parseNumber(textContent(documento, "Encabezado > Totales > MntNeto"))
-    const iva = parseNumber(textContent(documento, "Encabezado > Totales > IVA"))
-    const mntTotal = parseNumber(textContent(documento, "Encabezado > Totales > MntTotal"))
+    const idDoc = encabezado.IdDoc ?? {}
+    const emisor = encabezado.Emisor ?? {}
+    const totales = encabezado.Totales ?? {}
+
+    const folio = str(idDoc.Folio)
+    const fechaEmision = str(idDoc.FechaEmision)
+    const rutEmisor = str(emisor.RUTEmisor)
+    const rznSocEmisor = str(emisor.RznSocEmisor)
+
+    const mntNeto = num(totales.MntNeto)
+    const iva = num(totales.IVA)
+    const mntTotal = num(totales.MntTotal)
 
     // ── Line items ──────────────────────────────────────────────────────────
-    const detailNodes = documento.querySelectorAll("Detalle > Item")
-    const items: DteItem[] = []
+    const detalle = documento.Detalle
+    const rawItems: Record<string, unknown>[] = detalle?.Item
+      ? Array.isArray(detalle.Item) ? detalle.Item : [detalle.Item]
+      : []
 
-    detailNodes.forEach((itemNode) => {
-      const nroLinea = parseInt(textContent(itemNode, "NroLinea") ?? "0", 10)
-      const cdgItem = itemNode.querySelector("CdgItem")
-      const productCode = cdgItem ? textContent(cdgItem, "VlrCod") : null
-      const nmItem = textContent(itemNode, "NmItem") ?? ""
-      const dscItem = textContent(itemNode, "DscItem")
-      const qtyItem = parseNumber(textContent(itemNode, "QtyItem"))
-      const unmdItem = textContent(itemNode, "UnmdItem") ?? "UN"
-      const prcItem = parseNumber(textContent(itemNode, "PrcItem"))
-      const montoItem = parseNumber(textContent(itemNode, "MontoItem"))
+    const items: DteItem[] = rawItems.map((itemNode, index) => {
+      const nroLinea = num(itemNode.NroLinea) || index + 1
+      const cdgItem = itemNode.CdgItem as Record<string, unknown> | undefined
+      const productCode = cdgItem ? str(cdgItem.VlrCod) : null
+      const nmItem = str(itemNode.NmItem) ?? ""
+      const dscItem = str(itemNode.DscItem)
+      const qtyItem = num(itemNode.QtyItem)
+      const unmdItem = str(itemNode.UnmdItem) ?? "UN"
+      const prcItem = num(itemNode.PrcItem)
+      const montoItem = num(itemNode.MontoItem)
+      const descuentoMonto = num(itemNode.DescuentoMonto)
 
-      // Some DTEs use PrcItem sinDescuentos + DescuentoMonto
-      const descuentoMonto = parseNumber(textContent(itemNode, "DescuentoMonto"))
-
-      items.push({
-        lineNumber:   nroLinea || items.length + 1,
+      return {
+        lineNumber:   nroLinea,
         productCode,
         productName:  nmItem,
         description:  dscItem,
@@ -82,15 +91,14 @@ export function parseDteXml(xmlString: string): DteData | null {
         unitPrice:    prcItem,
         discount:     descuentoMonto,
         amount:       montoItem || qtyItem * prcItem,
-      })
+      }
     })
 
     // ── Build result ────────────────────────────────────────────────────────
-    const invoiceNumber = folio ?? ""
     const totalAmount = mntTotal || (mntNeto + iva)
 
     return {
-      invoiceNumber,
+      invoiceNumber: folio ?? "",
       issueDate:     fechaEmision ?? null,
       supplierRut:   rutEmisor ?? null,
       supplierName:  rznSocEmisor ?? null,
@@ -136,15 +144,18 @@ export function matchDteItemsToOcItems(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function textContent(parent: Element, selector: string): string | null {
-  const el = parent.querySelector(selector)
-  return el?.textContent?.trim() ?? null
+function str(value: unknown): string | null {
+  if (typeof value === "string") return value.trim()
+  if (typeof value === "number") return String(value)
+  return null
 }
 
-function parseNumber(value: string | null): number {
-  if (!value) return 0
-  // Chilean DTE uses integers (no decimals) for amounts
-  const cleaned = value.replace(/\./g, "").replace(/,/g, ".")
-  const num = parseFloat(cleaned)
-  return isNaN(num) ? 0 : num
+function num(value: unknown): number {
+  if (typeof value === "number") return value
+  if (typeof value === "string") {
+    const cleaned = value.replace(/\./g, "").replace(",", ".")
+    const n = parseFloat(cleaned)
+    return isNaN(n) ? 0 : n
+  }
+  return 0
 }

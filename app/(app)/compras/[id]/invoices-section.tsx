@@ -9,7 +9,6 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { FileInput } from "@/components/ui/file-input"
-import { DatePicker } from "@/components/ui/date-picker"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
@@ -439,6 +438,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
             type="date"
             id="invoice-issue-date"
             name="issueDate"
+            aria-label="Fecha de emisión"
             className="w-full text-xs p-2 rounded border border-(--color-border) bg-(--color-surface)"
           />
         </Field>
@@ -463,7 +463,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
           {lineItems.map((li, index) => {
             const ocItem = ocItems.find((oci) => oci.id === li.ocItemId)
             return (
-              <div key={index} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
+              <div key={li.ocItemId} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
                 <div className="flex-1 min-w-0">
                   <p className="text-[10px] text-text-subtle truncate mb-1">{ocItem?.productName ?? "Ítem"}</p>
                   <div className="grid grid-cols-2 gap-1.5">

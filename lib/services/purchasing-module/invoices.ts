@@ -2,7 +2,7 @@
  * Invoice management for purchase orders.
  */
 
-import { eq, and } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems } from "@/db/schema"
 import { nanoid } from "@/lib/id"

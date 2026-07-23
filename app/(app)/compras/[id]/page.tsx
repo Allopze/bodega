@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
-import { purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrders, statusHistory, users } from "@/db/schema"
+import { purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
 import { and, desc, eq } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"

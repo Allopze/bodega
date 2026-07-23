@@ -117,6 +117,7 @@ export function OcActions({
           name="reason"
           placeholder="Ej: ítems dañados no serán repuestos, acuerdo con proveedor..."
           required
+          aria-label="Motivo del cierre"
           className="w-full text-xs p-2 rounded border border-(--color-border) bg-(--color-surface) resize-none"
           rows={3}
         />
@@ -131,7 +132,7 @@ export function OcActions({
               <Warning size={12} /> Advertencias de conciliación
             </p>
             <ul className="space-y-0.5 list-disc list-inside">
-              {closeWarnings.map((w, i) => <li key={i}>{w}</li>)}
+              {closeWarnings.map((w) => <li key={w}>{w}</li>)}
             </ul>
           </div>
         )}
@@ -167,6 +168,7 @@ export function OcActions({
           name="reason"
           placeholder="Explique el motivo por el cual se anula esta orden de compra..."
           required
+          aria-label="Motivo de anulación"
           className="w-full text-xs p-2 rounded border border-(--color-border) bg-(--color-surface) resize-none"
           rows={3}
         />
