@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Field as UIField } from "@/components/ui/field"
 
 type Result = { ok: boolean; message?: string }
 
@@ -26,11 +27,8 @@ export function useOperation() {
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="grid gap-1 text-sm">
-      <span className="font-medium">{label}</span>
+    <UIField label={label} helper={hint}>
       {children}
-      {hint && <span className="text-xs text-[var(--color-text-subtle)]">{hint}</span>}
-    </label>
+    </UIField>
   )
 }
-
